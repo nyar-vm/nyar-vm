@@ -1,0 +1,12 @@
+[package]
+name = "Algebra"
+version = "0.0.5"
+authors = ["aster <aster@mugen.vip>"]
+
+[lib]
+name = "nyar_lib"
+path = "src/mod.rs"
+
+
+[dependencies]
+num = "0.2"

@@ -1,0 +1,18 @@
+# IDE
+.idea/
+.vs/
+.vscode/
+
+
+
+# Build
+target/
+Cargo.lock
+
+
+# tmp
+**/*.rs.bk
+history.txt
+*.swp
+*.swo
+*~
