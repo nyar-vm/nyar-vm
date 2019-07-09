@@ -1,38 +1,37 @@
-use crate::real::{Real, Integer};
-
-
 use num::BigInt;
-use num::rational::BigRational;
-use std::ops::Add;
 
-impl Add<Integer> for Integer {
-    type Output = Integer;
-    fn add(self, other: Integer) -> Self::Output {
-        let lhs = self.value;
-        let rhs = other.value;
-        let result = lhs + rhs;
-        Real { value: result }
-    }
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Integer {
+    value: BigInt,
 }
 
+impl std::ops::Deref for Integer {
+    type Target = BigInt;
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
 
 // region From trait
 impl From<&str> for Integer {
     fn from(literal: &str) -> Self {
         let v = BigInt::parse_bytes(literal.as_bytes(), 10).unwrap();
-        Real { value: v }
+        Integer { value: v }
     }
 }
 
 impl From<i32> for Integer {
     fn from(i: i32) -> Self {
-        Real { value: BigInt::from(i) }
+        Integer {
+            value: BigInt::from(i),
+        }
     }
 }
 
 impl From<BigInt> for Integer {
     fn from(i: BigInt) -> Self {
-        Real { value: i }
+        Integer { value: i }
     }
 }
 
@@ -40,7 +39,7 @@ impl Integer {
     //! from byte form
     fn from_base(literal: &str, base: u32) -> Integer {
         let v = BigInt::parse_bytes(literal.as_bytes(), base).unwrap();
-        Real { value: v }
+        Integer { value: v }
     }
     fn from_x(literal: &str) -> Integer {
         Integer::from_base(literal, 16u32)
@@ -52,12 +51,36 @@ impl Integer {
         Integer::from_base(literal, 2u32)
     }
 }
-// endregion
 
-#[test]
-fn run() {
-    let a: Integer = Integer::from_x("20045600af5604564560000");
-    let b: Integer = Integer::from(2000000000);
-    println!("{}", a.value);
-    panic!()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_hex() {
+        let lhs = Integer::from_x("FF");
+        let rhs = Integer::from(255);
+        assert_eq!(lhs, rhs)
+    }
+
+    #[test]
+    fn from_oct() {
+        let lhs = Integer::from_o("77");
+        let rhs = Integer::from(63);
+        assert_eq!(lhs, rhs)
+    }
+
+    #[test]
+    fn from_bin() {
+        let lhs = Integer::from_b("11");
+        let rhs = Integer::from(3);
+        assert_eq!(lhs, rhs)
+    }
+
+    #[test]
+    fn from_str() {
+        let lhs = Integer::from("99");
+        let rhs = Integer::from(99);
+        assert_eq!(lhs, rhs)
+    }
 }
