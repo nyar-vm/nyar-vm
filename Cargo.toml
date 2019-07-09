@@ -9,4 +9,10 @@ path = "src/mod.rs"
 
 
 [dependencies]
-num = "0.2"
+bigdecimal = "*"
+serde_json = "*"
+rand = "*"
+
+[dependencies.num]
+version = "0.2"
+default-features = true
