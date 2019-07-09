@@ -1,18 +1,19 @@
 # IDE
-.idea/
-.vs/
-.vscode/
+.vscode
+.idea
+*.iml
+time-travel.*
 
-
-
-# Build
+# Rust
 target/
 Cargo.lock
 
 
-# tmp
-**/*.rs.bk
-history.txt
-*.swp
-*.swo
-*~
+
+# Node
+node_modules/
+cache/
+package-lock.json
+
+# Wasm
+*.wasm

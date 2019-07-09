@@ -1,0 +1,14 @@
+[*]
+charset = utf-8
+
+[*.js]
+indent_style = space
+indent_size = 4
+
+[*.wit]
+indent_style = space
+indent_size = 4
+
+[*.toml]
+indent_style = space
+indent_size = 4

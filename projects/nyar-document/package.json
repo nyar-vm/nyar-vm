@@ -1,0 +1,27 @@
+{
+    "name": "vos-document",
+    "version": "1.0.0",
+    "description": "VOS Language Documentation",
+    "type": "module",
+    "main": "index.js",
+    "scripts": {
+        "dev": "vitepress dev docs",
+        "build": "vitepress build docs",
+        "preview": "vitepress preview docs",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [
+        "vos",
+        "rpc",
+        "documentation",
+        "schema"
+    ],
+    "author": "VOS Team",
+    "license": "MIT",
+    "devDependencies": {
+        "@shikijs/vitepress-twoslash": "^3.12.2",
+        "mermaid": "^11.11.0",
+        "vitepress": "^1.0.0",
+        "vitepress-plugin-mermaid": "^2.0.17"
+    }
+}

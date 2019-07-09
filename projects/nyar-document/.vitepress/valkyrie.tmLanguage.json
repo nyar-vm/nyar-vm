@@ -1,0 +1,226 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "valkyrie",
+  "scopeName": "source.valkyrie",
+  "fileTypes": [
+    "valkyrie"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#decorators"
+    },
+    {
+      "include": "#identifiers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.vos",
+          "match": "#\\?.*$"
+        },
+        {
+          "name": "comment.line.number-sign.vos",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.vos",
+          "match": "\\b(namespace|using|as|from)\\b"
+        },
+        {
+          "name": "keyword.declaration.vos",
+          "match": "\\b(class|union|agent|function|async|stream|upload|batch|bidirectional|fields)\\b"
+        },
+        {
+          "name": "keyword.other.vos",
+          "match": "\\b(Result|Stream|Secret)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.vos",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.vos",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.vos",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.vos",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.decimal.vos",
+          "match": "\\b\\d+(\\.\\d+)?\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.vos",
+          "match": "\\b(String|bool|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|Timestamp)\\b"
+        },
+        {
+          "name": "entity.name.type.vos",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        },
+        {
+          "name": "storage.modifier.vos",
+          "match": "\\?"
+        }
+      ]
+    },
+    "decorators": {
+      "patterns": [
+        {
+          "name": "meta.annotation.vos",
+          "begin": "(@)([a-zA-Z_][a-zA-Z0-9_]*)",
+          "beginCaptures": {
+            "1": {
+              "name": "entity.name.tag.decorator.vos"
+            },
+            "2": {
+              "name": "entity.name.tag.decorator.vos"
+            }
+          },
+          "end": "(?=\\s|$|[;{}])",
+          "patterns": [
+            {
+              "include": "#decorator-arguments"
+            }
+          ]
+        }
+      ]
+    },
+    "decorator-arguments": {
+      "patterns": [
+        {
+          "name": "meta.decorator.arguments.vos",
+          "begin": "\\(",
+          "end": "\\)",
+          "patterns": [
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "name": "variable.parameter.vos",
+              "match": "[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*:)"
+            },
+            {
+              "name": "punctuation.separator.vos",
+              "match": "[,:]"
+            },
+            {
+              "name": "constant.language.boolean.vos",
+              "match": "\\b(true|false)\\b"
+            },
+            {
+              "name": "meta.brackets.vos",
+              "begin": "\\[",
+              "end": "\\]",
+              "patterns": [
+                {
+                  "include": "#strings"
+                },
+                {
+                  "name": "punctuation.separator.vos",
+                  "match": ","
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "entity.name.function.vos",
+          "match": "(?<=\\bfunction\\s+)[a-zA-Z_][a-zA-Z0-9_]*"
+        },
+        {
+          "name": "variable.other.vos",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.vos",
+          "match": "(->|::|:)"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.terminator.vos",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.section.braces.vos",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.section.brackets.vos",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.section.parens.vos",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.separator.vos",
+          "match": ","
+        }
+      ]
+    }
+  }
+}
