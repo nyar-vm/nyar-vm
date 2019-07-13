@@ -1,18 +1,17 @@
 [package]
-name = "Algebra"
+name = "nyar-number"
 version = "0.0.5"
 authors = ["aster <aster@mugen.vip>"]
 
 [lib]
-name = "nyar_lib"
-path = "src/mod.rs"
+crate-type = ["dylib", "rlib"]
+name = "number"
+path = "src/lib.rs"
 
 
 [dependencies]
-bigdecimal = "*"
-serde_json = "*"
-rand = "*"
-
-[dependencies.num]
-version = "0.2"
-default-features = true
+bigdecimal = "0.1.0"
+serde_json = "1.0.40"
+rand = "0.7.0"
+gc = {version = "0.3.3", optional = true}
+num = {version = "0.2", default-features = true}
