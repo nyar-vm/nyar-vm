@@ -1,76 +1,89 @@
-use num::rational::Ratio as BigRational;
+use crate::Integer;
+use num::rational::BigRational;
 use num::BigInt;
-use super::integer::Integer;
+
 use std::ops::Add;
 
-type Base = BigRational<BigInt>;
-
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Rational { pub base: Base }
+pub struct Rational {
+    pub value: BigRational,
+}
+
+impl std::ops::Deref for Rational {
+    type Target = BigRational;
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
 
 impl Rational {
-    pub fn up(&self) -> Integer {
-        Integer::from(self.base.numer())
+    pub fn numerator(&self) -> Integer {
+        <Integer as std::convert::From<num::BigInt>>::from(self.value.numer().clone())
     }
-    pub fn down(&self) -> Integer {
-        Integer::from(self.base.denom())
+    pub fn denominator(&self) -> Integer {
+        <Integer as std::convert::From<num::BigInt>>::from(self.value.denom().clone())
     }
     pub fn new(numerator: &str, denominator: &str) -> Rational {
         Rational {
-            base: Base::new(
+            value: BigRational::new(
                 BigInt::parse_bytes(numerator.as_bytes(), 10).unwrap(),
                 BigInt::parse_bytes(denominator.as_bytes(), 10).unwrap(),
-            )
+            ),
         }
     }
-    pub fn from_i(numerator: BigInt, denominator: BigInt) -> Rational {
+    pub fn from_integer(numerator: BigInt, denominator: BigInt) -> Rational {
         Rational {
-            base: Base::new(numerator, denominator)
+            value: BigRational::new(numerator, denominator),
         }
     }
 }
 
-/*
 impl From<&str> for Rational {
     fn from(s: &str) -> Self {
         let i = BigInt::parse_bytes(s.as_bytes(), 10).unwrap();
-        Rational { base: Base::from_integer(i) }
+        Rational::from_integer(i, BigInt::from(1))
     }
 }
-*/
+
+impl From<i32> for Rational {
+    fn from(i: i32) -> Self {
+        Rational::from_integer(BigInt::from(i), BigInt::from(1))
+    }
+}
 
 impl From<BigInt> for Rational {
-    fn from(integer: BigInt) -> Self {
-        Rational { base: Base::from_integer(integer) }
+    fn from(i: BigInt) -> Self {
+        Rational::from_integer(i, BigInt::from(1))
     }
-}
-
-#[test]
-fn test_from() {
-    let a = Rational::new("4", "2");
-    assert_eq!(a.up(), Integer::from("2"));
-    assert_eq!(a.down(), Integer::from("1"));
-    let b = Rational::from(BigInt::from(2));
-    assert_eq!(b.up(), Integer::from("2"));
-    assert_eq!(b.down(), Integer::from("1"));
 }
 
 impl Add<Rational> for Rational {
     type Output = Rational;
     fn add(self, other: Rational) -> Self::Output {
-        let lhs = self.base;
-        let rhs = other.base;
-        Rational { base: lhs + rhs }
+        let lhs = self.value;
+        let rhs = other.value;
+        Rational { value: lhs + rhs }
     }
 }
 
 impl Add<Integer> for Rational {
     type Output = Rational;
     fn add(self, other: Integer) -> Self::Output {
-        let lhs = self.base;
-        let rhs = Rational::from(other.base).base;
-        Rational { base: lhs + rhs }
+        let lhs = self.value;
+        let rhs = Rational::from(other.value).value;
+        Rational { value: lhs + rhs }
     }
+}
+
+#[test]
+fn test_from() {
+    let a = Rational::new("4", "2");
+    assert_eq!(a.numerator(), Integer::from(2));
+    assert_eq!(a.denominator(), Integer::from(1));
+    let b = Rational::from(2);
+    assert_eq!(b.numerator(), Integer::from(2));
+    assert_eq!(b.denominator(), Integer::from(1));
 }
 
 #[test]
@@ -81,4 +94,3 @@ fn test_add() {
     assert_eq!(a.clone() + b, Rational::new("10", "3"));
     assert_eq!(a.clone() + c, Rational::new("10", "3"));
 }
-
