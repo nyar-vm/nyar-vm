@@ -1,7 +1,13 @@
 [package]
 name = "nyar-number"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["aster <aster@mugen.vip>"]
+description = "Number Lib for Nyar"
+license = "MPL-2.0"
+readme = "README.md"
+repository = "https://github.com/nyar-lang/nyar-number"
+exclude = ["/tests/*", "/.idea/*"]
+edition = "2018"
 
 [lib]
 crate-type = ["dylib", "rlib"]
