@@ -1,5 +1,7 @@
+use crate::Rational;
 use num::BigInt;
-use std::ops::Add;
+use std::fmt;
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
@@ -7,11 +9,20 @@ pub struct Integer {
     pub value: BigInt,
 }
 
+// region
+impl fmt::Display for Integer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        BigInt::fmt(&self.value, f)
+    }
+}
 
+/*
 impl std::ops::Deref for Integer {
     type Target = BigInt;
     fn deref(&self) -> &Self::Target { &self.value }
 }
+*/
+// endregion
 // region GC trait
 #[cfg(feature = "gc")]
 impl gc::Finalize for Integer {}
@@ -26,9 +37,10 @@ unsafe impl gc::Trace for Integer {
     unsafe fn unroot(&self) {}
     #[inline]
     fn finalize_glue(&self) {
-        Finalize::finalize(self)
+        gc::Finalize::finalize(self)
     }
 }
+
 // endregion
 // region From trait
 impl From<&str> for Integer {
@@ -53,79 +65,75 @@ impl From<BigInt> for Integer {
 }
 
 impl Integer {
-    fn new(integer: &str) -> Integer {
+    pub fn new(integer: &str) -> Integer {
         Integer::from(integer)
     }
-    fn from_base(literal: &str, base: u32) -> Integer {
+    pub fn from_base(literal: &str, base: u32) -> Integer {
         let v = BigInt::parse_bytes(literal.as_bytes(), base).unwrap();
         Integer { value: v }
     }
-    fn from_x(s: &str) -> Integer {
+    pub fn from_x(s: &str) -> Integer {
         Integer::from_base(s, 16u32)
     }
-    fn from_o(s: &str) -> Integer {
+    pub fn from_o(s: &str) -> Integer {
         Integer::from_base(s, 8u32)
     }
-    fn from_b(s: &str) -> Integer {
+    pub fn from_b(s: &str) -> Integer {
         Integer::from_base(s, 2u32)
     }
 }
 
 // endregion
 // region Operators
+impl PartialEq<i32> for Integer {
+    fn eq(&self, other: &i32) -> bool {
+        self.value == BigInt::from(*other)
+    }
+    fn ne(&self, other: &i32) -> bool {
+        !self.eq(other)
+    }
+}
+
 impl Add<Integer> for Integer {
     type Output = Integer;
     fn add(self, other: Integer) -> Integer {
-        let lhs = self.value;
-        let rhs = other.value;
-        let result = lhs + rhs;
-        Integer { value: result }
+        let result = self.value + other.value;
+        Integer::from(result)
     }
 }
+
+impl Sub<Integer> for Integer {
+    type Output = Integer;
+    fn sub(self, other: Integer) -> Integer {
+        let result = self.value - other.value;
+        Integer::from(result)
+    }
+}
+
+impl Mul<Integer> for Integer {
+    type Output = Integer;
+    fn mul(self, other: Integer) -> Integer {
+        let result = self.value * other.value;
+        Integer::from(result)
+    }
+}
+
+impl Div<Integer> for Integer {
+    type Output = Rational;
+    fn div(self, other: Integer) -> Rational {
+        Rational::from_pair(self.value, other.value)
+    }
+}
+
+impl Rem<Integer> for Integer {
+    type Output = Integer;
+    fn rem(self, other: Integer) -> Integer {
+        let result = self.value % other.value;
+        Integer::from(result)
+    }
+}
+
 // endregion
 
-
-#[cfg(test)]
-mod testing_covert {
-    use super::*;
-
-    #[test]
-    fn from_hex() {
-        let lhs = Integer::from_x("FF");
-        let rhs = Integer::from(255);
-        assert_eq!(lhs, rhs)
-    }
-
-    #[test]
-    fn from_oct() {
-        let lhs = Integer::from_o("77");
-        let rhs = Integer::from(63);
-        assert_eq!(lhs, rhs)
-    }
-
-    #[test]
-    fn from_bin() {
-        let lhs = Integer::from_b("11");
-        let rhs = Integer::from(3);
-        assert_eq!(lhs, rhs)
-    }
-
-    #[test]
-    fn from_str() {
-        let lhs = Integer::from("99");
-        let rhs = Integer::from(99);
-        assert_eq!(lhs, rhs)
-    }
-}
-
-#[cfg(test)]
-mod testing_operator {
-    use super::*;
-
-    #[test]
-    fn add() {
-        let lhs = Integer::from(2);
-        let rhs = Integer::from(3);
-        assert_eq!(lhs + rhs, Integer::from(5))
-    }
-}
+#[test]
+fn no_syntax_error() {}

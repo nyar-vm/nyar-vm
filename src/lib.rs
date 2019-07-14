@@ -12,5 +12,8 @@ pub mod integer;
 pub mod rational;
 pub mod unsigned;
 
+pub use complex::Complex;
+pub use complex::GaussianInteger;
 pub use decimal::Decimal;
 pub use integer::Integer;
+pub use rational::Rational;
