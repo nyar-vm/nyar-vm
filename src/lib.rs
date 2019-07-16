@@ -1,9 +1,9 @@
 extern crate bigdecimal;
-extern crate core;
-#[cfg(feature = "gc")]
-extern crate gc;
 extern crate num;
 extern crate rand;
+#[cfg(feature = "gc")]
+extern crate gc;
+#[cfg(feature = "serde_json")]
 extern crate serde_json;
 
 pub mod complex;
