@@ -2,8 +2,8 @@ use crate::Integer;
 use num::rational::BigRational;
 use num::BigInt;
 
-use std::ops::{Add, Sub};
 use std::fmt;
+use std::ops::{Add, Sub};
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -15,11 +15,6 @@ impl fmt::Display for Rational {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         BigRational::fmt(&self.value, f)
     }
-}
-
-impl std::ops::Deref for Rational {
-    type Target = BigRational;
-    fn deref(&self) -> &Self::Target { &self.value }
 }
 
 // region GC trait
@@ -54,10 +49,14 @@ impl Rational {
     pub fn new(numerator: &str, denominator: &str) -> Rational {
         let n = BigInt::parse_bytes(numerator.as_bytes(), 10).unwrap();
         let d = BigInt::parse_bytes(denominator.as_bytes(), 10).unwrap();
-        Rational { value: BigRational::new(n, d) }
+        Rational {
+            value: BigRational::new(n, d),
+        }
     }
-    pub fn from_integer(numerator: BigInt, denominator: BigInt) -> Rational {
-        Rational { value: BigRational::new(numerator, denominator) }
+    pub fn from_pair(numerator: BigInt, denominator: BigInt) -> Rational {
+        Rational {
+            value: BigRational::new(numerator, denominator),
+        }
     }
     pub fn from_float(f: f64) -> Rational {
         let r = BigRational::from_float(f).unwrap();
@@ -68,25 +67,25 @@ impl Rational {
 impl From<&str> for Rational {
     fn from(s: &str) -> Self {
         let i = BigInt::parse_bytes(s.as_bytes(), 10).unwrap();
-        Rational::from_integer(i, BigInt::from(1))
+        Rational::from_pair(i, BigInt::from(1))
     }
 }
 
-impl From<i32> for Rational {
-    fn from(i: i32) -> Self {
-        Rational::from_integer(BigInt::from(i), BigInt::from(1))
+impl From<i64> for Rational {
+    fn from(i: i64) -> Self {
+        Rational::from_pair(BigInt::from(i), BigInt::from(1))
     }
 }
 
 impl From<BigInt> for Rational {
     fn from(i: BigInt) -> Self {
-        Rational::from_integer(i, BigInt::from(1))
+        Rational::from_pair(i, BigInt::from(1))
     }
 }
 
 impl From<Integer> for Rational {
     fn from(i: Integer) -> Self {
-        Rational::from_integer(i.value, BigInt::from(1))
+        Rational::from_pair(i.value, BigInt::from(1))
     }
 }
 

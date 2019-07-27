@@ -1,5 +1,6 @@
 use crate::Rational;
 use num::BigInt;
+use num::Integer as IntegerTrait;
 use std::fmt;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
@@ -105,7 +106,7 @@ impl Add<Integer> for Integer {
 impl Sub<Integer> for Integer {
     type Output = Integer;
     fn sub(self, other: Integer) -> Integer {
-        let result = self.value - other.value;
+        let result: BigInt = self.value - other.value;
         Integer::from(result)
     }
 }
@@ -113,7 +114,7 @@ impl Sub<Integer> for Integer {
 impl Mul<Integer> for Integer {
     type Output = Integer;
     fn mul(self, other: Integer) -> Integer {
-        let result = self.value * other.value;
+        let result = self.value.checked_mul(&other.value).unwrap();
         Integer::from(result)
     }
 }
@@ -128,8 +129,8 @@ impl Div<Integer> for Integer {
 impl Rem<Integer> for Integer {
     type Output = Integer;
     fn rem(self, other: Integer) -> Integer {
-        let result = self.value % other.value;
-        Integer::from(result)
+        let (_, rem) = self.value.div_rem(&other.value);
+        Integer::from(rem)
     }
 }
 

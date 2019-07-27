@@ -1,8 +1,8 @@
 extern crate bigdecimal;
-extern crate num;
-extern crate rand;
 #[cfg(feature = "gc")]
 extern crate gc;
+extern crate num;
+extern crate rand;
 #[cfg(feature = "serde_json")]
 extern crate serde_json;
 
