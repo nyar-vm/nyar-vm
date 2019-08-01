@@ -10,7 +10,6 @@ pub mod complex;
 pub mod decimal;
 pub mod integer;
 pub mod rational;
-pub mod unsigned;
 
 pub use complex::Complex;
 pub use complex::GaussianInteger;
