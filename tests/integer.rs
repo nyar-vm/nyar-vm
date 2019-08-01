@@ -5,13 +5,13 @@ use number::{Integer, Rational};
 #[test]
 fn testing_display() {
     let i = Integer::from(-1);
-    assert_eq!(format!("{}", i), "-1".to_string());
+    assert_eq!(format!("{}", i), "-1");
 
     let i = Integer::from(0);
-    assert_eq!(format!("{}", i), "0".to_string());
+    assert_eq!(format!("{}", i), "0");
 
     let i = Integer::from(1);
-    assert_eq!(format!("{}", i), "1".to_string());
+    assert_eq!(format!("{}", i), "1");
 }
 
 #[cfg(test)]
