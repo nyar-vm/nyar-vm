@@ -51,8 +51,8 @@ impl From<&str> for Integer {
     }
 }
 
-impl From<i32> for Integer {
-    fn from(i: i32) -> Self {
+impl From<i64> for Integer {
+    fn from(i: i64) -> Self {
         Integer {
             value: BigInt::from(i),
         }
