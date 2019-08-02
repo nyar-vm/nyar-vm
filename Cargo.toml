@@ -1,6 +1,6 @@
 [package]
 name = "nyar-number"
-version = "0.2.2"
+version = "0.2.4"
 authors = ["aster <aster@mugen.vip>"]
 description = "Number lib for Nyar"
 license = "MPL-2.0"

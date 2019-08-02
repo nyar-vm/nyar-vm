@@ -1,12 +1,17 @@
-use super::integer::Integer;
-use crate::traits::ToNative;
-use num::BigInt;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::str::FromStr;
+#[cfg(feature = "gc")]
+use gc::{Finalize, Trace};
+use num::BigInt;
+
+use crate::traits::ToNative;
+
+use super::integer::Integer;
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "gc", derive(Finalize, Trace))]
 pub struct NativeType<T> {
     pub value: T,
 }
