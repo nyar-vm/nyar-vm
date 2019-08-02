@@ -1,3 +1,4 @@
+use crate::traits::ToNative;
 use crate::Rational;
 use num::BigInt;
 use num::Integer as IntegerTrait;
@@ -83,7 +84,12 @@ impl Integer {
         Integer::from_base(s, 2u32)
     }
 }
-
+impl ToNative for Integer {
+    type Output = BigInt;
+    fn to_native(&self) -> Self::Output {
+        self.clone().value
+    }
+}
 // endregion
 // region Operators
 impl PartialEq<i32> for Integer {

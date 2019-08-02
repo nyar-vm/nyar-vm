@@ -1,10 +1,9 @@
-use bigdecimal::BigDecimal;
 use num::complex::Complex as ComplexType;
 use num::BigInt;
 use std::any::Any;
 
 #[derive(Debug, Clone)]
-struct ComplexPair<R, I> {
+pub struct ComplexPair<R, I> {
     pub re: R,
     pub im: I,
 }

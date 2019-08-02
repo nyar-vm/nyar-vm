@@ -1,4 +1,5 @@
 use super::integer::Integer;
+use crate::traits::ToNative;
 use num::BigInt;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -16,11 +17,11 @@ pub type Integer32 = NativeType<i32>;
 pub type Integer64 = NativeType<i64>;
 pub type Integer128 = NativeType<i128>;
 
-pub type Unsigned8 = NativeType<i8>;
-pub type Unsigned16 = NativeType<i16>;
-pub type Unsigned32 = NativeType<i32>;
-pub type Unsigned64 = NativeType<i64>;
-pub type Unsigned128 = NativeType<i128>;
+pub type Unsigned8 = NativeType<u8>;
+pub type Unsigned16 = NativeType<u16>;
+pub type Unsigned32 = NativeType<u32>;
+pub type Unsigned64 = NativeType<u64>;
+pub type Unsigned128 = NativeType<u128>;
 
 // region From
 impl<T> From<&str> for NativeType<T>
@@ -62,13 +63,28 @@ warp_native! {i8,i16,i32,i64,i128}
 warp_native! {u8,u16,u32,u64,u128}
 */
 // endregion
+// region Into
+impl<T> ToNative for NativeType<T>
+where
+    T: Copy,
+{
+    type Output = T;
+    fn to_native(&self) -> Self::Output {
+        self.value
+    }
+}
+
+// endregion
 // region OPs
 impl<T> PartialEq<T> for NativeType<T>
 where
-    T: PartialEq,
+    T: PartialEq + Copy,
 {
     fn eq(&self, other: &T) -> bool {
         self.value == *other
+    }
+    fn ne(&self, other: &T) -> bool {
+        !self.eq(other)
     }
 }
 

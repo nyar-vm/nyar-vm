@@ -12,11 +12,3 @@ impl From<i16> for Integer16 {
         NativeType { value: i }
     }
 }
-
-impl From<Integer8> for Integer16 {
-    fn from(i: Integer8) -> Integer16 {
-        NativeType {
-            value: i.value as i16,
-        }
-    }
-}
