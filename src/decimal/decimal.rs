@@ -1,3 +1,4 @@
+use crate::traits::ToNative;
 use bigdecimal::BigDecimal;
 use num::BigInt;
 use std::fmt;
@@ -55,6 +56,18 @@ impl From<&str> for Decimal {
         Decimal { value: v }
     }
 }
+impl From<f64> for Decimal {
+    fn from(s: f64) -> Self {
+        let v = BigDecimal::from(s);
+        Decimal { value: v }
+    }
+}
+impl ToNative for Decimal {
+    type Output = BigDecimal;
+    fn to_native(&self) -> Self::Output {
+        self.clone().value
+    }
+}
 
 // endregion
 // region Display trait
@@ -66,21 +79,39 @@ impl fmt::Display for Decimal {
 
 // endregion
 // region Operators
-impl Add<Decimal> for Decimal {
-    type Output = Decimal;
-    fn add(self, other: Decimal) -> Decimal {
-        Decimal {
-            value: self.value + other.value,
+macro_rules! wrap_op {
+    ($T: ident, $F: ident) => {
+        impl $T<Decimal> for Decimal {
+            type Output = Decimal;
+            fn $F(self, other: Decimal) -> Self::Output {
+                let result = self.value.$F(other.value);
+                Decimal { value: result }
+            }
         }
-    }
+        impl $T<&Decimal> for Decimal {
+            type Output = Decimal;
+            fn $F(self, other: &Decimal) -> Self::Output {
+                let result = self.value.$F(other.value.clone());
+                Decimal { value: result }
+            }
+        }
+        impl $T<Decimal> for &Decimal {
+            type Output = Decimal;
+            fn $F(self, other: Decimal) -> Self::Output {
+                let result = self.value.clone().$F(other.value);
+                Decimal { value: result }
+            }
+        }
+        impl $T<&Decimal> for &Decimal {
+            type Output = Decimal;
+            fn $F(self, other: &Decimal) -> Self::Output {
+                let result = self.value.clone().$F(other.value.clone());
+                Decimal { value: result }
+            }
+        }
+    };
 }
 
-impl Sub<Decimal> for Decimal {
-    type Output = Decimal;
-    fn sub(self, other: Decimal) -> Decimal {
-        Decimal {
-            value: self.value - other.value,
-        }
-    }
-}
+wrap_op!(Add, add);
+wrap_op!(Sub, sub);
 // endregion
