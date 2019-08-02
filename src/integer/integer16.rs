@@ -1,6 +1,5 @@
+use super::types::*;
 use std::fmt::{Display, Formatter, Result};
-
-use super::types::{Integer16, IntegerType};
 
 impl Display for Integer16 {
     fn fmt(&self, f: &mut Formatter) -> Result {
@@ -8,8 +7,16 @@ impl Display for Integer16 {
     }
 }
 
-impl From<i16> for IntegerType<i16> {
+impl From<i16> for Integer16 {
     fn from(i: i16) -> Self {
-        IntegerType { value: i }
+        NativeType { value: i }
+    }
+}
+
+impl From<Integer8> for Integer16 {
+    fn from(i: Integer8) -> Integer16 {
+        NativeType {
+            value: i.value as i16,
+        }
     }
 }

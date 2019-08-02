@@ -60,10 +60,10 @@ mod testing_operator {
 
     #[test]
     fn sub() {
-        let lhs = Integer::from(2);
-        let rhs = Integer::from(3);
-        assert_eq!(lhs.clone() - rhs.clone(), Integer::from("-1"));
-        assert_eq!(rhs.clone() - lhs.clone(), Integer::from("+1"));
+        let lhs = &Integer::from(2);
+        let rhs = &Integer::from(3);
+        assert_eq!(lhs - rhs, Integer::from("-1"));
+        assert_eq!(rhs - lhs, Integer::from("+1"));
     }
 
     #[test]

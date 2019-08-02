@@ -1,7 +1,9 @@
 use super::integer::Integer;
+use num::BigInt;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::str::FromStr;
+
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct NativeType<T> {
@@ -20,6 +22,7 @@ pub type Unsigned32 = NativeType<i32>;
 pub type Unsigned64 = NativeType<i64>;
 pub type Unsigned128 = NativeType<i128>;
 
+// region From
 impl<T> From<&str> for NativeType<T>
 where
     T: FromStr,
@@ -41,6 +44,25 @@ where
     }
 }
 
+/* IDEA lint broken
+macro_rules! warp_native {
+    ($T:ty) => {
+        impl From<$T> for NativeType<$T> {
+            fn from(i: $T) -> Self {
+                NativeType { value: i }
+            }
+        }
+    };
+    ($($x:ty),*) => {
+        $(warp_native!($x);)*
+    };
+}
+
+warp_native! {i8,i16,i32,i64,i128}
+warp_native! {u8,u16,u32,u64,u128}
+*/
+// endregion
+// region OPs
 impl<T> PartialEq<T> for NativeType<T>
 where
     T: PartialEq,
@@ -50,46 +72,33 @@ where
     }
 }
 
-impl<T> Add<NativeType<T>> for NativeType<T>
-where
-    T: Add<Output = T> + Copy + Clone,
-{
-    type Output = NativeType<T>;
-    fn add(self, other: NativeType<T>) -> Self::Output {
-        let result = self.value + other.value;
-        NativeType { value: result }
-    }
+macro_rules! warp_op {
+    ($T: ident, $F: ident) => {
+        impl<T> $T<NativeType<T>> for NativeType<T>
+        where
+            T: $T<Output = T> + Copy + Clone,
+        {
+            type Output = NativeType<T>;
+            fn $F(self, other: NativeType<T>) -> Self::Output {
+                let result = self.value.$F(other.value);
+                NativeType { value: result }
+            }
+        }
+        impl<T> $T<T> for NativeType<T>
+        where
+            T: $T<Output = T> + Copy + Clone,
+        {
+            type Output = NativeType<T>;
+            fn $F(self, other: T) -> Self::Output {
+                let result = self.value.$F(other);
+                NativeType { value: result }
+            }
+        }
+    };
 }
 
-impl<T> Add<T> for NativeType<T>
-where
-    T: Add<Output = T> + Copy + Clone,
-{
-    type Output = NativeType<T>;
-    fn add(self, other: T) -> Self::Output {
-        let result = self.value + other;
-        NativeType { value: result }
-    }
-}
-
-impl<T> Sub<NativeType<T>> for NativeType<T>
-where
-    T: Sub<Output = T> + Copy + Clone,
-{
-    type Output = NativeType<T>;
-    fn sub(self, other: NativeType<T>) -> Self::Output {
-        let result = self.value - other.value;
-        NativeType { value: result }
-    }
-}
-
-impl<T> Sub<T> for NativeType<T>
-where
-    T: Sub<Output = T> + Copy + Clone,
-{
-    type Output = NativeType<T>;
-    fn sub(self, other: T) -> Self::Output {
-        let result = self.value - other;
-        NativeType { value: result }
-    }
-}
+warp_op!(Add, add);
+warp_op!(Sub, sub);
+warp_op!(Mul, mul);
+warp_op!(Div, div);
+// endregion
