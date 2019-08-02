@@ -1,0 +1,10 @@
+language: rust
+rust:
+  - stable
+cache: cargo
+before_script:
+  - rustup component add rustfmt
+script:
+  - cargo fmt --verbose
+  - cargo test --verbose
+  - cargo build --release --verbose

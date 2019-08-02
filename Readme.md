@@ -1,4 +1,5 @@
 # Rust Algebra
+[![Build Status](https://travis-ci.org/nyar-lang/nyar-number.svg?branch=master)](https://travis-ci.org/nyar-lang/nyar-number)
 
 A Mathematica-like numeric system.
 
