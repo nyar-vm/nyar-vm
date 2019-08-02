@@ -95,29 +95,42 @@ impl PartialEq<i32> for Integer {
     }
 }
 
-impl Add<Integer> for Integer {
-    type Output = Integer;
-    fn add(self, other: Integer) -> Integer {
-        let result = self.value + other.value;
-        Integer::from(result)
-    }
+macro_rules! wrap_op {
+    ($T: ident, $F: ident) => {
+        impl $T<Integer> for Integer {
+            type Output = Integer;
+            fn $F(self, other: Integer) -> Self::Output {
+                let result = self.value.$F(other.value);
+                Integer { value: result }
+            }
+        }
+        impl $T<&Integer> for Integer {
+            type Output = Integer;
+            fn $F(self, other: &Integer) -> Self::Output {
+                let result = self.value.$F(other.value.clone());
+                Integer { value: result }
+            }
+        }
+        impl $T<Integer> for &Integer {
+            type Output = Integer;
+            fn $F(self, other: Integer) -> Self::Output {
+                let result = self.value.clone().$F(other.value);
+                Integer { value: result }
+            }
+        }
+        impl $T<&Integer> for &Integer {
+            type Output = Integer;
+            fn $F(self, other: &Integer) -> Self::Output {
+                let result = self.value.clone().$F(other.value.clone());
+                Integer { value: result }
+            }
+        }
+    };
 }
 
-impl Sub<Integer> for Integer {
-    type Output = Integer;
-    fn sub(self, other: Integer) -> Integer {
-        let result: BigInt = self.value - other.value;
-        Integer::from(result)
-    }
-}
-
-impl Mul<Integer> for Integer {
-    type Output = Integer;
-    fn mul(self, other: Integer) -> Integer {
-        let result = self.value.checked_mul(&other.value).unwrap();
-        Integer::from(result)
-    }
-}
+wrap_op!(Add, add);
+wrap_op!(Sub, sub);
+wrap_op!(Mul, mul);
 
 impl Div<Integer> for Integer {
     type Output = Rational;

@@ -1,6 +1,6 @@
 [package]
 name = "nyar-number"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["aster <aster@mugen.vip>"]
 description = "Number lib for Nyar"
 license = "MPL-2.0"
@@ -19,7 +19,7 @@ default = ["serde_json"]
 
 [dependencies]
 bigdecimal = "0.1.0"
-rand = "0.7.0"
+rand = {version ="0.7.0", optional = true}
 serde_json = {version ="1.0.40", optional = true}
 gc = {version = "0.3.3", optional = true}
 num = {version = "0.2", default-features = true}
