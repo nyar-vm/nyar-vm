@@ -1,18 +1,10 @@
 # IDE
-.idea/
-.vs/
-.vscode/
+.vscode
+.idea
+*.iml
 
-
-
-# Build
+# Rust
 target/
 Cargo.lock
-
-
-# tmp
-**/*.rs.bk
-history.txt
-*.swp
-*.swo
-*~
+*.nb
+*.ps1
