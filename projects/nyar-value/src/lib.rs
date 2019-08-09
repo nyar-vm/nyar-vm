@@ -1,2 +1,2 @@
 mod nyar_class;
-mod modifiers;
+pub mod modifiers;

@@ -1,3 +1,5 @@
+use bitflags::bitflags;
+
 #[rustfmt::skip]
 bitflags! {
     /// ## Access control character
@@ -6,7 +8,7 @@ bitflags! {
     /// | public     |      √     |     √      |      √       |       √       |
     /// | internal   |      √     |     √      |      √       |       ×       |
     /// | private    |      √     |     √      |      ×       |       ×       |
-    /// | restricted |      √     |     ×      |      ×       |       ×       |
+    /// | sealed     |      √     |     ×      |      ×       |       ×       |
     ///
     #[allow(non_upper_case_globals)]
     pub struct NyarReadWrite: u8 {
@@ -19,9 +21,9 @@ bitflags! {
         const GlobalRead    = 0b01000000;
         const GlobalWrite   = 0b10000000;
         /// self modify
-        const Restricted = Self::SelfRead.bits | Self::SelfWrite.bits;
+        const Sealed = Self::SelfRead.bits | Self::SelfWrite.bits;
         ///
-        const Private = Self::ModuleRead.bits | Self::ModuleWrite.bits | Self::Restricted.bits;
+        const Private = Self::ModuleRead.bits | Self::ModuleWrite.bits | Self::Sealed.bits;
         /// inside
         const Internal = Self::PackageRead.bits | Self::PackageWrite.bits | Self::Private.bits;
         ///

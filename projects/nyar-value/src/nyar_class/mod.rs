@@ -1,60 +1,36 @@
+use crate::modifiers::NyarReadWrite;
 
-pub enum NyarPrototype {
-    EmptyClass,
-    EmptyVariant,
-    EmptyBitflag,
-    Class(Box<NyarClass>),
-    Variant(Box<NyarVariants>),
-    Bitflag(Box<NyarBitflags>),
+pub trait NyarClass {
+    fn is_native(&self) -> bool {
+        true
+    }
+
+    fn get_name(&self) -> String;
+
+    fn get_access(&self) -> NyarReadWrite;
 }
 
-pub struct NyarClass {
-    name: String,
-    base: Vec<Rc<NyarClass>>,
-    properties: HashMap<String, NyarProperty>,
-    methods: HashMap<String, NyarProperty>,
-}
+impl NyarClass for u8 {
+    fn get_name(&self) -> String {
+        "Unsigned8".to_string()
+    }
 
-pub struct NyarVariants {}
-
-pub struct NyarBitflags {}
-
-pub struct NyarContext {
-    ///
-    /// class Example {
-    ///     a: int = 0
-    /// }
-    ///
-    /// extends Example {
-    ///     f() {
-    ///         print(self.a)
-    ///         print(a)
-    ///     }
-    /// }
-    implicit_self: bool,
-    /// let a = [1, 2]
-    /// #index_system(0)
-    /// print(a[1]) // 2
-    /// #index_system(1)
-    /// print(a[1]) // 1
-    index_system: NyarIndexSystem,
-
-    /// a.x => a.x()
-    uniform_function_call_syntax: bool,
-}
-
-
-
-
-impl Default for NyarContext {
-    fn default() -> Self {
-        Self { implicit_self: false, index_system: NyarIndexSystem::OrdinalSystem, uniform_function_call_syntax: true }
+    fn get_access(&self) -> NyarReadWrite {
+        NyarReadWrite::Public
     }
 }
 
-pub struct NameSpace {
+pub struct CustomClass {
     name: String,
-    base: Option<Box<NameSpace>>,
-    ctx: NyarContext,
-    classes: HashMap<String, Rc<NyarClass>>,
+    access: NyarReadWrite,
+}
+
+impl NyarClass for CustomClass {
+    fn get_name(&self) -> String {
+        todo!()
+    }
+
+    fn get_access(&self) -> NyarReadWrite {
+        todo!()
+    }
 }
