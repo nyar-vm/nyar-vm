@@ -1,3 +1,4 @@
+#![allow(non_upper_case_globals)]
 use bitflags::bitflags;
 
 #[rustfmt::skip]
@@ -10,7 +11,6 @@ bitflags! {
     /// | private    |      √     |     √      |      ×       |       ×       |
     /// | sealed     |      √     |     ×      |      ×       |       ×       |
     ///
-    #[allow(non_upper_case_globals)]
     pub struct NyarReadWrite: u8 {
         const SelfRead      = 0b00000001;
         const SelfWrite     = 0b00000010;

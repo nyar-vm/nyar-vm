@@ -1,44 +1,34 @@
 mod customs;
 
+use std::collections::HashMap;
 use crate::modifiers::NyarReadWrite;
-use crate::{NyarCast, NyarValue};
 
-pub trait NyarClass: NyarCast {
+pub trait NyarClass {
     fn is_native(&self) -> bool {
         true
     }
-    fn get_name(&self) -> &str;
-    fn get_access(&self) -> NyarReadWrite;
-}
 
-impl NyarCast for u8 {
-    fn to_value(self) -> NyarValue {
-        NyarValue::new_class(self)
-    }
-    fn as_u8(&self) -> Option<u8> {
-        Some(*self)
-    }
+    fn get_name(&self) -> &str;
+
+    fn get_access(&self) -> NyarReadWrite;
 }
 
 impl NyarClass for u8 {
     fn get_name(&self) -> &str {
         "Unsigned8"
     }
-
     fn get_access(&self) -> NyarReadWrite {
         NyarReadWrite::Public
     }
 }
 
+
+
+
 pub struct CustomClass {
     name: String,
     access: NyarReadWrite,
-}
-
-impl NyarCast for CustomClass {
-    fn to_value(self) -> NyarValue {
-        todo!()
-    }
+    methods: HashMap<String, String>
 }
 
 impl NyarClass for CustomClass {

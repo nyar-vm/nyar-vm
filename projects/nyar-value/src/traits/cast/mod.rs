@@ -1,0 +1,22 @@
+use std::sync::Arc;
+use crate::{NyarClass, NyarValue};
+
+
+impl NyarValue {
+    pub fn new_class(object: impl NyarClass + 'static) -> Self {
+        Self::Class(Arc::new(object))
+    }
+}
+
+pub trait NyarCast {
+    fn to_value(self) -> NyarValue;
+    fn as_boolean(&self) -> Option<bool> {
+        None
+    }
+    fn as_u8(&self) -> Option<u8> {
+        None
+    }
+    fn as_u16(&self) -> Option<u16> {
+        None
+    }
+}
