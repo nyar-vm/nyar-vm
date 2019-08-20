@@ -1,9 +1,10 @@
 mod cast;
+mod dynamic;
 
-use std::sync::Arc;
+pub use self::cast::NyarCast;
 use crate::NyarClass;
-pub use self::cast::{NyarCast};
+use std::sync::Arc;
 
 pub enum NyarValue {
-    Class(Arc<dyn NyarClass>)
+    Class(Arc<dyn NyarClass>),
 }

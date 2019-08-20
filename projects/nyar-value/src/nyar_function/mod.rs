@@ -1,6 +1,10 @@
 use crate::NyarValue;
 use nyar_error::Result;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    any::{type_name, Any, TypeId},
+    collections::BTreeMap,
+    sync::Arc,
+};
 use FunctionTable::{Dispatch, Overload, Principal};
 
 pub trait NyarFunction {
