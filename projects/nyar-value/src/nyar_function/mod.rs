@@ -16,6 +16,10 @@ impl NyarFunction for CustomFunction {
     fn get_name(&self) -> &str {
         self.name.as_str()
     }
+
+    fn get_principal(types: &[NyarType]) -> Option<Arc<dyn FunctionObject>> {
+        todo!()
+    }
 }
 
 pub struct CustomFunction {
@@ -96,7 +100,6 @@ pub struct NativeFunction {
     name: String,
     typing: Vec<NyarType>,
     typing_ret: NyarType,
-    arg_types: AsRef<[TypeId]>,
     function: fn(FunctionInput) -> Result<NyarValue>,
 }
 

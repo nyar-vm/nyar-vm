@@ -27,7 +27,7 @@ impl<T: Any + Clone + Send + Sync> Dynamic for T {
 }
 
 impl dyn Dynamic {
-    /// Check if this [`Dynamic`] a specific type
+    /// Check if this [`Dynamic`] is a specific type
     #[inline(always)]
     #[must_use]
     pub fn is<T: Any>(&self) -> bool {
