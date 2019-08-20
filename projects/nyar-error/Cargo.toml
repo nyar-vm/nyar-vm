@@ -2,7 +2,7 @@
 name = "nyar-error"
 version = "0.1.0"
 authors = ["Aster <192607617@qq.com>"]
-description = "AWSL Window Structure Language"
+description = "Nyar VM ValueType"
 repository = "https://github.com/nyar-vm/nyar-vm"
 readme = "Readme.md"
 license = "MPL-2.0"
