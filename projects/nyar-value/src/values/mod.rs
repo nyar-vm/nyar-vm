@@ -1,8 +1,11 @@
+mod integer;
 mod shared;
+mod string;
 
 pub use self::shared::Shared;
 
-use crate::NyarClass;
+use crate::{values::integer::NyarInteger, NyarClass};
+use gc_derive::{Finalize, Trace};
 use num::BigInt;
 use smartstring::{LazyCompact, SmartString};
 use std::{
@@ -24,11 +27,11 @@ pub enum NyarValue {
     /// A boolean value
     Bool(bool),
     /// An integer value.
-    Integer(Shared<BigInt>),
+    Integer(Shared<NyarInteger>),
     /// A UTF8 character value
     Character(char),
     /// An [`StringView`] value
-    String(Shared<StringView>),
+    String(Shared<String>),
     /// An array value.
     AnyList(Shared<AnyList>),
     /// An blob (byte array).
@@ -39,22 +42,23 @@ pub enum NyarValue {
     AnyObject,
 }
 
+#[derive(Debug, Trace, Finalize)]
 pub struct Float32(f32);
 
+#[derive(Trace, Debug)]
 pub struct Float64(f64);
 
-pub struct StringView {
-    inner: SmartString<LazyCompact>,
-}
-
+#[derive(Trace, Debug)]
 pub struct ByteArray {
     inner: Vec<u8>,
 }
 
+#[derive(Trace, Debug)]
 pub struct AnyList {
     inner: LinkedList<NyarValue>,
 }
 
+#[derive(Trace, Debug)]
 pub struct AnyDict {
     inner: LinkedList<NyarValue>,
 }
