@@ -1,5 +1,3 @@
-mod accessibility;
+pub use self::accessibility::NyarReadWrite;
 
-pub use self::{
-    accessibility::{NyarReadWrite}
-};
+mod accessibility;

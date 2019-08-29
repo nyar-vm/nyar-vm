@@ -1,7 +1,6 @@
-mod customs;
+use crate::{modifiers::NyarReadWrite, NyarCast, NyarValue};
 
-use crate::modifiers::NyarReadWrite;
-use crate::{NyarCast, NyarValue};
+mod customs;
 
 pub trait NyarClass: NyarCast {
     fn is_native(&self) -> bool {

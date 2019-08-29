@@ -1,5 +1,6 @@
-use crate::{NyarClass, NyarValue};
 use std::sync::Arc;
+
+use crate::{NyarClass, NyarValue};
 
 impl NyarValue {
     pub fn new_class(object: impl NyarClass + 'static) -> Self {

@@ -1,6 +1,6 @@
-mod customs;
-
 use crate::modifiers::NyarReadWrite;
+
+mod customs;
 
 pub trait NyarClass {
     fn is_native(&self) -> bool {

@@ -14,9 +14,15 @@ smartstring = "1.0.1"
 num = "0.4.0"
 rkyv = "0.7.38"
 rkyv_derive = "0.7.38"
-gc = "0.4.1"
-gc_derive = "0.4.1"
 indexmap = { version = "1.9.1", feature = ["serde"] }
+
+[dependencies.shredder]
+git = "https://github.com/Others/shredder"
+version = "0.2.1-dev"
+
+[dependencies.nyar-macro]
+path = "../nyar-macro"
+version = "0.1.*"
 
 [dependencies.nyar-error]
 path = "../nyar-error"

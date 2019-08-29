@@ -1,5 +1,3 @@
-
-
 pub enum NyarPrototype {
     EmptyClass,
     EmptyVariant,
@@ -8,12 +6,12 @@ pub enum NyarPrototype {
     Variant(Box<NyarVariants>),
     Bitflag(Box<NyarBitflags>),
 }
+
 pub struct NyarVariants {}
 
 pub struct NyarBitflags {}
 
 pub struct NyarContext {
-    ///
     /// class Example {
     ///     a: int = 0
     /// }
@@ -35,7 +33,6 @@ pub struct NyarContext {
     /// a.x => a.x()
     uniform_function_call_syntax: bool,
 }
-
 
 impl Default for NyarContext {
     fn default() -> Self {

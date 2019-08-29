@@ -1,11 +1,13 @@
-use crate::NyarValue;
-use nyar_error::Result;
 use std::{
     any::{type_name, Any, TypeId},
     collections::BTreeMap,
     sync::Arc,
 };
+
+use nyar_error::Result;
 use FunctionTable::{Dispatch, Overload, Principal};
+
+use crate::NyarValue;
 
 pub trait NyarFunction {
     fn get_name(&self) -> &str;

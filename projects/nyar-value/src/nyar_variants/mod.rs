@@ -1,7 +1,8 @@
-mod customs;
-
 use std::collections::HashMap;
+
 use crate::modifiers::NyarReadWrite;
+
+mod customs;
 
 pub trait NyarClass {
     fn is_native(&self) -> bool {
@@ -22,13 +23,10 @@ impl NyarClass for u8 {
     }
 }
 
-
-
-
 pub struct CustomClass {
     name: String,
     access: NyarReadWrite,
-    methods: HashMap<String, String>
+    methods: HashMap<String, String>,
 }
 
 impl NyarClass for CustomClass {
