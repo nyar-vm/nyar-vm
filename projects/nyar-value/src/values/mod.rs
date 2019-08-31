@@ -11,7 +11,7 @@ use num::BigInt;
 use shredder::{atomic::AtomicGc, Gc, Scan};
 use smartstring::{LazyCompact, SmartString};
 
-use crate::{
+pub use crate::{
     values::{integer::NyarInteger, listing::AnyList},
     NyarClass,
 };
@@ -54,10 +54,16 @@ pub enum NyarValue {
     Integer128(i128),
     /// An integer value.
     Integer(Gc<NyarInteger>),
+    /// An integer value.
+    Float32(Float32),
+    /// An integer value.
+    Float64(Float64),
     /// A UTF8 character value
     Character(char),
     /// An [`StringView`] value
     String(Gc<String>),
+    /// An [`StringView`] value
+    ByteArray(Gc<Bytes>),
     /// An array value.
     AnyList(Gc<AnyList>),
     /// An blob (byte array).
@@ -75,7 +81,7 @@ pub struct Float32(f32);
 pub struct Float64(f64);
 
 #[derive(Debug, Scan)]
-pub struct ByteArray {
+pub struct Bytes {
     inner: Vec<u8>,
 }
 
@@ -102,8 +108,11 @@ impl Debug for NyarValue {
             NyarValue::Integer64(v) => Display::fmt(v, f),
             NyarValue::Integer128(v) => Display::fmt(v, f),
             NyarValue::Integer(v) => Display::fmt(v, f),
+            NyarValue::Float32(_) => unimplemented!(),
+            NyarValue::Float64(_) => unimplemented!(),
             NyarValue::Character(v) => Display::fmt(v, f),
             NyarValue::String(_) => unimplemented!(),
+            NyarValue::ByteArray(_) => unimplemented!(),
             NyarValue::AnyList(_) => unimplemented!(),
             NyarValue::AnyDict(_) => unimplemented!(),
             NyarValue::FunctionPointer => unimplemented!(),
