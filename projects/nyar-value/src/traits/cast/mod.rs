@@ -19,4 +19,8 @@ pub trait NyarCast {
     fn as_u16(&self) -> Option<u16> {
         None
     }
+
+    fn as_i64(&self) -> Option<u16> {
+        None
+    }
 }

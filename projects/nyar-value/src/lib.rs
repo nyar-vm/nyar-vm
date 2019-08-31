@@ -1,5 +1,7 @@
 extern crate core;
 
+use nyar_error::NyarError;
+
 pub use self::{
     nyar_class::{CustomClass, NyarClass},
     traits::*,
@@ -13,3 +15,5 @@ mod nyar_primitive;
 mod nyar_variants;
 mod traits;
 mod values;
+
+pub type NyarResult<T = NyarValue> = Result<T, NyarError>;

@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, LinkedList},
     fmt::{Debug, Display, Formatter},
-    ops::Deref,
+    ops::{Deref, Not},
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -11,6 +11,7 @@ use num::BigInt;
 use shredder::{atomic::AtomicGc, Gc, Scan};
 use smartstring::{LazyCompact, SmartString};
 
+use crate::NyarCast;
 pub use crate::{
     values::{integer::NyarInteger, listing::AnyList},
     NyarClass,
@@ -24,7 +25,7 @@ mod string;
 ///
 /// Box variants to reduce the size.
 #[repr(u8)]
-#[derive(Scan)]
+#[derive(Clone, Scan)]
 pub enum NyarValue {
     /// Something wrong happened
     Never,
@@ -74,18 +75,18 @@ pub enum NyarValue {
     AnyObject,
 }
 
-#[derive(Debug, Scan)]
+#[derive(Copy, Clone, Debug, Scan)]
 pub struct Float32(f32);
 
-#[derive(Debug, Scan)]
+#[derive(Copy, Clone, Debug, Scan)]
 pub struct Float64(f64);
 
-#[derive(Debug, Scan)]
+#[derive(Clone, Debug, Scan)]
 pub struct Bytes {
     inner: Vec<u8>,
 }
 
-#[derive(Debug, Scan)]
+#[derive(Clone, Debug, Scan)]
 pub struct AnyDict {
     // TODO: using some faster non-safe hasher
     inner: HashMap<String, NyarValue>,
@@ -117,6 +118,33 @@ impl Debug for NyarValue {
             NyarValue::AnyDict(_) => unimplemented!(),
             NyarValue::FunctionPointer => unimplemented!(),
             NyarValue::AnyObject => unimplemented!(),
+        }
+    }
+}
+
+impl NyarCast for NyarValue {
+    fn to_value(self) -> NyarValue {
+        self
+    }
+
+    fn as_i64(&self) -> Option<u16> {
+        match self {
+            _ => None,
+        }
+    }
+}
+
+impl NyarValue {
+    pub fn is_true(&self) -> bool {
+        *match self {
+            NyarValue::Bool(v) => v,
+            _ => false,
+        }
+    }
+    pub fn is_false(&self) -> bool {
+        match self {
+            NyarValue::Bool(v) => v.not(),
+            _ => false,
         }
     }
 }
