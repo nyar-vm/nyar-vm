@@ -5,7 +5,7 @@ use nyar_error::NyarError;
 pub use self::{
     nyar_class::{CustomClass, NyarClass},
     traits::*,
-    values::{AnyDict, AnyList, NyarValue},
+    values::{NyarDict, NyarList, NyarValue},
 };
 
 pub mod modifiers;

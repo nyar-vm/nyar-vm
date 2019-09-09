@@ -1,15 +1,18 @@
-use std::collections::{linked_list::IntoIter, LinkedList};
+use std::collections::{
+    linked_list::{IntoIter, IterMut},
+    LinkedList,
+};
 
 use shredder::Scan;
 
-use crate::{NyarCast, NyarResult, NyarValue};
+use crate::{NyarResult, NyarValue};
 
 #[derive(Clone, Debug, Scan)]
-pub struct AnyList {
+pub struct NyarList {
     inner: LinkedList<NyarValue>,
 }
 
-impl AnyList {
+impl NyarList {
     pub fn length(&self) -> NyarValue {
         todo!()
     }
@@ -20,40 +23,49 @@ impl AnyList {
         self.inner.iter().rev().nth(0).cloned()
     }
     /// 给出去掉最后一个元素的 expr.
-    pub fn most(&self) -> AnyList {
+    pub fn most(&self) -> NyarList {
         let mut out = LinkedList::new();
         if self.inner.len() <= 1 {
-            return AnyList { inner: out };
+            return NyarList { inner: out };
         }
         let mut iter = self.inner.iter();
-        AnyList { inner: iter.take(self.inner.len() - 1).cloned().collect() }
+        NyarList { inner: iter.take(self.inner.len() - 1).cloned().collect() }
     }
     /// 给出去掉第一个元素的 expr.
-    pub fn rest(&self) -> AnyList {
+    pub fn rest(&self) -> NyarList {
         let mut out = LinkedList::new();
         if self.inner.len() <= 1 {
-            return AnyList { inner: out };
+            return NyarList { inner: out };
         }
         let mut iter = self.inner.iter();
-        AnyList { inner: iter.take(self.inner.len() - 1).cloned().collect() }
+        NyarList { inner: iter.take(self.inner.len() - 1).cloned().collect() }
     }
-    pub fn flatten(&self) -> AnyList {
+    pub fn flatten(&self) -> NyarList {
         todo!()
     }
-    pub fn take_range(&self, a: usize, b: usize) -> NyarResult {
+    pub fn take_range(&self, a: NyarValue, b: NyarValue) -> NyarResult {
         todo!()
     }
-    pub fn map(&self) -> AnyList {
+    pub fn map(&self) -> NyarList {
         todo!()
     }
-    pub fn sort(&self) -> AnyList {
+    pub fn reduce(&self) -> NyarList {
         todo!()
     }
-    pub fn contains(&self) -> bool {
+    pub fn filter(&self) -> NyarList {
         todo!()
     }
-    pub fn riffle(&self) -> AnyList {
+    pub fn discard(&self) -> NyarList {
         todo!()
+    }
+    pub fn filter_discard(&self) -> NyarList {
+        todo!()
+    }
+    pub fn riffle(&self) -> NyarList {
+        todo!()
+    }
+    pub fn reverse(&self) -> NyarList {
+        NyarList { inner: self.inner.iter().rev().cloned().collect() }
     }
     // Union[list1,list2,…]
     // 给出 listi 中不同元素的列表
@@ -89,13 +101,6 @@ impl AnyList {
     // 将 list 的参数收集到相同参数的子列表中
     // GatherBy[list,f]
     // 当应用 f 时，将列表的参数收集到具有相同值的子列表中
-
-    // Min
-    // Max
-    // Sort[list]
-    // 把 list 中的元素按顺序排列
-    // Ordering[list]
-    // Sort[list] 中 list 元素的位置
     // Ordering[list,n]
     // Ordering[list] 的前 n 个元素
     // Ordering[list,-n]
@@ -104,7 +109,7 @@ impl AnyList {
     // list 的所有可能排序
     // AllTrue ▪  AnyTrue ▪  NoneTrue
     pub fn all_true(&self) -> bool {
-        for i in self.inner {
+        for i in &self.inner {
             if i.is_false() {
                 return false;
             }
@@ -112,7 +117,7 @@ impl AnyList {
         return true;
     }
     pub fn any_true(&self) -> bool {
-        for i in self.inner {
+        for i in &self.inner {
             if i.is_true() {
                 return true;
             }
@@ -120,7 +125,7 @@ impl AnyList {
         return false;
     }
     pub fn none_true(&self) -> bool {
-        for i in self.inner {
+        for i in &self.inner {
             if i.is_true() {
                 return false;
             }
@@ -130,8 +135,8 @@ impl AnyList {
 }
 
 /// Mutable methods
-impl AnyList {
-    pub fn extend(&mut self, new: &AnyList) {
+impl NyarList {
+    pub fn extend(&mut self, new: &NyarList) {
         self.inner.extend(new.inner.iter().cloned())
     }
     pub fn push(&mut self, new: NyarValue) {
@@ -146,12 +151,12 @@ impl AnyList {
     pub fn push_front(&mut self, new: NyarValue) {
         self.inner.push_front(new)
     }
-    pub fn extend_front(&mut self, new: &AnyList) {
+    pub fn extend_front(&mut self, new: &NyarList) {
         let mut out = new.clone();
         out.inner.extend(self.inner.iter().cloned());
         *self = out
     }
-    pub fn drop(&mut self) -> AnyList {
+    pub fn drop(&mut self) -> NyarList {
         todo!()
     }
     pub fn flatten_inplace(&mut self) {
@@ -160,12 +165,13 @@ impl AnyList {
     pub fn map_inplace(&mut self) {
         todo!()
     }
-    pub fn sort_inplace(&mut self) {
-        todo!()
+    // 即 `iter_mut`
+    pub fn traverse(&mut self) -> IterMut<'_, NyarValue> {
+        self.inner.iter_mut()
     }
 }
 
-impl IntoIterator for AnyList {
+impl IntoIterator for NyarList {
     type Item = NyarValue;
     type IntoIter = IntoIter<NyarValue>;
 

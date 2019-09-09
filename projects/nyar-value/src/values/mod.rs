@@ -6,16 +6,15 @@ use std::{
     time::Instant,
 };
 
+mod byte_array;
+mod dict;
 use indexmap::IndexMap;
 use num::BigInt;
 use shredder::{atomic::AtomicGc, Gc, Scan};
 use smartstring::{LazyCompact, SmartString};
 
-use crate::NyarCast;
-pub use crate::{
-    values::{integer::NyarInteger, listing::AnyList},
-    NyarClass,
-};
+pub use crate::values::{byte_array::NyarBlob, dict::NyarDict, integer::NyarInteger, listing::NyarList, string::NyarString};
+use crate::{NyarCast, NyarClass};
 
 mod integer;
 mod listing;
@@ -62,13 +61,13 @@ pub enum NyarValue {
     /// A UTF8 character value
     Character(char),
     /// An [`StringView`] value
-    String(Gc<String>),
+    String(Gc<NyarString>),
     /// An [`StringView`] value
-    ByteArray(Gc<Bytes>),
+    ByteArray(Gc<NyarBlob>),
     /// An array value.
-    AnyList(Gc<AnyList>),
+    AnyList(Gc<NyarList>),
     /// An blob (byte array).
-    AnyDict(Gc<AnyDict>),
+    AnyDict(Gc<NyarDict>),
     /// A function pointer.
     FunctionPointer,
     /// Any type as a trait object.
@@ -80,17 +79,6 @@ pub struct Float32(f32);
 
 #[derive(Copy, Clone, Debug, Scan)]
 pub struct Float64(f64);
-
-#[derive(Clone, Debug, Scan)]
-pub struct Bytes {
-    inner: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Scan)]
-pub struct AnyDict {
-    // TODO: using some faster non-safe hasher
-    inner: HashMap<String, NyarValue>,
-}
 
 impl Debug for NyarValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -136,8 +124,8 @@ impl NyarCast for NyarValue {
 
 impl NyarValue {
     pub fn is_true(&self) -> bool {
-        *match self {
-            NyarValue::Bool(v) => v,
+        match self {
+            NyarValue::Bool(v) => *v,
             _ => false,
         }
     }
