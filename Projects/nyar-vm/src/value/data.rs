@@ -31,3 +31,16 @@ pub enum ValueData {
     /// `Type` - 特殊类型/高阶类型
     Type(GcCell<ObjectData>), //TODO: TypeData
 }
+
+impl Display for ValueData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ValueData::Type(ref _v) => write!(f, "Type"),
+            ValueData::Boolean(ref v) => write!(f, "{}", v),
+            ValueData::String(ref v) => write!(f, "{}", v),
+            ValueData::Number(ref v) => write!(f, "{}", v),
+            ValueData::Object(ref _v) => write!(f, "Object"),
+            ValueData::Function(ref _v) => write!(f, "Function"),
+        }
+    }
+}
