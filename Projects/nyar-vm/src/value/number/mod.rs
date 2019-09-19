@@ -56,3 +56,31 @@ impl Display for Number {
         }
     }
 }
+
+
+macro_rules! wrap_type {
+    ($T:ty, $F:ident) => {
+        impl From<$T> for Number {
+            fn from(i: $T) -> Number {
+                Number::$F(i)
+            }
+        }
+    };
+}
+
+wrap_type!(BigInt, Integer);
+wrap_type!(i8, Integer8);
+wrap_type!(i16, Integer16);
+wrap_type!(i32, Integer32);
+wrap_type!(i64, Integer64);
+wrap_type!(i128, Integer128);
+
+wrap_type!(u8, Unsigned8);
+wrap_type!(u16, Unsigned16);
+wrap_type!(u32, Unsigned32);
+wrap_type!(u64, Unsigned64);
+wrap_type!(u128, Unsigned128);
+
+wrap_type!(BigDecimal, Decimal);
+wrap_type!(f32, Float32);
+wrap_type!(f64, Float64);

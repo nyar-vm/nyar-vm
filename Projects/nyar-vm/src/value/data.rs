@@ -44,3 +44,51 @@ impl Display for ValueData {
         }
     }
 }
+
+// region BasicTypeFrom
+impl From<bool> for ValueData {
+    fn from(b: bool) -> ValueData {
+        ValueData::Boolean(b)
+    }
+}
+
+impl From<&str> for ValueData {
+    fn from(s: &str) -> ValueData {
+        ValueData::String(s.to_string())
+    }
+}
+
+impl From<String> for ValueData {
+    fn from(s: String) -> ValueData {
+        ValueData::String(s)
+    }
+}
+
+macro_rules! wrap_type {
+    ($T:ty, $F:ident) => {
+        impl From<$T> for ValueData {
+            fn from(n: $T) -> ValueData {
+                let i = NyarNumber::$F(n);
+                ValueData::Number(i)
+            }
+        }
+    };
+}
+
+wrap_type!(BigInt, Integer);
+wrap_type!(i8, Integer8);
+wrap_type!(i16, Integer16);
+wrap_type!(i32, Integer32);
+wrap_type!(i64, Integer64);
+wrap_type!(i128, Integer128);
+
+wrap_type!(u8, Unsigned8);
+wrap_type!(u16, Unsigned16);
+wrap_type!(u32, Unsigned32);
+wrap_type!(u64, Unsigned64);
+wrap_type!(u128, Unsigned128);
+
+wrap_type!(BigDecimal, Decimal);
+wrap_type!(f32, Float32);
+wrap_type!(f64, Float64);
+// endregion
