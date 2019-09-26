@@ -92,3 +92,70 @@ wrap_type!(BigDecimal, Decimal);
 wrap_type!(f32, Float32);
 wrap_type!(f64, Float64);
 // endregion
+// region NumberTypeFrom
+pub trait NewBoolean<T> {
+    fn new_bool(t: T) -> ValueData;
+}
+
+pub trait NewNumber<T> {
+    fn new_int(t: T) -> ValueData;
+    fn new_dec(t: T) -> ValueData;
+}
+
+pub trait NewDecimal<T, U> {
+    fn new_dec_scale(t: T, s: U) -> ValueData;
+}
+
+pub trait NewString<T> {
+    fn new_str(t: T) -> ValueData;
+}
+
+impl NewBoolean<bool> for ValueData {
+    fn new_bool(b: bool) -> ValueData {
+        ValueData::Boolean(b)
+    }
+}
+
+impl NewString<&str> for ValueData {
+    fn new_str(s: &str) -> ValueData {
+        ValueData::String(s.to_string())
+    }
+}
+
+
+impl<T> NewDecimal<&str, T> for ValueData
+where
+    i64: From<T>,
+{
+    fn new_dec_scale(s: &str, u: T) -> ValueData {
+        let scale = i64::from(u);
+        let parse = BigDecimal::from_str(s).unwrap();
+        let n = parse.with_scale(scale);
+
+        ValueData::Number(NyarNumber::Decimal(n))
+    }
+}
+impl NewNumber<&str> for ValueData {
+    fn new_int(s: &str) -> ValueData {
+        let n = BigInt::parse_bytes(s.as_bytes(), 10).unwrap();
+        ValueData::Number(NyarNumber::Integer(n))
+    }
+
+    fn new_dec(s: &str) -> ValueData {
+        let n = BigDecimal::from_str(s).unwrap();
+        ValueData::Number(NyarNumber::Decimal(n))
+    }
+}
+
+impl NewNumber<i64> for ValueData {
+    fn new_int(i: i64) -> ValueData {
+        let n = BigInt::from(i);
+        ValueData::Number(NyarNumber::Integer(n))
+    }
+
+    fn new_dec(i: i64) -> ValueData {
+        let n = BigDecimal::from(i);
+        ValueData::Number(NyarNumber::Decimal(n))
+    }
+}
+// endregion
