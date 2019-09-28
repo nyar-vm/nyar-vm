@@ -1,0 +1,112 @@
+//!#56B6C2: Prefix|Infix|Postfix
+Prefix = @{Plus|Increase|Decrease}
+Postfix = @{"!"}
+Infix = @{o_add|o_times}
+
+
+Set = @{"="}
+
+Or = @{"|"}
+LazyOr = @{"||"}
+
+
+Star =@{"*"}
+Slash =@{"/"}
+
+Proportion = @{"::"|"∷"}//U+2237
+Comma =@{","|"，"} //U+FF0C
+Dot = @{"."}
+Separate = @{";;"}
+Semicolon = @{";" | "；"} //U+FF1B
+//!#56B6C2: Question|Colon
+Colon = @{":"|"："} //U+FF1A
+Question=@{"?"}
+Underline = @{"_"}
+
+
+
+Import =@{"<<<"|"⋘"} //U+22D8
+Export =@{">>>"|"⋙"} //U+22D9
+LeftShift =@{"<<"|"≪"} //U+226A
+RightShift =@{">>"|"≫"} //U+226B
+LessEqual =@{"<="}
+GraterEqual =@{">="}
+Less =@{"<"}
+Grater =@{">"}
+
+
+
+Equivalent =@{"==="}
+NotEquivalent =@{"=!="}
+Equal =@{"=="}
+NotEqual =@{"!="|"≠"} //U+2260
+
+
+
+
+
+
+o_add = _{Plus|Minus}
+Plus =@{"+"}
+Minus =@{"-"}
+o_times = _{Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient |Modulo }
+Multiply =@{Star | "×"} //U+00D7
+CenterDot = @{"⋅"} //U+22C5
+Kronecker =@{"⊗"} //U+2297
+TensorProduct=@{"⊙"} //U+2299
+Divide = @{Slash | "÷"} //U+00F7
+Quotient = @{"//"}
+Modulo = @{"%"}
+Remainder =@{"⁒"} //U+2052 //⸓
+
+o_power= _{ Power }
+Power = @{"^"}
+Surd = @{"√"} //U+221A
+
+
+Increase =@{"++"}
+Decrease =@{"--"}
+
+
+To =@{"->"}
+
+
+Elvis =@{":?"}
+Map =@ {"/@"}
+
+
+Quote =@{"`"}
+Acute =@{"´"} // U+00B4
+S1 = _{"'"}
+S2 = _{"\""}
+S3 = _{"'''"}
+S6 = _{"\"\"\""}
+
+
+
+LogicOr =@{"||"|"∧"} //U+2227
+LogicAnd =@{"&&"|"∨"} //U+2228
+LogicNot =@{"¬"} //U+00AC
+
+Ellipsis =@{"..."|"…"} // U+2026
+
+
+
+
+LogicXor =@{"⊕"} //U+2295
+MapAll =@{"//@"}
+
+Output =@{"%%"}
+
+Concat =@{"~~"}
+Destruct =@{"~="}
+
+
+DoubleBang =@{"!!"}
+BitNot =@{"!"}
+
+
+
+Curry =@{"@@@"}
+Apply =@{"@@"}
+LetAssign =@{"@="}

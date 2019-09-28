@@ -1,10 +1,8 @@
 [workspace]
-members = ["projects/*"]
-default-members = [
-    "projects/nyar-error",
-    "projects/nyar-value",
-]
 
-[profile.release]
-lto = true
-opt-level = "s"
+members = ["Projects/*"]
+default-members = [
+    "Projects/nyar-ast",
+    "Projects/valkyrie-parser",
+    "Projects/vanilla-parser",
+]
