@@ -1,3 +1,14 @@
+program = _{SOI~statement* ~ EOI}
+
+statement = _{
+    emptyStatement
+}
+/*====================================================================================================================*/
+emptyStatement = {eos | Separate }
+eos = {Semicolon}
+comma_or_semi = _{Comma|Semicolon}
+/*====================================================================================================================*/
+
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{Plus|Increase|Decrease}
 Postfix = @{"!"}
