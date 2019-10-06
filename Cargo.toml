@@ -1,8 +1,8 @@
 [workspace]
 
-members = ["Projects/*"]
+members = ["projects/*"]
 default-members = [
-    "Projects/nyar-ast",
-    "Projects/valkyrie-parser",
-    "Projects/vanilla-parser",
+#   "projects/nyar-ast",
+    "projects/valkyrie-parser",
+#   "projects/vanilla-parser",
 ]
