@@ -3,6 +3,8 @@
     "private": true,
     "scripts": {
         "build": "cargo build --release&& cargo fmt --all",
-        "test": "cargo build && cargo fmt --all"
+        "test": "cargo build && cargo fmt --all",
+        "push": "yarn test && git push",
+        "reset": "git reset Head~ --soft"
     }
 }

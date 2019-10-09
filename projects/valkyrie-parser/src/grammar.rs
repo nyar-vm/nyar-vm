@@ -1,9 +1,8 @@
 use crate::pest_parser::{Rule, Valkyrie};
 use pest::Parser;
 
-#[test]
-pub fn main() {
-    let pairs = Valkyrie::parse(Rule::program, ";").unwrap_or_else(|e| panic!("{}", e));
+pub fn get_statements(text: &str) {
+    let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
 
     // Because ident_list is silent, the iterator will contain idents
     for pair in pairs {
@@ -13,5 +12,10 @@ pub fn main() {
         println!("Text:    {}\n", pair.as_str());
         // A pair can be converted to an iterator of the tokens which make it up:
     }
+}
+
+#[test]
+fn debug() {
+    get_statements(";;");
     assert_eq!(0, 1)
 }

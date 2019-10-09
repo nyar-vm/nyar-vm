@@ -8,7 +8,23 @@ emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
-
+// NEWLINE = @{"\r"~"\n"|"\r"|"\n"}
+WHITESPACE = _{NEWLINE|SPACE_SEPARATOR|"\t"}
+//!#7F848E: MultiLineComment
+COMMENT = {Shebang| MultiLineComment|LineCommentSimple|LineCommentTodo|LineCommentFixme|LineCommentWarning}
+///Black
+Shebang = ${"#!" ~ (!NEWLINE ~ ANY)*}
+///Gray
+LineCommentSimple = ${ "///" ~ (!NEWLINE ~ ANY)*}
+///Green
+LineCommentTodo = ${ "//?" ~ (!NEWLINE ~ ANY)*}
+///Red
+LineCommentFixme = ${ "//!" ~ (!NEWLINE ~ ANY)*}
+///Yellow
+LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
+///Gray
+MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
+/*====================================================================================================================*/
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{Plus|Increase|Decrease}
 Postfix = @{"!"}
