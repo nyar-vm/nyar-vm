@@ -8,12 +8,17 @@ emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
+///#98C379
+String = ${StringSingle|StringBlock|LiteralString| LiteralBlock}//TODO: 字符串表达式
+StringSingle = ${ S2 ~ (!S2~ ANY)* ~ S2 }
+StringBlock = ${ S6 ~ (!S6~ ANY)* ~ S6 }
+LiteralString= ${ S1 ~ (!S1~ ANY)* ~ S1 }
+LiteralBlock = ${ S3 ~ (!S3~ ANY)* ~ S3 }
+/*====================================================================================================================*/
 // NEWLINE = @{"\r"~"\n"|"\r"|"\n"}
 WHITESPACE = _{NEWLINE|SPACE_SEPARATOR|"\t"}
 //!#7F848E: MultiLineComment
-COMMENT = {Shebang| MultiLineComment|LineCommentSimple|LineCommentTodo|LineCommentFixme|LineCommentWarning}
-///Black
-Shebang = ${"#!" ~ (!NEWLINE ~ ANY)*}
+COMMENT = {MultiLineComment|LineCommentSimple|LineCommentTodo|LineCommentFixme|LineCommentWarning}
 ///Gray
 LineCommentSimple = ${ "///" ~ (!NEWLINE ~ ANY)*}
 ///Green
@@ -28,7 +33,7 @@ MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{Plus|Increase|Decrease}
 Postfix = @{"!"}
-Infix = @{o_add|o_times}
+Infix = @{o_add|o_times|o_power}
 
 
 Set = @{"="}

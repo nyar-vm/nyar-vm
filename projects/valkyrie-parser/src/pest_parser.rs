@@ -8,9 +8,13 @@ pub enum Rule {
     emptyStatement,
     eos,
     comma_or_semi,
+    String,
+    StringSingle,
+    StringBlock,
+    LiteralString,
+    LiteralBlock,
     WHITESPACE,
     COMMENT,
-    Shebang,
     LineCommentSimple,
     LineCommentTodo,
     LineCommentFixme,
@@ -180,6 +184,112 @@ impl ::pest::Parser<Rule> for Valkyrie {
                 }
                 #[inline]
                 #[allow(non_snake_case, unused_variables)]
+                pub fn String(
+                    state: Box<::pest::ParserState<Rule>>,
+                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
+                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| {
+                        state.rule(Rule::String, |state| {
+                            self::StringSingle(state)
+                                .or_else(|state| self::StringBlock(state))
+                                .or_else(|state| self::LiteralString(state))
+                                .or_else(|state| self::LiteralBlock(state))
+                        })
+                    })
+                }
+                #[inline]
+                #[allow(non_snake_case, unused_variables)]
+                pub fn StringSingle(
+                    state: Box<::pest::ParserState<Rule>>,
+                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
+                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| {
+                        state.rule(Rule::StringSingle, |state| {
+                            state.sequence(|state| {
+                                self::S2(state)
+                                    .and_then(|state| {
+                                        state.repeat(|state| {
+                                            state.sequence(|state| {
+                                                state
+                                                    .lookahead(false, |state| self::S2(state))
+                                                    .and_then(|state| self::ANY(state))
+                                            })
+                                        })
+                                    })
+                                    .and_then(|state| self::S2(state))
+                            })
+                        })
+                    })
+                }
+                #[inline]
+                #[allow(non_snake_case, unused_variables)]
+                pub fn StringBlock(
+                    state: Box<::pest::ParserState<Rule>>,
+                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
+                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| {
+                        state.rule(Rule::StringBlock, |state| {
+                            state.sequence(|state| {
+                                self::S6(state)
+                                    .and_then(|state| {
+                                        state.repeat(|state| {
+                                            state.sequence(|state| {
+                                                state
+                                                    .lookahead(false, |state| self::S6(state))
+                                                    .and_then(|state| self::ANY(state))
+                                            })
+                                        })
+                                    })
+                                    .and_then(|state| self::S6(state))
+                            })
+                        })
+                    })
+                }
+                #[inline]
+                #[allow(non_snake_case, unused_variables)]
+                pub fn LiteralString(
+                    state: Box<::pest::ParserState<Rule>>,
+                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
+                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| {
+                        state.rule(Rule::LiteralString, |state| {
+                            state.sequence(|state| {
+                                self::S1(state)
+                                    .and_then(|state| {
+                                        state.repeat(|state| {
+                                            state.sequence(|state| {
+                                                state
+                                                    .lookahead(false, |state| self::S1(state))
+                                                    .and_then(|state| self::ANY(state))
+                                            })
+                                        })
+                                    })
+                                    .and_then(|state| self::S1(state))
+                            })
+                        })
+                    })
+                }
+                #[inline]
+                #[allow(non_snake_case, unused_variables)]
+                pub fn LiteralBlock(
+                    state: Box<::pest::ParserState<Rule>>,
+                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
+                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| {
+                        state.rule(Rule::LiteralBlock, |state| {
+                            state.sequence(|state| {
+                                self::S3(state)
+                                    .and_then(|state| {
+                                        state.repeat(|state| {
+                                            state.sequence(|state| {
+                                                state
+                                                    .lookahead(false, |state| self::S3(state))
+                                                    .and_then(|state| self::ANY(state))
+                                            })
+                                        })
+                                    })
+                                    .and_then(|state| self::S3(state))
+                            })
+                        })
+                    })
+                }
+                #[inline]
+                #[allow(non_snake_case, unused_variables)]
                 pub fn WHITESPACE(
                     state: Box<::pest::ParserState<Rule>>,
                 ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
@@ -196,33 +306,11 @@ impl ::pest::Parser<Rule> for Valkyrie {
                 ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
                     state.rule(Rule::COMMENT, |state| {
                         state.atomic(::pest::Atomicity::Atomic, |state| {
-                            self::Shebang(state)
-                                .or_else(|state| self::MultiLineComment(state))
+                            self::MultiLineComment(state)
                                 .or_else(|state| self::LineCommentSimple(state))
                                 .or_else(|state| self::LineCommentTodo(state))
                                 .or_else(|state| self::LineCommentFixme(state))
                                 .or_else(|state| self::LineCommentWarning(state))
-                        })
-                    })
-                }
-                #[inline]
-                #[allow(non_snake_case, unused_variables)]
-                pub fn Shebang(
-                    state: Box<::pest::ParserState<Rule>>,
-                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
-                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| {
-                        state.rule(Rule::Shebang, |state| {
-                            state.sequence(|state| {
-                                state.match_string("#!").and_then(|state| {
-                                    state.repeat(|state| {
-                                        state.sequence(|state| {
-                                            state
-                                                .lookahead(false, |state| self::NEWLINE(state))
-                                                .and_then(|state| self::ANY(state))
-                                        })
-                                    })
-                                })
-                            })
                         })
                     })
                 }
@@ -367,7 +455,9 @@ impl ::pest::Parser<Rule> for Valkyrie {
                 ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
                     state.rule(Rule::Infix, |state| {
                         state.atomic(::pest::Atomicity::Atomic, |state| {
-                            self::o_add(state).or_else(|state| self::o_times(state))
+                            self::o_add(state)
+                                .or_else(|state| self::o_times(state))
+                                .or_else(|state| self::o_power(state))
                         })
                     })
                 }
@@ -1025,6 +1115,20 @@ impl ::pest::Parser<Rule> for Valkyrie {
                 }
                 #[inline]
                 #[allow(dead_code, non_snake_case, unused_variables)]
+                fn SPACE_SEPARATOR(
+                    state: Box<::pest::ParserState<Rule>>,
+                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
+                    state.match_char_by(::pest::unicode::SPACE_SEPARATOR)
+                }
+                #[inline]
+                #[allow(dead_code, non_snake_case, unused_variables)]
+                pub fn EOI(
+                    state: Box<::pest::ParserState<Rule>>,
+                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
+                    state.rule(Rule::EOI, |state| state.end_of_input())
+                }
+                #[inline]
+                #[allow(dead_code, non_snake_case, unused_variables)]
                 pub fn ANY(
                     state: Box<::pest::ParserState<Rule>>,
                 ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
@@ -1040,20 +1144,6 @@ impl ::pest::Parser<Rule> for Valkyrie {
                         .or_else(|state| state.match_string("\r\n"))
                         .or_else(|state| state.match_string("\r"))
                 }
-                #[inline]
-                #[allow(dead_code, non_snake_case, unused_variables)]
-                pub fn EOI(
-                    state: Box<::pest::ParserState<Rule>>,
-                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
-                    state.rule(Rule::EOI, |state| state.end_of_input())
-                }
-                #[inline]
-                #[allow(dead_code, non_snake_case, unused_variables)]
-                fn SPACE_SEPARATOR(
-                    state: Box<::pest::ParserState<Rule>>,
-                ) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
-                    state.match_char_by(::pest::unicode::SPACE_SEPARATOR)
-                }
             }
             pub use self::visible::*;
         }
@@ -1063,9 +1153,13 @@ impl ::pest::Parser<Rule> for Valkyrie {
             Rule::emptyStatement => rules::emptyStatement(state),
             Rule::eos => rules::eos(state),
             Rule::comma_or_semi => rules::comma_or_semi(state),
+            Rule::String => rules::String(state),
+            Rule::StringSingle => rules::StringSingle(state),
+            Rule::StringBlock => rules::StringBlock(state),
+            Rule::LiteralString => rules::LiteralString(state),
+            Rule::LiteralBlock => rules::LiteralBlock(state),
             Rule::WHITESPACE => rules::WHITESPACE(state),
             Rule::COMMENT => rules::COMMENT(state),
-            Rule::Shebang => rules::Shebang(state),
             Rule::LineCommentSimple => rules::LineCommentSimple(state),
             Rule::LineCommentTodo => rules::LineCommentTodo(state),
             Rule::LineCommentFixme => rules::LineCommentFixme(state),
