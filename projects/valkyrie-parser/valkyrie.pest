@@ -8,6 +8,21 @@ emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
+///#D19A66
+Byte = ${Byte_BIN|Byte_OCT| Byte_HEX}//TODO: 广义 0 前导
+Byte_BIN = ${ Zero ~ B ~ (Underline? ~ ASCII_BIN_DIGIT)+ }
+Byte_OCT = ${ Zero ~ O ~ (Underline? ~ ASCII_OCT_DIGIT)+ }
+Byte_HEX = ${ Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+ }
+/*====================================================================================================================*/
+//!#D19A66: Integer|Decimal|DecimalBad|Exponent|ComplexHandler
+Number = ${Exponent|Complex|Decimal|DecimalBad|Integer}
+Decimal = ${Integer ~Dot~ ASCII_DIGIT+}
+DecimalBad = ${Integer~Dot | Dot~ASCII_DIGIT+}
+Exponent = ${(Decimal|Integer) ~E~ (Decimal|Integer)}
+Complex = ${(Decimal|Integer)~ ComplexHandler}
+Integer = @{ Zero|ASCII_DIGIT ~ (Underline? ~ ASCII_NONZERO_DIGIT)* }
+ComplexHandler = @{SYMBOL}
+/*====================================================================================================================*/
 ///#98C379
 String = ${StringSingle|StringBlock|LiteralString| LiteralBlock}//TODO: 字符串表达式
 StringSingle = ${ S2 ~ (!S2~ ANY)* ~ S2 }
@@ -29,6 +44,12 @@ LineCommentFixme = ${ "//!" ~ (!NEWLINE ~ ANY)*}
 LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 ///Gray
 MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
+/*====================================================================================================================*/
+Zero = _{"0"}
+E = _{"e"|"E"}
+X = _{"x"|"X"}
+O = _{"o"|"O"}
+B = _{"b"|"B"}
 /*====================================================================================================================*/
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{Plus|Increase|Decrease}
