@@ -14,11 +14,10 @@ Byte_BIN = ${ Zero ~ B ~ (Underline? ~ ASCII_BIN_DIGIT)+ }
 Byte_OCT = ${ Zero ~ O ~ (Underline? ~ ASCII_OCT_DIGIT)+ }
 Byte_HEX = ${ Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+ }
 /*====================================================================================================================*/
-//!#D19A66: Integer|Decimal|DecimalBad|Exponent|ComplexHandler
-Number = ${Exponent|Complex|Decimal|DecimalBad|Integer}
+//!#D19A66: Integer|Decimal|DecimalBad|ComplexHandler
+Number = ${Complex|Decimal|DecimalBad|Integer}
 Decimal = ${Integer ~Dot~ ASCII_DIGIT+}
 DecimalBad = ${Integer~Dot | Dot~ASCII_DIGIT+}
-Exponent = ${(Decimal|Integer) ~E~ (Decimal|Integer)}
 Complex = ${(Decimal|Integer)~ ComplexHandler}
 Integer = @{ Zero|ASCII_DIGIT ~ (Underline? ~ ASCII_NONZERO_DIGIT)* }
 ComplexHandler = @{SYMBOL}
@@ -46,7 +45,6 @@ LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
 Zero = _{"0"}
-E = _{"e"|"E"}
 X = _{"x"|"X"}
 O = _{"o"|"O"}
 B = _{"b"|"B"}
