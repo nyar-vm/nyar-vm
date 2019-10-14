@@ -44,6 +44,15 @@ LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 ///Gray
 MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
+Symbol = ${maybeSymbol|mustSymbol| SYMBOL}
+mustSymbol = ${namespace~(Dot~SYMBOL)+}
+maybeSymbol = ${SYMBOL~ (Dot~SYMBOL)+}
+namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
+///#61AFEF
+SYMBOL = @{NameStartCharacter~ NameCharacter*}
+NameCharacter = _{ASCII_DIGIT| NameStartCharacter}
+NameStartCharacter = _{Underline | ASCII_ALPHA}
+/*====================================================================================================================*/
 Zero = _{"0"}
 X = _{"x"|"X"}
 O = _{"o"|"O"}
