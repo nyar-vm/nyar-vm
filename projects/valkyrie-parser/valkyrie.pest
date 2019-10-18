@@ -7,9 +7,20 @@ statement = _{
 emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
+
+
+
 /*====================================================================================================================*/
 ///#D19A66
-Byte = ${Byte_BIN|Byte_OCT| Byte_HEX}//TODO: 广义 0 前导
+Null = @{"null"}
+/*====================================================================================================================*/
+///#D19A66
+Boolean = !{ True | False }
+True = @{"true"}
+False =@{"false"}
+/*====================================================================================================================*/
+///#D19A66
+Byte = ${Byte_BIN|Byte_OCT| Byte_HEX}
 Byte_BIN = ${ Zero ~ B ~ (Underline? ~ ASCII_BIN_DIGIT)+ }
 Byte_OCT = ${ Zero ~ O ~ (Underline? ~ ASCII_OCT_DIGIT)+ }
 Byte_HEX = ${ Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+ }
