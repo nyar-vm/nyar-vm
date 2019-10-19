@@ -2,14 +2,26 @@ program = _{SOI~statement* ~ EOI}
 
 statement = _{
     emptyStatement
+  | data
 }
 /*====================================================================================================================*/
 emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
-
-
-
+/*====================================================================================================================*/
+expr = {"expr"}
+/*====================================================================================================================*/
+data = {dict|list|Null|Boolean|Byte|Number| String |Symbol }
+dict = { "{" ~key_value? ~(Comma ~key_value)* ~Comma? ~"}"}
+list = { "[" ~element? ~(Comma ~element)* ~Comma? ~"]"}
+slice ={"[" ~index ~(Comma ~index)* ~Comma? ~"]"}
+index = { index_step|index_range|index_element}
+key_value =!{key_valid ~ Colon ~element}
+key_valid =!{Integer | SYMBOL | String}
+element =!{data | expr | statement}
+index_element = !{element}
+index_range = !{element? ~ Colon ~ element?}
+index_step = !{element? ~ Colon ~ element?~ Colon ~ element?}
 /*====================================================================================================================*/
 ///#D19A66
 Null = @{"null"}
