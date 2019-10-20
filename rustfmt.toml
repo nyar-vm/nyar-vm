@@ -1,8 +1,8 @@
 version = "Two"
 edition = "2018"
-max_width = 144
 
-imports_granularity = "Crate"
+
+merge_imports = true
 use_small_heuristics = "Max"
 control_brace_style = "ClosingNextLine"
 normalize_comments = true
