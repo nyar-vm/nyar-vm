@@ -2,6 +2,7 @@ program = _{SOI~statement* ~ EOI}
 
 statement = _{
     emptyStatement
+  | expr~eos?
   | data
 }
 /*====================================================================================================================*/
@@ -9,7 +10,16 @@ emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
-expr = {"expr"}
+expr = !{
+    term ~ (!NEWLINE~ slice)
+  | trinoculars
+  | term ~ (Infix ~ term)*
+}
+term =  { Prefix* ~ node ~ Postfix* }
+node = _{  data| "(" ~ expr ~ ")" }
+condition  = { node|expr}
+expressions = {"("~expr~ ( comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
+trinoculars = _{"trinoculars"}
 /*====================================================================================================================*/
 data = {dict|list|Null|Boolean|Byte|Number| String |Symbol }
 dict = { "{" ~key_value? ~(Comma ~key_value)* ~Comma? ~"}"}
