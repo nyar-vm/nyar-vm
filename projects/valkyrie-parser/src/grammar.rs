@@ -16,6 +16,6 @@ pub fn get_statements(text: &str) {
 
 #[test]
 fn debug() {
-    get_statements(";;");
+    get_statements("a;;[2]");
     assert_eq!(0, 1)
 }

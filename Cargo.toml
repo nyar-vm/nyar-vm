@@ -2,6 +2,7 @@
 
 members = ["projects/*"]
 default-members = [
+    "projects/pre-build",
 #   "projects/nyar-ast",
     "projects/valkyrie-parser",
 #   "projects/vanilla-parser",
