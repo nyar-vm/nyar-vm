@@ -6,6 +6,29 @@ statement = _{
   | data
 }
 /*====================================================================================================================*/
+block = !{
+"{" ~ statement* ~ "}"
+| Begin ~ (!End~statement)*~ End
+|Begin ~ expr
+}
+suite= !{
+     "{" ~ statement* ~ "}"
+     | Begin ~ statement*
+}
+//!#56B6C2: Begin|End
+Begin = @{Colon}
+End =@{"end"|"\u{AD}"}
+/*====================================================================================================================*/
+forStatement = _{For ~forLoop|For ~forInLoop}
+forLoop = {expressions ~block}
+
+
+forInLoop = {SYMBOL~In~expr~block}
+
+//!#C678DD: For|In
+For = @{"for"}
+In = @{"in"}
+/*====================================================================================================================*/
 functionApply = {
     function_name ~ "(" ~ expr? ~")"|
     function_module? ~ function_name ~ "(" ~ expr? ~")"
