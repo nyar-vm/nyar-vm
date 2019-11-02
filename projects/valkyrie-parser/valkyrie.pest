@@ -6,6 +6,17 @@ statement = _{
   | data
 }
 /*====================================================================================================================*/
+functionApply = {
+    function_name ~ "(" ~ expr? ~")"|
+    function_module? ~ function_name ~ "(" ~ expr? ~")"
+}
+methodApply = {expr ~Dot ~ function_name ~ "(" ~ expr? ~")"}
+
+
+///#61AFEF
+function_name = {SYMBOL}
+function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
+/*====================================================================================================================*/
 emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
@@ -20,6 +31,18 @@ node = _{  data| "(" ~ expr ~ ")" }
 condition  = { node|expr}
 expressions = {"("~expr~ ( comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
 trinoculars = _{"trinoculars"}
+/*====================================================================================================================*/
+/// #E06C75
+type_expr = !{ type_term ~ (Infix ~ type_term)* | data | functionApply}
+type_term =  { Prefix* ~ type_node ~ Postfix* }
+type_node = _{  "(" ~ type_expr ~ ")"  }
+
+
+type_prefix = _{type_expr}
+type_suffix = _{To~type_expr}
+
+//!#C678DD: Type|To
+Type = @{"type"}
 /*====================================================================================================================*/
 data = {dict|list|Null|Boolean|Byte|Number| String |Symbol }
 dict = { "{" ~key_value? ~(Comma ~key_value)* ~Comma? ~"}"}
