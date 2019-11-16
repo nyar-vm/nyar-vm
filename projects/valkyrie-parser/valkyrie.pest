@@ -3,23 +3,12 @@ program = _{SOI~statement* ~ EOI}
 statement = _{
     emptyStatement
   | controlFlow ~ eos?
-  | expr~eos?
+  | expr~eos
   | data
 }
 controlFlow = _{forStatement}
 /*====================================================================================================================*/
-block = !{
-"{" ~ statement* ~ "}"
-| Begin ~ (!End~statement)*~ End
-|Begin ~ expr
-}
-suite= !{
-     "{" ~ statement* ~ "}"
-     | Begin ~ statement*
-}
-//!#56B6C2: Begin|End
-Begin = @{Colon}
-End =@{"end"|"\u{AD}"}
+block = !{"{" ~ statement* ~ "}"}
 /*====================================================================================================================*/
 forStatement = _{For ~ forInLoop}
 forInLoop = {SYMBOL~In~expr~block}
