@@ -10,6 +10,33 @@ controlFlow = _{forStatement}
 /*====================================================================================================================*/
 block = !{"{" ~ statement* ~ "}"}
 /*====================================================================================================================*/
+if_statement ={if_nested_else|if_nested|if_single_else|if_single}
+if_single = _{ If~condition~ if_then_block}
+if_nested = _{ If~ condition~ if_then_suite ~ else_if_suite+}//FIXME: 无效语法
+if_single_else = _{ If~condition~ if_then_suite ~ Else ~ if_then_block}
+if_nested_else = _{ If~ condition~ if_then_suite~ else_if_suite+ ~Else ~ if_then_block}
+if_trinocular = _{
+    term ~ Question ~ term ~ Colon ~ term
+  | term ~ If ~ term ~ Else ~ term
+}
+else_if_suite = !{ elif ~condition~ if_nest_suite}
+else_if_block = !{ elif ~condition~ if_then_block}
+if_nest_suite = _{
+    "{" ~ statement+ ~ "}"
+}
+if_then_suite = _{
+    "{" ~ statement+ ~ "}"
+}
+if_then_block = _{
+    "{" ~ statement+ ~ "}"
+}
+elif = _{Ef|Else ~ If}
+if_forbidden = _{If|Else|elif}
+//!#C678DD: Ef|If|Else
+Ef = @{"ef"}
+If = @{"if"}
+Else = @{"else"}
+/*====================================================================================================================*/
 forStatement = _{For ~ forInLoop}
 forInLoop = {SYMBOL~In~expr~block}
 //!#C678DD: For|In
