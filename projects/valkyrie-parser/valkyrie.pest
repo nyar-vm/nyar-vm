@@ -6,39 +6,31 @@ statement = _{
   | expr~eos
   | data
 }
-controlFlow = _{forStatement}
 /*====================================================================================================================*/
+emptyStatement = {eos | Separate }
+eos = {Semicolon}
+comma_or_semi = _{Comma|Semicolon}
+/*====================================================================================================================*/
+controlFlow = _{if_statement|for_statement}
 block = !{"{" ~ statement* ~ "}"}
 /*====================================================================================================================*/
 if_statement ={if_nested_else|if_nested|if_single_else|if_single}
-if_single = _{ If~condition~ if_then_block}
-if_nested = _{ If~ condition~ if_then_suite ~ else_if_suite+}//FIXME: 无效语法
-if_single_else = _{ If~condition~ if_then_suite ~ Else ~ if_then_block}
-if_nested_else = _{ If~ condition~ if_then_suite~ else_if_suite+ ~Else ~ if_then_block}
+if_single = _{ If~condition~ block}
+if_nested = _{ If~ condition~ block ~ else_if_block+}
+if_single_else = _{ If~condition~ block ~ if_else_block}
+if_nested_else = _{ If~ condition~ block~ else_if_block+ ~ if_else_block}
 if_trinocular = _{
     term ~ Question ~ term ~ Colon ~ term
   | term ~ If ~ term ~ Else ~ term
 }
-else_if_suite = !{ elif ~condition~ if_nest_suite}
-else_if_block = !{ elif ~condition~ if_then_block}
-if_nest_suite = _{
-    "{" ~ statement+ ~ "}"
-}
-if_then_suite = _{
-    "{" ~ statement+ ~ "}"
-}
-if_then_block = _{
-    "{" ~ statement+ ~ "}"
-}
-elif = _{Ef|Else ~ If}
-if_forbidden = _{If|Else|elif}
-//!#C678DD: Ef|If|Else
-Ef = @{"ef"}
+else_if_block = !{ Else ~ If ~condition~ block}
+if_else_block = _{ Else ~ block}
+//!#C678DD: If|Else
 If = @{"if"}
 Else = @{"else"}
 /*====================================================================================================================*/
-forStatement = _{For ~ forInLoop}
-forInLoop = {SYMBOL~In~expr~block}
+for_statement = _{For ~ for_in_loop}
+for_in_loop = {SYMBOL~In~expr~block}
 //!#C678DD: For|In
 For = @{"for"}
 In = @{"in"}
@@ -54,12 +46,8 @@ methodApply = {expr ~Dot ~ function_name ~ "(" ~ expr? ~")"}
 function_name = {SYMBOL}
 function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
 /*====================================================================================================================*/
-emptyStatement = {eos | Separate }
-eos = {Semicolon}
-comma_or_semi = _{Comma|Semicolon}
-/*====================================================================================================================*/
 expr = !{
-    term ~ (!NEWLINE~ slice)
+    term ~ slice
   | trinoculars
   | term ~ (Infix ~ term)*
 }
@@ -67,7 +55,7 @@ term =  { Prefix* ~ node ~ Postfix* }
 node = _{  data| "(" ~ expr ~ ")" }
 condition  = { node|expr}
 expressions = {"("~expr~ ( comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
-trinoculars = _{"trinoculars"}
+trinoculars = _{if_trinocular}
 /*====================================================================================================================*/
 /// #E06C75
 type_expr = !{ type_term ~ (Infix ~ type_term)* | data | functionApply}
@@ -142,7 +130,8 @@ mustSymbol = ${namespace~(Dot~SYMBOL)+}
 maybeSymbol = ${SYMBOL~ (Dot~SYMBOL)+}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
 ///#61AFEF
-SYMBOL = @{NameStartCharacter~ NameCharacter*}
+SYMBOL = @{!KeyWords~NameStartCharacter~ NameCharacter*}
+KeyWords = _{If|Else|For|In}
 NameCharacter = _{ASCII_DIGIT| NameStartCharacter}
 NameStartCharacter = _{Underline | ASCII_ALPHA}
 /*====================================================================================================================*/
