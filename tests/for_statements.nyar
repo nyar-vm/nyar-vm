@@ -1,0 +1,6 @@
+for a in iter {
+
+}
+for a, b in iter {
+
+}
