@@ -2,6 +2,7 @@ program = _{SOI~statement* ~ EOI}
 
 statement = _{
     emptyStatement
+  | importStatement ~ eos?
   | controlFlow ~ eos?
   | expr~eos
   | data
@@ -10,6 +11,28 @@ statement = _{
 emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
+/*====================================================================================================================*/
+//FIXME: 修复 nested using
+importStatement = _{
+    Use ~use_alias|Use ~use_module_select|Use ~use_module_string
+}
+use_module_select = !{ moduleName ~  (( Dot | Proportion|With) ~ moduleSelect)? }
+use_module_except = !{ moduleName ~ (Slash|Except) ~ moduleSelect }
+
+use_module_string = !{ String ~ (With ~moduleSelect)?}
+
+moduleName = {namespace| maybeSymbol|SYMBOL} // MaybeSymbol as Namespace here
+moduleSelect = { Star | "{"~idTuples~ ( comma_or_semi? ~ idTuples)* ~comma_or_semi?~"}"}
+idTuples={use_alias|use_module_select}
+use_alias = !{ moduleName~As~SYMBOL}
+///#C678DD
+Cover = ${Star}
+//!#C678DD: Use|Expose|With|Except|As
+Use  =@{"use"}
+Expose   =@{"expose"}
+With = @{"with"}
+Except = @{"except"}
+As    =@{"as"}
 /*====================================================================================================================*/
 controlFlow = _{if_statement|for_statement}
 block = !{"{" ~ statement* ~ "}"}
