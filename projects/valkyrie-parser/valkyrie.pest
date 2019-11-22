@@ -14,7 +14,7 @@ comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
 importStatement = _{
-    Using ~use_alias|Using ~use_module_select|Using ~use_module_string
+    Use ~use_alias|Use ~use_module_select|Use ~use_module_string
 }
 use_module_select = !{ moduleName ~  (( Dot | Proportion|With) ~ moduleSelect)? }
 
@@ -27,7 +27,7 @@ use_alias = !{ moduleName~As~SYMBOL}
 ///#C678DD
 Cover = ${Star}
 //!#C678DD: Using|Expose|With|As
-Using  =@{"using"}
+Use  =@{"use"}
 Expose   =@{"expose"}
 With = @{"with"}
 As    =@{"as"}
