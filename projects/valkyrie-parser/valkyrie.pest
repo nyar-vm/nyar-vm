@@ -14,10 +14,9 @@ comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
 importStatement = _{
-    Use ~use_alias|Use ~use_module_select|Use ~use_module_string
+    Using ~use_alias|Using ~use_module_select|Using ~use_module_string
 }
 use_module_select = !{ moduleName ~  (( Dot | Proportion|With) ~ moduleSelect)? }
-use_module_except = !{ moduleName ~ (Slash|Except) ~ moduleSelect }
 
 use_module_string = !{ String ~ (With ~moduleSelect)?}
 
@@ -27,11 +26,10 @@ idTuples={use_alias|use_module_select}
 use_alias = !{ moduleName~As~SYMBOL}
 ///#C678DD
 Cover = ${Star}
-//!#C678DD: Use|Expose|With|Except|As
-Use  =@{"use"}
+//!#C678DD: Using|Expose|With|As
+Using  =@{"using"}
 Expose   =@{"expose"}
 With = @{"with"}
-Except = @{"except"}
 As    =@{"as"}
 /*====================================================================================================================*/
 controlFlow = _{if_statement|for_statement}
