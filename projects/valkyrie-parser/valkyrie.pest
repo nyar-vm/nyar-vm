@@ -2,7 +2,7 @@ program = _{SOI~statement* ~ EOI}
 
 statement = _{
     emptyStatement
-  | importStatement ~ eos?
+  | useStatement ~ eos?
   | controlFlow ~ eos?
   | expr~eos
   | data
@@ -13,24 +13,23 @@ eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
-importStatement = _{
-    Use ~use_alias|Use ~use_module_select|Use ~use_module_string
+useStatement = _{
+    Use ~ use_alias
+  | Use ~ use_module_select
+  | Use ~ use_module_string
 }
-use_module_select = !{ moduleName ~  (( Dot | Proportion|With) ~ moduleSelect)? }
-
-use_module_string = !{ String ~ (With ~moduleSelect)?}
-
-moduleName = {namespace| maybeSymbol|SYMBOL} // MaybeSymbol as Namespace here
+use_alias = !{moduleName~As~SYMBOL}
+use_module_select = !{moduleName ~ ((Dot|Proportion) ~ moduleSelect)?}
+use_module_string = !{String ~ As ~ SYMBOL|String ~ (Dot ~ moduleSelect)?}
+moduleName = {namespace|SYMBOL}
 moduleSelect = { Star | "{"~idTuples~ ( comma_or_semi? ~ idTuples)* ~comma_or_semi?~"}"}
 idTuples={use_alias|use_module_select}
-use_alias = !{ moduleName~As~SYMBOL}
 ///#C678DD
 Cover = ${Star}
-//!#C678DD: Using|Expose|With|As
-Use  =@{"use"}
-Expose   =@{"expose"}
+//!#C678DD: With|Use|As
 With = @{"with"}
-As    =@{"as"}
+Use  = @{"use"}
+As   = @{"as"}
 /*====================================================================================================================*/
 controlFlow = _{if_statement|for_statement}
 block = !{"{" ~ statement* ~ "}"}
@@ -146,13 +145,11 @@ LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 ///Gray
 MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
-Symbol = ${maybeSymbol|mustSymbol| SYMBOL}
-mustSymbol = ${namespace~(Dot~SYMBOL)+}
-maybeSymbol = ${SYMBOL~ (Dot~SYMBOL)+}
+Symbol = ${SYMBOL|namespace}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
 ///#61AFEF
 SYMBOL = @{!KeyWords~NameStartCharacter~ NameCharacter*}
-KeyWords = _{If|Else|For|In}
+KeyWords = _{If|Else|For|In|Use}
 NameCharacter = _{ASCII_DIGIT| NameStartCharacter}
 NameStartCharacter = _{Underline | ASCII_ALPHA}
 /*====================================================================================================================*/

@@ -1,0 +1,4 @@
+use "./mod" as C
+use "../lib/lib".{
+	a, b, c
+}
