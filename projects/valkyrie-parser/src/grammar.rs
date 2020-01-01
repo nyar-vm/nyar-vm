@@ -1,5 +1,6 @@
 use crate::pest_parser::{Rule, Valkyrie};
 use pest::Parser;
+use nyar_ast::AST;
 
 pub fn get_statements(text: &str) {
     let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
@@ -14,14 +15,21 @@ pub fn get_statements(text: &str) {
     }
 }
 
-const INPUT: &str = r#"
-if a {}
-if a {} else {}
-if a {} else if b {}
-"#;
-
-#[test]
-fn debug() {
-    get_statements(INPUT);
-    assert_eq!(0, 1)
+pub fn get_ast(text: &str) -> AST {
+    let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
+    let mut nodes: Vec<AST> = vec![];
+    for pair in pairs {
+        let rule = pair.as_rule();
+        let node = match rule {
+            Rule::EOI => continue,
+            Rule::emptyStatement => AST::EmptyStatement,
+            _ => {
+                println!("unimplemented ValkyrieRule::{:?}", rule);
+                AST::None
+            }
+        };
+        nodes.push(node)
+    }
+    println!("{:?}", nodes.clone());
+    return AST::Program(nodes);
 }

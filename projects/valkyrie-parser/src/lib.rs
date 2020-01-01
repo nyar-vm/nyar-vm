@@ -1,6 +1,6 @@
 extern crate pest;
 
-mod grammar;
-mod pest_parser;
+pub mod grammar;
+pub mod pest_parser;
 
-use grammar::get_statements;
+pub use grammar::{get_statements, get_ast};

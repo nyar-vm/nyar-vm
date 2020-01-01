@@ -8,6 +8,8 @@ edition = "2018"
 pest = "2.1.0"
 pest_derive = "2.1.0"
 
+nyar_ast = {path = "../nyar-ast"}
+
 [dev-dependencies]
 
 
