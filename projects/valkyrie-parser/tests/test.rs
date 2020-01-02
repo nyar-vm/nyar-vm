@@ -1,10 +1,14 @@
 extern crate nyar_valkyrie;
-use nyar_valkyrie::{get_statements,get_ast};
+use nyar_valkyrie::{get_ast, get_statements};
 
 const INPUT: &str = r#"
-if a {}
-if a {} else {}
-if a {} else if b {}
+'';
+"";
+'s';
+"s";
+""s"";
+s's';
+s"s";
 "#;
 
 #[test]

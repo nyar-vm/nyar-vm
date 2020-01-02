@@ -105,30 +105,33 @@ index_step = !{element? ~ Colon ~ element?~ Colon ~ element?}
 Null = @{"null"}
 /*====================================================================================================================*/
 ///#D19A66
-Boolean = !{ True | False }
-True = @{"true"}
-False =@{"false"}
+Boolean = !{True|False}
+True    = @{"true"}
+False   = @{"false"}
 /*====================================================================================================================*/
 ///#D19A66
-Byte = ${Byte_BIN|Byte_OCT| Byte_HEX}
-Byte_BIN = ${ Zero ~ B ~ (Underline? ~ ASCII_BIN_DIGIT)+ }
-Byte_OCT = ${ Zero ~ O ~ (Underline? ~ ASCII_OCT_DIGIT)+ }
-Byte_HEX = ${ Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+ }
+Byte     = ${Byte_BIN|Byte_OCT|Byte_HEX}
+Byte_BIN = ${Zero ~ B ~ (Underline? ~ ASCII_BIN_DIGIT)+}
+Byte_OCT = ${Zero ~ O ~ (Underline? ~ ASCII_OCT_DIGIT)+}
+Byte_HEX = ${Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+}
 /*====================================================================================================================*/
-//!#D19A66: Integer|Decimal|DecimalBad|ComplexHandler
-Number = ${Complex|Decimal|DecimalBad|Integer}
-Decimal = ${Integer ~Dot~ ASCII_DIGIT+}
+//!#D19A66: Integer|Decimal|DecimalBad
+Number     = ${Complex|Decimal|DecimalBad|Integer}
+Decimal    = ${Integer ~Dot~ ASCII_DIGIT+}
 DecimalBad = ${Integer~Dot | Dot~ASCII_DIGIT+}
-Complex = ${(Decimal|Integer)~ ComplexHandler}
-Integer = @{ Zero|ASCII_DIGIT ~ (Underline? ~ ASCII_NONZERO_DIGIT)* }
-ComplexHandler = @{SYMBOL}
+Complex    = ${(Decimal|Integer)~ SYMBOL}
+Integer    = @{Zero|ASCII_DIGIT ~ (Underline? ~ ASCII_NONZERO_DIGIT)*}
 /*====================================================================================================================*/
-///#98C379
-String = ${StringSingle|StringBlock|LiteralString| LiteralBlock}//TODO: 字符串表达式
-StringSingle = ${ S2 ~ (!S2~ ANY)* ~ S2 }
-StringBlock = ${ S6 ~ (!S6~ ANY)* ~ S6 }
-LiteralString= ${ S1 ~ (!S1~ ANY)* ~ S1 }
-LiteralBlock = ${ S3 ~ (!S3~ ANY)* ~ S3 }
+//!#3C963C: String
+//!#98C379: StringText|StringLiteralText
+String            = ${SYMBOL? ~ (StringNormal|StringLiteral|StringEmpty)}
+StringNormal      = {StringStart ~ StringText ~ StringEnd}
+StringLiteral     = {Apostrophe ~ StringLiteralText ~ Apostrophe}
+StringEmpty       = {Quotation{2}|Apostrophe{2}}
+StringText        = {(!(Quotation ~ PEEK) ~ ANY)*}
+StringLiteralText = {(!Apostrophe~ ANY)*}
+StringStart       = @{Quotation{1}~PUSH(Quotation*)}
+StringEnd         = @{POP ~ Quotation{1}}
 /*====================================================================================================================*/
 // NEWLINE = @{"\r"~"\n"|"\r"|"\n"}
 WHITESPACE = _{NEWLINE|SPACE_SEPARATOR|"\t"}
@@ -147,7 +150,6 @@ MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
 Symbol = ${SYMBOL|namespace}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
-///#61AFEF
 SYMBOL = @{!KeyWords~NameStartCharacter~ NameCharacter*}
 KeyWords = _{If|Else|For|In|Use}
 NameCharacter = _{ASCII_DIGIT| NameStartCharacter}
@@ -237,11 +239,8 @@ Map =@ {"/@"}
 
 Quote =@{"`"}
 Acute =@{"´"} // U+00B4
-S1 = _{"'"}
-S2 = _{"\""}
-S3 = _{"'''"}
-S6 = _{"\"\"\""}
-
+Apostrophe = @{"'"}
+Quotation = @{"\""}
 
 
 LogicOr =@{"||"|"∧"} //U+2227

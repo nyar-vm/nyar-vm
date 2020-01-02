@@ -1,6 +1,6 @@
 use crate::pest_parser::{Rule, Valkyrie};
-use pest::Parser;
 use nyar_ast::AST;
+use pest::Parser;
 
 pub fn get_statements(text: &str) {
     let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
@@ -24,7 +24,7 @@ pub fn get_ast(text: &str) -> AST {
             Rule::EOI => continue,
             Rule::emptyStatement => AST::EmptyStatement,
             _ => {
-                println!("unimplemented ValkyrieRule::{:?}", rule);
+                println!("Unimplemented Valkyrie Rule::{:?}", rule);
                 AST::None
             }
         };
