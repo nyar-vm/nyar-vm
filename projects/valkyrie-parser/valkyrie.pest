@@ -3,6 +3,7 @@ program = _{SOI~statement* ~ EOI}
 statement = _{
     emptyStatement
   | useStatement ~ eos?
+  | traitStatement ~ eos?
   | controlFlow ~ eos?
   | expr~eos
   | data
@@ -13,7 +14,7 @@ eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
-useStatement = _{
+useStatement = {
     Use ~ use_alias
   | Use ~ use_module_select
   | Use ~ use_module_string
@@ -54,6 +55,15 @@ for_in_loop = {SYMBOL~In~expr~block}
 //!#C678DD: For|In
 For = @{"for"}
 In = @{"in"}
+/*====================================================================================================================*/
+traitStatement = { trait_head ~"{" ~ traitExpression*  ~ "}"   }
+trait_head = _{Trait ~ SYMBOL ~classExtend?}
+traitExpression= { interfaceFunction ~Colon ~type_expr~comma_or_semi?}
+interfaceFunction= { SYMBOL ~"(" ~interfaceParameters? ~")"~ nullable?}
+interfaceParameters= { type_expr ~SYMBOL ~ (Comma ~type_expr~ SYMBOL )*}
+classExtend =${"extend"}
+nullable = ${"?"}
+Trait = @{"trait"}
 /*====================================================================================================================*/
 functionApply = {
     function_name ~ "(" ~ expr? ~")"|
