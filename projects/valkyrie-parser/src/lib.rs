@@ -1,3 +1,4 @@
+#![feature(format_args_nl)]
 extern crate pest;
 
 pub mod grammar;

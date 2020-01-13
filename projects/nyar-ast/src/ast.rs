@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AST {
     /// - `None`: It doesn't look like anything to me
     None,
@@ -6,11 +6,12 @@ pub enum AST {
     Program(Vec<AST>),
     /// - `EmptyStatement`: Nothing
     EmptyStatement,
-
     ///
     Number { handler: String, data: String },
     ///
-    String { handler: String, data: String },
+    StringLiteral { handler: String, data: String },
+    ///
+    String(String),
 }
 
 #[allow(unused_variables)]
