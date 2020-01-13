@@ -5,6 +5,7 @@ statement = _{
   | useStatement ~ eos?
   | traitStatement ~ eos?
   | controlFlow ~ eos?
+  | assignStatement ~ eos?
   | expr~eos
   | data
 }
@@ -64,6 +65,19 @@ interfaceParameters= { type_expr ~SYMBOL ~ (Comma ~type_expr~ SYMBOL )*}
 classExtend =${"extend"}
 nullable = ${"?"}
 Trait = @{"trait"}
+/*====================================================================================================================*/
+assignStatement = {Let ~ (!assign_pair ~ modifier)* ~assign_pair}
+assign_name = {SYMBOL~type_suffix?}
+assign_pair = {assign_name ~ block}
+
+setStatement = _{ SYMBOL ~Set ~expr }
+
+///Orange
+modifier = ${Symbol}
+//!#C678DD: Val|Var|Let
+Var = @{"var"}
+Val = @{"val"}
+Let = @{"let"}
 /*====================================================================================================================*/
 functionApply = {
     function_name ~ "(" ~ expr? ~")"|
