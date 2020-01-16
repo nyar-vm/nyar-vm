@@ -2,13 +2,15 @@ extern crate nyar_valkyrie;
 use nyar_valkyrie::{get_ast, get_statements};
 
 const INPUT: &str = r#"
-'';
-"";
-'s';
-"s";
-""s"";
-s's';
-s"s";
+123456
+123456i
+0xFF
+0o77
+0b11
+0
+0.
+.0
+0.0
 "#;
 
 #[test]

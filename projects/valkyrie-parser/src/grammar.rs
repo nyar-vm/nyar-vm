@@ -1,9 +1,8 @@
 use crate::pest_parser::{Rule, Valkyrie};
-use serde_json;
 use nyar_ast::AST;
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
-use snailquote::unescape;
+use crate::string_fix::unescape;
 
 pub fn get_statements(text: &str) {
     let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
@@ -70,7 +69,7 @@ fn parse_data(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_string(pairs: Pairs<Rule>) -> AST {
-    let (mut h, mut t) = ("n", "".to_string());
+    let (mut h, mut t) = ("", "".to_string());
     for pair in pairs {
         match pair.as_rule() {
             Rule::SYMBOL => h = pair.as_str(),
@@ -78,7 +77,7 @@ fn parse_string(pairs: Pairs<Rule>) -> AST {
             Rule::StringNormal => {
                 for inner in pair.into_inner() {
                     match inner.as_rule() {
-                        Rule::StringText => t = unescape(inner.as_str()).unwrap_or_default(),
+                        Rule::StringText => t = unescape(inner.as_str()),
                         _ => continue,
                     };
                 }
@@ -86,7 +85,7 @@ fn parse_string(pairs: Pairs<Rule>) -> AST {
             Rule::StringLiteral => {
                 for inner in pair.into_inner() {
                     match inner.as_rule() {
-                        Rule::StringLiteralText => t = unescape(inner.as_str()).unwrap_or_default(),
+                        Rule::StringLiteralText => t = unescape(inner.as_str()),
                         _ => continue,
                     };
                 }
@@ -94,5 +93,20 @@ fn parse_string(pairs: Pairs<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return AST::StringLiteral { handler: h.to_string(), data: t };
+    return match h {
+        "" => AST::String(t),
+        _ => AST::StringLiteral { handler: h.to_string(), data: t }
+    };
+}
+
+fn parse_number(pairs: Pairs<Rule>) -> AST {
+    return AST::None;
+}
+
+fn parse_bytes(pairs: Pairs<Rule>) -> AST {
+    return AST::None;
+}
+
+fn parse_boolean(pairs: Pairs<Rule>) -> AST {
+    return AST::None;
 }

@@ -113,11 +113,11 @@ type_suffix = _{To~type_expr}
 //!#C678DD: Type|To
 Type = @{"type"}
 /*====================================================================================================================*/
-data = {dict|list|Null|Boolean|Byte|Number| String |Symbol }
-dict = { "{" ~key_value? ~(Comma ~key_value)* ~Comma? ~"}"}
-list = { "[" ~element? ~(Comma ~element)* ~Comma? ~"]"}
+data = {dict|list|Null|Boolean|Byte|Number|String|Symbol}
+dict = {"{" ~key_value? ~(Comma ~key_value)* ~Comma? ~"}"}
+list = {"[" ~element? ~(Comma ~element)* ~Comma? ~"]"}
 slice ={"[" ~index ~(Comma ~index)* ~Comma? ~"]"}
-index = { index_step|index_range|index_element}
+index ={index_step|index_range|index_element}
 key_value =!{key_valid ~ Colon ~element}
 key_valid =!{Integer | SYMBOL | String}
 element =!{data | expr | statement}
@@ -149,13 +149,13 @@ Integer    = @{Zero|ASCII_DIGIT ~ (Underline? ~ ASCII_NONZERO_DIGIT)*}
 //!#3C963C: String
 //!#98C379: StringText|StringLiteralText
 String            = ${SYMBOL? ~ (StringNormal|StringLiteral|StringEmpty)}
-StringNormal      = {StringStart ~ StringText ~ StringEnd}
-StringLiteral     = {Apostrophe ~ StringLiteralText ~ Apostrophe}
+StringLiteral     = {StringStart ~ StringLiteralText ~ StringEnd}
+StringNormal      = {Quotation ~ StringText ~ Quotation}
 StringEmpty       = {Quotation{2}|Apostrophe{2}}
-StringText        = {(!(Quotation ~ PEEK) ~ ANY)*}
-StringLiteralText = {(!Apostrophe~ ANY)*}
-StringStart       = @{Quotation{1}~PUSH(Quotation*)}
-StringEnd         = @{POP ~ Quotation{1}}
+StringLiteralText = {(!(Apostrophe ~ PEEK) ~ ANY)*}
+StringText        = {(Solidus~(Solidus|Quotation)|!Quotation ~ ANY)*}
+StringStart       = @{Apostrophe{1}~PUSH(Apostrophe*)}
+StringEnd         = @{POP ~ Apostrophe{1}}
 /*====================================================================================================================*/
 // NEWLINE = @{"\r"~"\n"|"\r"|"\n"}
 WHITESPACE = _{NEWLINE|SPACE_SEPARATOR|"\t"}
@@ -198,6 +198,7 @@ LazyOr = @{"||"}
 
 Star =@{"*"}
 Slash =@{"/"}
+Solidus = @{"\\"}
 
 Proportion = @{"::"|"∷"}//U+2237
 Comma =@{","|"，"} //U+FF0C
