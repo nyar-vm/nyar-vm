@@ -11,6 +11,8 @@ const INPUT: &str = r#"
 0.
 .0
 0.0
+true
+false
 "#;
 
 #[test]

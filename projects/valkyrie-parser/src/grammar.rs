@@ -56,6 +56,7 @@ fn parse_data(pairs: Pairs<Rule>) -> AST {
     for pair in pairs {
         let node = match pair.as_rule() {
             Rule::String => parse_string(pair.into_inner()),
+            Rule::Boolean => parse_boolean(pair.into_inner()),
             _ => {
                 println!("Rule:    {:?}", pair.as_rule());
                 println!("Span:    {:?}", pair.as_span());
@@ -108,5 +109,13 @@ fn parse_bytes(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_boolean(pairs: Pairs<Rule>) -> AST {
+    for pair in pairs {
+        let node = match pair.as_rule() {
+            Rule::True => AST::Boolean(true),
+            Rule::False => AST::Boolean(false),
+            _ => unreachable!()
+        };
+        return node;
+    }
     return AST::None;
 }

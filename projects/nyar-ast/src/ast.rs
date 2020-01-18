@@ -12,11 +12,13 @@ pub enum AST {
     Number { handler: String, data: String },
 
     ///
-    Bytes(),
+    Bytes(Vec<u8>),
     ///
     StringLiteral { handler: String, data: String },
     ///
     String(String),
+    ///
+    Boolean(bool),
 }
 
 
