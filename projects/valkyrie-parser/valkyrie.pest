@@ -66,17 +66,24 @@ classExtend =${"extend"}
 nullable = ${"?"}
 Trait = @{"trait"}
 /*====================================================================================================================*/
-assignStatement = {Let ~ (!assign_pair ~ modifier)* ~assign_pair}
-assign_name = {SYMBOL~type_suffix?}
-assign_pair = {assign_name ~ block}
+assignStatement = _{set_assign|let_assign}
+let_assign = {
+    Let ~ "(" ~ assign_name ~ ")" ~type_hint? ~ (Set ~ statement)?
+  | Let ~ assign_name ~ type_hint? ~ (Set ~ statement)?
+}
+set_assign = {
+    "(" ~ assign_name ~ ")" ~Set ~ statement
+
+}
+assign_name = {assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
+assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon)) ~modifier)* ~ SYMBOL}
+type_hint = { Colon ~ type_expr}
 
 setStatement = _{ SYMBOL ~Set ~expr }
 
 ///Orange
 modifier = ${Symbol}
-//!#C678DD: Val|Var|Let
-Var = @{"var"}
-Val = @{"val"}
+//!#C678DD: Let
 Let = @{"let"}
 /*====================================================================================================================*/
 functionApply = {
@@ -102,9 +109,9 @@ expressions = {"("~expr~ ( comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
 trinoculars = _{if_trinocular}
 /*====================================================================================================================*/
 /// #E06C75
-type_expr = !{ type_term ~ (Infix ~ type_term)* | data | functionApply}
+type_expr = !{ SYMBOL | functionApply|type_term ~ (Infix ~ type_term)*}
 type_term =  { Prefix* ~ type_node ~ Postfix* }
-type_node = _{  "(" ~ type_expr ~ ")"  }
+type_node = _{ "(" ~ type_expr ~ ")" }
 
 
 type_prefix = _{type_expr}
@@ -125,10 +132,10 @@ index_element = !{element}
 index_range = !{element? ~ Colon ~ element?}
 index_step = !{element? ~ Colon ~ element?~ Colon ~ element?}
 /*====================================================================================================================*/
-///#D19A66
+///#C678DD
 Null = @{"null"}
 /*====================================================================================================================*/
-///#D19A66
+///#C678DD
 Boolean = !{True|False}
 True    = @{"true"}
 False   = @{"false"}
@@ -174,8 +181,7 @@ MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
 Symbol = ${SYMBOL|namespace}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
-SYMBOL = @{!KeyWords~NameStartCharacter~ NameCharacter*}
-KeyWords = _{If|Else|For|In|Use}
+SYMBOL = @{NameStartCharacter~ NameCharacter*}
 NameCharacter = _{ASCII_DIGIT| NameStartCharacter}
 NameStartCharacter = _{Underline | ASCII_ALPHA}
 /*====================================================================================================================*/
@@ -189,7 +195,7 @@ Prefix = @{Plus|Increase|Decrease}
 Postfix = @{"!"}
 Infix = @{o_add|o_times|o_power}
 
-
+///#56B6C2
 Set = @{"="}
 
 Or = @{"|"}
@@ -293,4 +299,3 @@ BitNot =@{"!"}
 
 Curry =@{"@@@"}
 Apply =@{"@@"}
-LetAssign =@{"@="}

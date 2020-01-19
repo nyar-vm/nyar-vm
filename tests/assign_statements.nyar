@@ -1,4 +1,6 @@
-let a = 1
-let mut b = 2
-let ref c = b
-let rec f = d -> (f, d)
+let mut a, rec b, rec lazy c;
+let mut p, ref q, rec lazy r:(int);
+let mut x, ref y, rec lazy z:(iq) = (1);
+
+a = 1
+(b, c) = (2)

@@ -9,14 +9,16 @@ pub enum AST {
     /// - `EmptyStatement`: Nothing
     EmptyStatement,
     ///
-    Number { handler: String, data: String },
+    NumberLiteral { handler: String, data: String },
 
     ///
     Bytes(Vec<u8>),
-    ///
+    /// - `StringLiteral`: raw string with handler
     StringLiteral { handler: String, data: String },
-    ///
+    /// - `String`: raw string
     String(String),
+    /// - `Comment`: raw comment with handler
+    Comment { handler: String, data: String },
     ///
     Boolean(bool),
 }
