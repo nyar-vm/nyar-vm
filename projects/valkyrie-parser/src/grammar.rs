@@ -1,8 +1,8 @@
 use crate::pest_parser::{Rule, Valkyrie};
+use crate::string_fix::unescape;
 use nyar_ast::AST;
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
-use crate::string_fix::unescape;
 
 pub fn get_statements(text: &str) {
     let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
@@ -96,7 +96,7 @@ fn parse_string(pairs: Pairs<Rule>) -> AST {
     }
     return match h {
         "" => AST::String(t),
-        _ => AST::StringLiteral { handler: h.to_string(), data: t }
+        _ => AST::StringLiteral { handler: h.to_string(), data: t },
     };
 }
 
@@ -113,7 +113,7 @@ fn parse_boolean(pairs: Pairs<Rule>) -> AST {
         let node = match pair.as_rule() {
             Rule::True => AST::Boolean(true),
             Rule::False => AST::Boolean(false),
-            _ => unreachable!()
+            _ => unreachable!(),
         };
         return node;
     }

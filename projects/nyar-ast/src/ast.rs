@@ -23,7 +23,6 @@ pub enum AST {
     Boolean(bool),
 }
 
-
 #[allow(unused_variables)]
 impl AST {
     pub fn new_number(data: &str, handler: &str) {}

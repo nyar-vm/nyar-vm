@@ -27,9 +27,9 @@ pub fn unescape(s: &str) -> String {
                         ' ' => ' ',
                         'u' => match parse_unicode(&mut chars) {
                             Ok(c3) => c3,
-                            Err(_) => ' '
+                            Err(_) => ' ',
                         },
-                        _ => ' '
+                        _ => ' ',
                     });
                     continue;
                 }
@@ -41,8 +41,8 @@ pub fn unescape(s: &str) -> String {
 }
 
 fn parse_unicode<I>(chars: &mut I) -> Result<char, String>
-    where
-        I: Iterator<Item=(usize, char)>,
+where
+    I: Iterator<Item = (usize, char)>,
 {
     match chars.next() {
         Some((_, '{')) => {}
@@ -51,12 +51,7 @@ fn parse_unicode<I>(chars: &mut I) -> Result<char, String>
         }
     }
 
-    let unicode_seq: String = chars
-        .take_while(|&(_, c)| c != '}')
-        .map(|(_, c)| c)
-        .collect();
+    let unicode_seq: String = chars.take_while(|&(_, c)| c != '}').map(|(_, c)| c).collect();
 
-    u32::from_str_radix(&unicode_seq, 16)
-        .map_err(|e| format!("could not parse {} as u32 hex: {}", unicode_seq, e))
-        .and_then(|u| char::from_u32(u).ok_or_else(|| format!("could not parse {} as a unicode char", u)))
+    u32::from_str_radix(&unicode_seq, 16).map_err(|e| format!("could not parse {} as u32 hex: {}", unicode_seq, e)).and_then(|u| char::from_u32(u).ok_or_else(|| format!("could not parse {} as a unicode char", u)))
 }

@@ -72,14 +72,11 @@ let_assign = {
   | Let ~ assign_name ~ type_hint? ~ (Set ~ statement)?
 }
 set_assign = {
-    "(" ~ assign_name ~ ")" ~Set ~ statement
-
+    "(" ~ SYMBOL  ~ (Comma ~ SYMBOL)* ~ Comma?  ~ ")" ~Set ~ statement
+  | SYMBOL ~ Set ~ statement
 }
 assign_name = {assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
 assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon)) ~modifier)* ~ SYMBOL}
-type_hint = { Colon ~ type_expr}
-
-setStatement = _{ SYMBOL ~Set ~expr }
 
 ///Orange
 modifier = ${Symbol}
@@ -112,10 +109,7 @@ trinoculars = _{if_trinocular}
 type_expr = !{ SYMBOL | functionApply|type_term ~ (Infix ~ type_term)*}
 type_term =  { Prefix* ~ type_node ~ Postfix* }
 type_node = _{ "(" ~ type_expr ~ ")" }
-
-
-type_prefix = _{type_expr}
-type_suffix = _{To~type_expr}
+type_hint = { Colon ~ type_expr}
 
 //!#C678DD: Type|To
 Type = @{"type"}
@@ -211,8 +205,8 @@ Comma =@{","|"，"} //U+FF0C
 Dot = @{"."}
 Separate = @{";;"}
 Semicolon = @{";" | "；"} //U+FF1B
-//!#56B6C2: Question|Colon
 Colon = @{":"|"："} //U+FF1A
+///#56B6C2
 Question=@{"?"}
 Underline = @{"_"}
 
