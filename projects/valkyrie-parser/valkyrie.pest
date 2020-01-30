@@ -6,6 +6,7 @@ statement = _{
   | traitStatement ~ eos?
   | controlFlow ~ eos?
   | assignStatement ~ eos?
+  | annotation ~ eos?
   | expr~eos
   | data
 }
@@ -83,9 +84,13 @@ modifier = ${Symbol}
 //!#C678DD: Let
 Let = @{"let"}
 /*====================================================================================================================*/
+//!Orange:annotation_call
+annotation = {annotation_call+~statement}
+annotation_call = @{At~(list|functionApply|Symbol)}
+/*====================================================================================================================*/
 functionApply = {
-    function_name ~ "(" ~ expr? ~")"|
-    function_module? ~ function_name ~ "(" ~ expr? ~")"
+    function_name ~ "(" ~ expr? ~")"
+  | function_module? ~ function_name ~ "(" ~ expr? ~")"
 }
 methodApply = {expr ~Dot ~ function_name ~ "(" ~ expr? ~")"}
 
@@ -289,7 +294,8 @@ Destruct =@{"~="}
 DoubleBang =@{"!!"}
 BitNot =@{"!"}
 
-
+Sharp =@{"#"}
 
 Curry =@{"@@@"}
 Apply =@{"@@"}
+At    =@{"@"}
