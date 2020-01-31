@@ -2,7 +2,7 @@ program = _{SOI~statement* ~ EOI}
 
 statement = _{
     emptyStatement
-  | useStatement ~ eos?
+  | importStatement ~ eos?
   | traitStatement ~ eos?
   | controlFlow ~ eos?
   | assignStatement ~ eos?
@@ -16,22 +16,22 @@ eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
-useStatement = {
-    Use ~ use_alias
-  | Use ~ use_module_select
-  | Use ~ use_module_string
+importStatement = {
+    Import ~ use_alias
+  | Import ~ use_module_select
+  | Import ~ use_module_string
 }
-use_alias = !{moduleName~As~SYMBOL}
-use_module_select = !{moduleName ~ ((Dot|Proportion) ~ moduleSelect)?}
-use_module_string = !{String ~ As ~ SYMBOL|String ~ (Dot ~ moduleSelect)?}
-moduleName = {namespace|SYMBOL}
-moduleSelect = { Star | "{"~idTuples~ ( comma_or_semi? ~ idTuples)* ~comma_or_semi?~"}"}
-idTuples={use_alias|use_module_select}
+use_alias = !{String ~ As ~ SYMBOL|SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~As~SYMBOL}
+use_module_select = !{SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~(ModuleSplit ~ module_block)?}
+use_module_string = !{String ~ (ModuleSplit ~ module_block)?}
+module_block = {"{"~module_tuple~ ( comma_or_semi? ~ module_tuple)* ~comma_or_semi?~"}"}
+module_tuple = {use_alias|use_module_select}
 ///#C678DD
 Cover = ${Star}
-//!#C678DD: With|Use|As
+ModuleSplit= _{Dot|Proportion}
+//!#C678DD: With|Import|As
 With = @{"with"}
-Use  = @{"use"}
+Import  = @{"import"}
 As   = @{"as"}
 /*====================================================================================================================*/
 controlFlow = _{if_statement|for_statement}
@@ -61,10 +61,9 @@ In = @{"in"}
 traitStatement = { trait_head ~"{" ~ traitExpression*  ~ "}"   }
 trait_head = _{Trait ~ SYMBOL ~classExtend?}
 traitExpression= { interfaceFunction ~Colon ~type_expr~comma_or_semi?}
-interfaceFunction= { SYMBOL ~"(" ~interfaceParameters? ~")"~ nullable?}
-interfaceParameters= { type_expr ~SYMBOL ~ (Comma ~type_expr~ SYMBOL )*}
+interfaceFunction= { SYMBOL ~"(" ~interfaceParameters? ~")"~ Question?}
+interfaceParameters= {type_expr ~SYMBOL ~ (Comma ~type_expr~ SYMBOL )*}
 classExtend =${"extend"}
-nullable = ${"?"}
 Trait = @{"trait"}
 /*====================================================================================================================*/
 assignStatement = _{set_assign|let_assign}
@@ -178,6 +177,7 @@ LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 ///Gray
 MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
+//!
 Symbol = ${SYMBOL|namespace}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
 SYMBOL = @{NameStartCharacter~ NameCharacter*}
@@ -217,8 +217,8 @@ Underline = @{"_"}
 
 
 
-Import =@{"<<<"|"⋘"} //U+22D8
-Export =@{">>>"|"⋙"} //U+22D9
+Load =@{"<<<"|"⋘"} //U+22D8
+Save =@{">>>"|"⋙"} //U+22D9
 LeftShift =@{"<<"|"≪"} //U+226A
 RightShift =@{">>"|"≫"} //U+226B
 LessEqual =@{"<="}
