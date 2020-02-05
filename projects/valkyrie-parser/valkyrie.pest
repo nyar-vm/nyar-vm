@@ -17,17 +17,15 @@ comma_or_semi = _{Comma|Semicolon}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
 importStatement = {
-    Import ~ use_alias
-  | Import ~ use_module_select
+    Import ~ Dot* ~ use_alias
+  | Import ~ Dot* ~ use_module_select
   | Import ~ use_module_string
 }
 use_alias = !{String ~ As ~ SYMBOL|SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~As~SYMBOL}
-use_module_select = !{SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~(ModuleSplit ~ module_block)?}
-use_module_string = !{String ~ (ModuleSplit ~ module_block)?}
+use_module_select = !{SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~(ModuleSplit ~ (module_block|Star))?}
+use_module_string = !{String ~ (ModuleSplit ~ (module_block|Star))?}
 module_block = {"{"~module_tuple~ ( comma_or_semi? ~ module_tuple)* ~comma_or_semi?~"}"}
 module_tuple = {use_alias|use_module_select}
-///#C678DD
-Cover = ${Star}
 ModuleSplit= _{Dot|Proportion}
 //!#C678DD: With|Import|As
 With = @{"with"}
