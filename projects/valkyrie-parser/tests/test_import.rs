@@ -2,8 +2,8 @@ extern crate nyar_valkyrie;
 use nyar_valkyrie::{get_ast, get_statements};
 
 const INPUT: &str = r#"
-@py import numpy as np
-@py import pandas.dataframe
+import numpy as np
+import pandas.database as db
 
 import .mod as x
 import ..mod as z

@@ -40,7 +40,7 @@ pub fn unescape(s: &str) -> String {
     return res;
 }
 
-fn parse_unicode<I>(chars: &mut I) -> Result<char, String>
+pub fn parse_unicode<I>(chars: &mut I) -> Result<char, String>
 where
     I: Iterator<Item = (usize, char)>,
 {
