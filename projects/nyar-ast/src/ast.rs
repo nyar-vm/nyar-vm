@@ -8,30 +8,45 @@ pub enum AST {
     Program(Vec<AST>),
     /// - `EmptyStatement`: Nothing
     EmptyStatement,
+
+    ImportStatement {
+        data: ImportStatement,
+        modifier: Annotation,
+    },
+
     ///
-    NumberLiteral { handler: String, data: String },
+    NumberLiteral {
+        handler: String,
+        data: String,
+    },
 
     ///
     Bytes(Vec<u8>),
     /// - `StringLiteral`: raw string with handler
-    StringLiteral { handler: String, data: String },
+    StringLiteral {
+        handler: String,
+        data: String,
+    },
     /// - `String`: raw string
     String(String),
     /// - `Comment`: raw comment with handler
-    Comment { handler: String, data: String },
+    CommentLiteral {
+        handler: String,
+        data: String,
+    },
     ///
     Boolean(bool),
 }
 
-#[allow(unused_variables)]
-impl AST {
-    pub fn new_number(data: &str, handler: &str) {}
-    pub fn new_string(data: &str, handler: &str) {}
-    pub fn save(self, path: &str) {
-        let json = serde_json::to_string(&self).unwrap();
-        println!("{}", json);
-    }
-    pub fn load(path: &str) -> AST {
-        unimplemented!()
-    }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ImportStatement {
+    Local { root: u8, path: Vec<String> },
+    LocalAlias { root: u8, path: Vec<String>, alias: String },
+    URL { path: String },
+    URLAlias { path: String, alias: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Annotation {
+    None,
 }

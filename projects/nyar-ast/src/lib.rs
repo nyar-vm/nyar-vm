@@ -4,5 +4,6 @@ extern crate serde_json;
 extern crate serde_derive;
 
 pub mod ast;
+pub mod utils;
 
 pub use ast::AST;
