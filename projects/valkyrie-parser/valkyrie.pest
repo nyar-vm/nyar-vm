@@ -14,6 +14,7 @@ statement = _{
 emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
+block_or_expr = _{block|Set ~ expr}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
 importStatement = {
@@ -66,11 +67,11 @@ Trait = @{"trait"}
 /*====================================================================================================================*/
 assignStatement = _{set_assign|let_assign}
 let_assign = {
-    Let ~ "(" ~ assign_name ~ ")" ~type_hint? ~ (Set ~ statement)?
-  | Let ~ assign_name ~ type_hint? ~ (Set ~ statement)?
+    Let ~ "(" ~ assign_name ~ ")" ~type_hint? ~ block_or_expr?
+  | Let ~ assign_name ~ type_hint? ~ block_or_expr?
 }
 set_assign = {
-    "(" ~ SYMBOL  ~ (Comma ~ SYMBOL)* ~ Comma?  ~ ")" ~Set ~ statement
+    "(" ~ SYMBOL  ~ (Comma ~ SYMBOL)* ~ Comma?  ~ ")" ~ Set ~ statement
   | SYMBOL ~ Set ~ statement
 }
 assign_name = {assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
