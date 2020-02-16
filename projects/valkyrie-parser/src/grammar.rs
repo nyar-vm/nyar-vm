@@ -1,7 +1,7 @@
-use crate::pest_parser::Rule::controlFlow;
+use crate::pest_parser::Rule::{controlFlow, data, modifier};
 use crate::pest_parser::{Rule, Valkyrie};
 use crate::utils::unescape;
-use nyar_ast::ast::ImportStatement;
+use nyar_ast::ast::{Annotation, ImportStatement};
 use nyar_ast::AST;
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
@@ -45,30 +45,24 @@ pub fn get_ast(text: &str) -> AST {
 }
 
 fn parse_import(pairs: Pairs<Rule>) -> AST {
-    let mut father = 0;
+    let mut root = 0;
     for pair in pairs {
         match pair.as_rule() {
             Rule::Dot => {
-                father += 1;
+                root += 1;
                 continue;
             }
             Rule::use_alias => {
-                let mut nodes = vec![];
+                let mut nodes: Vec<String> = vec![];
                 for inner in pair.into_inner() {
                     let node = match inner.as_rule() {
-                        Rule::SYMBOL => inner.as_str(),
+                        Rule::SYMBOL => inner.as_str().to_string(),
                         _ => continue,
                     };
                     nodes.push(node)
                 }
-                println!("{:?}", nodes);
-                let a = nodes.pop().unwrap();
-                let i = ImportStatement::Alias {
-                    root: 0,
-                    path: vec![],
-                    alias: "".to_string(),
-                };
-                return AST::ImportStatement(i);
+                let alias = nodes.pop().unwrap();
+                return AST::ImportStatement { data: ImportStatement::LocalAlias { root, path: nodes, alias }, modifier: Annotation::None };
             }
             Rule::use_module_select => {
                 println!("Rule:    {:?}", pair.as_rule());

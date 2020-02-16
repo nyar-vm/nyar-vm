@@ -1,3 +1,4 @@
+@wolfram import System.{Fibonacci, Factorial}
 @py import numpy as np
 @py import pandas.dataframe
 
