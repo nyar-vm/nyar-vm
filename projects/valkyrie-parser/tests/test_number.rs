@@ -1,0 +1,29 @@
+extern crate nyar_valkyrie;
+
+use nyar_valkyrie::{get_ast, get_statements};
+
+const BYTES: &str = r#"
+0xFF
+0o77
+0b11
+"#;
+
+const NUMBERS: &str = r#"
+0
+0.
+.0
+0.0
+123456
+123456i
+"#;
+
+#[test]
+fn debug_numbers() {
+    get_ast(NUMBERS);
+    assert_eq!(0, 1)
+}
+
+#[test]
+fn debug_bytes() {
+    get_ast(BYTES);
+}

@@ -21,8 +21,6 @@ pub enum AST {
     },
 
     ///
-    Bytes(Vec<u8>),
-    /// - `StringLiteral`: raw string with handler
     StringLiteral {
         handler: String,
         data: String,

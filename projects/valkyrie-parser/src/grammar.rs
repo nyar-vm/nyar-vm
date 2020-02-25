@@ -1,4 +1,3 @@
-use crate::pest_parser::Rule::{controlFlow, data, modifier};
 use crate::pest_parser::{Rule, Valkyrie};
 use crate::utils::unescape;
 use nyar_ast::ast::{Annotation, ImportStatement};
@@ -137,10 +136,7 @@ fn parse_string(pairs: Pairs<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return match h {
-        "" => AST::String(t),
-        _ => AST::StringLiteral { handler: h.to_string(), data: t },
-    };
+    return AST::StringLiteral { handler: h.to_string(), data: t };
 }
 
 fn parse_number(pairs: Pairs<Rule>) -> AST {
@@ -155,14 +151,28 @@ fn parse_number(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_byte(pairs: Pairs<Rule>) -> AST {
+    let (mut h, mut t) = ("", "0");
     for pair in pairs {
-        // A pair is a combination of the rule which matched and a span of INPUT
-        println!("Rule:    {:?}", pair.as_rule());
-        println!("Span:    {:?}", pair.as_span());
-        println!("Text:    {}\n", pair.as_str());
-        // A pair can be converted to an iterator of the tokens which make it up:
+        match pair.as_rule() {
+            Rule::Byte_HEX => {
+                let s = pair.as_str();
+                h = "x";
+                t = &s[2..s.len()];
+            }
+            Rule::Byte_OCT => {
+                let s = pair.as_str();
+                h = "o";
+                t = &s[2..s.len()];
+            }
+            Rule::Byte_BIN => {
+                let s = pair.as_str();
+                h = "b";
+                t = &s[2..s.len()];
+            }
+            _ => continue,
+        };
     }
-    return AST::None;
+    return AST::NumberLiteral { handler: h.to_string(), data: t.to_string() };
 }
 
 fn parse_boolean(pairs: Pairs<Rule>) -> AST {
