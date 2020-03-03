@@ -112,7 +112,7 @@ fn parse_data(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_string(pairs: Pairs<Rule>) -> AST {
-    let (mut h, mut t) = ("", "".to_string());
+    let (mut h, mut t) = ("", String::new());
     for pair in pairs {
         match pair.as_rule() {
             Rule::SYMBOL => h = pair.as_str(),
@@ -140,14 +140,34 @@ fn parse_string(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_number(pairs: Pairs<Rule>) -> AST {
+    let (mut h, mut t) = ("", String::new());
     for pair in pairs {
-        // A pair is a combination of the rule which matched and a span of INPUT
-        println!("Rule:    {:?}", pair.as_rule());
-        println!("Span:    {:?}", pair.as_span());
-        println!("Text:    {}\n", pair.as_str());
-        // A pair can be converted to an iterator of the tokens which make it up:
+        match pair.as_rule() {
+            Rule::Integer => {
+                h = "int";
+                t = pair.as_str().to_string();
+            }
+            Rule::Decimal => {
+                h = "fp";
+                t = pair.as_str().to_string();
+            }
+            Rule::DecimalBad => {
+                h = "fp";
+                let s = pair.as_str();
+                if s.starts_with('.') {
+                    t = "0".to_string() + s
+                } else {
+                    t = s.to_string() + "0"
+                }
+            }
+            _ => {
+                println!("Rule:    {:?}", pair.as_rule());
+                println!("Span:    {:?}", pair.as_span());
+                println!("Text:    {}\n", pair.as_str());
+            }
+        };
     }
-    return AST::None;
+    return AST::NumberLiteral { handler: h.to_string(), data: t };
 }
 
 fn parse_byte(pairs: Pairs<Rule>) -> AST {
