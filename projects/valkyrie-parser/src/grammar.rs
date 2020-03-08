@@ -160,11 +160,17 @@ fn parse_number(pairs: Pairs<Rule>) -> AST {
                     t = s.to_string() + "0"
                 }
             }
-            _ => {
-                println!("Rule:    {:?}", pair.as_rule());
-                println!("Span:    {:?}", pair.as_span());
-                println!("Text:    {}\n", pair.as_str());
+            Rule::Complex => {
+                for inner in pair.into_inner() {
+                    match inner.as_rule() {
+                        Rule::Integer => t = inner.as_str().to_string(),
+                        Rule::Decimal => t = inner.as_str().to_string(),
+                        Rule::SYMBOL => h = inner.as_str(),
+                        _ => unreachable!(),
+                    };
+                }
             }
+            _ => unreachable!(),
         };
     }
     return AST::NumberLiteral { handler: h.to_string(), data: t };
@@ -189,7 +195,7 @@ fn parse_byte(pairs: Pairs<Rule>) -> AST {
                 h = "b";
                 t = &s[2..s.len()];
             }
-            _ => continue,
+            _ => unreachable!(),
         };
     }
     return AST::NumberLiteral { handler: h.to_string(), data: t.to_string() };

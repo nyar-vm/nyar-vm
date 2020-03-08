@@ -147,7 +147,7 @@ Byte_HEX = ${Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+}
 Number     = ${Complex|Decimal|DecimalBad|Integer}
 Decimal    = ${Integer ~Dot~ ASCII_DIGIT+}
 DecimalBad = ${Integer~Dot | Dot~ASCII_DIGIT+}
-Complex    = ${(Decimal|Integer)~ SYMBOL}
+Complex    = {(Decimal|Integer)~ SYMBOL}
 Integer    = @{Zero|ASCII_DIGIT ~ (Underline? ~ ASCII_NONZERO_DIGIT)*}
 /*====================================================================================================================*/
 //!#3C963C: String
