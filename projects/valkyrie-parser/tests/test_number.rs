@@ -24,7 +24,6 @@ const NUMBERS: &str = r#"
 #[test]
 fn debug_numbers() {
     get_ast(NUMBERS);
-    assert_eq!(0, 1)
 }
 
 #[test]

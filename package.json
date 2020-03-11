@@ -5,7 +5,7 @@
         "prebuild": "cargo run --release --color=always --package nyar_prebuild --bin nyar_prebuild && cargo fmt --all",
         "build": "cargo build --release",
         "test": "cargo build",
-        "format": "cargo fmt --all",
+        "fmt": "cargo fmt --all",
         "push": "yarn test && git push",
         "reset": "git reset Head~ --soft"
     }
