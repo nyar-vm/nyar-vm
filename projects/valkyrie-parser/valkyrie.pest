@@ -7,8 +7,7 @@ statement = _{
   | controlFlow ~ eos?
   | assignStatement ~ eos?
   | annotation ~ eos?
-  | expr~eos
-  | data
+  | expr ~ eos?
 }
 /*====================================================================================================================*/
 emptyStatement = {eos | Separate }
@@ -34,7 +33,7 @@ Import  = @{"import"}
 As   = @{"as"}
 /*====================================================================================================================*/
 controlFlow = _{if_statement|for_statement}
-block = !{"{" ~ statement* ~ "}"}
+block = !{"{" ~ statement+ ~ "}"}
 /*====================================================================================================================*/
 if_statement ={if_nested_else|if_nested|if_single_else|if_single}
 if_single = _{ If~condition~ block}
@@ -57,6 +56,11 @@ for_in_loop = {SYMBOL~In~expr~block}
 For = @{"for"}
 In = @{"in"}
 /*====================================================================================================================*/
+//!#C678DD: Return|Break|Pass
+Return = @{"return"}
+Break = @{"break"}
+Pass = @{"pass"}
+/*====================================================================================================================*/
 traitStatement = { trait_head ~"{" ~ traitExpression*  ~ "}"   }
 trait_head = _{Trait ~ SYMBOL ~classExtend?}
 traitExpression= { interfaceFunction ~Colon ~type_expr~comma_or_semi?}
@@ -75,7 +79,7 @@ set_assign = {
   | SYMBOL ~ Set ~ statement
 }
 assign_name = {assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon)) ~modifier)* ~ SYMBOL}
+assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon|"{")) ~modifier)* ~ SYMBOL}
 
 ///Orange
 modifier = ${Symbol}
@@ -98,11 +102,16 @@ function_name = {SYMBOL}
 function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
 /*====================================================================================================================*/
 expr = !{
-    term ~ slice
-  | trinoculars
-  | term ~ (Infix ~ term)*
+ term ~ (Infix ~ term)*
 }
-term =  { Prefix* ~ node ~ Postfix* }
+term =  {
+
+//   term ~ slice
+// | trinoculars
+//  |
+Prefix* ~ node ~ Postfix*
+
+}
 node = _{  data| "(" ~ expr ~ ")" }
 condition  = { node|expr}
 expressions = {"("~expr~ ( comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
@@ -119,15 +128,13 @@ Type = @{"type"}
 /*====================================================================================================================*/
 data = {dict|list|Null|Boolean|Byte|Number|String|Symbol}
 dict = {"{" ~key_value? ~(Comma ~key_value)* ~Comma? ~"}"}
-list = {"[" ~element? ~(Comma ~element)* ~Comma? ~"]"}
+list = {"[" ~expr? ~(Comma ~expr)* ~Comma? ~"]"}
 slice ={"[" ~index ~(Comma ~index)* ~Comma? ~"]"}
-index ={index_step|index_range|index_element}
-key_value =!{key_valid ~ Colon ~element}
+index ={index_step|index_range|expr}
+key_value =!{key_valid ~ Colon ~expr}
 key_valid =!{Integer | SYMBOL | String}
-element =!{data | expr | statement}
-index_element = !{element}
-index_range = !{element? ~ Colon ~ element?}
-index_step = !{element? ~ Colon ~ element?~ Colon ~ element?}
+index_range = !{expr? ~ Colon ~ expr?}
+index_step = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 /*====================================================================================================================*/
 ///#C678DD
 Null = @{"null"}
@@ -180,8 +187,8 @@ MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 Symbol = ${SYMBOL|namespace}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
 SYMBOL = @{NameStartCharacter~ NameCharacter*}
-NameCharacter = _{ASCII_DIGIT| NameStartCharacter}
-NameStartCharacter = _{Underline | ASCII_ALPHA}
+NameCharacter = _{XID_CONTINUE|ASCII_DIGIT| NameStartCharacter}
+NameStartCharacter = _{XID_START|Underline | ASCII_ALPHA}
 /*====================================================================================================================*/
 Zero = _{"0"}
 X = _{"x"|"X"}
