@@ -5,6 +5,22 @@ use nyar_ast::AST;
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 
+use pest::prec_climber::{Assoc, Operator, PrecClimber};
+
+#[rustfmt::skip]
+lazy_static! {
+    static ref PREC_CLIMBER: PrecClimber<Rule> = {
+        use Rule::*;
+        use Assoc::*;
+        //TODO: use macro
+        PrecClimber::new(vec![
+            Operator::new(Plus, Left) | Operator::new(Minus, Left),
+            Operator::new(Multiply, Left) | Operator::new(CenterDot, Left),
+            Operator::new(Power, Right)
+        ])
+    };
+}
+
 pub fn get_statements(text: &str) {
     let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
 
@@ -30,7 +46,7 @@ pub fn get_ast(text: &str) -> AST {
             Rule::EOI => continue,
             Rule::emptyStatement => AST::EmptyStatement,
             Rule::importStatement => parse_import(pair.into_inner()),
-            Rule::expr => parse_expression(pair.into_inner()),
+            Rule::expr => parse_expr(pair.into_inner()),
             Rule::data => parse_data(pair.into_inner()),
             _ => {
                 println!("Unimplemented Valkyrie Rule::{:?}", rule);
@@ -81,15 +97,45 @@ fn parse_import(pairs: Pairs<Rule>) -> AST {
     return AST::None;
 }
 
-fn parse_expression(pairs: Pairs<Rule>) -> AST {
+fn parse_expr(pairs: Pairs<Rule>) -> AST {
+    let out = PREC_CLIMBER.climb(
+        pairs,
+        |pair: Pair<Rule>| match pair.as_rule() {
+            Rule::expr => parse_expr(pair.into_inner()),
+            Rule::term => parse_term(pair.into_inner()),
+            Rule::data => parse_data(pair.into_inner()),
+            _ => {
+                println!("Rule:    {:?}", pair.as_rule());
+                println!("Span:    {:?}", pair.as_span());
+                println!("Text:    {}\n", pair.as_str());
+                AST::None
+            }
+        },
+        |lhs: AST, op: Pair<Rule>, rhs: AST| match op.as_rule() {
+            Rule::Plus => {
+                println!("Plus!");
+                AST::None
+            }
+            _ => {
+                println!("unknow!");
+                AST::None
+            }
+        },
+    );
+    println!("{:?}", out);
+    return AST::None;
+}
+
+fn parse_term(pairs: Pairs<Rule>) -> AST {
     for pair in pairs {
-        // A pair is a combination of the rule which matched and a span of INPUT
         println!("Rule:    {:?}", pair.as_rule());
         println!("Span:    {:?}", pair.as_span());
         println!("Text:    {}\n", pair.as_str());
-        // A pair can be converted to an iterator of the tokens which make it up:
+        match pair.as_rule() {
+            _ => continue,
+        };
     }
-    return AST::None;
+    AST::None
 }
 
 fn parse_data(pairs: Pairs<Rule>) -> AST {

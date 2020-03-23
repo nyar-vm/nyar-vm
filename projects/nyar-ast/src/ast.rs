@@ -13,13 +13,13 @@ pub enum AST {
         data: ImportStatement,
         modifier: Annotation,
     },
-
-    ///
+    /// - `Number`: raw number represent
     NumberLiteral {
         handler: String,
         data: String,
     },
-
+    ///
+    Number(Number),
     ///
     StringLiteral {
         handler: String,
@@ -47,4 +47,25 @@ pub enum ImportStatement {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Annotation {
     None,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Number {
+    Integer(String),
+    Integer8(i8),
+    Integer16(i16),
+    Integer32(i32),
+    Integer64(i64),
+    Integer128(i128),
+    Integer256(String),
+    Unsigned(String),
+    Unsigned8(u8),
+    Unsigned16(u16),
+    Unsigned32(u32),
+    Unsigned64(u64),
+    Unsigned128(u128),
+    Unsigned256(String),
+    Decimal(String),
+    Decimal32(f32),
+    Decimal64(f64),
 }
