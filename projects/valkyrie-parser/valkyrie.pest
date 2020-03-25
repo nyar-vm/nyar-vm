@@ -112,7 +112,7 @@ term =  {
 Prefix* ~ node ~ Postfix*
 
 }
-node = _{  data| "(" ~ expr ~ ")" }
+node = {  data| "(" ~ expr ~ ")" }
 condition  = { node|expr}
 expressions = {"("~expr~ ( comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
 trinoculars = _{if_trinocular}
@@ -196,7 +196,7 @@ O = _{"o"|"O"}
 B = _{"b"|"B"}
 /*====================================================================================================================*/
 //!#56B6C2: Prefix|Infix|Postfix
-Prefix = @{Plus|Increase|Decrease}
+Prefix = @{Plus|Minus|Star}
 Postfix = @{"!"}
 Infix = @{o_add|o_times|o_power}
 

@@ -13,6 +13,19 @@ pub enum AST {
         data: ImportStatement,
         modifier: Annotation,
     },
+    /// - `UnaryOperators`
+    ///     - `base`
+    ///     - `stack`: (op, isPrefix): (String, bool)
+    UnaryOperators {
+        base: Box<AST>,
+        stack: Vec<(String, bool)>,
+    },
+    /// - `InfixOperators`
+    InfixOperators {
+        lhs: Box<AST>,
+        rhs: Box<AST>,
+        operator: String,
+    },
     /// - `Number`: raw number represent
     NumberLiteral {
         handler: String,

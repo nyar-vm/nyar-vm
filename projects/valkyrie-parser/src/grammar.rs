@@ -98,11 +98,50 @@ fn parse_import(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_expr(pairs: Pairs<Rule>) -> AST {
-    let out = PREC_CLIMBER.climb(
+    let mut lhs = AST::None;
+    let mut rhs = AST::None;
+    let mut operator = String::new();
+    let out: AST = PREC_CLIMBER.climb(
         pairs,
         |pair: Pair<Rule>| match pair.as_rule() {
             Rule::expr => parse_expr(pair.into_inner()),
             Rule::term => parse_term(pair.into_inner()),
+            _ => unreachable!(),
+        },
+        |lhs: AST, op: Pair<Rule>, rhs: AST| match op.as_rule() {
+            _ => {
+                println!("GG");
+                operator = op.as_str().to_string();
+                AST::None
+            }
+        },
+    );
+
+    return if operator.len() == 0 {
+        println!("{:?}", out);
+        out
+    } else {
+        AST::InfixOperators { lhs: Box::new(lhs), rhs: Box::new(rhs), operator }
+    };
+}
+
+fn parse_term(pairs: Pairs<Rule>) -> AST {
+    let mut base = AST::None;
+    let mut stack = vec![];
+    for pair in pairs {
+        match pair.as_rule() {
+            Rule::node => base = parse_node(pair.into_inner()),
+            Rule::Prefix => stack.push((pair.as_str().to_string(), true)),
+            Rule::Postfix => stack.push((pair.as_str().to_string(), false)),
+            _ => unreachable!(),
+        };
+    }
+    return if stack.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), stack } };
+}
+
+fn parse_node(pairs: Pairs<Rule>) -> AST {
+    for pair in pairs {
+        return match pair.as_rule() {
             Rule::data => parse_data(pair.into_inner()),
             _ => {
                 println!("Rule:    {:?}", pair.as_rule());
@@ -110,32 +149,9 @@ fn parse_expr(pairs: Pairs<Rule>) -> AST {
                 println!("Text:    {}\n", pair.as_str());
                 AST::None
             }
-        },
-        |lhs: AST, op: Pair<Rule>, rhs: AST| match op.as_rule() {
-            Rule::Plus => {
-                println!("Plus!");
-                AST::None
-            }
-            _ => {
-                println!("unknow!");
-                AST::None
-            }
-        },
-    );
-    println!("{:?}", out);
-    return AST::None;
-}
-
-fn parse_term(pairs: Pairs<Rule>) -> AST {
-    for pair in pairs {
-        println!("Rule:    {:?}", pair.as_rule());
-        println!("Span:    {:?}", pair.as_span());
-        println!("Text:    {}\n", pair.as_str());
-        match pair.as_rule() {
-            _ => continue,
         };
     }
-    AST::None
+    return AST::None;
 }
 
 fn parse_data(pairs: Pairs<Rule>) -> AST {
