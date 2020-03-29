@@ -7,4 +7,4 @@ pub mod grammar;
 pub mod pest_parser;
 pub mod utils;
 
-pub use grammar::{get_ast, get_statements};
+pub use grammar::get_ast;

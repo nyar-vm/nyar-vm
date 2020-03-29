@@ -21,22 +21,6 @@ lazy_static! {
     };
 }
 
-pub fn get_statements(text: &str) {
-    let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
-
-    // Because ident_list is silent, the iterator will contain idents
-    for pair in pairs {
-        match pair.as_rule() {
-            Rule::EOI => continue,
-            _ => {
-                println!("Rule:    {:?}", pair.as_rule());
-                println!("Span:    {:?}", pair.as_span());
-                println!("Text:    {}\n", pair.as_str());
-            }
-        };
-    }
-}
-
 pub fn get_ast(text: &str) -> AST {
     let pairs = Valkyrie::parse(Rule::program, text).unwrap_or_else(|e| panic!("{}", e));
     let mut nodes: Vec<AST> = vec![];
@@ -47,7 +31,6 @@ pub fn get_ast(text: &str) -> AST {
             Rule::emptyStatement => AST::EmptyStatement,
             Rule::importStatement => parse_import(pair.into_inner()),
             Rule::expr => parse_expr(pair.into_inner()),
-            Rule::data => parse_data(pair.into_inner()),
             _ => {
                 println!("Unimplemented Valkyrie Rule::{:?}", rule);
                 AST::None
@@ -97,32 +80,24 @@ fn parse_import(pairs: Pairs<Rule>) -> AST {
     return AST::None;
 }
 
+#[rustfmt::skip]
 fn parse_expr(pairs: Pairs<Rule>) -> AST {
-    let mut lhs = AST::None;
-    let mut rhs = AST::None;
     let mut operator = String::new();
-    let out: AST = PREC_CLIMBER.climb(
+    PREC_CLIMBER.climb(
         pairs,
         |pair: Pair<Rule>| match pair.as_rule() {
             Rule::expr => parse_expr(pair.into_inner()),
             Rule::term => parse_term(pair.into_inner()),
             _ => unreachable!(),
         },
-        |lhs: AST, op: Pair<Rule>, rhs: AST| match op.as_rule() {
-            _ => {
-                println!("GG");
-                operator = op.as_str().to_string();
-                AST::None
-            }
+        |left: AST, op: Pair<Rule>, right: AST| match op.as_rule() {
+            _ => AST::InfixOperators {
+                lhs: Box::new(left),
+                rhs: Box::new(right),
+                operator: op.as_str().to_string(),
+            },
         },
-    );
-
-    return if operator.len() == 0 {
-        println!("{:?}", out);
-        out
-    } else {
-        AST::InfixOperators { lhs: Box::new(lhs), rhs: Box::new(rhs), operator }
-    };
+    )
 }
 
 fn parse_term(pairs: Pairs<Rule>) -> AST {
