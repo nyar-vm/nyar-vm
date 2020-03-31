@@ -1,6 +1,6 @@
 extern crate nyar_valkyrie;
 
-use nyar_valkyrie::{get_ast, get_statements};
+use nyar_valkyrie::get_ast;
 
 const BYTES: &str = r#"
 0xFF
@@ -23,10 +23,12 @@ const NUMBERS: &str = r#"
 
 #[test]
 fn debug_numbers() {
-    get_ast(NUMBERS);
+    let ast = get_ast(NUMBERS);
+    ast.save("tests/debug_numbers.json");
 }
 
 #[test]
 fn debug_bytes() {
-    get_ast(BYTES);
+    let ast = get_ast(BYTES);
+    ast.save("tests/debug_bytes.json");
 }

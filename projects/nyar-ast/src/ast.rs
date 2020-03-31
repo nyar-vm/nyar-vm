@@ -22,9 +22,9 @@ pub enum AST {
     },
     /// - `InfixOperators`
     InfixOperators {
+        operator: String,
         lhs: Box<AST>,
         rhs: Box<AST>,
-        operator: String,
     },
     /// - `Number`: raw number represent
     NumberLiteral {
