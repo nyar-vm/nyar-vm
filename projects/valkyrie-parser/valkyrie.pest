@@ -40,10 +40,6 @@ if_single = _{ If~condition~ block}
 if_nested = _{ If~ condition~ block ~ else_if_block+}
 if_single_else = _{ If~condition~ block ~ if_else_block}
 if_nested_else = _{ If~ condition~ block~ else_if_block+ ~ if_else_block}
-if_trinocular = _{
-    term ~ Question ~ term ~ Colon ~ term
-  | term ~ If ~ term ~ Else ~ term
-}
 else_if_block = !{ Else ~ If ~condition~ block}
 if_else_block = _{ Else ~ block}
 //!#C678DD: If|Else
@@ -88,11 +84,10 @@ Let = @{"let"}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation = {annotation_call+~statement}
-annotation_call = @{At~(list|functionApply|Symbol)}
+annotation_call = @{At~(list|apply|Symbol)}
 /*====================================================================================================================*/
-functionApply = {
-    function_name ~ "(" ~ expr? ~")"
-  | function_module? ~ function_name ~ "(" ~ expr? ~")"
+apply = {
+     "(" ~ expr? ~")"
 }
 methodApply = {expr ~Dot ~ function_name ~ "(" ~ expr? ~")"}
 
@@ -102,23 +97,22 @@ function_name = {SYMBOL}
 function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
 /*====================================================================================================================*/
 expr = !{
- term ~ (Infix ~ term)*
+    trinocular
+  | bracket_call
+  | term ~ (Infix ~ term)*
 }
-term =  {
-
-//   term ~ slice
-// | trinoculars
-//  |
-Prefix* ~ node ~ Postfix*
-
+term =  {Prefix* ~ node ~ Postfix*}
+node = {data| "(" ~ expr ~ ")"}
+condition  = {node|expr}
+expressions = {"("~expr~ (comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
+bracket_call = {term ~ (slice|apply)+}
+trinocular = {
+    term ~ Question ~ expr ~ Colon ~ expr
+  | term ~ If ~ expr ~ Else ~ expr
 }
-node = {  data| "(" ~ expr ~ ")" }
-condition  = { node|expr}
-expressions = {"("~expr~ ( comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
-trinoculars = _{if_trinocular}
 /*====================================================================================================================*/
 /// #E06C75
-type_expr = !{ SYMBOL | functionApply|type_term ~ (Infix ~ type_term)*}
+type_expr = !{ SYMBOL | apply|type_term ~ (Infix ~ type_term)*}
 type_term =  { Prefix* ~ type_node ~ Postfix* }
 type_node = _{ "(" ~ type_expr ~ ")" }
 type_hint = { Colon ~ type_expr}
@@ -186,9 +180,10 @@ MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 //!
 Symbol = ${SYMBOL|namespace}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
-SYMBOL = @{NameStartCharacter~ NameCharacter*}
-NameCharacter = _{XID_CONTINUE|ASCII_DIGIT| NameStartCharacter}
-NameStartCharacter = _{XID_START|Underline | ASCII_ALPHA}
+SYMBOL = @{
+    XID_START ~  XID_CONTINUE*
+  | Underline ~ XID_CONTINUE+
+}
 /*====================================================================================================================*/
 Zero = _{"0"}
 X = _{"x"|"X"}
@@ -196,12 +191,19 @@ O = _{"o"|"O"}
 B = _{"b"|"B"}
 /*====================================================================================================================*/
 //!#56B6C2: Prefix|Infix|Postfix
-Prefix = @{Plus|Minus|Star}
-Postfix = @{"!"}
+Prefix = @{
+    Bang|Plus|Minus|Star
+}
+Postfix = @{
+    Bang
+  | DoubleBang
+}
 Infix = _{
     Plus|Minus
   | Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo
   | Power
+  | Grater|GraterEqual|Equal
+  | Dot
 }
 
 ///#56B6C2
@@ -304,7 +306,7 @@ Destruct =@{"~="}
 
 
 DoubleBang =@{"!!"}
-BitNot =@{"!"}
+Bang =@{"!"}
 
 Sharp =@{"#"}
 
