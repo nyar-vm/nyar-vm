@@ -15,10 +15,10 @@ pub enum AST {
     },
     /// - `UnaryOperators`
     ///     - `base`
-    ///     - `stack`: (op, isPrefix): (String, bool)
     UnaryOperators {
         base: Box<AST>,
-        stack: Vec<(String, bool)>,
+        prefix: Vec<String>,
+        postfix: Vec<String>,
     },
     /// - `InfixOperators`
     InfixOperators {
