@@ -3,6 +3,8 @@ name = "nyar_ast"
 version = "0.0.1"
 authors = ["192607617@qq.com"]
 edition = "2018"
+description = "..."
+license = "MPL-2.0"
 
 [dependencies]
 serde = "1.0.104"

@@ -8,3 +8,4 @@ pub mod pest_parser;
 pub mod utils;
 
 pub use grammar::get_ast;
+pub use nyar_ast::AST;
