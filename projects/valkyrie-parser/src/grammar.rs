@@ -30,6 +30,7 @@ pub fn get_ast(text: &str) -> AST {
             Rule::EOI => continue,
             Rule::emptyStatement => AST::EmptyStatement,
             Rule::importStatement => parse_import(pair.into_inner()),
+            Rule::if_statement => parse_if(pair.into_inner()),
             Rule::expr => parse_expr(pair.into_inner()),
             _ => {
                 println!("Unimplemented Valkyrie Rule::{:?}", rule);
@@ -80,6 +81,45 @@ fn parse_import(pairs: Pairs<Rule>) -> AST {
     return AST::None;
 }
 
+fn parse_if(pairs: Pairs<Rule>) -> AST {
+    let mut cond: Vec<AST> = vec![];
+    let mut pass: Vec<AST> = vec![];
+    for pair in pairs {
+        match pair.as_rule() {
+            Rule::If => (),
+            Rule::Else => (),
+            Rule::expr => {
+                cond.push(parse_expr(pair.into_inner()));
+            }
+            Rule::block => {
+                pass.push(parse_block(pair.into_inner()));
+            }
+            _ => unreachable!(),
+        }
+    }
+    println!("COND: {:?}", cond);
+    println!("PASS: {:?}", pass);
+    return AST::None;
+}
+
+fn parse_block(pairs: Pairs<Rule>) -> AST {
+    let mut pass: Vec<AST> = vec![];
+    for pair in pairs {
+        match pair.as_rule() {
+            Rule::expr => {
+                let node = parse_expr(pair.into_inner());
+                pass.push(node);
+            }
+            _ => {
+                println!("parse_block: {:?}", pair.as_rule());
+                println!("Span:        {:?}", pair.as_span());
+                println!("Text:        {}\n", pair.as_str());
+            }
+        };
+    }
+    return AST::None;
+}
+
 #[rustfmt::skip]
 fn parse_expr(pairs: Pairs<Rule>) -> AST {
     PREC_CLIMBER.climb(
@@ -88,15 +128,15 @@ fn parse_expr(pairs: Pairs<Rule>) -> AST {
             Rule::expr => parse_expr(pair.into_inner()),
             Rule::term => parse_term(pair.into_inner()),
             Rule::trinocular => {
-                println!("NodeRule:    {:?}", pair.as_rule());
-                println!("Span:    {:?}", pair.as_span());
-                println!("Text:    {}\n", pair.as_str());
+                println!("parse_expr: {:?}", pair.as_rule());
+                println!("Span:       {:?}", pair.as_span());
+                println!("Text:       {}\n", pair.as_str());
                 AST::None
             }
             Rule::bracket_call => {
-                println!("NodeRule:    {:?}", pair.as_rule());
-                println!("Span:    {:?}", pair.as_span());
-                println!("Text:    {}\n", pair.as_str());
+                println!("parse_expr: {:?}", pair.as_rule());
+                println!("Span:       {:?}", pair.as_span());
+                println!("Text:       {}\n", pair.as_str());
                 AST::None
             }
             _ => unreachable!(),
@@ -106,6 +146,7 @@ fn parse_expr(pairs: Pairs<Rule>) -> AST {
                 lhs: Box::new(left),
                 rhs: Box::new(right),
                 operator: op.as_str().to_string(),
+                modifier: Annotation::None,
             },
         },
     )
@@ -123,7 +164,7 @@ fn parse_term(pairs: Pairs<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return if prefix.len() + postfix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, postfix } };
+    return if prefix.len() + postfix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, postfix, modifier: Annotation::None } };
 }
 
 fn parse_node(pairs: Pairs<Rule>) -> AST {
@@ -132,9 +173,9 @@ fn parse_node(pairs: Pairs<Rule>) -> AST {
             Rule::expr => parse_expr(pair.into_inner()),
             Rule::data => parse_data(pair.into_inner()),
             _ => {
-                println!("NodeRule:    {:?}", pair.as_rule());
-                println!("Span:    {:?}", pair.as_span());
-                println!("Text:    {}\n", pair.as_str());
+                println!("parse_node: {:?}", pair.as_rule());
+                println!("Span:       {:?}", pair.as_span());
+                println!("Text:       {}\n", pair.as_str());
                 AST::None
             }
         };
@@ -149,10 +190,11 @@ fn parse_data(pairs: Pairs<Rule>) -> AST {
             Rule::Boolean => parse_boolean(pair.into_inner()),
             Rule::Number => parse_number(pair.into_inner()),
             Rule::Byte => parse_byte(pair.into_inner()),
+            Rule::Symbol => parse_symbol(pair.into_inner()),
             _ => {
-                println!("Rule:    {:?}", pair.as_rule());
-                println!("Span:    {:?}", pair.as_span());
-                println!("Text:    {}\n", pair.as_str());
+                println!("parse_data: {:?}", pair.as_rule());
+                println!("Span:       {:?}", pair.as_span());
+                println!("Text:       {}\n", pair.as_str());
                 AST::None
             }
         };
@@ -259,6 +301,16 @@ fn parse_boolean(pairs: Pairs<Rule>) -> AST {
             _ => unreachable!(),
         };
         return node;
+    }
+    return AST::None;
+}
+
+fn parse_symbol(pairs: Pairs<Rule>) -> AST {
+    for pair in pairs {
+        return match pair.as_rule() {
+            Rule::SYMBOL => AST::Symbol { name: pair.as_str().to_string(), scope: vec![] },
+            _ => unreachable!(),
+        };
     }
     return AST::None;
 }

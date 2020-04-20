@@ -7,15 +7,17 @@ impl AST {
         return match self {
             AST::StringLiteral { handler, data } => AST::String("".to_string()),
             AST::String(s) => AST::String(s),
-            _ => AST::String("".to_string()),
+            _ => self,
         };
     }
     pub fn parse_integer(self) -> AST {
-        unimplemented!()
+        return match self {
+            _ => self,
+        };
     }
 
-    pub fn save(self, path: &str) -> std::io::Result<()> {
-        let json = serde_json::to_string_pretty(&self).unwrap();
+    pub fn save(&self, path: &str) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self).unwrap();
         let mut file = File::create(path)?;
         file.write_all(json.as_bytes())?;
         Ok(())

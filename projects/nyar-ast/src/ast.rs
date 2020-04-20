@@ -1,14 +1,9 @@
-use serde_json;
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AST {
-    /// - `None`: It doesn't look like anything to me
-    None,
-    /// - `Program`:
     Program(Vec<AST>),
-    /// - `EmptyStatement`: Nothing
+    /// - `EmptyStatement`: Skip
     EmptyStatement,
-
+    /// - `ImportStatement`
     ImportStatement {
         data: ImportStatement,
         modifier: Annotation,
@@ -25,6 +20,11 @@ pub enum AST {
         operator: String,
         lhs: Box<AST>,
         rhs: Box<AST>,
+    },
+    /// - `Symbol`
+    Symbol {
+        name: String,
+        scope: Vec<String>,
     },
     /// - `Number`: raw number represent
     NumberLiteral {
@@ -47,6 +47,8 @@ pub enum AST {
     },
     ///
     Boolean(bool),
+    /// - `None`: It doesn't look like anything to me
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
