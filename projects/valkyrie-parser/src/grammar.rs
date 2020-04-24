@@ -39,7 +39,6 @@ pub fn get_ast(text: &str) -> AST {
         };
         nodes.push(node)
     }
-    println!("{:?}", nodes.clone());
     return AST::Program(nodes);
 }
 
@@ -61,7 +60,7 @@ fn parse_import(pairs: Pairs<Rule>) -> AST {
                     nodes.push(node)
                 }
                 let alias = nodes.pop().unwrap();
-                return AST::ImportStatement { data: ImportStatement::LocalAlias { root, path: nodes, alias }, modifier: Annotation::None };
+                return AST::ImportStatement { data: ImportStatement::LocalAlias { root, path: nodes, alias }, modifier: None };
             }
             Rule::use_module_select => {
                 println!("Rule:    {:?}", pair.as_rule());
@@ -82,24 +81,22 @@ fn parse_import(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_if(pairs: Pairs<Rule>) -> AST {
-    let mut cond: Vec<AST> = vec![];
-    let mut pass: Vec<AST> = vec![];
+    let mut conditions: Vec<AST> = vec![];
+    let mut blocks: Vec<AST> = vec![];
+    let mut default = None;
     for pair in pairs {
         match pair.as_rule() {
             Rule::If => (),
             Rule::Else => (),
-            Rule::expr => {
-                cond.push(parse_expr(pair.into_inner()));
-            }
-            Rule::block => {
-                pass.push(parse_block(pair.into_inner()));
-            }
+            Rule::expr => conditions.push(parse_expr(pair.into_inner())),
+            Rule::block => blocks.push(parse_block(pair.into_inner())),
             _ => unreachable!(),
         }
     }
-    println!("COND: {:?}", cond);
-    println!("PASS: {:?}", pass);
-    return AST::None;
+    if conditions.len() != blocks.len() {
+        default = Some(Box::new(blocks.pop().unwrap()))
+    }
+    return AST::IfStatement { conditions, blocks, default, modifier: None };
 }
 
 fn parse_block(pairs: Pairs<Rule>) -> AST {
@@ -146,7 +143,7 @@ fn parse_expr(pairs: Pairs<Rule>) -> AST {
                 lhs: Box::new(left),
                 rhs: Box::new(right),
                 operator: op.as_str().to_string(),
-                modifier: Annotation::None,
+                modifier: None,
             },
         },
     )
@@ -164,7 +161,7 @@ fn parse_term(pairs: Pairs<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return if prefix.len() + postfix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, postfix, modifier: Annotation::None } };
+    return if prefix.len() + postfix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, postfix, modifier: None } };
 }
 
 fn parse_node(pairs: Pairs<Rule>) -> AST {

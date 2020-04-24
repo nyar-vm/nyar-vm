@@ -6,7 +6,13 @@ pub enum AST {
     /// - `ImportStatement`
     ImportStatement {
         data: ImportStatement,
-        modifier: Annotation,
+        modifier: Option<Annotation>,
+    },
+    IfStatement {
+        conditions: Vec<AST>,
+        blocks: Vec<AST>,
+        default: Option<Box<AST>>,
+        modifier: Option<Annotation>,
     },
     /// - `UnaryOperators`
     ///     - `base`
@@ -14,12 +20,14 @@ pub enum AST {
         base: Box<AST>,
         prefix: Vec<String>,
         postfix: Vec<String>,
+        modifier: Option<Annotation>,
     },
     /// - `InfixOperators`
     InfixOperators {
         operator: String,
         lhs: Box<AST>,
         rhs: Box<AST>,
+        modifier: Option<Annotation>,
     },
     /// - `Symbol`
     Symbol {
