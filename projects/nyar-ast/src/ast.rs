@@ -9,8 +9,7 @@ pub enum AST {
         modifier: Option<Annotation>,
     },
     IfStatement {
-        conditions: Vec<AST>,
-        blocks: Vec<AST>,
+        pairs: Vec<(AST, AST)>,
         default: Option<Box<AST>>,
         modifier: Option<Annotation>,
     },

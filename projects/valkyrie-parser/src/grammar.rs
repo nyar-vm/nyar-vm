@@ -96,7 +96,8 @@ fn parse_if(pairs: Pairs<Rule>) -> AST {
     if conditions.len() != blocks.len() {
         default = Some(Box::new(blocks.pop().unwrap()))
     }
-    return AST::IfStatement { conditions, blocks, default, modifier: None };
+    let pairs = conditions.into_iter().zip(blocks.into_iter()).collect();
+    return AST::IfStatement { pairs, default, modifier: None };
 }
 
 fn parse_block(pairs: Pairs<Rule>) -> AST {
