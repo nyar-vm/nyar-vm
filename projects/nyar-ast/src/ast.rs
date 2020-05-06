@@ -1,3 +1,5 @@
+use num::{BigInt, BigUint};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AST {
     Program(Vec<AST>),
@@ -73,14 +75,14 @@ pub enum Annotation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Number {
-    Integer(String),
+    Integer(BigInt),
     Integer8(i8),
     Integer16(i16),
     Integer32(i32),
     Integer64(i64),
     Integer128(i128),
     Integer256(String),
-    Unsigned(String),
+    Unsigned(BigUint),
     Unsigned8(u8),
     Unsigned16(u16),
     Unsigned32(u32),
