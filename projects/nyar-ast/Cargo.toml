@@ -1,6 +1,6 @@
 [package]
 name = "nyar_ast"
-version = "0.0.4"
+version = "0.0.5"
 authors = ["192607617@qq.com"]
 edition = "2018"
 description = "..."
@@ -10,7 +10,11 @@ license = "MPL-2.0"
 serde = "^1.0.104"
 serde_derive = "^1.0.104"
 serde_json = "^1.0.45"
-num = "^0.2.0"
+
+[dependencies.num]
+version = "^0.2.0"
+default-features = false
+features =  ["serde", "std"]
 
 [dev-dependencies]
 
