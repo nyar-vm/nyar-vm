@@ -21,5 +21,4 @@ import "../lib/mod"::{
 #[test]
 fn debug_import() {
     get_ast(INPUT);
-    assert_eq!(0, 1)
 }

@@ -1,14 +1,27 @@
 use crate::pest_parser::{Rule, Valkyrie};
 use crate::utils::unescape;
-use nyar_ast::ast::{Annotation, ImportStatement};
+use nyar_ast::ast::ImportStatement;
 use nyar_ast::AST;
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 
 use pest::prec_climber::{Assoc, Operator, PrecClimber};
 
+#[derive(Debug)]
+struct Settings {
+    pub refine: bool,
+}
+
+impl Settings {
+    fn from_cli_args() -> Self {
+        let args = std::env::args();
+        Self { refine: true }
+    }
+}
+
 #[rustfmt::skip]
 lazy_static! {
+    static ref SETTINGS: Settings = Settings::from_cli_args();
     static ref PREC_CLIMBER: PrecClimber<Rule> = {
         use Rule::*;
         use Assoc::*;
@@ -263,7 +276,8 @@ fn parse_number(pairs: Pairs<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return AST::NumberLiteral { handler: h.to_string(), data: t };
+    let n = AST::NumberLiteral { handler: h.to_string(), data: t };
+    return if SETTINGS.refine { n.parse_number() } else { n };
 }
 
 fn parse_byte(pairs: Pairs<Rule>) -> AST {
@@ -288,7 +302,8 @@ fn parse_byte(pairs: Pairs<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return AST::NumberLiteral { handler: h.to_string(), data: t.to_string() };
+    let n = AST::NumberLiteral { handler: h.to_string(), data: t.to_string() };
+    return if SETTINGS.refine { n.parse_number() } else { n };
 }
 
 fn parse_boolean(pairs: Pairs<Rule>) -> AST {
