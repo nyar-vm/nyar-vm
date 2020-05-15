@@ -19,4 +19,14 @@ impl AST {
             _ => ast,
         }
     }
+    pub fn parse_string(&self) -> AST {
+        let ast = self.clone();
+        return match self {
+            AST::StringLiteral { handler, data } => match handler.as_str() {
+                "" => AST::String(data.clone()),
+                _ => ast,
+            },
+            _ => ast,
+        };
+    }
 }

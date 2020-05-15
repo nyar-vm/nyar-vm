@@ -8,4 +8,3 @@ pub mod ast;
 pub mod utils;
 
 pub use ast::AST;
-pub use utils::Refine;

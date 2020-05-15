@@ -15,6 +15,11 @@ pub enum AST {
         default: Option<Box<AST>>,
         modifier: Option<Annotation>,
     },
+    /// - `Expression`
+    Expression {
+        base: Box<AST>,
+        eos: bool,
+    },
     /// - `UnaryOperators`
     ///     - `base`
     UnaryOperators {
@@ -29,6 +34,21 @@ pub enum AST {
         lhs: Box<AST>,
         rhs: Box<AST>,
         modifier: Option<Annotation>,
+    },
+    ///
+    ListExpression(Vec<AST>),
+
+    IndexExpression {
+        base: Box<AST>,
+        start: Box<AST>,
+        end: Box<AST>,
+        step: Box<AST>,
+    },
+    ApplyExpression {
+        base: Box<AST>,
+    },
+    StructureExpression {
+        symbol: Box<AST>,
     },
     /// - `Symbol`
     Symbol {
