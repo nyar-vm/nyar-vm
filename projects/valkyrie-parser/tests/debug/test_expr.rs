@@ -23,13 +23,18 @@ a(1 + 1)
 fn debug_expr_parentheses() {
     let ast = get_ast(PARENTHESES);
     ast.save("tests/debug_expr_parentheses.json");
-    assert_eq!(0, 1)
 }
 
 const BRACKETS: &str = r#"
-[1 + 1]
-a[1 + 1]
-a[1 + 1] + 1
+[1 + 2];
+[1 + 2, 3,];
+[1 + 2, 3, []];
+[1 + 2, 3, [4,5]];
+[1 + 2, 3, [4,5,[]]];
+
+a[1 + 1];
+a[1 + 1] + 1;
+a[[1,2,3]]
 "#;
 
 #[test]

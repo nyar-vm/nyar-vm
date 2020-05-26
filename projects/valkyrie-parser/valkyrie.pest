@@ -7,7 +7,7 @@ statement = _{
   | controlFlow ~ eos?
   | assignStatement ~ eos?
   | annotation ~ eos?
-  | expr ~ eos?
+  | expression
 }
 /*====================================================================================================================*/
 emptyStatement = {eos | Separate }
@@ -96,15 +96,17 @@ methodApply = {expr ~Dot ~ function_name ~ "(" ~ expr? ~")"}
 function_name = {SYMBOL}
 function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
 /*====================================================================================================================*/
+expression = {expr~eos?}
 expr = !{
     trinocular
   | term ~ (Infix ~ term)*
 }
 term =  {Prefix* ~ node ~ Postfix*}
-node = {"(" ~ expr ~ ")"|bracket_call|data}
-condition  = _{"(" ~ expr ~ ")"|expr}
-expressions = {"("~expr~ (comma_or_semi? ~ expr)* ~comma_or_semi?~")"}
+node = {"(" ~ expr ~ ")"|tuple|bracket_call|bracket_apply|data}
+tuple = {"(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 bracket_call = {data ~ (slice|apply)+}
+bracket_apply = {Symbol ~ block}
+condition  = _{"(" ~ expr ~ ")"|expr}
 trinocular = {
     term ~ Question ~ term ~ Colon ~ term
   | term ~ If ~ term ~ Else ~ term
@@ -145,10 +147,10 @@ Byte_HEX = ${Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad
 Number     = ${Complex|Decimal|DecimalBad|Integer}
-Decimal    = ${Integer ~Dot~ ASCII_DIGIT+}
-DecimalBad = ${Integer~Dot | Dot~ASCII_DIGIT+}
+Decimal    = ${Integer ~ Dot ~ ASCII_DIGIT+}
+DecimalBad = ${Integer ~ Dot|Dot ~ ASCII_DIGIT+}
+Integer    = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline? ~ ASCII_DIGIT)*}
 Complex    = {(Decimal|Integer)~ SYMBOL}
-Integer    = @{Zero|ASCII_DIGIT ~ (Underline? ~ ASCII_NONZERO_DIGIT)*}
 /*====================================================================================================================*/
 //!#3C963C: String
 //!#98C379: StringText|StringLiteralText
