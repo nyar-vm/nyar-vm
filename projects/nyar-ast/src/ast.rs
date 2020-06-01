@@ -19,6 +19,7 @@ pub enum AST {
     Expression {
         base: Box<AST>,
         eos: bool,
+        modifier: Option<Annotation>,
     },
     /// - `UnaryOperators`
     ///     - `base`
@@ -26,20 +27,22 @@ pub enum AST {
         base: Box<AST>,
         prefix: Vec<String>,
         postfix: Vec<String>,
-        modifier: Option<Annotation>,
     },
     /// - `InfixOperators`
     InfixOperators {
         operator: String,
         lhs: Box<AST>,
         rhs: Box<AST>,
-        modifier: Option<Annotation>,
     },
     ///
     ListExpression(Vec<AST>),
-
-    IndexExpression {
+    /// - `SliceExpression`
+    /// the terms must `IndexExpression`
+    SliceExpression {
         base: Box<AST>,
+        list: Vec<AST>,
+    },
+    IndexExpression {
         start: Box<AST>,
         end: Box<AST>,
         step: Box<AST>,

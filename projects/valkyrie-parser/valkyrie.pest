@@ -89,6 +89,8 @@ annotation_call = @{At~(list|apply|Symbol)}
 apply = {
      "(" ~ expr? ~")"
 }
+// 需要考虑泛型< > ( )
+pair = {SYMBOL~ Colon ~ expr}
 methodApply = {expr ~Dot ~ function_name ~ "(" ~ expr? ~")"}
 
 
@@ -99,6 +101,7 @@ function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
 expression = {expr~eos?}
 expr = !{
     trinocular
+  | dot_call
   | term ~ (Infix ~ term)*
 }
 term =  {Prefix* ~ node ~ Postfix*}
@@ -111,6 +114,7 @@ trinocular = {
     term ~ Question ~ term ~ Colon ~ term
   | term ~ If ~ term ~ Else ~ term
 }
+dot_call = {term~ Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 /// #E06C75
 type_expr = !{ SYMBOL | apply|type_term ~ (Infix ~ type_term)*}

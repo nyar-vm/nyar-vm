@@ -15,17 +15,6 @@ fn debug_expr() {
 }
 
 const PARENTHESES: &str = r#"
-(1 + 1)
-a(1 + 1)
-"#;
-
-#[test]
-fn debug_expr_parentheses() {
-    let ast = get_ast(PARENTHESES);
-    ast.save("tests/debug_expr_parentheses.json");
-}
-
-const BRACKETS: &str = r#"
 [1 + 2];
 [1 + 2, 3,];
 [1 + 2, 3, []];
@@ -35,6 +24,17 @@ const BRACKETS: &str = r#"
 a[1 + 1];
 a[1 + 1] + 1;
 a[[1,2,3]]
+"#;
+
+#[test]
+fn debug_list_or_slice() {
+    let ast = get_ast(PARENTHESES);
+    ast.save("tests/debug_list_or_slice.json");
+}
+
+const BRACKETS: &str = r#"
+a(1)[2]
+b[1](2)
 "#;
 
 #[test]
