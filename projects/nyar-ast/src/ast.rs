@@ -42,11 +42,7 @@ pub enum AST {
         base: Box<AST>,
         list: Vec<AST>,
     },
-    IndexExpression {
-        start: Box<AST>,
-        end: Box<AST>,
-        step: Box<AST>,
-    },
+    IndexExpression(IndexExpression),
     ApplyExpression {
         base: Box<AST>,
     },
@@ -84,6 +80,11 @@ pub enum AST {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Annotation {
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ImportStatement {
     Local { root: u8, path: Vec<String> },
     LocalAlias { root: u8, path: Vec<String>, alias: String },
@@ -92,8 +93,15 @@ pub enum ImportStatement {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Annotation {
+pub enum IndexExpression {
     None,
+    ///
+    Single(),
+    Normal {
+        start: Box<AST>,
+        end: Box<AST>,
+        step: Box<AST>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

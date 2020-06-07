@@ -234,8 +234,15 @@ fn parse_bracket_call(pairs: Pairs<Rule>) -> AST {
                 return apply;
             }
             Rule::slice => {
-                let slice = parse_slice(pair.into_inner());
-                return slice;
+                let mut list = vec![];
+                for inner in pair.into_inner() {
+                    match inner.as_rule() {
+                        Rule::Comma => (),
+                        Rule::index => list.push(parse_index(inner.into_inner())),
+                        _ => unreachable!(),
+                    };
+                }
+                return AST::SliceExpression { base: Box::new(base), list };
             }
             _ => {
                 println!("parse_bracket_call: Rule::{:?}=>AST::None,", pair.as_rule());
@@ -262,7 +269,7 @@ fn parse_apply(pairs: Pairs<Rule>) -> AST {
     return AST::None;
 }
 
-fn parse_slice(pairs: Pairs<Rule>) -> AST {
+fn parse_index(pairs: Pairs<Rule>) -> AST {
     let mut base = AST::None;
     for pair in pairs {
         match pair.as_rule() {
