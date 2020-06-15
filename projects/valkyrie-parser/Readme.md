@@ -58,7 +58,7 @@ def final private lazy function(a, b:int?=1) {
 
 ## Lambda
 
-其实 let 和 def 没有那么大的区别.
+其实 let 和 def 没有多大区别.
 
 只是习惯上用 let 声明变量, def 声明函数.
 
@@ -66,7 +66,7 @@ def final private lazy function(a, b:int?=1) {
 
 
 
-### If 表达式
+### If Statement
 
 ```py
 if a {
@@ -83,7 +83,7 @@ else {
 }
 ```
 
-### While 表达式
+### While Statement
 
 ```py
 while(true){
@@ -92,7 +92,7 @@ while(true){
 ```
 
 
-### For-in 表达式
+### For-in Statement
 
 ```py
 for v in iter {
@@ -112,7 +112,7 @@ in 后面如果不是 Iterator 会尝试转化.
 
 ## Pattern Match
 
-### Match
+### Match Statement
 
 undefined
 

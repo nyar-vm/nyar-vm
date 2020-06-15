@@ -7,4 +7,5 @@ default-members = [
     "projects/valkyrie-parser",
     "projects/vanilla-parser",
     "projects/vampire-parser",
+    "projects/sijuiacion-codegen",
 ]

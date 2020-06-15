@@ -185,8 +185,7 @@ fn parse_expr(pairs: Pairs<Rule>) -> AST {
             _ => AST::InfixOperators {
                 lhs: Box::new(left),
                 rhs: Box::new(right),
-                operator: op.as_str().to_string(),
-
+                o: op.as_str().to_string(),
             },
         },
     )
@@ -225,13 +224,20 @@ fn parse_node(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_bracket_call(pairs: Pairs<Rule>) -> AST {
-    let mut base = AST::None;
+    let mut unboxed = AST::None;
     for pair in pairs {
         match pair.as_rule() {
-            Rule::data => base = parse_data(pair.into_inner()),
+            Rule::data => unboxed = parse_data(pair.into_inner()),
             Rule::apply => {
-                let apply = parse_apply(pair.into_inner());
-                return apply;
+                let mut apply = parse_apply(pair.into_inner());
+                // return AST::ApplyExpression { base: Box::new(base), ..apply };
+                match apply {
+                    AST::ApplyExpression { base, types, args, kv_pairs } => {
+                        apply = AST::ApplyExpression { base: Box::new(unboxed), types, args, kv_pairs };
+                        return apply;
+                    }
+                    _ => unreachable!(),
+                }
             }
             Rule::slice => {
                 let mut list = vec![];
@@ -242,7 +248,7 @@ fn parse_bracket_call(pairs: Pairs<Rule>) -> AST {
                         _ => unreachable!(),
                     };
                 }
-                return AST::SliceExpression { base: Box::new(base), list };
+                return AST::SliceExpression { base: Box::new(unboxed), list };
             }
             _ => {
                 println!("parse_bracket_call: Rule::{:?}=>AST::None,", pair.as_rule());
@@ -255,18 +261,52 @@ fn parse_bracket_call(pairs: Pairs<Rule>) -> AST {
 }
 
 fn parse_apply(pairs: Pairs<Rule>) -> AST {
-    let mut base = AST::None;
+    let mut args = vec![];
+    let mut kv_pairs = vec![];
+    let mut types = vec![];
     for pair in pairs {
         match pair.as_rule() {
-            Rule::expr => return parse_expr(pair.into_inner()),
-            _ => {
-                println!("parse_apply: Rule::{:?}=>AST::None,", pair.as_rule());
-                println!("Span:       {:?}", pair.as_span());
-                println!("Text:       {}\n", pair.as_str());
+            Rule::Comma => (),
+            Rule::apply_kv => {
+                let (mut k, mut v) = (AST::None, AST::None);
+                for inner in pair.into_inner() {
+                    match inner.as_rule() {
+                        Rule::Colon => (),
+                        Rule::SYMBOL => k = parse_symbol(inner),
+                        Rule::expr => v = parse_expr(inner.into_inner()),
+                        _ => unreachable!(),
+                    };
+                }
+                match k {
+                    AST::None => args.push(k),
+                    _ => kv_pairs.push((k, v)),
+                }
             }
+            Rule::apply_type => {
+                for inner in pair.into_inner() {
+                    match inner.as_rule() {
+                        Rule::expr => types.push(parse_expr(inner.into_inner())),
+                        _ => unreachable!(),
+                    };
+                }
+            }
+            _ => unreachable!(),
         };
     }
-    return AST::None;
+    return AST::ApplyExpression { base: Box::new(AST::None), types, args, kv_pairs };
+}
+
+fn parse_apply_kv(pairs: Pairs<Rule>) -> (AST, AST) {
+    let (mut k, mut v) = (AST::None, AST::None);
+    for pair in pairs {
+        match pair.as_rule() {
+            Rule::Colon => (),
+            Rule::SYMBOL => k = parse_symbol(pair),
+            Rule::expr => v = parse_expr(pair.into_inner()),
+            _ => unreachable!(),
+        };
+    }
+    return (k, v);
 }
 
 fn parse_index(pairs: Pairs<Rule>) -> AST {
@@ -291,7 +331,7 @@ fn parse_data(pairs: Pairs<Rule>) -> AST {
             Rule::Boolean => parse_boolean(pair.into_inner()),
             Rule::Number => parse_number(pair.into_inner()),
             Rule::Byte => parse_byte(pair.into_inner()),
-            Rule::Symbol => parse_symbol(pair.into_inner()),
+            Rule::Symbol => parse_symbol(pair),
             Rule::list => parse_list(pair.into_inner()),
             _ => {
                 println!("parse_data: Rule::{:?}=>AST::None,", pair.as_rule());
@@ -421,12 +461,28 @@ fn parse_boolean(pairs: Pairs<Rule>) -> AST {
     return AST::None;
 }
 
-fn parse_symbol(pairs: Pairs<Rule>) -> AST {
-    for pair in pairs {
-        return match pair.as_rule() {
-            Rule::SYMBOL => AST::Symbol { name: pair.as_str().to_string(), scope: vec![] },
-            _ => unreachable!(),
-        };
+fn parse_symbol(pairs: Pair<Rule>) -> AST {
+    let mut scope = vec![];
+    match pairs.as_rule() {
+        Rule::SYMBOL => scope.push(pairs.as_str().to_string()),
+        _ => {
+            for pair in pairs.into_inner() {
+                match pair.as_rule() {
+                    Rule::SYMBOL => scope.push(pair.as_str().to_string()),
+                    Rule::namespace => {
+                        for inner in pair.into_inner() {
+                            match inner.as_rule() {
+                                Rule::Proportion => (),
+                                Rule::SYMBOL => scope.push(inner.as_str().to_string()),
+                                _ => unreachable!(),
+                            };
+                        }
+                    }
+                    _ => unreachable!(),
+                };
+            }
+        }
     }
-    return AST::None;
+    let name = scope.pop().unwrap();
+    return AST::Symbol { name, scope };
 }

@@ -9,7 +9,7 @@ pub mod utils;
 
 /// re-export
 pub mod ast {
-    pub use nyar_ast::ast::{Annotation, ImportStatement, Number};
+    pub use nyar_ast::ast::{ImportStatement, Number};
     pub use nyar_ast::AST;
 }
 

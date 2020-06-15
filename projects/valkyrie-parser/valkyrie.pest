@@ -87,11 +87,11 @@ annotation = {annotation_call+~statement}
 annotation_call = @{At~(list|apply|Symbol)}
 /*====================================================================================================================*/
 apply = {
-     "(" ~ expr? ~")"
+     apply_type? ~ "(" ~ apply_kv? ~ (Comma ~ apply_kv)* ~ Comma? ~")"
 }
 // 需要考虑泛型< > ( )
-pair = {SYMBOL~ Colon ~ expr}
-methodApply = {expr ~Dot ~ function_name ~ "(" ~ expr? ~")"}
+apply_kv = {SYMBOL~ Colon ~ expr|expr}
+apply_type = {"<" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ">"}
 
 
 ///#61AFEF
@@ -101,7 +101,6 @@ function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
 expression = {expr~eos?}
 expr = !{
     trinocular
-  | dot_call
   | term ~ (Infix ~ term)*
 }
 term =  {Prefix* ~ node ~ Postfix*}
@@ -126,9 +125,9 @@ type_hint =  { Colon ~ type_expr}
 Type = @{"type"}
 /*====================================================================================================================*/
 data = {dict|list|Null|Boolean|Byte|Number|String|Symbol}
-dict = {"{" ~key_value? ~(Comma ~key_value)* ~Comma? ~"}"}
-list = {"[" ~expr? ~(Comma ~expr)* ~Comma? ~"]"}
-slice ={"[" ~index ~(Comma ~index)* ~Comma? ~"]"}
+dict = {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
+list = {"[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
+slice ={"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
 index ={index_step|index_range|expr}
 key_value =!{key_valid ~ Colon ~expr}
 key_valid =!{Integer | SYMBOL | String}
@@ -183,7 +182,7 @@ LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
 //!
-Symbol = ${SYMBOL|namespace}
+Symbol = ${namespace|SYMBOL}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
 SYMBOL = @{
     XID_START ~  XID_CONTINUE*

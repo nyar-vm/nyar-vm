@@ -32,16 +32,42 @@ e[1:2:3,[1,2,3]];
 fn debug_list_or_slice() {
     let ast = get_ast(LIST_OR_SLICE);
     ast.save("tests/debug_list_or_slice.json");
-    assert_eq!(0, 1)
 }
 
 const BRACKETS: &str = r#"
 a(1)[2]
 b[1](2)
+
+Persion(20,"2",a, a: 2)
+
 "#;
 
 #[test]
 fn debug_expr_brackets() {
     let ast = get_ast(BRACKETS);
     ast.save("tests/debug_expr_brackets.json");
+    assert_eq!(0, 1)
+}
+
+const DOT_CALL: &str = r#"
+a::b::c
+a::b::c()
+
+a::b.c
+a::b.c()
+
+a.b::c
+a.b::c()
+
+a.b.c
+a.b.c()
+a.b().c()
+a().b().c()
+"#;
+
+#[test]
+fn debug_dot_call() {
+    let ast = get_ast(DOT_CALL);
+    ast.save("tests/debug_dot_call.json");
+    assert_eq!(0, 1)
 }

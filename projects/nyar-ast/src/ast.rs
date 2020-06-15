@@ -8,18 +8,18 @@ pub enum AST {
     /// - `ImportStatement`
     ImportStatement {
         data: ImportStatement,
-        modifier: Option<Annotation>,
+        modifier: Option<Box<AST>>,
     },
     IfStatement {
         pairs: Vec<(AST, AST)>,
         default: Option<Box<AST>>,
-        modifier: Option<Annotation>,
+        modifier: Option<Box<AST>>,
     },
     /// - `Expression`
     Expression {
         base: Box<AST>,
         eos: bool,
-        modifier: Option<Annotation>,
+        modifier: Option<Box<AST>>,
     },
     /// - `UnaryOperators`
     ///     - `base`
@@ -30,7 +30,7 @@ pub enum AST {
     },
     /// - `InfixOperators`
     InfixOperators {
-        operator: String,
+        o: String,
         lhs: Box<AST>,
         rhs: Box<AST>,
     },
@@ -45,6 +45,9 @@ pub enum AST {
     IndexExpression(IndexExpression),
     ApplyExpression {
         base: Box<AST>,
+        types: Vec<AST>,
+        args: Vec<AST>,
+        kv_pairs: Vec<(AST, AST)>,
     },
     StructureExpression {
         symbol: Box<AST>,
@@ -76,11 +79,6 @@ pub enum AST {
     ///
     Boolean(bool),
     /// - `None`: It doesn't look like anything to me
-    None,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Annotation {
     None,
 }
 
