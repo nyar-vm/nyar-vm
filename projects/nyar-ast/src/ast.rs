@@ -3,23 +3,35 @@ use num::{BigInt, BigUint};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AST {
     Program(Vec<AST>),
+    Suite(Vec<AST>),
     /// - `EmptyStatement`: Skip
     EmptyStatement,
     /// - `ImportStatement`
     ImportStatement {
         data: ImportStatement,
-        modifier: Option<Box<AST>>,
+        annotations: Option<Box<AST>>,
     },
     IfStatement {
         pairs: Vec<(AST, AST)>,
         default: Option<Box<AST>>,
-        modifier: Option<Box<AST>>,
+        annotations: Option<Box<AST>>,
+    },
+    LetBinding {
+        symbol: Box<AST>,
+        modifiers: Vec<AST>,
+        types: Box<AST>,
+        annotations: Option<Box<AST>>,
     },
     /// - `Expression`
     Expression {
         base: Box<AST>,
         eos: bool,
-        modifier: Option<Box<AST>>,
+        annotations: Option<Box<AST>>,
+    },
+    /// - `Expression`
+    TypeExpression {
+        base: Box<AST>,
+        annotations: Option<Box<AST>>,
     },
     /// - `UnaryOperators`
     ///     - `base`
@@ -36,6 +48,8 @@ pub enum AST {
     },
     ///
     ListExpression(Vec<AST>),
+    ///
+    TupleExpression(Vec<AST>),
     /// - `SliceExpression`
     /// the terms must `IndexExpression`
     SliceExpression {

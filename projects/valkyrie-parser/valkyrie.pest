@@ -1,6 +1,6 @@
 program = _{SOI~statement* ~ EOI}
 
-statement = _{
+statement = {
     emptyStatement
   | importStatement ~ eos?
   | traitStatement ~ eos?
@@ -13,7 +13,7 @@ statement = _{
 emptyStatement = {eos | Separate }
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
-block_or_expr = _{block|Set ~ expr}
+block_or_stmt = _{block|Set ~ statement}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
 importStatement = {
@@ -46,7 +46,7 @@ if_else_block = _{Else ~ block}
 If = @{"if"}
 Else = @{"else"}
 /*====================================================================================================================*/
-for_statement = _{For ~ for_in_loop}
+for_statement = {For ~ for_in_loop}
 for_in_loop = {SYMBOL~In~expr~block}
 //!#C678DD: For|In
 For = @{"for"}
@@ -65,20 +65,17 @@ interfaceParameters= {type_expr ~SYMBOL ~ (Comma ~type_expr~ SYMBOL )*}
 classExtend =${"extend"}
 Trait = @{"trait"}
 /*====================================================================================================================*/
-assignStatement = _{set_assign|let_assign}
-let_assign = {
-    Let ~ "(" ~ assign_name ~ ")" ~type_hint? ~ block_or_expr?
-  | Let ~ assign_name ~ type_hint? ~ block_or_expr?
+assignStatement = {
+    Let ~ "(" ~ assign_name ~ ")" ~ (Colon ~ type_expr)? ~ block_or_stmt?
+  | Let ~ assign_name ~ (Colon ~ type_expr)? ~ block_or_stmt?
 }
 set_assign = {
     "(" ~ SYMBOL  ~ (Comma ~ SYMBOL)* ~ Comma?  ~ ")" ~ Set ~ statement
   | SYMBOL ~ Set ~ statement
 }
-assign_name = {assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon|"{")) ~modifier)* ~ SYMBOL}
+assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
+assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon|"{"|")")) ~Symbol)* ~ Symbol}
 
-///Orange
-modifier = ${Symbol}
 //!#C678DD: Let
 Let = @{"let"}
 /*====================================================================================================================*/
@@ -89,7 +86,6 @@ annotation_call = @{At~(list|apply|Symbol)}
 apply = {
      apply_type? ~ "(" ~ apply_kv? ~ (Comma ~ apply_kv)* ~ Comma? ~")"
 }
-// 需要考虑泛型< > ( )
 apply_kv = {SYMBOL~ Colon ~ expr|expr}
 apply_type = {"<" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ">"}
 
@@ -107,7 +103,7 @@ term =  {Prefix* ~ node ~ Postfix*}
 node = {"(" ~ expr ~ ")"|tuple|bracket_call|bracket_apply|data}
 tuple = {"(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 bracket_call = {data ~ (slice|apply)+}
-bracket_apply = {Symbol ~ block}
+bracket_apply = {Symbol ~ dict}
 condition  = _{"(" ~ expr ~ ")"|expr}
 trinocular = {
     term ~ Question ~ term ~ Colon ~ term
@@ -116,15 +112,11 @@ trinocular = {
 dot_call = {term~ Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 /// #E06C75
-type_expr = !{ SYMBOL | apply|type_term ~ (Infix ~ type_term)*}
-type_term =  { Prefix* ~ type_node ~ Postfix* }
-type_node = _{ "(" ~ type_expr ~ ")" }
-type_hint =  { Colon ~ type_expr}
-
+type_expr = !{ "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"| expr}
 //!#C678DD: Type|To
 Type = @{"type"}
 /*====================================================================================================================*/
-data = {dict|list|Null|Boolean|Byte|Number|String|Symbol}
+data = ${dict|list|Null|Boolean|Byte|Number|String|Symbol}
 dict = {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
 list = {"[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
 slice ={"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
@@ -181,13 +173,14 @@ LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 ///Gray
 MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
-//!
-Symbol = ${namespace|SYMBOL}
+///#61AFEF
+Symbol = ${namespace|Underline+|SYMBOL}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
 SYMBOL = @{
     XID_START ~  XID_CONTINUE*
   | Underline ~ XID_CONTINUE+
 }
+Keywords = _{If|For}
 /*====================================================================================================================*/
 Zero = _{"0"}
 X = _{"x"|"X"}
@@ -203,7 +196,8 @@ Postfix = @{
   | DoubleBang
 }
 Infix = _{
-    Plus|Minus
+    Set
+  | Plus|Minus
   | Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo
   | Power
   | Grater|GraterEqual|Equal

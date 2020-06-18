@@ -1,7 +1,7 @@
 Valkyrie Language Specification
 -------------------------------
 
-## Let Binding
+## LET Binding
 
 ```ts
 let a; /// 声明不变量 a
