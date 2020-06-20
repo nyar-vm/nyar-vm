@@ -46,7 +46,6 @@ Persion(20,"2",a, a: 2)
 fn debug_expr_brackets() {
     let ast = get_ast(BRACKETS);
     ast.save("tests/debug_expr_brackets.json");
-    assert_eq!(0, 1)
 }
 
 const DOT_CALL: &str = r#"
@@ -60,6 +59,7 @@ a.b::c
 a.b::c()
 
 a.b.c
+a.(b.c)
 a.b.c()
 a.b().c()
 a().b().c()
@@ -69,5 +69,4 @@ a().b().c()
 fn debug_dot_call() {
     let ast = get_ast(DOT_CALL);
     ast.save("tests/debug_dot_call.json");
-    assert_eq!(0, 1)
 }

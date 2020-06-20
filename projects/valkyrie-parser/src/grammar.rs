@@ -146,17 +146,7 @@ fn parse_assign(pairs: Pairs<Rule>) -> Vec<AST> {
                 }
                 syms.push(mods)
             }
-            Rule::statement => {
-                let mut mods = vec![];
-                for inner in pair.into_inner() {
-                    match inner.as_rule() {
-                        _ => {
-                            mods.push(parse_statement(inner.into_inner()));
-                        }
-                    };
-                }
-                init = Some(AST::Suite(mods))
-            }
+            Rule::statement => init = Some(parse_statement(pair.into_inner())),
             _ => unreachable!(),
         };
     }
