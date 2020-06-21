@@ -1,6 +1,5 @@
 use nyar_ast::ast::Position;
-use pest::iterators::Pair;
-use pest::Span;
+use pest::{iterators::Pair, Span};
 
 fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> String {
     let indent = if is_newline { "  ".repeat(indent_level) } else { "".to_string() };

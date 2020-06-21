@@ -25,13 +25,7 @@ impl AST {
     pub fn set_base(self, replace: AST) -> AST {
         match self {
             AST::ApplyExpression { base, types, args, kv_pairs, pos } => {
-                return AST::ApplyExpression {
-                    base: Box::new(replace),
-                    types,
-                    args,
-                    kv_pairs,
-                    pos,
-                };
+                return AST::ApplyExpression { base: Box::new(replace), types, args, kv_pairs, pos };
             }
             _ => self,
         }

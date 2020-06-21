@@ -79,19 +79,11 @@ Let = @{"let"}
 /*====================================================================================================================*/
 defineStatement = {Def ~ define_terms}
 define_terms = _{
-    assign_pair ~ parametric_types ~ define_parameter ~ type_hint? ~ parametric_terms* ~ block_or_stmt
-  | assign_pair ~ define_parameter ~ type_hint? ~ parametric_types_where? ~ parametric_terms* ~ block_or_stmt
+    assign_pair ~ parametric_types ~ define_parameter ~ type_hint? ~ parametric_types_term? ~ block_or_stmt
+  | assign_pair ~ define_parameter ~ type_hint? ~ block_or_stmt
 }
 define_parameter = {
     "(" ~  ")"
-}
-parametric_terms = {
-    expr ~ Colon ~ expr ~ eos?
-}
-parametric_types = {"<" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ ">"}
-parametric_types_pair = {(Plus|Minus)? ~ SYMBOL}
-parametric_types_where = {
-    Where ~ SYMBOL ~ (Comma ~ SYMBOL)* ~ eos?
 }
 //!#C678DD: Def|Where
 Def = @{"def"}
@@ -113,20 +105,13 @@ function_name = {SYMBOL}
 function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
 /*====================================================================================================================*/
 expression = {expr~eos?}
-expr = !{
-    trinocular
-  | term ~ (Infix ~ term)*
-}
+expr = !{term ~ (Infix ~ term)*}
 term =  {Prefix* ~ node ~ Suffix*}
 node = {"(" ~ expr ~ ")"|tuple|bracket_call|data}
 tuple = {"(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 bracket_call = {data~ (slice|generic_type|apply)+}
 bracket_apply = {Symbol ~ dict}
 condition  = _{"(" ~ expr ~ ")"|expr}
-trinocular = {
-    term ~ Question ~ term ~ Colon ~ term
-  | term ~ If ~ term ~ Else ~ term
-}
 dot_call = {term~ Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
@@ -135,6 +120,9 @@ dot_call = {term~ Dot ~ (Integer|Symbol) }
 //type_node = {"(" ~ type_expr ~ ")"|data}
 type_hint = {Colon ~ expr}
 generic_type = {"<" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ">"}
+parametric_types = {"<" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ ">"}
+parametric_types_pair = {(Plus|Minus)? ~ SYMBOL}
+parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //!#C678DD: Type|To
 Type = @{"type"}
 //TypePrefix = @{Plus|Minus}

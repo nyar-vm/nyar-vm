@@ -1,9 +1,10 @@
 use crate::pest_parser::{Rule, Valkyrie};
-use nyar_ast::ast::ImportStatement;
-use nyar_ast::utils::{number_refine, unescape};
-use nyar_ast::AST;
-use pest::iterators::Pair;
-use pest::Parser;
+use nyar_ast::{
+    ast::ImportStatement,
+    utils::{number_refine, unescape},
+    AST,
+};
+use pest::{iterators::Pair, Parser};
 
 use crate::utils::get_position;
 use nyar_ast::utils::build_string::string_refine;
@@ -168,7 +169,8 @@ fn parse_assign(pairs: Pair<Rule>) -> Vec<AST> {
             let ast = AST::LetBinding { symbol: Box::new(s), modifiers: ss, types: Box::new(typ), annotations: None };
             vec.push(ast)
         }
-    } else {
+    }
+    else {
         for (mut sym, typ) in syms.into_iter().zip(types.into_iter()) {
             let s = sym.pop().unwrap();
             let mut ss = vec![];
@@ -505,11 +507,7 @@ fn parse_number(pairs: Pair<Rule>) -> AST {
             Rule::DecimalBad => {
                 h = "fp";
                 let s = pair.as_str();
-                if s.starts_with('.') {
-                    t = "0".to_string() + s
-                } else {
-                    t = s.to_string() + "0"
-                }
+                if s.starts_with('.') { t = "0".to_string() + s } else { t = s.to_string() + "0" }
             }
             Rule::Complex => {
                 for inner in pair.into_inner() {
