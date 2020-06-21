@@ -1,5 +1,4 @@
 use num::{BigInt, BigUint};
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AST {
     Program(Vec<AST>),
@@ -26,11 +25,13 @@ pub enum AST {
     Expression {
         base: Box<AST>,
         eos: bool,
+        pos: Position,
         annotations: Option<Box<AST>>,
     },
     /// - `Expression`
     TypeExpression {
         base: Box<AST>,
+        pos: Position,
         annotations: Option<Box<AST>>,
     },
     /// - `UnaryOperators`
@@ -39,12 +40,14 @@ pub enum AST {
         base: Box<AST>,
         prefix: Vec<String>,
         postfix: Vec<String>,
+        pos: Position,
     },
     /// - `InfixOperators`
     InfixOperators {
         o: String,
         lhs: Box<AST>,
         rhs: Box<AST>,
+        pos: Position,
     },
     ///
     ListExpression(Vec<AST>),
@@ -62,9 +65,7 @@ pub enum AST {
         types: Vec<AST>,
         args: Vec<AST>,
         kv_pairs: Vec<(AST, AST)>,
-    },
-    StructureExpression {
-        symbol: Box<AST>,
+        pos: Position,
     },
     /// - `Symbol`
     Symbol {
@@ -94,6 +95,12 @@ pub enum AST {
     Boolean(bool),
     /// - `None`: It doesn't look like anything to me
     None,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Position {
+    pub start: (usize, usize),
+    pub end: (usize, usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

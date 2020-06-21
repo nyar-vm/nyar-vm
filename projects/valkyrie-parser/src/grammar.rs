@@ -2,9 +2,10 @@ use crate::pest_parser::{Rule, Valkyrie};
 use nyar_ast::ast::ImportStatement;
 use nyar_ast::utils::{number_refine, unescape};
 use nyar_ast::AST;
-use pest::iterators::{Pair, Pairs};
+use pest::iterators::Pair;
 use pest::Parser;
 
+use crate::utils::get_position;
 use nyar_ast::utils::build_string::string_refine;
 use pest::prec_climber::{Assoc, Operator, PrecClimber};
 
@@ -112,6 +113,7 @@ fn parse_import(pairs: Pair<Rule>) -> AST {
 }
 
 fn parse_assign(pairs: Pair<Rule>) -> Vec<AST> {
+    let pos = get_position(pairs.as_span());
     let mut vec = vec![];
     let mut syms = vec![];
     let mut types = vec![];
@@ -158,7 +160,7 @@ fn parse_assign(pairs: Pair<Rule>) -> Vec<AST> {
             let mut ss = vec![];
             for i in sym {
                 match i {
-                    AST::Symbol { name, scope } => ss.push(name),
+                    AST::Symbol { name, scope: _ } => ss.push(name),
                     _ => unreachable!(),
                 }
             }
@@ -172,7 +174,7 @@ fn parse_assign(pairs: Pair<Rule>) -> Vec<AST> {
             let mut ss = vec![];
             for i in sym {
                 match i {
-                    AST::Symbol { name, scope } => ss.push(name),
+                    AST::Symbol { name, scope: _ } => ss.push(name),
                     _ => unreachable!(),
                 }
             }
@@ -191,7 +193,7 @@ fn parse_assign(pairs: Pair<Rule>) -> Vec<AST> {
                 }
             }
             let lhs = AST::TupleExpression(s);
-            let ast = AST::InfixOperators { o: "=".to_string(), lhs: Box::new(lhs), rhs: Box::new(i) };
+            let ast = AST::InfixOperators { o: "=".to_string(), lhs: Box::new(lhs), rhs: Box::new(i), pos };
             vec.push(ast)
         }
     }
@@ -252,6 +254,7 @@ fn parse_block(pairs: Pair<Rule>) -> AST {
 }
 
 fn parse_expression(pairs: Pair<Rule>) -> AST {
+    let pos = get_position(pairs.as_span());
     let mut base = AST::None;
     let mut eos = false;
     for pair in pairs.into_inner() {
@@ -261,11 +264,12 @@ fn parse_expression(pairs: Pair<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return AST::Expression { base: Box::new(base), eos, annotations: None };
+    return AST::Expression { base: Box::new(base), eos, pos, annotations: None };
 }
 
 #[rustfmt::skip]
 fn parse_expr(pairs: Pair<Rule>) -> AST {
+    let pos = get_position(pairs.as_span());
     PREC_CLIMBER.climb(
         pairs.into_inner(),
         |pair: Pair<Rule>| match pair.as_rule() {
@@ -290,12 +294,14 @@ fn parse_expr(pairs: Pair<Rule>) -> AST {
                 lhs: Box::new(left),
                 rhs: Box::new(right),
                 o: op.as_str().to_string(),
+                pos
             },
         },
     )
 }
 
 fn parse_term(pairs: Pair<Rule>) -> AST {
+    let pos = get_position(pairs.as_span());
     let mut base = AST::None;
     let mut prefix = vec![];
     let mut postfix = vec![];
@@ -307,7 +313,7 @@ fn parse_term(pairs: Pair<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return if prefix.len() + postfix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, postfix } };
+    return if prefix.len() + postfix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, postfix, pos } };
 }
 
 fn parse_node(pairs: Pair<Rule>) -> AST {
@@ -360,6 +366,7 @@ fn parse_bracket_call(pairs: Pair<Rule>) -> AST {
 }
 
 fn parse_apply(pairs: Pair<Rule>) -> AST {
+    let pos = get_position(pairs.as_span());
     let mut args = vec![];
     let mut kv_pairs = vec![];
     let mut types = vec![];
@@ -392,7 +399,7 @@ fn parse_apply(pairs: Pair<Rule>) -> AST {
             _ => unreachable!(),
         };
     }
-    return AST::ApplyExpression { base: Box::new(AST::None), types, args, kv_pairs };
+    return AST::ApplyExpression { base: Box::new(AST::None), types, args, kv_pairs, pos };
 }
 
 fn parse_index(pairs: Pair<Rule>) -> AST {

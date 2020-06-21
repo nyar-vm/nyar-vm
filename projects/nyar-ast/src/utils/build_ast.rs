@@ -1,4 +1,4 @@
-use crate::ast::{Number, AST};
+use crate::ast::{Number, Position, AST};
 use std::{fs::File, io::Write};
 
 pub trait Dump<T> {
@@ -24,8 +24,14 @@ impl AST {
     }
     pub fn set_base(self, replace: AST) -> AST {
         match self {
-            AST::ApplyExpression { base, types, args, kv_pairs } => {
-                return AST::ApplyExpression { base: Box::new(replace), types, args, kv_pairs };
+            AST::ApplyExpression { base, types, args, kv_pairs, pos } => {
+                return AST::ApplyExpression {
+                    base: Box::new(replace),
+                    types,
+                    args,
+                    kv_pairs,
+                    pos,
+                };
             }
             _ => self,
         }

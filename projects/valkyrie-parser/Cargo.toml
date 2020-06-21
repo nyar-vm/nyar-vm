@@ -1,6 +1,6 @@
 [package]
 name = "nyar_valkyrie"
-version = "0.0.7"
+version = "0.0.8"
 authors = ["192608617@qq.com"]
 edition = "2018"
 description = "..."

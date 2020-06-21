@@ -6,11 +6,12 @@ statement = {
   | traitStatement ~ eos?
   | controlFlow ~ eos?
   | assignStatement ~ eos?
+  | defineStatement ~ eos?
   | annotation ~ eos?
   | expression
 }
 /*====================================================================================================================*/
-emptyStatement = {eos | Separate }
+emptyStatement = {eos | Separate}
 eos = {Semicolon}
 comma_or_semi = _{Comma|Semicolon}
 block_or_stmt = _{block|Set ~ statement}
@@ -59,35 +60,52 @@ Pass = @{"pass"}
 /*====================================================================================================================*/
 traitStatement = { trait_head ~"{" ~ traitExpression*  ~ "}"   }
 trait_head = _{Trait ~ SYMBOL ~classExtend?}
-traitExpression= { interfaceFunction ~Colon ~type_expr~comma_or_semi?}
+traitExpression= { interfaceFunction ~type_hint~comma_or_semi?}
 interfaceFunction= { SYMBOL ~"(" ~interfaceParameters? ~")"~ Question?}
-interfaceParameters= {type_expr ~SYMBOL ~ (Comma ~type_expr~ SYMBOL )*}
+interfaceParameters= {expr ~SYMBOL ~ (Comma ~expr~ SYMBOL )*}
 classExtend =${"extend"}
 Trait = @{"trait"}
 /*====================================================================================================================*/
-assignStatement = {
-    Let ~ "(" ~ assign_name ~ ")" ~ (Colon ~ type_expr)? ~ block_or_stmt?
-  | Let ~ assign_name ~ (Colon ~ type_expr)? ~ block_or_stmt?
-}
-set_assign = {
-    "(" ~ SYMBOL  ~ (Comma ~ SYMBOL)* ~ Comma?  ~ ")" ~ Set ~ statement
-  | SYMBOL ~ Set ~ statement
+assignStatement = {Let ~ assign_terms}
+assign_terms = _{
+    "(" ~ assign_name ~ ")" ~ type_hint? ~ block_or_stmt?
+  | assign_name ~ type_hint? ~ block_or_stmt?
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon|"{"|")")) ~SYMBOL)* ~ Symbol}
+assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~SYMBOL)* ~ Symbol}
 
-//!#C678DD: Let
+///#C678DD
 Let = @{"let"}
+/*====================================================================================================================*/
+defineStatement = {Def ~ define_terms}
+define_terms = _{
+    assign_pair ~ parametric_types ~ define_parameter ~ type_hint? ~ parametric_terms* ~ block_or_stmt
+  | assign_pair ~ define_parameter ~ type_hint? ~ parametric_types_where? ~ parametric_terms* ~ block_or_stmt
+}
+define_parameter = {
+    "(" ~  ")"
+}
+parametric_terms = {
+    expr ~ Colon ~ expr ~ eos?
+}
+parametric_types = {"<" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ ">"}
+parametric_types_pair = {(Plus|Minus)? ~ SYMBOL}
+parametric_types_where = {
+    Where ~ SYMBOL ~ (Comma ~ SYMBOL)* ~ eos?
+}
+//!#C678DD: Def|Where
+Def = @{"def"}
+Where = @{"where"}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation = {annotation_call+~statement}
 annotation_call = @{At~(list|apply|Symbol)}
 /*====================================================================================================================*/
 apply = {
-     apply_type? ~ "(" ~ apply_kv? ~ (Comma ~ apply_kv)* ~ Comma? ~")"
+     generic_type? ~ "(" ~ apply_kv? ~ (Comma ~ apply_kv)* ~ Comma? ~")"
 }
 apply_kv = {SYMBOL~ Colon ~ expr|expr}
-apply_type = {"<" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ">"}
+
 
 
 ///#61AFEF
@@ -99,10 +117,10 @@ expr = !{
     trinocular
   | term ~ (Infix ~ term)*
 }
-term =  {Prefix* ~ node ~ Postfix*}
-node = {"(" ~ expr ~ ")"|tuple|bracket_call|bracket_apply|data}
+term =  {Prefix* ~ node ~ Suffix*}
+node = {"(" ~ expr ~ ")"|tuple|bracket_call|data}
 tuple = {"(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
-bracket_call = {data~ (slice|apply)+}
+bracket_call = {data~ (slice|generic_type|apply)+}
 bracket_apply = {Symbol ~ dict}
 condition  = _{"(" ~ expr ~ ")"|expr}
 trinocular = {
@@ -111,12 +129,19 @@ trinocular = {
 }
 dot_call = {term~ Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
-/// #E06C75
-type_expr = !{ "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"| expr}
+//!#E06C75: type_hint|generic_type|parametric_types_pair
+//type_expr = _{type_term~ TypeInfix ~type_term}
+//type_term = {TypePrefix* ~ type_node ~ TypeSuffix*}
+//type_node = {"(" ~ type_expr ~ ")"|data}
+type_hint = {Colon ~ expr}
+generic_type = {"<" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ">"}
 //!#C678DD: Type|To
 Type = @{"type"}
+//TypePrefix = @{Plus|Minus}
+//TypeSuffix = @{Question}
+//TypeInfix = @{Or}
 /*====================================================================================================================*/
-data = ${dict|list|Null|Boolean|Byte|Number|String|Symbol}
+data = ${dict|list|Null|Unit|Boolean|Byte|Number|String|Symbol}
 dict = {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
 list = {"[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
 slice ={"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
@@ -126,10 +151,11 @@ key_valid =!{Integer | SYMBOL | String}
 index_range = !{expr? ~ Colon ~ expr?}
 index_step = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 /*====================================================================================================================*/
-///#C678DD
+//!#D19A66: Null|Unit
 Null = @{"null"}
+Unit = !{"("~")"}
 /*====================================================================================================================*/
-///#C678DD
+///#D19A66
 Boolean = !{True|False}
 True    = @{"true"}
 False   = @{"false"}
@@ -189,18 +215,18 @@ B = _{"b"|"B"}
 /*====================================================================================================================*/
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
-    Bang|Plus|Minus|Star
+    (Bang|Plus|Minus|Star)
 }
-Postfix = @{
-    Bang
-  | DoubleBang
+Suffix = @{
+    DoubleBang
+  | (Bang | Question)
 }
 Infix = _{
     Set
-  | Plus|Minus
-  | Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo
+  | (Plus|Minus)
+  | (Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo)
   | Power
-  | Grater|GraterEqual|Equal
+  | (Grater|GraterEqual|Equal)
   | Dot
 }
 
