@@ -22,23 +22,6 @@ impl AST {
     pub fn load(path: &str) -> AST {
         unimplemented!()
     }
-    pub fn parse_number(&self) -> AST {
-        let ast = self.clone();
-        match ast {
-            AST::NumberLiteral { .. } => Number::parse_number(ast),
-            _ => ast,
-        }
-    }
-    pub fn parse_string(&self) -> AST {
-        let ast = self.clone();
-        return match self {
-            AST::StringLiteral { handler, data } => match handler.as_str() {
-                "" => AST::String(data.clone()),
-                _ => ast,
-            },
-            _ => ast,
-        };
-    }
     pub fn set_base(self, replace: AST) -> AST {
         match self {
             AST::ApplyExpression { base, types, args, kv_pairs } => {

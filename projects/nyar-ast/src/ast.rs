@@ -18,7 +18,7 @@ pub enum AST {
     },
     LetBinding {
         symbol: Box<AST>,
-        modifiers: Vec<AST>,
+        modifiers: Vec<String>,
         types: Box<AST>,
         annotations: Option<Box<AST>>,
     },

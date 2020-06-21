@@ -74,7 +74,7 @@ set_assign = {
   | SYMBOL ~ Set ~ statement
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon|"{"|")")) ~Symbol)* ~ Symbol}
+assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon|"{"|")")) ~SYMBOL)* ~ Symbol}
 
 //!#C678DD: Let
 Let = @{"let"}
