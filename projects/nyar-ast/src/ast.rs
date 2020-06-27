@@ -39,7 +39,7 @@ pub enum AST {
     UnaryOperators {
         base: Box<AST>,
         prefix: Vec<String>,
-        postfix: Vec<String>,
+        suffix: Vec<String>,
         pos: Position,
     },
     /// - `InfixOperators`

@@ -3,7 +3,9 @@ program = _{SOI~statement* ~ EOI}
 statement = {
     emptyStatement
   | importStatement ~ eos?
+  | classStatement ~ eos?
   | traitStatement ~ eos?
+  | extendStatement ~ eos?
   | controlFlow ~ eos?
   | assignStatement ~ eos?
   | defineStatement ~ eos?
@@ -28,8 +30,7 @@ use_module_string = !{String ~ (ModuleSplit ~ (module_block|Star))?}
 module_block = {"{"~module_tuple~ ( comma_or_semi? ~ module_tuple)* ~comma_or_semi?~"}"}
 module_tuple = {use_alias|use_module_select}
 ModuleSplit= _{Dot|Proportion}
-//!#C678DD: With|Import|As
-With = @{"with"}
+//!#C678DD: Import|As
 Import  = @{"import"}
 As   = @{"as"}
 /*====================================================================================================================*/
@@ -58,13 +59,29 @@ Return = @{"return"}
 Break = @{"break"}
 Pass = @{"pass"}
 /*====================================================================================================================*/
-traitStatement = { trait_head ~"{" ~ traitExpression*  ~ "}"   }
-trait_head = _{Trait ~ SYMBOL ~classExtend?}
-traitExpression= { interfaceFunction ~type_hint~comma_or_semi?}
-interfaceFunction= { SYMBOL ~"(" ~interfaceParameters? ~")"~ Question?}
-interfaceParameters= {expr ~SYMBOL ~ (Comma ~expr~ SYMBOL )*}
-classExtend =${"extend"}
+classStatement = {Class ~ assign_pair ~ short_block?}
+traitStatement = {Trait ~ assign_pair ~ short_block?}
+
+short_block = {"{" ~ short_statement* ~ "}"}
+short_statement = {
+    emptyStatement
+  | Def? ~ define_terms ~ eos?
+  | Let? ~ assign_terms ~ eos?
+  | short_annotation ~ eos?
+}
+short_annotation = {annotation_call+~short_statement}
+//!#C678DD: Trait|Class
 Trait = @{"trait"}
+Class = @{"class"}
+/*====================================================================================================================*/
+extendStatement = {
+    Extend ~ Symbol ~ generic_type? ~ with_trait? ~ short_block?
+}
+with_trait = {With ~ Symbol ~ generic_type?}
+
+//!#C678DD: Extend|With
+Extend = @{"extend"}
+With = @{"with"}
 /*====================================================================================================================*/
 assignStatement = {Let ~ assign_terms}
 assign_terms = _{
@@ -72,19 +89,21 @@ assign_terms = _{
   | assign_name ~ type_hint? ~ block_or_stmt?
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {(!(SYMBOL~(Comma|Set|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~SYMBOL)* ~ Symbol}
+assign_pair = {Modifier* ~ Symbol}
 
 ///#C678DD
 Let = @{"let"}
 /*====================================================================================================================*/
 defineStatement = {Def ~ define_terms}
 define_terms = _{
-    assign_pair ~ parametric_types ~ define_parameter ~ type_hint? ~ parametric_types_term? ~ block_or_stmt
-  | assign_pair ~ define_parameter ~ type_hint? ~ block_or_stmt
+    assign_pair ~ parametric_types ~ define_parameter ~ type_hint? ~ parametric_types_term? ~ block_or_stmt?
+  | assign_pair ~ define_parameter ~ type_hint? ~ block_or_stmt?
 }
 define_parameter = {
-    "(" ~  ")"
+    "(" ~ define_pair ~ (Comma ~ define_pair)* ~ Comma? ~ ")"
+  | "(" ~ ")"
 }
+define_pair = {SYMBOL ~ type_hint? ~ (Set ~ expr)?}
 //!#C678DD: Def|Where
 Def = @{"def"}
 Where = @{"where"}
@@ -115,10 +134,10 @@ condition  = _{"(" ~ expr ~ ")"|expr}
 dot_call = {term~ Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
-//type_expr = _{type_term~ TypeInfix ~type_term}
-//type_term = {TypePrefix* ~ type_node ~ TypeSuffix*}
+type_expr = _{term~ (TypeInfix ~term)*}
+//type_term = {Prefix* ~ type_node ~ Suffix*}
 //type_node = {"(" ~ type_expr ~ ")"|data}
-type_hint = {Colon ~ expr}
+type_hint = {Colon ~ type_expr}
 generic_type = {"<" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ">"}
 parametric_types = {"<" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ ">"}
 parametric_types_pair = {(Plus|Minus)? ~ SYMBOL}
@@ -127,7 +146,7 @@ parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 Type = @{"type"}
 //TypePrefix = @{Plus|Minus}
 //TypeSuffix = @{Question}
-//TypeInfix = @{Or}
+TypeInfix = @{Or}
 /*====================================================================================================================*/
 data = ${dict|list|Null|Unit|Boolean|Byte|Number|String|Symbol}
 dict = {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
@@ -188,19 +207,21 @@ LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
 /*====================================================================================================================*/
 ///#61AFEF
-Symbol = ${namespace|Underline+|SYMBOL}
+Symbol = ${namespace|SYMBOL}
 namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
 SYMBOL = @{
     XID_START ~  XID_CONTINUE*
   | Underline ~ XID_CONTINUE+
 }
-Keywords = _{If|For}
 /*====================================================================================================================*/
 Zero = _{"0"}
 X = _{"x"|"X"}
 O = _{"o"|"O"}
 B = _{"b"|"B"}
 /*====================================================================================================================*/
+//!Orange: Modifier
+Keywords = !{If|For}
+Modifier = !{(!(SYMBOL~(Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~SYMBOL)}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
     (Bang|Plus|Minus|Star)

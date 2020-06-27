@@ -1,8 +1,11 @@
 [package]
 name = "nyar_prebuild"
-version = "0.0.1"
+version = "1.0.0"
 authors = ["192608617@qq.com"]
 edition = "2018"
+description = "..."
+repository = "https://github.com/nyar-lang/NyarNative"
+license = "MPL-2.0"
 
 [dependencies]
 pest_generator = "2.1.1"

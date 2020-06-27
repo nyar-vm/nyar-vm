@@ -277,12 +277,6 @@ fn parse_expr(pairs: Pair<Rule>) -> AST {
         |pair: Pair<Rule>| match pair.as_rule() {
             Rule::expr => parse_expr(pair),
             Rule::term => parse_term(pair),
-            Rule::trinocular => {
-                println!("parse_expr: Rule::{:?}=>AST::None,", pair.as_rule());
-                println!("Span:       {:?}", pair.as_span());
-                println!("Text:       {}\n", pair.as_str());
-                AST::None
-            }
             Rule::bracket_call => {
                 println!("parse_expr: Rule::{:?}=>AST::None,", pair.as_rule());
                 println!("Span:       {:?}", pair.as_span());
@@ -306,16 +300,16 @@ fn parse_term(pairs: Pair<Rule>) -> AST {
     let pos = get_position(pairs.as_span());
     let mut base = AST::None;
     let mut prefix = vec![];
-    let mut postfix = vec![];
+    let mut suffix = vec![];
     for pair in pairs.into_inner() {
         match pair.as_rule() {
             Rule::node => base = parse_node(pair),
             Rule::Prefix => prefix.push(pair.as_str().to_string()),
-            Rule::Postfix => postfix.push(pair.as_str().to_string()),
+            Rule::Suffix => suffix.push(pair.as_str().to_string()),
             _ => unreachable!(),
         };
     }
-    return if prefix.len() + postfix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, postfix, pos } };
+    return if prefix.len() + suffix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, suffix, pos } };
 }
 
 fn parse_node(pairs: Pair<Rule>) -> AST {
@@ -390,7 +384,7 @@ fn parse_apply(pairs: Pair<Rule>) -> AST {
                     _ => kv_pairs.push((k, v)),
                 }
             }
-            Rule::apply_type => {
+            Rule::apply => {
                 for inner in pair.into_inner() {
                     match inner.as_rule() {
                         Rule::expr => types.push(parse_expr(inner)),

@@ -1,4 +1,4 @@
-use crate::ast::{Number, Position, AST};
+use crate::ast::AST;
 use std::{fs::File, io::Write};
 
 pub trait Dump<T> {
