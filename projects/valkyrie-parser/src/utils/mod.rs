@@ -1,3 +1,5 @@
+mod settings;
+
 use nyar_ast::ast::Position;
 use pest::{iterators::Pair, Span};
 

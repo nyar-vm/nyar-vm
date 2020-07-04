@@ -9,3 +9,7 @@ default-members = [
     "projects/vampire-parser",
     "projects/sijuiacion-codegen",
 ]
+
+[profile.release]
+lto = true
+opt-level = "s"

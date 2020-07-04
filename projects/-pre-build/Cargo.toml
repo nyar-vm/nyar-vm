@@ -1,9 +1,9 @@
 [package]
-name = "nyar_prebuild"
+name = "nyar-prebuild"
+publish = false
 version = "1.0.0"
 authors = ["192608617@qq.com"]
 edition = "2018"
-description = "..."
 repository = "https://github.com/nyar-lang/NyarNative"
 license = "MPL-2.0"
 
