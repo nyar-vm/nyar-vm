@@ -13,5 +13,5 @@ if a {1} else if b {2} else if c {3}
 #[test]
 fn debug_if() {
     let ast = get_ast(INPUT);
-    ast.save("tests/debug_if.json");
+    ast.save("tests/debug_if.yaml");
 }

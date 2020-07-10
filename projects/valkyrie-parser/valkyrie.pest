@@ -34,7 +34,7 @@ ModuleSplit= _{Dot|Proportion}
 Import  = @{"import"}
 As   = @{"as"}
 /*====================================================================================================================*/
-controlFlow = _{if_statement|for_statement}
+controlFlow = _{re_control|if_statement|for_statement}
 block = !{"{" ~ statement+ ~ "}"}
 /*====================================================================================================================*/
 if_statement = {if_nested_else|if_nested|if_single_else|if_single}
@@ -54,10 +54,20 @@ for_in_loop = {SYMBOL~In~expr~block}
 For = @{"for"}
 In = @{"in"}
 /*====================================================================================================================*/
-//!#C678DD: Return|Break|Pass
+re_control = {
+    Return ~ expr
+  | Break
+  | Pass
+}
+
+//!#C678DD: Return|Yield|Break|Pass
 Return = @{"return"}
+Yield = @{"yield"}
 Break = @{"break"}
 Pass = @{"pass"}
+/*====================================================================================================================*/
+///#C678DD
+Type = @{"type"}
 /*====================================================================================================================*/
 classStatement = {Class ~ assign_pair ~ short_block?}
 traitStatement = {Trait ~ assign_pair ~ short_block?}
@@ -75,9 +85,9 @@ Trait = @{"trait"}
 Class = @{"class"}
 /*====================================================================================================================*/
 extendStatement = {
-    Extend ~ Symbol ~ generic_type? ~ with_trait? ~ short_block?
+    Extend ~ Symbol ~ parametric_types? ~ with_trait? ~ short_block
 }
-with_trait = {With ~ Symbol ~ generic_type?}
+with_trait = {With ~ Symbol ~ parametric_types?}
 
 //!#C678DD: Extend|With
 Extend = @{"extend"}
@@ -112,7 +122,7 @@ Where = @{"where"}
 annotation = {annotation_call+~statement}
 annotation_call = @{At~(list|apply|Symbol)}
 /*====================================================================================================================*/
-apply = {
+apply = !{
      generic_type? ~ "(" ~ apply_kv? ~ (Comma ~ apply_kv)* ~ Comma? ~")"
 }
 apply_kv = {SYMBOL~ Colon ~ expr|expr}
@@ -128,7 +138,7 @@ expr = !{term ~ (Infix ~ term)*}
 term =  {Prefix* ~ node ~ Suffix*}
 node = {"(" ~ expr ~ ")"|tuple|bracket_call|data}
 tuple = {"(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
-bracket_call = {data~ (slice|generic_type|apply)+}
+bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
 bracket_apply = {Symbol ~ dict}
 condition  = _{"(" ~ expr ~ ")"|expr}
 dot_call = {term~ Dot ~ (Integer|Symbol) }
@@ -142,8 +152,6 @@ generic_type = {"<" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ">"}
 parametric_types = {"<" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ ">"}
 parametric_types_pair = {(Plus|Minus)? ~ SYMBOL}
 parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
-//!#C678DD: Type|To
-Type = @{"type"}
 //TypePrefix = @{Plus|Minus}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
@@ -151,9 +159,9 @@ TypeInfix = @{Or}
 data = ${dict|list|Null|Unit|Boolean|Byte|Number|String|Symbol}
 dict = {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
 list = {"[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
-slice ={"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
+slice = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
 index ={index_step|index_range|expr}
-key_value =!{key_valid ~ Colon ~expr}
+key_value =!{key_valid ~ Colon ~ expr}
 key_valid =!{Integer | SYMBOL | String}
 index_range = !{expr? ~ Colon ~ expr?}
 index_step = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
@@ -192,7 +200,7 @@ StringStart       = @{Apostrophe{1}~PUSH(Apostrophe*)}
 StringEnd         = @{POP ~ Apostrophe{1}}
 /*====================================================================================================================*/
 // NEWLINE = @{"\r"~"\n"|"\r"|"\n"}
-WHITESPACE = _{NEWLINE|SPACE_SEPARATOR|"\t"}
+WHITESPACE = {NEWLINE|WHITE_SPACE}
 //!#7F848E: MultiLineComment
 COMMENT = {MultiLineComment|LineCommentSimple|LineCommentTodo|LineCommentFixme|LineCommentWarning}
 ///Gray

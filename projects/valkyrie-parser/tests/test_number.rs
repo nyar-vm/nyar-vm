@@ -29,11 +29,11 @@ const NUMBERS: &str = r#"
 #[test]
 fn debug_bytes() {
     let ast = get_ast(BYTES);
-    ast.save("tests/debug_bytes.json");
+    ast.save("tests/debug_bytes.yaml");
 }
 
 #[test]
 fn debug_numbers() {
     let ast = get_ast(NUMBERS);
-    ast.save("tests/debug_numbers.json");
+    ast.save("tests/debug_numbers.yaml");
 }

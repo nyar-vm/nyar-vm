@@ -11,7 +11,7 @@ const INPUT: &str = r#"
 #[test]
 fn debug_expr() {
     let ast = get_ast(INPUT);
-    ast.save("tests/debug_expr.json");
+    ast.save("tests/debug_expr.yaml");
 }
 
 const LIST_OR_SLICE: &str = r#"
@@ -31,7 +31,7 @@ e[1:2:3,[1,2,3]];
 #[test]
 fn debug_list_or_slice() {
     let ast = get_ast(LIST_OR_SLICE);
-    ast.save("tests/debug_list_or_slice.json");
+    ast.save("tests/debug_list_or_slice.yaml");
 }
 
 const BRACKETS: &str = r#"
@@ -45,7 +45,7 @@ Persion(20,"2",a, a: 2)
 #[test]
 fn debug_expr_brackets() {
     let ast = get_ast(BRACKETS);
-    ast.save("tests/debug_expr_brackets.json");
+    ast.save("tests/debug_expr_brackets.yaml");
 }
 
 const DOT_CALL: &str = r#"
@@ -68,5 +68,5 @@ a().b().c()
 #[test]
 fn debug_dot_call() {
     let ast = get_ast(DOT_CALL);
-    ast.save("tests/debug_dot_call.json");
+    ast.save("tests/debug_dot_call.yaml");
 }

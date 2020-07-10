@@ -52,8 +52,7 @@ impl Settings {
         let mut nodes: Vec<AST> = vec![];
         for pair in pairs {
             match pair.as_rule() {
-                Rule::EOI => continue,
-                Rule::WHITESPACE => continue,
+                Rule::WHITESPACE | Rule::EOI => continue,
                 Rule::statement => nodes.push(self.parse_statement(pair)),
                 _ => unreachable!(),
             };
@@ -64,8 +63,7 @@ impl Settings {
         let mut nodes: Vec<AST> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::EOI => continue,
-                Rule::eos => continue,
+                Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
                 Rule::emptyStatement => nodes.push(AST::EmptyStatement),
                 Rule::importStatement => nodes.push(self.parse_import(pair)),
                 Rule::assignStatement => {
@@ -74,10 +72,7 @@ impl Settings {
                 }
                 Rule::if_statement => nodes.push(self.parse_if(pair)),
                 Rule::expression => nodes.push(self.parse_expression(pair)),
-                _ => {
-                    println!("Unimplemented Valkyrie Rule::{:?}", pair.as_rule());
-                    nodes.push(AST::None);
-                }
+                _ => debug_cases!(pair),
             };
         }
         return AST::Suite(nodes);
@@ -103,18 +98,8 @@ impl Settings {
                     let alias = nodes.pop().unwrap();
                     return AST::ImportStatement { data: ImportStatement::LocalAlias { root, path: nodes, alias }, annotations: None };
                 }
-                Rule::use_module_select => {
-                    println!("Rule:    {:?}", pair.as_rule());
-                    println!("Span:    {:?}", pair.as_span());
-                    println!("Text:    {}\n", pair.as_str());
-                    AST::None
-                }
-                Rule::use_module_string => {
-                    println!("Rule:    {:?}", pair.as_rule());
-                    println!("Span:    {:?}", pair.as_span());
-                    println!("Text:    {}\n", pair.as_str());
-                    AST::None
-                }
+                Rule::use_module_select => debug_cases!(pair),
+                Rule::use_module_string => debug_cases!(pair),
                 _ => continue,
             };
         }
@@ -130,21 +115,15 @@ impl Settings {
         let mut init: Option<AST> = None;
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::Let => continue,
-                Rule::Colon => continue,
-                Rule::Comma => continue,
-                Rule::Set => continue,
+                Rule::Set | Rule::Colon | Rule::Comma => continue,
+                Rule::Let | Rule::WHITESPACE => continue,
                 Rule::type_expr => {
                     typing = true;
                     for inner in pair.into_inner() {
                         match inner.as_rule() {
                             Rule::Comma => (),
                             Rule::expr => types.push(self.parse_expr(inner)),
-                            _ => {
-                                println!("inner:      Rule::{:?}=>AST::None,", inner.as_rule());
-                                println!("Span:       {:?}", inner.as_span());
-                                println!("Text:       {}\n", inner.as_str());
-                            }
+                            _ => debug_cases!(inner),
                         };
                     }
                 }
@@ -154,13 +133,13 @@ impl Settings {
                         match inner.as_rule() {
                             Rule::Symbol => mods.push(self.parse_symbol(inner)),
                             Rule::SYMBOL => mods.push(self.parse_symbol(inner)),
-                            _ => unreachable!(),
+                            _ => debug_cases!(inner),
                         };
                     }
                     syms.push(mods)
                 }
                 Rule::statement => init = Some(self.parse_statement(pair)),
-                _ => unreachable!(),
+                _ => debug_cases!(pair),
             };
         }
         if typing == false {
@@ -203,7 +182,7 @@ impl Settings {
                     }
                 }
                 let lhs = AST::TupleExpression(s);
-                let ast = AST::InfixOperators { o: "=".to_string(), lhs: Box::new(lhs), rhs: Box::new(i), pos };
+                let ast = AST::InfixOperators { o: Box::from("="), lhs: Box::new(lhs), rhs: Box::new(i), pos };
                 vec.push(ast)
             }
         }
@@ -216,6 +195,7 @@ impl Settings {
         let mut default = None;
         for pair in pairs.into_inner() {
             match pair.as_rule() {
+                Rule::WHITESPACE => continue,
                 Rule::If => (),
                 Rule::Else => (),
                 Rule::expr => conditions.push(self.parse_expr(pair)),
@@ -235,11 +215,7 @@ impl Settings {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::expr => vec.push(self.parse_expr(pair)),
-                _ => {
-                    println!("parse_data: Rule::{:?}=>AST::None,", pair.as_rule());
-                    println!("Span:       {:?}", pair.as_span());
-                    println!("Text:       {}\n", pair.as_str());
-                }
+                _ => debug_cases!(pair),
             };
         }
         return AST::None;
@@ -253,11 +229,11 @@ impl Settings {
                     let node = self.parse_expr(pair);
                     pass.push(node);
                 }
-                _ => {
-                    println!("parse_block: Rule::{:?}=>AST::None,", pair.as_rule());
-                    println!("Span:        {:?}", pair.as_span());
-                    println!("Text:        {}\n", pair.as_str());
+                Rule::statement => {
+                    let node = self.parse_statement(pair);
+                    pass.push(node);
                 }
+                _ => debug_cases!(pair),
             };
         }
         return AST::None;
@@ -269,9 +245,10 @@ impl Settings {
         let mut eos = false;
         for pair in pairs.into_inner() {
             match pair.as_rule() {
+                Rule::WHITESPACE => continue,
                 Rule::expr => base = self.parse_expr(pair),
                 Rule::eos => eos = true,
-                _ => unreachable!(),
+                _ => debug_cases!(pair),
             };
         }
         return AST::Expression { base: Box::new(base), eos, pos, annotations: None };
@@ -283,21 +260,17 @@ impl Settings {
         PREC_CLIMBER.climb(
              pairs.into_inner(),
             |pair: Pair<Rule>| match pair.as_rule() {
+                Rule::WHITESPACE => AST::EmptyStatement,
                 Rule::expr => self.parse_expr(pair),
                 Rule::term => self.parse_term(pair),
-                Rule::bracket_call => {
-                    println!("parse_expr: Rule::{:?}=>AST::None,", pair.as_rule());
-                    println!("Span:       {:?}", pair.as_span());
-                    println!("Text:       {}\n", pair.as_str());
-                    AST::None
-                }
-                _ => unreachable!(),
+                Rule::bracket_call => debug_cases!(pair),
+                _ => debug_cases!(pair),
             },
             |left: AST, op: Pair<Rule>, right: AST| match op.as_rule() {
                 _ => AST::InfixOperators {
+                    o: Box::from(op.as_str()),
                     lhs: Box::new(left),
                     rhs: Box::new(right),
-                    o: op.as_str().to_string(),
                     pos,
                 },
             },
@@ -328,12 +301,7 @@ impl Settings {
                 Rule::expr => self.parse_expr(pair),
                 Rule::data => self.parse_data(pair),
                 Rule::tuple => self.parse_tuple(pair),
-                _ => {
-                    println!("parse_node: Rule::{:?}=>AST::None,", pair.as_rule());
-                    println!("Span:       {:?}", pair.as_span());
-                    println!("Text:       {}\n", pair.as_str());
-                    AST::None
-                }
+                _ => debug_cases!(pair),
             };
         }
         return AST::None;
@@ -375,15 +343,16 @@ impl Settings {
         let mut types = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
+                Rule::WHITESPACE => continue,
                 Rule::Comma => (),
                 Rule::apply_kv => {
                     let (mut k, mut v) = (AST::None, AST::None);
                     for inner in pair.into_inner() {
                         match inner.as_rule() {
-                            Rule::Colon => (),
+                            Rule::WHITESPACE | Rule::Colon => continue,
                             Rule::SYMBOL => k = self.parse_symbol(inner),
                             Rule::expr => v = self.parse_expr(inner),
-                            _ => unreachable!(),
+                            _ => debug_cases!(inner),
                         };
                     }
                     match k {
@@ -399,7 +368,7 @@ impl Settings {
                         };
                     }
                 }
-                _ => unreachable!(),
+                _ => debug_cases!(pair),
             };
         }
         return AST::ApplyExpression { base: Box::new(AST::None), types, args, kv_pairs, pos };
@@ -410,11 +379,7 @@ impl Settings {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::expr => return self.parse_expr(pair),
-                _ => {
-                    println!("parse_slice: Rule::{:?}=>AST::None,", pair.as_rule());
-                    println!("Span:       {:?}", pair.as_span());
-                    println!("Text:       {}\n", pair.as_str());
-                }
+                _ => debug_cases!(pair),
             };
         }
         return AST::None;
@@ -429,12 +394,7 @@ impl Settings {
                 Rule::Byte => self.parse_byte(pair),
                 Rule::Symbol => self.parse_symbol(pair),
                 Rule::list => self.parse_list(pair),
-                _ => {
-                    println!("parse_data: Rule::{:?}=>AST::None,", pair.as_rule());
-                    println!("Span:       {:?}", pair.as_span());
-                    println!("Text:       {}\n", pair.as_str());
-                    AST::None
-                }
+                _ => debug_cases!(pair),
             };
             return node;
         }
@@ -532,17 +492,17 @@ impl Settings {
             match pair.as_rule() {
                 Rule::Byte_HEX => {
                     let s = pair.as_str();
-                    h = "x";
+                    h = "x0";
                     t = &s[2..s.len()];
                 }
                 Rule::Byte_OCT => {
                     let s = pair.as_str();
-                    h = "o";
+                    h = "o0";
                     t = &s[2..s.len()];
                 }
                 Rule::Byte_BIN => {
                     let s = pair.as_str();
-                    h = "b";
+                    h = "b0 ";
                     t = &s[2..s.len()];
                 }
                 _ => unreachable!(),
