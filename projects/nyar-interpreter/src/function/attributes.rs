@@ -1,14 +1,23 @@
 use super::*;
+use crate::error::Level3;
 use std::lazy::SyncLazy;
 
 #[derive(Debug, Clone)]
 pub struct NyarFunctionAttributes {
-    is_currying: bool,
+    currying: bool,
+    extra_arguments: Level3,
+    extra_keywords: Level3,
+    override_keywords: Level3,
 }
 
 impl Default for NyarFunctionAttributes {
     fn default() -> Self {
-        Self { is_currying: true }
+        Self {
+            currying: true,
+            extra_arguments: Level3::Warning,
+            extra_keywords: Level3::Warning,
+            override_keywords: Level3::Warning,
+        }
     }
 }
 
@@ -26,6 +35,18 @@ impl NyarFunction {
 impl FunctionInstance {
     #[inline]
     pub fn is_currying(&self) -> bool {
-        self.prototype.attributes().is_currying
+        self.prototype.attributes().currying
+    }
+    #[inline]
+    pub fn allow_extra_arguments(&self) -> Level3 {
+        self.prototype.attributes().extra_arguments
+    }
+    #[inline]
+    pub fn allow_extra_keywords(&self) -> Level3 {
+        self.prototype.attributes().extra_keywords
+    }
+    #[inline]
+    pub fn allow_override_keywords(&self) -> Level3 {
+        self.prototype.attributes().override_keywords
     }
 }
