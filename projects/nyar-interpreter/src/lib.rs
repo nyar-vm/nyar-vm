@@ -1,8 +1,11 @@
 #![feature(once_cell)]
 
+pub mod effects;
 pub mod error;
-mod function;
+pub mod function;
 mod gc;
-mod value;
+pub mod typing;
+pub mod value;
 
 pub use error::{NyarError, Result};
+pub use value::Value;
