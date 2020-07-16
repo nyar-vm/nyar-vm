@@ -1,23 +1,21 @@
 mod attributes;
 mod prototype;
 
-use self::{attributes::NyarFunctionAttributes, prototype::NyarFunction};
-use crate::{error::Level3, NyarError, Result, Value};
+pub use self::{attributes::NyarFunctionAttributes, prototype::NyarFunction};
+use crate::{error::Level3, value::Value, NyarError, Result};
 use indexmap::IndexMap;
 use std::{collections::HashMap, rc::Rc};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EffectHandler {
     effects: HashMap<String, String>,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Argument;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Statement;
-#[derive(Debug, Clone)]
-pub struct Typing;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FunctionInstance {
     prototype: Rc<NyarFunction>,
     args: Vec<Value>,
@@ -25,8 +23,8 @@ pub struct FunctionInstance {
 }
 
 impl FunctionInstance {
-    pub fn new(f: NyarFunction) -> Self {
-        Self { prototype: Rc::new(f), args: vec![], kvs: IndexMap::new() }
+    pub fn new(f: Rc<NyarFunction>) -> Self {
+        Self { prototype: f, args: vec![], kvs: IndexMap::new() }
     }
     pub fn fill_arguments(&mut self, args: Vec<Value>) -> Result<()> {
         self.args.extend(args);

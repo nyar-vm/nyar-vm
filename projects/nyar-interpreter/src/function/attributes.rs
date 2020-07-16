@@ -2,12 +2,12 @@ use super::*;
 use crate::error::Level3;
 use std::lazy::SyncLazy;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct NyarFunctionAttributes {
-    currying: bool,
-    extra_arguments: Level3,
-    extra_keywords: Level3,
-    override_keywords: Level3,
+    pub currying: bool,
+    pub extra_arguments: Level3,
+    pub extra_keywords: Level3,
+    pub override_keywords: Level3,
 }
 
 impl Default for NyarFunctionAttributes {

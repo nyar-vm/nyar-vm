@@ -1,6 +1,6 @@
 [package]
-name = "nyar-runtime"
-version = "0.0.1"
+name = "nyar-interpreter"
+version = "0.1.0"
 authors = ["192608617@qq.com"]
 edition = "2018"
 description = "..."
@@ -10,6 +10,10 @@ license = "MPL-2.0"
 
 [dependencies]
 indexmap = "1.6"
+# zerogc = "0.2.0-alpha.1"
+# zerogc-derive = "0.2.0-alpha.1"
+num = "0.3"
+bigdecimal = "0.2"
 
 [dev-dependencies]
 
