@@ -1,3 +1,5 @@
+mod refine;
+
 use crate::{function::EffectHandler, Value};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -12,6 +14,8 @@ pub struct Typing {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TypingExpression {
+    Null,
+    Boolean,
     Literal(Box<Value>),
     Union(Vec<TypingExpression>),
     Tuple(Vec<TypingExpression>),
@@ -25,15 +29,9 @@ pub struct EffectExpression {
 impl Display for Typing {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match (&self.typing, &self.effect) {
-            (Some(t), Some(e)) => {
-                write!(f, "-> {:?} / {{{:?}}}", t, e)
-            }
-            (Some(t), None) => {
-                write!(f, "-> {:?}", t)
-            }
-            (None, Some(e)) => {
-                write!(f, "-> / {{{:?}}}", e)
-            }
+            (Some(t), Some(e)) => write!(f, "-> {} / {{{:?}}}", t, e),
+            (Some(t), None) => write!(f, "-> {}", t),
+            (None, Some(e)) => write!(f, "-> / {{{:?}}}", e),
             (None, None) => Ok(()),
         }
     }
@@ -42,10 +40,17 @@ impl Display for Typing {
 impl Display for TypingExpression {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
+            Self::Null => {
+                write!(f, "null")
+            }
+            Self::Boolean => {
+                write!(f, "bool")
+            }
             Self::Literal(value) => {
                 write!(f, "{}", value)
             }
             Self::Union(terms) => {
+                assert!(!terms.is_empty());
                 for (index, term) in terms.iter().enumerate() {
                     write!(f, "{}", term)?;
                     if index != terms.len() - 1 {
@@ -54,19 +59,16 @@ impl Display for TypingExpression {
                 }
                 Ok(())
             }
-            Self::Tuple(_) => {
-                unimplemented!()
+            Self::Tuple(terms) => {
+                write!(f, "(")?;
+                for (index, term) in terms.iter().enumerate() {
+                    write!(f, "{}", term)?;
+                    if index != terms.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ")")
             }
         }
     }
-}
-
-#[test]
-fn test() {
-    let t = TypingExpression::Literal(box Value::True);
-    let null = TypingExpression::Literal(box Value::Null);
-
-    let union = vec![null, t];
-    let typing = TypingExpression::Union(union);
-    println!("{}", typing)
 }
