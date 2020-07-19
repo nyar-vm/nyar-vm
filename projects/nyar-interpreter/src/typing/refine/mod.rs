@@ -1,3 +1,6 @@
+mod collector;
+
+use self::collector::UnionCollector;
 use super::*;
 use std::ops::AddAssign;
 
@@ -28,7 +31,14 @@ impl TypingExpression {
                     *self = u[0].to_owned();
                     self.refine()
                 }
-                _ => (),
+                _ => {
+                    let mut collector = UnionCollector::default();
+                    for i in u {
+                        i.refine();
+                        collector += &*i;
+                    }
+                    *self = Self::from(collector)
+                }
             },
             Self::Tuple(_) => (),
         }
@@ -37,30 +47,6 @@ impl TypingExpression {
 
 impl EffectExpression {
     pub fn refine(&mut self) {}
-}
-
-struct UnionCollector {
-    null_collect: bool,
-    bool_collect: (bool, bool),
-    dis_join: Vec<TypingExpression>,
-}
-
-impl Default for UnionCollector {
-    fn default() -> Self {
-        Self { null_collect: false, bool_collect: (false, false), dis_join: vec![] }
-    }
-}
-
-impl AddAssign<TypingExpression> for UnionCollector {
-    fn add_assign(&mut self, rhs: TypingExpression) {
-        match rhs {
-            TypingExpression::Null => {}
-            TypingExpression::Boolean => {}
-            TypingExpression::Literal(_) => {}
-            TypingExpression::Union(_) => {}
-            TypingExpression::Tuple(_) => {}
-        }
-    }
 }
 
 #[test]
