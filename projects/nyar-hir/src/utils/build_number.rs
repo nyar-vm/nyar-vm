@@ -1,11 +1,11 @@
-use crate::{ast::Position, AST};
+use crate::{ast::Position, ASTKind};
 use arc_number::Number;
 use std::fmt::{self, Debug};
 
-pub fn number_refine(h: &str, data: &str) -> AST {
+pub fn number_refine(h: &str, data: &str) -> ASTKind {
     match Number::parse(h, data) {
-        Some(s) => AST::Number(s),
-        None => AST::NumberLiteral { handler: h.to_string(), data: data.to_string() },
+        Some(s) => ASTKind::Number(s),
+        None => ASTKind::NumberLiteral { handler: h.to_string(), data: data.to_string() },
     }
 }
 

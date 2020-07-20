@@ -1,11 +1,11 @@
-use crate::AST;
+use crate::ASTKind;
 use std::{char, iter::Iterator, str};
 
-pub fn string_refine(h: &str, text: &str) -> AST {
+pub fn string_refine(h: &str, text: &str) -> ASTKind {
     let data = text.to_string();
     return match h {
-        "" => AST::String(data),
-        _ => AST::StringLiteral { handler: h.to_string(), data },
+        "" => ASTKind::String(data),
+        _ => ASTKind::StringLiteral { handler: h.to_string(), data },
     };
 }
 

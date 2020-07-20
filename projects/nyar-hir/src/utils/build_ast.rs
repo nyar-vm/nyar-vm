@@ -1,4 +1,4 @@
-use crate::ast::AST;
+use crate::ast::ASTKind;
 use std::{fs::File, io::Write};
 /*
 pub trait Dump<T> {
@@ -12,7 +12,7 @@ pub trait Refine<T> {
 }
 */
 #[allow(unused_variables)]
-impl AST {
+impl ASTKind {
     /*
     pub fn save(&self, path: &str) -> std::io::Result<()> {
         let json = serde_json::to_string_pretty(self).unwrap();
@@ -26,13 +26,13 @@ impl AST {
         file.write_all(format!("{:#?}", self).as_bytes())?;
         Ok(())
     }
-    pub fn load(path: &str) -> AST {
+    pub fn load(path: &str) -> ASTKind {
         unimplemented!()
     }
-    pub fn set_base(self, replace: AST) -> AST {
+    pub fn set_base(self, replace: ASTKind) -> ASTKind {
         match self {
-            AST::ApplyExpression { base, types, args, kv_pairs, pos } => {
-                return AST::ApplyExpression { base: Box::new(replace), types, args, kv_pairs, pos };
+            ASTKind::ApplyExpression { base, types, args, kv_pairs, pos } => {
+                return ASTKind::ApplyExpression { base: Box::new(replace), types, args, kv_pairs, pos };
             }
             _ => self,
         }

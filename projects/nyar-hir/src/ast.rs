@@ -1,44 +1,49 @@
 use arc_number::Number;
 
+pub struct ASTNode<N> {
+    kind: ASTKind<N>,
+    range: Position,
+}
+
 #[derive(Debug, Clone)]
-pub enum AST {
-    Program(Vec<AST>),
-    Suite(Vec<AST>),
+pub enum ASTKind<T> {
+    Program(Vec<ASTKind<T>>),
+    Suite(Vec<ASTKind<T>>),
     /// - `EmptyStatement`: Skip
     EmptyStatement,
     /// - `ImportStatement`
     ImportStatement {
         data: ImportStatement,
-        annotations: Option<Box<AST>>,
+        annotations: Option<Box<ASTKind<T>>>,
     },
     IfStatement {
-        pairs: Vec<(AST, AST)>,
-        default: Option<Box<AST>>,
-        annotations: Option<Box<AST>>,
+        pairs: Vec<(ASTKind<T>, ASTKind<T>)>,
+        default: Option<Box<ASTKind<T>>>,
+        annotations: Option<Box<ASTKind<T>>>,
     },
     LetBinding {
-        symbol: Box<AST>,
+        symbol: Box<ASTKind<T>>,
         modifiers: Vec<String>,
-        types: Box<AST>,
-        annotations: Option<Box<AST>>,
+        types: Box<ASTKind<T>>,
+        annotations: Option<Box<ASTKind<T>>>,
     },
     /// - `Expression`
     Expression {
-        base: Box<AST>,
+        base: Box<ASTKind<T>>,
         eos: bool,
         pos: Position,
-        annotations: Option<Box<AST>>,
+        annotations: Option<Box<ASTKind<T>>>,
     },
     /// - `Expression`
     TypeExpression {
-        base: Box<AST>,
+        base: Box<ASTKind<T>>,
         pos: Position,
-        annotations: Option<Box<AST>>,
+        annotations: Option<Box<ASTKind<T>>>,
     },
     /// - `UnaryOperators`
     ///     - `base`
     UnaryOperators {
-        base: Box<AST>,
+        base: Box<ASTKind<T>>,
         prefix: Vec<String>,
         suffix: Vec<String>,
         pos: Position,
@@ -46,26 +51,26 @@ pub enum AST {
     /// - `InfixOperators`
     InfixOperators {
         o: String,
-        lhs: Box<AST>,
-        rhs: Box<AST>,
+        lhs: Box<ASTKind<T>>,
+        rhs: Box<ASTKind<T>>,
         pos: Position,
     },
     ///
-    ListExpression(Vec<AST>),
+    ListExpression(Vec<ASTKind<T>>),
     ///
-    TupleExpression(Vec<AST>),
+    TupleExpression(Vec<ASTKind<T>>),
     /// - `SliceExpression`
     /// the terms must `IndexExpression`
     SliceExpression {
-        base: Box<AST>,
-        list: Vec<AST>,
+        base: Box<ASTKind<T>>,
+        list: Vec<ASTKind<T>>,
     },
     IndexExpression(IndexExpression),
     ApplyExpression {
-        base: Box<AST>,
-        types: Vec<AST>,
-        args: Vec<AST>,
-        kv_pairs: Vec<(AST, AST)>,
+        base: Box<ASTKind<T>>,
+        types: Vec<ASTKind<T>>,
+        args: Vec<ASTKind<T>>,
+        kv_pairs: Vec<(ASTKind<T>, ASTKind<T>)>,
         pos: Position,
     },
     /// - `Symbol`
@@ -134,8 +139,8 @@ pub enum IndexExpression {
     ///
     Single(),
     Normal {
-        start: Box<AST>,
-        end: Box<AST>,
-        step: Box<AST>,
+        start: Box<ASTKind>,
+        end: Box<ASTKind>,
+        step: Box<ASTKind>,
     },
 }
