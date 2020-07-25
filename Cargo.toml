@@ -3,9 +3,9 @@
 members = ["projects/*"]
 default-members = [
     "projects/nyar-interpreter",
-    "projects/nyar-ast",
+    "projects/nyar-hir",
+    "projects/valkyrie-pest",
     "projects/valkyrie-parser",
-    "projects/sijuiacion-codegen",
 ]
 
 [profile.release]

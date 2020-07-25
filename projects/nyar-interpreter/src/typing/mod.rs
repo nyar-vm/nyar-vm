@@ -26,3 +26,12 @@ pub enum TypingExpression {
 pub struct EffectExpression {
     inner: Vec<EffectHandler>,
 }
+
+impl TypingExpression {
+    pub fn boolean(v: bool) -> Self {
+        match v {
+            true => TypingExpression::Literal(box Value::True),
+            false => TypingExpression::Literal(box Value::False),
+        }
+    }
+}

@@ -34,7 +34,7 @@ impl TypingExpression {
                 _ => {
                     let mut collector = UnionCollector::default();
                     for i in u {
-                        i.refine();
+                        // i don't need refined
                         collector += &*i;
                     }
                     *self = Self::from(collector)

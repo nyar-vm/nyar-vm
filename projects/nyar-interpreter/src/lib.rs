@@ -2,6 +2,7 @@
 #![feature(once_cell)]
 #![feature(box_syntax)]
 
+pub mod class;
 pub mod effects;
 pub mod error;
 pub mod function;

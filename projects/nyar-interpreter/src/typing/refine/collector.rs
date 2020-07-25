@@ -2,7 +2,7 @@ use super::*;
 
 pub struct UnionCollector {
     null_collect: bool,
-    bool_collect: BooleanCollector,
+    bool_collect: (bool, bool),
     dis_join: Vec<TypingExpression>,
 }
 
@@ -13,7 +13,7 @@ struct BooleanCollector {
 
 impl Default for UnionCollector {
     fn default() -> Self {
-        Self { null_collect: false, bool_collect: Default::default(), dis_join: vec![] }
+        Self { null_collect: false, bool_collect: (false, false), dis_join: vec![] }
     }
 }
 
@@ -23,15 +23,23 @@ impl Default for BooleanCollector {
     }
 }
 
-impl AddAssign<TypingExpression> for UnionCollector {
+impl AddAssign<&TypingExpression> for UnionCollector {
     fn add_assign(&mut self, rhs: &TypingExpression) {
-        /// rhs already refined
         match rhs {
             TypingExpression::Null => self.null_collect = true,
-            TypingExpression::Boolean => {}
-            TypingExpression::Literal(_) => {}
-            TypingExpression::Union(_) => {}
-            TypingExpression::Tuple(_) => {}
+            TypingExpression::Boolean => self.bool_collect = (true, true),
+            TypingExpression::Literal(t) => match t.as_ref() {
+                Value::Null => self.null_collect = true,
+                Value::Boolean(true) => self.bool_collect.0 = true,
+                Value::Boolean(false) => self.bool_collect.1 = true,
+                _ => self.dis_join.push(rhs.to_owned()),
+            },
+            TypingExpression::Union(terms) => {
+                for term in terms {
+                    *self += term
+                }
+            }
+            TypingExpression::Tuple(_) => self.dis_join.push(rhs.to_owned()),
         }
     }
 }
@@ -48,6 +56,17 @@ impl AddAssign<TypingExpression> for BooleanCollector {
 
 impl From<UnionCollector> for TypingExpression {
     fn from(b: UnionCollector) -> Self {
-        unimplemented!()
+        let mut terms = vec![];
+        if b.null_collect {
+            terms.push(TypingExpression::Null)
+        }
+        match (b.bool_collect.0, b.bool_collect.1) {
+            (true, true) => terms.push(TypingExpression::Boolean),
+            (true, false) => terms.push(TypingExpression::boolean(true)),
+            (false, true) => terms.push(TypingExpression::boolean(false)),
+            (false, false) => (),
+        }
+        terms.extend(b.dis_join);
+        TypingExpression::Union(terms)
     }
 }
