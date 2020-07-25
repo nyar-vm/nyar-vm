@@ -48,6 +48,16 @@ if_else_block = _{Else ~ block}
 If = @{"if"}
 Else = @{"else"}
 /*====================================================================================================================*/
+match_statement = {
+    Match ~ expression ~ "{" ~ case_statement+ ~ "}"
+}
+case_statement = {
+    Colon ~ statement
+}
+Match = @{"match"}
+Case = @{"case"}
+
+/*====================================================================================================================*/
 for_statement = {For ~ for_in_loop}
 for_in_loop = {SYMBOL~In~expr~block}
 //!#C678DD: For|In
@@ -62,9 +72,8 @@ re_control = {
 
 //!#C678DD: Return|Yield|Break|Pass
 Return = @{"return"}
-Yield = @{"yield"}
 Break = @{"break"}
-Pass = @{"pass"}
+Pass = @{"continue"}
 /*====================================================================================================================*/
 ///#C678DD
 Type = @{"type"}

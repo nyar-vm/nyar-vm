@@ -1,5 +1,8 @@
+use std::ops::AddAssign;
+
 pub use self::import::ImportStatement;
 use super::*;
+use crate::ast::kind::chain::CallChain;
 
 mod chain;
 mod import;
@@ -34,37 +37,35 @@ pub enum ASTKind {
         base: Box<ASTKind>,
         annotations: Option<Box<ASTKind>>,
     },
-    CallChain(Box<CallChain>),
     ///
     ListExpression(Vec<ASTKind>),
     ///
     TupleExpression(Vec<ASTKind>),
-    /// - `UnaryOperators`
-    ///     - `base`
-    UnaryOperators {
-        base: Box<ASTKind>,
-        prefix: Vec<String>,
-        suffix: Vec<String>,
-    },
     /// - `InfixOperators`
-    InfixOperators {
-        o: String,
-        lhs: Box<ASTKind>,
-        rhs: Box<ASTKind>,
-    },
-    /// - `SliceExpression`
-    /// the terms must `IndexExpression`
-    SliceExpression {
+    Operator(Box<Operator>),
+    CallChain(Box<CallChain>),
+    /// - `SliceCall`
+    ///
+    /// ```v
+    /// expr[index]
+    /// ```
+    SliceCall {
         base: Box<ASTKind>,
         list: Vec<ASTKind>,
     },
-    IndexExpression(IndexExpression),
-    ApplyExpression {
-        base: Box<ASTKind>,
-        types: Vec<ASTKind>,
-        args: Vec<ASTKind>,
-        kv_pairs: Vec<(ASTKind, ASTKind)>,
-    },
+    ///
+    /// ```v
+    /// expr(index)
+    /// ```
+    ApplyCall(Box<ApplyCall>),
+    ///
+    /// ```v
+    /// expr + rhs
+    /// ```
+    InfixCall(Box<InfixCall>),
+    /// - `UnaryOperators`
+    ///     - `base`
+    UnaryCall(Box<UnaryCall>),
     /// - `Symbol`
     Symbol {
         name: String,
@@ -72,20 +73,21 @@ pub enum ASTKind {
     },
     /// - `Number`: raw number represent
     NumberLiteral {
-        handler: String,
-        data: String,
+        handler: Option<ASTNode>,
+        value: Box<ASTNode>,
     },
-    ///
-    Number(Number),
+    /// - `Number`: raw number represent
+    ByteLiteral {
+        handler: Option<ASTNode>,
+        value: Box<ASTNode>,
+    },
     ///
     StringLiteral {
-        handler: String,
-        data: String,
+        handler: Option<ASTNode>,
+        value: Box<ASTNode>,
     },
-    /// - `String`: raw string
-    String(String),
     /// - `Comment`: raw comment with handler
-    CommentLiteral {
+    Comment {
         handler: String,
         data: String,
     },

@@ -31,8 +31,8 @@ impl ASTKind {
     }
     pub fn set_base(self, replace: ASTKind) -> ASTKind {
         match self {
-            ASTKind::ApplyExpression { base, types, args, kv_pairs, pos } => {
-                return ASTKind::ApplyExpression { base: Box::new(replace), types, args, kv_pairs, pos };
+            ASTKind::ApplyCall { base, types, args, kv_pairs, pos } => {
+                return ASTKind::ApplyCall { base: Box::new(replace), types, args, kv_pairs, pos };
             }
             _ => self,
         }
