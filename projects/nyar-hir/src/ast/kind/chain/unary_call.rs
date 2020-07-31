@@ -1,7 +1,11 @@
-use crate::ASTNode;
+use super::*;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct UnaryExpression {
-    pub prefix: bool,
-    pub op: ASTNode,
+///
+/// ```v
+/// ++base!!
+/// ```
+#[derive(Clone, Debug)]
+pub struct UnaryCall {
+    prefix: Vec<Operator>,
+    suffix: Vec<Operator>
 }

@@ -7,9 +7,15 @@ mod kont_call;
 mod slice_call;
 mod unary_call;
 
+pub use self::apply_call::ApplyCall;
+pub use self::infix_call::InfixCall;
+pub use self::slice_call::SliceCall;
+pub use self::unary_call::UnaryCall;
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CallChain {
     pub base: ASTNode,
+    /// one of calls
     pub chain: Vec<ASTNode>,
 }
 

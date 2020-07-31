@@ -5,7 +5,12 @@ use super::*;
 use crate::ast::kind::chain::CallChain;
 
 mod chain;
+mod atoms;
 mod import;
+mod control;
+
+pub use self::atoms::*;
+pub use self::chain::*;
 
 #[derive(Debug, Clone)]
 pub enum ASTKind {
@@ -28,14 +33,9 @@ pub enum ASTKind {
     },
     /// - `Expression`
     Expression {
-        base: Box<ASTKind>,
-        eos: bool,
-        annotations: Option<Box<ASTKind>>,
     },
     /// - `Expression`
     TypeExpression {
-        base: Box<ASTKind>,
-        annotations: Option<Box<ASTKind>>,
     },
     ///
     ListExpression(Vec<ASTKind>),
@@ -49,28 +49,26 @@ pub enum ASTKind {
     /// ```v
     /// expr[index]
     /// ```
-    SliceCall {
-        base: Box<ASTKind>,
-        list: Vec<ASTKind>,
-    },
+    CallSlice(Box<SliceCall>),
     ///
     /// ```v
     /// expr(index)
     /// ```
-    ApplyCall(Box<ApplyCall>),
+    CallApply(Box<ApplyCall>),
     ///
     /// ```v
-    /// expr + rhs
+    /// expr + rhs1 + rhs2
     /// ```
-    InfixCall(Box<InfixCall>),
+    CallInfix(Box<InfixCall>),
     /// - `UnaryOperators`
     ///     - `base`
-    UnaryCall(Box<UnaryCall>),
+    ///
+    /// ```v
+    /// ++expr!!
+    /// ```
+    CallUnary(Box<UnaryCall>),
     /// - `Symbol`
-    Symbol {
-        name: String,
-        scope: Vec<String>,
-    },
+    Symbol(Box<Symbol>),
     /// - `Number`: raw number represent
     NumberLiteral {
         handler: Option<ASTNode>,
