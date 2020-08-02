@@ -15,6 +15,9 @@ indexmap = "1.6"
 num = "0.3"
 bigdecimal = "0.2"
 
+[dependencies.nyar-mir]
+version = "0.1"
+path = "../nyar-mir"
 
 [dev-dependencies]
 
