@@ -9,6 +9,7 @@ license = "MPL-2.0"
 
 
 [dependencies]
+# lazy_static = "1.4"
 
 [dependencies.valkyrie-pest]
 path = "../valkyrie-pest"

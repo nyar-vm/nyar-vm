@@ -96,7 +96,10 @@ impl Settings {
                         nodes.push(node)
                     }
                     let alias = nodes.pop().unwrap();
-                    return AST::ImportStatement { data: ImportStatement::LocalAlias { root, path: nodes, alias }, annotations: None };
+                    return AST::ImportStatement {
+                        data: ImportStatement::LocalAlias { root, path: nodes, alias },
+                        annotations: None,
+                    };
                 }
                 Rule::use_module_select => debug_cases!(pair),
                 Rule::use_module_string => debug_cases!(pair),
@@ -291,7 +294,12 @@ impl Settings {
                 _ => unreachable!(),
             };
         }
-        return if prefix.len() + suffix.len() == 0 { base } else { AST::UnaryOperators { base: Box::new(base), prefix, suffix, pos } };
+        return if prefix.len() + suffix.len() == 0 {
+            base
+        }
+        else {
+            AST::UnaryOperators { base: Box::new(base), prefix, suffix, pos }
+        };
     }
 
     fn parse_node(&self, pairs: Pair<Rule>) -> AST {
