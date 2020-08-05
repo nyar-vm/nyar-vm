@@ -5,6 +5,6 @@ use super::*;
 /// a[1][2]
 /// ```
 #[derive(Clone, Debug)]
-pub struct SliceCall {
+pub struct KontCall {
     terms: ASTNode,
 }

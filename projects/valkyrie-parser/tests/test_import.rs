@@ -1,5 +1,4 @@
-extern crate nyar_valkyrie;
-use nyar_valkyrie::get_ast;
+use valkyrie_parser::get_ast;
 
 const INPUT: &str = r#"
 import torch

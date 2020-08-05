@@ -6,3 +6,5 @@ mod if_statement;
 mod match_statement;
 mod switch_statement;
 mod while_statement;
+
+pub use if_statement::IfStatement;

@@ -2,9 +2,11 @@ use super::*;
 
 ///
 /// ```v
-/// a[1][2]
+/// base {
+///     key: value
+/// }
 /// ```
 #[derive(Clone, Debug)]
-pub struct KontCall {
+pub struct DictCall {
     terms: ASTNode,
 }

@@ -7,5 +7,5 @@ use super::*;
 #[derive(Clone, Debug)]
 pub struct UnaryCall {
     prefix: Vec<Operator>,
-    suffix: Vec<Operator>
+    suffix: Vec<Operator>,
 }

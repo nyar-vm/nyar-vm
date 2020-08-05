@@ -6,5 +6,5 @@ use super::*;
 /// ```
 #[derive(Clone, Debug)]
 pub struct ApplyCall {
-    terms: Vec<ASTNode>
+    terms: Vec<ASTNode>,
 }

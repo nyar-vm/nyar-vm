@@ -6,5 +6,5 @@ use super::*;
 /// ```
 #[derive(Clone, Debug)]
 pub struct InfixCall {
-    terms: Vec<(Operator, ASTNode)>
+    terms: Vec<(Operator, ASTNode)>,
 }
