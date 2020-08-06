@@ -1,4 +1,4 @@
-use crate::ASTKind;
+use nyar_hir::ast::ASTKind;
 use std::{char, iter::Iterator, str};
 
 pub fn string_refine(h: &str, text: &str) -> ASTKind {

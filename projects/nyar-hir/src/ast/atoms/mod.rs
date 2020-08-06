@@ -1,5 +1,3 @@
-use super::*;
-
 mod byte_literal;
 mod comment_literal;
 mod number_literal;
@@ -15,3 +13,5 @@ pub use self::{
     string_literal::StringLiteral,
     symbol::Symbol,
 };
+
+use super::*;

@@ -1,4 +1,4 @@
-use crate::ast::ASTKind;
+use nyar_hir::ast::ASTKind;
 use std::{fs::File, io::Write};
 /*
 pub trait Dump<T> {

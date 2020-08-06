@@ -5,7 +5,7 @@ pub enum ImportStatement {
     /// import a
     Symbol(String),
     /// import a as b
-    SymbolAlias(Vec<str>, String),
+    SymbolAlias(Vec<String>, String),
     Local {
         root: u8,
         path: Vec<String>,

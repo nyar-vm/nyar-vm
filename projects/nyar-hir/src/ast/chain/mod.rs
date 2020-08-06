@@ -9,7 +9,7 @@ mod unary_call;
 
 pub use self::{apply_call::ApplyCall, infix_call::InfixCall, slice_call::SliceCall, unary_call::UnaryCall};
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CallChain {
     pub base: ASTNode,
     /// one of calls

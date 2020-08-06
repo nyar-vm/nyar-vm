@@ -1,17 +1,20 @@
 mod atoms;
+mod utils;
 mod chain;
 mod control;
 mod import;
 
-pub use self::{kind::ASTKind};
 pub use self::import::ImportStatement;
 pub use self::{atoms::*, chain::*, control::*};
 
 use lsp_types::Range;
 use std::ops::AddAssign;
-use crate::ast::kind::chain::CallChain;
+// use crate::ast::kind::chain::CallChain;
+use std::fmt::{self, Debug, Display, Formatter};
 
-#[derive(Debug, Clone)]
+pub type StringRange = (String, Range);
+
+#[derive(Clone)]
 pub struct ASTNode {
     pub kind: ASTKind,
     pub range: Range,
@@ -19,6 +22,7 @@ pub struct ASTNode {
 
 #[derive(Debug, Clone)]
 pub enum ASTKind {
+    /// Root Node of the AST
     Program(Vec<ASTKind>),
     Suite(Vec<ASTKind>),
     /// - `EmptyStatement`: Skip
@@ -61,6 +65,9 @@ pub enum ASTKind {
     /// ++expr!!
     /// ```
     CallUnary(Box<UnaryCall>),
+    /// - `Comment`: raw comment with handler
+    Comment(Box<CommentLiteral>),
+
     /// - `Symbol`
     Symbol(Box<Symbol>),
     /// - `Number`: raw number represent
@@ -69,10 +76,8 @@ pub enum ASTKind {
     ByteLiteral(Box<ByteLiteral>),
     ///
     StringLiteral(Box<StringLiteral>),
-    /// - `Comment`: raw comment with handler
-    Comment(Box<CommentLiteral>),
     ///
     Boolean(bool),
-    /// - `None`: It doesn't look like anything to me
-    None,
+    /// - `Null`: It doesn't look like anything to me
+    Null,
 }

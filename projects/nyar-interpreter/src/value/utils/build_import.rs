@@ -1,4 +1,4 @@
-use crate::ast::ImportStatement;
+use nyar_hir::ast::import::ImportStatement;
 
 #[allow(unused_variables)]
 impl ImportStatement {

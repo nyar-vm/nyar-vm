@@ -1,16 +1,17 @@
 use std::{borrow::Cow, collections::VecDeque};
+use std::{
+    any::Any,
+    fmt::{self, Debug, Display, Formatter},
+};
 
 use bigdecimal::BigDecimal;
 use indexmap::IndexMap;
 use num::BigInt;
 
 use crate::{class::Class, function::FunctionInstance};
-use std::{
-    any::Any,
-    fmt::{self, Debug, Display, Formatter},
-};
 
 mod from_native;
+pub mod utils;
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum Value {

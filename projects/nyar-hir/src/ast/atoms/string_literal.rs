@@ -1,7 +1,8 @@
 use super::*;
 
 ///
+#[derive(Debug, Clone)]
 pub struct StringLiteral {
-    handler: Option<ASTNode>,
+    handler: Option<StringRange>,
     value: Box<ASTNode>,
 }
