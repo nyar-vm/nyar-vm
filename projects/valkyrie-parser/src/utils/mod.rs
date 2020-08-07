@@ -1,7 +1,6 @@
 mod settings;
 
-use nyar_hir::ast::Position;
-use pest::{iterators::Pair, Span};
+use valkyrie_pest::{Pair, Span};
 
 fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> String {
     let indent = if is_newline { "  ".repeat(indent_level) } else { "".to_string() };
@@ -19,6 +18,6 @@ fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> Strin
     }
 }
 
-pub fn get_position(s: Span) -> Position {
-    Position { start: s.start_pos().line_col(), end: s.end_pos().line_col() }
-}
+// pub fn get_position(s: Span) -> Position {
+//     Position { start: s.start_pos().line_col(), end: s.end_pos().line_col() }
+// }

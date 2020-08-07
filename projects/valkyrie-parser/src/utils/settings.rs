@@ -1,11 +1,11 @@
-use crate::Settings;
-use nyar_ast::AST;
+use crate::LexerContext;
+use nyar_hir::{ASTNode, ASTKind};
 
-impl Settings {
-    pub(crate) fn new_number(handler: &str, data: &str) -> AST {
-        AST::NumberLiteral { handler: String::from(handler), data: String::from(data) }
-    }
-    pub(crate) fn new_string(handler: &str, data: &str) -> AST {
-        AST::StringLiteral { handler: String::from(handler), data: String::from(data) }
-    }
+impl LexerContext {
+    // pub(crate) fn new_number(handler: &str, data: &str) -> ASTKind {
+    //     ASTKind::NumberLiteral { handler: String::from(handler), data: String::from(data) }
+    // }
+    // pub(crate) fn new_string(handler: &str, data: &str) -> ASTNode {
+    //     ASTKind::StringLiteral { handler: String::from(handler), data: String::from(data) }
+    // }
 }

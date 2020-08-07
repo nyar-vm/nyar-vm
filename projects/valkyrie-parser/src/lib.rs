@@ -1,22 +1,18 @@
-#![feature(format_args_nl)]
-extern crate pest;
-#[macro_use]
-extern crate lazy_static;
+#![feature(once_cell)]
 
 pub mod grammar;
-pub mod pest_parser;
 pub mod utils;
-
-/// re-export
 pub mod ast {
-    pub use nyar_ast::{ast::ImportStatement, AST};
+    pub use nyar_hir::ast::*;
 }
 
-pub use ast::AST;
-pub use grammar::Settings;
+mod errors;
 
-pub fn get_ast(input: &str) -> AST {
-    let mut cfg = Settings::default();
+pub use grammar::LexerContext;
+
+
+pub fn get_ast(input: &str) -> nyar_hir::ASTKind {
+    let mut cfg = LexerContext::default();
     cfg.refine = true;
     cfg.get_ast(input)
 }

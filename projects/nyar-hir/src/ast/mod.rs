@@ -1,11 +1,10 @@
 mod atoms;
-mod utils;
 mod chain;
 mod control;
 mod import;
+mod utils;
 
-pub use self::import::ImportStatement;
-pub use self::{atoms::*, chain::*, control::*};
+pub use self::{atoms::*, chain::*, control::*, import::ImportStatement};
 
 use lsp_types::Range;
 use std::ops::AddAssign;
@@ -23,8 +22,8 @@ pub struct ASTNode {
 #[derive(Debug, Clone)]
 pub enum ASTKind {
     /// Root Node of the AST
-    Program(Vec<ASTKind>),
-    Suite(Vec<ASTKind>),
+    Program(Vec<ASTNode>),
+    Suite(Vec<ASTNode>),
     /// - `EmptyStatement`: Skip
     EmptyStatement,
     /// - `ImportStatement`
@@ -36,9 +35,9 @@ pub enum ASTKind {
     /// - `Expression`
     TypeExpression {},
     ///
-    ListExpression(Vec<ASTKind>),
+    ListExpression(Vec<ASTNode>),
     ///
-    TupleExpression(Vec<ASTKind>),
+    TupleExpression(Vec<ASTNode>),
     /// - `InfixOperators`
     Operator(Box<Operator>),
     CallChain(Box<CallChain>),
