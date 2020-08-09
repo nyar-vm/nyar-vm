@@ -6,10 +6,14 @@ mod utils;
 
 pub use self::{atoms::*, chain::*, control::*, import::ImportStatement};
 
+#[cfg(feature = "pest")]
+mod wrap_pest;
+
 use lsp_types::Range;
 use std::ops::AddAssign;
 // use crate::ast::kind::chain::CallChain;
 use std::fmt::{self, Debug, Display, Formatter};
+
 
 pub type StringRange = (String, Range);
 
@@ -21,6 +25,9 @@ pub struct ASTNode {
 
 #[derive(Debug, Clone)]
 pub enum ASTKind {
+    /// Wrong node
+    None,
+
     /// Root Node of the AST
     Program(Vec<ASTNode>),
     Suite(Vec<ASTNode>),
@@ -31,7 +38,10 @@ pub enum ASTKind {
     IfStatement(Box<IfStatement>),
     LetBinding,
     /// - `Expression`
-    Expression {},
+    Expression {
+        base: Box<ASTNode>,
+        eos: bool,
+    },
     /// - `Expression`
     TypeExpression {},
     ///
@@ -79,4 +89,57 @@ pub enum ASTKind {
     Boolean(bool),
     /// - `Null`: It doesn't look like anything to me
     Null,
+}
+
+impl ASTNode {
+    pub fn empty_statement(r: Range) -> Self {
+        Self {
+            kind: ASTKind::EmptyStatement,
+            range: r,
+        }
+    }
+    pub fn suite(v: Vec<ASTNode>, r: Range) -> Self {
+        Self {
+            kind: ASTKind::Suite(v),
+            range: r,
+        }
+    }
+    pub fn expression(base: ASTNode, eos: bool, r: Range) -> Self {
+        Self {
+            kind: ASTKind::Expression { base: box base, eos },
+            range: r,
+        }
+    }
+
+
+    pub fn infix(base: ASTNode, eos: bool, r: Range) -> Self {
+        Self {
+            kind: ASTKind::Expression { base: box base, eos },
+            range: r,
+        }
+    }
+
+    pub fn list(v: Vec<ASTNode>, r: Range) -> Self {
+        Self {
+            kind: ASTKind::ListExpression(v),
+            range: r,
+        }
+    }
+
+    pub fn tuple(v: Vec<ASTNode>, r: Range) -> Self {
+        Self {
+            kind: ASTKind::TupleExpression(v),
+            range: r,
+        }
+    }
+
+    pub fn boolean(v: bool, r: Range) -> Self {
+        Self {
+            kind: ASTKind::Boolean(v),
+            range: r,
+        }
+    }
+
+
+
 }

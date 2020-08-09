@@ -1,6 +1,7 @@
 mod settings;
 
-use valkyrie_pest::{Pair, Span};
+use valkyrie_pest::{Pair, Span, Rule};
+use nyar_hir::{Range, Position};
 
 fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> String {
     let indent = if is_newline { "  ".repeat(indent_level) } else { "".to_string() };
@@ -18,6 +19,12 @@ fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> Strin
     }
 }
 
-// pub fn get_position(s: Span) -> Position {
-//     Position { start: s.start_pos().line_col(), end: s.end_pos().line_col() }
-// }
+pub fn get_position(s: &Pair<Rule>) -> Range {
+    let us = s.as_span().start_pos().line_col();
+    let es = s.as_span().end_pos().line_col();
+    Range {
+        // index: s.start_pos().pos() as u64,
+        start: Position { line: us.0 as u32, character: us.1 as u32 },
+        end: Position { line: es.0 as u32, character: es.1 as u32 },
+    }
+}

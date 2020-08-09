@@ -10,9 +10,8 @@ mod errors;
 
 pub use grammar::LexerContext;
 
-
 pub fn get_ast(input: &str) -> nyar_hir::ASTKind {
     let mut cfg = LexerContext::default();
     cfg.refine = true;
-    cfg.get_ast(input)
+    cfg.get_ast(input).unwrap()
 }

@@ -2,9 +2,12 @@ use super::*;
 
 macro_rules! native_error {
     ($native:ty => $error:ident) => {
-        impl From<$native> for SDLError {
+        impl From<$native> for NyarError {
             fn from(e: $native) -> Self {
-                Self { kind: Box::new(SDLErrorKind::$error(e)) }
+                Self {
+                    kind: box NyarErrorKind::$error(e),
+                    position: None
+                }
             }
         }
     };

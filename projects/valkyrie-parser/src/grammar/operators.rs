@@ -1,5 +1,5 @@
 use std::lazy::SyncLazy;
-use valkyrie_pest::{PrecClimber, Rule, Rule::*, Assoc::*, Operator};
+use valkyrie_pest::{Assoc::*, Operator, PrecClimber, Rule, Rule::*};
 
 pub static PREC_CLIMBER: SyncLazy<PrecClimber<Rule>> = SyncLazy::new(|| {
     //TODO: use macro

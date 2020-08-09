@@ -23,6 +23,6 @@ impl Debug for ASTNode {
 
 impl Default for ASTNode {
     fn default() -> Self {
-        Self { kind: ASTKind::EmptyStatement, range: Default::default() }
+        Self { kind: ASTKind::None, range: Default::default() }
     }
 }

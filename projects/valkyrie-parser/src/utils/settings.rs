@@ -1,5 +1,5 @@
 use crate::LexerContext;
-use nyar_hir::{ASTNode, ASTKind};
+use nyar_hir::{ASTKind, ASTNode};
 
 impl LexerContext {
     // pub(crate) fn new_number(handler: &str, data: &str) -> ASTKind {
