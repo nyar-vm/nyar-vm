@@ -1,4 +1,4 @@
-use valkyrie_parser::get_ast;
+use valkyrie_parser::{ast::ASTKind, ASTDump};
 
 const INPUT: &str = r#"
 a[1]
@@ -13,6 +13,6 @@ a
 
 #[test]
 fn debug_index() -> std::io::Result<()> {
-    let ast = get_ast(INPUT);
-    ast.save("tests/debug_slice.yaml")
+    let ast: ASTKind = ASTDump::parse(BYTES);
+    ast.save(file!());
 }

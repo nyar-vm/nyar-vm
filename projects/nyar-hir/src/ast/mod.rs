@@ -6,14 +6,11 @@ mod utils;
 
 pub use self::{atoms::*, chain::*, control::*, import::ImportStatement};
 
-#[cfg(feature = "pest")]
-mod wrap_pest;
-
 use lsp_types::Range;
-use std::ops::AddAssign;
-// use crate::ast::kind::chain::CallChain;
-use std::fmt::{self, Debug, Display, Formatter};
-
+use std::{
+    fmt::{self, Debug, Display, Formatter},
+    ops::AddAssign,
+};
 
 pub type StringRange = (String, Range);
 
@@ -91,55 +88,53 @@ pub enum ASTKind {
     Null,
 }
 
+impl ASTNode {}
+
 impl ASTNode {
     pub fn empty_statement(r: Range) -> Self {
-        Self {
-            kind: ASTKind::EmptyStatement,
-            range: r,
-        }
+        Self { kind: ASTKind::EmptyStatement, range: r }
     }
     pub fn suite(v: Vec<ASTNode>, r: Range) -> Self {
-        Self {
-            kind: ASTKind::Suite(v),
-            range: r,
-        }
+        Self { kind: ASTKind::Suite(v), range: r }
     }
     pub fn expression(base: ASTNode, eos: bool, r: Range) -> Self {
-        Self {
-            kind: ASTKind::Expression { base: box base, eos },
-            range: r,
-        }
+        Self { kind: ASTKind::Expression { base: box base, eos }, range: r }
     }
 
-
-    pub fn infix(base: ASTNode, eos: bool, r: Range) -> Self {
-        Self {
-            kind: ASTKind::Expression { base: box base, eos },
-            range: r,
-        }
+    pub fn push_infix_chain(self, op: &str, base: ASTNode, r: Range) -> Self {
+        let infix = match &self.kind {
+            ASTKind::CallInfix(e) => (**e).clone(),
+            _ => InfixCall { base: self, terms: vec![] },
+        };
+        infix.push_infix_pair(op, base);
+        Self { kind: ASTKind::CallInfix(box infix), range: r }
     }
 
     pub fn list(v: Vec<ASTNode>, r: Range) -> Self {
-        Self {
-            kind: ASTKind::ListExpression(v),
-            range: r,
-        }
+        Self { kind: ASTKind::ListExpression(v), range: r }
     }
 
     pub fn tuple(v: Vec<ASTNode>, r: Range) -> Self {
-        Self {
-            kind: ASTKind::TupleExpression(v),
-            range: r,
-        }
+        Self { kind: ASTKind::TupleExpression(v), range: r }
+    }
+
+    pub fn number(h: &str, v: &str, r: Range) -> Self {
+        let handler = if h.is_empty() { None } else { Some(String::from(h)) };
+        let v = NumberLiteral { handler, value: String::from(v) };
+        Self { kind: ASTKind::NumberLiteral(box v), range: r }
+    }
+
+    pub fn bytes(h: &str, v: &str, r: Range) -> Self {
+        let handler = if h.is_empty() { None } else { Some(String::from(h)) };
+        let v = ByteLiteral { handler, value: String::from(v) };
+        Self { kind: ASTKind::ByteLiteral(box v), range: r }
     }
 
     pub fn boolean(v: bool, r: Range) -> Self {
-        Self {
-            kind: ASTKind::Boolean(v),
-            range: r,
-        }
+        Self { kind: ASTKind::Boolean(v), range: r }
     }
 
-
-
+    pub fn null(r: Range) -> Self {
+        Self { kind: ASTKind::Null, range: r }
+    }
 }

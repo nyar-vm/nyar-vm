@@ -1,4 +1,4 @@
-use valkyrie_parser::get_ast;
+use valkyrie_parser::{ast::ASTKind, Result,ASTDump};
 
 const BYTES: &str = r#"
 0xFF
@@ -25,13 +25,13 @@ const NUMBERS: &str = r#"
 "#;
 
 #[test]
-fn debug_bytes() {
-    let ast = get_ast(BYTES);
-    ast.save("tests/debug_bytes.yaml");
+fn debug_bytes() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(BYTES);
+    ast.save("tests/numbers/debug_bytes.yaml")
 }
 
 #[test]
-fn debug_numbers() {
-    let ast = get_ast(NUMBERS);
-    ast.save("tests/debug_numbers.yaml");
+fn debug_numbers() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(NUMBERS);
+    ast.save("tests/numbers/debug_numbers.yaml")
 }

@@ -1,7 +1,7 @@
 mod settings;
 
-use valkyrie_pest::{Pair, Span, Rule};
-use nyar_hir::{Range, Position};
+use nyar_hir::{Position, Range};
+use valkyrie_pest::{Pair, Rule, Span};
 
 fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> String {
     let indent = if is_newline { "  ".repeat(indent_level) } else { "".to_string() };
@@ -27,4 +27,8 @@ pub fn get_position(s: &Pair<Rule>) -> Range {
         start: Position { line: us.0 as u32, character: us.1 as u32 },
         end: Position { line: es.0 as u32, character: es.1 as u32 },
     }
+}
+
+pub fn unescape(_s: &str) {
+    unimplemented!()
 }

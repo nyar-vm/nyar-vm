@@ -1,0 +1,332 @@
+Program(
+    [
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "int",
+                                        ),
+                                        value: "0",
+                                    },
+                                ),
+                                range: "(2:1, 2:2)",
+                            },
+                            eos: false,
+                        },
+                        range: "(2:1, 3:1)",
+                    },
+                ],
+            ),
+            range: "(2:1, 3:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: CallInfix(
+                                    InfixCall {
+                                        base: AST {
+                                            kind: NumberLiteral(
+                                                NumberLiteral {
+                                                    handler: Some(
+                                                        "fp",
+                                                    ),
+                                                    value: "0.0",
+                                                },
+                                            ),
+                                            range: "(3:1, 3:3)",
+                                        },
+                                        terms: [],
+                                    },
+                                ),
+                                range: "(3:1, 5:1)",
+                            },
+                            eos: false,
+                        },
+                        range: "(3:1, 5:1)",
+                    },
+                ],
+            ),
+            range: "(3:1, 5:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: CallInfix(
+                                    InfixCall {
+                                        base: AST {
+                                            kind: NumberLiteral(
+                                                NumberLiteral {
+                                                    handler: Some(
+                                                        "fp",
+                                                    ),
+                                                    value: "123456.0",
+                                                },
+                                            ),
+                                            range: "(5:1, 5:8)",
+                                        },
+                                        terms: [],
+                                    },
+                                ),
+                                range: "(5:1, 7:1)",
+                            },
+                            eos: false,
+                        },
+                        range: "(5:1, 7:1)",
+                    },
+                ],
+            ),
+            range: "(5:1, 7:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "fp",
+                                        ),
+                                        value: "0.0",
+                                    },
+                                ),
+                                range: "(7:1, 7:4)",
+                            },
+                            eos: false,
+                        },
+                        range: "(7:1, 8:1)",
+                    },
+                ],
+            ),
+            range: "(7:1, 8:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "f32",
+                                        ),
+                                        value: "42",
+                                    },
+                                ),
+                                range: "(8:1, 8:6)",
+                            },
+                            eos: false,
+                        },
+                        range: "(8:1, 9:1)",
+                    },
+                ],
+            ),
+            range: "(8:1, 9:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "i32",
+                                        ),
+                                        value: "2147483647",
+                                    },
+                                ),
+                                range: "(9:1, 9:14)",
+                            },
+                            eos: false,
+                        },
+                        range: "(9:1, 10:1)",
+                    },
+                ],
+            ),
+            range: "(9:1, 10:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "i64",
+                                        ),
+                                        value: "9223372036854775807",
+                                    },
+                                ),
+                                range: "(10:1, 10:23)",
+                            },
+                            eos: false,
+                        },
+                        range: "(10:1, 11:1)",
+                    },
+                ],
+            ),
+            range: "(10:1, 11:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "i128",
+                                        ),
+                                        value: "170141183460469231731687303715884105727",
+                                    },
+                                ),
+                                range: "(11:1, 11:44)",
+                            },
+                            eos: false,
+                        },
+                        range: "(11:1, 12:1)",
+                    },
+                ],
+            ),
+            range: "(11:1, 12:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "int",
+                                        ),
+                                        value: "57896044618658097711785492504343953926634992332820282019728792003956564819967",
+                                    },
+                                ),
+                                range: "(12:1, 12:78)",
+                            },
+                            eos: false,
+                        },
+                        range: "(12:1, 13:1)",
+                    },
+                ],
+            ),
+            range: "(12:1, 13:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "int",
+                                        ),
+                                        value: "123456",
+                                    },
+                                ),
+                                range: "(13:1, 13:7)",
+                            },
+                            eos: false,
+                        },
+                        range: "(13:1, 14:1)",
+                    },
+                ],
+            ),
+            range: "(13:1, 14:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "i",
+                                        ),
+                                        value: "123456",
+                                    },
+                                ),
+                                range: "(14:1, 14:8)",
+                            },
+                            eos: false,
+                        },
+                        range: "(14:1, 15:1)",
+                    },
+                ],
+            ),
+            range: "(14:1, 15:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "im",
+                                        ),
+                                        value: "1234.56",
+                                    },
+                                ),
+                                range: "(15:1, 15:10)",
+                            },
+                            eos: false,
+                        },
+                        range: "(15:1, 16:1)",
+                    },
+                ],
+            ),
+            range: "(15:1, 16:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST {
+                        kind: Expression {
+                            base: AST {
+                                kind: NumberLiteral(
+                                    NumberLiteral {
+                                        handler: Some(
+                                            "cm",
+                                        ),
+                                        value: "1234.56",
+                                    },
+                                ),
+                                range: "(16:1, 16:10)",
+                            },
+                            eos: false,
+                        },
+                        range: "(16:1, 17:1)",
+                    },
+                ],
+            ),
+            range: "(16:1, 17:1)",
+        },
+    ],
+)

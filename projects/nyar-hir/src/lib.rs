@@ -6,4 +6,4 @@ mod errors;
 
 pub use ast::{ASTKind, ASTNode};
 pub use errors::{NyarError, NyarErrorKind, Result};
-pub use lsp_types::{Range, Position};
+pub use lsp_types::{Position, Range};

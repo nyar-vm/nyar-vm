@@ -1,4 +1,4 @@
-use valkyrie_parser::get_ast;
+use valkyrie_parser::{ast::ASTKind, ASTDump};
 
 const LET: &str = r#"
 let a;
@@ -18,6 +18,6 @@ a.b = c
 
 #[test]
 fn debug_let() {
-    let ast = get_ast(LET);
-    ast.save("tests/debug_let.json");
+    let ast: ASTKind = ASTDump::parse(BYTES);
+    ast.save(file!());
 }

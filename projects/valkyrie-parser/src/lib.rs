@@ -2,16 +2,13 @@
 
 pub mod grammar;
 pub mod utils;
+
 pub mod ast {
     pub use nyar_hir::ast::*;
 }
 
-mod errors;
+mod traits;
 
 pub use grammar::LexerContext;
-
-pub fn get_ast(input: &str) -> nyar_hir::ASTKind {
-    let mut cfg = LexerContext::default();
-    cfg.refine = true;
-    cfg.get_ast(input).unwrap()
-}
+pub use traits::ASTDump;
+pub use nyar_hir::{Result, NyarError, NyarErrorKind};

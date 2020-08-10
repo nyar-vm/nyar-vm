@@ -1,4 +1,4 @@
-use valkyrie_parser::get_ast;
+use valkyrie_parser::{ast::ASTKind, ASTDump};
 
 const INPUT: &str = r#"
 +1+2*3^-4!!
@@ -8,8 +8,8 @@ const INPUT: &str = r#"
 
 #[test]
 fn debug_expr() {
-    let ast = get_ast(INPUT);
-    ast.save("tests/debug_expr.yaml");
+    let ast: ASTKind = ASTDump::parse(BYTES);
+    ast.save(file!());
 }
 
 const LIST_OR_SLICE: &str = r#"
@@ -28,7 +28,7 @@ e[1:2:3,[1,2,3]];
 
 #[test]
 fn debug_list_or_slice() {
-    let ast = get_ast(LIST_OR_SLICE);
+    let ast: ASTKind = ASTDump::parse(BYTES);
     ast.save("tests/debug_list_or_slice.yaml");
 }
 
@@ -42,7 +42,7 @@ Persion(20,"2",a, a: 2)
 
 #[test]
 fn debug_expr_brackets() {
-    let ast = get_ast(BRACKETS);
+    let ast: ASTKind = ASTDump::parse(BYTES);
     ast.save("tests/debug_expr_brackets.yaml");
 }
 
@@ -65,6 +65,6 @@ a().b().c()
 
 #[test]
 fn debug_dot_call() {
-    let ast = get_ast(DOT_CALL);
-    ast.save("tests/debug_dot_call.yaml");
+    let ast: ASTKind = ASTDump::parse(BYTES);
+    ast.save("tests/debug_dot_call");
 }

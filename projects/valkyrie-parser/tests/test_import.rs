@@ -1,4 +1,4 @@
-use valkyrie_parser::get_ast;
+use valkyrie_parser::{ast::ASTKind, ASTDump};
 
 const INPUT: &str = r#"
 import torch
