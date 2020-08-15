@@ -124,9 +124,9 @@ impl ASTNode {
         Self { kind: ASTKind::NumberLiteral(box v), range: r }
     }
 
-    pub fn bytes(h: &str, v: &str, r: Range) -> Self {
-        let handler = if h.is_empty() { None } else { Some(String::from(h)) };
-        let v = ByteLiteral { handler, value: String::from(v) };
+    pub fn bytes(h: char, v: &str, r: Range) -> Self {
+        // let handler = if h.is_empty() { None } else { Some(String::from(h)) };
+        let v = ByteLiteral { handler: h, value: String::from(v) };
         Self { kind: ASTKind::ByteLiteral(box v), range: r }
     }
 

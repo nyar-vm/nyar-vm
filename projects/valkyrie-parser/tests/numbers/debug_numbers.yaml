@@ -8,9 +8,7 @@ Program(
                             base: AST {
                                 kind: NumberLiteral(
                                     NumberLiteral {
-                                        handler: Some(
-                                            "int",
-                                        ),
+                                        handler: None,
                                         value: "0",
                                     },
                                 ),
@@ -35,9 +33,7 @@ Program(
                                         base: AST {
                                             kind: NumberLiteral(
                                                 NumberLiteral {
-                                                    handler: Some(
-                                                        "fp",
-                                                    ),
+                                                    handler: None,
                                                     value: "0.0",
                                                 },
                                             ),
@@ -67,9 +63,7 @@ Program(
                                         base: AST {
                                             kind: NumberLiteral(
                                                 NumberLiteral {
-                                                    handler: Some(
-                                                        "fp",
-                                                    ),
+                                                    handler: None,
                                                     value: "123456.0",
                                                 },
                                             ),
@@ -96,9 +90,7 @@ Program(
                             base: AST {
                                 kind: NumberLiteral(
                                     NumberLiteral {
-                                        handler: Some(
-                                            "fp",
-                                        ),
+                                        handler: None,
                                         value: "0.0",
                                     },
                                 ),
@@ -216,9 +208,7 @@ Program(
                             base: AST {
                                 kind: NumberLiteral(
                                     NumberLiteral {
-                                        handler: Some(
-                                            "int",
-                                        ),
+                                        handler: None,
                                         value: "57896044618658097711785492504343953926634992332820282019728792003956564819967",
                                     },
                                 ),
@@ -240,9 +230,7 @@ Program(
                             base: AST {
                                 kind: NumberLiteral(
                                     NumberLiteral {
-                                        handler: Some(
-                                            "int",
-                                        ),
+                                        handler: None,
                                         value: "123456",
                                     },
                                 ),

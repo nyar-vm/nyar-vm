@@ -373,6 +373,7 @@ impl LexerContext {
             let node = match pair.as_rule() {
                 Rule::String => self.parse_string(pair),
                 Rule::Boolean => self.parse_boolean(pair),
+                Rule::Null=>self.parse_null(pair),
                 Rule::Number => self.parse_number(pair),
                 Rule::Byte => self.parse_byte(pair),
                 Rule::Symbol => self.parse_symbol(pair),
@@ -444,15 +445,15 @@ impl LexerContext {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::Integer => {
-                    h = "int";
+                    // h = "int";
                     t = pair.as_str().to_string();
                 }
                 Rule::Decimal => {
-                    h = "fp";
+                    // h = "dec";
                     t = pair.as_str().to_string();
                 }
                 Rule::DecimalBad => {
-                    h = "fp";
+                    // h = "dec";
                     let s = pair.as_str();
                     if s.starts_with('.') { t = "0".to_string() + s } else { t = s.to_string() + "0" }
                 }
@@ -474,28 +475,13 @@ impl LexerContext {
 
     fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = get_position(&pairs);
-        let (mut h, mut t) = ("", "0");
+        let (mut h, mut t) = ('0', "0");
         for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::Byte_HEX => {
-                    let s = pair.as_str();
-                    h = "x0";
-                    t = &s[2..s.len()];
-                }
-                Rule::Byte_OCT => {
-                    let s = pair.as_str();
-                    h = "o0";
-                    t = &s[2..s.len()];
-                }
-                Rule::Byte_BIN => {
-                    let s = pair.as_str();
-                    h = "b0 ";
-                    t = &s[2..s.len()];
-                }
-                _ => unreachable!(),
-            };
+            let s = pair.as_str();
+            t = &s[2..s.len()];
+            h = s.chars().nth(1).unwrap();
         }
-        ASTNode::number(h, t, r)
+        ASTNode::bytes(h, t, r)
     }
 
     fn parse_boolean(&self, pairs: Pair<Rule>) -> ASTNode {
