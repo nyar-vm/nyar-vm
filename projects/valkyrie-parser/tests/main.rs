@@ -1,6 +1,6 @@
 // mod test_assign;
 // mod test_expr;
-// mod test_if;
+mod test_if;
 // mod test_import;
 // mod test_index;
-mod numbers;
+mod test_numbers;

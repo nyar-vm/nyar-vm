@@ -4,12 +4,13 @@ const BYTES: &str = r#"
 0xFF
 0o77
 0b11
+0a_b_c_d
 "#;
 
 #[test]
 fn debug_bytes() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(BYTES);
-    ast.save("tests/numbers/debug_bytes.yaml")
+    ast.save("tests/test_numbers/debug_bytes.yaml")
 }
 
 const NUMBERS: &str = r#"
@@ -33,7 +34,7 @@ const NUMBERS: &str = r#"
 #[test]
 fn debug_numbers() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(NUMBERS);
-    ast.save("tests/numbers/debug_numbers.yaml")
+    ast.save("tests/test_numbers/debug_numbers.yaml")
 }
 
 const SPECIALS: &str = r#"
@@ -45,5 +46,5 @@ false
 #[test]
 fn debug_specials() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(SPECIALS);
-    ast.save("tests/numbers/debug_specials.yaml")
+    ast.save("tests/test_numbers/debug_specials.yaml")
 }

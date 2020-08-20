@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Debug, Clone)]
 pub struct IfStatement {
-    pairs: Vec<(ASTKind, ASTKind)>,
-    default: Option<Box<ASTKind>>,
-    annotations: Option<Box<ASTKind>>,
+    pub pairs: Vec<(ASTNode, ASTNode)>,
+    pub default: Option<ASTNode>,
+    // annotations: Option<Box<ASTKind>>,
 }

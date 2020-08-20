@@ -8,16 +8,34 @@ impl Display for ASTNode {
 
 impl Debug for ASTNode {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("AST")
-            .field("kind", &self.kind)
-            .field(
-                "range",
-                &format!(
-                    "({}:{}, {}:{})",
-                    self.range.start.line, self.range.start.character, self.range.end.line, self.range.end.character
-                ),
-            )
-            .finish()
+        let range = format!(
+            "({}:{}, {}:{})",
+            self.range.start.line, self.range.start.character, self.range.end.line, self.range.end.character
+        );
+        match &self.kind {
+            ASTKind::Expression { base, eos } => f
+                .debug_struct("AST::Expression")
+                .field("base", base)
+                .field("eos", eos)
+                .field("range", &range) // force format
+                .finish(),
+            ASTKind::Boolean(v) => f
+                .debug_struct("AST::Boolean")
+                .field("value", v)
+                .field("range", &range) //
+                .finish(),
+            ASTKind::ByteLiteral(v) => f
+                .debug_struct("AST::ByteLiteral")
+                .field("value", &v.value)
+                .field("handler", &v.handler)
+                .field("range", &range) //
+                .finish(),
+            _ => f
+                .debug_struct("AST")
+                .field("kind", &self.kind)
+                .field("range", &range) //
+                .finish(),
+        }
     }
 }
 

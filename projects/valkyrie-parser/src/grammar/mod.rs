@@ -39,19 +39,19 @@ impl LexerContext {
             match pair.as_rule() {
                 Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
                 Rule::emptyStatement => nodes.push(ASTNode::empty_statement(r)),
-                // Rule::importStatement => nodes.push(self.parse_import(pair)),
+                Rule::importStatement => nodes.push(self.parse_import(pair)),
                 Rule::assignStatement => {
                     let s = self.parse_assign(pair);
                     nodes.extend(s.iter().cloned());
                 }
-                // Rule::if_statement => nodes.push(self.parse_if(pair)),
+                Rule::if_statement => nodes.push(self.parse_if(pair)),
                 Rule::expression => nodes.push(self.parse_expression(pair)),
                 _ => debug_cases!(pair),
             };
         }
         return ASTNode::suite(nodes, r_all);
     }
-    //
+
     fn parse_import(&self, pairs: Pair<Rule>) -> ASTNode {
         let _r = get_position(&pairs);
         unimplemented!()
@@ -170,55 +170,45 @@ impl LexerContext {
         //     return vec;
     }
 
-    // fn parse_if(&self, pairs: Pair<Rule>) -> ASTNode {
-    //     let mut conditions: Vec<AST> = vec![];
-    //     let mut blocks: Vec<AST> = vec![];
-    //     let mut default = None;
-    //     for pair in pairs.into_inner() {
-    //         match pair.as_rule() {
-    //             Rule::WHITESPACE => continue,
-    //             Rule::If => (),
-    //             Rule::Else => (),
-    //             Rule::expr => conditions.push(self.parse_expr(pair)),
-    //             Rule::block => blocks.push(self.parse_block(pair)),
-    //             _ => unreachable!(),
-    //         }
-    //     }
-    //     if conditions.len() != blocks.len() {
-    //         default = Some(Box::new(blocks.pop().unwrap()))
-    //     }
-    //     let pairs = conditions.into_iter().zip(blocks.into_iter()).collect();
-    //     return AST::IfStatement { pairs, default, annotations: None };
-    // }
+    fn parse_if(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = get_position(&pairs);
+        let mut conditions: Vec<ASTNode> = vec![];
+        let mut blocks: Vec<ASTNode> = vec![];
+        let mut default = None;
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::WHITESPACE => continue,
+                Rule::If => (),
+                Rule::Else => (),
+                Rule::expr => conditions.push(self.parse_expr(pair)),
+                Rule::block => blocks.push(self.parse_block(pair)),
+                _ => unreachable!(),
+            }
+        }
+        if conditions.len() != blocks.len() {
+            default = Some(blocks.pop().unwrap())
+        }
+        let pairs = conditions.into_iter().zip(blocks.into_iter()).collect();
+        return ASTNode::if_statement(pairs,default,r);
+    }
 
-    // fn parse_dict(&self, pairs: Pair<Rule>) -> ASTNode {
-    //     let mut vec: Vec<AST> = vec![];
-    //     for pair in pairs.into_inner() {
-    //         match pair.as_rule() {
-    //             Rule::expr => vec.push(self.parse_expr(pair)),
-    //             _ => debug_cases!(pair),
-    //         };
-    //     }
-    //     return AST::None;
-    // }
-    //
-    // fn parse_block(&self, pairs: Pair<Rule>) -> ASTNode {
-    //     let mut pass: Vec<AST> = vec![];
-    //     for pair in pairs.into_inner() {
-    //         match pair.as_rule() {
-    //             Rule::expr => {
-    //                 let node = self.parse_expr(pair);
-    //                 pass.push(node);
-    //             }
-    //             Rule::statement => {
-    //                 let node = self.parse_statement(pair);
-    //                 pass.push(node);
-    //             }
-    //             _ => debug_cases!(pair),
-    //         };
-    //     }
-    //     return AST::None;
-    // }
+    fn parse_block(&self, pairs: Pair<Rule>) -> ASTNode {
+        let mut pass: Vec<ASTNode> = vec![];
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::expr => {
+                    let node = self.parse_expr(pair);
+                    pass.push(node);
+                }
+                Rule::statement => {
+                    let node = self.parse_statement(pair);
+                    pass.push(node);
+                }
+                _ => debug_cases!(pair),
+            };
+        }
+        return ASTNode::default();
+    }
 
     fn parse_expression(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = get_position(&pairs);
@@ -283,7 +273,7 @@ impl LexerContext {
                 // Rule::bracket_call => self.parse_bracket_call(pair),
                 Rule::expr => self.parse_expr(pair),
                 Rule::data => self.parse_data(pair),
-                Rule::tuple => self.parse_tuple(pair),
+                Rule::tuple => self.parse_list_or_tuple(pair, false),
                 _ => debug_cases!(pair),
             };
         }
@@ -372,12 +362,13 @@ impl LexerContext {
         for pair in pairs.into_inner() {
             let node = match pair.as_rule() {
                 Rule::String => self.parse_string(pair),
-                Rule::Boolean => self.parse_boolean(pair),
-                Rule::Null=>self.parse_null(pair),
+                Rule::Special => self.parse_special(pair),
+                // Rule::Null => self.parse_null(pair),
+                // Rule::Unit=>self.parse_unit(pair),
                 Rule::Number => self.parse_number(pair),
                 Rule::Byte => self.parse_byte(pair),
                 Rule::Symbol => self.parse_symbol(pair),
-                Rule::list => self.parse_list(pair),
+                Rule::list => self.parse_list_or_tuple(pair, true),
                 _ => debug_cases!(pair),
             };
             return node;
@@ -385,20 +376,19 @@ impl LexerContext {
         return ASTNode::default();
     }
 
-    fn parse_list(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = get_position(&pairs);
+    fn parse_dict(&self, pairs: Pair<Rule>) -> ASTNode {
         let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::Comma => (),
                 Rule::expr => vec.push(self.parse_expr(pair)),
-                _ => unreachable!(),
+                _ => debug_cases!(pair),
             };
         }
-        return ASTNode::list(vec, r);
+        return ASTNode::default();
     }
 
-    fn parse_tuple(&self, pairs: Pair<Rule>) -> ASTNode {
+
+    fn parse_list_or_tuple(&self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
         let r = get_position(&pairs);
         let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
@@ -408,7 +398,10 @@ impl LexerContext {
                 _ => unreachable!(),
             };
         }
-        return ASTNode::tuple(vec, r);
+        match is_list {
+            true => { ASTNode::list(vec, r) }
+            false => { ASTNode::tuple(vec, r) }
+        }
     }
 
     fn parse_string(&self, pairs: Pair<Rule>) -> ASTNode {
@@ -475,28 +468,21 @@ impl LexerContext {
 
     fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = get_position(&pairs);
-        let (mut h, mut t) = ('0', "0");
-        for pair in pairs.into_inner() {
-            let s = pair.as_str();
-            t = &s[2..s.len()];
-            h = s.chars().nth(1).unwrap();
-        }
+        let s = pairs.as_str();
+        let t = &s[2..s.len()];
+        let h = s.chars().nth(1).unwrap();
         ASTNode::bytes(h, t, r)
     }
 
-    fn parse_boolean(&self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_special(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = get_position(&pairs);
         let pair = pairs.into_inner().nth(0).unwrap();
         match pair.as_rule() {
             Rule::True => ASTNode::boolean(true, r),
             Rule::False => ASTNode::boolean(false, r),
+            Rule::Null => ASTNode::null(r),
             _ => unreachable!(),
         }
-    }
-
-    fn parse_null(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = get_position(&pairs);
-        ASTNode::null(r)
     }
 
     fn parse_symbol(&self, pairs: Pair<Rule>) -> ASTNode {

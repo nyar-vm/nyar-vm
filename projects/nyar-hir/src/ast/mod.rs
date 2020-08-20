@@ -97,6 +97,17 @@ impl ASTNode {
     pub fn suite(v: Vec<ASTNode>, r: Range) -> Self {
         Self { kind: ASTKind::Suite(v), range: r }
     }
+
+    pub fn if_statement(pairs: Vec<(ASTNode, ASTNode)>, default: Option<ASTNode>, r: Range) -> Self {
+        let s = IfStatement {
+            pairs,
+            default,
+        };
+
+        Self { kind: ASTKind::IfStatement(box s), range: r }
+    }
+
+
     pub fn expression(base: ASTNode, eos: bool, r: Range) -> Self {
         Self { kind: ASTKind::Expression { base: box base, eos }, range: r }
     }

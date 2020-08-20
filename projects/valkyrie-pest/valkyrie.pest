@@ -165,7 +165,7 @@ parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
 /*====================================================================================================================*/
-data = ${dict|list|Null|Unit|Boolean|Byte|Number|String|Symbol}
+data = ${dict|list|Special|Byte|Number|String|Symbol}
 dict = {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
 list = {"[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
 slice = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
@@ -175,14 +175,12 @@ key_valid =!{Integer | SYMBOL | String}
 index_range = !{expr? ~ Colon ~ expr?}
 index_step = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 /*====================================================================================================================*/
-//!#D19A66: Null|Unit
-Null = @{"null"}
-Unit = !{"("~")"}
-/*====================================================================================================================*/
 ///#D19A66
-Boolean = !{True|False}
+Special = !{Null|Unit|True|False}
+Null    = @{"null"}
 True    = @{"true"}
 False   = @{"false"}
+Unit    = !{"("~")"}
 /*====================================================================================================================*/
 // Byte     = ${Byte_BIN|Byte_OCT|Byte_HEX}
 // Byte_BIN = ${Zero ~ B ~ (Underline? ~ ASCII_BIN_DIGIT)+}
@@ -196,6 +194,7 @@ Decimal    = ${Integer ~ Dot ~ ASCII_DIGIT+}
 DecimalBad = ${Integer ~ Dot|Dot ~ ASCII_DIGIT+}
 Integer    = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline? ~ ASCII_DIGIT)*}
 Complex    = {(Decimal|Integer)~ SYMBOL}
+Zero       = _{"0"}
 /*====================================================================================================================*/
 //!#3C963C: String
 //!#98C379: StringText|StringLiteralText
@@ -221,7 +220,7 @@ LineCommentFixme = ${ "//!" ~ (!NEWLINE ~ ANY)*}
 ///Yellow
 LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 ///Gray
-MultiLineComment = ${ "%%%" ~ (MultiLineComment | !"%%%" ~ ANY)* ~ "%%%"}
+MultiLineComment = ${ "//+" ~ (MultiLineComment)* ~ "//-"}
 /*====================================================================================================================*/
 ///#61AFEF
 Symbol = ${namespace|SYMBOL}
@@ -231,10 +230,9 @@ SYMBOL = @{
   | Underline ~ XID_CONTINUE+
 }
 /*====================================================================================================================*/
-Zero = _{"0"}
-X = _{"x"|"X"}
-O = _{"o"|"O"}
-B = _{"b"|"B"}
+// X = _{"x"|"X"}
+// O = _{"o"|"O"}
+// B = _{"b"|"B"}
 /*====================================================================================================================*/
 //!Orange: Modifier
 Keywords = !{If|For}
