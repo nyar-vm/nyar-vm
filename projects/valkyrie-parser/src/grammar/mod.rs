@@ -257,13 +257,7 @@ impl LexerContext {
                 _ => unreachable!(),
             };
         }
-        return if prefix.len() + suffix.len() == 0 {
-            base
-        }
-        else {
-            unimplemented!()
-            //ASTNode::UnaryOperators { base: Box::new(base), prefix, suffix, r }
-        };
+        base.push_unary_operations(&prefix, &suffix, r)
     }
 
     fn parse_node(&self, pairs: Pair<Rule>) -> ASTNode {

@@ -88,7 +88,18 @@ pub enum ASTKind {
     Null,
 }
 
-impl ASTNode {}
+impl ASTNode {
+    pub fn refine(self) -> Self {
+        match self.kind {
+            ASTKind::CallUnary(v) => {
+                v.base
+            }
+            _ => self
+        }
+
+    }
+
+}
 
 impl ASTNode {
     pub fn empty_statement(r: Range) -> Self {
@@ -119,6 +130,23 @@ impl ASTNode {
         };
         infix.push_infix_pair(op, base);
         Self { kind: ASTKind::CallInfix(box infix), range: r }
+    }
+
+    pub fn push_unary_operations(self, prefix: &[String], suffix: &[String], r: Range) -> Self {
+        if prefix.is_empty() && suffix.is_empty() {
+            return self.refine()
+        }
+        let mut unary = match self.kind {
+            ASTKind::CallUnary(u) => {
+                *u
+            }
+            _ => {
+                UnaryCall::new(self)
+            }
+        };
+        unary.push_prefix(prefix);
+        unary.push_suffix(prefix);
+        Self { kind: ASTKind::CallUnary(box unary), range: r }
     }
 
     pub fn list(v: Vec<ASTNode>, r: Range) -> Self {
