@@ -1,13 +1,13 @@
 use super::*;
 use OperatorAssociativity::*;
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum OperatorAssociativity {
     Left,
     Right,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy,Clone)]
 pub enum Operator {
     Prefix {
         op: &'static str,
@@ -60,6 +60,7 @@ impl Operator {
             "+" => Self::SUFFIX_PLUS,
             "-" => Self::SUFFIX_MINUS,
             "!" => Self::SUFFIX_FACTORIAL,
+            "!!" => Self::SUFFIX_FACTORIAL2,
             _ => unimplemented!("{:?}", o),
         }
     }
@@ -82,4 +83,5 @@ impl Operator {
     pub const SUFFIX_PLUS: Self = Self::Suffix { op: "+" };
     pub const SUFFIX_MINUS: Self = Self::Suffix { op: "-" };
     pub const SUFFIX_FACTORIAL: Self = Self::Suffix { op: "!" };
+    pub const SUFFIX_FACTORIAL2: Self = Self::Suffix { op: "!!" };
 }

@@ -145,7 +145,7 @@ impl ASTNode {
             }
         };
         unary.push_prefix(prefix);
-        unary.push_suffix(prefix);
+        unary.push_suffix(suffix);
         Self { kind: ASTKind::CallUnary(box unary), range: r }
     }
 

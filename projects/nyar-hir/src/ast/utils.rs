@@ -30,6 +30,7 @@ impl Debug for ASTNode {
                 .field("handler", &v.handler)
                 .field("range", &range) //
                 .finish(),
+            ASTKind::NumberLiteral(v) => write!(f, "{}", v),
             _ => f
                 .debug_struct("AST")
                 .field("kind", &self.kind)

@@ -1,0 +1,75 @@
+Program(
+    [
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: AST {
+                                        kind: CallUnary(
+                                            UnaryCall {
+                                                base: 1,
+                                                prefix: [
+                                                    +,
+                                                ],
+                                                suffix: [],
+                                            },
+                                        ),
+                                        range: "(2:1, 2:3)",
+                                    },
+                                    terms: [],
+                                },
+                            ),
+                            range: "(2:1, 2:12)",
+                        },
+                        eos: true,
+                        range: "(2:1, 2:13)",
+                    },
+                ],
+            ),
+            range: "(2:1, 2:13)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 1,
+                                    terms: [],
+                                },
+                            ),
+                            range: "(3:1, 3:8)",
+                        },
+                        eos: true,
+                        range: "(3:1, 3:9)",
+                    },
+                ],
+            ),
+            range: "(3:1, 3:9)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 1,
+                                    terms: [],
+                                },
+                            ),
+                            range: "(4:1, 4:12)",
+                        },
+                        eos: true,
+                        range: "(4:1, 4:13)",
+                    },
+                ],
+            ),
+            range: "(4:1, 4:13)",
+        },
+    ],
+)

@@ -13,18 +13,18 @@ fn debug_unary() -> Result<()> {
     ast.save("tests/test_expr/debug_unary.yaml")
 }
 
-// const INPUT: &str = r#"
-// +1+2*3^-4!!
-// 1 +++ 2
-// 1 * (2 + 3)
-// "#;
-//
-// #[test]
-// fn debug_expr() {
-//     let ast: ASTKind = ASTDump::parse(INPUT);
-//     ast.save("tests/test_expr/debug_expr.yaml");
-// }
-//
+const INFIX: &str = r#"
++1+2*3^-4!!;
+1 +++ 2;
+1 * (2 + 3);
+"#;
+
+#[test]
+fn debug_infix() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(INFIX);
+    ast.save("tests/test_expr/debug_infix.yaml")
+}
+
 // const LIST_OR_SLICE: &str = r#"
 // [1 + 2];
 // [1 + 2, 3,];
