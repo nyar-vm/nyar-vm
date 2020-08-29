@@ -9,7 +9,7 @@ pub use self::{
     byte_literal::ByteLiteral,
     comment_literal::CommentLiteral,
     number_literal::NumberLiteral,
-    operator::{Operator, OperatorKind},
+    operator::{Operator},
     string_literal::StringLiteral,
     symbol::Symbol,
 };

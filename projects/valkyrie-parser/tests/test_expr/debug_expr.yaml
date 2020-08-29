@@ -20,18 +20,12 @@ Program(
                                                     range: "(2:2, 2:3)",
                                                 },
                                                 prefix: [
-                                                    Operator {
-                                                        kind: Infix,
-                                                        assoc: Left,
-                                                        prec: 100,
+                                                    Prefix {
                                                         op: "+",
                                                     },
                                                 ],
                                                 suffix: [
-                                                    Operator {
-                                                        kind: Infix,
-                                                        assoc: Left,
-                                                        prec: 100,
+                                                    Suffix {
                                                         op: "+",
                                                     },
                                                 ],

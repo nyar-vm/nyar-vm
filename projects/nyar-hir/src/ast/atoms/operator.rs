@@ -1,13 +1,5 @@
 use super::*;
 use OperatorAssociativity::*;
-use OperatorKind::*;
-
-#[derive(Clone, Debug)]
-pub enum OperatorKind {
-    Prefix,
-    Infix,
-    Suffix,
-}
 
 #[derive(Clone, Debug)]
 pub enum OperatorAssociativity {
@@ -16,11 +8,28 @@ pub enum OperatorAssociativity {
 }
 
 #[derive(Clone, Debug)]
-pub struct Operator {
-    kind: OperatorKind,
-    assoc: OperatorAssociativity,
-    prec: u8,
-    op: &'static str,
+pub enum Operator {
+    Prefix {
+        op: &'static str,
+    },
+    Infix {
+        assoc: OperatorAssociativity,
+        prec: u8,
+        op: &'static str,
+    },
+    Suffix {
+        op: &'static str,
+    },
+}
+
+impl Debug for Operator {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Operator::Prefix { op,.. } => f.write_str(op),
+            Operator::Infix { op,.. } => f.write_str(op),
+            Operator::Suffix { op,.. } => f.write_str(op)
+        }
+    }
 }
 
 impl Operator {
@@ -33,9 +42,9 @@ impl Operator {
     }
     fn parse_prefix(o: &str) -> Self {
         match o {
-            "+"  => Self::PREFIX_PLUS,
-            "-"  => Self::PREFIX_MINUS,
-            "!"  => Self::PREFIX_NOT,
+            "+" => Self::PREFIX_PLUS,
+            "-" => Self::PREFIX_MINUS,
+            "!" => Self::PREFIX_NOT,
             _ => unimplemented!("{:?}", o),
         }
     }
@@ -48,29 +57,29 @@ impl Operator {
     }
     fn parse_suffix(o: &str) -> Self {
         match o {
-            "+"  => Self::SUFFIX_PLUS,
-            "-"  => Self::SUFFIX_MINUS,
-            "!"  => Self::SUFFIX_POWER,
+            "+" => Self::SUFFIX_PLUS,
+            "-" => Self::SUFFIX_MINUS,
+            "!" => Self::SUFFIX_FACTORIAL,
             _ => unimplemented!("{:?}", o),
         }
     }
 }
 
 impl Operator {
-    pub const PREFIX_PLUS: Self = Self { kind: Infix, assoc: Left, prec: 100, op: "+" };
-    pub const PREFIX_MINUS: Self = Self { kind: Infix, assoc: Left, prec: 100, op: "-" };
-    pub const PREFIX_NOT: Self = Self { kind: Infix, assoc: Right, prec: 120, op: "!" };
+    pub const PREFIX_PLUS: Self = Self::Prefix { op: "+" };
+    pub const PREFIX_MINUS: Self = Self::Prefix { op: "-" };
+    pub const PREFIX_NOT: Self = Self::Prefix { op: "!" };
 }
 
 
 impl Operator {
-    pub const INFIX_PLUS: Self = Self { kind: Infix, assoc: Left, prec: 100, op: "+" };
-    pub const INFIX_MINUS: Self = Self { kind: Infix, assoc: Left, prec: 100, op: "-" };
-    pub const INFIX_POWER: Self = Self { kind: Infix, assoc: Right, prec: 120, op: "*" };
+    pub const INFIX_PLUS: Self = Self::Infix { assoc: Left, prec: 100, op: "+" };
+    pub const INFIX_MINUS: Self = Self::Infix { assoc: Left, prec: 100, op: "-" };
+    pub const INFIX_POWER: Self = Self::Infix { assoc: Right, prec: 120, op: "*" };
 }
 
 impl Operator {
-    pub const SUFFIX_PLUS: Self = Self { kind: Infix, assoc: Left, prec: 100, op: "+" };
-    pub const SUFFIX_MINUS: Self = Self { kind: Infix, assoc: Left, prec: 100, op: "-" };
-    pub const SUFFIX_POWER: Self = Self { kind: Infix, assoc: Right, prec: 120, op: "*" };
+    pub const SUFFIX_PLUS: Self = Self::Suffix { op: "+" };
+    pub const SUFFIX_MINUS: Self = Self::Suffix { op: "-" };
+    pub const SUFFIX_FACTORIAL: Self = Self::Suffix { op: "!" };
 }

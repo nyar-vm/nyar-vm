@@ -1,16 +1,29 @@
 use super::*;
 
-const INPUT: &str = r#"
-+1+2*3^-4!!
-1 +++ 2
-1 * (2 + 3)
+const UNARY: &str = r#"
++1;
+2!;
++3!;
+-+4!!;
 "#;
 
 #[test]
-fn debug_expr() {
-    let ast: ASTKind = ASTDump::parse(INPUT);
-    ast.save("tests/test_expr/debug_expr.yaml");
+fn debug_unary() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(UNARY);
+    ast.save("tests/test_expr/debug_unary.yaml")
 }
+
+// const INPUT: &str = r#"
+// +1+2*3^-4!!
+// 1 +++ 2
+// 1 * (2 + 3)
+// "#;
+//
+// #[test]
+// fn debug_expr() {
+//     let ast: ASTKind = ASTDump::parse(INPUT);
+//     ast.save("tests/test_expr/debug_expr.yaml");
+// }
 //
 // const LIST_OR_SLICE: &str = r#"
 // [1 + 2];
