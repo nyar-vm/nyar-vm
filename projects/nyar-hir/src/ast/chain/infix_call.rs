@@ -14,8 +14,13 @@ impl InfixCall {
     pub fn new(base: ASTNode) -> Self {
         Self { base, terms: vec![] }
     }
-    pub fn push_infix_pair(&self, _op: &str, _base: ASTNode) {
-        print!("{}", _op);
-        print!("{}", _op);
+    pub fn push_infix_pair(&mut self, op: Operator, base: ASTNode) {
+        self.terms.push((op, base))
+    }
+    pub fn get_priority(&self) -> u8 {
+        match &self.base.kind {
+            ASTKind::Operator(o) => o.get_priority(),
+            _ => unreachable!()
+        }
     }
 }

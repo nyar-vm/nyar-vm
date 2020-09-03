@@ -7,14 +7,14 @@ pub enum OperatorAssociativity {
     Right,
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 pub enum Operator {
     Prefix {
         op: &'static str,
     },
     Infix {
-        assoc: OperatorAssociativity,
-        prec: u8,
+        a: OperatorAssociativity,
+        p: u8,
         op: &'static str,
     },
     Suffix {
@@ -25,9 +25,9 @@ pub enum Operator {
 impl Debug for Operator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Operator::Prefix { op,.. } => f.write_str(op),
-            Operator::Infix { op,.. } => f.write_str(op),
-            Operator::Suffix { op,.. } => f.write_str(op)
+            Operator::Prefix { op, .. } => f.write_str(op),
+            Operator::Infix { op, .. } => f.write_str(op),
+            Operator::Suffix { op, .. } => f.write_str(op)
         }
     }
 }
@@ -52,6 +52,8 @@ impl Operator {
         match o {
             "+" => Self::INFIX_PLUS,
             "-" => Self::INFIX_MINUS,
+            "*" => Self::INFIX_TIMES,
+            "^" => Self::INFIX_POWER,
             _ => unimplemented!("{:?}", o),
         }
     }
@@ -64,6 +66,12 @@ impl Operator {
             _ => unimplemented!("{:?}", o),
         }
     }
+    pub fn get_priority(&self) -> u8 {
+        match self {
+            Self::Infix { p, .. } => { *p }
+            _ => 0
+        }
+    }
 }
 
 impl Operator {
@@ -74,9 +82,10 @@ impl Operator {
 
 
 impl Operator {
-    pub const INFIX_PLUS: Self = Self::Infix { assoc: Left, prec: 100, op: "+" };
-    pub const INFIX_MINUS: Self = Self::Infix { assoc: Left, prec: 100, op: "-" };
-    pub const INFIX_POWER: Self = Self::Infix { assoc: Right, prec: 120, op: "*" };
+    pub const INFIX_PLUS: Self = Self::Infix { a: Left, p: 100, op: "+" };
+    pub const INFIX_MINUS: Self = Self::Infix { a: Left, p: 100, op: "-" };
+    pub const INFIX_TIMES: Self = Self::Infix { a: Left, p: 120, op: "*" };
+    pub const INFIX_POWER: Self = Self::Infix { a: Right, p: 140, op: "^" };
 }
 
 impl Operator {

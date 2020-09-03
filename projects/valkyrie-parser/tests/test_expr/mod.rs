@@ -14,15 +14,32 @@ fn debug_unary() -> Result<()> {
 }
 
 const INFIX: &str = r#"
-+1+2*3^-4!!;
-1 +++ 2;
-1 * (2 + 3);
+1 + 1;
+2 ++ 2;
+3 + + 3;
+4 +++ 4
+4 + ++ 4;
+5 ++ + 5;
+6 ++++ 6;
+7 + +++ 7;
+8 ++ ++ 8;
+9 +++ + 9;
 "#;
 
 #[test]
 fn debug_infix() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(INFIX);
     ast.save("tests/test_expr/debug_infix.yaml")
+}
+
+const MIX_INFIX: &str = r#"
++1+2*3^-4!!;
+"#;
+
+#[test]
+fn debug_mix_infix() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(MIX_INFIX);
+    ast.save("tests/test_expr/debug_mix_infix.yaml")
 }
 
 // const LIST_OR_SLICE: &str = r#"

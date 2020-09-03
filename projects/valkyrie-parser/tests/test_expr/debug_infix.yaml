@@ -7,29 +7,58 @@ Program(
                         base: AST {
                             kind: CallInfix(
                                 InfixCall {
-                                    base: AST {
-                                        kind: CallUnary(
-                                            UnaryCall {
-                                                base: 1,
+                                    base: 1,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST {
+                                                kind: EmptyStatement,
+                                                range: "(2:1, 2:6)",
+                                            },
+                                        ),
+                                    ],
+                                },
+                            ),
+                            range: "(2:1, 2:6)",
+                        },
+                        eos: true,
+                        range: "(2:1, 2:7)",
+                    },
+                ],
+            ),
+            range: "(2:1, 2:7)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 2,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST::CallUnary {
+                                                base: 2,
                                                 prefix: [
                                                     +,
                                                 ],
                                                 suffix: [],
+                                                range: "(3:4, 3:7)",
                                             },
                                         ),
-                                        range: "(2:1, 2:3)",
-                                    },
-                                    terms: [],
+                                    ],
                                 },
                             ),
-                            range: "(2:1, 2:12)",
+                            range: "(3:1, 3:7)",
                         },
                         eos: true,
-                        range: "(2:1, 2:13)",
+                        range: "(3:1, 3:8)",
                     },
                 ],
             ),
-            range: "(2:1, 2:13)",
+            range: "(3:1, 3:8)",
         },
         AST {
             kind: Suite(
@@ -38,18 +67,26 @@ Program(
                         base: AST {
                             kind: CallInfix(
                                 InfixCall {
-                                    base: 1,
-                                    terms: [],
+                                    base: 3,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST {
+                                                kind: EmptyStatement,
+                                                range: "(4:1, 4:8)",
+                                            },
+                                        ),
+                                    ],
                                 },
                             ),
-                            range: "(3:1, 3:8)",
+                            range: "(4:1, 4:8)",
                         },
                         eos: true,
-                        range: "(3:1, 3:9)",
+                        range: "(4:1, 4:9)",
                     },
                 ],
             ),
-            range: "(3:1, 3:9)",
+            range: "(4:1, 4:9)",
         },
         AST {
             kind: Suite(
@@ -58,18 +95,222 @@ Program(
                         base: AST {
                             kind: CallInfix(
                                 InfixCall {
-                                    base: 1,
-                                    terms: [],
+                                    base: 4,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST::CallUnary {
+                                                base: 4,
+                                                prefix: [
+                                                    +,
+                                                    +,
+                                                ],
+                                                suffix: [],
+                                                range: "(5:4, 6:1)",
+                                            },
+                                        ),
+                                    ],
                                 },
                             ),
-                            range: "(4:1, 4:12)",
+                            range: "(5:1, 6:1)",
                         },
-                        eos: true,
-                        range: "(4:1, 4:13)",
+                        eos: false,
+                        range: "(5:1, 6:1)",
                     },
                 ],
             ),
-            range: "(4:1, 4:13)",
+            range: "(5:1, 6:1)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 4,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST {
+                                                kind: EmptyStatement,
+                                                range: "(6:1, 6:9)",
+                                            },
+                                        ),
+                                    ],
+                                },
+                            ),
+                            range: "(6:1, 6:9)",
+                        },
+                        eos: true,
+                        range: "(6:1, 6:10)",
+                    },
+                ],
+            ),
+            range: "(6:1, 6:10)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 5,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST::CallUnary {
+                                                base: 5,
+                                                prefix: [
+                                                    +,
+                                                    +,
+                                                ],
+                                                suffix: [],
+                                                range: "(7:4, 7:9)",
+                                            },
+                                        ),
+                                    ],
+                                },
+                            ),
+                            range: "(7:1, 7:9)",
+                        },
+                        eos: true,
+                        range: "(7:1, 7:10)",
+                    },
+                ],
+            ),
+            range: "(7:1, 7:10)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 6,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST::CallUnary {
+                                                base: 6,
+                                                prefix: [
+                                                    +,
+                                                    +,
+                                                    +,
+                                                ],
+                                                suffix: [],
+                                                range: "(8:4, 8:9)",
+                                            },
+                                        ),
+                                    ],
+                                },
+                            ),
+                            range: "(8:1, 8:9)",
+                        },
+                        eos: true,
+                        range: "(8:1, 8:10)",
+                    },
+                ],
+            ),
+            range: "(8:1, 8:10)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 7,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST {
+                                                kind: EmptyStatement,
+                                                range: "(9:1, 9:10)",
+                                            },
+                                        ),
+                                    ],
+                                },
+                            ),
+                            range: "(9:1, 9:10)",
+                        },
+                        eos: true,
+                        range: "(9:1, 9:11)",
+                    },
+                ],
+            ),
+            range: "(9:1, 9:11)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 8,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST::CallUnary {
+                                                base: 8,
+                                                prefix: [
+                                                    +,
+                                                    +,
+                                                    +,
+                                                ],
+                                                suffix: [],
+                                                range: "(10:4, 10:10)",
+                                            },
+                                        ),
+                                    ],
+                                },
+                            ),
+                            range: "(10:1, 10:10)",
+                        },
+                        eos: true,
+                        range: "(10:1, 10:11)",
+                    },
+                ],
+            ),
+            range: "(10:1, 10:11)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: CallInfix(
+                                InfixCall {
+                                    base: 9,
+                                    terms: [
+                                        (
+                                            +,
+                                            AST::CallUnary {
+                                                base: 9,
+                                                prefix: [
+                                                    +,
+                                                    +,
+                                                    +,
+                                                ],
+                                                suffix: [],
+                                                range: "(11:4, 11:10)",
+                                            },
+                                        ),
+                                    ],
+                                },
+                            ),
+                            range: "(11:1, 11:10)",
+                        },
+                        eos: true,
+                        range: "(11:1, 11:11)",
+                    },
+                ],
+            ),
+            range: "(11:1, 11:11)",
         },
     ],
 )

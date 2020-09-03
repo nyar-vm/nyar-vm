@@ -123,12 +123,14 @@ impl ASTNode {
         Self { kind: ASTKind::Expression { base: box base, eos }, range: r }
     }
 
-    pub fn push_infix_chain(self, op: &str, base: ASTNode, r: Range) -> Self {
-        let infix = match &self.kind {
-            ASTKind::CallInfix(e) => (**e).clone(),
+    pub fn push_infix_chain(self, op: &str, rhs: ASTNode, r: Range) -> Self {
+        let op = Operator::parse(op, 0);
+
+        let mut infix = match self.kind {
+            ASTKind::CallInfix(e) if op.get_priority() == e.get_priority() => *e,
             _ => InfixCall { base: self, terms: vec![] },
         };
-        infix.push_infix_pair(op, base);
+        infix.push_infix_pair(op, rhs);
         Self { kind: ASTKind::CallInfix(box infix), range: r }
     }
 
