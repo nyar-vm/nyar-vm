@@ -9,17 +9,9 @@ pub enum OperatorAssociativity {
 
 #[derive(Copy, Clone)]
 pub enum Operator {
-    Prefix {
-        op: &'static str,
-    },
-    Infix {
-        a: OperatorAssociativity,
-        p: u8,
-        op: &'static str,
-    },
-    Suffix {
-        op: &'static str,
-    },
+    Prefix { op: &'static str },
+    Infix { a: OperatorAssociativity, p: u8, op: &'static str },
+    Suffix { op: &'static str },
 }
 
 impl Debug for Operator {
@@ -27,7 +19,7 @@ impl Debug for Operator {
         match self {
             Operator::Prefix { op, .. } => f.write_str(op),
             Operator::Infix { op, .. } => f.write_str(op),
-            Operator::Suffix { op, .. } => f.write_str(op)
+            Operator::Suffix { op, .. } => f.write_str(op),
         }
     }
 }
@@ -68,8 +60,8 @@ impl Operator {
     }
     pub fn get_priority(&self) -> u8 {
         match self {
-            Self::Infix { p, .. } => { *p }
-            _ => 0
+            Self::Infix { p, .. } => *p,
+            _ => 0,
         }
     }
 }
@@ -79,7 +71,6 @@ impl Operator {
     pub const PREFIX_MINUS: Self = Self::Prefix { op: "-" };
     pub const PREFIX_NOT: Self = Self::Prefix { op: "!" };
 }
-
 
 impl Operator {
     pub const INFIX_PLUS: Self = Self::Infix { a: Left, p: 100, op: "+" };

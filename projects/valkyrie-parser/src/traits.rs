@@ -1,5 +1,5 @@
 use crate::LexerContext;
-use nyar_hir::{ASTKind, ASTNode, Result};
+use nyar_hir::{ASTKind, Result};
 use std::{fs::File, io::Write};
 
 pub trait ASTDump {

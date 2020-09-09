@@ -19,6 +19,12 @@ impl Debug for ASTNode {
                 .field("eos", eos)
                 .field("range", &range) // force format
                 .finish(),
+            ASTKind::CallInfix(v) => f
+                .debug_struct("AST::CallInfix")
+                .field("base", &v)
+                .field("range", &range) // force format
+                .finish(),
+
             ASTKind::CallUnary(v) => f
                 .debug_struct("AST::CallUnary")
                 .field("base", &v.base)

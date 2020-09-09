@@ -4,68 +4,84 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
-                                    base: AST::CallUnary {
-                                        base: 1,
-                                        prefix: [
-                                            +,
-                                        ],
-                                        suffix: [],
-                                        range: "(2:1, 2:3)",
-                                    },
-                                    terms: [
-                                        (
-                                            +,
-                                            AST {
-                                                kind: CallInfix(
-                                                    InfixCall {
-                                                        base: 2,
-                                                        terms: [
-                                                            (
-                                                                *,
-                                                                AST {
-                                                                    kind: CallInfix(
-                                                                        InfixCall {
-                                                                            base: 3,
-                                                                            terms: [
-                                                                                (
-                                                                                    ^,
-                                                                                    AST::CallUnary {
-                                                                                        base: 4,
-                                                                                        prefix: [
-                                                                                            -,
-                                                                                        ],
-                                                                                        suffix: [
-                                                                                            !!,
-                                                                                        ],
-                                                                                        range: "(2:8, 2:12)",
-                                                                                    },
-                                                                                ),
-                                                                            ],
-                                                                        },
-                                                                    ),
-                                                                    range: "(2:1, 2:12)",
-                                                                },
-                                                            ),
-                                                        ],
-                                                    },
-                                                ),
-                                                range: "(2:1, 2:12)",
-                                            },
-                                        ),
-                                    ],
-                                },
-                            ),
-                            range: "(2:1, 2:12)",
-                        },
+                        base: 1,
                         eos: true,
-                        range: "(2:1, 2:13)",
+                        range: "(2:1, 2:11)",
                     },
                 ],
             ),
-            range: "(2:1, 2:13)",
+            range: "(2:1, 2:11)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST::CallInfix {
+                            base: [
+                                1,
+                                +,
+                                AST {
+                                    kind: EmptyStatement,
+                                    range: "(3:1, 3:22)",
+                                },
+                            ],
+                            range: "(3:1, 3:22)",
+                        },
+                        eos: true,
+                        range: "(3:1, 3:23)",
+                    },
+                ],
+            ),
+            range: "(3:1, 3:23)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST::CallInfix {
+                            base: [
+                                AST::CallUnary {
+                                    base: 1,
+                                    prefix: [
+                                        +,
+                                    ],
+                                    suffix: [],
+                                    range: "(4:1, 4:3)",
+                                },
+                                +,
+                                AST::CallInfix {
+                                    base: [
+                                        2,
+                                        *,
+                                        AST::CallInfix {
+                                            base: [
+                                                3,
+                                                ^,
+                                                AST::CallUnary {
+                                                    base: 4,
+                                                    prefix: [
+                                                        -,
+                                                    ],
+                                                    suffix: [
+                                                        !!,
+                                                    ],
+                                                    range: "(4:8, 4:12)",
+                                                },
+                                            ],
+                                            range: "(4:1, 4:12)",
+                                        },
+                                    ],
+                                    range: "(4:1, 4:12)",
+                                },
+                            ],
+                            range: "(4:1, 4:12)",
+                        },
+                        eos: true,
+                        range: "(4:1, 4:13)",
+                    },
+                ],
+            ),
+            range: "(4:1, 4:13)",
         },
     ],
 )

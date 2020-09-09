@@ -1,7 +1,7 @@
 mod settings;
 
 use nyar_hir::{Position, Range};
-use valkyrie_pest::{Pair, Rule, Span};
+use valkyrie_pest::{Pair, Rule};
 
 fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> String {
     let indent = if is_newline { "  ".repeat(indent_level) } else { "".to_string() };

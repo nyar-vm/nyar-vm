@@ -11,14 +11,9 @@ pub struct UnaryCall {
     pub suffix: Vec<Operator>,
 }
 
-
 impl UnaryCall {
     pub fn new(base: ASTNode) -> Self {
-        Self {
-            base,
-            prefix: vec![],
-            suffix: vec![],
-        }
+        Self { base, prefix: vec![], suffix: vec![] }
     }
     pub fn push_prefix(&mut self, ops: &[String]) {
         for op in ops {

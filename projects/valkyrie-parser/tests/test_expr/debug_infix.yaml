@@ -4,21 +4,15 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
-                                    base: 1,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST {
-                                                kind: EmptyStatement,
-                                                range: "(2:1, 2:6)",
-                                            },
-                                        ),
-                                    ],
+                        base: AST::CallInfix {
+                            base: [
+                                1,
+                                +,
+                                AST {
+                                    kind: EmptyStatement,
+                                    range: "(2:1, 2:6)",
                                 },
-                            ),
+                            ],
                             range: "(2:1, 2:6)",
                         },
                         eos: true,
@@ -32,25 +26,19 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
+                        base: AST::CallInfix {
+                            base: [
+                                2,
+                                +,
+                                AST::CallUnary {
                                     base: 2,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST::CallUnary {
-                                                base: 2,
-                                                prefix: [
-                                                    +,
-                                                ],
-                                                suffix: [],
-                                                range: "(3:4, 3:7)",
-                                            },
-                                        ),
+                                    prefix: [
+                                        +,
                                     ],
+                                    suffix: [],
+                                    range: "(3:4, 3:7)",
                                 },
-                            ),
+                            ],
                             range: "(3:1, 3:7)",
                         },
                         eos: true,
@@ -64,21 +52,15 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
-                                    base: 3,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST {
-                                                kind: EmptyStatement,
-                                                range: "(4:1, 4:8)",
-                                            },
-                                        ),
-                                    ],
+                        base: AST::CallInfix {
+                            base: [
+                                3,
+                                +,
+                                AST {
+                                    kind: EmptyStatement,
+                                    range: "(4:1, 4:8)",
                                 },
-                            ),
+                            ],
                             range: "(4:1, 4:8)",
                         },
                         eos: true,
@@ -92,26 +74,20 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
+                        base: AST::CallInfix {
+                            base: [
+                                4,
+                                +,
+                                AST::CallUnary {
                                     base: 4,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST::CallUnary {
-                                                base: 4,
-                                                prefix: [
-                                                    +,
-                                                    +,
-                                                ],
-                                                suffix: [],
-                                                range: "(5:4, 6:1)",
-                                            },
-                                        ),
+                                    prefix: [
+                                        +,
+                                        +,
                                     ],
+                                    suffix: [],
+                                    range: "(5:4, 6:1)",
                                 },
-                            ),
+                            ],
                             range: "(5:1, 6:1)",
                         },
                         eos: false,
@@ -125,21 +101,15 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
-                                    base: 4,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST {
-                                                kind: EmptyStatement,
-                                                range: "(6:1, 6:9)",
-                                            },
-                                        ),
-                                    ],
+                        base: AST::CallInfix {
+                            base: [
+                                4,
+                                +,
+                                AST {
+                                    kind: EmptyStatement,
+                                    range: "(6:1, 6:9)",
                                 },
-                            ),
+                            ],
                             range: "(6:1, 6:9)",
                         },
                         eos: true,
@@ -153,26 +123,20 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
+                        base: AST::CallInfix {
+                            base: [
+                                5,
+                                +,
+                                AST::CallUnary {
                                     base: 5,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST::CallUnary {
-                                                base: 5,
-                                                prefix: [
-                                                    +,
-                                                    +,
-                                                ],
-                                                suffix: [],
-                                                range: "(7:4, 7:9)",
-                                            },
-                                        ),
+                                    prefix: [
+                                        +,
+                                        +,
                                     ],
+                                    suffix: [],
+                                    range: "(7:4, 7:9)",
                                 },
-                            ),
+                            ],
                             range: "(7:1, 7:9)",
                         },
                         eos: true,
@@ -186,27 +150,21 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
+                        base: AST::CallInfix {
+                            base: [
+                                6,
+                                +,
+                                AST::CallUnary {
                                     base: 6,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST::CallUnary {
-                                                base: 6,
-                                                prefix: [
-                                                    +,
-                                                    +,
-                                                    +,
-                                                ],
-                                                suffix: [],
-                                                range: "(8:4, 8:9)",
-                                            },
-                                        ),
+                                    prefix: [
+                                        +,
+                                        +,
+                                        +,
                                     ],
+                                    suffix: [],
+                                    range: "(8:4, 8:9)",
                                 },
-                            ),
+                            ],
                             range: "(8:1, 8:9)",
                         },
                         eos: true,
@@ -220,21 +178,15 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
-                                    base: 7,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST {
-                                                kind: EmptyStatement,
-                                                range: "(9:1, 9:10)",
-                                            },
-                                        ),
-                                    ],
+                        base: AST::CallInfix {
+                            base: [
+                                7,
+                                +,
+                                AST {
+                                    kind: EmptyStatement,
+                                    range: "(9:1, 9:10)",
                                 },
-                            ),
+                            ],
                             range: "(9:1, 9:10)",
                         },
                         eos: true,
@@ -248,27 +200,21 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
+                        base: AST::CallInfix {
+                            base: [
+                                8,
+                                +,
+                                AST::CallUnary {
                                     base: 8,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST::CallUnary {
-                                                base: 8,
-                                                prefix: [
-                                                    +,
-                                                    +,
-                                                    +,
-                                                ],
-                                                suffix: [],
-                                                range: "(10:4, 10:10)",
-                                            },
-                                        ),
+                                    prefix: [
+                                        +,
+                                        +,
+                                        +,
                                     ],
+                                    suffix: [],
+                                    range: "(10:4, 10:10)",
                                 },
-                            ),
+                            ],
                             range: "(10:1, 10:10)",
                         },
                         eos: true,
@@ -282,27 +228,21 @@ Program(
             kind: Suite(
                 [
                     AST::Expression {
-                        base: AST {
-                            kind: CallInfix(
-                                InfixCall {
+                        base: AST::CallInfix {
+                            base: [
+                                9,
+                                +,
+                                AST::CallUnary {
                                     base: 9,
-                                    terms: [
-                                        (
-                                            +,
-                                            AST::CallUnary {
-                                                base: 9,
-                                                prefix: [
-                                                    +,
-                                                    +,
-                                                    +,
-                                                ],
-                                                suffix: [],
-                                                range: "(11:4, 11:10)",
-                                            },
-                                        ),
+                                    prefix: [
+                                        +,
+                                        +,
+                                        +,
                                     ],
+                                    suffix: [],
+                                    range: "(11:4, 11:10)",
                                 },
-                            ),
+                            ],
                             range: "(11:1, 11:10)",
                         },
                         eos: true,

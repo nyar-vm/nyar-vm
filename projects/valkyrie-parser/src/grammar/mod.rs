@@ -189,7 +189,7 @@ impl LexerContext {
             default = Some(blocks.pop().unwrap())
         }
         let pairs = conditions.into_iter().zip(blocks.into_iter()).collect();
-        return ASTNode::if_statement(pairs,default,r);
+        return ASTNode::if_statement(pairs, default, r);
     }
 
     fn parse_block(&self, pairs: Pair<Rule>) -> ASTNode {
@@ -264,7 +264,7 @@ impl LexerContext {
         let r = get_position(&pairs);
         for pair in pairs.into_inner() {
             return match pair.as_rule() {
-                // Rule::bracket_call => self.parse_bracket_call(pair),
+                Rule::bracket_call => self.parse_bracket_call(pair),
                 Rule::expr => self.parse_expr(pair),
                 Rule::data => self.parse_data(pair),
                 Rule::tuple => self.parse_list_or_tuple(pair, false),
@@ -274,35 +274,37 @@ impl LexerContext {
         return ASTNode::default();
     }
 
-    // fn parse_bracket_call(&self, pairs: Pair<Rule>) -> ASTNode {
-    //     let mut base = AST::None;
-    //     for pair in pairs.into_inner() {
-    //         match pair.as_rule() {
-    //             Rule::WHITESPACE => continue,
-    //             Rule::data => base = self.parse_data(pair),
-    //             Rule::apply => {
-    //                 let apply = self.parse_apply(pair);
-    //                 // return AST::ApplyExpression { base: Box::new(base), ..apply };
-    //                 return apply.set_base(base);
-    //             }
-    //             Rule::slice => {
-    //                 let mut list = vec![];
-    //                 for inner in pair.into_inner() {
-    //                     match inner.as_rule() {
-    //                         Rule::WHITESPACE => continue,
-    //                         Rule::Comma => (),
-    //                         Rule::index => list.push(self.parse_index(inner)),
-    //                         _ => unreachable!(),
-    //                     };
-    //                 }
-    //                 return AST::SliceExpression { base: Box::new(base), list };
-    //             }
-    //             _ => debug_cases!(pair),
-    //         };
-    //     }
-    //     return AST::None;
-    // }
-    //
+    fn parse_bracket_call(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = get_position(&pairs);
+        let mut base = ASTNode::default();
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::WHITESPACE => continue,
+                Rule::data => base = self.parse_data(pair),
+                Rule::apply => {
+                    unimplemented!();
+                    // let apply = self.parse_apply(pair);
+                    // return AST::ApplyExpression { base: Box::new(base), ..apply };
+                    // return apply.set_base(base);
+                }
+                Rule::slice => {
+                    let mut list = vec![];
+                    for inner in pair.into_inner() {
+                        match inner.as_rule() {
+                            Rule::WHITESPACE => continue,
+                            Rule::Comma => (),
+                            Rule::index => list.push(self.parse_index(inner)),
+                            _ => unreachable!(),
+                        };
+                    }
+                    return base.push_slice_term(&list, r);
+                }
+                _ => debug_cases!(pair),
+            };
+        }
+        return base;
+    }
+
     // fn parse_apply(&self, pairs: Pair<Rule>) -> ASTNode {
     //     let pos = get_position(pairs.as_span());
     //     let mut args = vec![];
@@ -340,18 +342,19 @@ impl LexerContext {
     //     }
     //     return AST::ApplyExpression { base: Box::new(AST::None), types, args, kv_pairs, pos };
     // }
-    //
-    // fn parse_index(&self, pairs: Pair<Rule>) -> ASTNode {
-    //     let mut base = AST::None;
-    //     for pair in pairs.into_inner() {
-    //         match pair.as_rule() {
-    //             Rule::expr => return self.parse_expr(pair),
-    //             _ => debug_cases!(pair),
-    //         };
-    //     }
-    //     return AST::None;
-    // }
-    //
+
+    fn parse_index(&self, pairs: Pair<Rule>) -> ASTNode {
+        let mut base = ASTNode::default();
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::expr => return self.parse_expr(pair),
+                Rule::index_step=> continue,
+                _ => debug_cases!(pair),
+            };
+        }
+        return base;
+    }
+
     fn parse_data(&self, pairs: Pair<Rule>) -> ASTNode {
         for pair in pairs.into_inner() {
             let node = match pair.as_rule() {
@@ -381,7 +384,6 @@ impl LexerContext {
         return ASTNode::default();
     }
 
-
     fn parse_list_or_tuple(&self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
         let r = get_position(&pairs);
         let mut vec: Vec<ASTNode> = vec![];
@@ -393,8 +395,8 @@ impl LexerContext {
             };
         }
         match is_list {
-            true => { ASTNode::list(vec, r) }
-            false => { ASTNode::tuple(vec, r) }
+            true => ASTNode::list(vec, r),
+            false => ASTNode::tuple(vec, r),
         }
     }
 
@@ -502,8 +504,6 @@ impl LexerContext {
                 }
             }
         }
-        let name = scope.pop().unwrap();
-        unimplemented!()
-        // return ASTNode::symbol { name, scope, r };
+        ASTNode::symbol(&scope,r )
     }
 }

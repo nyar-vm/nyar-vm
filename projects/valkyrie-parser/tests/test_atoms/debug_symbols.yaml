@@ -1,0 +1,134 @@
+Program(
+    [
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: Symbol(
+                                Symbol {
+                                    name: "a",
+                                    scope: [],
+                                },
+                            ),
+                            range: "(2:1, 2:2)",
+                        },
+                        eos: true,
+                        range: "(2:1, 2:3)",
+                    },
+                ],
+            ),
+            range: "(2:1, 2:3)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: Symbol(
+                                Symbol {
+                                    name: "b",
+                                    scope: [
+                                        "a",
+                                    ],
+                                },
+                            ),
+                            range: "(3:1, 3:5)",
+                        },
+                        eos: true,
+                        range: "(3:1, 3:6)",
+                    },
+                ],
+            ),
+            range: "(3:1, 3:6)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: Symbol(
+                                Symbol {
+                                    name: "c",
+                                    scope: [
+                                        "a",
+                                        "b",
+                                    ],
+                                },
+                            ),
+                            range: "(4:1, 4:8)",
+                        },
+                        eos: true,
+                        range: "(4:1, 4:9)",
+                    },
+                ],
+            ),
+            range: "(4:1, 4:9)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: Symbol(
+                                Symbol {
+                                    name: "我",
+                                    scope: [],
+                                },
+                            ),
+                            range: "(5:1, 5:2)",
+                        },
+                        eos: true,
+                        range: "(5:1, 5:3)",
+                    },
+                ],
+            ),
+            range: "(5:1, 5:3)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: Symbol(
+                                Symbol {
+                                    name: "的",
+                                    scope: [
+                                        "我",
+                                    ],
+                                },
+                            ),
+                            range: "(6:1, 6:5)",
+                        },
+                        eos: true,
+                        range: "(6:1, 6:6)",
+                    },
+                ],
+            ),
+            range: "(6:1, 6:6)",
+        },
+        AST {
+            kind: Suite(
+                [
+                    AST::Expression {
+                        base: AST {
+                            kind: Symbol(
+                                Symbol {
+                                    name: "库",
+                                    scope: [
+                                        "我",
+                                        "的",
+                                    ],
+                                },
+                            ),
+                            range: "(7:1, 7:8)",
+                        },
+                        eos: true,
+                        range: "(7:1, 7:9)",
+                    },
+                ],
+            ),
+            range: "(7:1, 7:9)",
+        },
+    ],
+)

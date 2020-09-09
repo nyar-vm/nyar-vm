@@ -10,7 +10,7 @@ const BYTES: &str = r#"
 #[test]
 fn debug_bytes() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(BYTES);
-    ast.save("tests/test_numbers/debug_bytes.yaml")
+    ast.save("tests/test_atoms/debug_bytes.yaml")
 }
 
 const NUMBERS: &str = r#"
@@ -34,7 +34,7 @@ const NUMBERS: &str = r#"
 #[test]
 fn debug_numbers() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(NUMBERS);
-    ast.save("tests/test_numbers/debug_numbers.yaml")
+    ast.save("tests/test_atoms/debug_numbers.yaml")
 }
 
 const SPECIALS: &str = r#"
@@ -46,5 +46,21 @@ false
 #[test]
 fn debug_specials() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(SPECIALS);
-    ast.save("tests/test_numbers/debug_specials.yaml")
+    ast.save("tests/test_atoms/debug_specials.yaml")
+}
+
+
+const SYMBOLS: &str = r#"
+a;
+a::b;
+a::b::c;
+我;
+我::的;
+我::的::库;
+"#;
+
+#[test]
+fn debug_symbols() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(SYMBOLS);
+    ast.save("tests/test_atoms/debug_symbols.yaml")
 }

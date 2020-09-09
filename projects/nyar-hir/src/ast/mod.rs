@@ -91,14 +91,10 @@ pub enum ASTKind {
 impl ASTNode {
     pub fn refine(self) -> Self {
         match self.kind {
-            ASTKind::CallUnary(v) => {
-                v.base
-            }
-            _ => self
+            ASTKind::CallUnary(v) => v.base,
+            _ => self,
         }
-
     }
-
 }
 
 impl ASTNode {
@@ -110,14 +106,10 @@ impl ASTNode {
     }
 
     pub fn if_statement(pairs: Vec<(ASTNode, ASTNode)>, default: Option<ASTNode>, r: Range) -> Self {
-        let s = IfStatement {
-            pairs,
-            default,
-        };
+        let s = IfStatement { pairs, default };
 
         Self { kind: ASTKind::IfStatement(box s), range: r }
     }
-
 
     pub fn expression(base: ASTNode, eos: bool, r: Range) -> Self {
         Self { kind: ASTKind::Expression { base: box base, eos }, range: r }
@@ -136,19 +128,24 @@ impl ASTNode {
 
     pub fn push_unary_operations(self, prefix: &[String], suffix: &[String], r: Range) -> Self {
         if prefix.is_empty() && suffix.is_empty() {
-            return self.refine()
+            return self.refine();
         }
         let mut unary = match self.kind {
-            ASTKind::CallUnary(u) => {
-                *u
-            }
-            _ => {
-                UnaryCall::new(self)
-            }
+            ASTKind::CallUnary(u) => *u,
+            _ => UnaryCall::new(self),
         };
         unary.push_prefix(prefix);
         unary.push_suffix(suffix);
         Self { kind: ASTKind::CallUnary(box unary), range: r }
+    }
+
+    pub fn push_slice_term(self, terms: &[ASTNode], r: Range) -> Self {
+        let mut slice = match self.kind {
+            ASTKind::CallSlice(c) => *c,
+            _ => SliceCall::new(self),
+        };
+        slice.extend(terms);
+        Self { kind: ASTKind::CallSlice(box slice), range: r }
     }
 
     pub fn list(v: Vec<ASTNode>, r: Range) -> Self {
@@ -157,6 +154,10 @@ impl ASTNode {
 
     pub fn tuple(v: Vec<ASTNode>, r: Range) -> Self {
         Self { kind: ASTKind::TupleExpression(v), range: r }
+    }
+
+    pub fn symbol(path: &[String], r: Range) -> Self {
+        Self { kind: ASTKind::Symbol(box Symbol::path(path)), range: r }
     }
 
     pub fn number(h: &str, v: &str, r: Range) -> Self {
