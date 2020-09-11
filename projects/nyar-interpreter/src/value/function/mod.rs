@@ -1,10 +1,16 @@
-mod attributes;
-mod prototype;
+use std::{collections::HashMap, rc::Rc};
+
+use indexmap::IndexMap;
+
+use crate::{
+    value::{error::Level3, Value},
+    NyarError, Result,
+};
 
 pub use self::{attributes::NyarFunctionAttributes, prototype::NyarFunction};
-use crate::{error::Level3, value::Value, NyarError, Result};
-use indexmap::IndexMap;
-use std::{collections::HashMap, rc::Rc};
+
+mod attributes;
+mod prototype;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EffectHandler {

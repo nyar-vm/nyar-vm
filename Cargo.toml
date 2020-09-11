@@ -8,6 +8,10 @@ default-members = [
     "projects/valkyrie-pest",
     "projects/valkyrie-parser",
 ]
+exclude = [
+    "projects/valkyrie-core",
+    "projects/valkyrie-std",
+]
 
 [profile.release]
 lto = true

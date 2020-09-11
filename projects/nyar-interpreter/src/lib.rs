@@ -2,16 +2,13 @@
 #![feature(once_cell)]
 #![feature(box_syntax)]
 
-pub mod class;
-pub mod effects;
-pub mod error;
-pub mod function;
-mod gc;
-pub mod module;
+pub use nyar_hir::{ASTKind, ASTNode};
+pub use value::{
+    error::{NyarError, Result},
+    Value,
+};
+
+pub mod engine;
 pub mod typing;
 pub mod utils;
 pub mod value;
-pub mod variable;
-
-pub use error::{NyarError, Result};
-pub use value::Value;

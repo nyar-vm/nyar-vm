@@ -9,15 +9,23 @@ license = "MPL-2.0"
 
 
 [dependencies]
-indexmap = "1.6"
+# indexmap = "1.6"
 # zerogc = "0.2.0-alpha.1"
 # zerogc-derive = "0.2.0-alpha.1"
 num = "0.3"
 bigdecimal = "0.2"
 
-[dependencies.nyar-mir]
+[dependencies.indexmap]
+version = "1.6"
+features = ["std", "serde", "rayon"]
+
+[dependencies.nyar-hir]
 version = "0.1"
-path = "../nyar-mir"
+path = "../nyar-hir"
+
+#[dependencies.nyar-mir]
+#version = "0.1"
+#path = "../nyar-mir"
 
 [dev-dependencies]
 

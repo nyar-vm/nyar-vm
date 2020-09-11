@@ -105,14 +105,14 @@
 //
 //
 // // fn with_state(init, f: fn() -> Control<> ) {
-// //     let cell = Cell {
+// //     let engine.cell = Cell {
 // //         inner: init
 // //     };
 // //     Control {
 // //         apply: |k:Stack<>| {
-// //             k.fields.push(cell);
+// //             k.fields.push(engine.cell);
 // //             Step {
-// //                 c: f(cell),
+// //                 c: f(engine.cell),
 // //                 s: k
 // //             }
 // //         }
@@ -126,7 +126,7 @@
 // //     return res;
 // // }
 
-// mod cell.stateful;
+// mod engine.cell.stateful;
 
 // trait CPS<A, B> {
 //     fn apply(&self,k: impl Continuation<A, B>);

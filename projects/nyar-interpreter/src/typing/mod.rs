@@ -1,11 +1,13 @@
-mod display;
-mod refine;
-
-use crate::{function::EffectHandler, Value};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fmt::{self, Display, Formatter},
 };
+
+use crate::{value::function::EffectHandler, Value};
+
+mod display;
+pub mod effects;
+mod refine;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Typing {
