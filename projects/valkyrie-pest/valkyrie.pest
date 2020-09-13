@@ -132,11 +132,12 @@ annotation = {annotation_call+~statement}
 annotation_call = @{At~(list|apply|Symbol)}
 /*====================================================================================================================*/
 apply = !{
-     generic_type? ~ "(" ~ apply_kv? ~ (Comma ~ apply_kv)* ~ Comma? ~")"
+    "(" ~ apply_kv? ~ (Comma ~ apply_kv)* ~ Comma? ~")"
 }
 apply_kv = {SYMBOL~ Colon ~ expr|expr}
-
-
+apply_generic = !{
+    ("::" ~ generic_type)
+}
 
 ///#61AFEF
 function_name = {SYMBOL}
@@ -147,13 +148,14 @@ expr = !{term ~ (Infix ~ term)*}
 term =  {Prefix* ~ node ~ Suffix*}
 node = {"(" ~ expr ~ ")"|tuple|bracket_call|data}
 tuple = {"(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
-bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
+// bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
+bracket_call = {data ~ (slice|apply|apply_generic|bracket_apply)+}
 bracket_apply = {Symbol ~ dict}
 condition  = _{"(" ~ expr ~ ")"|expr}
 dot_call = {term~ Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
-type_expr = _{term~ (TypeInfix ~term)*}
+type_expr = _{term ~ (TypeInfix ~ term)*}
 //type_term = {Prefix* ~ type_node ~ Suffix*}
 //type_node = {"(" ~ type_expr ~ ")"|data}
 type_hint = {Colon ~ type_expr}
@@ -165,18 +167,18 @@ parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
 /*====================================================================================================================*/
-data = ${dict|list|Special|Byte|Number|String|Symbol}
-dict = {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
-list = {"[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
-slice = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
-index ={index_step|index_range|expr}
-key_value =!{key_valid ~ Colon ~ expr}
-key_valid =!{Integer | SYMBOL | String}
+data        = ${dict|list|Special|Byte|Number|String|Symbol}
+dict        =  {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
+list        =  {"[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
+slice       = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
+index       =  {index_step|index_range|expr}
+key_value   = !{key_valid ~ Colon ~ expr}
+key_valid   = !{Integer | SYMBOL | String}
 index_range = !{expr? ~ Colon ~ expr?}
-index_step = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
+index_step  = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 /*====================================================================================================================*/
 ///#D19A66
-Special = !{Null|Unit|True|False}
+Special = !{Null|True|False}
 Null    = @{"null"}
 True    = @{"true"}
 False   = @{"false"}
@@ -210,17 +212,16 @@ StringEnd         = @{POP ~ Apostrophe{1}}
 // NEWLINE = @{"\r"~"\n"|"\r"|"\n"}
 WHITESPACE = {NEWLINE|WHITE_SPACE}
 //!#7F848E: MultiLineComment
-COMMENT = {MultiLineComment|LineCommentSimple|LineCommentTodo|LineCommentFixme|LineCommentWarning}
-///Gray
-LineCommentSimple = ${ "///" ~ (!NEWLINE ~ ANY)*}
-///Green
-LineCommentTodo = ${ "//?" ~ (!NEWLINE ~ ANY)*}
-///Red
-LineCommentFixme = ${ "//!" ~ (!NEWLINE ~ ANY)*}
-///Yellow
-LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
-///Gray
+COMMENT = {MultiLineComment|LineCommentSimple}
 MultiLineComment = ${ "//+" ~ (MultiLineComment)* ~ "//-"}
+///Gray
+LineCommentSimple = ${ "//" ~ (!NEWLINE ~ ANY)*}
+///Green
+// LineCommentTodo = ${ "//?" ~ (!NEWLINE ~ ANY)*}
+///Red
+// LineCommentFixme = ${ "//!" ~ (!NEWLINE ~ ANY)*}
+///Yellow
+// LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
 /*====================================================================================================================*/
 ///#61AFEF
 Symbol = ${namespace|SYMBOL}
@@ -235,7 +236,7 @@ SYMBOL = @{
 // B = _{"b"|"B"}
 /*====================================================================================================================*/
 //!Orange: Modifier
-Keywords = !{If|For}
+// Keywords = !{If|For}
 Modifier = !{(!(SYMBOL~(Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~SYMBOL)}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
@@ -247,6 +248,7 @@ Suffix = @{
 }
 Infix = _{
     Set
+  | (Increase|Decrease)
   | (Plus|Minus)
   | (Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo)
   | Power
@@ -266,11 +268,11 @@ Slash =@{"/"}
 Solidus = @{"\\"}
 
 Proportion = @{"::"|"∷"}//U+2237
-Comma =@{","|"，"} //U+FF0C
+Comma =@{","} //U+FF0C
 Dot = @{"."}
 Separate = @{";;"}
-Semicolon = @{";" | "；"} //U+FF1B
-Colon = @{":"|"："} //U+FF1A
+Semicolon = @{";"} //U+FF1B
+Colon = @{":"} //U+FF1A
 ///#56B6C2
 Question=@{"?"}
 Underline = @{"_"}
@@ -311,7 +313,6 @@ TensorProduct=@{"⊙"} //U+2299
 Divide = @{Slash | "÷"} //U+00F7
 Quotient = @{"//"}
 Modulo = @{"%"}
-Remainder =@{"⁒"} //U+2052 //⸓
 
 
 Power = @{"^"}
@@ -323,10 +324,7 @@ Decrease =@{"--"}
 
 
 To =@{"->"}
-
-
 Elvis =@{":?"}
-Map =@ {"/@"}
 
 
 Quote =@{"`"}
@@ -338,14 +336,9 @@ Quotation = @{"\""}
 LogicOr =@{"||"|"∧"} //U+2227
 LogicAnd =@{"&&"|"∨"} //U+2228
 LogicNot =@{"¬"} //U+00AC
+LogicXor =@{"⊕"} //U+2295
 
 Ellipsis =@{"..."|"…"} // U+2026
-
-
-
-
-LogicXor =@{"⊕"} //U+2295
-MapAll =@{"//@"}
 
 Output =@{"%%"}
 
@@ -357,7 +350,4 @@ DoubleBang =@{"!!"}
 Bang =@{"!"}
 
 Sharp =@{"#"}
-
-Curry =@{"@@@"}
-Apply =@{"@@"}
 At    =@{"@"}
