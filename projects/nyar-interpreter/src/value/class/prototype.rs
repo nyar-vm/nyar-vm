@@ -1,5 +1,6 @@
 use crate::typing::Typing;
 use std::{collections::HashMap, rc::Rc};
+use std::task::Context;
 
 pub trait Class {
     fn get_meta(&self) -> NyarClass;
@@ -33,7 +34,12 @@ pub struct NyarClass {
 
 impl Default for NyarClass {
     fn default() -> Self {
-        Self { name: String::from("Object"), base: vec![] }
+        Self {
+            name: String::from("Object"),
+            base: vec![],
+            properties: Default::default(),
+            methods: Default::default(),
+        }
     }
 }
 
@@ -70,6 +76,16 @@ pub struct NyarContext {
 
     /// a.x => a.x()
     uniform_function_call_syntax: bool,
+}
+
+impl Default for NyarContext {
+    fn default() -> Self {
+        Self {
+            implicit_self: false,
+            index_system: NyarIndexSystem::OrdinalSystem,
+            uniform_function_call_syntax: false.then_some()
+        }
+    }
 }
 
 pub struct NameSpace {

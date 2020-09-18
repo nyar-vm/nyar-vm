@@ -1,0 +1,69 @@
+//+*
+
+# Zero-Sized Types
+
+内置的 ZST 有 !, (), null 三种
+
+自定义的 ZST 有以下写法
+
+variant Type11;
+variant Type12 { };
+
+
+class Type21;
+class Type22();
+class Type23 { };
+
+以上写法除 Type13, 实际上都会被声明为 `variant Name { Name }`, Type13 则有自己的 variant 名称.
+
+variant Type13 { VName };
+enum Unit2 {
+    Unit,
+    Uninhabited(!),
+    Uninhabited2(Void),
+}
+
+
+//-
+
+
+//+?
+The `null` type, also called "void", "nil".
+
+type_size(null) // 0
+//-
+variant Null;
+
+#[allow_lowercase_type]
+type null = Null::Null;
+
+//+?
+The `!` type, also called "never".
+
+作为 Bottom type，表示程序不终止、异常等
+
+Bottom type 不包含任何值所以永远不可能实例化该类型, 因此只能写在类型表达式中
+
+
+//-
+variant Never;
+
+//? The error type for errors that can never happen.
+type Infallible = Never;
+
+//+?
+The `()` type, also called “unit”.
+
+The `()` type has exactly one value, and is used when there is no other meaningful value that could be returned.
+
+type_size(()) // 0
+//-
+
+variant Unit;
+
+
+
+
+
+
+
