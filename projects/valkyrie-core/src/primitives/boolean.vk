@@ -1,0 +1,37 @@
+
+
+
+
+
+#[alias(bool)]
+variant Boolean {
+	True,
+	False,
+}
+
+#[internal, allow_lowercase_type]
+type true = Boolean::True;
+
+#[internal, allow_lowercase_type]
+type false = Boolean::False;
+
+extends bool {
+	internal is_true(self) -> bool {
+		self
+	}
+	internal is_false(self) -> bool {
+		!self
+	}
+    internal then<T, F: () -> T>(self, f: F) -> Option<T> {
+        if self { Some(f()) } else { None }
+    }
+    internal then_some<T>(self, t: T) -> Option<T> {
+        if self { Some(t) } else { None }
+    }
+}
+
+extends bool: Falsy {
+	internal is_falsy(self) -> bool {
+		!self
+	}
+}

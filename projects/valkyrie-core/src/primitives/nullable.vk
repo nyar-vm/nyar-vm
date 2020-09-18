@@ -1,0 +1,10 @@
+
+
+
+
+variant Null {};
+
+type null = Null;
+
+
+

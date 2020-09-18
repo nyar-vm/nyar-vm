@@ -1,0 +1,20 @@
+
+
+
+//+?
+
+```vk
+type_name(u8) // "u8"
+```
+//-
+macro internal type_name;
+
+macro internal type_name_path;
+
+macro internal type_real_name;
+
+macro internal type_real_name_path;
+
+macro internal type_size;
+
+macro internal type_size_recursive;

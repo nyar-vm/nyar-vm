@@ -1,0 +1,8 @@
+
+namespace internal boolean;
+
+using boolean::*;
+
+
+#alias(i8)
+class Integer8;

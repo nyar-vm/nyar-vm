@@ -1,0 +1,25 @@
+
+
+#[internal, alias(int)]
+class Integer;
+
+#[internal, alias(uint)]
+class UnsignedInteger;
+
+#[internal]
+extends Integer:
+	  From<i8> + From<i16> + From<i32> + From<i64> + From<i128>
+	+ From<u8> + From<u16> + From<u32> + From<u64> + From<u128>
+	+ From<uint>;
+
+
+extends Integer {
+	#[internal, dispatch(1)]
+	infix +(self, rhs: Into<int>) -> Self;
+
+
+
+
+}
+
+

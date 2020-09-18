@@ -1,0 +1,8 @@
+using self::context::*;
+
+//? mark internal macros
+macro internal internal;
+
+// macro internal internal_implementation;
+
+macro internal alias;
