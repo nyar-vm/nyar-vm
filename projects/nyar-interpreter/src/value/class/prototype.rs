@@ -1,6 +1,7 @@
 use crate::typing::Typing;
 use std::{collections::HashMap, rc::Rc};
 use std::task::Context;
+use bitflags::bitflags;
 
 pub trait Class {
     fn get_meta(&self) -> NyarClass;
@@ -20,9 +21,59 @@ impl<T> PartialEq<T> for Box<dyn Class> {
 
 impl Eq for Box<dyn Class> {}
 
+pub struct NyarVisibility {
+    self_read: bool,
+    self_write: bool,
+}
+
+
+#[rustfmt::skip]
+bitflags! {
+    /// Access control character
+    /// 作用域         当前类        package       子孙类       其他package的类
+    ///
+    /// public           √               √            √                √
+    ///
+    /// protected        √               √            √                ×
+    ///
+    /// friendly         √               √            ×                ×
+    ///
+    /// private          √               ×            ×                ×
+    /// ————————————————
+    struct NyarReadWrite: u8 {
+        const SelfRead      = 0b00000001;
+        const SelfWrite     = 0b00000010;
+        const ScopeRead     = 0b00000100;
+        const ScopeWrite    = 0b00001000;
+        const PackageRead   = 0b00010000;
+        const PackageWrite  = 0b00100000;
+        const GlobalRead    = 0b01000000;
+        const GlobalWrite   = 0b10000000;
+        /// self modify
+        const Restricted = Self::SelfRead | Self::SelfWrite;
+        ///
+        const Private = Self::ScopeRead | Self::ScopeWrite | Self::Restricted;
+        /// inside
+        const Internal = Self::PackageRead | Self::PackageWrite | Self::Private;
+        ///
+        const Public = Self::GlobalRead | Self::GlobalWrite | Self::Internal;
+    }
+}
+
 pub struct NyarProperty {
     // typing: Option<Typing>,
     default: Rc<NyarClass>,
+    visibility: NyarReadWrite,
+}
+
+
+pub enum NyarPrototype {
+    EmptyClass,
+    EmptyVariant,
+    EmptyBitflag,
+    Class(Box<NyarClass>),
+    Variant(Box<NyarVariants>),
+    Bitflag(Box<NyarBitflags>)
 }
 
 pub struct NyarClass {
@@ -31,6 +82,15 @@ pub struct NyarClass {
     properties: HashMap<String, NyarProperty>,
     methods: HashMap<String, NyarProperty>,
 }
+
+pub struct NyarVariants {
+
+}
+pub struct NyarBitflags {
+
+}
+
+
 
 impl Default for NyarClass {
     fn default() -> Self {
@@ -83,14 +143,14 @@ impl Default for NyarContext {
         Self {
             implicit_self: false,
             index_system: NyarIndexSystem::OrdinalSystem,
-            uniform_function_call_syntax: false.then_some()
+            uniform_function_call_syntax: true,
         }
     }
 }
 
 pub struct NameSpace {
     name: String,
-    base: Option<NameSpace>,
+    base: Option<Box<NameSpace>>,
     ctx: NyarContext,
     classes: HashMap<String, Rc<NyarClass>>,
 }

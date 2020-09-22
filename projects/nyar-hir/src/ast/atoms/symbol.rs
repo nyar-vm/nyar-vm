@@ -1,31 +1,32 @@
 use super::*;
 
 ///
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Symbol {
-    name: String,
-    scope: Vec<String>,
+    pub name: String,
+    pub scope: Vec<String>,
+}
+
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        for s in &self.scope {
+            f.write_str(s)?;
+            f.write_str("::")?;
+        }
+        f.write_str(&self.name)
+    }
 }
 
 impl Symbol {
     pub fn simple(name: &str) -> Symbol {
-        Self {
-            name: String::from(name),
-            scope: vec![]
-        }
+        Self { name: String::from(name), scope: vec![] }
     }
     pub fn namespace(name: &str) -> Symbol {
-        Self {
-            name: String::from(name),
-            scope: vec![]
-        }
+        Self { name: String::from(name), scope: vec![] }
     }
     pub fn path(names: &[String]) -> Symbol {
         let mut path = Vec::from(names);
-        let name  = path.pop().unwrap();
-        Self {
-            name,
-            scope: path
-        }
+        let name = path.pop().unwrap();
+        Self { name, scope: path }
     }
 }
