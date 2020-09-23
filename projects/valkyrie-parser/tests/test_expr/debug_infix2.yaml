@@ -1,0 +1,74 @@
+AST::Suite: [
+    AST::Expression: {
+        base: AST::CallInfix {
+            base: [
+                1,
+                +,
+                AST::CallInfix {
+                    base: [
+                        2,
+                        *,
+                        3,
+                    ],
+                    range: "(2:1, 2:10)",
+                },
+            ],
+            range: "(2:1, 2:10)",
+        },
+        eos: true,
+        range: "(2:1, 2:11)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        base: AST::CallInfix {
+            base: [
+                AST::CallInfix {
+                    base: [
+                        1,
+                        +,
+                        2,
+                    ],
+                    range: "(3:2, 3:5)",
+                },
+                *,
+                3,
+            ],
+            range: "(3:1, 3:10)",
+        },
+        eos: true,
+        range: "(3:1, 3:11)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        base: AST::CallInfix {
+            base: [
+                1,
+                +,
+                AST::CallInfix {
+                    base: [
+                        2,
+                        *,
+                        3,
+                    ],
+                    range: "(4:1, 4:22)",
+                },
+                +,
+                AST::CallInfix {
+                    base: [
+                        4,
+                        *,
+                        5,
+                        *,
+                        6,
+                    ],
+                    range: "(4:1, 4:22)",
+                },
+            ],
+            range: "(4:1, 4:22)",
+        },
+        eos: true,
+        range: "(4:1, 4:23)",
+    },
+]

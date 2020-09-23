@@ -23,9 +23,9 @@ impl LexerContext {
         let mut nodes: Vec<ASTNode> = vec![];
         for pair in pairs {
             match pair.as_rule() {
-                Rule::WHITESPACE | Rule::EOI => continue,
+                Rule::WHITESPACE | Rule::COMMENT | Rule::EOI => continue,
                 Rule::statement => nodes.push(self.parse_statement(pair)),
-                _ => unreachable!(),
+                _ => debug_cases!(pair),
             };
         }
         Ok(ASTKind::Program(nodes))
@@ -228,10 +228,11 @@ impl LexerContext {
     #[rustfmt::skip]
     fn parse_expr(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = get_position(&pairs);
+        // println!("{:#?}", pairs);
         PREC_CLIMBER.climb(
-            pairs.into_inner(),
+            pairs.into_inner().filter(|p| p.as_rule() != Rule::WHITESPACE),
             |pair: Pair<Rule>| match pair.as_rule() {
-                Rule::WHITESPACE => ASTNode::empty_statement(r),
+                // Rule::WHITESPACE => ASTNode::empty_statement(r),
                 Rule::expr => self.parse_expr(pair),
                 Rule::term => self.parse_term(pair),
                 Rule::bracket_call => debug_cases!(pair),
@@ -250,7 +251,7 @@ impl LexerContext {
         let mut suffix = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::WHITESPACE => continue,
+                Rule::WHITESPACE | Rule::COMMENT => continue,
                 Rule::node => base = self.parse_node(pair),
                 Rule::Prefix => prefix.push(pair.as_str().to_string()),
                 Rule::Suffix => suffix.push(pair.as_str().to_string()),
@@ -261,7 +262,6 @@ impl LexerContext {
     }
 
     fn parse_node(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = get_position(&pairs);
         for pair in pairs.into_inner() {
             return match pair.as_rule() {
                 Rule::bracket_call => self.parse_bracket_call(pair),
@@ -344,33 +344,37 @@ impl LexerContext {
     // }
 
     fn parse_index(&self, pairs: Pair<Rule>) -> ASTNode {
-        let mut base = ASTNode::default();
+        let pair = pairs.into_inner().nth(0).unwrap();
+        match pair.as_rule() {
+            Rule::expr => self.parse_expr(pair),
+            Rule::index_step => self.parse_index_step(pair),
+            _ => debug_cases!(pair),
+        }
+    }
+
+    fn parse_index_step(&self, pairs: Pair<Rule>) -> ASTNode {
+        let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::expr => return self.parse_expr(pair),
-                Rule::index_step=> continue,
+                Rule::Colon => continue,
+                Rule::expr => vec.push(self.parse_expr(pair)),
                 _ => debug_cases!(pair),
             };
         }
-        return base;
+        return ASTNode::default();
     }
 
     fn parse_data(&self, pairs: Pair<Rule>) -> ASTNode {
-        for pair in pairs.into_inner() {
-            let node = match pair.as_rule() {
-                Rule::String => self.parse_string(pair),
-                Rule::Special => self.parse_special(pair),
-                // Rule::Null => self.parse_null(pair),
-                // Rule::Unit=>self.parse_unit(pair),
-                Rule::Number => self.parse_number(pair),
-                Rule::Byte => self.parse_byte(pair),
-                Rule::Symbol => self.parse_symbol(pair),
-                Rule::list => self.parse_list_or_tuple(pair, true),
-                _ => debug_cases!(pair),
-            };
-            return node;
+        let pair = pairs.into_inner().nth(0).unwrap();
+        match pair.as_rule() {
+            Rule::String => self.parse_string(pair),
+            Rule::Special => self.parse_special(pair),
+            Rule::Number => self.parse_number(pair),
+            Rule::Byte => self.parse_byte(pair),
+            Rule::Symbol => self.parse_symbol(pair),
+            Rule::list => self.parse_list_or_tuple(pair, true),
+            _ => debug_cases!(pair),
         }
-        return ASTNode::default();
     }
 
     fn parse_dict(&self, pairs: Pair<Rule>) -> ASTNode {
@@ -389,7 +393,7 @@ impl LexerContext {
         let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::Comma => (),
+                Rule::WHITESPACE | Rule::Comma => continue,
                 Rule::expr => vec.push(self.parse_expr(pair)),
                 _ => unreachable!(),
             };
@@ -504,6 +508,6 @@ impl LexerContext {
                 }
             }
         }
-        ASTNode::symbol(&scope,r )
+        ASTNode::symbol(&scope, r)
     }
 }

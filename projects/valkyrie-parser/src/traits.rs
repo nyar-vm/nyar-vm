@@ -1,6 +1,6 @@
 use crate::LexerContext;
 use nyar_hir::{ASTKind, Result};
-use std::{fs::File, io::Write};
+use std::{fmt::Write as _, fs::File, io::Write};
 
 pub trait ASTDump {
     fn parse(input: &str) -> Self;
@@ -14,9 +14,17 @@ impl ASTDump for ASTKind {
         cfg.get_ast(input).unwrap()
     }
     fn save(&self, path: &str) -> Result<()> {
-        let text = format!("{:#?}", self);
+        let mut out = String::new();
+        match self {
+            ASTKind::Program(v) => {
+                for i in v {
+                    writeln!(out, "{:#?}", i)?;
+                }
+            }
+            _ => unreachable!(),
+        }
         let mut file = File::create(path)?;
-        file.write_all(text.as_bytes())?;
+        file.write_all(out.as_bytes())?;
         Ok(())
     }
 }
