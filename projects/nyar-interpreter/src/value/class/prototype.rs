@@ -2,6 +2,7 @@ use crate::typing::Typing;
 use std::{collections::HashMap, rc::Rc};
 use std::task::Context;
 use bitflags::bitflags;
+use std::collections::BTreeMap;
 
 pub trait Class {
     fn get_meta(&self) -> NyarClass;
@@ -29,22 +30,19 @@ pub struct NyarVisibility {
 
 #[rustfmt::skip]
 bitflags! {
-    /// Access control character
-    /// 作用域         当前类        package       子孙类       其他package的类
+    /// ## Access control character
+    /// | Scopes    | curr module | sub module | curr package | other package |
+    /// | :-------- | :---------: | :--------: | :----------: | :-----------: |
+    /// | public     |      √     |     √      |      √       |       √       |
+    /// | internal   |      √     |     √      |      √       |       ×       |
+    /// | private    |      √     |     √      |      ×       |       ×       |
+    /// | restricted |      √     |     ×      |      ×       |       ×       |
     ///
-    /// public           √               √            √                √
-    ///
-    /// protected        √               √            √                ×
-    ///
-    /// friendly         √               √            ×                ×
-    ///
-    /// private          √               ×            ×                ×
-    /// ————————————————
     struct NyarReadWrite: u8 {
         const SelfRead      = 0b00000001;
         const SelfWrite     = 0b00000010;
-        const ScopeRead     = 0b00000100;
-        const ScopeWrite    = 0b00001000;
+        const ModuleRead    = 0b00000100;
+        const ModuleWrite   = 0b00001000;
         const PackageRead   = 0b00010000;
         const PackageWrite  = 0b00100000;
         const GlobalRead    = 0b01000000;
@@ -52,7 +50,7 @@ bitflags! {
         /// self modify
         const Restricted = Self::SelfRead | Self::SelfWrite;
         ///
-        const Private = Self::ScopeRead | Self::ScopeWrite | Self::Restricted;
+        const Private = Self::ModuleRead | Self::ModuleWrite | Self::Restricted;
         /// inside
         const Internal = Self::PackageRead | Self::PackageWrite | Self::Private;
         ///
@@ -66,6 +64,21 @@ pub struct NyarProperty {
     visibility: NyarReadWrite,
 }
 
+impl Default for NyarReadWrite {
+    fn default() -> Self {
+        Self::Public
+    }
+}
+
+pub struct MatchTree {
+    base :BTreeMap<usize, CaseObject>,
+    default: bool
+}
+
+pub struct CaseObject {
+    cond: bool,
+    expr: bool,
+}
 
 pub enum NyarPrototype {
     EmptyClass,
@@ -73,7 +86,7 @@ pub enum NyarPrototype {
     EmptyBitflag,
     Class(Box<NyarClass>),
     Variant(Box<NyarVariants>),
-    Bitflag(Box<NyarBitflags>)
+    Bitflag(Box<NyarBitflags>),
 }
 
 pub struct NyarClass {
@@ -83,13 +96,9 @@ pub struct NyarClass {
     methods: HashMap<String, NyarProperty>,
 }
 
-pub struct NyarVariants {
+pub struct NyarVariants {}
 
-}
-pub struct NyarBitflags {
-
-}
-
+pub struct NyarBitflags {}
 
 
 impl Default for NyarClass {

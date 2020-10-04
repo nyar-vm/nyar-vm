@@ -14,15 +14,22 @@ class Type21;
 class Type22();
 class Type23 { };
 
-以上写法除 Type13, 实际上都会被声明为 `variant Name { Name }`, Type13 则有自己的 variant 名称.
+以上写法实际上都会被声明为 `variant Name { Name }`
 
-variant Type13 { VName };
-enum Unit2 {
+class Type31 {
+	left: (),
+	right: null
+}
+variant Type32 { VName };
+variant Type33 {
     Unit,
     Uninhabited(!),
-    Uninhabited2(Void),
+    Uninhabited2(()),
 }
 
+以上写法也是 ZST, 如果一个类型的 ADT 计数小于等于1, 那么实际上也是个 ZST.
+
+不过这些情况可以获取到名称索引
 
 //-
 
@@ -32,10 +39,9 @@ The `null` type, also called "void", "nil".
 
 type_size(null) // 0
 //-
-variant Null;
 
-#[allow_lowercase_type]
-type null = Null::Null;
+#[internal, alias(null)]
+variant Null;
 
 //+?
 The `!` type, also called "never".

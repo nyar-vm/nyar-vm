@@ -6,17 +6,13 @@ use super::*;
 /// ```
 #[derive(Clone, Debug)]
 pub struct SliceCall {
-    base: ASTNode,
-    terms: Vec<ASTNode>,
+    pub base: ASTNode,
+    pub terms: Vec<ASTNode>,
 }
 
-
 impl SliceCall {
-    pub fn new(base: ASTNode) ->Self {
-        Self {
-            base,
-            terms: vec![]
-        }
+    pub fn new(base: ASTNode) -> Self {
+        Self { base, terms: vec![] }
     }
     pub fn push(&mut self, term: ASTNode) {
         self.terms.push(term)

@@ -1,4 +1,4 @@
-use valkyrie_parser::{ast::ASTKind, ASTDump};
+use super::*;
 
 const INPUT: &str = r#"
 import torch
@@ -19,5 +19,6 @@ import "../lib/mod"::{
 
 #[test]
 fn debug_import() {
-    get_ast(INPUT);
+    unimplemented!()
+    // get_ast(INPUT);
 }

@@ -13,18 +13,21 @@ impl Debug for ASTNode {
             self.range.start.line, self.range.start.character, self.range.end.line, self.range.end.character
         );
         match &self.kind {
+            ASTKind::Suite(v) => {
+                f.write_str("AST::Suite: ")?;
+                f.debug_list().entries(v.iter()).finish()
+            }
             ASTKind::Expression { base, eos } => f
-                .debug_struct("AST::Expression")
-                .field("base", base)
+                .debug_struct("AST::Expression:")
+                .field("expr", base)
                 .field("eos", eos)
                 .field("range", &range) // force format
                 .finish(),
             ASTKind::CallInfix(v) => f
                 .debug_struct("AST::CallInfix")
-                .field("base", &v)
+                .field("chain", &v)
                 .field("range", &range) // force format
                 .finish(),
-
             ASTKind::CallUnary(v) => f
                 .debug_struct("AST::CallUnary")
                 .field("base", &v.base)
@@ -32,17 +35,11 @@ impl Debug for ASTNode {
                 .field("suffix", &v.suffix)
                 .field("range", &range) // force format
                 .finish(),
-            ASTKind::Boolean(v) => f
-                .debug_struct("AST::Boolean")
-                .field("value", v)
-                .field("range", &range) //
-                .finish(),
-            ASTKind::ByteLiteral(v) => f
-                .debug_struct("AST::ByteLiteral")
-                .field("value", &v.value)
-                .field("handler", &v.handler)
-                .field("range", &range) //
-                .finish(),
+            ASTKind::CallSlice(v) => f.debug_struct("AST::CallSlice").field("base", &v.base).field("terms", &v.terms).finish(),
+            ASTKind::ListExpression(v) => f.debug_list().entries(v.iter()).finish(),
+            ASTKind::Symbol(v) => write!(f, "{}", v),
+            ASTKind::Boolean(v) => write!(f, "{}", v),
+            ASTKind::ByteLiteral(v) => write!(f, "{}", v),
             ASTKind::NumberLiteral(v) => write!(f, "{}", v),
             _ => f
                 .debug_struct("AST")

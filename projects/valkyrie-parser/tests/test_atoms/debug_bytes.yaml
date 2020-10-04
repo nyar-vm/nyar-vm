@@ -1,68 +1,44 @@
-Program(
-    [
-        AST {
-            kind: Suite(
-                [
-                    AST::Expression {
-                        base: AST::ByteLiteral {
-                            value: "FF",
-                            handler: 'x',
-                            range: "(2:1, 2:5)",
-                        },
-                        eos: false,
-                        range: "(2:1, 3:1)",
-                    },
-                ],
-            ),
-            range: "(2:1, 3:1)",
+AST::Suite: [
+    AST::Expression: {
+        base: AST::ByteLiteral {
+            handler: 'x',
+            value: "FF",
+            range: "(2:1, 2:5)",
         },
-        AST {
-            kind: Suite(
-                [
-                    AST::Expression {
-                        base: AST::ByteLiteral {
-                            value: "77",
-                            handler: 'o',
-                            range: "(3:1, 3:5)",
-                        },
-                        eos: false,
-                        range: "(3:1, 4:1)",
-                    },
-                ],
-            ),
-            range: "(3:1, 4:1)",
+        eos: false,
+        range: "(2:1, 3:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        base: AST::ByteLiteral {
+            handler: 'o',
+            value: "77",
+            range: "(3:1, 3:5)",
         },
-        AST {
-            kind: Suite(
-                [
-                    AST::Expression {
-                        base: AST::ByteLiteral {
-                            value: "11",
-                            handler: 'b',
-                            range: "(4:1, 4:5)",
-                        },
-                        eos: false,
-                        range: "(4:1, 5:1)",
-                    },
-                ],
-            ),
-            range: "(4:1, 5:1)",
+        eos: false,
+        range: "(3:1, 4:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        base: AST::ByteLiteral {
+            handler: 'b',
+            value: "11",
+            range: "(4:1, 4:5)",
         },
-        AST {
-            kind: Suite(
-                [
-                    AST::Expression {
-                        base: AST::ByteLiteral {
-                            value: "_b_c_d",
-                            handler: 'a',
-                            range: "(5:1, 5:9)",
-                        },
-                        eos: false,
-                        range: "(5:1, 6:1)",
-                    },
-                ],
-            ),
-            range: "(5:1, 6:1)",
+        eos: false,
+        range: "(4:1, 5:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        base: AST::ByteLiteral {
+            handler: 'a',
+            value: "_b_c_d",
+            range: "(5:1, 5:9)",
         },
-    ],
-)
+        eos: false,
+        range: "(5:1, 6:1)",
+    },
+]

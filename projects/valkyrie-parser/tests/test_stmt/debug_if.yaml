@@ -1,0 +1,178 @@
+AST::Suite: [
+    AST {
+        kind: IfStatement(
+            IfStatement {
+                pairs: [
+                    (
+                        AST {
+                            kind: Symbol(
+                                a,
+                            ),
+                            range: "(2:4, 2:5)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                ],
+                default: None,
+            },
+        ),
+        range: "(2:1, 2:9)",
+    },
+]
+AST::Suite: [
+    AST {
+        kind: IfStatement(
+            IfStatement {
+                pairs: [
+                    (
+                        AST {
+                            kind: Symbol(
+                                a,
+                            ),
+                            range: "(3:4, 3:5)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                ],
+                default: Some(
+                    AST {
+                        kind: None,
+                        range: "(0:0, 0:0)",
+                    },
+                ),
+            },
+        ),
+        range: "(3:1, 3:18)",
+    },
+]
+AST::Suite: [
+    AST {
+        kind: IfStatement(
+            IfStatement {
+                pairs: [
+                    (
+                        AST {
+                            kind: Symbol(
+                                a,
+                            ),
+                            range: "(4:4, 4:5)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                    (
+                        AST {
+                            kind: Symbol(
+                                b,
+                            ),
+                            range: "(4:18, 4:19)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                ],
+                default: None,
+            },
+        ),
+        range: "(4:1, 5:1)",
+    },
+]
+AST::Suite: [
+    AST {
+        kind: IfStatement(
+            IfStatement {
+                pairs: [
+                    (
+                        AST {
+                            kind: Symbol(
+                                a,
+                            ),
+                            range: "(5:4, 5:5)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                    (
+                        AST {
+                            kind: Symbol(
+                                b,
+                            ),
+                            range: "(5:18, 5:19)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                ],
+                default: Some(
+                    AST {
+                        kind: None,
+                        range: "(0:0, 0:0)",
+                    },
+                ),
+            },
+        ),
+        range: "(5:1, 5:32)",
+    },
+]
+AST::Suite: [
+    AST {
+        kind: IfStatement(
+            IfStatement {
+                pairs: [
+                    (
+                        AST {
+                            kind: Symbol(
+                                a,
+                            ),
+                            range: "(6:4, 6:5)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                    (
+                        AST {
+                            kind: Symbol(
+                                b,
+                            ),
+                            range: "(6:18, 6:19)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                    (
+                        AST {
+                            kind: Symbol(
+                                c,
+                            ),
+                            range: "(6:32, 6:33)",
+                        },
+                        AST {
+                            kind: None,
+                            range: "(0:0, 0:0)",
+                        },
+                    ),
+                ],
+                default: None,
+            },
+        ),
+        range: "(6:1, 6:37)",
+    },
+]

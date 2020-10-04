@@ -1,4 +1,4 @@
-use valkyrie_parser::{ast::ASTKind, ASTDump};
+use super::*;
 
 const LET: &str = r#"
 let a;
@@ -18,6 +18,7 @@ a.b = c
 
 #[test]
 fn debug_let() {
-    let ast: ASTKind = ASTDump::parse(BYTES);
-    ast.save(file!());
+    unimplemented!()
+    // let ast: ASTKind = ASTDump::parse(BYTES);
+    // ast.save(file!());
 }
