@@ -282,12 +282,11 @@ impl LexerContext {
                 Rule::WHITESPACE => continue,
                 Rule::data => base = self.parse_data(pair),
                 Rule::apply => {
-                    unimplemented!();
-                    // let apply = self.parse_apply(pair);
-                    // return AST::ApplyExpression { base: Box::new(base), ..apply };
-                    // return apply.set_base(base);
-                }
+                    let r = get_position(&pair);
+                    base.push_apply_terms( &[self.parse_apply(pair)], r)
+                },
                 Rule::slice => {
+                    let r = get_position(&pair);
                     let mut list = vec![];
                     for inner in pair.into_inner() {
                         match inner.as_rule() {
@@ -297,7 +296,7 @@ impl LexerContext {
                             _ => unreachable!(),
                         };
                     }
-                    return base.push_slice_term(&list, r);
+                    return base.push_slice_terms(&list, r);
                 }
                 _ => debug_cases!(pair),
             };
@@ -305,43 +304,43 @@ impl LexerContext {
         return base;
     }
 
-    // fn parse_apply(&self, pairs: Pair<Rule>) -> ASTNode {
-    //     let pos = get_position(pairs.as_span());
-    //     let mut args = vec![];
-    //     let mut kv_pairs = vec![];
-    //     let mut types = vec![];
-    //     for pair in pairs.into_inner() {
-    //         match pair.as_rule() {
-    //             Rule::WHITESPACE => continue,
-    //             Rule::Comma => (),
-    //             Rule::apply_kv => {
-    //                 let (mut k, mut v) = (AST::None, AST::None);
-    //                 for inner in pair.into_inner() {
-    //                     match inner.as_rule() {
-    //                         Rule::WHITESPACE | Rule::Colon => continue,
-    //                         Rule::SYMBOL => k = self.parse_symbol(inner),
-    //                         Rule::expr => v = self.parse_expr(inner),
-    //                         _ => debug_cases!(inner),
-    //                     };
-    //                 }
-    //                 match k {
-    //                     AST::None => args.push(k),
-    //                     _ => kv_pairs.push((k, v)),
-    //                 }
-    //             }
-    //             Rule::apply => {
-    //                 for inner in pair.into_inner() {
-    //                     match inner.as_rule() {
-    //                         Rule::expr => types.push(self.parse_expr(inner)),
-    //                         _ => unreachable!(),
-    //                     };
-    //                 }
-    //             }
-    //             _ => debug_cases!(pair),
-    //         };
-    //     }
-    //     return AST::ApplyExpression { base: Box::new(AST::None), types, args, kv_pairs, pos };
-    // }
+    fn parse_apply(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = get_position(&pairs);
+        let mut args = vec![];
+        let mut kv_pairs = vec![];
+        let mut types = vec![];
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::WHITESPACE => continue,
+                Rule::Comma => (),
+                Rule::apply_kv => {
+                    let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
+                    for inner in pair.into_inner() {
+                        match inner.as_rule() {
+                            Rule::WHITESPACE | Rule::Colon => continue,
+                            Rule::SYMBOL => k = self.parse_symbol(inner),
+                            Rule::expr => v = self.parse_expr(inner),
+                            _ => debug_cases!(inner),
+                        };
+                    }
+                    match k.kind {
+                        ASTKind::None => args.push(k),
+                        _ => kv_pairs.push((k, v)),
+                    }
+                }
+                Rule::apply => {
+                    for inner in pair.into_inner() {
+                        match inner.as_rule() {
+                            Rule::expr => types.push(self.parse_expr(inner)),
+                            _ => unreachable!(),
+                        };
+                    }
+                }
+                _ => debug_cases!(pair),
+            };
+        }
+        return AST::ApplyExpression { base: Box::new(AST::None), types, args, kv_pairs, pos };
+    }
 
     fn parse_index(&self, pairs: Pair<Rule>) -> ASTNode {
         let pair = pairs.into_inner().nth(0).unwrap();

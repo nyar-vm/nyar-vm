@@ -139,7 +139,16 @@ impl ASTNode {
         Self { kind: ASTKind::CallUnary(box unary), range: r }
     }
 
-    pub fn push_slice_term(self, terms: &[ASTNode], r: Range) -> Self {
+    pub fn push_apply_terms(self, terms: &[ASTNode], r: Range) -> Self {
+        let mut apply = match self.kind {
+            ASTKind::CallApply(c) => *c,
+            _ => ApplyCall::new(self),
+        };
+        apply.extend(terms);
+        Self { kind: ASTKind::CallApply(box apply), range: r }
+    }
+
+    pub fn push_slice_terms(self, terms: &[ASTNode], r: Range) -> Self {
         let mut slice = match self.kind {
             ASTKind::CallSlice(c) => *c,
             _ => SliceCall::new(self),
@@ -147,6 +156,8 @@ impl ASTNode {
         slice.extend(terms);
         Self { kind: ASTKind::CallSlice(box slice), range: r }
     }
+
+
 
     pub fn list(v: Vec<ASTNode>, r: Range) -> Self {
         Self { kind: ASTKind::ListExpression(v), range: r }

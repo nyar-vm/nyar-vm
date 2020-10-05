@@ -1,13 +1,12 @@
-use crate::ASTKind;
 use std::{char, iter::Iterator, str};
 
-pub fn string_refine(h: &str, text: &str) -> ASTKind {
-    let data = text.to_string();
-    return match h {
-        "" => ASTKind::String(data),
-        _ => ASTKind::StringLiteral { handler: h.to_string(), data },
-    };
-}
+// pub fn string_refine(h: &str, text: &str) -> ASTKind {
+//     let data = text.to_string();
+//     return match h {
+//         "" => ASTKind::String(data),
+//         _ => ASTKind::StringLiteral { handler: h.to_string(), data },
+//     };
+// }
 
 pub fn unescape(s: &str) -> String {
     let mut chars = s.chars().enumerate();

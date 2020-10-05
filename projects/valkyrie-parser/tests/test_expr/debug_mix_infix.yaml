@@ -1,14 +1,14 @@
 AST::Suite: [
     AST::Expression: {
-        base: 1,
+        expr: 1,
         eos: true,
         range: "(2:1, 2:11)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        base: AST::CallInfix {
-            base: [
+        expr: AST::CallInfix {
+            chain: [
                 AST::CallUnary {
                     base: 1,
                     prefix: [
@@ -19,11 +19,11 @@ AST::Suite: [
                 },
                 +,
                 AST::CallInfix {
-                    base: [
+                    chain: [
                         2,
                         *,
                         AST::CallInfix {
-                            base: [
+                            chain: [
                                 3,
                                 ^,
                                 AST::CallUnary {

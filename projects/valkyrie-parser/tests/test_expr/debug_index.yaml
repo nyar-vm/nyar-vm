@@ -24,43 +24,26 @@ AST::Suite: [
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: a,
+        expr: AST::CallSlice {
+            base: a,
+            terms: [
+                3,
+                4,
+            ],
+        },
         eos: false,
-        range: "(8:1, 9:1)",
+        range: "(8:1, 11:1)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: [
-            3,
-            4,
-        ],
+        expr: AST::CallSlice {
+            base: a,
+            terms: [
+                5,
+            ],
+        },
         eos: false,
-        range: "(9:1, 11:1)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(11:1, 12:1)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: [
-            5,
-        ],
-        eos: false,
-        range: "(12:1, 13:1)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: [
-            6,
-        ],
-        eos: false,
-        range: "(13:1, 14:1)",
+        range: "(11:1, 14:1)",
     },
 ]

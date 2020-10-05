@@ -1,8 +1,10 @@
 use crate::typing::Typing;
-use std::{collections::HashMap, rc::Rc};
-use std::task::Context;
 use bitflags::bitflags;
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    rc::Rc,
+    task::Context,
+};
 
 pub trait Class {
     fn get_meta(&self) -> NyarClass;
@@ -27,7 +29,6 @@ pub struct NyarVisibility {
     self_write: bool,
 }
 
-
 #[rustfmt::skip]
 bitflags! {
     /// ## Access control character
@@ -38,7 +39,8 @@ bitflags! {
     /// | private    |      √     |     √      |      ×       |       ×       |
     /// | restricted |      √     |     ×      |      ×       |       ×       |
     ///
-    struct NyarReadWrite: u8 {
+    #[allow(non_upper_case_globals)]
+    pub struct NyarReadWrite: u8 {
         const SelfRead      = 0b00000001;
         const SelfWrite     = 0b00000010;
         const ModuleRead    = 0b00000100;
@@ -48,13 +50,13 @@ bitflags! {
         const GlobalRead    = 0b01000000;
         const GlobalWrite   = 0b10000000;
         /// self modify
-        const Restricted = Self::SelfRead | Self::SelfWrite;
+        const Restricted = Self::SelfRead.bits | Self::SelfWrite.bits;
         ///
-        const Private = Self::ModuleRead | Self::ModuleWrite | Self::Restricted;
+        const Private = Self::ModuleRead.bits | Self::ModuleWrite.bits | Self::Restricted.bits;
         /// inside
-        const Internal = Self::PackageRead | Self::PackageWrite | Self::Private;
+        const Internal = Self::PackageRead.bits | Self::PackageWrite.bits | Self::Private.bits;
         ///
-        const Public = Self::GlobalRead | Self::GlobalWrite | Self::Internal;
+        const Public = Self::GlobalRead.bits | Self::GlobalWrite.bits | Self::Internal.bits;
     }
 }
 
@@ -71,8 +73,8 @@ impl Default for NyarReadWrite {
 }
 
 pub struct MatchTree {
-    base :BTreeMap<usize, CaseObject>,
-    default: bool
+    base: BTreeMap<usize, CaseObject>,
+    default: bool,
 }
 
 pub struct CaseObject {
@@ -100,15 +102,9 @@ pub struct NyarVariants {}
 
 pub struct NyarBitflags {}
 
-
 impl Default for NyarClass {
     fn default() -> Self {
-        Self {
-            name: String::from("Object"),
-            base: vec![],
-            properties: Default::default(),
-            methods: Default::default(),
-        }
+        Self { name: String::from("Object"), base: vec![], properties: Default::default(), methods: Default::default() }
     }
 }
 
@@ -149,11 +145,7 @@ pub struct NyarContext {
 
 impl Default for NyarContext {
     fn default() -> Self {
-        Self {
-            implicit_self: false,
-            index_system: NyarIndexSystem::OrdinalSystem,
-            uniform_function_call_syntax: true,
-        }
+        Self { implicit_self: false, index_system: NyarIndexSystem::OrdinalSystem, uniform_function_call_syntax: true }
     }
 }
 

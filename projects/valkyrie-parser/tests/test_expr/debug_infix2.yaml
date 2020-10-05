@@ -1,11 +1,11 @@
 AST::Suite: [
     AST::Expression: {
-        base: AST::CallInfix {
-            base: [
+        expr: AST::CallInfix {
+            chain: [
                 1,
                 +,
                 AST::CallInfix {
-                    base: [
+                    chain: [
                         2,
                         *,
                         3,
@@ -21,10 +21,10 @@ AST::Suite: [
 ]
 AST::Suite: [
     AST::Expression: {
-        base: AST::CallInfix {
-            base: [
+        expr: AST::CallInfix {
+            chain: [
                 AST::CallInfix {
-                    base: [
+                    chain: [
                         1,
                         +,
                         2,
@@ -42,12 +42,12 @@ AST::Suite: [
 ]
 AST::Suite: [
     AST::Expression: {
-        base: AST::CallInfix {
-            base: [
+        expr: AST::CallInfix {
+            chain: [
                 1,
                 +,
                 AST::CallInfix {
-                    base: [
+                    chain: [
                         2,
                         *,
                         3,
@@ -56,7 +56,7 @@ AST::Suite: [
                 },
                 +,
                 AST::CallInfix {
-                    base: [
+                    chain: [
                         4,
                         *,
                         5,

@@ -9,12 +9,12 @@ license = "MPL-2.0"
 
 
 [dependencies]
-# indexmap = "1.6"
 # zerogc = "0.2.0-alpha.1"
 # zerogc-derive = "0.2.0-alpha.1"
 num = "0.3"
 bigdecimal = "0.2"
 bitflags = "1.3"
+type-uuid = "0.1"
 
 [dependencies.indexmap]
 version = "1.6"

@@ -192,8 +192,8 @@ Unit    = !{"("~")"}
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
 Number     = ${Complex|Decimal|DecimalBad|Integer}
 Byte       = ${Zero ~ ASCII_ALPHA ~ (Underline? ~ ASCII_ALPHANUMERIC)+}
-Decimal    = ${Integer ~ Dot ~ ASCII_DIGIT+}
-DecimalBad = ${Integer ~ Dot|Dot ~ ASCII_DIGIT+}
+Decimal    = ${Integer ~ Dot ~ Integer+}
+DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
 Integer    = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline? ~ ASCII_DIGIT)*}
 Complex    = {(Decimal|Integer)~ SYMBOL}
 Zero       = _{"0"}
@@ -237,7 +237,7 @@ SYMBOL = @{
 /*====================================================================================================================*/
 //!Orange: Modifier
 // Keywords = !{If|For}
-Modifier = !{(!(SYMBOL~(Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~SYMBOL)}
+Modifier = !{(!(SYMBOL~(Dot|Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~SYMBOL)}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
     (Bang|Plus|Minus|Star)
@@ -253,7 +253,7 @@ Infix = _{
   | (Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo)
   | Power
   | (Grater|GraterEqual|Equal)
-  | Dot
+  //| Dot
 }
 
 ///#56B6C2
