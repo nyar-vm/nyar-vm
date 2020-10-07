@@ -11,6 +11,7 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::AddAssign,
 };
+use crate::ast::ASTKind::CallChain;
 
 pub type StringRange = (String, Range);
 
@@ -47,18 +48,18 @@ pub enum ASTKind {
     TupleExpression(Vec<ASTNode>),
     /// - `InfixOperators`
     Operator(Box<Operator>),
-    CallChain(Box<CallChain>),
+    CallChain(Box<ChainCall>),
     /// - `SliceCall`
     ///
     /// ```v
     /// expr[index]
     /// ```
-    CallSlice(Box<SliceCall>),
+    CallSlice(Box<SliceCallTerm>),
     ///
     /// ```v
     /// expr(index)
     /// ```
-    CallApply(Box<ApplyCall>),
+    CallApply(Box<ApplyCallTerm>),
     ///
     /// ```v
     /// expr + rhs1 + rhs2
@@ -139,25 +140,51 @@ impl ASTNode {
         Self { kind: ASTKind::CallUnary(box unary), range: r }
     }
 
-    pub fn push_apply_terms(self, terms: &[ASTNode], r: Range) -> Self {
-        let mut apply = match self.kind {
-            ASTKind::CallApply(c) => *c,
-            _ => ApplyCall::new(self),
-        };
-        apply.extend(terms);
-        Self { kind: ASTKind::CallApply(box apply), range: r }
+    pub fn chain_join(self, terms: ASTNode) -> Self {
+        ChainCall::join_chain_terms(self, &[terms])
     }
 
-    pub fn push_slice_terms(self, terms: &[ASTNode], r: Range) -> Self {
-        let mut slice = match self.kind {
-            ASTKind::CallSlice(c) => *c,
-            _ => SliceCall::new(self),
+    pub fn apply_call(args: &[ASTNode], kvs: &[(ASTNode, ASTNode)], r: Range) -> Self {
+        let kv_pairs = Default::default();
+        for (k, v) in kvs {
+            match k.kind {
+                _ => unimplemented!("{:?}", k.kind)
+            }
+        }
+        let kind = ApplyCallTerm {
+            args: Vec::from(args),
+            kv_pairs,
         };
-        slice.extend(terms);
-        Self { kind: ASTKind::CallSlice(box slice), range: r }
+        ASTNode {
+            kind: ASTKind::CallApply(box kind),
+            range: r,
+        }
     }
 
+    pub fn apply_slice(mut self, index: &[ASTNode], r: Range) -> Self {
+        let kind = SliceCallTerm {
+            start: Some(index),
+            end: None,
+            steps: None
+        };
+        ASTNode {
+            kind: ASTKind::CallSlice(box kind),
+            range: r,
+        }
 
+    }
+
+    pub fn apply_index(mut self, start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>, r:Range) -> Self {
+        let kind = SliceCallTerm {
+            start,
+            end,
+            steps,
+        };
+        ASTNode {
+            kind: ASTKind::CallSlice(box kind),
+            range: r,
+        }
+    }
 
     pub fn list(v: Vec<ASTNode>, r: Range) -> Self {
         Self { kind: ASTKind::ListExpression(v), range: r }

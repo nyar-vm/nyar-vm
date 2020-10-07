@@ -275,29 +275,14 @@ impl LexerContext {
     }
 
     fn parse_bracket_call(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = get_position(&pairs);
+        // let r = get_position(&pairs);
         let mut base = ASTNode::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
                 Rule::data => base = self.parse_data(pair),
-                Rule::apply => {
-                    let r = get_position(&pair);
-                    base.push_apply_terms( &[self.parse_apply(pair)], r)
-                },
-                Rule::slice => {
-                    let r = get_position(&pair);
-                    let mut list = vec![];
-                    for inner in pair.into_inner() {
-                        match inner.as_rule() {
-                            Rule::WHITESPACE => continue,
-                            Rule::Comma => (),
-                            Rule::index => list.push(self.parse_index(inner)),
-                            _ => unreachable!(),
-                        };
-                    }
-                    return base.push_slice_terms(&list, r);
-                }
+                Rule::apply => base = ASTNode::chain_join(base, self.parse_apply(pair)),
+                Rule::slice => base = ASTNode::chain_join(base, self.parse_slice(pair)),
                 _ => debug_cases!(pair),
             };
         }
@@ -311,8 +296,7 @@ impl LexerContext {
         let mut types = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::WHITESPACE => continue,
-                Rule::Comma => (),
+                Rule::WHITESPACE | Rule::Comma => continue,
                 Rule::apply_kv => {
                     let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
                     for inner in pair.into_inner() {
@@ -339,10 +323,24 @@ impl LexerContext {
                 _ => debug_cases!(pair),
             };
         }
-        return AST::ApplyExpression { base: Box::new(AST::None), types, args, kv_pairs, pos };
+        return ASTNode::apply_call(&args, &kv_pairs, r)
     }
 
-    fn parse_index(&self, pairs: Pair<Rule>) -> ASTNode {
+
+    fn parse_slice(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = get_position(&pairs);
+        let mut list = vec![];
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::WHITESPACE|Rule::Comma => continue,
+                Rule::index => list.push(self.parse_index_term(pair)),
+                _ => debug_cases!(pair),
+            };
+        }
+        ASTNode::apply_index( )
+    }
+
+    fn parse_index_term(&self, pairs: Pair<Rule>) -> ASTNode {
         let pair = pairs.into_inner().nth(0).unwrap();
         match pair.as_rule() {
             Rule::expr => self.parse_expr(pair),

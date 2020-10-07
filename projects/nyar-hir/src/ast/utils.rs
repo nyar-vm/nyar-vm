@@ -35,7 +35,7 @@ impl Debug for ASTNode {
                 .field("suffix", &v.suffix)
                 .field("range", &range) // force format
                 .finish(),
-            ASTKind::CallSlice(v) => f.debug_struct("AST::CallSlice").field("base", &v.base).field("terms", &v.terms).finish(),
+            ASTKind::CallSlice(v) => write!(f, "{:?}", v),
             ASTKind::ListExpression(v) => f.debug_list().entries(v.iter()).finish(),
             ASTKind::Symbol(v) => write!(f, "{}", v),
             ASTKind::Boolean(v) => write!(f, "{}", v),
