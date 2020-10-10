@@ -7,7 +7,7 @@ mod kont_call;
 mod slice_call;
 mod unary_call;
 
-pub use self::{apply_call::ApplyCallTerm, infix_call::InfixCall, slice_call::SliceCallTerm, unary_call::UnaryCall};
+pub use self::{apply_call::ApplyCallTerm, infix_call::InfixCall, slice_call::{SliceTerm,IndexTerm}, unary_call::UnaryCall};
 
 #[derive(Debug, Clone)]
 pub struct ChainCall {

@@ -3,6 +3,6 @@ use super::*;
 ///
 #[derive(Debug, Clone)]
 pub struct StringLiteral {
-    handler: Option<StringRange>,
-    value: ASTNode,
+   pub handler: Option<String>,
+   pub value: Vec<ASTNode>,
 }

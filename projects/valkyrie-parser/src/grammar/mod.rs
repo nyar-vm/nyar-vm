@@ -323,7 +323,7 @@ impl LexerContext {
                 _ => debug_cases!(pair),
             };
         }
-        return ASTNode::apply_call(&args, &kv_pairs, r)
+        return ASTNode::apply_call(args, kv_pairs, r)
     }
 
 
@@ -337,7 +337,7 @@ impl LexerContext {
                 _ => debug_cases!(pair),
             };
         }
-        ASTNode::apply_index( )
+        ASTNode::apply_slice(&list, r)
     }
 
     fn parse_index_term(&self, pairs: Pair<Rule>) -> ASTNode {
@@ -402,6 +402,7 @@ impl LexerContext {
     }
 
     fn parse_string(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = get_position(&pairs);
         let (mut h, mut t) = Default::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
@@ -426,7 +427,7 @@ impl LexerContext {
                 _ => unreachable!(),
             };
         }
-        unimplemented!()
+        ASTNode::string(t, r)
     }
 
     fn parse_number(&self, pairs: Pair<Rule>) -> ASTNode {

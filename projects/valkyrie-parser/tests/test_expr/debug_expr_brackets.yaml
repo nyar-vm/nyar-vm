@@ -1,0 +1,102 @@
+AST::Suite: [
+    AST::Expression: {
+        expr: AST {
+            kind: CallChain(
+                ChainCall {
+                    base: a,
+                    chain: [
+                        AST {
+                            kind: CallApply(
+                                ApplyCallTerm {
+                                    args: [
+                                        AST {
+                                            kind: None,
+                                            range: "(0:0, 0:0)",
+                                        },
+                                    ],
+                                    kv_pairs: {},
+                                },
+                            ),
+                            range: "(2:2, 2:5)",
+                        },
+                        [2],
+                    ],
+                },
+            ),
+            range: "(2:1, 2:8)",
+        },
+        eos: false,
+        range: "(2:1, 3:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        expr: AST {
+            kind: CallChain(
+                ChainCall {
+                    base: b,
+                    chain: [
+                        [1],
+                        AST {
+                            kind: CallApply(
+                                ApplyCallTerm {
+                                    args: [
+                                        AST {
+                                            kind: None,
+                                            range: "(0:0, 0:0)",
+                                        },
+                                    ],
+                                    kv_pairs: {},
+                                },
+                            ),
+                            range: "(3:5, 3:8)",
+                        },
+                    ],
+                },
+            ),
+            range: "(3:1, 3:8)",
+        },
+        eos: false,
+        range: "(3:1, 5:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        expr: AST {
+            kind: CallChain(
+                ChainCall {
+                    base: Persion,
+                    chain: [
+                        AST {
+                            kind: CallApply(
+                                ApplyCallTerm {
+                                    args: [
+                                        AST {
+                                            kind: None,
+                                            range: "(0:0, 0:0)",
+                                        },
+                                        AST {
+                                            kind: None,
+                                            range: "(0:0, 0:0)",
+                                        },
+                                        AST {
+                                            kind: None,
+                                            range: "(0:0, 0:0)",
+                                        },
+                                    ],
+                                    kv_pairs: {
+                                        "a": 2,
+                                    },
+                                },
+                            ),
+                            range: "(5:8, 5:24)",
+                        },
+                    ],
+                },
+            ),
+            range: "(5:1, 5:24)",
+        },
+        eos: false,
+        range: "(5:1, 7:1)",
+    },
+]

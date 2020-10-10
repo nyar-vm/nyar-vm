@@ -1,17 +1,15 @@
 AST::Suite: [
     AST::Expression: {
-        expr: AST::CallSlice {
-            base: a,
-            terms: [
-                AST::CallInfix {
+        expr: AST {
+            kind: CallChain(
+                ChainCall {
+                    base: a,
                     chain: [
-                        1,
-                        +,
-                        1,
+                        [AST::CallInfix { chain: [1, +, 1], range: "(2:3, 2:8)" }],
                     ],
-                    range: "(2:3, 2:8)",
                 },
-            ],
+            ),
+            range: "(2:1, 2:9)",
         },
         eos: true,
         range: "(2:1, 2:10)",
@@ -21,18 +19,16 @@ AST::Suite: [
     AST::Expression: {
         expr: AST::CallInfix {
             chain: [
-                AST::CallSlice {
-                    base: b,
-                    terms: [
-                        AST::CallInfix {
+                AST {
+                    kind: CallChain(
+                        ChainCall {
+                            base: b,
                             chain: [
-                                1,
-                                +,
-                                1,
+                                [AST::CallInfix { chain: [1, +, 1], range: "(3:3, 3:8)" }],
                             ],
-                            range: "(3:3, 3:8)",
                         },
-                    ],
+                    ),
+                    range: "(3:1, 3:9)",
                 },
                 +,
                 1,
@@ -45,13 +41,16 @@ AST::Suite: [
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: AST::CallSlice {
-            base: c,
-            terms: [
-                1,
-                2,
-                3,
-            ],
+        expr: AST {
+            kind: CallChain(
+                ChainCall {
+                    base: c,
+                    chain: [
+                        [1, 2, 3],
+                    ],
+                },
+            ),
+            range: "(4:1, 4:9)",
         },
         eos: true,
         range: "(4:1, 4:10)",
@@ -59,15 +58,16 @@ AST::Suite: [
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: AST::CallSlice {
-            base: d,
-            terms: [
-                [
-                    1,
-                    2,
-                    3,
-                ],
-            ],
+        expr: AST {
+            kind: CallChain(
+                ChainCall {
+                    base: d,
+                    chain: [
+                        [[1, 2, 3]],
+                    ],
+                },
+            ),
+            range: "(5:1, 5:11)",
         },
         eos: true,
         range: "(5:1, 5:12)",
@@ -75,19 +75,16 @@ AST::Suite: [
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: AST::CallSlice {
-            base: e,
-            terms: [
-                AST {
-                    kind: None,
-                    range: "(0:0, 0:0)",
+        expr: AST {
+            kind: CallChain(
+                ChainCall {
+                    base: e,
+                    chain: [
+                        [AST { kind: None, range: "(0:0, 0:0)" }, [1, 2, 3]],
+                    ],
                 },
-                [
-                    1,
-                    2,
-                    3,
-                ],
-            ],
+            ),
+            range: "(6:1, 6:17)",
         },
         eos: true,
         range: "(6:1, 6:18)",

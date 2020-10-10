@@ -12,6 +12,7 @@ use std::{
     ops::AddAssign,
 };
 use crate::ast::ASTKind::CallChain;
+use std::collections::HashMap;
 
 pub type StringRange = (String, Range);
 
@@ -47,6 +48,7 @@ pub enum ASTKind {
     ///
     TupleExpression(Vec<ASTNode>),
     /// - `InfixOperators`
+    StringExpression(Box<StringLiteral>),
     Operator(Box<Operator>),
     CallChain(Box<ChainCall>),
     /// - `SliceCall`
@@ -54,7 +56,8 @@ pub enum ASTKind {
     /// ```v
     /// expr[index]
     /// ```
-    CallSlice(Box<SliceCallTerm>),
+    CallSlice(Box<SliceTerm>),
+    CallIndex(Box<IndexTerm>),
     ///
     /// ```v
     /// expr(index)
@@ -82,7 +85,7 @@ pub enum ASTKind {
     /// - `Number`: raw number represent
     ByteLiteral(Box<ByteLiteral>),
     ///
-    StringLiteral(Box<StringLiteral>),
+    String(Box<String>),
     ///
     Boolean(bool),
     /// - `Null`: It doesn't look like anything to me
@@ -116,6 +119,12 @@ impl ASTNode {
         Self { kind: ASTKind::Expression { base: box base, eos }, range: r }
     }
 
+    pub fn string_expression(h: &str, v: &[ASTNode], r: Range) -> Self {
+        let handler = if h.is_empty() { None } else { Some(String::from(h)) };
+        let v = StringLiteral { handler, value: Vec::from(v) };
+        Self { kind: ASTKind::StringExpression(box v), range: r }
+    }
+
     pub fn push_infix_chain(self, op: &str, rhs: ASTNode, r: Range) -> Self {
         let op = Operator::parse(op, 0);
 
@@ -144,15 +153,17 @@ impl ASTNode {
         ChainCall::join_chain_terms(self, &[terms])
     }
 
-    pub fn apply_call(args: &[ASTNode], kvs: &[(ASTNode, ASTNode)], r: Range) -> Self {
-        let kv_pairs = Default::default();
-        for (k, v) in kvs {
-            match k.kind {
-                _ => unimplemented!("{:?}", k.kind)
-            }
+    pub fn apply_call(args: Vec<ASTNode>, kvs: Vec<(ASTNode, ASTNode)>, r: Range) -> Self {
+        let mut kv_pairs: HashMap<String, ASTNode> = Default::default();
+        for (kn, v) in kvs {
+            let k = match &kn.kind {
+                ASTKind::Symbol(s) => s.name.to_owned(),
+                _ => unimplemented!("{:?}", kn.kind)
+            };
+            kv_pairs.insert(k, v);
         }
         let kind = ApplyCallTerm {
-            args: Vec::from(args),
+            args,
             kv_pairs,
         };
         ASTNode {
@@ -161,11 +172,9 @@ impl ASTNode {
         }
     }
 
-    pub fn apply_slice(mut self, index: &[ASTNode], r: Range) -> Self {
-        let kind = SliceCallTerm {
-            start: Some(index),
-            end: None,
-            steps: None
+    pub fn apply_slice(indexes: &[ASTNode], r: Range) -> Self {
+        let kind = SliceTerm {
+            terms: Vec::from(indexes)
         };
         ASTNode {
             kind: ASTKind::CallSlice(box kind),
@@ -174,14 +183,14 @@ impl ASTNode {
 
     }
 
-    pub fn apply_index(mut self, start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>, r:Range) -> Self {
-        let kind = SliceCallTerm {
+    pub fn apply_index(start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>, r:Range) -> Self {
+        let kind = IndexTerm {
             start,
             end,
             steps,
         };
         ASTNode {
-            kind: ASTKind::CallSlice(box kind),
+            kind: ASTKind::CallIndex(box kind),
             range: r,
         }
     }
@@ -208,6 +217,10 @@ impl ASTNode {
         // let handler = if h.is_empty() { None } else { Some(String::from(h)) };
         let v = ByteLiteral { handler: h, value: String::from(v) };
         Self { kind: ASTKind::ByteLiteral(box v), range: r }
+    }
+
+    pub fn string(s : &str, r: Range) -> Self {
+        Self { kind: ASTKind::String(box String::from(s)), range: r }
     }
 
     pub fn boolean(v: bool, r: Range) -> Self {

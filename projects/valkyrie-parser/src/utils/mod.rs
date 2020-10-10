@@ -29,6 +29,6 @@ pub fn get_position(s: &Pair<Rule>) -> Range {
     }
 }
 
-pub fn unescape(_s: &str) {
-    unimplemented!()
+pub fn unescape(s: &str) -> &str {
+    return s
 }

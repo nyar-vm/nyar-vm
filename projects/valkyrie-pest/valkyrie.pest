@@ -149,10 +149,10 @@ term =  {Prefix* ~ node ~ Suffix*}
 node = {"(" ~ expr ~ ")"|tuple|bracket_call|data}
 tuple = {"(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 // bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
-bracket_call = {data ~ (slice|apply|apply_generic|bracket_apply)+}
+bracket_call = {data ~ (slice|apply|apply_generic|dot_call|bracket_apply)+}
 bracket_apply = {Symbol ~ dict}
 condition  = _{"(" ~ expr ~ ")"|expr}
-dot_call = {term~ Dot ~ (Integer|Symbol) }
+dot_call = {term ~ Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
 type_expr = _{term ~ (TypeInfix ~ term)*}

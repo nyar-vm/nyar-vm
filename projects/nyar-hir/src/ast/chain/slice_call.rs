@@ -5,13 +5,34 @@ use super::*;
 /// a[1][2]
 /// ```
 #[derive(Clone, Debug)]
-pub struct SliceCallTerm {
+pub struct SliceTerm {
+    pub terms: Vec<ASTNode>,
+}
+
+///
+/// ```v
+/// a[1][2]
+/// ```
+#[derive(Clone, Debug)]
+pub struct IndexTerm {
     pub start: Option<ASTNode>,
     pub end: Option<ASTNode>,
     pub steps: Option<ASTNode>,
 }
 
-impl SliceCallTerm {
+impl Display for SliceTerm {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(&self.terms).finish()
+    }
+}
+
+// impl Display for IndexTerm {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+//         f.debug_struct()
+//     }
+// }
+
+impl IndexTerm {
     // pub fn new(base: ASTNode) -> Self {
     //     Self { base, terms: vec![] }
     // }
