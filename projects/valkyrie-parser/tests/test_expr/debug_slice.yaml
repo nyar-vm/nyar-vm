@@ -1,16 +1,6 @@
 AST::Suite: [
     AST::Expression: {
-        expr: AST {
-            kind: CallChain(
-                ChainCall {
-                    base: a,
-                    chain: [
-                        [AST::CallInfix { chain: [1, +, 1], range: "(2:3, 2:8)" }],
-                    ],
-                },
-            ),
-            range: "(2:1, 2:9)",
-        },
+        expr: a,
         eos: true,
         range: "(2:1, 2:10)",
     },
@@ -19,17 +9,7 @@ AST::Suite: [
     AST::Expression: {
         expr: AST::CallInfix {
             chain: [
-                AST {
-                    kind: CallChain(
-                        ChainCall {
-                            base: b,
-                            chain: [
-                                [AST::CallInfix { chain: [1, +, 1], range: "(3:3, 3:8)" }],
-                            ],
-                        },
-                    ),
-                    range: "(3:1, 3:9)",
-                },
+                b,
                 +,
                 1,
             ],
@@ -41,51 +21,21 @@ AST::Suite: [
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: AST {
-            kind: CallChain(
-                ChainCall {
-                    base: c,
-                    chain: [
-                        [1, 2, 3],
-                    ],
-                },
-            ),
-            range: "(4:1, 4:9)",
-        },
+        expr: c,
         eos: true,
         range: "(4:1, 4:10)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: AST {
-            kind: CallChain(
-                ChainCall {
-                    base: d,
-                    chain: [
-                        [[1, 2, 3]],
-                    ],
-                },
-            ),
-            range: "(5:1, 5:11)",
-        },
+        expr: d,
         eos: true,
         range: "(5:1, 5:12)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: AST {
-            kind: CallChain(
-                ChainCall {
-                    base: e,
-                    chain: [
-                        [AST { kind: None, range: "(0:0, 0:0)" }, [1, 2, 3]],
-                    ],
-                },
-            ),
-            range: "(6:1, 6:17)",
-        },
+        expr: e,
         eos: true,
         range: "(6:1, 6:18)",
     },

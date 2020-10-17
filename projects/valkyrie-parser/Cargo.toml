@@ -1,6 +1,6 @@
 [package]
 name = "valkyrie-parser"
-version = "0.0.1"
+version = "0.2.0"
 authors = ["192608617@qq.com"]
 edition = "2018"
 description = "..."
@@ -13,11 +13,11 @@ license = "MPL-2.0"
 
 [dependencies.valkyrie-pest]
 path = "../valkyrie-pest"
-version = "0.1"
+version = "0.2"
 
 [dependencies.nyar-hir]
 path = "../nyar-hir"
-version = "0.1"
+version = "0.2"
 
 [dev-dependencies]
 

@@ -1,77 +1,70 @@
 AST::Suite: [
     AST::Expression: {
-        expr: 0,
+        expr: a::b::c,
         eos: false,
-        range: "(2:1, 7:1)",
+        range: "(2:1, 3:1)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: 0.0,
+        expr: a::b::c,
         eos: false,
-        range: "(7:1, 8:1)",
+        range: "(3:1, 5:1)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: 42f32,
+        expr: a::b,
+        eos: false,
+        range: "(5:1, 6:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        expr: a::b,
+        eos: false,
+        range: "(6:1, 8:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        expr: a,
         eos: false,
         range: "(8:1, 9:1)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: 2147483647i32,
+        expr: a,
         eos: false,
-        range: "(9:1, 10:1)",
+        range: "(9:1, 11:1)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: 9223372036854775807i64,
+        expr: a,
         eos: false,
-        range: "(10:1, 11:1)",
+        range: "(11:1, 13:1)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: 170141183460469231731687303715884105727i128,
-        eos: false,
-        range: "(11:1, 12:1)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: 57896044618658097711785492504343953926634992332820282019728792003956564819967,
-        eos: false,
-        range: "(12:1, 13:1)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: 123456,
+        expr: a,
         eos: false,
         range: "(13:1, 14:1)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: 123456i,
+        expr: a,
         eos: false,
         range: "(14:1, 15:1)",
     },
 ]
 AST::Suite: [
     AST::Expression: {
-        expr: 1234.56im,
+        expr: a,
         eos: false,
         range: "(15:1, 16:1)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: 1234.56cm,
-        eos: false,
-        range: "(16:1, 17:1)",
     },
 ]

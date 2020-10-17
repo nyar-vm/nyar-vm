@@ -283,6 +283,8 @@ impl LexerContext {
                 Rule::data => base = self.parse_data(pair),
                 Rule::apply => base = ASTNode::chain_join(base, self.parse_apply(pair)),
                 Rule::slice => base = ASTNode::chain_join(base, self.parse_slice(pair)),
+                Rule::dot_call => continue,
+                Rule::block => continue,
                 _ => debug_cases!(pair),
             };
         }
@@ -442,11 +444,11 @@ impl LexerContext {
                     // h = "dec";
                     t = pair.as_str().to_string();
                 }
-                Rule::DecimalBad => {
-                    // h = "dec";
-                    let s = pair.as_str();
-                    if s.starts_with('.') { t = "0".to_string() + s } else { t = s.to_string() + "0" }
-                }
+                // Rule::DecimalBad => {
+                //     // h = "dec";
+                //     let s = pair.as_str();
+                //     if s.starts_with('.') { t = "0".to_string() + s } else { t = s.to_string() + "0" }
+                // }
                 Rule::Complex => {
                     for inner in pair.into_inner() {
                         match inner.as_rule() {

@@ -1,6 +1,6 @@
 [package]
 name = "nyar-mir"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["192607617@qq.com"]
 edition = "2018"
 description = "..."
@@ -14,7 +14,7 @@ license = "MPL-2.0"
 # lsp-types = "0.89.0"
 
 [dependencies.nyar-hir]
-version = "0.1"
+version = "0.2"
 path = "../nyar-hir"
 
 [dev-dependencies]

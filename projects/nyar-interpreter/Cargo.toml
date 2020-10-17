@@ -1,6 +1,6 @@
 [package]
 name = "nyar-interpreter"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["192608617@qq.com"]
 edition = "2018"
 description = "..."
@@ -21,7 +21,7 @@ version = "1.6"
 features = ["std", "serde", "rayon"]
 
 [dependencies.nyar-hir]
-version = "0.1"
+version = "0.2"
 path = "../nyar-hir"
 
 #[dependencies.nyar-mir]

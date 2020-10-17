@@ -37,16 +37,14 @@ As   = @{"as"}
 controlFlow = _{re_control|if_statement|for_statement}
 block = !{"{" ~ statement+ ~ "}"}
 /*====================================================================================================================*/
-if_statement = {if_nested_else|if_nested|if_single_else|if_single}
-if_single = _{If ~ condition ~ block}
-if_nested = _{If ~ condition ~ block ~ else_if_block+}
-if_single_else = _{If ~ condition ~ block ~ if_else_block}
-if_nested_else = _{If ~ condition ~ block ~ else_if_block+ ~ if_else_block}
+if_statement = {if_block ~ else_if_block* ~ else_block?}
+if_block = _{If ~ condition ~ block}
 else_if_block = _{Else ~ If ~ condition ~ block}
-if_else_block = _{Else ~ block}
+else_block = _{Else ~ block}
 //!#C678DD: If|Else
-If = @{"if"}
-Else = @{"else"}
+condition = _{"(" ~ expr ~ ")"|expr}
+If        = @{"if"}
+Else      = @{"else"}
 /*====================================================================================================================*/
 match_statement = {
     Match ~ expression ~ "{" ~ case_statement+ ~ "}"
@@ -131,26 +129,27 @@ Where = @{"where"}
 annotation = {annotation_call+~statement}
 annotation_call = @{At~(list|apply|Symbol)}
 /*====================================================================================================================*/
-apply = !{
-    "(" ~ ")"
-  | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"
+expression = {expr ~ eos?}
+expr = !{term ~ (Infix ~ term)*}
+term =  {Prefix* ~ node ~ Suffix*}
+node = {
+    "(" ~ expr ~ ")"
+  | data ~ bracket_once? ~ (bracket_call+ ~ bracket_once?)+
+  | data
 }
-apply_kv = {SYMBOL~ Colon ~ expr|expr}
+// bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
+bracket_call = _{dot_call|slice|apply|apply_generic}
+bracket_once = _{dict|block}
+dot_call     = !{Dot ~ (Integer|Symbol) }
+/*====================================================================================================================*/
+apply    = !{"(" ~ ")" | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"}
+apply_kv = {SYMBOL~ Colon ~ expr | expr}
 apply_generic = !{
     ("::" ~ generic_type)
 }
-
 ///#61AFEF
 function_name = {SYMBOL}
 function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
-/*====================================================================================================================*/
-expression = {expr~eos?}
-expr = !{term ~ (Infix ~ term)*}
-term =  {Prefix* ~ ("(" ~ expr ~ ")"|bracket_call|data) ~ Suffix*}
-// bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
-bracket_call = {data ~ (dot_call|slice|apply|apply_generic|dict|block)+}
-condition  = _{"(" ~ expr ~ ")"|expr}
-dot_call = !{Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
 type_expr = _{term ~ (TypeInfix ~ term)*}
