@@ -7,7 +7,12 @@ mod kont_call;
 mod slice_call;
 mod unary_call;
 
-pub use self::{apply_call::ApplyCallTerm, infix_call::InfixCall, slice_call::{SliceTerm,IndexTerm}, unary_call::UnaryCall};
+pub use self::{
+    apply_call::ApplyCallTerm,
+    infix_call::InfixCall,
+    slice_call::{IndexTerm, SliceTerm},
+    unary_call::UnaryCall,
+};
 
 #[derive(Debug, Clone)]
 pub struct ChainCall {
@@ -47,12 +52,6 @@ impl ChainCall {
             _ => ChainCall::new(base),
         };
         chain.extend(terms);
-        ASTNode {
-            kind: ASTKind::CallChain(box chain),
-            range: Range {
-                start,
-                end,
-            },
-        }
+        ASTNode { kind: ASTKind::CallChain(box chain), range: Range { start, end } }
     }
 }

@@ -6,13 +6,13 @@ mod utils;
 
 pub use self::{atoms::*, chain::*, control::*, import::ImportStatement};
 
+use crate::ast::ASTKind::CallChain;
 use lsp_types::Range;
 use std::{
+    collections::HashMap,
     fmt::{self, Debug, Display, Formatter},
     ops::AddAssign,
 };
-use crate::ast::ASTKind::CallChain;
-use std::collections::HashMap;
 
 pub type StringRange = (String, Range);
 
@@ -158,41 +158,22 @@ impl ASTNode {
         for (kn, v) in kvs {
             let k = match &kn.kind {
                 ASTKind::Symbol(s) => s.name.to_owned(),
-                _ => unimplemented!("{:?}", kn.kind)
+                _ => unimplemented!("{:?}", kn.kind),
             };
             kv_pairs.insert(k, v);
         }
-        let kind = ApplyCallTerm {
-            args,
-            kv_pairs,
-        };
-        ASTNode {
-            kind: ASTKind::CallApply(box kind),
-            range: r,
-        }
+        let kind = ApplyCallTerm { args, kv_pairs };
+        ASTNode { kind: ASTKind::CallApply(box kind), range: r }
     }
 
     pub fn apply_slice(indexes: &[ASTNode], r: Range) -> Self {
-        let kind = SliceTerm {
-            terms: Vec::from(indexes)
-        };
-        ASTNode {
-            kind: ASTKind::CallSlice(box kind),
-            range: r,
-        }
-
+        let kind = SliceTerm { terms: Vec::from(indexes) };
+        ASTNode { kind: ASTKind::CallSlice(box kind), range: r }
     }
 
-    pub fn apply_index(start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>, r:Range) -> Self {
-        let kind = IndexTerm {
-            start,
-            end,
-            steps,
-        };
-        ASTNode {
-            kind: ASTKind::CallIndex(box kind),
-            range: r,
-        }
+    pub fn apply_index(start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>, r: Range) -> Self {
+        let kind = IndexTerm { start, end, steps };
+        ASTNode { kind: ASTKind::CallIndex(box kind), range: r }
     }
 
     pub fn list(v: Vec<ASTNode>, r: Range) -> Self {
@@ -219,7 +200,7 @@ impl ASTNode {
         Self { kind: ASTKind::ByteLiteral(box v), range: r }
     }
 
-    pub fn string(s : &str, r: Range) -> Self {
+    pub fn string(s: &str, r: Range) -> Self {
         Self { kind: ASTKind::String(box String::from(s)), range: r }
     }
 

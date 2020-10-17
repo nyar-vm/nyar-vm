@@ -132,7 +132,8 @@ annotation = {annotation_call+~statement}
 annotation_call = @{At~(list|apply|Symbol)}
 /*====================================================================================================================*/
 apply = !{
-    "(" ~ apply_kv? ~ (Comma ~ apply_kv)* ~ Comma? ~")"
+    "(" ~ ")"
+  | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"
 }
 apply_kv = {SYMBOL~ Colon ~ expr|expr}
 apply_generic = !{
@@ -145,14 +146,11 @@ function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
 /*====================================================================================================================*/
 expression = {expr~eos?}
 expr = !{term ~ (Infix ~ term)*}
-term =  {Prefix* ~ node ~ Suffix*}
-node = {"(" ~ expr ~ ")"|tuple|bracket_call|data}
-tuple = {"(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
+term =  {Prefix* ~ ("(" ~ expr ~ ")"|bracket_call|data) ~ Suffix*}
 // bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
-bracket_call = {data ~ (slice|apply|apply_generic|dot_call|bracket_apply)+}
-bracket_apply = {Symbol ~ dict}
+bracket_call = {data ~ (dot_call|slice|apply|apply_generic|dict|block)+}
 condition  = _{"(" ~ expr ~ ")"|expr}
-dot_call = {term ~ Dot ~ (Integer|Symbol) }
+dot_call = !{Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
 type_expr = _{term ~ (TypeInfix ~ term)*}
@@ -167,15 +165,18 @@ parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
 /*====================================================================================================================*/
-data        = ${dict|list|Special|Byte|Number|String|Symbol}
-dict        =  {"{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
-list        =  {"[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
+data        = ${tuple|dict|block|list|Special|Byte|Number|String|Symbol}
+tuple       = !{"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
+
+list        = !{"[" ~ "]" | "[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
 slice       = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
 index       =  {index_step|index_range|expr}
-key_value   = !{key_valid ~ Colon ~ expr}
-key_valid   = !{Integer | SYMBOL | String}
 index_range = !{expr? ~ Colon ~ expr?}
 index_step  = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
+
+dict        = !{"{" ~ "}" | "{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
+key_value   = !{key_valid ~ Colon ~ expr}
+key_valid   = !{Integer | SYMBOL | String}
 /*====================================================================================================================*/
 ///#D19A66
 Special = !{Null|True|False}
@@ -190,12 +191,12 @@ Unit    = !{"("~")"}
 // Byte_HEX = ${Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
-Number     = ${Complex|Decimal|DecimalBad|Integer}
+Number     = ${Complex|Decimal|Integer}
 Byte       = ${Zero ~ ASCII_ALPHA ~ (Underline? ~ ASCII_ALPHANUMERIC)+}
 Decimal    = ${Integer ~ Dot ~ Integer+}
-DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
+// DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
 Integer    = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline? ~ ASCII_DIGIT)*}
-Complex    = {(Decimal|Integer)~ SYMBOL}
+Complex    =  {(Decimal|Integer)~ SYMBOL}
 Zero       = _{"0"}
 /*====================================================================================================================*/
 //!#3C963C: String

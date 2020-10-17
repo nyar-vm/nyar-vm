@@ -1,0 +1,24 @@
+AST::Suite: [
+    AST::Expression: {
+        expr: AST {
+            kind: Null,
+            range: "(2:1, 2:5)",
+        },
+        eos: false,
+        range: "(2:1, 3:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        expr: true,
+        eos: false,
+        range: "(3:1, 4:1)",
+    },
+]
+AST::Suite: [
+    AST::Expression: {
+        expr: false,
+        eos: false,
+        range: "(4:1, 5:1)",
+    },
+]

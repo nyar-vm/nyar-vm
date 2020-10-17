@@ -1,0 +1,12 @@
+AST::Suite: [
+    AST::Expression: {
+        expr: AST {
+            kind: String(
+                "\\n",
+            ),
+            range: "(2:1, 2:5)",
+        },
+        eos: false,
+        range: "(2:1, 3:1)",
+    },
+]

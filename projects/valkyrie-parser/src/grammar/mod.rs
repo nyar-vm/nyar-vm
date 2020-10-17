@@ -293,7 +293,7 @@ impl LexerContext {
         let r = get_position(&pairs);
         let mut args = vec![];
         let mut kv_pairs = vec![];
-        let mut types = vec![];
+        // let mut types = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::WHITESPACE | Rule::Comma => continue,
@@ -312,27 +312,26 @@ impl LexerContext {
                         _ => kv_pairs.push((k, v)),
                     }
                 }
-                Rule::apply => {
-                    for inner in pair.into_inner() {
-                        match inner.as_rule() {
-                            Rule::expr => types.push(self.parse_expr(inner)),
-                            _ => unreachable!(),
-                        };
-                    }
-                }
+                // Rule::apply => {
+                //     for inner in pair.into_inner() {
+                //         match inner.as_rule() {
+                //             Rule::expr => types.push(self.parse_expr(inner)),
+                //             _ => unreachable!(),
+                //         };
+                //     }
+                // }
                 _ => debug_cases!(pair),
             };
         }
-        return ASTNode::apply_call(args, kv_pairs, r)
+        return ASTNode::apply_call(args, kv_pairs, r);
     }
-
 
     fn parse_slice(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = get_position(&pairs);
         let mut list = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::WHITESPACE|Rule::Comma => continue,
+                Rule::WHITESPACE | Rule::Comma => continue,
                 Rule::index => list.push(self.parse_index_term(pair)),
                 _ => debug_cases!(pair),
             };

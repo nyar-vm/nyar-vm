@@ -30,5 +30,5 @@ pub fn get_position(s: &Pair<Rule>) -> Range {
 }
 
 pub fn unescape(s: &str) -> &str {
-    return s
+    return s;
 }
