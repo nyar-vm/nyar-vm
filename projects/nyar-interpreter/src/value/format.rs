@@ -12,6 +12,7 @@ impl Debug for Value {
             Value::Object(v) => f.debug_tuple("Object").field(v).finish(),
             Value::Function(v) => f.debug_tuple("Function").field(v).finish(),
             Value::CustomClass(_) => f.debug_tuple("Class").finish(),
+            _ => unimplemented!("{}", self),
         }
     }
 }
@@ -28,6 +29,7 @@ impl Display for Value {
             Value::Object(v) => write!(f, "{:?}", v),
             Value::Function(v) => write!(f, "{:?}", v),
             Value::CustomClass(_) => write!(f, "Class"),
+            _ => unimplemented!("{}", self),
         }
     }
 }

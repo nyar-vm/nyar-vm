@@ -14,8 +14,8 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 
+use crate::utils::OrderedMap;
 use bigdecimal::BigDecimal;
-use indexmap::IndexMap;
 use num::BigInt;
 
 use class::Class;
@@ -25,11 +25,24 @@ use function::FunctionInstance;
 pub enum Value {
     Null,
     Boolean(bool),
+    Character(char),
+    Integer8(i8),
+    Integer16(i16),
+    Integer32(i32),
+    Integer64(i64),
+    Integer128(i128),
+    IntegerSized(isize),
+    UnsignedInteger8(u8),
+    UnsignedInteger16(u16),
+    UnsignedInteger32(u32),
+    UnsignedInteger64(u64),
+    UnsignedInteger128(u128),
+    UnsignedIntegerSized(usize),
     Integer(Box<BigInt>),
     Decimal(Box<BigDecimal>),
     String(Box<String>),
     List(Box<VecDeque<Self>>),
-    Object(Box<IndexMap<String, Self>>),
+    Object(Box<OrderedMap<String, Self>>),
     Function(Box<FunctionInstance>),
     CustomClass(Box<dyn Class>),
 }
@@ -45,6 +58,5 @@ fn check_size() {
     assert_eq!(std::mem::size_of::<String>(), 24);
     assert_eq!(std::mem::size_of::<Cow<str>>(), 32);
     assert_eq!(std::mem::size_of::<VecDeque<Value>>(), 32);
-    assert_eq!(std::mem::size_of::<IndexMap<String, Value>>(), 72);
     assert_eq!(std::mem::size_of::<Value>(), 24);
 }
