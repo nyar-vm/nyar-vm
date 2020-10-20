@@ -10,7 +10,7 @@ pub struct Variable {
 }
 
 impl Variable {
-    pub fn is_mutable(&self)->bool {
+    pub fn is_mutable(&self) -> bool {
         true
     }
 }

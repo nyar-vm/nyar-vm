@@ -29,6 +29,6 @@ path = "../nyar-hir"
 #path = "../nyar-mir"
 
 [dev-dependencies]
-
+valkyrie-parser = {version = "0.2", path = "../valkyrie-parser"}
 
 [build-dependencies]
