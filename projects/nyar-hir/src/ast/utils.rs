@@ -55,3 +55,12 @@ impl Default for ASTNode {
         Self { kind: ASTKind::None, range: Default::default() }
     }
 }
+
+impl From<ASTKind> for ASTNode {
+    fn from(kind: ASTKind) -> Self {
+        Self {
+            kind,
+            range: Default::default()
+        }
+    }
+}

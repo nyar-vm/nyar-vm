@@ -6,10 +6,8 @@ mod utils;
 
 pub use self::{atoms::*, chain::*, control::*, import::ImportStatement};
 
-use crate::ast::ASTKind::CallChain;
 use lsp_types::Range;
 use std::{
-    collections::HashMap,
     fmt::{self, Debug, Display, Formatter},
     ops::AddAssign,
 };
@@ -46,6 +44,8 @@ pub enum ASTKind {
     ///
     ListExpression(Vec<ASTNode>),
     ///
+    DictExpression(Vec<ASTNode>),
+    ///
     TupleExpression(Vec<ASTNode>),
     /// - `InfixOperators`
     StringExpression(Box<StringLiteral>),
@@ -62,7 +62,7 @@ pub enum ASTKind {
     /// ```v
     /// expr(index)
     /// ```
-    CallApply(Box<ApplyCallTerm>),
+    CallApply(Vec<ASTNode>),
     ///
     /// ```v
     /// expr + rhs1 + rhs2
@@ -75,9 +75,9 @@ pub enum ASTKind {
     /// ++expr!!
     /// ```
     CallUnary(Box<UnaryCall>),
+    KVPair(Box<KVPair>),
     /// - `Comment`: raw comment with handler
     Comment(Box<CommentLiteral>),
-
     /// - `Symbol`
     Symbol(Box<Symbol>),
     /// - `Number`: raw number represent
@@ -85,7 +85,7 @@ pub enum ASTKind {
     /// - `Number`: raw number represent
     ByteLiteral(Box<ByteLiteral>),
     ///
-    String(Box<String>),
+    String(String),
     ///
     Boolean(bool),
     /// - `Null`: It doesn't look like anything to me
@@ -153,17 +153,15 @@ impl ASTNode {
         ChainCall::join_chain_terms(self, &[terms])
     }
 
-    pub fn apply_call(args: Vec<ASTNode>, kvs: Vec<(ASTNode, ASTNode)>, r: Range) -> Self {
-        let mut kv_pairs: HashMap<String, ASTNode> = Default::default();
-        for (kn, v) in kvs {
-            let k = match &kn.kind {
-                ASTKind::Symbol(s) => s.name.to_owned(),
-                _ => unimplemented!("{:?}", kn.kind),
-            };
-            kv_pairs.insert(k, v);
-        }
-        let kind = ApplyCallTerm { args, kv_pairs };
-        ASTNode { kind: ASTKind::CallApply(box kind), range: r }
+    pub fn apply_call(args: Vec<ASTNode>, r: Range) -> Self {
+        ASTNode { kind: ASTKind::CallApply(args), range: r }
+    }
+
+    pub fn kv_pair(k: ASTNode, v: ASTNode) -> ASTNode {
+        let start = k.range.start;
+        let end = v.range.end;
+        let kind = KVPair { k, v };
+        ASTNode { kind: ASTKind::KVPair(box kind), range: Range { start, end } }
     }
 
     pub fn apply_slice(indexes: &[ASTNode], r: Range) -> Self {
@@ -180,6 +178,10 @@ impl ASTNode {
         Self { kind: ASTKind::ListExpression(v), range: r }
     }
 
+    pub fn dict(v: Vec<ASTNode>, r: Range) -> Self {
+        Self { kind: ASTKind::DictExpression(v), range: r }
+    }
+
     pub fn tuple(v: Vec<ASTNode>, r: Range) -> Self {
         Self { kind: ASTKind::TupleExpression(v), range: r }
     }
@@ -188,9 +190,9 @@ impl ASTNode {
         Self { kind: ASTKind::Symbol(box Symbol::path(path)), range: r }
     }
 
-    pub fn number(h: &str, v: &str, r: Range) -> Self {
+    pub fn number(h: &str, v: &str,is_integer:bool, r: Range) -> Self {
         let handler = if h.is_empty() { None } else { Some(String::from(h)) };
-        let v = NumberLiteral { handler, value: String::from(v) };
+        let v = NumberLiteral { handler, value: String::from(v), is_integer };
         Self { kind: ASTKind::NumberLiteral(box v), range: r }
     }
 
@@ -201,7 +203,7 @@ impl ASTNode {
     }
 
     pub fn string(s: &str, r: Range) -> Self {
-        Self { kind: ASTKind::String(box String::from(s)), range: r }
+        Self { kind: ASTKind::String(String::from(s)), range: r }
     }
 
     pub fn boolean(v: bool, r: Range) -> Self {
@@ -211,4 +213,11 @@ impl ASTNode {
     pub fn null(r: Range) -> Self {
         Self { kind: ASTKind::Null, range: r }
     }
+}
+
+#[test]
+fn check_size() {
+    assert_eq!(std::mem::size_of::<String>(), 24);
+    assert_eq!(std::mem::size_of::<ASTKind>(), 32);
+    assert_eq!(std::mem::size_of::<ASTNode>(), 48);
 }

@@ -10,6 +10,9 @@ pub enum NyarErrorKind {
     InvalidIterator { item_type: String },
     IfLost,
     IfNonBoolean,
+    VariableNotFound { name: String },
+    WriteUnwritable { name: String },
+    CustomErrorText { text: String },
     LexerError { info: String },
     IOError(std::io::Error),
     FormatError(std::fmt::Error),
@@ -51,6 +54,13 @@ impl Display for NyarErrorKind {
             NyarErrorKind::InvalidCast { item_type } => {
                 write!(f, "CastError: Cast target can't be `{}`", item_type)
             }
+            NyarErrorKind::VariableNotFound { name } => {
+                write!(f, "MissingError: Cannot find variable `{}`", name)
+            }
+            NyarErrorKind::WriteUnwritable { name } => {
+                write!(f, "WriteError: Attempt to write a non-writable item `{}`", name)
+            }
+            NyarErrorKind::CustomErrorText { text } => write!(f, "{}", text),
         }
     }
 }

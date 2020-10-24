@@ -4,6 +4,7 @@ use super::*;
 pub struct NumberLiteral {
     pub handler: Option<String>,
     pub value: String,
+    pub is_integer: bool,
 }
 
 impl Display for NumberLiteral {

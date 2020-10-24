@@ -1,9 +1,10 @@
+use super::*;
+
 mod test_data;
+mod test_dict;
 mod test_index;
 mod test_infix;
 mod test_unary;
-
-use super::*;
 
 const BRACKETS: &str = r#"
 a(1)[2]
@@ -39,5 +40,5 @@ a().b().c()
 #[test]
 fn debug_dot_call() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(DOT_CALL);
-    ast.save("tests/test_expr/debug_dot_call")
+    ast.save("tests/test_expr/debug_dot_call.yaml")
 }

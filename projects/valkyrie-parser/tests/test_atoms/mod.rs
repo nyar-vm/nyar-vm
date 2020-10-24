@@ -1,7 +1,7 @@
+use super::*;
+
 mod test_number;
 mod test_string;
-
-use super::*;
 
 const SYMBOLS: &str = r#"
 a;

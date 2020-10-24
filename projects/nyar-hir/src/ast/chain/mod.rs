@@ -8,7 +8,6 @@ mod slice_call;
 mod unary_call;
 
 pub use self::{
-    apply_call::ApplyCallTerm,
     infix_call::InfixCall,
     slice_call::{IndexTerm, SliceTerm},
     unary_call::UnaryCall,
