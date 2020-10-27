@@ -1,0 +1,35 @@
+trait BitFlag {
+
+    def bytes() -> bytes;
+
+    def from_bytes(src: bytes) -> Self;
+
+    #macro_map(protect)
+
+    prefix !(self) -> Self {
+        self.complement()
+    }
+
+    infix |(self, rhs: Self) -> Self {
+        self.union(rhs)
+    }
+    setter |(self, rhs: Self) {
+        self = self.union(rhs)
+    }
+
+    infix &(self, rhs: Self) -> Self {
+        self.intersection(rhs)
+    }
+    setter &(self, rhs: Self) {
+        self = self.intersection(rhs)
+    }
+}
+
+def is_bitflag(value: Any) -> bool {
+    case extends BitFlag:
+        true
+    else:
+        false
+}
+
+

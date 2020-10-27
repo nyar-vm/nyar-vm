@@ -16,7 +16,7 @@ use std::{
 
 use crate::utils::OrderedMap;
 use bigdecimal::BigDecimal;
-use num::BigInt;
+use num::{BigInt, BigUint};
 
 use class::Class;
 use function::FunctionInstance;
@@ -39,6 +39,7 @@ pub enum Value {
     UnsignedInteger128(u128),
     UnsignedIntegerSized(usize),
     Integer(Box<BigInt>),
+    UnsignedInteger(Box<BigUint>),
     Decimal(Box<BigDecimal>),
     String(Box<String>),
     List(Box<VecDeque<Self>>),

@@ -1,6 +1,6 @@
 mod context;
 
-pub use self::context::{NyarContext, NyarIndexSystem, NYAR_CONTEXT_PRESET};
+pub use self::context::{NyarContext, NyarIndexSystem, NYAR_CONTEXT_PRESET,DefaultIntegerHandler,DefaultDecimalHandler};
 use crate::{
     value::{function::NyarFunction, variable::Variable},
     Result,
