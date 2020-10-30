@@ -1,6 +1,6 @@
 mod context;
 
-pub use self::context::{NyarContext, NyarIndexSystem, NYAR_CONTEXT_PRESET,DefaultIntegerHandler,DefaultDecimalHandler};
+pub use self::context::{DefaultDecimalHandler, DefaultIntegerHandler, NyarContext, NyarIndexSystem, NYAR_CONTEXT_PRESET};
 use crate::{
     value::{function::NyarFunction, variable::Variable},
     Result,
@@ -29,7 +29,7 @@ impl Default for ModuleInstance {
             father: None,
             children: Default::default(),
             context: Default::default(),
-            variable_table: Default::default()
+            variable_table: Default::default(),
         }
     }
 }

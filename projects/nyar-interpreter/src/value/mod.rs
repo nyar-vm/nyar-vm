@@ -38,9 +38,13 @@ pub enum Value {
     UnsignedInteger64(u64),
     UnsignedInteger128(u128),
     UnsignedIntegerSized(usize),
+    Decimal32(f32),
+    Decimal64(f64),
+
     Integer(Box<BigInt>),
     UnsignedInteger(Box<BigUint>),
     Decimal(Box<BigDecimal>),
+
     String(Box<String>),
     List(Box<VecDeque<Self>>),
     Object(Box<OrderedMap<String, Self>>),

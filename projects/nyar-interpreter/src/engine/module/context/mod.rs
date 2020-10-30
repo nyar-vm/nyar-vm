@@ -1,6 +1,14 @@
 use super::*;
 use crate::Value;
-use num::{BigInt, BigUint};
+
+
+mod integer_handler;
+mod decimal_handler;
+
+pub use self::{
+    integer_handler::{DefaultIntegerHandler,BUILD_INTEGER_PARSERS},
+    decimal_handler::{DefaultDecimalHandler,BUILD_DECIMAL_PARSERS},
+};
 
 #[derive(Copy, Clone, Debug)]
 pub enum NyarIndexSystem {
@@ -10,66 +18,7 @@ pub enum NyarIndexSystem {
     OffsetSystem,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum DefaultIntegerHandler {
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    ISize,
-    IBig,
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    USize,
-    UBig,
-}
-
-impl DefaultIntegerHandler {
-    pub fn parse(&self, input: &str) -> Result<Value> {
-        macro_rules! wrap_parse {
-            ($t:ty, $v:ident) => {Ok(Value::$v(input.parse::<$t>()?))};
-        }
-        match self {
-            Self::I8 =>  {wrap_parse!(i8, Integer8)}
-            Self::I16 => {wrap_parse!(i16, Integer16)}
-            Self::I32 => {wrap_parse!(i32, Integer32)}
-            Self::I64 =>{wrap_parse!(i64, Integer64)}
-            Self::I128 => {wrap_parse!(i128, Integer128)}
-            Self::ISize => {wrap_parse!(isize, IntegerSized)}
-            Self::IBig => {
-                let i = match BigInt::parse_bytes(input.as_bytes(), 10) {
-                    Some(s) => {s},
-                    None => {return Err(NyarError::msg("TODO: Int parse error"))}
-                };
-                Ok(Value::Integer(box i))
-            }
-            Self::U8 => {wrap_parse!(u8, UnsignedInteger8)}
-            Self::U16 => {wrap_parse!(u16, UnsignedInteger16)}
-            Self::U32 =>{wrap_parse!(u32, UnsignedInteger32)}
-            Self::U64 => {wrap_parse!(u64, UnsignedInteger64)}
-            Self::U128 => {wrap_parse!(u128, UnsignedInteger128)}
-            Self::USize => {wrap_parse!(usize, UnsignedIntegerSized)}
-            Self::UBig => {
-                let i = match BigUint::parse_bytes(input.as_bytes(), 10) {
-                    Some(s) => {s},
-                    None => {return Err(NyarError::msg("TODO: Dec parse error"))}
-                };
-                Ok(Value::UnsignedInteger(box i))
-            }
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum DefaultDecimalHandler {
-    F32,
-    F64,
-    FBig
-}
+pub type StringCallback = fn(String) -> Result<Value>;
 
 #[derive(Clone, Debug)]
 pub struct NyarContext {
@@ -105,6 +54,8 @@ pub struct NyarContext {
 
     pub default_decimal_handler: Option<DefaultDecimalHandler>,
 
+    pub default_string_handler: Option<bool>,
+
     pub missing_access_modifier_handler: Option<AccessModifierHandler>,
 }
 
@@ -112,7 +63,7 @@ pub struct NyarContext {
 pub enum AccessModifierHandler {
     Public,
     Private,
-    Custom()
+    Custom(),
 }
 
 impl Default for NyarContext {
@@ -125,7 +76,8 @@ impl Default for NyarContext {
             clean_prelude_modules: None,
             default_integer_handler: None,
             default_decimal_handler: None,
-            missing_access_modifier_handler: None
+            default_string_handler: None,
+            missing_access_modifier_handler: None,
         }
     }
 }
@@ -136,9 +88,10 @@ pub static NYAR_CONTEXT_PRESET: SyncLazy<NyarContext> = SyncLazy::new(|| NyarCon
     uniform_function_call_syntax: Some(true),
     clean_inherit_modules: Some(false),
     clean_prelude_modules: Some(false),
-    default_integer_handler: Some(DefaultIntegerHandler::IBig),
-    default_decimal_handler: Some(DefaultDecimalHandler::FBig),
-    missing_access_modifier_handler: None
+    default_integer_handler: Some(*BUILD_INTEGER_PARSERS),
+    default_decimal_handler: Some(*BUILD_DECIMAL_PARSERS),
+    default_string_handler: None,
+    missing_access_modifier_handler: None,
 });
 
 macro_rules! wrap_context {
@@ -179,4 +132,3 @@ impl ModuleInstance {
     wrap_context!(default_integer_handler, get_integer_handler, set_integer_handler, DefaultIntegerHandler);
     wrap_context!(default_decimal_handler, get_decimal_handler, set_decimal_handler, DefaultDecimalHandler);
 }
-

@@ -190,7 +190,7 @@ impl ASTNode {
         Self { kind: ASTKind::Symbol(box Symbol::path(path)), range: r }
     }
 
-    pub fn number(h: &str, v: &str,is_integer:bool, r: Range) -> Self {
+    pub fn number(h: &str, v: &str, is_integer: bool, r: Range) -> Self {
         let handler = if h.is_empty() { None } else { Some(String::from(h)) };
         let v = NumberLiteral { handler, value: String::from(v), is_integer };
         Self { kind: ASTKind::NumberLiteral(box v), range: r }
