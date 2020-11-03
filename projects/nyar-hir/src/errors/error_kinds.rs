@@ -17,6 +17,7 @@ pub enum NyarErrorKind {
     IOError(std::io::Error),
     FormatError(std::fmt::Error),
     ParseIntegerError(std::num::ParseIntError),
+    ParseDecimalError(std::num::ParseFloatError),
 }
 
 impl Display for NyarErrorKind {

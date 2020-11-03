@@ -18,10 +18,15 @@ impl Evaluate for ASTKind {
     fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value> {
         match self {
             Self::Program(v) | Self::Suite(v) => {
+                let mut out = vec![];
                 for i in v {
-                    i.kind.evaluate(ctx)?;
+                    let o = i.kind.evaluate(ctx)?;
+                    match o {
+                        Value::Null => {},
+                        _ => out.push(o)
+                    }
                 }
-                unimplemented!()
+                return Ok(Value::Suite(out))
             }
             Self::Expression { base, eos } => {
                 let out = base.kind.evaluate(ctx)?;
@@ -38,9 +43,17 @@ impl Evaluate for ASTKind {
 
 impl Evaluate for NumberLiteral {
     fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value> {
-        match self.is_integer {
-            true => ctx.root_module.get_integer_handler().parse_integer(&self.handler,&self.value),
-            false => ctx.root_module.get_decimal_handler().parse_decimal(&self.handler, &self.value),
+        match (self.is_integer, &self.handler) {
+            (true, Some(s)) => ctx.root_module.get_integer_handlers().parse_integer(s, &self.value),
+            (true, None) => {
+                let s = &ctx.root_module.get_integer_handler();
+                ctx.root_module.get_integer_handlers().parse_integer(s, &self.value)
+            }
+            (false, Some(s)) => ctx.root_module.get_decimal_handlers().parse_decimal(s, &self.value),
+            (false, None) => {
+                let s = &ctx.root_module.get_decimal_handler();
+                ctx.root_module.get_decimal_handlers().parse_decimal(s, &self.value)
+            }
         }
     }
 }

@@ -23,4 +23,5 @@ native_error! {
     std::io::Error  => IOError,
     std::fmt::Error => FormatError,
     std::num::ParseIntError => ParseIntegerError,
+    std::num::ParseFloatError => ParseDecimalError,
 }

@@ -38,15 +38,16 @@ pub enum Value {
     UnsignedInteger64(u64),
     UnsignedInteger128(u128),
     UnsignedIntegerSized(usize),
-    Decimal32(f32),
-    Decimal64(f64),
+    Decimal32([u8; 4]),
+    Decimal64([u8; 8]),
 
     Integer(Box<BigInt>),
     UnsignedInteger(Box<BigUint>),
     Decimal(Box<BigDecimal>),
 
-    String(Box<String>),
+    String(String),
     List(Box<VecDeque<Self>>),
+    Suite(Vec<Self>),
     Object(Box<OrderedMap<String, Self>>),
     Function(Box<FunctionInstance>),
     CustomClass(Box<dyn Class>),
@@ -63,5 +64,5 @@ fn check_size() {
     assert_eq!(std::mem::size_of::<String>(), 24);
     assert_eq!(std::mem::size_of::<Cow<str>>(), 32);
     assert_eq!(std::mem::size_of::<VecDeque<Value>>(), 32);
-    assert_eq!(std::mem::size_of::<Value>(), 24);
+    assert_eq!(std::mem::size_of::<Value>(), 32);
 }

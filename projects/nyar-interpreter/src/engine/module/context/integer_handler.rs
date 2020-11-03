@@ -1,9 +1,16 @@
 use super::*;
 use num::{BigInt, BigUint};
+use std::fmt::{Debug, Formatter};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DefaultIntegerHandler {
     handlers: HashMap<String, StringCallback>,
+}
+
+impl Debug for DefaultIntegerHandler {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.handlers.keys()).finish()
+    }
 }
 
 impl Default for DefaultIntegerHandler {
@@ -18,14 +25,14 @@ impl DefaultIntegerHandler {
     }
     pub fn parse_integer(&self, handler: &str, value: &str) -> Result<Value> {
         let parser = match self.handlers.get(handler) {
-            Some(s) => {s}
-            None => {return Err(NyarError::msg("TODO: No such int handler"))}
+            Some(s) => s,
+            None => return Err(NyarError::msg("TODO: No such int handler")),
         };
-        return parser(value)
+        return parser(value);
     }
 }
 
-pub static BUILD_INTEGER_PARSERS: SyncLazy<DefaultIntegerHandler> = SyncLazy::new(|| build_integer_parsers());
+pub static BUILD_IN_INTEGER_PARSERS: SyncLazy<DefaultIntegerHandler> = SyncLazy::new(|| build_integer_parsers());
 
 pub fn build_integer_parsers() -> DefaultIntegerHandler {
     let mut handlers = DefaultIntegerHandler::default();
@@ -34,18 +41,18 @@ pub fn build_integer_parsers() -> DefaultIntegerHandler {
             handlers.insert($h, |input| Ok(Value::$v(input.parse::<$t>()?)));
         };
     }
-    wrap_parser!("i8",i8,Integer8);
-    wrap_parser!("i16",i16,Integer16);
-    wrap_parser!("i32",i32, Integer32);
-    wrap_parser!("i64",i64, Integer64);
-    wrap_parser!("i128",i128, Integer128);
-    wrap_parser!("isize",isize, IntegerSized);
-    wrap_parser!("u8",u8, UnsignedInteger8);
-    wrap_parser!("u16",u16, UnsignedInteger16);
-    wrap_parser!("u32",u32, UnsignedInteger32);
-    wrap_parser!("u64",u64, UnsignedInteger64);
-    wrap_parser!("u128",u128, UnsignedInteger128);
-    wrap_parser!("usize",usize, UnsignedIntegerSized);
+    wrap_parser!("i8", i8, Integer8);
+    wrap_parser!("i16", i16, Integer16);
+    wrap_parser!("i32", i32, Integer32);
+    wrap_parser!("i64", i64, Integer64);
+    wrap_parser!("i128", i128, Integer128);
+    wrap_parser!("isize", isize, IntegerSized);
+    wrap_parser!("u8", u8, UnsignedInteger8);
+    wrap_parser!("u16", u16, UnsignedInteger16);
+    wrap_parser!("u32", u32, UnsignedInteger32);
+    wrap_parser!("u64", u64, UnsignedInteger64);
+    wrap_parser!("u128", u128, UnsignedInteger128);
+    wrap_parser!("usize", usize, UnsignedIntegerSized);
 
     handlers.insert("int", |input| {
         let i = match BigInt::parse_bytes(input.as_bytes(), 10) {
@@ -66,5 +73,5 @@ pub fn build_integer_parsers() -> DefaultIntegerHandler {
         };
         Ok(Value::UnsignedInteger(box i))
     });
-    return handlers
+    return handlers;
 }
