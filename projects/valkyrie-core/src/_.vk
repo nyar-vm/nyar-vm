@@ -1,0 +1,85 @@
+
+
+def print(..objects: [Any], separator: str|char = "", end: str|char = "", io=sys.stdout, flush: bool = false) -> () / IO {
+	// objects – 复数，表示可以一次输出多个对象。输出多个对象时，需要用 , 分隔。
+	// sep – 用来间隔多个对象，默认值是一个空格。
+	// end – 用来设定以什么结尾。默认值是换行符 \n，我们可以换成其他字符串。
+	// file – 要写入的文件对象。
+	// flush – 输出是否被缓存通常决定于 file，但如果 flush 关键字参数为 True，流会被强制刷新。
+}
+
+def print_line(..objects, flush=False) {
+	print(objects, separator: "\n", end: "\n")
+}
+
+def write(..objects: [Any], separator: char|str = "", end: char|str= "", io=sys.stdout, flush: bool = false) -> () / IO {
+	// objects – 复数，表示可以一次输出多个对象。输出多个对象时，需要用 , 分隔。
+	// sep – 用来间隔多个对象，默认值是一个空格。
+	// end – 用来设定以什么结尾。默认值是换行符 \n，我们可以换成其他字符串。
+	// file – 要写入的文件对象。
+	// flush – 输出是否被缓存通常决定于 file，但如果 flush 关键字参数为 True，流会被强制刷新。
+}
+
+
+p"a.txt"
+
+extension! PathHelper {
+//?
+def String::check_prefix(self, prefix: String) -> Option<String> {
+	if !self.starts_with(prefix) {
+		return;
+	}
+	return self.splitn(2, prefix).nth(1)
+}
+
+}
+
+
+def string_prefix_handler<Path>(input: String) -> Result<Path> {
+	macro ast prefix_with {
+		/// case let Some($bind) = input.check_prefix($prefix): $then
+		($prefix:str, $bind:id, $then:block) => new SwitchArm {
+			bind: new CaseLet {
+				lhs: #quote Some(path)
+				rhs: #quote input.check_prefix($prefix)
+			}
+			body: $then
+		}
+	}
+
+	switch input {
+	#prefix_with("@@", path) {
+		return #project_path.join(Path::from_relative(path))
+	}
+	#prefix_with("@", path) {
+		return #package_path.join(Path::from_relative(path))
+	}
+
+	case let Some(path) = input.check_prefix("@"):
+
+		return Path("a.txt")
+	else:
+	    return PathError
+}
+
+let s = 
+
+Path("a.txt")
+
+
+File(p"a.txt")
+
+try_box_result;
+try_box_option;
+
+"@a.txt"
+
+"@@a.txt"
+
+if input.starts_with("@@") {}
+
+
+//? Abbreviation of `shut_up_and_just_run_these_codes_because_there_are_definitely_safe`
+//? AKA `unsafe`
+#[alias(unsafe)]
+#trust_me 

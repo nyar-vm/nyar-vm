@@ -22,6 +22,5 @@ macro_rules! native_error {
 native_error! {
     std::io::Error  => IOError,
     std::fmt::Error => FormatError,
-    std::num::ParseIntError => ParseIntegerError,
     std::num::ParseFloatError => ParseDecimalError,
 }

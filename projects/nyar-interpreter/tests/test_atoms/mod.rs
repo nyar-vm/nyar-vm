@@ -3,13 +3,15 @@ use nyar_hir::ASTNode;
 use nyar_interpreter::engine::NyarEngine;
 
 const NUMBERS: &str = r#"
-0
 // 0.
 // .0
 // 123456.
 // .789
 0.0
+0.02
 42f32
+
+0
 2147483647i32
 9223372036854775807i64
 170141183460469231731687303715884105727i128
@@ -24,7 +26,6 @@ fn debug_numbers() -> Result<()> {
     println!("{:#?}", out);
     Ok(())
 }
-
 
 const NUMBERS_WITH_HANDLERS: &str = r#"
 123456
@@ -51,5 +52,8 @@ false
 #[test]
 fn debug_specials() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(SPECIALS);
-    ast.save("tests/test_atoms/debug_specials.yaml")
+    let mut engine = NyarEngine::default();
+    let out = engine.evaluate(&ASTNode::from(ast));
+    println!("{:#?}", out);
+    Ok(())
 }

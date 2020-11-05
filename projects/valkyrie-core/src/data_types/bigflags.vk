@@ -4,7 +4,7 @@ trait BitFlag {
 
     def from_bytes(src: bytes) -> Self;
 
-    #macro_map(protect)
+    #modifier_map[#protect]
 
     prefix !(self) -> Self {
         self.complement()
@@ -25,6 +25,7 @@ trait BitFlag {
     }
 }
 
+#native
 def is_bitflag(value: Any) -> bool {
     case extends BitFlag:
         true
@@ -32,4 +33,50 @@ def is_bitflag(value: Any) -> bool {
         false
 }
 
+没有
 
+typeof(v) == MyType
+
+#type_check(v, Type)
+
+一方面, 值与类型间的关系很复杂, 远不是 `==` 和 `===` 能表达的
+
+另一方面在表达式区, MyType 表示的是原型而不是类型
+
+所以这样的语句是写不出来的
+
+#type_check(v, MyType)
+
+#type_extends(v, MyParentType)
+
+#type_inherits(v, MyTrait)
+
+如果再复杂一些的话就要使用模式匹配了
+
+switch v {
+case is MyType:
+    true
+case extends MyTraitA & MyTraitB:
+    true
+case inherits MyParentTypeA | MyParentTypeAB:
+    true
+else:
+    false
+}
+
+当然也可以写成等价的 case object 形式.
+
+let check_my_type = {
+    case is MyType:
+        true
+    case extends MyTrait:
+        true
+    case inherits MyParentType:
+        true
+    else:
+        false
+}
+check_my_type(v)
+
+
+overload 

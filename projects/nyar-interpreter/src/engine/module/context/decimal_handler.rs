@@ -3,6 +3,7 @@ use bigdecimal::BigDecimal;
 use std::{
     fmt::{self, Debug, Formatter},
     mem::transmute,
+    num::ParseFloatError,
 };
 
 #[derive(Clone)]
@@ -37,30 +38,32 @@ impl DefaultDecimalHandler {
     }
 }
 
-pub static BUILD_IN_DECIMAL_PARSERS: SyncLazy<DefaultDecimalHandler> = SyncLazy::new(|| unsafe { build_decimal_parsers() });
+pub static BUILD_IN_DECIMAL_PARSERS: SyncLazy<DefaultDecimalHandler> = SyncLazy::new(|| build_decimal_parsers());
 
-pub unsafe fn build_decimal_parsers() -> DefaultDecimalHandler {
+pub fn build_decimal_parsers() -> DefaultDecimalHandler {
     let mut handlers = DefaultDecimalHandler::default();
-
-    handlers.insert("f32", |input| {
-        let v = input.parse::<f32>()?;
-        Ok(Value::Decimal32(transmute::<f32, [u8; 4]>(v)))
-    });
-
-    handlers.insert("f64", |input| {
-        let v = input.parse::<f64>()?;
-        Ok(Value::Decimal64(transmute::<f64, [u8; 8]>(v)))
-    });
-
-    handlers.insert("dec", |input| {
-        let i = match BigDecimal::parse_bytes(input.as_bytes(), 10) {
-            Some(s) => s,
-            None => {
-                return Err(NyarError::msg("TODO: Int parse error"));
-            }
-        };
-        Ok(Value::Decimal(box i))
-    });
-
+    handlers.insert("f32", parse_f32);
+    handlers.insert("f64", parse_f64);
+    handlers.insert("dec", parse_dec);
     return handlers;
+}
+
+pub fn parse_f32(input: &str) -> Result<Value> {
+    let v = unsafe { transmute::<f32, [u8; 4]>(input.parse::<f32>()?) };
+    Ok(Value::Decimal32(v))
+}
+
+pub fn parse_f64(input: &str) -> Result<Value> {
+    let v = unsafe { transmute::<f64, [u8; 8]>(input.parse::<f64>()?) };
+    Ok(Value::Decimal64(v))
+}
+
+pub fn parse_dec(input: &str) -> Result<Value> {
+    let i = match BigDecimal::parse_bytes(input.as_bytes(), 10) {
+        Some(s) => s,
+        None => {
+            return Err(NyarError::msg("TODO: Int parse error"));
+        }
+    };
+    Ok(Value::Decimal(box i))
 }

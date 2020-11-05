@@ -16,28 +16,31 @@ impl Evaluate for ASTNode {
 
 impl Evaluate for ASTKind {
     fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value> {
-        match self {
+        let value = match self {
             Self::Program(v) | Self::Suite(v) => {
                 let mut out = vec![];
                 for i in v {
                     let o = i.kind.evaluate(ctx)?;
                     match o {
-                        Value::Null => {},
-                        _ => out.push(o)
+                        Value::Null => {}
+                        _ => out.push(o),
                     }
                 }
-                return Ok(Value::Suite(out))
+                Value::Suite(out)
             }
             Self::Expression { base, eos } => {
                 let out = base.kind.evaluate(ctx)?;
                 match *eos {
-                    true => Ok(Value::Null),
-                    false => Ok(out),
+                    true => Value::Null,
+                    false => out,
                 }
             }
-            Self::NumberLiteral(n) => n.evaluate(ctx),
+            Self::NumberLiteral(n) => n.evaluate(ctx)?,
+            Self::Null => Value::Null,
+            Self::Boolean(v) => Value::Boolean(*v),
             _ => unimplemented!("Self::{:?}", self),
-        }
+        };
+        return Ok(value);
     }
 }
 

@@ -6,4 +6,3 @@ use valkyrie_parser::{ast::ASTKind, ASTDump, Result};
 fn ready() {
     println!("it works!")
 }
-

@@ -294,38 +294,16 @@ impl LexerContext {
     fn parse_apply(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = get_position(&pairs);
         let mut args = vec![];
-        let mut kv_pairs = vec![];
+        // let mut kv_pairs = vec![];
         // let mut types = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::WHITESPACE | Rule::Comma => continue,
-                Rule::apply_kv => {
-                    let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
-                    for inner in pair.into_inner() {
-                        match inner.as_rule() {
-                            Rule::WHITESPACE | Rule::Colon => continue,
-                            Rule::SYMBOL => k = self.parse_symbol(inner),
-                            Rule::expr => v = self.parse_expr(inner),
-                            _ => debug_cases!(inner),
-                        };
-                    }
-                    match k.kind {
-                        ASTKind::None => args.push(k),
-                        _ => kv_pairs.push((k, v)),
-                    }
-                }
-                // Rule::apply => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::expr => types.push(self.parse_expr(inner)),
-                //             _ => unreachable!(),
-                //         };
-                //     }
-                // }
+                Rule::apply_kv => args.push(self.parse_kv(pair)),
                 _ => debug_cases!(pair),
             };
         }
-        return ASTNode::apply_call(args, kv_pairs, r);
+        return ASTNode::apply_call(args, r);
     }
 
     fn parse_slice(&self, pairs: Pair<Rule>) -> ASTNode {
@@ -371,6 +349,7 @@ impl LexerContext {
             Rule::Byte => self.parse_byte(pair),
             Rule::Symbol => self.parse_symbol(pair),
             Rule::list => self.parse_list_or_tuple(pair, true),
+            Rule::dict => self.parse_dict(pair),
             _ => debug_cases!(pair),
         }
     }
@@ -379,11 +358,29 @@ impl LexerContext {
         let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
+                Rule::WHITESPACE => continue,
                 Rule::expr => vec.push(self.parse_expr(pair)),
+                Rule::key_value => {}
                 _ => debug_cases!(pair),
             };
         }
         return ASTNode::default();
+    }
+
+    fn parse_kv(&self, pairs: Pair<Rule>) -> ASTNode {
+        let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::WHITESPACE | Rule::Colon => continue,
+                Rule::SYMBOL => k = self.parse_symbol(pair),
+                Rule::expr => v = self.parse_expr(pair),
+                _ => debug_cases!(pair),
+            };
+        }
+        match k.kind {
+            ASTKind::None => k,
+            _ => ASTNode::kv_pair(k, v),
+        }
     }
 
     fn parse_list_or_tuple(&self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
@@ -433,15 +430,15 @@ impl LexerContext {
 
     fn parse_number(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = get_position(&pairs);
-        let (mut h, mut t) = ("", String::new());
+        let (mut h, mut t, mut i) = Default::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::Integer => {
-                    // h = "int";
+                    i = true;
                     t = pair.as_str().to_string();
                 }
                 Rule::Decimal => {
-                    // h = "dec";
+                    i = false;
                     t = pair.as_str().to_string();
                 }
                 // Rule::DecimalBad => {
@@ -452,8 +449,14 @@ impl LexerContext {
                 Rule::Complex => {
                     for inner in pair.into_inner() {
                         match inner.as_rule() {
-                            Rule::Integer => t = inner.as_str().to_string(),
-                            Rule::Decimal => t = inner.as_str().to_string(),
+                            Rule::Integer => {
+                                i = true;
+                                t = inner.as_str().to_string()
+                            }
+                            Rule::Decimal => {
+                                i = false;
+                                t = inner.as_str().to_string()
+                            }
                             Rule::SYMBOL => h = inner.as_str(),
                             _ => unreachable!(),
                         };
@@ -462,7 +465,7 @@ impl LexerContext {
                 _ => unreachable!(),
             };
         }
-        ASTNode::number(h, t.as_str(), r)
+        ASTNode::number(h, t.as_str(), i, r)
     }
 
     fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {

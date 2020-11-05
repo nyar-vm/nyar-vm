@@ -1,4 +1,5 @@
 #![feature(box_syntax)]
+#![feature(int_error_matching)]
 
 pub mod ast;
 

@@ -1,6 +1,9 @@
 use super::*;
 use num::{BigInt, BigUint};
-use std::fmt::{Debug, Formatter};
+use std::{
+    fmt::{Debug, Formatter},
+    mem::transmute,
+};
 
 #[derive(Clone)]
 pub struct DefaultIntegerHandler {
@@ -26,7 +29,7 @@ impl DefaultIntegerHandler {
     pub fn parse_integer(&self, handler: &str, value: &str) -> Result<Value> {
         let parser = match self.handlers.get(handler) {
             Some(s) => s,
-            None => return Err(NyarError::msg("TODO: No such int handler")),
+            None => return Err(NyarError::int_handler_not_found(handler, None)),
         };
         return parser(value);
     }
@@ -47,12 +50,16 @@ pub fn build_integer_parsers() -> DefaultIntegerHandler {
     wrap_parser!("i64", i64, Integer64);
     wrap_parser!("i128", i128, Integer128);
     wrap_parser!("isize", isize, IntegerSized);
+
     wrap_parser!("u8", u8, UnsignedInteger8);
     wrap_parser!("u16", u16, UnsignedInteger16);
     wrap_parser!("u32", u32, UnsignedInteger32);
     wrap_parser!("u64", u64, UnsignedInteger64);
     wrap_parser!("u128", u128, UnsignedInteger128);
     wrap_parser!("usize", usize, UnsignedIntegerSized);
+
+    handlers.insert("f32", parse_f32);
+    handlers.insert("f64", parse_f64);
 
     handlers.insert("int", |input| {
         let i = match BigInt::parse_bytes(input.as_bytes(), 10) {

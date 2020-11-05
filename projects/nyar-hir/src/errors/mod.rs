@@ -1,7 +1,8 @@
 mod error_kinds;
 mod native_wrap;
+mod numeric_errors;
 
-pub use self::error_kinds::NyarErrorKind;
+pub use self::{error_kinds::NyarErrorKind, numeric_errors::ParseIntegerError};
 
 use lsp_types::Range;
 use std::{
@@ -27,6 +28,12 @@ impl Display for NyarError {
             None => write!(f, "--> <internal>")?,
         }
         Ok(())
+    }
+}
+
+impl NyarError {
+    pub fn set_range(&mut self, r: Range) {
+        self.position = Some(r)
     }
 }
 
@@ -68,6 +75,11 @@ impl NyarError {
 
     pub fn invalid_index(index: impl Into<String>, item_type: impl Into<String>, position: Option<Range>) -> NyarError {
         Self { kind: Box::new(NyarErrorKind::InvalidIndex { index: index.into(), item_type: item_type.into() }), position }
+    }
+
+    pub fn int_handler_not_found(handler: impl Into<String>, position: Option<Range>) -> NyarError {
+        let kind = ParseIntegerError::HandlerNotFound(handler.into());
+        Self { kind: Box::new(NyarErrorKind::ParseIntegerError { kind }), position }
     }
 
     pub fn variable_not_found(name: impl Into<String>, position: Option<Range>) -> NyarError {

@@ -21,7 +21,7 @@ use num::{BigInt, BigUint};
 use class::Class;
 use function::FunctionInstance;
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Value {
     Null,
     Boolean(bool),
@@ -50,7 +50,7 @@ pub enum Value {
     Suite(Vec<Self>),
     Object(Box<OrderedMap<String, Self>>),
     Function(Box<FunctionInstance>),
-    CustomClass(Box<dyn Class>),
+    // CustomClass(Box<dyn Class>),
 }
 
 #[allow(non_upper_case_globals)]

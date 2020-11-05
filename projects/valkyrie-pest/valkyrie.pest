@@ -175,7 +175,7 @@ index_step  = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 
 dict        = !{"{" ~ "}" | "{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
 key_value   = !{key_valid ~ Colon ~ expr}
-key_valid   = !{Integer | SYMBOL | String}
+key_valid   = _{Integer | SYMBOL | String}
 /*====================================================================================================================*/
 ///#D19A66
 Special = !{Null|True|False}

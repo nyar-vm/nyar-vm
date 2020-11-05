@@ -5,7 +5,7 @@ mod decimal_handler;
 mod integer_handler;
 
 pub use self::{
-    decimal_handler::{DefaultDecimalHandler, BUILD_IN_DECIMAL_PARSERS},
+    decimal_handler::{parse_f32, parse_f64, DefaultDecimalHandler, BUILD_IN_DECIMAL_PARSERS},
     integer_handler::{DefaultIntegerHandler, BUILD_IN_INTEGER_PARSERS},
 };
 use crate::value::class::NyarReadWrite;

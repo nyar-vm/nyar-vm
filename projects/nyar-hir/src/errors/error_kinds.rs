@@ -16,7 +16,7 @@ pub enum NyarErrorKind {
     LexerError { info: String },
     IOError(std::io::Error),
     FormatError(std::fmt::Error),
-    ParseIntegerError(std::num::ParseIntError),
+    ParseIntegerError { kind: ParseIntegerError },
     ParseDecimalError(std::num::ParseFloatError),
 }
 
