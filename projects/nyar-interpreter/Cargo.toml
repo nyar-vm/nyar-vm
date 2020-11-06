@@ -18,6 +18,7 @@ type-uuid = "0.1"
 num = "0.3"
 bigdecimal = "0.2"
 
+pretty = "0.10"
 
 [dependencies.indexmap]
 version = "1.6"

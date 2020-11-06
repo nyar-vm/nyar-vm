@@ -1,6 +1,4 @@
 use super::*;
-use nyar_hir::ASTNode;
-use nyar_interpreter::engine::NyarEngine;
 
 const NUMBERS: &str = r#"
 // 0.
@@ -20,11 +18,7 @@ const NUMBERS: &str = r#"
 
 #[test]
 fn debug_numbers() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(NUMBERS);
-    let mut engine = NyarEngine::default();
-    let out = engine.evaluate(&ASTNode::from(ast));
-    println!("{:#?}", out);
-    Ok(())
+    dump_value(NUMBERS, "tests/test_atoms/debug_numbers.yaml")
 }
 
 const NUMBERS_WITH_HANDLERS: &str = r#"
@@ -36,11 +30,7 @@ const NUMBERS_WITH_HANDLERS: &str = r#"
 
 #[test]
 fn debug_number_handlers() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(NUMBERS_WITH_HANDLERS);
-    let mut engine = NyarEngine::default();
-    let out = engine.evaluate(&ASTNode::from(ast));
-    println!("{:#?}", out);
-    Ok(())
+    dump_value(NUMBERS_WITH_HANDLERS, "tests/test_atoms/debug_number_handlers.yaml")
 }
 
 const SPECIALS: &str = r#"
@@ -51,9 +41,5 @@ false
 
 #[test]
 fn debug_specials() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(SPECIALS);
-    let mut engine = NyarEngine::default();
-    let out = engine.evaluate(&ASTNode::from(ast));
-    println!("{:#?}", out);
-    Ok(())
+    dump_value(SPECIALS, "tests/test_atoms/debug_specials.yaml")
 }

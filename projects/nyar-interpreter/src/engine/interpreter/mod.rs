@@ -21,10 +21,7 @@ impl Evaluate for ASTKind {
                 let mut out = vec![];
                 for i in v {
                     let o = i.kind.evaluate(ctx)?;
-                    match o {
-                        Value::Null => {}
-                        _ => out.push(o),
-                    }
+                    out.push(o)
                 }
                 Value::Suite(out)
             }
@@ -38,6 +35,17 @@ impl Evaluate for ASTKind {
             Self::NumberLiteral(n) => n.evaluate(ctx)?,
             Self::Null => Value::Null,
             Self::Boolean(v) => Value::Boolean(*v),
+            Self::ListExpression(v) => {
+                let mut out = vec![];
+                for i in v {
+                    let o = i.kind.evaluate(ctx)?;
+                    match o {
+                        Value::Null => {}
+                        _ => out.push(o),
+                    }
+                }
+                Value::List(out)
+            }
             _ => unimplemented!("Self::{:?}", self),
         };
         return Ok(value);

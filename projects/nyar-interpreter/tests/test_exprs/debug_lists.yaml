@@ -1,0 +1,54 @@
+[
+    List(
+        [],
+    ),
+    List(
+        [
+            Integer(
+                BigInt {
+                    sign: Plus,
+                    data: BigUint {
+                        data: [
+                            1,
+                        ],
+                    },
+                },
+            ),
+        ],
+    ),
+    List(
+        [
+            Integer(
+                BigInt {
+                    sign: Plus,
+                    data: BigUint {
+                        data: [
+                            2,
+                        ],
+                    },
+                },
+            ),
+        ],
+    ),
+    List(
+        [
+            Integer(
+                BigInt {
+                    sign: Plus,
+                    data: BigUint {
+                        data: [
+                            3,
+                        ],
+                    },
+                },
+            ),
+            Boolean(
+                true,
+            ),
+            List(
+                [],
+            ),
+        ],
+    ),
+]
+

@@ -46,7 +46,7 @@ pub enum Value {
     Decimal(Box<BigDecimal>),
 
     String(String),
-    List(Box<VecDeque<Self>>),
+    List(Vec<Self>),
     Suite(Vec<Self>),
     Object(Box<OrderedMap<String, Self>>),
     Function(Box<FunctionInstance>),
