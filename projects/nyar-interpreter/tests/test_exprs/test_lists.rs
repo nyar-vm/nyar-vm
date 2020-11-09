@@ -1,7 +1,5 @@
 use super::*;
 
-
-
 const LISTS: &str = r#"
 [
     [],

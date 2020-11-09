@@ -3,7 +3,6 @@ use bigdecimal::BigDecimal;
 use std::{
     fmt::{self, Debug, Formatter},
     mem::transmute,
-    num::ParseFloatError,
 };
 
 #[derive(Clone)]

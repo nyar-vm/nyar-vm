@@ -2,7 +2,6 @@ use super::*;
 use num::{BigInt, BigUint};
 use std::{
     fmt::{Debug, Formatter},
-    mem::transmute,
 };
 
 #[derive(Clone)]
@@ -78,7 +77,7 @@ pub fn build_integer_parsers() -> DefaultIntegerHandler {
                 return Err(NyarError::msg("TODO: Dec parse error"));
             }
         };
-        Ok(Value::UnsignedInteger(box i))
+        Ok(Value::UnsignedInteger(i))
     });
     return handlers;
 }

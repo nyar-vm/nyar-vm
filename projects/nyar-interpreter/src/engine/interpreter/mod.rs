@@ -1,7 +1,4 @@
-use crate::{
-    engine::{module::DefaultIntegerHandler, NyarEngine},
-    ASTKind, ASTNode, Result, Value,
-};
+use crate::{engine::NyarEngine, ASTKind, ASTNode, Result, Value};
 use nyar_hir::ast::NumberLiteral;
 
 pub trait Evaluate {

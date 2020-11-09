@@ -8,9 +8,6 @@ mod format;
 mod from_native;
 
 use std::{
-    any::Any,
-    borrow::Cow,
-    collections::VecDeque,
     fmt::{self, Debug, Display, Formatter},
 };
 
@@ -20,6 +17,7 @@ use num::{BigInt, BigUint};
 
 use class::Class;
 use function::FunctionInstance;
+
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Value {
@@ -42,7 +40,7 @@ pub enum Value {
     Decimal64([u8; 8]),
 
     Integer(Box<BigInt>),
-    UnsignedInteger(Box<BigUint>),
+    UnsignedInteger(BigUint),
     Decimal(Box<BigDecimal>),
 
     String(String),
@@ -61,8 +59,17 @@ impl Value {
 
 #[test]
 fn check_size() {
+    use std::borrow::Cow;
+    use std::collections::VecDeque;
+
+    assert_eq!(std::mem::size_of::<BigUint>(), 24);
+    assert_eq!(std::mem::size_of::<BigInt>(), 32);
+
     assert_eq!(std::mem::size_of::<String>(), 24);
     assert_eq!(std::mem::size_of::<Cow<str>>(), 32);
+
+    assert_eq!(std::mem::size_of::<Vec<Value>>(), 24);
     assert_eq!(std::mem::size_of::<VecDeque<Value>>(), 32);
+
     assert_eq!(std::mem::size_of::<Value>(), 32);
 }

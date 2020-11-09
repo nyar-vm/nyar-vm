@@ -1,10 +1,6 @@
 use super::*;
 
 const NUMBERS: &str = r#"
-// 0.
-// .0
-// 123456.
-// .789
 0.0
 0.02
 42f32
@@ -21,8 +17,34 @@ fn debug_numbers() -> Result<()> {
     dump_value(NUMBERS, "tests/test_atoms/debug_numbers.yaml")
 }
 
+const BAD_DECIMAL: &str = r#"
+0.
+.0
+123456.
+.789
+"#;
+
+#[test]
+#[should_panic]
+fn errors_bad_decimal() {
+    for input in BAD_DECIMAL.lines() {
+        dump_value(input, "");
+    }
+}
+
+const BYTES: &str = r#"
+0b11
+0o17
+0x1F
+"#;
+
+#[test]
+fn debug_bytes() -> Result<()> {
+    dump_value(BYTES, "tests/test_atoms/debug_bytes.yaml")
+}
+
+
 const NUMBERS_WITH_HANDLERS: &str = r#"
-123456
 123456i
 1234.56im
 1234.56cm

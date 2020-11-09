@@ -7,7 +7,6 @@ use crate::{
 };
 use nyar_hir::{NyarError, Range};
 use std::{
-    cell::RefCell,
     collections::HashMap,
     lazy::SyncLazy,
     rc::{Rc, Weak},
