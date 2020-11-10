@@ -1,4 +1,5 @@
 mod context;
+mod manager;
 
 pub use self::context::{DefaultDecimalHandler, DefaultIntegerHandler, NyarContext, NyarIndexSystem, NYAR_CONTEXT_PRESET};
 use crate::{

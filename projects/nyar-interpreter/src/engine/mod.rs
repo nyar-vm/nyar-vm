@@ -6,22 +6,7 @@ pub use self::module::ModuleInstance;
 use crate::{engine::interpreter::Evaluate, ASTNode, Result, Value};
 use std::collections::HashMap;
 
-use indextree::Arena;
 
-#[test]
-fn test() {
-    // Create a new arena
-    let arena = &mut Arena::new();
-
-// Add some new nodes to the arena
-    let a = arena.new_node(1);
-    let b = arena.new_node(2);
-
-
-// Append b to a
-    a.append(b, arena);
-    assert_eq!(b.ancestors(arena).into_iter().count(), 2);
-}
 
 
 pub struct NyarEngine {
