@@ -35,6 +35,19 @@ impl Default for ModuleInstance {
 }
 
 impl ModuleInstance {
+    pub fn new_module(name:&str) -> Self {
+        Self {
+            name: Some(String::from(name)),
+            father: None,
+            children: Default::default(),
+            context: Default::default(),
+            variable_table: Default::default()
+        }
+    }
+    pub fn new_scope() -> Self {
+        Self::default()
+    }
+
     pub fn root() -> Rc<Self> {
         Rc::new(Self::default())
     }
