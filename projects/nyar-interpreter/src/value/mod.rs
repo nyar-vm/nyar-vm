@@ -7,9 +7,7 @@ pub mod variable;
 mod format;
 mod from_native;
 
-use std::{
-    fmt::{self, Debug, Display, Formatter},
-};
+use std::fmt::{self, Debug, Display, Formatter};
 
 use crate::utils::OrderedMap;
 use bigdecimal::BigDecimal;
@@ -17,7 +15,6 @@ use num::{BigInt, BigUint};
 
 use class::Class;
 use function::FunctionInstance;
-
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Value {
@@ -59,8 +56,7 @@ impl Value {
 
 #[test]
 fn check_size() {
-    use std::borrow::Cow;
-    use std::collections::VecDeque;
+    use std::{borrow::Cow, collections::VecDeque};
 
     assert_eq!(std::mem::size_of::<BigUint>(), 24);
     assert_eq!(std::mem::size_of::<BigInt>(), 32);

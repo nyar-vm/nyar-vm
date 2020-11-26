@@ -43,7 +43,6 @@ fn debug_bytes() -> Result<()> {
     dump_value(BYTES, "tests/test_atoms/debug_bytes.yaml")
 }
 
-
 const NUMBERS_WITH_HANDLERS: &str = r#"
 123456i
 1234.56im

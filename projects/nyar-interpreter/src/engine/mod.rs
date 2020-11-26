@@ -6,9 +6,6 @@ pub use self::module::ModuleInstance;
 use crate::{engine::interpreter::Evaluate, ASTNode, Result, Value};
 use std::collections::HashMap;
 
-
-
-
 pub struct NyarEngine {
     deps_module: HashMap<String, ModuleInstance>,
     root_module: ModuleInstance,

@@ -28,7 +28,6 @@ impl Value {
             Integer64(v) => RcDoc::text(v.to_string()).append(RcDoc::text("_i64")),
             Integer128(v) => RcDoc::text(v.to_string()).append(RcDoc::text("_i128")),
 
-
             Decimal(v) => RcDoc::as_string(v),
             Decimal32(a) => {
                 let v = unsafe { transmute::<[u8; 4], f32>(*a) };

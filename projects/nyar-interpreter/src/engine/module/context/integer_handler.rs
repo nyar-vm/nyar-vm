@@ -1,8 +1,6 @@
 use super::*;
 use num::{BigInt, BigUint};
-use std::{
-    fmt::{Debug, Formatter},
-};
+use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]
 pub struct DefaultIntegerHandler {
