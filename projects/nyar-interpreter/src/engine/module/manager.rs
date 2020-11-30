@@ -1,10 +1,11 @@
 use super::*;
 
+use crate::engine::NyarEngine;
 use indextree::{Ancestors, Arena, Children, Descendants, Node, NodeId};
 use std::{collections::HashSet, iter::FromIterator};
 
 pub struct ModuleManager {
-    modules_arena: Arena<ModuleInstance>,
+    arena: Arena<ModuleInstance>,
     root_name: Option<String>,
     root_module: NodeId,
     current_module: NodeId,
@@ -12,9 +13,9 @@ pub struct ModuleManager {
 
 impl Default for ModuleManager {
     fn default() -> Self {
-        let mut modules_arena = Arena::new();
-        let root = modules_arena.new_node(ModuleInstance::default());
-        Self { modules_arena, root_name: None, root_module: root, current_module: root }
+        let mut arena = Arena::new();
+        let root = arena.new_node(ModuleInstance::default());
+        Self { arena, root_name: None, root_module: root, current_module: root }
     }
 }
 
@@ -22,57 +23,64 @@ impl ModuleManager {
     pub fn new(name: &str) -> Self {
         Self { root_name: Some(String::from(name)), ..Self::default() }
     }
+    #[inline]
     pub fn count(&self) -> usize {
-        self.modules_arena.count()
+        self.arena.count()
     }
 }
 
 impl ModuleManager {
     #[inline]
     fn get(&self, id: NodeId) -> &Node<ModuleInstance> {
-        self.modules_arena.get(id).unwrap()
+        self.arena.get(id).unwrap()
     }
     #[inline]
     fn get_mut(&mut self, id: NodeId) -> &mut Node<ModuleInstance> {
-        self.modules_arena.get_mut(id).unwrap()
+        self.arena.get_mut(id).unwrap()
     }
     #[inline]
     fn get_node_name(&self, id: NodeId) -> Option<String> {
-        self.modules_arena.get(id).and_then(|f| f.get().name.to_owned())
+        self.arena.get(id).and_then(|f| f.get().name.to_owned())
     }
     #[inline]
-    pub fn get_root_module(&self) -> &Node<ModuleInstance> {
-        self.get(self.root_module)
+    pub fn get_root_module(&self) -> &ModuleInstance {
+        self.get(self.root_module).get()
     }
     #[inline]
-    pub fn get_root_module_mut(&mut self) -> &mut Node<ModuleInstance> {
-        self.get_mut(self.root_module)
+    pub fn get_root_module_mut(&mut self) -> &mut ModuleInstance {
+        self.get_mut(self.root_module).get_mut()
     }
     #[inline]
-    pub fn get_current_module(&self) -> &Node<ModuleInstance> {
-        self.get(self.current_module)
+    pub fn get_current_module(&self) -> &ModuleInstance {
+        self.get(self.current_module).get()
     }
     #[inline]
-    pub fn get_current_module_mut(&mut self) -> &mut Node<ModuleInstance> {
-        self.get_mut(self.current_module)
+    pub fn get_current_module_mut(&mut self) -> &mut ModuleInstance {
+        self.get_mut(self.current_module).get_mut()
     }
     #[inline]
-    pub fn get_father_module(&self) -> &Node<ModuleInstance> {
-        let id = self.get_current_module().parent().unwrap();
-        self.get(id)
+    pub fn get_parent_id(&self) -> NodeId {
+        self.get(self.current_module).parent().unwrap()
     }
     #[inline]
-    pub fn get_father_module_mut(&mut self) -> &mut Node<ModuleInstance> {
-        let id = self.get_current_module().parent().unwrap();
-        self.get_mut(id)
+    pub fn get_parent_module(&self) -> &ModuleInstance {
+        self.get(self.get_parent_id()).get()
     }
     #[inline]
-    pub fn get_children_modules(&self) -> Children<ModuleInstance> {
-        self.current_module.children(&self.modules_arena)
+    pub fn get_parent_module_mut(&mut self) -> &mut ModuleInstance {
+        self.get_mut(self.get_parent_id()).get_mut()
+    }
+    #[inline]
+    fn get_children_id(&self) -> Children<ModuleInstance> {
+        self.current_module.children(&self.arena)
+    }
+    #[inline]
+    pub fn get_children_modules(&self) -> Vec<&ModuleInstance> {
+        self.get_children_id().map(|id| self.get(id).get()).collect()
     }
     pub fn get_children_names(&self) -> Vec<String> {
         let mut names = vec![];
-        for node in self.get_children_modules() {
+        for node in self.get_children_id() {
             // notice no names means scope
             if let Some(s) = self.get_node_name(node) {
                 names.push(s)
@@ -85,57 +93,61 @@ impl ModuleManager {
         HashSet::from_iter(self.get_children_names().iter().cloned())
     }
     #[inline]
-    pub fn get_ancestors_modules(&self) -> Ancestors<ModuleInstance> {
-        self.current_module.ancestors(&self.modules_arena)
+    fn get_ancestors_modules_id(&self) -> Ancestors<ModuleInstance> {
+        self.current_module.ancestors(&self.arena)
+    }
+    #[inline]
+    pub fn get_ancestors_modules(&self) -> Vec<&ModuleInstance> {
+        self.get_ancestors_modules_id().map(|id| self.get(id).get()).collect()
     }
     pub fn get_full_path(&self) {}
     pub fn get_full_path_name(&self) {}
     #[inline]
-    pub fn get_descendants_modules(&self) -> Descendants<ModuleInstance> {
-        self.current_module.descendants(&self.modules_arena)
+    fn get_descendants_modules_id(&self) -> Descendants<ModuleInstance> {
+        self.current_module.descendants(&self.arena)
     }
 }
 
 impl ModuleManager {
-    pub fn new_child_module(&mut self, name: &str) -> Result<()>{
+    pub fn new_child_module(&mut self, name: &str) -> Result<()> {
         if self.get_children_names_set().contains(name) {
-            return Err(NyarError::msg("submodule already exists"))
+            return Err(NyarError::msg("submodule already exists"));
         }
         let module = ModuleInstance::new_module(name);
-        let id = self.modules_arena.new_node(module);
-        self.current_module.append(id, &mut self.modules_arena);
+        let id = self.arena.new_node(module);
+        self.current_module.append(id, &mut self.arena);
         Ok(())
     }
-    pub fn new_child_module_then_switch(&mut self, name: &str) -> Result<()>{
+    pub fn new_child_module_then_switch(&mut self, name: &str) -> Result<()> {
         if self.get_children_names_set().contains(name) {
-            return Err(NyarError::msg("submodule already exists"))
+            return Err(NyarError::msg("submodule already exists"));
         }
         let module = ModuleInstance::new_module(name);
-        let id = self.modules_arena.new_node(module);
-        self.current_module.append(id, &mut self.modules_arena);
+        let id = self.arena.new_node(module);
+        self.current_module.append(id, &mut self.arena);
         self.current_module = id;
         Ok(())
     }
 
-    pub fn new_child_scope(&mut self) -> Result<()>{
+    pub fn new_child_scope(&mut self) -> Result<()> {
         let module = ModuleInstance::new_scope();
-        let id = self.modules_arena.new_node(module);
-        self.current_module.append(id, &mut self.modules_arena);
+        let id = self.arena.new_node(module);
+        self.current_module.append(id, &mut self.arena);
         Ok(())
     }
 
-    pub fn new_child_scope_then_switch(&mut self) -> Result<()>{
+    pub fn new_child_scope_then_switch(&mut self) -> Result<()> {
         let module = ModuleInstance::new_scope();
-        let id = self.modules_arena.new_node(module);
-        self.current_module.append(id, &mut self.modules_arena);
+        let id = self.arena.new_node(module);
+        self.current_module.append(id, &mut self.arena);
         self.current_module = id;
         Ok(())
     }
 }
 
 impl ModuleManager {
-    pub fn switch_to_father_module(&mut self) -> Result<()> {
-        let id = self.get_current_module().parent().unwrap();
+    pub fn switch_to_parent_module(&mut self) -> Result<()> {
+        let id = self.get_parent_id();
         if self.current_module == self.root_module {
             return Err(NyarError::msg("root module has no father module!"));
         }
@@ -147,34 +159,48 @@ impl ModuleManager {
         Ok(())
     }
     pub fn switch_to_child_module(&mut self, name: &str) -> Result<()> {
-        for node in self.get_children_modules() {
+        for node in self.get_children_id() {
             match &self.get_node_name(node) {
                 Some(s) if s == name => {
                     self.current_module = node;
-                    return Ok(())
-                },
+                    return Ok(());
+                }
                 _ => {}
             }
         }
-        return Err(NyarError::msg("no such module"))
+        return Err(NyarError::msg("no such module"));
     }
     pub fn switch_by_path(&mut self, path: &str) -> Result<()> {
+        let _root = self.arena.get(self.root_module).unwrap();
+        for _i in path.split("::") {
+            unimplemented!()
+        }
+
         unimplemented!()
     }
 }
 
 impl ModuleManager {}
 
-#[test]
-fn test() {
-    let mut arena = ModuleManager::default();
-    arena.new_child_scope();
-    arena.new_child_module_then_switch("a1");
-    arena.new_child_module_then_switch("a2");
-    arena.new_child_module("a3");
-    arena.switch_to_root_module();
-    arena.new_child_module_then_switch("b1");
-    arena.new_child_module("b2");
-    arena.switch_to_root_module();
-    println!("{:#?}", arena.get_children_names_set())
+impl NyarEngine {
+    #[inline]
+    pub fn new_child_module(&mut self, name: &str) -> Result<()> {
+        self.current_pkg.new_child_module(name)
+    }
+    #[inline]
+    pub fn new_child_module_then_switch(&mut self, name: &str) -> Result<()> {
+        self.current_pkg.new_child_module_then_switch(name)
+    }
+    #[inline]
+    pub fn new_child_scope(&mut self) -> Result<()> {
+        self.current_pkg.new_child_scope()
+    }
+    #[inline]
+    pub fn new_child_scope_then_switch(&mut self) -> Result<()> {
+        self.current_pkg.new_child_scope_then_switch()
+    }
+    #[inline]
+    pub fn switch_to_root_module(&mut self) -> Result<()> {
+        self.current_pkg.switch_to_root_module()
+    }
 }

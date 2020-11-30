@@ -52,15 +52,15 @@ impl Evaluate for ASTKind {
 impl Evaluate for NumberLiteral {
     fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value> {
         match (self.is_integer, &self.handler) {
-            (true, Some(s)) => ctx.root_module.get_integer_handlers().parse_integer(s, &self.value),
+            (true, Some(s)) => ctx.get_integer_handlers().parse_integer(s, &self.value),
             (true, None) => {
-                let s = &ctx.root_module.get_integer_handler();
-                ctx.root_module.get_integer_handlers().parse_integer(s, &self.value)
+                let s = &ctx.get_integer_handler();
+                ctx.get_integer_handlers().parse_integer(s, &self.value)
             }
-            (false, Some(s)) => ctx.root_module.get_decimal_handlers().parse_decimal(s, &self.value),
+            (false, Some(s)) => ctx.get_decimal_handlers().parse_decimal(s, &self.value),
             (false, None) => {
-                let s = &ctx.root_module.get_decimal_handler();
-                ctx.root_module.get_decimal_handlers().parse_decimal(s, &self.value)
+                let s = &ctx.get_decimal_handler();
+                ctx.get_decimal_handlers().parse_decimal(s, &self.value)
             }
         }
     }

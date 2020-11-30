@@ -4,7 +4,6 @@ use std::mem::transmute;
 use Value::*;
 
 pub const MAX_LENGTH_OF_LINE: usize = 144;
-pub const LIST_MAX_DISPLAY: usize = 255;
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {

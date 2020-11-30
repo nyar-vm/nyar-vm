@@ -1,11 +1,14 @@
 pub mod class;
 pub mod error;
 pub mod function;
+pub mod symbol;
 pub mod utils;
 pub mod variable;
 
 mod format;
 mod from_native;
+
+pub use self::symbol::Symbol;
 
 use std::fmt::{self, Debug, Display, Formatter};
 
