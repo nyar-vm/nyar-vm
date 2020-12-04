@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 pub trait Class {
     fn get_meta(&self) -> NyarClass;
@@ -23,9 +24,10 @@ pub struct NyarVisibility {
     self_write: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct NyarProperty {
     // typing: Option<Typing>,
-    default: Rc<NyarClass>,
+    default: Arc<NyarClass>,
     visibility: NyarReadWrite,
 }
 
@@ -48,9 +50,10 @@ pub enum NyarPrototype {
     Bitflag(Box<NyarBitflags>),
 }
 
+#[derive(Debug, Clone)]
 pub struct NyarClass {
     name: String,
-    base: Vec<Rc<NyarClass>>,
+    base: Vec<Arc<NyarClass>>,
     properties: HashMap<String, NyarProperty>,
     methods: HashMap<String, NyarProperty>,
 }

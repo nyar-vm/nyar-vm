@@ -9,6 +9,7 @@ mod format;
 mod from_native;
 
 pub use self::symbol::Symbol;
+pub use self::class::NyarClass;
 
 use std::fmt::{self, Debug, Display, Formatter};
 

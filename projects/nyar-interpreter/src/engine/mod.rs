@@ -2,9 +2,10 @@ mod interpreter;
 mod module;
 
 pub use self::module::ModuleInstance;
+pub use self::module::ModuleManager;
 
 use crate::{
-    engine::{interpreter::Evaluate, module::ModuleManager},
+    engine::{interpreter::Evaluate},
     ASTNode, Result, Value,
 };
 use std::collections::HashMap;

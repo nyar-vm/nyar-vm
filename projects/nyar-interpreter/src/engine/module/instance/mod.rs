@@ -12,11 +12,7 @@ pub struct ModuleInstance {
     pub name: Option<String>,
     // pub context: Option<Box<NyarContext>>,
     pub context: NyarContext,
-    pub namespace: HashSet<String>,
-    pub variable_table: HashMap<String, Symbol>,
-    pub class_table: HashMap<String, Value>,
-    pub enum_table: HashMap<String, Value>,
-    pub flag_table: HashMap<String, Value>,
+    pub symbol_table: HashMap<String, Symbol>,
 }
 
 impl Default for ModuleInstance {
@@ -24,11 +20,7 @@ impl Default for ModuleInstance {
         Self {
             name: None,
             context: Default::default(),
-            namespace: Default::default(),
-            variable_table: Default::default(),
-            class_table: Default::default(),
-            enum_table: Default::default(),
-            flag_table: Default::default(),
+            symbol_table: Default::default(),
         }
     }
 }
