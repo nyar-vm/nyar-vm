@@ -11,5 +11,9 @@ use crate::{
     value::{function::NyarFunction, variable::Variable},
     Result,
 };
+use std::sync::Arc;
+use std::sync::RwLock;
 use nyar_hir::{NyarError, Range};
 use std::collections::HashMap;
+
+pub type SharedModule = Arc<RwLock<ModuleInstance>>;

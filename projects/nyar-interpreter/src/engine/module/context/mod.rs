@@ -10,6 +10,8 @@ pub use self::{
 };
 use crate::{engine::NyarEngine, value::class::NyarReadWrite};
 use std::lazy::SyncLazy;
+use std::ops::DerefMut;
+use std::sync::LockResult;
 
 #[derive(Copy, Clone, Debug)]
 pub enum NyarIndexSystem {
@@ -103,70 +105,107 @@ pub static NYAR_CONTEXT_PRESET: SyncLazy<NyarContext> = SyncLazy::new(|| NyarCon
     default_access_handler: None,
 });
 
+impl ModuleInstance {
+    pub fn get_context_mut(&mut self) -> &mut NyarContext {
+        match &self.context {
+            None => {
+                let ctx = NyarContext::default();
+                self.context = Some(box ctx);
+            }
+            Some(_) => {}
+        }
+        self.context.as_mut().unwrap().as_mut()
+    }
+}
+
 macro_rules! wrap_context {
     ($p:ident,$f_get:ident,$f_set:ident, $t:ty) => {
         impl ModuleInstance {
             pub fn $f_get(&self, pkg: &ModuleManager) -> $t {
-                if let Some(v) = &self.context.$p {
-                    return v.to_owned();
+                match self.context.as_ref().and_then(|ctx| ctx.$p.as_ref()) {
+                    Some(s) => return s.to_owned(),
+                    None => {}
                 }
-                for m in pkg.get_ancestors_modules().iter().rev() {
-                    if let Some(v) = &m.context.$p {
-                        return v.to_owned();
+                for shared in pkg.get_ancestors_modules().iter().rev() {
+                    match shared.read().ok().as_ref()
+                        .and_then(|ctx| ctx.context.as_ref())
+                        .and_then(|ctx| ctx.$p.as_ref())
+                    {
+                        Some(s) => return s.to_owned(),
+                        None => {}
                     }
                 }
                 return NYAR_CONTEXT_PRESET.$p.to_owned().unwrap();
             }
+            #[inline]
             pub fn $f_set(&mut self, new: $t) {
-                self.context.$p = Some(new)
+                self.get_context_mut().$p = Some(new)
             }
         }
 
         impl NyarEngine {
             #[inline]
             pub fn $f_get(&self) -> $t {
-                self.current_pkg.get_current_module().$f_get(&self.current_pkg)
+                match self.current_pkg.get_current_module().read() {
+                    Ok(o) => { o.$f_get(&self.current_pkg)}
+                    Err(_) => {panic!()}
+                }
             }
             #[inline]
             pub fn $f_set(&mut self, new: $t) {
-                self.current_pkg.get_current_module_mut().$f_set(new)
+                match self.current_pkg.get_current_module().write() {
+                    Ok(mut o) => { o.$f_set(new)}
+                    Err(_) => {panic!()}
+                }
             }
         }
     };
 }
 
 impl ModuleInstance {
-    pub fn get_implicit_self(&self, pkg: &ModuleManager) -> bool {
-        if let Some(v) = &self.context.implicit_self {
-            return v.to_owned();
+    pub fn get_integer_handler(&self, pkg: &ModuleManager) -> String {
+        match self.context.as_ref().and_then(|ctx| ctx.default_integer_handler.as_ref()) {
+            Some(s) => return s.to_owned(),
+            None => {}
         }
-        for m in pkg.get_ancestors_modules().iter().rev() {
-            if let Some(v) = &m.context.implicit_self {
-                return v.to_owned();
+        for shared in pkg.get_ancestors_modules().iter().rev() {
+            match shared.read().ok().as_ref()
+                .and_then(|ctx| ctx.context.as_ref())
+                .and_then(|ctx| ctx.default_integer_handler.as_ref())
+            {
+                Some(s) => return s.to_owned(),
+                None => {}
             }
         }
-        return NYAR_CONTEXT_PRESET.implicit_self.to_owned().unwrap();
+        return NYAR_CONTEXT_PRESET.default_integer_handler.to_owned().unwrap();
     }
-    pub fn set_implicit_self(&mut self, new: bool) {
-        self.context.implicit_self = Some(new)
+    #[inline]
+    pub fn set_integer_handler(&mut self, new: String) {
+        self.get_context_mut().default_integer_handler = Some(new)
     }
 }
 
 impl NyarEngine {
     #[inline]
-    pub fn get_implicit_self(&self) -> bool {
-        self.current_pkg.get_current_module().get_implicit_self(&self.current_pkg)
+    pub fn get_integer_handler(&self) -> String {
+        match self.current_pkg.get_current_module().read() {
+            Ok(mut o) => { o.get_integer_handler(&self.current_pkg) }
+            Err(_) => { panic!() }
+        }
     }
     #[inline]
-    pub fn set_implicit_self(&mut self, new: bool) {
-        self.current_pkg.get_current_module_mut().set_implicit_self(new)
+    pub fn set_integer_handler(&mut self, new: String) {
+        match self.current_pkg.get_current_module().write() {
+            Ok(mut o) => { o.set_integer_handler(new) }
+            Err(_) => { panic!() }
+        }
     }
 }
 
-// wrap_context!(implicit_self, get_implicit_self, set_implicit_self, bool);
+wrap_context!(implicit_self, get_implicit_self, set_implicit_self, bool);
 wrap_context!(uniform_function_call_syntax, get_ufcs, set_ufcs, bool);
 wrap_context!(index_system, get_index_system, set_index_system, NyarIndexSystem);
-wrap_context!(default_integer_handler, get_integer_handler, set_integer_handler, String);
+// wrap_context!(default_integer_handler, get_integer_handler, set_integer_handler, String);
 wrap_context!(default_decimal_handler, get_decimal_handler, set_decimal_handler, String);
 wrap_context!(integer_handlers, get_integer_handlers, set_integer_handlers, DefaultIntegerHandler);
 wrap_context!(decimal_handlers, get_decimal_handlers, set_decimal_handlers, DefaultDecimalHandler);

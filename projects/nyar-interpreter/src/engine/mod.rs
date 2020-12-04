@@ -1,13 +1,9 @@
 mod interpreter;
 mod module;
 
-pub use self::module::ModuleInstance;
-pub use self::module::ModuleManager;
+pub use self::module::{ModuleInstance, ModuleManager, SharedModule };
 
-use crate::{
-    engine::{interpreter::Evaluate},
-    ASTNode, Result, Value,
-};
+use crate::{engine::interpreter::Evaluate, ASTNode, Result, Value};
 use std::collections::HashMap;
 
 pub struct NyarEngine {

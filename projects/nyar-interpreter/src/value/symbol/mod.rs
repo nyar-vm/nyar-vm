@@ -1,20 +1,22 @@
 use super::*;
-use crate::engine::{ModuleInstance, ModuleManager};
-use std::sync::Arc;
-use crate::value::NyarClass;
-use std::rc::Rc;
+use crate::{
+    engine::{ModuleInstance, ModuleManager, SharedModule},
+    value::NyarClass,
+};
+use std::{rc::Rc, sync::Arc};
 
 #[derive(Debug, Clone)]
 pub enum Symbol {
     Alias(AliasSymbol),
-    Module(Rc<ModuleInstance>),
+    Module(SharedModule),
     Variable,
     Class(Arc<NyarClass>),
 }
 
+#[derive(Debug, Clone)]
 pub struct AliasSymbol {
     name: String,
-    src: Box<Symbol>
+    src: Box<Symbol>,
 }
 
 impl ModuleManager {
@@ -22,16 +24,15 @@ impl ModuleManager {
         for name in path {
             print!("{}", name)
         }
-        Symbol::Module(Rc::new(self.get_current_module().clone()))
+        Symbol::Module(self.get_current_module().clone())
     }
     pub fn find_symbol_by_path(&self, path: &str) -> Symbol {
         for name in path.split("::") {
             print!("{}", name)
         }
-        Symbol::Module(Rc::new(self.get_current_module().clone()))
+        Symbol::Module(self.get_current_module().clone())
     }
 }
-
 
 #[test]
 fn test() {
@@ -40,5 +41,4 @@ fn test() {
 
     let sym = pkg.find_symbol_by_path("a::b");
     println!("{:#?}", sym)
-
 }

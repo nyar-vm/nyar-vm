@@ -8,8 +8,7 @@ pub mod variable;
 mod format;
 mod from_native;
 
-pub use self::symbol::Symbol;
-pub use self::class::NyarClass;
+pub use self::{class::NyarClass, symbol::Symbol};
 
 use std::fmt::{self, Debug, Display, Formatter};
 

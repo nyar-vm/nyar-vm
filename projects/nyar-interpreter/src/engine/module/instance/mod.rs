@@ -10,18 +10,13 @@ use std::{
 #[derive(Clone, Debug)]
 pub struct ModuleInstance {
     pub name: Option<String>,
-    // pub context: Option<Box<NyarContext>>,
-    pub context: NyarContext,
+    pub context: Option<Box<NyarContext>>,
     pub symbol_table: HashMap<String, Symbol>,
 }
 
 impl Default for ModuleInstance {
     fn default() -> Self {
-        Self {
-            name: None,
-            context: Default::default(),
-            symbol_table: Default::default(),
-        }
+        Self { name: None, context: Default::default(), symbol_table: Default::default() }
     }
 }
 
