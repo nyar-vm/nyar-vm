@@ -16,7 +16,7 @@ pub struct ModuleManager {
 impl Default for ModuleManager {
     fn default() -> Self {
         let mut arena = Arena::new();
-        let root = arena.new_node(Arc::new(RwLock::new(ModuleInstance::default())));
+        let root = arena.new_node(Gc::new(RwLock::new(ModuleInstance::default())));
         Self { arena, root_name: None, root_module: root, current_module: root }
     }
 }
@@ -24,6 +24,10 @@ impl Default for ModuleManager {
 impl ModuleManager {
     pub fn new(name: &str) -> Self {
         Self { root_name: Some(String::from(name)), ..Self::default() }
+    }
+    #[inline]
+    pub fn get_package_name(&self) -> Option<String> {
+        self.root_name.to_owned()
     }
     #[inline]
     pub fn count(&self) -> usize {
@@ -120,7 +124,7 @@ impl ModuleManager {
             return Err(NyarError::msg("submodule already exists"));
         }
         let module = ModuleInstance::new_module(name);
-        let id = self.arena.new_node(Arc::new(RwLock::new(module)));
+        let id = self.arena.new_node(Gc::new(RwLock::new(module)));
         self.current_module.append(id, &mut self.arena);
         Ok(())
     }
@@ -129,7 +133,7 @@ impl ModuleManager {
             return Err(NyarError::msg("submodule already exists"));
         }
         let module = ModuleInstance::new_module(name);
-        let id = self.arena.new_node(Arc::new(RwLock::new(module)));
+        let id = self.arena.new_node(Gc::new(RwLock::new(module)));
         self.current_module.append(id, &mut self.arena);
         self.current_module = id;
         Ok(())
@@ -137,14 +141,14 @@ impl ModuleManager {
 
     pub fn new_child_scope(&mut self) -> Result<()> {
         let module = ModuleInstance::new_scope();
-        let id = self.arena.new_node(Arc::new(RwLock::new(module)));
+        let id = self.arena.new_node(Gc::new(RwLock::new(module)));
         self.current_module.append(id, &mut self.arena);
         Ok(())
     }
 
     pub fn new_child_scope_then_switch(&mut self) -> Result<()> {
         let module = ModuleInstance::new_scope();
-        let id = self.arena.new_node(Arc::new(RwLock::new(module)));
+        let id = self.arena.new_node(Gc::new(RwLock::new(module)));
         self.current_module.append(id, &mut self.arena);
         self.current_module = id;
         Ok(())

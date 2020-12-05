@@ -12,9 +12,12 @@ license = "MPL-2.0"
 # Manage GC
 # zerogc = "0.2.0-alpha.1"
 # zerogc-derive = "0.2.0-alpha.1"
-bitflags = "1.3"
-# Manage Type FFI
+shredder = "0.2"
+
+# TODO: Manage Type FFI
 type-uuid = "0.1"
+
+bitflags = "1.3"
 # TODO: intern + inline str
 # TODO: intern + inline int
 num = "0.3"
@@ -24,6 +27,9 @@ bigdecimal = "0.2"
 pretty = "0.10"
 # Manage mudule resolve
 indextree = "4.3"
+patricia_tree = "0.3"
+
+
 
 nyar-hir = {version = "0.2", path = "../nyar-hir"}
 # nyar-mir = {version = "0.2", path = "../nyar-mir"}

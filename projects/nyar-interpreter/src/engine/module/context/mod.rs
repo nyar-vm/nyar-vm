@@ -8,10 +8,8 @@ pub use self::{
     decimal_handler::{parse_f32, parse_f64, DefaultDecimalHandler, BUILD_IN_DECIMAL_PARSERS},
     integer_handler::{DefaultIntegerHandler, BUILD_IN_INTEGER_PARSERS},
 };
-use crate::{engine::NyarEngine, value::class::NyarReadWrite};
+use crate::{engine::NyarEngine, engine::module::NyarReadWrite};
 use std::lazy::SyncLazy;
-use std::ops::DerefMut;
-use std::sync::LockResult;
 
 #[derive(Copy, Clone, Debug)]
 pub enum NyarIndexSystem {

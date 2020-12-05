@@ -4,6 +4,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     mem::transmute,
 };
+use crate::value::FloatWrapper;
 
 #[derive(Clone)]
 pub struct DefaultDecimalHandler {
@@ -48,13 +49,11 @@ pub fn build_decimal_parsers() -> DefaultDecimalHandler {
 }
 
 pub fn parse_f32(input: &str) -> Result<Value> {
-    let v = unsafe { transmute::<f32, [u8; 4]>(input.parse::<f32>()?) };
-    Ok(Value::Decimal32(v))
+    Ok(Value::Decimal32(FloatWrapper::new(input.parse::<f32>()?)))
 }
 
 pub fn parse_f64(input: &str) -> Result<Value> {
-    let v = unsafe { transmute::<f64, [u8; 8]>(input.parse::<f64>()?) };
-    Ok(Value::Decimal64(v))
+    Ok(Value::Decimal64(FloatWrapper::new(input.parse::<f64>()?)))
 }
 
 pub fn parse_dec(input: &str) -> Result<Value> {

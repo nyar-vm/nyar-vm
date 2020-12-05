@@ -1,4 +1,6 @@
+use super::*;
 use bitflags::bitflags;
+
 
 #[rustfmt::skip]
 bitflags! {
@@ -33,5 +35,16 @@ bitflags! {
 impl Default for NyarReadWrite {
     fn default() -> Self {
         Self::Public
+    }
+}
+
+unsafe impl GcSafe for NyarReadWrite {}
+
+unsafe impl GcDrop for NyarReadWrite {}
+
+unsafe impl Scan for NyarReadWrite {
+    fn scan(&self, scanner: &mut Scanner<'_>) {
+        scanner.scan(&self.bits);
+        check_gc_drop(&self.bits);
     }
 }

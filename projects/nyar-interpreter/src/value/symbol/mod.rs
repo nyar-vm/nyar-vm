@@ -1,16 +1,14 @@
 use super::*;
 use crate::{
-    engine::{ModuleInstance, ModuleManager, SharedModule},
-    value::NyarClass,
+    engine::{ModuleManager, SharedModule},
 };
-use std::{rc::Rc, sync::Arc};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,Scan)]
 pub enum Symbol {
-    Alias(AliasSymbol),
+    //Alias(AliasSymbol),
     Module(SharedModule),
-    Variable,
-    Class(Arc<NyarClass>),
+    Variable(SharedValue),
+    //Class(Arc<NyarClass>),
 }
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,6 @@
+pub mod module;
 mod interpreter;
-mod module;
+mod gc;
 
 pub use self::module::{ModuleInstance, ModuleManager, SharedModule };
 

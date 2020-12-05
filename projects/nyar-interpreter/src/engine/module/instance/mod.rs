@@ -1,11 +1,6 @@
 use super::*;
 
 use crate::{value::Symbol, Value};
-use std::{
-    collections::HashSet,
-    lazy::SyncLazy,
-    rc::{Rc, Weak},
-};
 
 #[derive(Clone, Debug)]
 pub struct ModuleInstance {
@@ -19,6 +14,25 @@ impl Default for ModuleInstance {
         Self { name: None, context: Default::default(), symbol_table: Default::default() }
     }
 }
+
+unsafe impl GcSafe for ModuleInstance {}
+
+
+unsafe impl GcDrop for ModuleInstance {}
+
+unsafe impl Scan for ModuleInstance {
+    fn scan(&self, scanner: &mut shredder::Scanner<'_>) {
+        scanner.scan(&self.name);
+        check_gc_drop(&self.name);
+        // scanner.scan(&self.context);
+        // shredder::plumbing::check_gc_drop(__binding_0);
+        scanner.scan(&self.symbol_table);
+        check_gc_drop(&self.symbol_table);
+    }
+}
+
+
+
 
 impl ModuleInstance {
     pub fn new_module(name: &str) -> Self {

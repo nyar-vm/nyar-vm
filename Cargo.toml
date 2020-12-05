@@ -10,7 +10,7 @@ default-members = [
 ]
 exclude = [
     "projects/valkyrie-core",
-    "projects/valkyrie-std",
+#   "projects/valkyrie-std",
 ]
 
 [profile.release]

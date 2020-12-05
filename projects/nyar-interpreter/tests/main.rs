@@ -1,5 +1,6 @@
 pub mod test_atoms;
 pub mod test_exprs;
+pub mod test_let;
 
 use nyar_hir::ASTNode;
 use nyar_interpreter::engine::NyarEngine;
