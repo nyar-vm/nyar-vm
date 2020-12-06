@@ -8,26 +8,22 @@ mod manager;
 mod optimized;
 
 pub use self::{
-    context::{DefaultDecimalHandler, DefaultIntegerHandler, NYAR_CONTEXT_PRESET, NyarContext, NyarIndexSystem},
+    context::{DefaultDecimalHandler, DefaultIntegerHandler, NyarContext, NyarIndexSystem, NYAR_CONTEXT_PRESET},
+    flags::NyarReadWrite,
     instance::ModuleInstance,
     manager::ModuleManager,
-    flags::NyarReadWrite,
 };
 
-use std::collections::HashMap;
-use std::sync::RwLock;
-use nyar_hir::{NyarError, Range};
-use shredder::{Scan, Scanner};
-use shredder::marker::{GcSafe, GcDrop};
-use shredder::plumbing::check_gc_drop;
-use shredder::{Gc, GRwLock};
 use crate::{
-    Result,
     value::{function::NyarFunction, variable::Variable},
+    Result,
 };
-
-
-
+use nyar_hir::{NyarError, Range};
+use shredder::{
+    marker::{GcDrop, GcSafe},
+    plumbing::check_gc_drop,
+    GRwLock, Gc, Scan, Scanner,
+};
+use std::{collections::HashMap, sync::RwLock};
 
 pub type SharedModule = Gc<RwLock<ModuleInstance>>;
-

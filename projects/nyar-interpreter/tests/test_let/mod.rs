@@ -9,19 +9,18 @@ fn debug_atoms() -> Result<()> {
     dump_value(ATOMS, "tests/test_let/debug_atoms.yaml")
 }
 
-const BAD_DECIMAL: &str = r#"
-0.
-.0
-123456.
-.789
+const COMPLEX: &str = r#"
+let a, b: int;
+let (a, b): (int, int)
+let (a: int, b: int)
+let mut a: int, = 1;
+let (mut a: int, ) = 1;
+let mut a, _, _ = (1,2,3)
 "#;
 
 #[test]
-#[should_panic]
-fn errors_bad_decimal() {
-    for input in BAD_DECIMAL.lines() {
-        dump_value(input, "");
-    }
+fn debug_complex() -> Result<()> {
+    dump_value(COMPLEX, "tests/test_let/debug_complex.yaml")
 }
 
 const BYTES: &str = r#"

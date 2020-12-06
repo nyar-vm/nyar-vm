@@ -4,8 +4,6 @@ use crate::engine::NyarEngine;
 use indextree::{Ancestors, Arena, Children, Descendants, Node, NodeId};
 use std::{collections::HashSet, iter::FromIterator};
 
-
-
 pub struct ModuleManager {
     arena: Arena<SharedModule>,
     root_name: Option<String>,
@@ -46,9 +44,7 @@ impl ModuleManager {
     }
     #[inline]
     fn get_node_name(&self, id: NodeId) -> Option<String> {
-        self.arena.get(id)
-            .and_then(|f| f.get().read().ok())
-            .and_then(|f| f.name.to_owned())
+        self.arena.get(id).and_then(|f| f.get().read().ok()).and_then(|f| f.name.to_owned())
     }
     #[inline]
     pub fn get_root_module(&self) -> &SharedModule {
@@ -84,9 +80,7 @@ impl ModuleManager {
     }
     #[inline]
     pub fn get_children_modules(&self) -> Vec<&SharedModule> {
-        self.get_children_id()
-            .map(|id| self.get(id).get())
-            .collect()
+        self.get_children_id().map(|id| self.get(id).get()).collect()
     }
     pub fn get_children_names(&self) -> Vec<String> {
         let mut names = vec![];

@@ -1,4 +1,4 @@
-// use nyar_hir::ast::import::ImportStatement;
+// use nyar_hir::ast::assign::ImportStatement;
 //
 // #[allow(unused_variables)]
 // impl ImportStatement {

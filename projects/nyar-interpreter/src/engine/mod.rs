@@ -1,8 +1,8 @@
-pub mod module;
-mod interpreter;
 mod gc;
+mod interpreter;
+pub mod module;
 
-pub use self::module::{ModuleInstance, ModuleManager, SharedModule };
+pub use self::module::{ModuleInstance, ModuleManager, SharedModule};
 
 use crate::{engine::interpreter::Evaluate, ASTNode, Result, Value};
 use std::collections::HashMap;

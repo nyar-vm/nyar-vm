@@ -13,7 +13,13 @@ let mut lazy ref a; ///可以叠多个修饰词
 ### 类型声明
 
 ```ts
+
 let (mut a, b, c): (int, int, int)
+// type broadcast
+let (mut a, b, c): int;
+
+
+let mut a, b, c : int;
 ```
 
 ### 初始化
@@ -25,8 +31,10 @@ let (mut a, b, c) = (1, 2, 3)
 ### 其他
 
 ```ts
-let mut a, b, c {
-    return (1, 2, 3)
+// keyword let
+let {
+    // mod let
+    let a = 1,
 }
 ```
 

@@ -2,14 +2,12 @@
 #![feature(once_cell)]
 #![feature(box_syntax)]
 #![feature(arc_new_cyclic)]
-#![feature(const_fn)]
+#![feature(const_fn_trait_bound)]
 
 pub use nyar_hir::{ASTKind, ASTNode, NyarError, Result};
 pub use value::Value;
-
 
 pub mod engine;
 pub mod typing;
 pub mod utils;
 pub mod value;
-

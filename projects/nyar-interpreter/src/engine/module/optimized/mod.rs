@@ -2,11 +2,9 @@ use super::*;
 use crate::value::Symbol;
 use patricia_tree::PatriciaMap;
 
-
 pub struct OptimizedModule {
     inner: PatriciaMap<Symbol>,
 }
-
 
 impl OptimizedModule {
     #[inline]
@@ -20,8 +18,10 @@ impl From<ModuleManager> for OptimizedModule {
         let mut path = vec![];
         let mut map = PatriciaMap::default();
         let root = match src.get_package_name() {
-            None => { panic!("package name not found") }
-            Some(s) => { s }
+            None => {
+                panic!("package name not found")
+            }
+            Some(s) => s,
         };
         path.push(root);
 
@@ -30,13 +30,8 @@ impl From<ModuleManager> for OptimizedModule {
             //     Some(s) => { s }
             //     None => (Default::default()),
             // };
-
-
         }
 
-
-        return Self{ inner: map };
-
-
+        return Self { inner: map };
     }
 }

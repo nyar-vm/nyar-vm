@@ -1,17 +1,17 @@
 use super::*;
 use num::Float;
-use std::hash::Hasher;
-use std::ops::{Deref, DerefMut};
-use std::fmt::LowerExp;
-use std::str::FromStr;
-
+use std::{
+    fmt::LowerExp,
+    hash::Hasher,
+    ops::{Deref, DerefMut},
+    str::FromStr,
+};
 
 /// A type that wraps a floating-point number and implements [`Hash`].
 ///
 /// Not available under `no_float`.
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct FloatWrapper<F>(F);
-
 
 // impl<F: Float> Hash for FloatWrapper<F> {
 //     #[inline(always)]
@@ -22,7 +22,7 @@ pub struct FloatWrapper<F>(F);
 
 macro_rules! eq_hash {
     ($t:ty) => {
-        impl Eq for FloatWrapper<$t> {  }
+        impl Eq for FloatWrapper<$t> {}
         impl Hash for FloatWrapper<$t> {
             #[inline(always)]
             fn hash<H: Hasher>(&self, state: &mut H) {
@@ -31,7 +31,6 @@ macro_rules! eq_hash {
         }
     };
 }
-
 
 eq_hash!(f32);
 eq_hash!(f64);
@@ -43,14 +42,12 @@ impl<F: Float> AsRef<F> for FloatWrapper<F> {
     }
 }
 
-
 impl<F: Float> AsMut<F> for FloatWrapper<F> {
     #[inline(always)]
     fn as_mut(&mut self) -> &mut F {
         &mut self.0
     }
 }
-
 
 impl<F: Float> Deref for FloatWrapper<F> {
     type Target = F;
@@ -61,14 +58,12 @@ impl<F: Float> Deref for FloatWrapper<F> {
     }
 }
 
-
 impl<F: Float> DerefMut for FloatWrapper<F> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
-
 
 impl<F: Float + Debug> Debug for FloatWrapper<F> {
     #[inline(always)]
@@ -77,15 +72,13 @@ impl<F: Float + Debug> Debug for FloatWrapper<F> {
     }
 }
 
-
 impl<F: Float + Display + LowerExp + From<f32>> Display for FloatWrapper<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let abs = self.0.abs();
-        if abs > Self::MAX_NATURAL_FLOAT_FOR_DISPLAY.into()
-            || abs < Self::MIN_NATURAL_FLOAT_FOR_DISPLAY.into()
-        {
+        if abs > Self::MAX_NATURAL_FLOAT_FOR_DISPLAY.into() || abs < Self::MIN_NATURAL_FLOAT_FOR_DISPLAY.into() {
             write!(f, "{:e}", self.0)
-        } else {
+        }
+        else {
             Display::fmt(&self.0, f)?;
             if abs.fract().is_zero() {
                 f.write_str(".0")?;
@@ -95,14 +88,12 @@ impl<F: Float + Display + LowerExp + From<f32>> Display for FloatWrapper<F> {
     }
 }
 
-
 impl<F: Float> From<F> for FloatWrapper<F> {
     #[inline(always)]
     fn from(value: F) -> Self {
         Self::new(value)
     }
 }
-
 
 impl<F: Float + FromStr> FromStr for FloatWrapper<F> {
     type Err = <F as FromStr>::Err;
@@ -112,7 +103,6 @@ impl<F: Float + FromStr> FromStr for FloatWrapper<F> {
         F::from_str(s).map(Into::<Self>::into)
     }
 }
-
 
 impl<F: Float> FloatWrapper<F> {
     /// Maximum floating-point number for natural display before switching to scientific notation.

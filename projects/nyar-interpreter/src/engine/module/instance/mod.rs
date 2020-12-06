@@ -17,7 +17,6 @@ impl Default for ModuleInstance {
 
 unsafe impl GcSafe for ModuleInstance {}
 
-
 unsafe impl GcDrop for ModuleInstance {}
 
 unsafe impl Scan for ModuleInstance {
@@ -30,9 +29,6 @@ unsafe impl Scan for ModuleInstance {
         check_gc_drop(&self.symbol_table);
     }
 }
-
-
-
 
 impl ModuleInstance {
     pub fn new_module(name: &str) -> Self {

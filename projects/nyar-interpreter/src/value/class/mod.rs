@@ -1,12 +1,7 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-};
+use std::collections::{BTreeMap, HashMap};
 
 pub use crate::engine::module::NyarReadWrite;
 
-pub use self::{
-    prototype::{Class, NyarClass},
-};
+pub use self::prototype::{Class, NyarClass};
 
 mod prototype;
-

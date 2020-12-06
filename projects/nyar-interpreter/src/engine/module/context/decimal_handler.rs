@@ -1,10 +1,10 @@
 use super::*;
+use crate::value::FloatWrapper;
 use bigdecimal::BigDecimal;
 use std::{
     fmt::{self, Debug, Formatter},
     mem::transmute,
 };
-use crate::value::FloatWrapper;
 
 #[derive(Clone)]
 pub struct DefaultDecimalHandler {

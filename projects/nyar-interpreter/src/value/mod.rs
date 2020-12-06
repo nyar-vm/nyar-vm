@@ -1,31 +1,31 @@
 pub mod class;
 pub mod error;
 pub mod function;
+pub mod numbers;
 pub mod symbol;
 pub mod utils;
 pub mod variable;
-pub mod numbers;
 
 mod format;
 mod from_native;
 
-pub use self::{class::NyarClass, symbol::Symbol,numbers::FloatWrapper};
+pub use self::{class::NyarClass, numbers::FloatWrapper, symbol::Symbol};
 
 use std::fmt::{self, Debug, Display, Formatter};
 
+use self::function::FunctionInstance;
 use crate::utils::OrderedMap;
 use bigdecimal::BigDecimal;
 use num::{BigInt, BigUint};
-use self::function::FunctionInstance;
 
-use shredder::{Scan, Gc};
-use shredder::marker::{GcSafe, GcDrop};
-use shredder::Scanner;
-use shredder::plumbing::check_gc_drop;
+use shredder::{
+    marker::{GcDrop, GcSafe},
+    plumbing::check_gc_drop,
+    Gc, Scan, Scanner,
+};
 use std::sync::RwLock;
 
 pub type SharedValue = Gc<RwLock<Value>>;
-
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Value {
@@ -71,9 +71,7 @@ impl Value {
 
 #[test]
 fn check_size() {
-    use std::{borrow::Cow, collections::VecDeque};
-    use std::rc::Rc;
-    use std::sync::{Arc};
+    use std::{borrow::Cow, collections::VecDeque, rc::Rc, sync::Arc};
 
     assert_eq!(std::mem::size_of::<Box<Value>>(), 8);
     assert_eq!(std::mem::size_of::<Vec<Value>>(), 24);
@@ -87,7 +85,6 @@ fn check_size() {
     assert_eq!(std::mem::size_of::<String>(), 24);
     assert_eq!(std::mem::size_of::<Cow<str>>(), 32);
     assert_eq!(std::mem::size_of::<[u8; 31]>(), 31);
-
 
     assert_eq!(std::mem::size_of::<VecDeque<Value>>(), 32);
 

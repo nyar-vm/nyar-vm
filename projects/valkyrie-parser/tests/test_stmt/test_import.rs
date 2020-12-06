@@ -1,16 +1,16 @@
 use super::*;
 
 const INPUT: &str = r#"
-import torch
-import numpy as np
-import pandas.database as db
+assign torch
+assign numpy as np
+assign pandas.database as db
 
-import .mod
-import ..mod as z
-import lib.*
-import mod::*
-import "./mod" as y
-import "../lib/mod"::{
+assign .mod
+assign ..mod as z
+assign lib.*
+assign mod::*
+assign "./mod" as y
+assign "../lib/mod"::{
 	a as b
 	c as d
 	e.f.{g as h}

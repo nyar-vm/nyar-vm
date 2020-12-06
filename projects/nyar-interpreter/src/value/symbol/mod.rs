@@ -1,9 +1,7 @@
 use super::*;
-use crate::{
-    engine::{ModuleManager, SharedModule},
-};
+use crate::engine::{ModuleManager, SharedModule};
 
-#[derive(Debug, Clone,Scan)]
+#[derive(Debug, Clone, Scan)]
 pub enum Symbol {
     //Alias(AliasSymbol),
     Module(SharedModule),

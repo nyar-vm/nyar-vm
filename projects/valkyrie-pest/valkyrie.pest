@@ -13,8 +13,9 @@ statement = {
   | expression
 }
 /*====================================================================================================================*/
-emptyStatement = {eos | Separate}
-eos = {Semicolon}
+emptyStatement = {eos}
+eos = {Semicolon | Separate}
+separator = {eos|Comma}
 comma_or_semi = _{Comma|Semicolon}
 block_or_stmt = _{block|Set ~ statement}
 /*====================================================================================================================*/
@@ -31,7 +32,7 @@ module_block = {"{"~module_tuple~ ( comma_or_semi? ~ module_tuple)* ~comma_or_se
 module_tuple = {use_alias|use_module_select}
 ModuleSplit= _{Dot|Proportion}
 //!#C678DD: Import|As
-Import  = @{"import"}
+Import  = @{"assign"}
 As   = @{"as"}
 /*====================================================================================================================*/
 controlFlow = _{re_control|if_statement|for_statement}
@@ -83,7 +84,8 @@ short_block = {"{" ~ short_statement* ~ "}"}
 short_statement = {
     emptyStatement
   | Def? ~ define_terms ~ eos?
-  | Let? ~ assign_terms ~ eos?
+    // mut a = 1 ;
+  | assign_pair ~ separator?
   | short_annotation ~ eos?
 }
 short_annotation = {annotation_call+~short_statement}
@@ -100,13 +102,20 @@ with_trait = {With ~ Symbol ~ parametric_types?}
 Extend = @{"extend"}
 With = @{"with"}
 /*====================================================================================================================*/
-assignStatement = {Let ~ assign_terms}
-assign_terms = _{
-    "(" ~ assign_name ~ ")" ~ type_hint? ~ block_or_stmt?
-  | assign_name ~ type_hint? ~ block_or_stmt?
+assignStatement = {
+    // let (mut a: int, ) = 1;
+    Let ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ Set ~ expr ~ eos?
+    // let (a: int, b: int)
+    // let (a, b): (int, int)
+  | Let ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ eos?
+    // let mut a: int, = 1;
+  | Let ~ assign_name ~ Set ~ expr ~ eos?
+    // let a, b: int;
+  | Let ~ assign_name ~ eos
+  | Let ~ short_statement ~ eos?
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {Modifier* ~ Symbol}
+assign_pair = {Modifier* ~ Symbol ~ type_hint?}
 
 ///#C678DD
 Let = @{"let"}
@@ -256,8 +265,7 @@ Infix = _{
   //| Dot
 }
 
-///#56B6C2
-Set = @{"="}
+
 
 Or = @{"|"}
 LazyOr = @{"||"}
@@ -294,7 +302,8 @@ Equivalent =@{"==="}
 NotEquivalent =@{"=!="}
 Equal =@{"=="}
 NotEqual =@{"!="|"≠"} //U+2260
-
+///#56B6C2
+Set = @{"="}
 
 
 

@@ -86,88 +86,86 @@ impl LexerContext {
     }
     //
     fn parse_assign(&self, pairs: Pair<Rule>) -> Vec<ASTNode> {
-        let _r = get_position(&pairs);
-        unimplemented!()
-        //     let pos = get_position(pairs.as_span());
-        //     let mut vec = vec![];
-        //     let mut syms = vec![];
-        //     let mut types = vec![];
-        //     let mut typing = false;
-        //     let mut init: Option<AST> = None;
-        //     for pair in pairs.into_inner() {
-        //         match pair.as_rule() {
-        //             Rule::Set | Rule::Colon | Rule::Comma => continue,
-        //             Rule::Let | Rule::WHITESPACE => continue,
-        //             Rule::type_expr => {
-        //                 typing = true;
-        //                 for inner in pair.into_inner() {
-        //                     match inner.as_rule() {
-        //                         Rule::Comma => (),
-        //                         Rule::expr => types.push(self.parse_expr(inner)),
-        //                         _ => debug_cases!(inner),
-        //                     };
-        //                 }
-        //             }
-        //             Rule::assign_pair => {
-        //                 let mut mods = vec![];
-        //                 for inner in pair.into_inner() {
-        //                     match inner.as_rule() {
-        //                         Rule::Symbol => mods.push(self.parse_symbol(inner)),
-        //                         Rule::SYMBOL => mods.push(self.parse_symbol(inner)),
-        //                         _ => debug_cases!(inner),
-        //                     };
-        //                 }
-        //                 syms.push(mods)
-        //             }
-        //             Rule::statement => init = Some(self.parse_statement(pair)),
-        //             _ => debug_cases!(pair),
-        //         };
-        //     }
-        //     if typing == false {
-        //         for mut sym in syms {
-        //             let s = sym.pop().unwrap();
-        //             let mut ss = vec![];
-        //             for i in sym {
-        //                 match i {
-        //                     AST::Symbol { name, scope: _ } => ss.push(name),
-        //                     _ => unreachable!(),
-        //                 }
-        //             }
-        //             let typ = AST::Symbol { name: "auto".to_string(), scope: vec![] };
-        //             let ast = AST::LetBinding { symbol: Box::new(s), modifiers: ss, types: Box::new(typ), annotations: None };
-        //             vec.push(ast)
-        //         }
-        //     }
-        //     else {
-        //         for (mut sym, typ) in syms.into_iter().zip(types.into_iter()) {
-        //             let s = sym.pop().unwrap();
-        //             let mut ss = vec![];
-        //             for i in sym {
-        //                 match i {
-        //                     AST::Symbol { name, scope: _ } => ss.push(name),
-        //                     _ => unreachable!(),
-        //                 }
-        //             }
-        //             let ast = AST::LetBinding { symbol: Box::new(s), modifiers: ss, types: Box::new(typ), annotations: None };
-        //             vec.push(ast)
-        //         }
-        //     }
-        //     match init {
-        //         None => (),
-        //         Some(i) => {
-        //             let mut s = vec![];
-        //             for v in vec.clone() {
-        //                 match v {
-        //                     AST::LetBinding { symbol, .. } => s.push(*symbol),
-        //                     _ => unreachable!(),
-        //                 }
-        //             }
-        //             let lhs = AST::TupleExpression(s);
-        //             let ast = AST::InfixOperators { o: Box::from("="), lhs: Box::new(lhs), rhs: Box::new(i), pos };
-        //             vec.push(ast)
-        //         }
-        //     }
-        //     return vec;
+        let r = get_position(&pairs);
+        let mut vec = vec![];
+        let mut syms = vec![];
+        let mut types = vec![];
+        let mut typing = false;
+        let mut init: Option<AST> = None;
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::Set | Rule::Colon | Rule::Comma => continue,
+                Rule::Let | Rule::WHITESPACE => continue,
+                Rule::type_expr => {
+                    typing = true;
+                    for inner in pair.into_inner() {
+                        match inner.as_rule() {
+                            Rule::Comma => (),
+                            Rule::expr => types.push(self.parse_expr(inner)),
+                            _ => debug_cases!(inner),
+                        };
+                    }
+                }
+                Rule::assign_pair => {
+                    let mut mods = vec![];
+                    for inner in pair.into_inner() {
+                        match inner.as_rule() {
+                            Rule::Symbol => mods.push(self.parse_symbol(inner)),
+                            Rule::SYMBOL => mods.push(self.parse_symbol(inner)),
+                            _ => debug_cases!(inner),
+                        };
+                    }
+                    syms.push(mods)
+                }
+                Rule::statement => init = Some(self.parse_statement(pair)),
+                _ => debug_cases!(pair),
+            };
+        }
+        if typing == false {
+            for mut sym in syms {
+                let s = sym.pop().unwrap();
+                let mut ss = vec![];
+                for i in sym {
+                    match i {
+                        AST::Symbol { name, scope: _ } => ss.push(name),
+                        _ => unreachable!(),
+                    }
+                }
+                let typ = AST::Symbol { name: "auto".to_string(), scope: vec![] };
+                let ast = AST::LetBinding { symbol: Box::new(s), modifiers: ss, types: Box::new(typ), annotations: None };
+                vec.push(ast)
+            }
+        }
+        else {
+            for (mut sym, typ) in syms.into_iter().zip(types.into_iter()) {
+                let s = sym.pop().unwrap();
+                let mut ss = vec![];
+                for i in sym {
+                    match i {
+                        AST::Symbol { name, scope: _ } => ss.push(name),
+                        _ => unreachable!(),
+                    }
+                }
+                let ast = AST::LetBinding { symbol: Box::new(s), modifiers: ss, types: Box::new(typ), annotations: None };
+                vec.push(ast)
+            }
+        }
+        match init {
+            None => (),
+            Some(i) => {
+                let mut s = vec![];
+                for v in vec.clone() {
+                    match v {
+                        AST::LetBinding { symbol, .. } => s.push(*symbol),
+                        _ => unreachable!(),
+                    }
+                }
+                let lhs = AST::TupleExpression(s);
+                let ast = AST::InfixOperators { o: Box::from("="), lhs: Box::new(lhs), rhs: Box::new(i), pos };
+                vec.push(ast)
+            }
+        }
+        return vec;
     }
 
     fn parse_if(&self, pairs: Pair<Rule>) -> ASTNode {

@@ -1,10 +1,10 @@
+mod assign;
 mod atoms;
 mod chain;
 mod control;
-mod import;
 mod utils;
 
-pub use self::{atoms::*, chain::*, control::*, import::ImportStatement};
+pub use self::{assign::ImportStatement, atoms::*, chain::*, control::*};
 
 use lsp_types::Range;
 use std::{

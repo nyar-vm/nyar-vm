@@ -1,7 +1,6 @@
 use super::*;
 use bitflags::bitflags;
 
-
 #[rustfmt::skip]
 bitflags! {
     /// ## Access control character

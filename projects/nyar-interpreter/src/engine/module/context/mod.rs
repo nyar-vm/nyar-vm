@@ -8,7 +8,7 @@ pub use self::{
     decimal_handler::{parse_f32, parse_f64, DefaultDecimalHandler, BUILD_IN_DECIMAL_PARSERS},
     integer_handler::{DefaultIntegerHandler, BUILD_IN_INTEGER_PARSERS},
 };
-use crate::{engine::NyarEngine, engine::module::NyarReadWrite};
+use crate::engine::{module::NyarReadWrite, NyarEngine};
 use std::lazy::SyncLazy;
 
 #[derive(Copy, Clone, Debug)]
@@ -125,10 +125,7 @@ macro_rules! wrap_context {
                     None => {}
                 }
                 for shared in pkg.get_ancestors_modules().iter().rev() {
-                    match shared.read().ok().as_ref()
-                        .and_then(|ctx| ctx.context.as_ref())
-                        .and_then(|ctx| ctx.$p.as_ref())
-                    {
+                    match shared.read().ok().as_ref().and_then(|ctx| ctx.context.as_ref()).and_then(|ctx| ctx.$p.as_ref()) {
                         Some(s) => return s.to_owned(),
                         None => {}
                     }
@@ -145,15 +142,19 @@ macro_rules! wrap_context {
             #[inline]
             pub fn $f_get(&self) -> $t {
                 match self.current_pkg.get_current_module().read() {
-                    Ok(o) => { o.$f_get(&self.current_pkg)}
-                    Err(_) => {panic!()}
+                    Ok(o) => o.$f_get(&self.current_pkg),
+                    Err(_) => {
+                        panic!()
+                    }
                 }
             }
             #[inline]
             pub fn $f_set(&mut self, new: $t) {
                 match self.current_pkg.get_current_module().write() {
-                    Ok(mut o) => { o.$f_set(new)}
-                    Err(_) => {panic!()}
+                    Ok(mut o) => o.$f_set(new),
+                    Err(_) => {
+                        panic!()
+                    }
                 }
             }
         }
@@ -167,7 +168,10 @@ impl ModuleInstance {
             None => {}
         }
         for shared in pkg.get_ancestors_modules().iter().rev() {
-            match shared.read().ok().as_ref()
+            match shared
+                .read()
+                .ok()
+                .as_ref()
                 .and_then(|ctx| ctx.context.as_ref())
                 .and_then(|ctx| ctx.default_integer_handler.as_ref())
             {
@@ -187,15 +191,19 @@ impl NyarEngine {
     #[inline]
     pub fn get_integer_handler(&self) -> String {
         match self.current_pkg.get_current_module().read() {
-            Ok(mut o) => { o.get_integer_handler(&self.current_pkg) }
-            Err(_) => { panic!() }
+            Ok(mut o) => o.get_integer_handler(&self.current_pkg),
+            Err(_) => {
+                panic!()
+            }
         }
     }
     #[inline]
     pub fn set_integer_handler(&mut self, new: String) {
         match self.current_pkg.get_current_module().write() {
-            Ok(mut o) => { o.set_integer_handler(new) }
-            Err(_) => { panic!() }
+            Ok(mut o) => o.set_integer_handler(new),
+            Err(_) => {
+                panic!()
+            }
         }
     }
 }
