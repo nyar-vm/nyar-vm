@@ -6,13 +6,12 @@ mod utils;
 
 pub use self::{assign::ImportStatement, atoms::*, chain::*, control::*};
 
-use lsp_types::Range;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::AddAssign,
 };
 
-pub type StringRange = (String, Range);
+pub type Range = std::ops::Range<u32>;
 
 #[derive(Clone)]
 pub struct ASTNode {
@@ -219,5 +218,5 @@ impl ASTNode {
 fn check_size() {
     assert_eq!(std::mem::size_of::<String>(), 24);
     assert_eq!(std::mem::size_of::<ASTKind>(), 32);
-    assert_eq!(std::mem::size_of::<ASTNode>(), 48);
+    assert_eq!(std::mem::size_of::<ASTNode>(), 40);
 }

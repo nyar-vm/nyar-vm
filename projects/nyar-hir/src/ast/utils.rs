@@ -9,8 +9,9 @@ impl Display for ASTNode {
 impl Debug for ASTNode {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let range = format!(
-            "({}:{}, {}:{})",
-            self.range.start.line, self.range.start.character, self.range.end.line, self.range.end.character
+            "({}, {})",
+            self.range.start,
+            self.range.end
         );
         match &self.kind {
             ASTKind::Suite(v) => {

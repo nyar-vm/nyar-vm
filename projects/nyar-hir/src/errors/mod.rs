@@ -4,11 +4,11 @@ mod numeric_errors;
 
 pub use self::{error_kinds::NyarErrorKind, numeric_errors::ParseIntegerError};
 
-use lsp_types::Range;
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
 };
+use crate::ast::Range;
 
 pub type Result<T> = std::result::Result<T, NyarError>;
 
@@ -23,8 +23,8 @@ impl Error for NyarError {}
 impl Display for NyarError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         writeln!(f, "{:?}", self.kind)?;
-        match self.position {
-            Some(r) => write!(f, "--> {}:{}", r.start.line + 1, r.start.character + 1)?,
+        match &self.position {
+            Some(r) => write!(f, "--> {}:{}", r.start, r.end)?,
             None => write!(f, "--> <internal>")?,
         }
         Ok(())
