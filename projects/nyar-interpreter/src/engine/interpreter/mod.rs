@@ -30,7 +30,7 @@ impl Evaluate for ASTKind {
                 }
             }
             Self::NumberLiteral(n) => n.evaluate(ctx)?,
-            Self::Null => Value::Null,
+            Self::Nothing => Value::Null,
             Self::Boolean(v) => Value::Boolean(*v),
             Self::ListExpression(v) => {
                 let mut out = vec![];

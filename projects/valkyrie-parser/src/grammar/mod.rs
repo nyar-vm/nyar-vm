@@ -376,7 +376,7 @@ impl LexerContext {
             };
         }
         match k.kind {
-            ASTKind::None => k,
+            ASTKind::Nothing => k,
             _ => ASTNode::kv_pair(k, v),
         }
     }

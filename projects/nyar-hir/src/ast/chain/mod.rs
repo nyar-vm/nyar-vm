@@ -46,11 +46,6 @@ impl ChainCall {
         assert_ne!(terms.len(), 0);
         let start = base.range.start;
         let end = terms.iter().last().unwrap().range.end;
-        let mut chain = match base.kind {
-            ASTKind::CallChain(c) => *c,
-            _ => ChainCall::new(base),
-        };
-        chain.extend(terms);
-        ASTNode { kind: ASTKind::CallChain(box chain), range: Range { start, end } }
+        todo!()
     }
 }
