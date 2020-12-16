@@ -2,37 +2,53 @@ mod assign;
 mod atoms;
 mod chain;
 mod control;
-mod utils;
+mod display;
 
 pub use self::{assign::ImportStatement, atoms::*, chain::*, control::*};
-
+use rkyv::{Archive, Deserialize, Serialize};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::AddAssign,
 };
+use std::num::NonZeroU64;
 
 pub type Range = std::ops::Range<u32>;
 
-#[derive(Clone)]
+#[derive(Clone, Archive, Deserialize, Serialize)]
 pub struct ASTNode {
-    pub kind: ASTKind,
-    pub range: Range,
+    kind: ASTKind,
+    meta: ASTMeta,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Archive, Deserialize, Serialize)]
+pub struct ASTMeta {
+    /// span start offset
+    pub start: u32,
+    /// span end offset
+    pub end: u32,
+    /// same as ptr size, 0 refers to `<anonymous file>`
+    pub file_id: u64,
+    /// comment documentations
+    pub document: String,
+}
+
+#[derive(Clone, Archive, Deserialize, Serialize)]
 pub enum ASTKind {
     /// Wrong node
     Nothing,
-
+    ///
+    ASTAtom(Box<ASTAtom>),
 }
 
 impl ASTNode {
-    pub fn refine(self) -> Self {
-        todo!()
-        // match self.kind {
-        //     ASTKind::CallUnary(v) => v.base,
-        //     _ => self,
-        // }
+    pub fn kind(&self) -> &ASTKind {
+        &self.kind
+    }
+    pub fn start(self) -> u32 {
+        self.meta.start
+    }
+    pub fn end(self) -> u32 {
+        self.meta.end
     }
 }
 
@@ -135,7 +151,6 @@ impl ASTNode {
     }
 
     pub fn symbol(path: &[String], r: Range) -> Self {
-
         todo!()
         // Self { kind: ASTKind::Symbol(box Symbol::path(path)), range: r }
     }
@@ -164,8 +179,8 @@ impl ASTNode {
         // Self { kind: ASTKind::Boolean(v), range: r }
     }
 
-    pub fn null(r: Range) -> Self {
-        Self { kind: ASTKind::Nothing, range: r }
+    pub fn null(meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::Nothing, meta }
     }
 }
 
