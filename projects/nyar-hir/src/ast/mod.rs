@@ -3,6 +3,8 @@ mod atoms;
 mod chain;
 mod control;
 mod display;
+mod cps;
+mod let_bind;
 
 pub use self::{assign::ImportStatement, atoms::*, chain::*, control::*};
 use rkyv::{Archive, Deserialize, Serialize};
@@ -10,7 +12,7 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::AddAssign,
 };
-use std::num::NonZeroU64;
+use crate::ast::let_bind::LetBind;
 
 pub type Range = std::ops::Range<u32>;
 
@@ -36,6 +38,8 @@ pub struct ASTMeta {
 pub enum ASTKind {
     /// Wrong node
     Nothing,
+    ///
+    LetBind(Box<LetBind>),
     ///
     ASTAtom(Box<ASTAtom>),
 }
