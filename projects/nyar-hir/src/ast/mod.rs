@@ -7,7 +7,7 @@ mod cps;
 mod let_bind;
 
 pub use self::{assign::ImportStatement, atoms::*, chain::*, control::*};
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::AddAssign,
@@ -16,13 +16,13 @@ use crate::ast::let_bind::LetBind;
 
 pub type Range = std::ops::Range<u32>;
 
-#[derive(Clone, Archive, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct ASTNode {
     kind: ASTKind,
     meta: ASTMeta,
 }
 
-#[derive(Clone, Archive, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct ASTMeta {
     /// span start offset
     pub start: u32,
@@ -34,10 +34,12 @@ pub struct ASTMeta {
     pub document: String,
 }
 
-#[derive(Clone, Archive, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub enum ASTKind {
     /// Wrong node
     Nothing,
+    ///
+    Sequence(Vec<ASTNode>),
     ///
     LetBind(Box<LetBind>),
     ///

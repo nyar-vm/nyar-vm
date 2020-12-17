@@ -1,36 +1,61 @@
-use crate::{ASTKind, ASTNode};
-use crate::ast::ASTAtom;
-use crate::ast::let_bind::LetBind;
+use crate::{
+    ast::{let_bind::LetBind, ASTAtom},
+    ASTKind, ASTNode,
+};
+
+pub struct CpsTransformer {
+    pub count: u64,
+}
+
+impl CpsTransformer {
+    pub fn new_symbol() -> Self {
+        Self { count: 0 }
+    }
+}
 
 impl ASTNode {
-    pub fn cps_transform(&self) -> ASTNode {
-        ASTNode {
-            kind: self.kind.cps_transform(),
-            meta: self.meta.clone(),
-        }
+    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTNode {
+        ASTNode { kind: self.kind.cps_transform(ctx), meta: self.meta.clone() }
     }
 }
 
 impl ASTKind {
-    pub fn cps_transform(&self) -> ASTKind {
+    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
         match self {
-            ASTKind::Nothing => { ASTKind::Nothing }
-            ASTKind::ASTAtom(atom) => {
-                atom.cps_transform()
-            }
-            ASTKind::LetBind(bind) => { bind.cps_transform() }
+            ASTKind::Nothing => ASTKind::Nothing,
+            ASTKind::ASTAtom(atom) => atom.cps_transform(ctx),
+            ASTKind::LetBind(bind) => bind.cps_transform(ctx),
+            ASTKind::Sequence(nodes) => ASTKind::Sequence(nodes.iter().map(|f| f.cps_transform(ctx)).collect()),
         }
     }
 }
 
 impl ASTAtom {
-    pub fn cps_transform(&self) -> ASTKind {
+    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
         todo!()
     }
 }
 
 impl LetBind {
-    pub fn cps_transform(&self) -> ASTKind {
+    //     function cps_let(exp, k) {
+    //         if (exp.vars.length === 0) {
+    //             return cps(exp.body, k);
+    //         }
+    //         return cps({
+    //             type: 'call',
+    //             args: [exp.vars[0].def || FALSE],
+    //             func: {
+    //                 type: 'lambda',
+    //                 vars: [exp.vars[0].name],
+    //                 body: {
+    //                     type: 'let',
+    //                     vars: exp.vars.slice(1),
+    //                     body: exp.body
+    //                 }
+    //             }
+    //         }, k);
+    //     }
+    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
         todo!()
     }
 }

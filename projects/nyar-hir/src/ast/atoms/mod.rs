@@ -14,8 +14,8 @@ pub use self::{
 
 use super::*;
 
-#[derive(Clone, Archive, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub enum ASTAtom {
     Boolean(bool),
-    String(Arc<String>),
+    String(String),
 }

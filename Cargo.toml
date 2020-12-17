@@ -5,6 +5,7 @@ default-members = [
     "projects/nyar-interpreter",
     "projects/nyar-hir",
     "projects/nyar-mir",
+    "projects/nyar-js",
     "projects/valkyrie-pest",
     "projects/valkyrie-parser",
 ]

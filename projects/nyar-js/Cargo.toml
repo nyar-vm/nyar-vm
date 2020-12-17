@@ -1,6 +1,6 @@
 [package]
-name = "nyar-hir"
-version = "0.2.0"
+name = "nyar-js"
+version = "0.1.0"
 authors = ["192607617@qq.com"]
 edition = "2018"
 description = "..."
@@ -9,10 +9,11 @@ license = "MPL-2.0"
 
 [dependencies]
 # serde_json = "^1.0.45"
+# lsp-types = "0.89"
 
-[dependencies.serde]
-version = "1.0.143"
-features = ["derive"]
+[dependencies.nyar-hir]
+version = "0.2.0"
+path = "../nyar-hir"
 
 
 
