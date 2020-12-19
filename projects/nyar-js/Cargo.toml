@@ -15,7 +15,9 @@ license = "MPL-2.0"
 version = "0.2.0"
 path = "../nyar-hir"
 
-
+[dependencies.nyar-error]
+version = "0.1.0"
+path = "../nyar-error"
 
 [dev-dependencies]
 
