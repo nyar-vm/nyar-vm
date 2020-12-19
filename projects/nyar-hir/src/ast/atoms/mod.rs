@@ -16,9 +16,10 @@ use std::sync::Arc;
 use super::*;
 
 /// Literals that without any effects
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum ASTAtom {
     Boolean(bool),
     Integer(BigInt),
     String(String),
+    Symbol(String),
 }

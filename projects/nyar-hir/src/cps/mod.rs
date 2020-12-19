@@ -1,5 +1,5 @@
 use crate::{
-    ast::{let_bind::LetBind, ASTAtom},
+    ast::{ASTAtom, LambdaFunction, LetBind},
     ASTKind, ASTNode,
 };
 
@@ -26,6 +26,7 @@ impl ASTKind {
             ASTKind::ASTAtom(atom) => atom.cps_transform(ctx),
             ASTKind::LetBind(bind) => bind.cps_transform(ctx),
             ASTKind::Sequence(nodes) => ASTKind::Sequence(nodes.iter().map(|f| f.cps_transform(ctx)).collect()),
+            ASTKind::LambdaFunction(lambda) => lambda.cps_transform(ctx),
         }
     }
 }
@@ -55,6 +56,12 @@ impl LetBind {
     //             }
     //         }, k);
     //     }
+    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
+        todo!()
+    }
+}
+
+impl LambdaFunction {
     pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
         todo!()
     }

@@ -7,10 +7,13 @@ impl JsCompiler {
                 true => self.buffer.push_str("true"),
                 false => self.buffer.push_str("false"),
             },
-            ASTAtom::String(s) => self.compile_raw_string(s),
+            ASTAtom::String(v) => self.compile_raw_string(v),
+            ASTAtom::Integer(v) => write!(self.buffer, "{}n", v)?,
+            ASTAtom::Symbol(v) => self.compile_raw_symbol(v),
         }
         Ok(())
     }
+
     fn compile_raw_string(&mut self, input: &str) {
         self.buffer.push_str("\"");
         for c in input.chars() {
@@ -25,5 +28,13 @@ impl JsCompiler {
             }
         }
         self.buffer.push_str("\"");
+    }
+    fn compile_raw_symbol(&mut self, input: &str) {
+        for c in input.chars() {
+            match c {
+                '\n' => self.buffer.push_str("\\n"),
+                _ => self.buffer.push(c),
+            }
+        }
     }
 }

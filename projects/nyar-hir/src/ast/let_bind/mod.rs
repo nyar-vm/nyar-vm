@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct LetBind {
     pub name: String,
     pub body: ASTNode,

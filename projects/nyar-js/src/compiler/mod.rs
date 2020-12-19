@@ -1,4 +1,5 @@
 mod compile_atom;
+mod compile_lambda;
 mod writer;
 
 use nyar_error::Result;
@@ -15,9 +16,8 @@ impl JsCompiler {
             ASTKind::Nothing => {}
             ASTKind::Sequence(_) => {}
             ASTKind::LetBind(_) => {}
-            ASTKind::ASTAtom(atom) => {
-                self.compile_atom(atom)?;
-            }
+            ASTKind::ASTAtom(atom) => self.compile_atom(atom)?,
+            ASTKind::LambdaFunction(lambda) => self.compile_lambda(lambda)?,
         }
         Ok(())
     }

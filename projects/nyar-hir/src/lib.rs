@@ -4,7 +4,6 @@
 
 pub mod ast;
 
-mod errors;
+mod cps;
 
 pub use ast::{ASTKind, ASTNode};
-pub use errors::{NyarError, NyarErrorKind, Result};

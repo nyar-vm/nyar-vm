@@ -3,26 +3,26 @@ mod atoms;
 mod chain;
 mod control;
 mod display;
-mod cps;
+mod lambda;
 mod let_bind;
 
-pub use self::{assign::ImportStatement, atoms::*, chain::*, control::*};
+pub use self::{atoms::*, chain::*, control::*};
+pub use crate::ast::{assign::ImportStatement, lambda::LambdaFunction, let_bind::LetBind};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::AddAssign,
 };
-use crate::ast::let_bind::LetBind;
 
 pub type Range = std::ops::Range<u32>;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ASTNode {
-    kind: ASTKind,
-    meta: ASTMeta,
+    pub(crate) kind: ASTKind,
+    pub(crate) meta: ASTMeta,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ASTMeta {
     /// span start offset
     pub start: u32,
@@ -34,7 +34,7 @@ pub struct ASTMeta {
     pub document: String,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum ASTKind {
     /// Wrong node
     Nothing,
@@ -42,6 +42,13 @@ pub enum ASTKind {
     Sequence(Vec<ASTNode>),
     ///
     LetBind(Box<LetBind>),
+    /// Lambda Function
+    LambdaFunction(Box<LambdaFunction>),
+    /// XML Template
+    XMLTemplate(Vec<ASTNode>),
+    /// String Template
+    StringTemplate(Vec<ASTNode>),
+    StringInterpreter(Box<StringInterpreter>),
     ///
     ASTAtom(Box<ASTAtom>),
 }
