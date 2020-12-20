@@ -1,8 +1,8 @@
 use super::*;
 
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StringLiteral {
     pub handler: String,
-    pub meta: ASTMeta,
+    pub literal: String,
 }

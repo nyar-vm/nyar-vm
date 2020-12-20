@@ -8,6 +8,7 @@ mod let_bind;
 
 pub use self::{atoms::*, chain::*, control::*};
 pub use crate::ast::{assign::ImportStatement, lambda::LambdaFunction, let_bind::LetBind};
+use nyar_error::Span;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -25,11 +26,7 @@ pub struct ASTNode {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ASTMeta {
     /// span start offset
-    pub start: u32,
-    /// span end offset
-    pub end: u32,
-    /// same as ptr size, 0 refers to `<anonymous file>`
-    pub file_id: u64,
+    pub span: Span,
     /// comment documentations
     pub document: String,
 }
@@ -48,7 +45,7 @@ pub enum ASTKind {
     XMLTemplate(Vec<ASTNode>),
     /// String Template
     StringTemplate(Vec<ASTNode>),
-    StringInterpreter(Box<StringInterpreter>),
+    StringInterpreter(Box<StringLiteral>),
     ///
     ASTAtom(Box<ASTAtom>),
 }
@@ -58,10 +55,10 @@ impl ASTNode {
         &self.kind
     }
     pub fn start(self) -> u32 {
-        self.meta.start
+        self.meta.span.start
     }
     pub fn end(self) -> u32 {
-        self.meta.end
+        self.meta.span.end
     }
 }
 

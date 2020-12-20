@@ -11,6 +11,7 @@ pub use self::{
     operator::Operator, string_literal::StringLiteral, symbol::Symbol,
 };
 use num::BigInt;
+use nyar_error::Span;
 use std::sync::Arc;
 
 use super::*;

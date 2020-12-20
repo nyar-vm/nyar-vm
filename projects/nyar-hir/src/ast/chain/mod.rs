@@ -44,8 +44,8 @@ impl ChainCall {
     }
     pub fn join_chain_terms(base: ASTNode, terms: &[ASTNode]) -> ASTNode {
         assert_ne!(terms.len(), 0);
-        let start = base.meta.start;
-        let end = terms.iter().last().unwrap().meta.end;
+        // let start = base.meta.start;
+        // let end = terms.iter().last().unwrap().meta.end;
         todo!()
     }
 }

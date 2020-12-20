@@ -1,6 +1,5 @@
 use super::*;
 
-
 impl Default for ASTNode {
     fn default() -> Self {
         Self { kind: ASTKind::Nothing, meta: Default::default() }
@@ -9,12 +8,7 @@ impl Default for ASTNode {
 
 impl Default for ASTMeta {
     fn default() -> Self {
-        Self {
-            start: 0,
-            end: 0,
-            file_id: 0,
-            document: String::new()
-        }
+        Self { span: Default::default(), document: String::new() }
     }
 }
 
@@ -35,6 +29,3 @@ impl Debug for ASTKind {
         todo!()
     }
 }
-
-
-

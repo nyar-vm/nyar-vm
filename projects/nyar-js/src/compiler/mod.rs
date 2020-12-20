@@ -18,6 +18,15 @@ impl JsCompiler {
             ASTKind::LetBind(_) => {}
             ASTKind::ASTAtom(atom) => self.compile_atom(atom)?,
             ASTKind::LambdaFunction(lambda) => self.compile_lambda(lambda)?,
+            ASTKind::XMLTemplate(_) => {
+                todo!()
+            }
+            ASTKind::StringTemplate(_) => {
+                todo!()
+            }
+            ASTKind::StringInterpreter(_) => {
+                todo!()
+            }
         }
         Ok(())
     }

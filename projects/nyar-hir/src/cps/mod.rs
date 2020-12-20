@@ -27,6 +27,15 @@ impl ASTKind {
             ASTKind::LetBind(bind) => bind.cps_transform(ctx),
             ASTKind::Sequence(nodes) => ASTKind::Sequence(nodes.iter().map(|f| f.cps_transform(ctx)).collect()),
             ASTKind::LambdaFunction(lambda) => lambda.cps_transform(ctx),
+            ASTKind::XMLTemplate(_) => {
+                todo!()
+            }
+            ASTKind::StringTemplate(_) => {
+                todo!()
+            }
+            ASTKind::StringInterpreter(_) => {
+                todo!()
+            }
         }
     }
 }
