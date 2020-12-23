@@ -23,7 +23,7 @@ use shredder::{
     plumbing::check_gc_drop,
     Gc, Scan, Scanner,
 };
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 pub type SharedValue = Gc<RwLock<Value>>;
 
@@ -32,29 +32,24 @@ pub enum Value {
     Null,
     Boolean(bool),
 
-    Integer8(i8),
-    Integer16(i16),
-    Integer32(i32),
-    Integer64(i64),
-    Integer128(i128),
-    IntegerSized(isize),
     UnsignedInteger8(u8),
     UnsignedInteger16(u16),
     UnsignedInteger32(u32),
     UnsignedInteger64(u64),
     UnsignedInteger128(u128),
-    UnsignedIntegerSized(usize),
+    Integer8(i8),
+    Integer16(i16),
+    Integer32(i32),
+    Integer64(i64),
+    Integer128(i128),
+    Integer(Arc<BigInt>),
     Decimal32(FloatWrapper<f32>),
-    Decimal64(FloatWrapper<f64>),
 
-    InlineInteger(i128),
-    Integer(Box<BigInt>),
-    UnsignedInteger(BigUint),
-    Decimal(Box<BigDecimal>),
+    Decimal64(FloatWrapper<f64>),
+    Decimal(Arc<BigDecimal>),
 
     Character(char),
-    String(String),
-    InlineString([u8; 31]),
+    String(Arc<String>),
 
     List(Vec<Self>),
     Suite(Vec<Self>),

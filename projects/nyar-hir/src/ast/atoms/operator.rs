@@ -1,13 +1,13 @@
 use super::*;
 use OperatorAssociativity::*;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum OperatorAssociativity {
     Left,
     Right,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Operator {
     Prefix { op: &'static str },
     Infix { a: OperatorAssociativity, p: u8, op: &'static str },

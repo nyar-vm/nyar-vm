@@ -1,7 +1,7 @@
 use super::*;
 
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Symbol {
     pub name: String,
     pub scope: Vec<String>,
@@ -18,8 +18,11 @@ impl Display for Symbol {
 }
 
 impl Symbol {
-    pub fn simple(name: &str) -> Symbol {
-        Self { name: String::from(name), scope: vec![] }
+    pub fn simple<S>(name: S) -> Symbol
+    where
+        S: Into<String>,
+    {
+        Self { name: name.into(), scope: vec![] }
     }
     pub fn namespace(name: &str) -> Symbol {
         Self { name: String::from(name), scope: vec![] }

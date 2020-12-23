@@ -38,7 +38,7 @@ impl LexerContext {
             let r = get_position(&pair);
             match pair.as_rule() {
                 Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
-                Rule::emptyStatement => nodes.push(ASTNode::empty_statement(r)),
+                Rule::emptyStatement => nodes.push(ASTNode::program(r)),
                 Rule::importStatement => nodes.push(self.parse_import(pair)),
                 Rule::assignStatement => {
                     let s = self.parse_assign(pair);

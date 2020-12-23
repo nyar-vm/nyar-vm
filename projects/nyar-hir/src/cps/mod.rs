@@ -1,49 +1,97 @@
 use crate::{
-    ast::{ASTAtom, LambdaFunction, LetBind},
+    ast::{ASTMeta, InfixExpression, LambdaFunction, LetBind, Symbol},
     ASTKind, ASTNode,
 };
+
+mod effects;
 
 pub struct CpsTransformer {
     pub count: u64,
 }
 
 impl CpsTransformer {
-    pub fn new_symbol() -> Self {
-        Self { count: 0 }
+    pub fn make_symbol(&mut self) -> Symbol {
+        self.count += 1;
+        Symbol::simple(format!("Φ_{}", self.count))
+    }
+
+    // function make_continuation(k) {
+    // var cont = gensym('R');
+    // return {
+    // type: 'lambda',
+    // vars: [cont],
+    // body: k({
+    // type: 'var',
+    // value: cont
+    // })
+    // };
+    // }
+
+    pub fn make_continuation(&mut self, k: LambdaFunction) -> LambdaFunction {
+        let cont = self.make_symbol();
+        // LambdaFunction {
+        //
+        // }
+        // k.call(cont)
+        //
+        todo!()
     }
 }
 
-impl ASTNode {
-    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTNode {
-        ASTNode { kind: self.kind.cps_transform(ctx), meta: self.meta.clone() }
-    }
-}
-
-impl ASTKind {
-    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
-        match self {
-            ASTKind::Nothing => ASTKind::Nothing,
-            ASTKind::ASTAtom(atom) => atom.cps_transform(ctx),
-            ASTKind::LetBind(bind) => bind.cps_transform(ctx),
-            ASTKind::Sequence(nodes) => ASTKind::Sequence(nodes.iter().map(|f| f.cps_transform(ctx)).collect()),
-            ASTKind::LambdaFunction(lambda) => lambda.cps_transform(ctx),
+impl CpsTransformer {
+    pub fn transform(&mut self, ast: &ASTNode, k: LambdaFunction) -> ASTNode {
+        match &ast.kind {
+            ASTKind::Nothing => unreachable!(),
+            ASTKind::Program(_) => {
+                todo!()
+            }
+            ASTKind::Sequence(nodes) => {
+                todo!()
+            }
+            ASTKind::LetBind(bind) => self.cps_let(bind, k),
+            ASTKind::LambdaFunction(lambda) => self.cps_lambda(lambda, k),
             ASTKind::XMLTemplate(_) => {
                 todo!()
             }
             ASTKind::StringTemplate(_) => {
                 todo!()
             }
-            ASTKind::StringInterpreter(_) => {
+            ASTKind::Boolean(_) | ASTKind::Number(_) | ASTKind::String(_) | ASTKind::Symbol(_) => k.call(ast),
+            ASTKind::ListExpression(_) => {
                 todo!()
+            }
+            ASTKind::TupleExpression(_) => {
+                todo!()
+            }
+
+            ASTKind::DictExpression(_) => {
+                todo!()
+            }
+            ASTKind::BinaryExpression(infix) => {
+                let k = LambdaFunction {};
+
+                if infix {}
+
+                let r = LambdaFunction {};
+                let rest = self.transform(&infix.rhs, r);
+
+                self.transform(&infix.lhs, k)
             }
         }
     }
-}
-
-impl ASTAtom {
-    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
+    fn cps_let(&mut self, ast: &LetBind, k: LambdaFunction) -> ASTNode {
         todo!()
     }
+    fn cps_lambda(&mut self, ast: &LambdaFunction, k: LambdaFunction) -> ASTNode {
+        todo!()
+    }
+}
+
+impl InfixExpression {
+    fn k_lhs(&self) {
+        if self.o.is_infix_and() {}
+    }
+    fn k_rhs(&self) {}
 }
 
 impl LetBind {
@@ -65,12 +113,6 @@ impl LetBind {
     //             }
     //         }, k);
     //     }
-    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
-        todo!()
-    }
-}
-
-impl LambdaFunction {
     pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
         todo!()
     }

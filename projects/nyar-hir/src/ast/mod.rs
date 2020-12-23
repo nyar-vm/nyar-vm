@@ -3,11 +3,20 @@ mod atoms;
 mod chain;
 mod control;
 mod display;
+mod infix;
 mod lambda;
 mod let_bind;
 
-pub use self::{atoms::*, chain::*, control::*};
-pub use crate::ast::{assign::ImportStatement, lambda::LambdaFunction, let_bind::LetBind};
+pub use self::{
+    atoms::{
+        byte_literal::ByteLiteral, comment_literal::CommentLiteral, kv_pair::KVPair, number_literal::NumberLiteral,
+        operator::Operator, string_literal::StringLiteral, symbol::Symbol, *,
+    },
+    chain::*,
+    control::*,
+};
+use crate::ast::dict_literal::DictLiteral;
+pub use crate::ast::{assign::ImportStatement, infix::InfixExpression, lambda::LambdaFunction, let_bind::LetBind};
 use nyar_error::Span;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -18,6 +27,7 @@ use std::{
 pub type Range = std::ops::Range<u32>;
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(bound(deserialize = "'de: 'static"))]
 pub struct ASTNode {
     pub(crate) kind: ASTKind,
     pub(crate) meta: ASTMeta,
@@ -32,22 +42,37 @@ pub struct ASTMeta {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(bound(deserialize = "'de: 'static"))]
 pub enum ASTKind {
     /// Wrong node
     Nothing,
+    ///
+    Program(Vec<ASTNode>),
     ///
     Sequence(Vec<ASTNode>),
     ///
     LetBind(Box<LetBind>),
     /// Lambda Function
     LambdaFunction(Box<LambdaFunction>),
-    /// XML Template
-    XMLTemplate(Vec<ASTNode>),
+
+    ///
+    BinaryExpression(Box<InfixExpression>),
+
+    /// `(1, 2, 3)`
+    TupleExpression(Vec<ASTNode>),
+    /// `[1, 2, 3]`
+    ListExpression(Vec<ASTNode>),
+    ///
+    DictExpression(Box<DictLiteral>),
+    ///
+    Boolean(bool),
+    Number(Box<NumberLiteral>),
+    String(Box<StringLiteral>),
     /// String Template
     StringTemplate(Vec<ASTNode>),
-    StringInterpreter(Box<StringLiteral>),
-    ///
-    ASTAtom(Box<ASTAtom>),
+    /// XML Template
+    XMLTemplate(Vec<ASTNode>),
+    Symbol(Box<Symbol>),
 }
 
 impl ASTNode {
@@ -63,34 +88,33 @@ impl ASTNode {
 }
 
 impl ASTNode {
-    pub fn empty_statement(r: Range) -> Self {
-        todo!()
-        // Self { kind: ASTKind::EmptyStatement, range: r }
+    pub fn program(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::Program(v), meta }
     }
-    pub fn suite(v: Vec<ASTNode>, r: Range) -> Self {
+    pub fn suite(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
         todo!()
-        // Self { kind: ASTKind::Suite(v), range: r }
+        // Self { kind: ASTKind::Suite(v), meta }
     }
 
-    pub fn if_statement(pairs: Vec<(ASTNode, ASTNode)>, default: Option<ASTNode>, r: Range) -> Self {
+    pub fn if_statement(pairs: Vec<(ASTNode, ASTNode)>, default: Option<ASTNode>, meta: ASTMeta) -> Self {
         todo!()
         // let s = IfStatement { pairs, default };
-        // Self { kind: ASTKind::IfStatement(box s), range: r }
+        // Self { kind: ASTKind::IfStatement(box s), meta }
     }
 
-    pub fn expression(base: ASTNode, eos: bool, r: Range) -> Self {
+    pub fn expression(base: ASTNode, eos: bool, meta: ASTMeta) -> Self {
         todo!()
-        // Self { kind: ASTKind::Expression { base: box base, eos }, range: r }
+        // Self { kind: ASTKind::Expression { base: box base, eos }, meta }
     }
 
-    pub fn string_expression(h: &str, v: &[ASTNode], r: Range) -> Self {
+    pub fn string_expression(h: &str, v: &[ASTNode], meta: ASTMeta) -> Self {
         todo!()
         // let handler = if h.is_empty() { None } else { Some(String::from(h)) };
         // let v = StringLiteral { handler, value: Vec::from(v) };
-        // Self { kind: ASTKind::StringExpression(box v), range: r }
+        // Self { kind: ASTKind::StringExpression(box v), meta }
     }
 
-    pub fn push_infix_chain(self, op: &str, rhs: ASTNode, r: Range) -> Self {
+    pub fn push_infix_chain(self, op: &str, rhs: ASTNode, meta: ASTMeta) -> Self {
         todo!()
         // let op = Operator::parse(op, 0);
         //
@@ -99,10 +123,10 @@ impl ASTNode {
         //     _ => InfixCall { base: self, terms: vec![] },
         // };
         // infix.push_infix_pair(op, rhs);
-        // Self { kind: ASTKind::CallInfix(box infix), range: r }
+        // Self { kind: ASTKind::CallInfix(box infix), meta }
     }
 
-    pub fn push_unary_operations(self, prefix: &[String], suffix: &[String], r: Range) -> Self {
+    pub fn push_unary_operations(self, prefix: &[String], suffix: &[String], meta: ASTMeta) -> Self {
         todo!()
         // if prefix.is_empty() && suffix.is_empty() {
         //     return self.refine();
@@ -113,80 +137,72 @@ impl ASTNode {
         // };
         // unary.push_prefix(prefix);
         // unary.push_suffix(suffix);
-        // Self { kind: ASTKind::CallUnary(box unary), range: r }
+        // Self { kind: ASTKind::CallUnary(box unary), meta }
     }
 
     pub fn chain_join(self, terms: ASTNode) -> Self {
         ChainCall::join_chain_terms(self, &[terms])
     }
 
-    pub fn apply_call(args: Vec<ASTNode>, r: Range) -> Self {
+    pub fn apply_call(args: Vec<ASTNode>, meta: ASTMeta) -> Self {
         todo!()
-        // ASTNode { kind: ASTKind::CallApply(args), range: r }
+        // ASTNode { kind: ASTKind::CallApply(args), meta }
     }
 
-    pub fn kv_pair(k: ASTNode, v: ASTNode) -> ASTNode {
-        todo!()
-        // let start = k.range.start;
-        // let end = v.range.end;
-        // let kind = KVPair { k, v };
-        // ASTNode { kind: ASTKind::KVPair(box kind), range: Range { start, end } }
+    pub fn kv_pair(k: ASTNode, v: ASTNode) -> KVPair {
+        KVPair { k, v }
     }
 
-    pub fn apply_slice(indexes: &[ASTNode], r: Range) -> Self {
+    pub fn apply_slice(indexes: &[ASTNode], meta: ASTMeta) -> Self {
         todo!()
         // let kind = SliceTerm { terms: Vec::from(indexes) };
-        // ASTNode { kind: ASTKind::CallSlice(box kind), range: r }
+        // ASTNode { kind: ASTKind::CallSlice(box kind), meta }
     }
 
-    pub fn apply_index(start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>, r: Range) -> Self {
+    pub fn apply_index(start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>, meta: ASTMeta) -> Self {
         todo!()
         // let kind = IndexTerm { start, end, steps };
-        // ASTNode { kind: ASTKind::CallIndex(box kind), range: r }
+        // ASTNode { kind: ASTKind::CallIndex(box kind), meta }
     }
 
-    pub fn list(v: Vec<ASTNode>, r: Range) -> Self {
-        todo!()
-        // Self { kind: ASTKind::ListExpression(v), range: r }
+    pub fn list(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::ListExpression(v), meta }
     }
 
-    pub fn dict(v: Vec<ASTNode>, r: Range) -> Self {
-        todo!()
-        // Self { kind: ASTKind::DictExpression(v), range: r }
+    pub fn dict(v: DictLiteral, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::DictExpression(box v), meta }
     }
 
-    pub fn tuple(v: Vec<ASTNode>, r: Range) -> Self {
-        todo!()
-        // Self { kind: ASTKind::TupleExpression(v), range: r }
+    pub fn tuple(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::TupleExpression(v), meta }
     }
 
-    pub fn symbol(path: &[String], r: Range) -> Self {
-        todo!()
-        // Self { kind: ASTKind::Symbol(box Symbol::path(path)), range: r }
+    pub fn symbol(symbol: Symbol, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::Symbol(box symbol), meta }
     }
 
-    pub fn number(h: &str, v: &str, is_integer: bool, r: Range) -> Self {
-        todo!()
-        // let handler = if h.is_empty() { None } else { Some(String::from(h)) };
-        // let v = NumberLiteral { handler, value: String::from(v), is_integer };
-        // Self { kind: ASTKind::NumberLiteral(box v), range: r }
+    pub fn number(literal: &str, handler: &str, meta: ASTMeta) -> Self {
+        let v = NumberLiteral { handler: handler.to_string(), value: literal.to_string() };
+        Self { kind: ASTKind::Number(box v), meta }
     }
 
-    pub fn bytes(h: char, v: &str, r: Range) -> Self {
-        todo!()
-        // let handler = if h.is_empty() { None } else { Some(String::from(h)) };
-        // let v = ByteLiteral { handler: h, value: String::from(v) };
-        // Self { kind: ASTKind::ByteLiteral(box v), range: r }
+    pub fn bytes(literal: &str, mode: &str, meta: ASTMeta) -> Self {
+        let v = NumberLiteral { handler: mode.to_string(), value: literal.to_string() };
+        Self { kind: ASTKind::Number(box v), meta }
     }
 
-    pub fn string(s: &str, r: Range) -> Self {
-        todo!()
-        // Self { kind: ASTKind::String(String::from(s)), range: r }
+    pub fn string(literal: &str, meta: ASTMeta) -> Self {
+        let s = StringLiteral { handler: String::new(), literal: literal.to_string() };
+        Self { kind: ASTKind::String(box s), meta }
     }
 
-    pub fn boolean(v: bool, r: Range) -> Self {
-        todo!()
-        // Self { kind: ASTKind::Boolean(v), range: r }
+    pub fn string_handler(literal: &str, handler: &str, meta: ASTMeta) -> ASTNode {
+        let s = StringLiteral { handler: handler.to_string(), literal: literal.to_string() };
+        Self { kind: ASTKind::String(box s), meta }
+    }
+
+    pub fn boolean(v: bool, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::Boolean(v), meta }
     }
 
     pub fn null(meta: ASTMeta) -> Self {

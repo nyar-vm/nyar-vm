@@ -1,18 +1,19 @@
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NumberLiteral {
-    pub handler: Option<String>,
+    pub handler: String,
     pub value: String,
-    pub is_integer: bool,
 }
 
 impl Display for NumberLiteral {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.value)?;
-        if let Some(s) = &self.handler {
-            f.write_str(s)?
-        }
-        Ok(())
+        write!(f, "{}{}", self.value, self.handler)
+    }
+}
+
+impl Default for NumberLiteral {
+    fn default() -> Self {
+        Self { handler: "".to_string(), value: "".to_string() }
     }
 }
