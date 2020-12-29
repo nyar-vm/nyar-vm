@@ -1,5 +1,4 @@
 use super::*;
-use std::fmt::write;
 
 impl Default for ASTNode {
     fn default() -> Self {
@@ -21,12 +20,57 @@ impl From<ASTKind> for ASTNode {
 
 impl Debug for ASTNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Debug::fmt(&self.kind, f)
+        match self.kind {
+            ASTKind::Nothing => f.write_str("<<unreachable Nothing>>"),
+            ASTKind::Sequence(_) => {
+                f.write_str("<<unreachable Sequence>>")?;
+                f.debug_list().entries(v.iter()).finish()
+            }
+            ASTKind::Boolean(_) => {}
+            ASTKind::Number(_) => {}
+            ASTKind::String(_) => {}
+            _ => Debug::fmt(&self.kind, f),
+        }
     }
 }
 
-impl Debug for ASTKind {
+impl Display for ASTKind {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        todo!()
+        match self {
+            ASTKind::Nothing => f.write_str("<<unreachable Nothing>>"),
+            ASTKind::Program(v) => {
+                f.write_str("Program")?;
+                f.debug_list().entries(v.iter()).finish()
+            }
+            ASTKind::Sequence(v) => f.write_str("<<unreachable Sequence>>"),
+            ASTKind::LetBind(v) => {
+                todo!()
+            }
+            ASTKind::LambdaFunction(v) => {
+                todo!()
+            }
+            ASTKind::InfixExpression(v) => {
+                todo!()
+            }
+            ASTKind::TupleExpression(v) => {
+                todo!()
+            }
+            ASTKind::ListExpression(v) => {
+                todo!()
+            }
+            ASTKind::DictExpression(v) => {
+                todo!()
+            }
+            ASTKind::Boolean(v) => write!(f, "{}", v),
+            ASTKind::Number(v) => write!(f, "{}", v),
+            ASTKind::String(v) => write!(f, "{}", v),
+            ASTKind::StringTemplate(v) => {
+                todo!()
+            }
+            ASTKind::XMLTemplate(v) => {
+                todo!()
+            }
+            ASTKind::Symbol(v) => write!(f, "{}", v),
+        }
     }
 }

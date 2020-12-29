@@ -1,0 +1,25 @@
+loop {
+    if (i > 0) {
+        i -= 1
+        continue
+    }
+    else {
+        break
+    }
+}
+i + 1
+
+
+
+def loop_k() {
+    if (i > 0) {
+        i -= 1
+        loop_k()
+    }
+    else {
+        break_k()
+    }
+}
+def break_k() {
+    i + 1
+}

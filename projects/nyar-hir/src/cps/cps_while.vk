@@ -1,0 +1,20 @@
+while i > 0 {
+    i -= 1
+}
+else {
+    i + 1
+}
+
+def loop_1() {
+    if (i > 0) {
+        i -= 1
+        loop_1()
+    }
+    else {
+        break_k()
+    }
+}
+
+def break_k() {
+    i + 1
+}

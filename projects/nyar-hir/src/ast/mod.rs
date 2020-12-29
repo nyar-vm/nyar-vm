@@ -3,8 +3,8 @@ mod atoms;
 mod chain;
 mod control;
 mod display;
+mod function;
 mod infix;
-mod lambda;
 mod let_bind;
 
 pub use self::{
@@ -16,7 +16,7 @@ pub use self::{
     control::*,
 };
 use crate::ast::dict_literal::DictLiteral;
-pub use crate::ast::{assign::ImportStatement, infix::InfixExpression, lambda::LambdaFunction, let_bind::LetBind};
+pub use crate::ast::{assign::ImportStatement, function::LambdaFunction, infix::BinaryExpression, let_bind::LetBind};
 use nyar_error::Span;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -41,7 +41,7 @@ pub struct ASTMeta {
     pub document: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(bound(deserialize = "'de: 'static"))]
 pub enum ASTKind {
     /// Wrong node
@@ -56,7 +56,7 @@ pub enum ASTKind {
     LambdaFunction(Box<LambdaFunction>),
 
     ///
-    BinaryExpression(Box<InfixExpression>),
+    InfixExpression(Box<BinaryExpression>),
 
     /// `(1, 2, 3)`
     TupleExpression(Vec<ASTNode>),
@@ -94,6 +94,10 @@ impl ASTNode {
     pub fn suite(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
         todo!()
         // Self { kind: ASTKind::Suite(v), meta }
+    }
+
+    pub fn empty_block() -> Self {
+        todo!()
     }
 
     pub fn if_statement(pairs: Vec<(ASTNode, ASTNode)>, default: Option<ASTNode>, meta: ASTMeta) -> Self {

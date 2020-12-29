@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt::Write;
 use OperatorAssociativity::*;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -20,6 +21,26 @@ impl Debug for Operator {
             Operator::Prefix { op, .. } => f.write_str(op),
             Operator::Infix { op, .. } => f.write_str(op),
             Operator::Suffix { op, .. } => f.write_str(op),
+        }
+    }
+}
+
+impl Display for Operator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Operator::Prefix { op, .. } => match *op {
+                "+" => f.write_str("Add::add"),
+                _ => unimplemented!(),
+            },
+            Operator::Infix { op, .. } => match *op {
+                "+" => f.write_str("Add::add"),
+                "++" => f.write_str("Concat::concat"),
+                _ => unimplemented!(),
+            },
+            Operator::Suffix { op, .. } => match *op {
+                "?" => f.write_str("Concat::concat"),
+                _ => unimplemented!(),
+            },
         }
     }
 }

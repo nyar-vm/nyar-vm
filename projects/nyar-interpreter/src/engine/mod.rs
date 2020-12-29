@@ -10,11 +10,12 @@ use std::collections::HashMap;
 pub struct NyarEngine {
     pub(crate) import_pkg: HashMap<String, ModuleManager>,
     pub(crate) current_pkg: ModuleManager,
+    pub(crate) runtime_stack: Vec<Value>,
 }
 
 impl Default for NyarEngine {
     fn default() -> Self {
-        Self { import_pkg: Default::default(), current_pkg: Default::default() }
+        Self { import_pkg: Default::default(), current_pkg: Default::default(), runtime_stack: vec![] }
     }
 }
 
@@ -22,4 +23,7 @@ impl NyarEngine {
     pub fn evaluate(&mut self, ast: &ASTNode) -> Result<Value> {
         ast.evaluate(self)
     }
+    pub fn goto(&mut self) {}
+    pub fn shift() {}
+    pub fn reset() {}
 }

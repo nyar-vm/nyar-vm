@@ -1,0 +1,12 @@
+effect Loop {
+    Break()
+    Continue()
+}
+
+def break() -> () / [Loop] {
+    raise Break()
+}
+
+def continue() -> () / [Loop] {
+    raise Continue()
+}

@@ -1,0 +1,21 @@
+
+def f() {
+    yield 1
+    yield 2
+    yield 3
+}
+
+
+def f_k() {
+    yield_1()
+}
+
+
+def yield_1() {
+    yield 2
+    yield 3
+}
+
+def break_k() {
+    i + 1
+}

@@ -1,5 +1,5 @@
 use crate::{
-    ast::{ASTMeta, InfixExpression, LambdaFunction, LetBind, Symbol},
+    ast::{ASTMeta, BinaryExpression, LambdaFunction, LetBind, Symbol},
     ASTKind, ASTNode,
 };
 
@@ -18,7 +18,7 @@ impl CpsTransformer {
     // function make_continuation(k) {
     // var cont = gensym('R');
     // return {
-    // type: 'lambda',
+    // type: 'function',
     // vars: [cont],
     // body: k({
     // type: 'var',
@@ -39,7 +39,7 @@ impl CpsTransformer {
 }
 
 impl CpsTransformer {
-    pub fn transform(&mut self, ast: &ASTNode, k: LambdaFunction) -> ASTNode {
+    pub fn cps(&mut self, ast: &ASTNode, k: LambdaFunction) -> ASTNode {
         match &ast.kind {
             ASTKind::Nothing => unreachable!(),
             ASTKind::Program(_) => {
@@ -67,16 +67,7 @@ impl CpsTransformer {
             ASTKind::DictExpression(_) => {
                 todo!()
             }
-            ASTKind::BinaryExpression(infix) => {
-                let k = LambdaFunction {};
-
-                if infix {}
-
-                let r = LambdaFunction {};
-                let rest = self.transform(&infix.rhs, r);
-
-                self.transform(&infix.lhs, k)
-            }
+            ASTKind::InfixExpression(_) => unreachable!(),
         }
     }
     fn cps_let(&mut self, ast: &LetBind, k: LambdaFunction) -> ASTNode {
@@ -85,13 +76,6 @@ impl CpsTransformer {
     fn cps_lambda(&mut self, ast: &LambdaFunction, k: LambdaFunction) -> ASTNode {
         todo!()
     }
-}
-
-impl InfixExpression {
-    fn k_lhs(&self) {
-        if self.o.is_infix_and() {}
-    }
-    fn k_rhs(&self) {}
 }
 
 impl LetBind {
@@ -103,7 +87,7 @@ impl LetBind {
     //             type: 'call',
     //             args: [exp.vars[0].def || FALSE],
     //             func: {
-    //                 type: 'lambda',
+    //                 type: 'function',
     //                 vars: [exp.vars[0].name],
     //                 body: {
     //                     type: 'let',

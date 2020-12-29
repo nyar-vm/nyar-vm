@@ -1,0 +1,27 @@
+for i in iter {
+    if (i > 0) {
+        break
+    }   
+    else {
+        continue
+    }
+}
+i + 1
+
+
+
+def loop_k() {
+    i = iter.next()
+    if (i.is_none) {
+        k_break()
+    }
+    else {
+        i = i.unwrap()
+    }
+    if (i > 0) {
+        break_k()
+    }   
+    else {
+        loop_k()
+    }
+}
