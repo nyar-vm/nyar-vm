@@ -1,9 +1,10 @@
 mod compile_atom;
 mod compile_lambda;
+mod generator;
 mod writer;
 
 use nyar_error::Result;
-use nyar_hir::{ast::ASTAtom, ASTKind, ASTNode};
+use nyar_hir::{ASTKind, ASTNode};
 use std::{fmt::Write, mem::take};
 
 pub struct JsCompiler {
@@ -16,7 +17,6 @@ impl JsCompiler {
             ASTKind::Nothing => {}
             ASTKind::Sequence(_) => {}
             ASTKind::LetBind(_) => {}
-            ASTKind::ASTAtom(atom) => self.compile_atom(atom)?,
             ASTKind::LambdaFunction(lambda) => self.compile_lambda(lambda)?,
             ASTKind::XMLTemplate(_) => {
                 todo!()

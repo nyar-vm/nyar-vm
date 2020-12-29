@@ -1,7 +1,7 @@
 use super::*;
 
 ///
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Symbol {
     pub name: String,
     pub scope: Vec<String>,

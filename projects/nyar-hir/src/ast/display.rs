@@ -20,15 +20,16 @@ impl From<ASTKind> for ASTNode {
 
 impl Debug for ASTNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self.kind {
+        match &self.kind {
             ASTKind::Nothing => f.write_str("<<unreachable Nothing>>"),
-            ASTKind::Sequence(_) => {
+            ASTKind::Sequence(v) => {
                 f.write_str("<<unreachable Sequence>>")?;
                 f.debug_list().entries(v.iter()).finish()
             }
-            ASTKind::Boolean(_) => {}
-            ASTKind::Number(_) => {}
-            ASTKind::String(_) => {}
+            ASTKind::Boolean(v) => Display::fmt(v, f),
+            ASTKind::Number(v) => Display::fmt(v, f),
+            ASTKind::String(v) => Display::fmt(v, f),
+            ASTKind::Symbol(v) => Display::fmt(v, f),
             _ => Debug::fmt(&self.kind, f),
         }
     }

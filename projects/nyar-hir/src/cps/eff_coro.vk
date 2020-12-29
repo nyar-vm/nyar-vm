@@ -1,0 +1,25 @@
+#[native]
+class Coroutine[I, O, E] {
+    next() -> Result[O, E]
+    send(I ) -> Result[(), E]
+}
+
+effect Awaiting[I, O, E] {
+    YieldReturn(out: O) -> ();
+    YieldResume() -> I;
+    YieldFinishException(final: F) -> ();
+}
+
+
+
+def yield[I, O, F](out: O) -> () / [Yielding[I, O, F]] {
+    raise YieldReturn(out)
+}
+
+def yield_from[I, O, F]() -> I / [Yielding[I, O, F]] {
+    raise YieldResume()
+}
+
+def yield_finish[I, O, F](final: F) -> () / [Yielding[I, O, F]] {
+    raise YieldFinishException(out)
+}

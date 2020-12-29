@@ -4,7 +4,7 @@ use super::*;
 #[serde(bound(deserialize = "'de: 'static"))]
 pub struct DefinedFunction {}
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(bound(deserialize = "'de: 'static"))]
 pub struct LambdaFunction {
     pub arguments: Vec<Symbol>,
@@ -24,3 +24,5 @@ impl LambdaFunction {
         todo!()
     }
 }
+
+fn test() {}

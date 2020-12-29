@@ -1,0 +1,30 @@
+foo(1, bar(2, 3))
+
+
+iter
+    .filter(is_odd)
+    .foreach {
+        print($it)
+    }
+    .map(double)
+
+for it in iter.filter(is_odd) {
+    print(it)
+}
+
+
+
+if foo(1) {
+    bar(2)
+}
+else {
+    baz(3)
+}
+
+
+def case_1(k) {
+    k(bar(2))
+}
+def case_2(k) {
+    k(baz(3))
+}

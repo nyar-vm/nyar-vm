@@ -1,12 +1,39 @@
-effect Loop {
+trait Iterator {
+    type Item
+    next(mut self) -> Option[Self::Item]
+}
+
+trait Iterable {
+    type Item;
+    type Target: Iterator
+    meta concept_validate() {
+        @where {
+            Item: Debug
+        }
+        if(Self.Target.Item != Self.Item) {
+            compile_error("....")
+        }
+    }
+    iterator(self) -> Self::Target;
+}
+
+effect Looping {
     Break()
     Continue()
 }
 
-def break() -> () / [Loop] {
+def break() -> () / [Looping] {
     raise Break()
 }
 
-def continue() -> () / [Loop] {
+def continue() -> () / [Looping] {
     raise Continue()
+}
+
+forall T {
+
+}
+extends Array[T]: Iteratable {
+
+    
 }

@@ -9,7 +9,7 @@ license = "MPL-2.0"
 
 [dependencies]
 serde = { version = "1.0.143", features = ["derive"] }
-
+genawaiter = "0.99.1"
 
 [dependencies.nyar-error]
 version = "0.1.0"

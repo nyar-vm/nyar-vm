@@ -1,5 +1,4 @@
 use super::*;
-use std::fmt::Write;
 use OperatorAssociativity::*;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]

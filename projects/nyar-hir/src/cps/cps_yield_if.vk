@@ -1,0 +1,82 @@
+def generator(v) {
+    yield 1
+    if v {
+        // yield from iter
+        loop {
+            i = iter.next()
+            if i.is_none() {
+                break
+            }
+            yield i.unwrap()
+        }
+    }
+    yield 3
+}
+
+class Generator {
+    v = false;
+    k = yield_0
+    constructor(v) {
+        v = v
+    }
+    def next() {
+        k()
+    }
+    def yield_0() {
+        k = yield_1;
+        return 1
+    }
+    
+    def yield_1() {
+        if v {
+            k = yield_2 
+            return 2
+        }
+        yield_2()
+    }
+    def loop_1() {
+        i = iter.next()
+        if i.is_none() {
+            break_1()
+        }
+        k = loop_1
+        return i.unwrap()
+    }
+    def break_1() {
+        yield_2()
+    }
+
+    def yield_2() {
+        k = yield_error
+        return 3
+    }
+    def yield_error() {
+        print("generator deplete")
+    }
+}
+
+let gene = f(true)
+gene.next()
+gene.next()
+
+
+
+def f() {
+    let x = 0;
+    loop {
+        yield x
+        x += 1
+    }
+}
+
+
+def f() {
+    let x = 0
+    loop_k()
+}
+
+def loop_k() {
+    yield x
+    x += 1
+    loop_k()
+}

@@ -1,12 +1,25 @@
-effect Loop {
-    Break()
-    Continue()
+trait Generator {
+    type Item
+    type Error
+    next() -> Result[Self::Item, Self::Error]
 }
 
-def break() -> () / [Loop] {
-    raise Break()
+type Iterator[T] = Generator[Item: T, Error: ()]
+
+
+
+#derive(Exception)
+class GeneratorDepleteException {};
+
+effect Yielding[O, E] {
+    YieldReturn(out: Result[O, E]) -> ();
 }
 
-def continue() -> () / [Loop] {
-    raise Continue()
+def yield[I, O, F](out: O) -> () / [Yielding[I, O, F]] {
+    raise YieldReturn(out)
 }
+
+def yield_finish[I, O, F](final: F) -> () / [Yielding[I, O, F]] {
+    raise YieldFinishException(out)
+}
+
