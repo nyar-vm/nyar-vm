@@ -1,0 +1,18 @@
+if foo(1) {
+    bar(2)
+}
+else {
+    baz(3)
+}
+
+
+class __csr_if() {
+    __csr_if(int cond, int then, int else) {
+        this.cond = cond;
+        this.then = then;
+        this.else = else;
+    }
+    int cond;
+    int then;
+    int else;
+}

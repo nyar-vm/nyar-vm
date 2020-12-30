@@ -2,7 +2,7 @@
 name = "nyar-hir"
 version = "0.2.0"
 authors = ["192607617@qq.com"]
-edition = "2018"
+edition = "2021"
 description = "..."
 repository = "https://github.com/nyar-lang/NyarNative"
 license = "MPL-2.0"

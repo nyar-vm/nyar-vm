@@ -1,0 +1,41 @@
+def loop2() {
+    loop {
+        #label(a)
+        loop {
+            if (i > 0) {
+                i -= 1
+                continue
+            }
+            else {
+                break(a)
+            }
+        }
+    }
+    i + 1
+}
+
+class loop2 {
+    late i;
+    late iter;
+    late j;
+    free constructor(i) {
+        self.i = i
+        iter = [-1, 0, 1]
+        __continue_1()
+    }
+    __break_1(mut self) {
+        print(i)
+    }
+    __continue_1(mut self) {
+        j = iter.next().match {
+            case Success(j): j
+            case Failure(_): __break_1()
+        }
+        if (j > 0) {
+            __break_1()
+        }
+        else {
+            __continue_1()
+        }
+    }
+}

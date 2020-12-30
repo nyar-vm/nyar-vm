@@ -1,0 +1,40 @@
+def test_loop(i) {
+    let iter = [-1, 0, 1]
+    for j in iter {
+        if (j > 0) {
+            break
+        }
+        else {
+            continue
+        }
+    }
+    print(i)
+}
+
+class test_loop {
+    late i;
+    late iter;
+    late j;
+    free constructor(i) {
+        self.i = i
+        iter = [-1, 0, 1]
+        __continue_1()
+    }
+    __break_1(mut self) {
+        print(i)
+    }
+    __continue_1(mut self) {
+        j = iter.next().match {
+            case Success(j): j
+            case Failure(_): __break_1()
+        }
+        if (j > 0) {
+            __break_1()
+        }
+        else {
+            __continue_1()
+        }
+    }
+}
+
+test_loop(1)

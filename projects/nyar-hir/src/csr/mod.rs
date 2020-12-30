@@ -4,13 +4,13 @@ use crate::{
 };
 
 impl BinaryExpression {
-    pub fn de_sugar(&self) -> ASTKind {
+    pub fn csr(&self) -> ASTKind {
         todo!()
     }
 }
 
 impl LetBind {
-    pub fn de_sugar(&self) -> ASTKind {
+    pub fn csr(&self) -> ASTKind {
         todo!()
     }
 }

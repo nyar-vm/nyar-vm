@@ -5,6 +5,6 @@
 pub mod ast;
 
 mod cps;
-mod de_sugar;
+mod csr;
 
 pub use ast::{ASTKind, ASTNode};
