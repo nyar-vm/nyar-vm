@@ -6,6 +6,7 @@ mod display;
 mod function;
 mod infix;
 mod let_bind;
+mod looping;
 
 pub use self::{
     atoms::{
