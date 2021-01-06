@@ -3,7 +3,7 @@
 #![feature(trivial_bounds)]
 
 pub mod ast;
-
+pub mod utils;
 mod cps;
 mod csr;
 

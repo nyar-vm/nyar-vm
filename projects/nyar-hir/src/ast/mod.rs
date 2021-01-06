@@ -1,3 +1,23 @@
+use std::{
+    fmt::{self, Debug, Display, Formatter},
+    ops::AddAssign,
+};
+
+use nyar_error::Span;
+use serde::{Deserialize, Serialize};
+use std::ops::Deref;
+pub use crate::ast::{assign::ImportStatement, function::LambdaFunction, infix::BinaryExpression, let_bind::LetBind};
+use crate::ast::dict_literal::DictLiteral;
+
+pub use self::{
+    atoms::{
+        *, byte_literal::ByteLiteral, comment_literal::CommentLiteral, kv_pair::KVPair,
+        number_literal::NumberLiteral, operator::Operator, string_literal::StringLiteral, symbol::Symbol,
+    },
+    chain::*,
+    control::*,
+};
+
 mod assign;
 mod atoms;
 mod chain;
@@ -7,23 +27,7 @@ mod function;
 mod infix;
 mod let_bind;
 mod looping;
-
-pub use self::{
-    atoms::{
-        byte_literal::ByteLiteral, comment_literal::CommentLiteral, kv_pair::KVPair, number_literal::NumberLiteral,
-        operator::Operator, string_literal::StringLiteral, symbol::Symbol, *,
-    },
-    chain::*,
-    control::*,
-};
-use crate::ast::dict_literal::DictLiteral;
-pub use crate::ast::{assign::ImportStatement, function::LambdaFunction, infix::BinaryExpression, let_bind::LetBind};
-use nyar_error::Span;
-use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{self, Debug, Display, Formatter},
-    ops::AddAssign,
-};
+mod checking;
 
 pub type Range = std::ops::Range<u32>;
 
@@ -55,7 +59,8 @@ pub enum ASTKind {
     LetBind(Box<LetBind>),
     /// Lambda Function
     LambdaFunction(Box<LambdaFunction>),
-
+    ///
+    IfStatement(Box<IfStatement>),
     ///
     InfixExpression(Box<BinaryExpression>),
 
@@ -76,17 +81,7 @@ pub enum ASTKind {
     Symbol(Box<Symbol>),
 }
 
-impl ASTNode {
-    pub fn kind(&self) -> &ASTKind {
-        &self.kind
-    }
-    pub fn start(self) -> u32 {
-        self.meta.span.start
-    }
-    pub fn end(self) -> u32 {
-        self.meta.span.end
-    }
-}
+
 
 impl ASTNode {
     pub fn program(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
@@ -101,10 +96,8 @@ impl ASTNode {
         todo!()
     }
 
-    pub fn if_statement(pairs: Vec<(ASTNode, ASTNode)>, default: Option<ASTNode>, meta: ASTMeta) -> Self {
-        todo!()
-        // let s = IfStatement { pairs, default };
-        // Self { kind: ASTKind::IfStatement(box s), meta }
+    pub fn if_statement(if_chain: IfStatement, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::IfStatement(box if_chain), meta }
     }
 
     pub fn expression(base: ASTNode, eos: bool, meta: ASTMeta) -> Self {
@@ -183,6 +176,10 @@ impl ASTNode {
     }
 
     pub fn symbol(symbol: Symbol, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::Symbol(box symbol), meta }
+    }
+    pub fn control_break(meta: ASTMeta) -> Self {
+        let symbol = Symbol::simple("break");
         Self { kind: ASTKind::Symbol(box symbol), meta }
     }
 

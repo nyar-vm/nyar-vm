@@ -4,22 +4,17 @@
 while cond {
     body1
 }
-else {
-    body2
-}
 ```
 
 
 ```scala
-if cond {
-    loop {
-        if cond {
-            body1
-        }
+loop {
+    if cond {
+        body1
     }
-}
-else {
-    body2
+    else {
+        break
+    }
 }
 ```
 

@@ -8,7 +8,7 @@ pub struct Span {
     /// span end offset
     pub end: u32,
     /// same as ptr size, 0 refers to `<anonymous file>`
-    pub file_id: u64,
+    pub file_id: u32,
 }
 
 impl Default for Span {
