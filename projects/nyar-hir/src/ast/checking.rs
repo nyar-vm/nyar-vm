@@ -12,13 +12,13 @@ impl ASTNode {
         &self.kind
     }
     pub fn start(self) -> u32 {
-        self.meta.span.start
+        self.span.span.start
     }
     pub fn end(self) -> u32 {
-        self.meta.span.end
+        self.span.span.end
     }
     pub fn file_id(self) -> u32 {
-        self.meta.span.file_id
+        self.span.span.file_id
     }
 }
 

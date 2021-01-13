@@ -2,7 +2,7 @@ use super::*;
 
 impl Default for ASTNode {
     fn default() -> Self {
-        Self { kind: ASTKind::Nothing, meta: Default::default() }
+        Self { kind: ASTKind::Nothing, span: Default::default() }
     }
 }
 
@@ -14,7 +14,7 @@ impl Default for ASTMeta {
 
 impl From<ASTKind> for ASTNode {
     fn from(kind: ASTKind) -> Self {
-        Self { kind, meta: Default::default() }
+        Self { kind, span: Default::default() }
     }
 }
 
@@ -72,6 +72,12 @@ impl Display for ASTKind {
                 todo!()
             }
             ASTKind::Symbol(v) => write!(f, "{}", v),
+            ASTKind::IfStatement(_) => {
+                todo!()
+            }
+            ASTKind::LoopStatement(_) => {
+                todo!()
+            }
         }
     }
 }

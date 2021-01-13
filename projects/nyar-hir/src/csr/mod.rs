@@ -1,6 +1,6 @@
 use crate::{
     ast::{BinaryExpression, LetBind},
-    ASTKind, ASTNode,
+    ASTKind,
 };
 
 impl BinaryExpression {

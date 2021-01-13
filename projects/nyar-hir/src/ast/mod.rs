@@ -1,18 +1,21 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
-    ops::AddAssign,
+    ops::{AddAssign, Deref},
 };
 
-use nyar_error::Span;
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
-pub use crate::ast::{assign::ImportStatement, function::LambdaFunction, infix::BinaryExpression, let_bind::LetBind};
-use crate::ast::dict_literal::DictLiteral;
+
+use nyar_error::Span;
+
+pub use crate::ast::{
+    assign::ImportStatement, atoms::dict_literal::DictLiteral, function::LambdaFunction, infix::BinaryExpression,
+    let_bind::LetBind, looping::LoopStatement,
+};
 
 pub use self::{
     atoms::{
-        *, byte_literal::ByteLiteral, comment_literal::CommentLiteral, kv_pair::KVPair,
-        number_literal::NumberLiteral, operator::Operator, string_literal::StringLiteral, symbol::Symbol,
+        byte_literal::ByteLiteral, comment_literal::CommentLiteral, kv_pair::KVPair, number_literal::NumberLiteral,
+        operator::Operator, string_literal::StringLiteral, symbol::Symbol,
     },
     chain::*,
     control::*,
@@ -21,29 +24,21 @@ pub use self::{
 mod assign;
 mod atoms;
 mod chain;
+mod checking;
 mod control;
 mod display;
 mod function;
 mod infix;
 mod let_bind;
 mod looping;
-mod checking;
 
 pub type Range = std::ops::Range<u32>;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(bound(deserialize = "'de: 'static"))]
 pub struct ASTNode {
-    pub(crate) kind: ASTKind,
-    pub(crate) meta: ASTMeta,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct ASTMeta {
-    /// span start offset
+    pub kind: ASTKind,
     pub span: Span,
-    /// comment documentations
-    pub document: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,6 +56,8 @@ pub enum ASTKind {
     LambdaFunction(Box<LambdaFunction>),
     ///
     IfStatement(Box<IfStatement>),
+    ///
+    LoopStatement(Box<LoopStatement>),
     ///
     InfixExpression(Box<BinaryExpression>),
 
@@ -81,11 +78,9 @@ pub enum ASTKind {
     Symbol(Box<Symbol>),
 }
 
-
-
 impl ASTNode {
     pub fn program(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
-        Self { kind: ASTKind::Program(v), meta }
+        Self { kind: ASTKind::Program(v), span: meta }
     }
     pub fn suite(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
         todo!()
@@ -97,7 +92,11 @@ impl ASTNode {
     }
 
     pub fn if_statement(if_chain: IfStatement, meta: ASTMeta) -> Self {
-        Self { kind: ASTKind::IfStatement(box if_chain), meta }
+        Self { kind: ASTKind::IfStatement(box if_chain), span: meta }
+    }
+
+    pub fn loop_statement(loop_chain: Vec<ASTNode>, meta: ASTMeta) -> Self {
+        Self { kind: ASTKind::LoopStatement(box LoopStatement { body: loop_chain }), span: meta }
     }
 
     pub fn expression(base: ASTNode, eos: bool, meta: ASTMeta) -> Self {
@@ -164,51 +163,51 @@ impl ASTNode {
     }
 
     pub fn list(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
-        Self { kind: ASTKind::ListExpression(v), meta }
+        Self { kind: ASTKind::ListExpression(v), span: meta }
     }
 
     pub fn dict(v: DictLiteral, meta: ASTMeta) -> Self {
-        Self { kind: ASTKind::DictExpression(box v), meta }
+        Self { kind: ASTKind::DictExpression(box v), span: meta }
     }
 
     pub fn tuple(v: Vec<ASTNode>, meta: ASTMeta) -> Self {
-        Self { kind: ASTKind::TupleExpression(v), meta }
+        Self { kind: ASTKind::TupleExpression(v), span: meta }
     }
 
     pub fn symbol(symbol: Symbol, meta: ASTMeta) -> Self {
-        Self { kind: ASTKind::Symbol(box symbol), meta }
+        Self { kind: ASTKind::Symbol(box symbol), span: meta }
     }
     pub fn control_break(meta: ASTMeta) -> Self {
         let symbol = Symbol::simple("break");
-        Self { kind: ASTKind::Symbol(box symbol), meta }
+        Self { kind: ASTKind::Symbol(box symbol), span: meta }
     }
 
     pub fn number(literal: &str, handler: &str, meta: ASTMeta) -> Self {
         let v = NumberLiteral { handler: handler.to_string(), value: literal.to_string() };
-        Self { kind: ASTKind::Number(box v), meta }
+        Self { kind: ASTKind::Number(box v), span: meta }
     }
 
     pub fn bytes(literal: &str, mode: &str, meta: ASTMeta) -> Self {
         let v = NumberLiteral { handler: mode.to_string(), value: literal.to_string() };
-        Self { kind: ASTKind::Number(box v), meta }
+        Self { kind: ASTKind::Number(box v), span: meta }
     }
 
     pub fn string(literal: &str, meta: ASTMeta) -> Self {
         let s = StringLiteral { handler: String::new(), literal: literal.to_string() };
-        Self { kind: ASTKind::String(box s), meta }
+        Self { kind: ASTKind::String(box s), span: meta }
     }
 
     pub fn string_handler(literal: &str, handler: &str, meta: ASTMeta) -> ASTNode {
         let s = StringLiteral { handler: handler.to_string(), literal: literal.to_string() };
-        Self { kind: ASTKind::String(box s), meta }
+        Self { kind: ASTKind::String(box s), span: meta }
     }
 
     pub fn boolean(v: bool, meta: ASTMeta) -> Self {
-        Self { kind: ASTKind::Boolean(v), meta }
+        Self { kind: ASTKind::Boolean(v), span: meta }
     }
 
     pub fn null(meta: ASTMeta) -> Self {
-        Self { kind: ASTKind::Nothing, meta }
+        Self { kind: ASTKind::Nothing, span: meta }
     }
 }
 

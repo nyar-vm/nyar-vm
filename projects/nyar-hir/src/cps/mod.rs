@@ -1,5 +1,5 @@
 use crate::{
-    ast::{ASTMeta, BinaryExpression, LambdaFunction, LetBind, Symbol},
+    ast::{LambdaFunction, LetBind, Symbol},
     ASTKind, ASTNode,
 };
 
@@ -67,7 +67,13 @@ impl CpsTransformer {
             ASTKind::DictExpression(_) => {
                 todo!()
             }
+            ASTKind::IfStatement(_) => {
+                todo!()
+            }
             ASTKind::InfixExpression(_) => unreachable!(),
+            ASTKind::LoopStatement(_) => {
+                unreachable!()
+            }
         }
     }
     fn cps_let(&mut self, ast: &LetBind, k: LambdaFunction) -> ASTNode {

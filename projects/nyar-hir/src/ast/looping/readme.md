@@ -37,6 +37,9 @@ if cond {
         if cond {
             body1
         }
+        else {
+            break
+        }
     }
 }
 else {
