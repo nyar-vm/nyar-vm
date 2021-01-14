@@ -1,11 +1,11 @@
 use super::*;
 
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(bound(deserialize = "'de: 'static"))]
+
 pub struct DefinedFunction {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(bound(deserialize = "'de: 'static"))]
+
 pub struct LambdaFunction {
     pub arguments: Vec<Symbol>,
     pub body: Vec<ASTNode>,

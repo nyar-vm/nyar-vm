@@ -2,7 +2,7 @@ use super::*;
 use std::{collections::BTreeSet, iter::FromIterator};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(bound(deserialize = "'de: 'static"))]
+
 pub struct BinaryExpression {
     pub o: Operator,
     pub lhs: ASTNode,

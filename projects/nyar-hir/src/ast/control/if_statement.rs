@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(bound(deserialize = "'de: 'static"))]
+
 pub struct IfStatement {
     pub pairs: Vec<(ASTNode, Vec<ASTNode>)>,
     pub default: Option<Vec<ASTNode>>,

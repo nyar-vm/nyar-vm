@@ -11,15 +11,6 @@ impl ASTNode {
     pub fn kind(&self) -> &ASTKind {
         &self.kind
     }
-    pub fn start(self) -> u32 {
-        self.span.span.start
-    }
-    pub fn end(self) -> u32 {
-        self.span.span.end
-    }
-    pub fn file_id(self) -> u32 {
-        self.span.span.file_id
-    }
 }
 
 impl ASTKind {
