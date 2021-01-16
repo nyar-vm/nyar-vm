@@ -1,31 +1,27 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::{AddAssign, Deref},
+    str::FromStr,
 };
 
 use serde::{Deserialize, Serialize};
 
 use nyar_error::Span;
 
-pub use self::{
-    atoms::{
-        byte_literal::ByteLiteral, comment_literal::CommentLiteral, kv_pair::KVPair, number_literal::NumberLiteral,
-        operator::Operator, string_literal::StringLiteral, symbol::Symbol,
-    },
-    chain::*,
-    control::*,
-};
 use crate::ast::looping::WhileLoop;
 pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
-        dict_literal::DictLiteral,
-        operator::{Infix, Postfix, Prefix},
+        byte_literal::ByteLiteral, comment_literal::CommentLiteral, dict_literal::DictLiteral, kv_pair::KVPair,
+        number_literal::NumberLiteral, string_literal::StringLiteral, symbol::Symbol,
     },
+    chain::*,
+    control::*,
     function::LambdaFunction,
     infix::BinaryExpression,
     let_bind::LetBind,
     looping::LoopStatement,
+    operator::{Infix, Operator, Postfix, Prefix},
 };
 
 mod assign;
@@ -38,6 +34,7 @@ mod function;
 mod infix;
 mod let_bind;
 mod looping;
+pub(crate) mod operator;
 
 pub type Range = std::ops::Range<u32>;
 

@@ -1,15 +1,15 @@
-use std::str::FromStr;
-
 use super::*;
+mod display;
+mod parse;
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum OperatorAssociativity {
     None,
     Left,
     Right,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Prefix {
     /// `-`
     Negative,
@@ -19,7 +19,7 @@ pub enum Prefix {
     Not,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Infix {
     Addition,
     Subtraction,
@@ -27,7 +27,7 @@ pub enum Infix {
     Division,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Postfix {
     /// `++`
     Increment,
@@ -92,44 +92,5 @@ impl Operator {
                 Infix::Division => 110,
             },
         }
-    }
-}
-
-impl FromStr for Prefix {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let out = match s {
-            "!" => Self::Not,
-            "+" => Self::Positive,
-            "-" => Self::Negative,
-            _ => return Err(()),
-        };
-        Ok(out)
-    }
-}
-
-impl FromStr for Infix {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let out = match s {
-            "+" => Self::Addition,
-            "-" => Self::Subtraction,
-            "*" => Self::Multiplication,
-            "/" => Self::Division,
-            _ => return Err(()),
-        };
-        Ok(out)
-    }
-}
-
-impl FromStr for Postfix {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let out = match s {
-            "+" => Self::Increment,
-            "-" => Self::Decrement,
-            _ => return Err(()),
-        };
-        Ok(out)
     }
 }
