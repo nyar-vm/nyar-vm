@@ -42,7 +42,7 @@ impl ChainCall {
     pub fn extend(&mut self, terms: &[ASTNode]) {
         self.chain.extend_from_slice(terms)
     }
-    pub fn join_chain_terms(base: ASTNode, terms: &[ASTNode]) -> ASTNode {
+    pub fn join_chain_terms(_base: ASTNode, terms: &[ASTNode]) -> ASTNode {
         assert_ne!(terms.len(), 0);
         // let start = base.meta.start;
         // let end = terms.iter().last().unwrap().meta.end;

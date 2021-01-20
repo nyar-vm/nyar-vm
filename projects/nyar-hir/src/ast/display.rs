@@ -37,32 +37,32 @@ impl Display for ASTKind {
                 f.write_str("Program")?;
                 f.debug_list().entries(v.iter()).finish()
             }
-            ASTKind::Sequence(v) => f.write_str("<<unreachable Sequence>>"),
-            ASTKind::LetBind(v) => {
+            ASTKind::Sequence(_v) => f.write_str("<<unreachable Sequence>>"),
+            ASTKind::LetBind(_v) => {
                 todo!()
             }
-            ASTKind::LambdaFunction(v) => {
+            ASTKind::LambdaFunction(_v) => {
                 todo!()
             }
-            ASTKind::InfixExpression(v) => {
+            ASTKind::InfixExpression(_v) => {
                 todo!()
             }
-            ASTKind::TupleExpression(v) => {
+            ASTKind::TupleExpression(_v) => {
                 todo!()
             }
-            ASTKind::ListExpression(v) => {
+            ASTKind::ListExpression(_v) => {
                 todo!()
             }
-            ASTKind::DictExpression(v) => {
+            ASTKind::DictExpression(_v) => {
                 todo!()
             }
             ASTKind::Boolean(v) => write!(f, "{}", v),
             ASTKind::Number(v) => write!(f, "{}", v),
             ASTKind::String(v) => write!(f, "{}", v),
-            ASTKind::StringTemplate(v) => {
+            ASTKind::StringTemplate(_v) => {
                 todo!()
             }
-            ASTKind::XMLTemplate(v) => {
+            ASTKind::XMLTemplate(_v) => {
                 todo!()
             }
             ASTKind::Symbol(v) => write!(f, "{}", v),

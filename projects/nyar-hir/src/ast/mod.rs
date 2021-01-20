@@ -34,19 +34,17 @@ mod function;
 mod infix;
 mod let_bind;
 mod looping;
-pub(crate) mod operator;
+mod operator;
 
 pub type Range = std::ops::Range<u32>;
 
 #[derive(Clone, Serialize, Deserialize)]
-
 pub struct ASTNode {
     pub kind: ASTKind,
     pub span: Span,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-
 pub enum ASTKind {
     /// Wrong node
     Nothing,
@@ -86,7 +84,7 @@ impl ASTNode {
     pub fn program(v: Vec<ASTNode>, meta: Span) -> Self {
         Self { kind: ASTKind::Program(v), span: meta }
     }
-    pub fn suite(v: Vec<ASTNode>, meta: Span) -> Self {
+    pub fn suite(_v: Vec<ASTNode>, _meta: Span) -> Self {
         todo!()
         // Self { kind: ASTKind::Suite(v), meta }
     }
@@ -111,19 +109,19 @@ impl ASTNode {
         WhileLoop::while_else(condition, body, else_trigger, span)
     }
 
-    pub fn expression(base: ASTNode, eos: bool, meta: Span) -> Self {
+    pub fn expression(_base: ASTNode, _eos: bool, _meta: Span) -> Self {
         todo!()
         // Self { kind: ASTKind::Expression { base: box base, eos }, meta }
     }
 
-    pub fn string_expression(h: &str, v: &[ASTNode], meta: Span) -> Self {
+    pub fn string_expression(_h: &str, _v: &[ASTNode], _meta: Span) -> Self {
         todo!()
         // let handler = if h.is_empty() { None } else { Some(String::from(h)) };
         // let v = StringLiteral { handler, value: Vec::from(v) };
         // Self { kind: ASTKind::StringExpression(box v), meta }
     }
 
-    pub fn push_infix_chain(self, op: &str, rhs: ASTNode, meta: Span) -> Self {
+    pub fn push_infix_chain(self, _op: &str, _rhs: ASTNode, _meta: Span) -> Self {
         todo!()
         // let op = Operator::parse(op, 0);
         //
@@ -135,7 +133,7 @@ impl ASTNode {
         // Self { kind: ASTKind::CallInfix(box infix), meta }
     }
 
-    pub fn push_unary_operations(self, prefix: &[String], suffix: &[String], meta: Span) -> Self {
+    pub fn push_unary_operations(self, _prefix: &[String], _suffix: &[String], _meta: Span) -> Self {
         todo!()
         // if prefix.is_empty() && suffix.is_empty() {
         //     return self.refine();
@@ -153,7 +151,7 @@ impl ASTNode {
         ChainCall::join_chain_terms(self, &[terms])
     }
 
-    pub fn apply_call(args: Vec<ASTNode>, meta: Span) -> Self {
+    pub fn apply_call(_args: Vec<ASTNode>, _meta: Span) -> Self {
         todo!()
         // ASTNode { kind: ASTKind::CallApply(args), meta }
     }
@@ -162,13 +160,13 @@ impl ASTNode {
         KVPair { k, v }
     }
 
-    pub fn apply_slice(indexes: &[ASTNode], meta: Span) -> Self {
+    pub fn apply_slice(_indexes: &[ASTNode], _meta: Span) -> Self {
         todo!()
         // let kind = SliceTerm { terms: Vec::from(indexes) };
         // ASTNode { kind: ASTKind::CallSlice(box kind), meta }
     }
 
-    pub fn apply_index(start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>, meta: Span) -> Self {
+    pub fn apply_index(_start: Option<ASTNode>, _end: Option<ASTNode>, _steps: Option<ASTNode>, _meta: Span) -> Self {
         todo!()
         // let kind = IndexTerm { start, end, steps };
         // ASTNode { kind: ASTKind::CallIndex(box kind), meta }

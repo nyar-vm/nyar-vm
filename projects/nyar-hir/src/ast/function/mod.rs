@@ -20,7 +20,7 @@ impl LambdaFunction {
     //     Self { arguments: args.iter().map(|s| Symbol::simple(*s)).collect(), body }
     // }
 
-    pub fn call(&self, node: &ASTNode) -> ASTNode {
+    pub fn call(&self, _node: &ASTNode) -> ASTNode {
         todo!()
     }
 }

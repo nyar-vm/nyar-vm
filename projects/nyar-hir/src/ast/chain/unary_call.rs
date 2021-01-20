@@ -17,12 +17,12 @@ impl UnaryCall {
     }
     pub fn push_prefix(&mut self, ops: &[String]) {
         for op in ops {
-            self.prefix.push(Operator::parse(op, -1))
+            self.prefix.push(Operator::parse_prefix(op))
         }
     }
     pub fn push_suffix(&mut self, ops: &[String]) {
         for op in ops {
-            self.suffix.push(Operator::parse(op, 1))
+            self.suffix.push(Operator::parse_postfix(op))
         }
     }
 }

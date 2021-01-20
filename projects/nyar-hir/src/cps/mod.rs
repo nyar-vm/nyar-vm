@@ -27,8 +27,8 @@ impl CpsTransformer {
     // };
     // }
 
-    pub fn make_continuation(&mut self, k: LambdaFunction) -> LambdaFunction {
-        let cont = self.make_symbol();
+    pub fn make_continuation(&mut self, _k: LambdaFunction) -> LambdaFunction {
+        let _cont = self.make_symbol();
         // LambdaFunction {
         //
         // }
@@ -45,7 +45,7 @@ impl CpsTransformer {
             ASTKind::Program(_) => {
                 todo!()
             }
-            ASTKind::Sequence(nodes) => {
+            ASTKind::Sequence(_nodes) => {
                 todo!()
             }
             ASTKind::LetBind(bind) => self.cps_let(bind, k),
@@ -76,10 +76,10 @@ impl CpsTransformer {
             }
         }
     }
-    fn cps_let(&mut self, ast: &LetBind, k: LambdaFunction) -> ASTNode {
+    fn cps_let(&mut self, _ast: &LetBind, _k: LambdaFunction) -> ASTNode {
         todo!()
     }
-    fn cps_lambda(&mut self, ast: &LambdaFunction, k: LambdaFunction) -> ASTNode {
+    fn cps_lambda(&mut self, _ast: &LambdaFunction, _k: LambdaFunction) -> ASTNode {
         todo!()
     }
 }
@@ -103,7 +103,7 @@ impl LetBind {
     //             }
     //         }, k);
     //     }
-    pub fn cps_transform(&self, ctx: &mut CpsTransformer) -> ASTKind {
+    pub fn cps_transform(&self, _ctx: &mut CpsTransformer) -> ASTKind {
         todo!()
     }
 }

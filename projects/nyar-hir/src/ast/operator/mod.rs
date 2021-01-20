@@ -1,8 +1,9 @@
 use super::*;
+
 mod display;
 mod parse;
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum OperatorAssociativity {
     None,
     Left,
@@ -43,33 +44,8 @@ pub enum Operator {
 }
 
 impl Operator {
-    pub fn parse(o: &str, a: i8) -> Self {
-        match a {
-            a if a < 0 => Operator::parse_prefix(o),
-            a if a > 0 => Operator::parse_postfix(o),
-            _ => Operator::parse_infix(o),
-        }
-    }
-    fn parse_prefix(o: &str) -> Self {
-        match Prefix::from_str(o) {
-            Ok(o) => Self::Prefix(o),
-            Err(_) => unimplemented!("Unknown prefix {}", o),
-        }
-    }
-    fn parse_infix(o: &str) -> Self {
-        match Infix::from_str(o) {
-            Ok(o) => Self::Infix(o),
-            Err(_) => unimplemented!("Unknown infix {}", o),
-        }
-    }
-    fn parse_postfix(o: &str) -> Self {
-        match Postfix::from_str(o) {
-            Ok(o) => Self::Postfix(o),
-            Err(_) => unimplemented!("Unknown postfix {}", o),
-        }
-    }
     pub fn associativity(&self) -> OperatorAssociativity {
-        use OperatorAssociativity::{Left, Right};
+        use OperatorAssociativity::{Left};
         match self {
             Operator::Prefix(_) => OperatorAssociativity::None,
             Operator::Postfix(_) => OperatorAssociativity::None,
@@ -90,6 +66,15 @@ impl Operator {
                 Infix::Subtraction => 100,
                 Infix::Multiplication => 110,
                 Infix::Division => 110,
+            },
+        }
+    }
+    pub fn is_shortcut(&self) -> bool {
+        match self {
+            Operator::Prefix(_) => false,
+            Operator::Postfix(_) => false,
+            Operator::Infix(o) => match o {
+                _ => false,
             },
         }
     }

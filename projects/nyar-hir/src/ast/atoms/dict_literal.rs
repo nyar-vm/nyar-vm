@@ -4,5 +4,5 @@ use super::*;
 pub struct DictLiteral {}
 
 impl DictLiteral {
-    pub fn insert_pair(&mut self, pair: KVPair) {}
+    pub fn insert_pair(&mut self, _pair: KVPair) {}
 }
