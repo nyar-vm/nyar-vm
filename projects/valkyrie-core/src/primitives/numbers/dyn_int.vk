@@ -1,9 +1,0 @@
-
-
-#[internal, alias(isize)]
-class IntegerSized;
-
-#[internal, alias(usize)]
-class UnsignedIntegerSized;
-
-

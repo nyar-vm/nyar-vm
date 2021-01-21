@@ -1,6 +1,0 @@
-let mut a, rec b, lazy rec c;
-let mut p, ref q, lazy rec r:(int);
-let mut x, ref y, lazy rec z:(iq) = (z);
-
-a = 2
-(b, c) = 2

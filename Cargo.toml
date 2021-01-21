@@ -2,17 +2,17 @@
 
 members = ["projects/*"]
 default-members = [
-    "projects/nyar-error",
-    "projects/nyar-interpreter",
     "projects/nyar-hir",
     "projects/nyar-mir",
+    "projects/nyar-error",
+    "projects/nyar-interpreter",
     "projects/nyar-js",
     "projects/valkyrie-pest",
     "projects/valkyrie-parser",
 ]
 exclude = [
-    "projects/valkyrie-core",
-#   "projects/valkyrie-std",
+   "projects/nyar-value",
+   "projects/nyar-macro",
 ]
 
 [profile.release]

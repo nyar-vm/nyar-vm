@@ -1,3 +1,0 @@
-Valkyrie Language Specification
--------------------------------
-

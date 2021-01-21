@@ -1,5 +1,0 @@
-
-
-#[internal, alias(str)]
-class String;
-
