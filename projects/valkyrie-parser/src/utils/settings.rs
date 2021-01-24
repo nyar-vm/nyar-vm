@@ -1,7 +1,7 @@
-use crate::LexerContext;
+use crate::ParsingContext;
 // use nyar_hir::{ASTKind, ASTNode};
 
-impl LexerContext {
+impl ParsingContext {
     // pub(crate) fn new_number(handler: &str, data: &str) -> ASTKind {
     //     ASTKind::NumberLiteral { handler: String::from(handler), data: String::from(data) }
     // }

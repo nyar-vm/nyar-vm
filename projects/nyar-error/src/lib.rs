@@ -1,3 +1,10 @@
-mod errors;
+#![feature(box_syntax)]
+#![feature(trivial_bounds)]
 
-pub use self::errors::{ErrorKind, NyarError, Result};
+mod errors;
+mod span;
+
+pub use self::{
+    errors::{NyarError, NyarErrorKind, Result},
+    span::Span,
+};

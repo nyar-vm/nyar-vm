@@ -1,14 +1,16 @@
 [package]
 name = "nyar-error"
 version = "0.1.0"
-authors = ["Aster <192607617@qq.com>"]
-description = "Nyar VM ValueType"
-repository = "https://github.com/nyar-vm/nyar-vm"
-readme = "Readme.md"
+authors = ["192607617@qq.com"]
+edition = "2021"
+description = "..."
+repository = "https://github.com/nyar-lang/NyarNative"
 license = "MPL-2.0"
-edition = "2018"
 
 [dependencies]
+serde = {version = "1.0.143", features = ["derive"]}
+pest = {version = "2.2.1", optional = true}
+
 
 [dev-dependencies]
 

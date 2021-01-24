@@ -11,7 +11,7 @@ license = "MPL-2.0"
 serde = { version = "1.0.143", features = ["derive"] }
 
 [dependencies.nyar-error]
-version = "0.1.0"
+version = "0.1"
 path = "../nyar-error"
 
 

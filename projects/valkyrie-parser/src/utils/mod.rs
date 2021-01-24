@@ -19,16 +19,6 @@ pub fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> S
     }
 }
 
-pub fn get_position(s: &Pair<Rule>) -> Range {
-    let us = s.as_span().start_pos().line_col();
-    let es = s.as_span().end_pos().line_col();
-    Range {
-        // index: s.start_pos().pos() as u64,
-        start: Position { line: us.0 as u32, character: us.1 as u32 },
-        end: Position { line: es.0 as u32, character: es.1 as u32 },
-    }
-}
-
 pub fn unescape(s: &str) -> &str {
     return s;
 }

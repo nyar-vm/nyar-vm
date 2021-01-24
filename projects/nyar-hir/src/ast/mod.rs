@@ -12,8 +12,8 @@ use crate::ast::looping::WhileLoop;
 pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
-        byte_literal::ByteLiteral, comment_literal::CommentLiteral, dict_literal::DictLiteral, kv_pair::KVPair,
-        number_literal::NumberLiteral, string_literal::StringLiteral, symbol::Symbol,
+        byte_literal::ByteLiteral, dict_literal::DictLiteral, kv_pair::KVPair, number_literal::NumberLiteral,
+        string_literal::StringLiteral, symbol::Symbol,
     },
     chain::*,
     control::*,
@@ -188,7 +188,7 @@ impl ASTNode {
         Self { kind: ASTKind::Symbol(box symbol), span: meta }
     }
     pub fn control_break(meta: Span) -> Self {
-        let symbol = Symbol::simple("break");
+        let symbol = Symbol::atom("break");
         Self { kind: ASTKind::Symbol(box symbol), span: meta }
     }
 

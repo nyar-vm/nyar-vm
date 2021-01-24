@@ -1,6 +1,6 @@
 use super::*;
 
-///
+/// A Symbol
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Symbol {
     pub name: String,
@@ -10,26 +10,40 @@ pub struct Symbol {
 impl Display for Symbol {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         for s in &self.scope {
-            f.write_str(s)?;
+            write_identifier(s, f)?;
             f.write_str("::")?;
         }
-        f.write_str(&self.name)
+        write_identifier(&self.name, f)
     }
 }
 
+fn write_identifier(id: &str, f: &mut Formatter) -> fmt::Result {
+    match is_valid_identifier(id) {
+        true => write!(f, "{}", id),
+        false => write!(f, "`{}`", id),
+    }
+}
+
+fn is_valid_identifier(id: &str) -> bool {
+    id.chars().all(|c| c.is_alphanumeric() || c == '_')
+}
+
 impl Symbol {
-    pub fn simple<S>(name: S) -> Symbol
+    pub fn atom<S>(name: S) -> Symbol
     where
         S: Into<String>,
     {
         Self { name: name.into(), scope: vec![] }
     }
-    pub fn namespace(name: &str) -> Symbol {
-        Self { name: String::from(name), scope: vec![] }
-    }
-    pub fn path(names: &[String]) -> Symbol {
-        let mut path = Vec::from(names);
+    pub fn path(names: Vec<&str>) -> Symbol {
+        let mut path: Vec<_> = names.iter().map(|f| f.to_string()).collect();
         let name = path.pop().unwrap();
         Self { name, scope: path }
     }
+}
+
+#[test]
+fn test_display() {
+    assert_eq!(Symbol::path(vec!["a", "b", "c"]).to_string(), "a::b::c");
+    assert_eq!(Symbol::path(vec!["a", "b", "℃"]).to_string(), "a::b::`℃`");
 }

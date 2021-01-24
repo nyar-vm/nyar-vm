@@ -1,4 +1,4 @@
-use crate::LexerContext;
+use crate::ParsingContext;
 use nyar_hir::{ASTKind, Result};
 use std::{fmt::Write as _, fs::File, io::Write};
 
@@ -9,7 +9,7 @@ pub trait ASTDump {
 
 impl ASTDump for ASTKind {
     fn parse(input: &str) -> Self {
-        let mut cfg = LexerContext::default();
+        let mut cfg = ParsingContext::default();
         cfg.refine = true;
         cfg.get_ast(input).unwrap()
     }

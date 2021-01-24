@@ -7,13 +7,16 @@ description = "..."
 repository = "https://github.com/nyar-lang/NyarNative"
 license = "MPL-2.0"
 
-
 [dependencies]
 # lazy_static = "1.4"
 
 [dependencies.valkyrie-pest]
 path = "../valkyrie-pest"
 version = "0.2"
+
+[dependencies.nyar-error]
+path = "../nyar-error"
+version = "0.1"
 
 [dependencies.nyar-hir]
 path = "../nyar-hir"

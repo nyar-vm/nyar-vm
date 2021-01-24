@@ -12,7 +12,7 @@ pub struct CpsTransformer {
 impl CpsTransformer {
     pub fn make_symbol(&mut self) -> Symbol {
         self.count += 1;
-        Symbol::simple(format!("Φ_{}", self.count))
+        Symbol::atom(format!("Φ_{}", self.count))
     }
 
     // function make_continuation(k) {
