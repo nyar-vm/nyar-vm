@@ -1,5 +1,6 @@
 use crate::ParsingContext;
-use nyar_hir::{ASTKind, Result};
+use nyar_error::Result;
+use nyar_hir::ASTKind;
 use std::{fmt::Write as _, fs::File, io::Write};
 
 pub trait ASTDump {

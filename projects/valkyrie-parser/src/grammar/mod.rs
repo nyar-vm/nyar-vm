@@ -4,7 +4,7 @@ use nyar_hir::{ASTKind, ASTNode};
 pub use operators::PREC_CLIMBER;
 use valkyrie_pest::{Pair, Parser, Rule, ValkyrieParser};
 
-use crate::utils::{get_position, unescape};
+use crate::utils::unescape;
 
 mod context;
 mod operators;
@@ -33,7 +33,7 @@ impl ParsingContext {
     }
 
     fn parse_statement(&self, pairs: Pair<Rule>) -> ASTNode {
-        // let r_all = get_position(&pairs);
+        let r_all = self.get_span(&pairs);
         let mut nodes: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             // let r = get_position(&pair);

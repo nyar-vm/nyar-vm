@@ -25,9 +25,9 @@ importStatement = {
   | Import ~ Dot* ~ use_module_select
   | Import ~ use_module_string
 }
-use_alias = !{String ~ As ~ SYMBOL|SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~As~SYMBOL}
+use_alias = !{string ~ As ~ SYMBOL|SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~As~SYMBOL}
 use_module_select = !{SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~(ModuleSplit ~ (module_block|Star))?}
-use_module_string = !{String ~ (ModuleSplit ~ (module_block|Star))?}
+use_module_string = !{string ~ (ModuleSplit ~ (module_block|Star))?}
 module_block = {"{"~module_tuple~ ( comma_or_semi? ~ module_tuple)* ~comma_or_semi?~"}"}
 module_tuple = {use_alias|use_module_select}
 ModuleSplit= _{Dot|Proportion}
@@ -94,9 +94,9 @@ Trait = @{"trait"}
 Class = @{"class"}
 /*====================================================================================================================*/
 extendStatement = {
-    Extend ~ Symbol ~ parametric_types? ~ with_trait? ~ short_block
+    Extend ~ symbol ~ parametric_types? ~ with_trait? ~ short_block
 }
-with_trait = {With ~ Symbol ~ parametric_types?}
+with_trait = {With ~ symbol ~ parametric_types?}
 
 //!#C678DD: Extend|With
 Extend = @{"extend"}
@@ -115,7 +115,7 @@ assignStatement = {
   | Let ~ short_statement ~ eos?
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {Modifier* ~ Symbol ~ type_hint?}
+assign_pair = {Modifier* ~ symbol ~ type_hint?}
 
 ///#C678DD
 Let = @{"let"}
@@ -136,7 +136,7 @@ Where = @{"where"}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation = {annotation_call+~statement}
-annotation_call = @{At~(list|apply|Symbol)}
+annotation_call = @{At~(list|apply|symbol)}
 /*====================================================================================================================*/
 expression = {expr ~ eos?}
 expr = !{term ~ (Infix ~ term)*}
@@ -149,7 +149,7 @@ node = {
 // bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
 bracket_call = _{dot_call|slice|apply|apply_generic}
 bracket_once = _{dict|block}
-dot_call     = !{Dot ~ (Integer|Symbol) }
+dot_call     = !{Dot ~ (Integer|symbol) }
 /*====================================================================================================================*/
 apply    = !{"(" ~ ")" | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"}
 apply_kv = {SYMBOL~ Colon ~ expr | expr}
@@ -158,7 +158,7 @@ apply_generic = !{
 }
 ///#61AFEF
 function_name = {SYMBOL}
-function_module = {(namespace ~ Dot)? ~ (SYMBOL ~ Dot)*}
+function_module = {(namepath ~ Dot)? ~ (SYMBOL ~ Dot)*}
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
 type_expr = _{term ~ (TypeInfix ~ term)*}
@@ -173,30 +173,20 @@ parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
 /*====================================================================================================================*/
-data        = ${tuple|dict|block|list|Special|Byte|Number|String|Symbol}
+data        = ${tuple|dict|block|list|Special|Byte|Number|string|symbol}
 tuple       = !{"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
-
 list        = !{"[" ~ "]" | "[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
 slice       = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
 index       =  {index_step|index_range|expr}
 index_range = !{expr? ~ Colon ~ expr?}
 index_step  = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
-
-dict        = !{"{" ~ "}" | "{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
+dict        = !{"[" ~ "]" | "{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
 key_value   = !{key_valid ~ Colon ~ expr}
-key_valid   = _{Integer | SYMBOL | String}
+key_valid   = _{Integer | symbol | string}
 /*====================================================================================================================*/
 ///#D19A66
-Special = !{Null|True|False}
-Null    = @{"null"}
-True    = @{"true"}
-False   = @{"false"}
+Special = !{"true" | "false"}
 Unit    = !{"("~")"}
-/*====================================================================================================================*/
-// Byte     = ${Byte_BIN|Byte_OCT|Byte_HEX}
-// Byte_BIN = ${Zero ~ B ~ (Underline? ~ ASCII_BIN_DIGIT)+}
-// Byte_OCT = ${Zero ~ O ~ (Underline? ~ ASCII_OCT_DIGIT)+}
-// Byte_HEX = ${Zero ~ X ~ (Underline? ~ ASCII_HEX_DIGIT)+}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
 Number     = ${Complex|Decimal|Integer}
@@ -207,42 +197,51 @@ Integer    = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline? ~ ASCII_DIGIT)*}
 Complex    =  {(Decimal|Integer)~ SYMBOL}
 Zero       = _{"0"}
 /*====================================================================================================================*/
-//!#3C963C: String
-//!#98C379: StringText|StringLiteralText
-String            = ${SYMBOL? ~ (StringNormal|StringLiteral|StringEmpty)}
-StringLiteral     = {StringStart ~ StringLiteralText ~ StringEnd}
-StringNormal      = {Quotation ~ StringText ~ Quotation}
-StringEmpty       = {Quotation{2}|Apostrophe{2}}
-StringLiteralText = {(!(Apostrophe ~ PEEK) ~ ANY)*}
-StringText        = {(Solidus~(Solidus|Quotation)|!Quotation ~ ANY)*}
-StringStart       = @{Apostrophe{1}~PUSH(Apostrophe*)}
-StringEnd         = @{POP ~ Apostrophe{1}}
-/*====================================================================================================================*/
-// NEWLINE = @{"\r"~"\n"|"\r"|"\n"}
-WHITESPACE = {NEWLINE|WHITE_SPACE}
-//!#7F848E: MultiLineComment
-COMMENT = {MultiLineComment|LineCommentSimple}
-MultiLineComment = ${ "//+" ~ (MultiLineComment)* ~ "//-"}
-///Gray
-LineCommentSimple = ${ "//" ~ (!NEWLINE ~ ANY)*}
-///Green
-// LineCommentTodo = ${ "//?" ~ (!NEWLINE ~ ANY)*}
-///Red
-// LineCommentFixme = ${ "//!" ~ (!NEWLINE ~ ANY)*}
-///Yellow
-// LineCommentWarning = ${ "//*" ~ (!NEWLINE ~ ANY)*}
+// https://en.wikipedia.org/wiki/Quotation_mark#Summary_table
+///#98C379
+string            = ${symbol? ~ (StringTemplate|StringSimple)}
+StringTemplate    = ${
+    PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ TemplateItem* ~ POP
+}
+/// RED
+TemplateItem      = $ {!PEEK ~ ANY | "{" ~ expression ~ "}"}
+StringSimple      = @{
+    "«" ~ (!"»" ~ ANY)* ~ "»" |
+    "‹" ~ (!"›" ~ ANY)* ~ "›"
+}
+Character         = ${Apostrophe ~ CharacterEscaped* ~ Apostrophe}
+CharacterEscaped  = @{
+    "\\x" ~ ASCII_ALPHANUMERIC{2} | // \x12
+    "\\u" ~ ASCII_ALPHANUMERIC{4} | // \u1234
+    "\\U" ~ ASCII_ALPHANUMERIC{6} | // \U123456
+    "\\" ~ ANY                    | // \r \n
+    !Apostrophe ~ ANY
+}
+XmlEscaped = @{ "&" ~ ASCII_ALPHANUMERIC+ ~ Semicolon } // &lt;
+Apostrophe = @{"'"}
+Quotation  = @{"\""}
+Semicolon  = @{";"}
+// «
 /*====================================================================================================================*/
 ///#61AFEF
-Symbol = ${namespace|SYMBOL}
-namespace = ${SYMBOL ~ (Proportion ~ SYMBOL)+}
-SYMBOL = @{
+symbol   = ${SYMBOL_XID|SYMBOL_ESCAPE}
+namepath = ${symbol ~ (Proportion ~ symbol)+}
+freepath = ${symbol ~ ((Proportion|Dot) ~ symbol)+}
+///
+SYMBOL_XID = @{
     XID_START ~  XID_CONTINUE*
   | Underline ~ XID_CONTINUE+
 }
+///
+SYMBOL_ESCAPE = @{Quote ~ !(Quote ~ ANY) ~ Quote}
+Quote =@{"`"}
 /*====================================================================================================================*/
-// X = _{"x"|"X"}
-// O = _{"o"|"O"}
-// B = _{"b"|"B"}
+//#7F848E
+WHITESPACE = _{NEWLINE|WHITE_SPACE}
+COMMENT    =  {CommentN|Comment1}
+Comment1   = @{Tilde ~ (!NEWLINE ~ ANY)* }
+CommentN   = @{PUSH(Tilde{3,}) ~ (!(Tilde ~ PEEK) ~ ANY)* ~ POP}
+Tilde      = @{"~"}
 /*====================================================================================================================*/
 //!Orange: Modifier
 // Keywords = !{If|For}
@@ -279,7 +278,7 @@ Proportion = @{"::"|"∷"}//U+2237
 Comma =@{","} //U+FF0C
 Dot = @{"."}
 Separate = @{";;"}
-Semicolon = @{";"} //U+FF1B
+
 Colon = @{":"} //U+FF1A
 ///#56B6C2
 Question=@{"?"}
@@ -336,12 +335,6 @@ To =@{"->"}
 Elvis =@{":?"}
 
 
-Quote =@{"`"}
-Acute =@{"´"} // U+00B4
-Apostrophe = @{"'"}
-Quotation = @{"\""}
-
-
 LogicOr =@{"||"|"∧"} //U+2227
 LogicAnd =@{"&&"|"∨"} //U+2228
 LogicNot =@{"¬"} //U+00AC
@@ -350,9 +343,6 @@ LogicXor =@{"⊕"} //U+2295
 Ellipsis =@{"..."|"…"} // U+2026
 
 Output =@{"%%"}
-
-Concat =@{"~~"}
-Destruct =@{"~="}
 
 
 DoubleBang =@{"!!"}
