@@ -45,7 +45,7 @@ pub enum Operator {
 
 impl Operator {
     pub fn associativity(&self) -> OperatorAssociativity {
-        use OperatorAssociativity::{Left};
+        use OperatorAssociativity::Left;
         match self {
             Operator::Prefix(_) => OperatorAssociativity::None,
             Operator::Postfix(_) => OperatorAssociativity::None,

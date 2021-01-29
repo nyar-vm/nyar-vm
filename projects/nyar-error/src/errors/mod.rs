@@ -1,22 +1,22 @@
-mod error_kinds;
-mod native_wrap;
-mod numeric_errors;
-mod third_party;
-
-pub use self::{error_kinds::NyarErrorKind, numeric_errors::ParseIntegerError};
-
-use crate::Span;
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
 };
 
+use crate::Span;
+
+pub use self::{error_kinds::NyarErrorKind, numeric_errors::ParseIntegerError};
+
+mod error_kinds;
+mod native_wrap;
+mod numeric_errors;
+
 pub type Result<T> = std::result::Result<T, NyarError>;
 
 #[derive(Debug)]
 pub struct NyarError {
-    kind: Box<NyarErrorKind>,
-    span: Span,
+    pub kind: Box<NyarErrorKind>,
+    pub span: Span,
 }
 
 impl Error for NyarError {}
@@ -43,8 +43,8 @@ impl NyarError {
 }
 
 impl NyarError {
-    pub fn lexer_error(msg: impl Into<String>) -> NyarError {
-        Self { kind: box NyarErrorKind::LexerError { info: msg.into() }, span: Default::default() }
+    pub fn syntax_error(msg: impl Into<String>) -> NyarError {
+        Self { kind: box NyarErrorKind::SyntaxError { info: msg.into() }, span: Default::default() }
     }
 
     pub fn invalid_operation(op: &str, lhs: Option<String>, rhs: Option<String>, position: Span) -> NyarError {

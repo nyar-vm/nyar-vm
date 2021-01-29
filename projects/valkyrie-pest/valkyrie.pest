@@ -199,23 +199,24 @@ Zero       = _{"0"}
 /*====================================================================================================================*/
 // https://en.wikipedia.org/wiki/Quotation_mark#Summary_table
 ///#98C379
-string            = ${symbol? ~ (StringTemplate|StringSimple)}
-StringTemplate    = ${
+string         = ${symbol? ~ (StringTemplate|StringSimple)}
+StringTemplate = ${
     PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ TemplateItem* ~ POP
 }
-/// RED
-TemplateItem      = $ {!PEEK ~ ANY | "{" ~ expression ~ "}"}
-StringSimple      = @{
-    "«" ~ (!"»" ~ ANY)* ~ "»" |
-    "‹" ~ (!"›" ~ ANY)* ~ "›"
-}
-Character         = ${Apostrophe ~ CharacterEscaped* ~ Apostrophe}
-CharacterEscaped  = @{
+TemplateItem   = ${
+    "$" ~ ASCII_ALPHANUMERIC      | // $1, $a
+    "${" ~ expression ~ "}"       | // ${a}, ${1 + 1}
     "\\x" ~ ASCII_ALPHANUMERIC{2} | // \x12
     "\\u" ~ ASCII_ALPHANUMERIC{4} | // \u1234
     "\\U" ~ ASCII_ALPHANUMERIC{6} | // \U123456
     "\\" ~ ANY                    | // \r \n
-    !Apostrophe ~ ANY
+    !PEEK ~ ANY
+}
+StringSimple   = @{
+//  "《" ~ (!"》" ~ ANY)* ~ "》" |
+//  "〈" ~ (!"〉" ~ ANY)* ~ "〉" |
+    "«" ~ (!"»" ~ ANY)* ~ "»" |
+    "‹" ~ (!"›" ~ ANY)* ~ "›"
 }
 XmlEscaped = @{ "&" ~ ASCII_ALPHANUMERIC+ ~ Semicolon } // &lt;
 Apostrophe = @{"'"}

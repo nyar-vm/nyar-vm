@@ -21,3 +21,13 @@ pub fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> S
 pub fn unescape(s: &str) -> &str {
     return s;
 }
+
+#[macro_export]
+macro_rules! debug_cases {
+    ($i:ident) => {{
+        println!("Rule::{:?}=>continue,", $i.as_rule());
+        println!("Span: {:?}", $i.as_span());
+        println!("Text: {}", $i.as_str());
+        unreachable!();
+    }};
+}

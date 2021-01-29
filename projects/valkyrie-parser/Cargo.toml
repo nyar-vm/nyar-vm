@@ -17,6 +17,7 @@ version = "0.2"
 [dependencies.nyar-error]
 path = "../nyar-error"
 version = "0.1"
+features = ["pest"]
 
 [dependencies.nyar-hir]
 path = "../nyar-hir"

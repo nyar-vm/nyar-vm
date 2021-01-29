@@ -13,7 +13,7 @@ pub enum NyarErrorKind {
     VariableNotFound { name: String },
     WriteUnwritable { name: String },
     CustomErrorText { text: String },
-    LexerError { info: String },
+    SyntaxError { info: String },
     IOError(std::io::Error),
     FormatError(std::fmt::Error),
     ParseIntegerError { kind: ParseIntegerError },
@@ -50,7 +50,7 @@ impl Display for NyarErrorKind {
             NyarErrorKind::FormatError(_) => {
                 write!(f, "FormatError")
             }
-            NyarErrorKind::LexerError { .. } => {
+            NyarErrorKind::SyntaxError { .. } => {
                 write!(f, "LexerError")
             }
             NyarErrorKind::InvalidCast { item_type } => {

@@ -5,7 +5,6 @@ pub use nyar_error::Result;
 pub use traits::ASTDump;
 
 pub mod grammar;
-mod lexer;
 pub mod utils;
 
 pub mod ast {
