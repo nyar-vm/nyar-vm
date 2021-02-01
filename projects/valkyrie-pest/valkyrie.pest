@@ -201,9 +201,9 @@ Zero       = _{"0"}
 ///#98C379
 string         = ${symbol? ~ (StringTemplate|StringSimple)}
 StringTemplate = ${
-    PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ TemplateItem* ~ POP
+    PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ StringItem* ~ POP
 }
-TemplateItem   = ${
+StringItem     = ${
     "$" ~ ASCII_ALPHANUMERIC      | // $1, $a
     "${" ~ expression ~ "}"       | // ${a}, ${1 + 1}
     "\\x" ~ ASCII_ALPHANUMERIC{2} | // \x12

@@ -103,7 +103,7 @@ pub enum Rule {
     Zero,
     string,
     StringTemplate,
-    TemplateItem,
+    StringItem,
     StringSimple,
     XmlEscaped,
     Apostrophe,
@@ -687,12 +687,12 @@ impl ::pest::Parser<Rule> for ValkyrieParser {
                 #[inline]
                 #[allow(non_snake_case, unused_variables)]
                 pub fn StringTemplate(state: Box<::pest::ParserState<Rule>>) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
-                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| state.rule(Rule::StringTemplate, |state| state.sequence(|state| state.stack_push(|state| state.sequence(|state| self::Quotation(state).and_then(|state| self::Quotation(state)).and_then(|state| self::Quotation(state)).and_then(|state| state.repeat(|state| self::Quotation(state)))).or_else(|state| state.sequence(|state| self::Apostrophe(state).and_then(|state| self::Apostrophe(state)).and_then(|state| self::Apostrophe(state)).and_then(|state| state.repeat(|state| self::Apostrophe(state))))).or_else(|state| self::Quotation(state)).or_else(|state| self::Apostrophe(state))).and_then(|state| state.repeat(|state| state.restore_on_err(|state| self::TemplateItem(state)))).and_then(|state| self::POP(state)))))
+                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| state.rule(Rule::StringTemplate, |state| state.sequence(|state| state.stack_push(|state| state.sequence(|state| self::Quotation(state).and_then(|state| self::Quotation(state)).and_then(|state| self::Quotation(state)).and_then(|state| state.repeat(|state| self::Quotation(state)))).or_else(|state| state.sequence(|state| self::Apostrophe(state).and_then(|state| self::Apostrophe(state)).and_then(|state| self::Apostrophe(state)).and_then(|state| state.repeat(|state| self::Apostrophe(state))))).or_else(|state| self::Quotation(state)).or_else(|state| self::Apostrophe(state))).and_then(|state| state.repeat(|state| state.restore_on_err(|state| self::StringItem(state)))).and_then(|state| self::POP(state)))))
                 }
                 #[inline]
                 #[allow(non_snake_case, unused_variables)]
-                pub fn TemplateItem(state: Box<::pest::ParserState<Rule>>) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
-                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| state.rule(Rule::TemplateItem, |state| state.sequence(|state| state.match_string("$").and_then(|state| self::ASCII_ALPHANUMERIC(state))).or_else(|state| state.restore_on_err(|state| state.sequence(|state| state.match_string("${").and_then(|state| self::expression(state)).and_then(|state| state.match_string("}"))))).or_else(|state| state.sequence(|state| state.match_string("\\x").and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)))).or_else(|state| state.sequence(|state| state.match_string("\\u").and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)))).or_else(|state| state.sequence(|state| state.match_string("\\U").and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)))).or_else(|state| state.sequence(|state| state.match_string("\\").and_then(|state| self::ANY(state)))).or_else(|state| state.sequence(|state| state.lookahead(false, |state| self::PEEK(state)).and_then(|state| self::ANY(state))))))
+                pub fn StringItem(state: Box<::pest::ParserState<Rule>>) -> ::pest::ParseResult<Box<::pest::ParserState<Rule>>> {
+                    state.atomic(::pest::Atomicity::CompoundAtomic, |state| state.rule(Rule::StringItem, |state| state.sequence(|state| state.match_string("$").and_then(|state| self::ASCII_ALPHANUMERIC(state))).or_else(|state| state.restore_on_err(|state| state.sequence(|state| state.match_string("${").and_then(|state| self::expression(state)).and_then(|state| state.match_string("}"))))).or_else(|state| state.sequence(|state| state.match_string("\\x").and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)))).or_else(|state| state.sequence(|state| state.match_string("\\u").and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)))).or_else(|state| state.sequence(|state| state.match_string("\\U").and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)).and_then(|state| self::ASCII_ALPHANUMERIC(state)))).or_else(|state| state.sequence(|state| state.match_string("\\").and_then(|state| self::ANY(state)))).or_else(|state| state.sequence(|state| state.lookahead(false, |state| self::PEEK(state)).and_then(|state| self::ANY(state))))))
                 }
                 #[inline]
                 #[allow(non_snake_case, unused_variables)]
@@ -1242,7 +1242,7 @@ impl ::pest::Parser<Rule> for ValkyrieParser {
             Rule::Zero => rules::Zero(state),
             Rule::string => rules::string(state),
             Rule::StringTemplate => rules::StringTemplate(state),
-            Rule::TemplateItem => rules::TemplateItem(state),
+            Rule::StringItem => rules::StringItem(state),
             Rule::StringSimple => rules::StringSimple(state),
             Rule::XmlEscaped => rules::XmlEscaped(state),
             Rule::Apostrophe => rules::Apostrophe(state),

@@ -1,8 +1,11 @@
 use super::*;
 
 const CHARACTERS: &str = r#"
-"1";
-'2';
+'';
+"'";
+'"';
+«"'»;
+‹'"›;
 "#;
 
 #[test]

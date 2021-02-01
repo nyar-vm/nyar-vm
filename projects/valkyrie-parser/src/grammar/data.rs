@@ -61,36 +61,6 @@ impl ParsingContext {
         }
     }
 
-    fn parse_string(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
-        // let (mut h, mut t) = Default::default();
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                // Rule::SYMBOL => h = pair.as_str(),
-                // Rule::StringEmpty => continue,
-                // Rule::StringNormal => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::StringText => t = unescape(inner.as_str()),
-                //             _ => continue,
-                //         };
-                //     }
-                // }
-                // Rule::StringLiteral => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::StringLiteralText => t = unescape(inner.as_str()),
-                //             _ => continue,
-                //         };
-                //     }
-                // }
-                _ => debug_cases!(pair), // _ => unreachable!(),
-            };
-        }
-        todo!()
-        // ASTNode::string(t, r)
-    }
-
     fn parse_number(&self, pairs: Pair<Rule>) -> ASTNode {
         todo!()
         // let r = self.get_span(&pairs);
@@ -180,4 +150,111 @@ impl ParsingContext {
     //     }
     //     ASTNode::symbol(&scope, r)
     // }
+}
+
+impl ParsingContext {
+    fn parse_string(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = self.get_span(&pairs);
+        let mut handler = "";
+        // let (mut h, mut t) = Default::default();
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::StringTemplate => match handler.is_empty() {
+                    true => self.parse_string_template(pair),
+                    false => self.parse_string_raw(pair, handler),
+                },
+                _ => debug_cases!(pair), // _ => unreachable!(),
+            };
+        }
+
+        todo!()
+        // ASTNode::string(t, r)
+    }
+    fn parse_string_raw(&self, pairs: Pair<Rule>, handler: &str) -> ASTNode {
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::Quotation => continue,
+                Rule::Apostrophe => continue,
+                Rule::StringItem => self.parse_string_item(pair),
+                // Rule::SYMBOL => h = pair.as_str(),
+                // Rule::StringEmpty => continue,
+                // Rule::StringNormal => {
+                //     for inner in pair.into_inner() {
+                //         match inner.as_rule() {
+                //             Rule::StringText => t = unescape(inner.as_str()),
+                //             _ => continue,
+                //         };
+                //     }
+                // }
+                // Rule::StringLiteral => {
+                //     for inner in pair.into_inner() {
+                //         match inner.as_rule() {
+                //             Rule::StringLiteralText => t = unescape(inner.as_str()),
+                //             _ => continue,
+                //         };
+                //     }
+                // }
+                _ => debug_cases!(pair), // _ => unreachable!(),
+            };
+        }
+        todo!()
+    }
+    fn parse_string_template(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = self.get_span(&pairs);
+        let mut items = vec![];
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::Quotation => continue,
+                Rule::Apostrophe => continue,
+                Rule::StringItem => items.push(self.parse_string_item(pair)),
+                // Rule::SYMBOL => h = pair.as_str(),
+                // Rule::StringEmpty => continue,
+                // Rule::StringNormal => {
+                //     for inner in pair.into_inner() {
+                //         match inner.as_rule() {
+                //             Rule::StringText => t = unescape(inner.as_str()),
+                //             _ => continue,
+                //         };
+                //     }
+                // }
+                // Rule::StringLiteral => {
+                //     for inner in pair.into_inner() {
+                //         match inner.as_rule() {
+                //             Rule::StringLiteralText => t = unescape(inner.as_str()),
+                //             _ => continue,
+                //         };
+                //     }
+                // }
+                _ => debug_cases!(pair), // _ => unreachable!(),
+            };
+        }
+        ASTNode::string_template(items, r)
+    }
+    fn parse_string_item(&self, pairs: Pair<Rule>) -> ASTNode {
+        println!("{:?}", pairs.as_str());
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                // Rule::SYMBOL => h = pair.as_str(),
+                // Rule::StringEmpty => continue,
+                // Rule::StringNormal => {
+                //     for inner in pair.into_inner() {
+                //         match inner.as_rule() {
+                //             Rule::StringText => t = unescape(inner.as_str()),
+                //             _ => continue,
+                //         };
+                //     }
+                // }
+                // Rule::StringLiteral => {
+                //     for inner in pair.into_inner() {
+                //         match inner.as_rule() {
+                //             Rule::StringLiteralText => t = unescape(inner.as_str()),
+                //             _ => continue,
+                //         };
+                //     }
+                // }
+                _ => debug_cases!(pair), // _ => unreachable!(),
+            };
+        }
+        todo!()
+    }
 }

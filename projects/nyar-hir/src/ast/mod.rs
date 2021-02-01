@@ -211,6 +211,9 @@ impl ASTNode {
         let s = StringLiteral { handler: handler.to_string(), literal: literal.to_string() };
         Self { kind: ASTKind::String(box s), span: meta }
     }
+    pub fn string_template(nodes: Vec<ASTNode>, span: Span) -> ASTNode {
+        Self { kind: ASTKind::StringTemplate(nodes), span }
+    }
 
     pub fn boolean(v: bool, meta: Span) -> Self {
         Self { kind: ASTKind::Boolean(v), span: meta }
