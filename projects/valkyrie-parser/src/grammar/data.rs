@@ -159,10 +159,12 @@ impl ParsingContext {
         // let (mut h, mut t) = Default::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::StringTemplate => match handler.is_empty() {
-                    true => self.parse_string_template(pair),
-                    false => self.parse_string_raw(pair, handler),
-                },
+                Rule::StringTemplate => {
+                    match handler.is_empty() {
+                        true => return self.parse_string_template(pair),
+                        false => return self.parse_string_raw(pair, handler),
+                    };
+                }
                 _ => debug_cases!(pair), // _ => unreachable!(),
             };
         }

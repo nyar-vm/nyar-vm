@@ -1,6 +1,6 @@
 pub use context::ParsingContext;
 use nyar_error::Result;
-use nyar_hir::{ASTKind, ASTNode};
+use nyar_hir::{ast::Expression, ASTKind, ASTNode};
 pub use operators::PREC_CLIMBER;
 use valkyrie_pest::{Pair, Parser, Rule, ValkyrieParser};
 
@@ -26,6 +26,7 @@ impl ParsingContext {
 
     fn parse_statement(&self, pairs: Pair<Rule>) -> ASTNode {
         let r_all = self.get_span(&pairs);
+        let mut eos = true;
         let mut nodes: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             let r = self.get_span(&pair);
@@ -38,7 +39,11 @@ impl ParsingContext {
                     nodes.extend(s.iter().cloned());
                 }
                 Rule::if_statement => nodes.push(self.parse_if(pair)),
-                Rule::expression => nodes.push(self.parse_expression(pair)),
+                Rule::expression => {
+                    expr = self.parse_expression(pair);
+
+                    nodes.push()
+                }
                 _ => debug_cases!(pair),
             };
         }
@@ -202,8 +207,7 @@ impl ParsingContext {
         return ASTNode::default();
     }
 
-    fn parse_expression(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
+    fn parse_expression(&self, pairs: Pair<Rule>) -> (ASTNode, bool) {
         let mut base = ASTNode::default();
         let mut eos = false;
         for pair in pairs.into_inner() {
@@ -214,7 +218,7 @@ impl ParsingContext {
                 _ => debug_cases!(pair),
             };
         }
-        return ASTNode::expression(base, eos, r);
+        return (base, eos);
     }
 
     #[rustfmt::skip]

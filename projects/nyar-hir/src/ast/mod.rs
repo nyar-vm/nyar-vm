@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use nyar_error::Span;
 
-use crate::ast::looping::WhileLoop;
 pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
@@ -17,10 +16,11 @@ pub use crate::ast::{
     },
     chain::*,
     control::*,
+    expression::Expression,
     function::LambdaFunction,
     infix::BinaryExpression,
     let_bind::LetBind,
-    looping::LoopStatement,
+    looping::{LoopStatement, WhileLoop},
     operator::{Infix, Operator, Postfix, Prefix},
 };
 
@@ -30,6 +30,7 @@ mod chain;
 mod checking;
 mod control;
 mod display;
+mod expression;
 mod function;
 mod infix;
 mod let_bind;
@@ -62,7 +63,6 @@ pub enum ASTKind {
     LoopStatement(Box<LoopStatement>),
     ///
     InfixExpression(Box<BinaryExpression>),
-
     /// `(1, 2, 3)`
     TupleExpression(Vec<ASTNode>),
     /// `[1, 2, 3]`
@@ -109,9 +109,8 @@ impl ASTNode {
         WhileLoop::while_else(condition, body, else_trigger, span)
     }
 
-    pub fn expression(_base: ASTNode, _eos: bool, _meta: Span) -> Self {
-        todo!()
-        // Self { kind: ASTKind::Expression { base: box base, eos }, meta }
+    pub fn expression(base: ASTNode, eos: bool) -> Expression {
+        Expression { base, eos }
     }
 
     pub fn string_expression(_h: &str, _v: &[ASTNode], _meta: Span) -> Self {
@@ -133,8 +132,8 @@ impl ASTNode {
         // Self { kind: ASTKind::CallInfix(box infix), meta }
     }
 
-    pub fn push_unary_operations(self, _prefix: &[String], _suffix: &[String], _meta: Span) -> Self {
-        todo!()
+    pub fn push_unary_operations(self, prefix: &[String], suffix: &[String], span: Span) -> Self {
+        return self;
         // if prefix.is_empty() && suffix.is_empty() {
         //     return self.refine();
         // }
@@ -144,7 +143,7 @@ impl ASTNode {
         // };
         // unary.push_prefix(prefix);
         // unary.push_suffix(suffix);
-        // Self { kind: ASTKind::CallUnary(box unary), meta }
+        // Self { kind: ASTKind::CallUnary(box unary), meta: span, span: Default::default() }
     }
 
     pub fn chain_join(self, terms: ASTNode) -> Self {
