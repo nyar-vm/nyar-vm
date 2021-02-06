@@ -1,3 +1,6 @@
+use nyar_error::Span;
+use nyar_hir::ast::StringTemplateBuilder;
+
 use super::*;
 
 impl ParsingContext {
@@ -160,55 +163,42 @@ impl ParsingContext {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::StringTemplate => {
-                    match handler.is_empty() {
-                        true => return self.parse_string_template(pair),
-                        false => return self.parse_string_raw(pair, handler),
+                    return match handler.is_empty() {
+                        true => self.parse_string_template(pair),
+                        false => self.parse_string_raw(pair, handler, r),
                     };
                 }
-                _ => debug_cases!(pair), // _ => unreachable!(),
+                Rule::StringSimple => {
+                    let mut chars = pair.as_str().chars();
+                    chars.next();
+                    chars.next_back();
+                    return ASTNode::string_handler(chars.as_str(), handler, r);
+                }
+                Rule::symbol => handler = pair.as_str(),
+                _ => unreachable!(),
             };
         }
-
-        todo!()
-        // ASTNode::string(t, r)
+        unreachable!()
     }
-    fn parse_string_raw(&self, pairs: Pair<Rule>, handler: &str) -> ASTNode {
+    fn parse_string_raw(&self, pairs: Pair<Rule>, handler: &str, span: Span) -> ASTNode {
+        let mut builder = String::with_capacity(pairs.as_str().len());
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::Quotation => continue,
                 Rule::Apostrophe => continue,
-                Rule::StringItem => self.parse_string_item(pair),
-                // Rule::SYMBOL => h = pair.as_str(),
-                // Rule::StringEmpty => continue,
-                // Rule::StringNormal => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::StringText => t = unescape(inner.as_str()),
-                //             _ => continue,
-                //         };
-                //     }
-                // }
-                // Rule::StringLiteral => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::StringLiteralText => t = unescape(inner.as_str()),
-                //             _ => continue,
-                //         };
-                //     }
-                // }
-                _ => debug_cases!(pair), // _ => unreachable!(),
+                Rule::StringItem => builder.push_str(pair.as_str()),
+                _ => unreachable!(),
             };
         }
-        todo!()
+        ASTNode::string_handler(builder, handler, span)
     }
     fn parse_string_template(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
-        let mut items = vec![];
+        let mut builder = StringTemplateBuilder::new(self.get_span(&pairs));
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::Quotation => continue,
                 Rule::Apostrophe => continue,
-                Rule::StringItem => items.push(self.parse_string_item(pair)),
+                Rule::StringItem => self.parse_string_item(pair, &mut builder),
                 // Rule::SYMBOL => h = pair.as_str(),
                 // Rule::StringEmpty => continue,
                 // Rule::StringNormal => {
@@ -230,33 +220,13 @@ impl ParsingContext {
                 _ => debug_cases!(pair), // _ => unreachable!(),
             };
         }
-        ASTNode::string_template(items, r)
+        builder.build()
     }
-    fn parse_string_item(&self, pairs: Pair<Rule>) -> ASTNode {
-        println!("{:?}", pairs.as_str());
+    fn parse_string_item(&self, pairs: Pair<Rule>, builder: &mut StringTemplateBuilder) {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                // Rule::SYMBOL => h = pair.as_str(),
-                // Rule::StringEmpty => continue,
-                // Rule::StringNormal => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::StringText => t = unescape(inner.as_str()),
-                //             _ => continue,
-                //         };
-                //     }
-                // }
-                // Rule::StringLiteral => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::StringLiteralText => t = unescape(inner.as_str()),
-                //             _ => continue,
-                //         };
-                //     }
-                // }
                 _ => debug_cases!(pair), // _ => unreachable!(),
             };
         }
-        todo!()
     }
 }

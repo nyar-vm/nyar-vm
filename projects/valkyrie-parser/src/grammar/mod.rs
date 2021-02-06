@@ -39,11 +39,12 @@ impl ParsingContext {
                     nodes.extend(s.iter().cloned());
                 }
                 Rule::if_statement => nodes.push(self.parse_if(pair)),
-                Rule::expression => {
-                    expr = self.parse_expression(pair);
-
-                    nodes.push()
-                }
+                Rule::expression => match self.parse_expression(pair) {
+                    (node, e) => {
+                        nodes.push(node);
+                        eos = e
+                    }
+                },
                 _ => debug_cases!(pair),
             };
         }

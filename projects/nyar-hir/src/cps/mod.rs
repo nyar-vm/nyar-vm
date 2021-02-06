@@ -74,6 +74,9 @@ impl CpsTransformer {
             ASTKind::LoopStatement(_) => {
                 unreachable!()
             }
+            ASTKind::Suite(_) => {
+                todo!()
+            }
         }
     }
     fn cps_let(&mut self, _ast: &LetBind, _k: LambdaFunction) -> ASTNode {

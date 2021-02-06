@@ -12,7 +12,7 @@ pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
         byte_literal::ByteLiteral, dict_literal::DictLiteral, kv_pair::KVPair, number_literal::NumberLiteral,
-        string_literal::StringLiteral, symbol::Symbol,
+        string_literal::StringLiteral, string_template::StringTemplateBuilder, symbol::Symbol,
     },
     chain::*,
     control::*,
@@ -51,7 +51,9 @@ pub enum ASTKind {
     Nothing,
     ///
     Program(Vec<ASTNode>),
-    ///
+    /// A block with new scope
+    Suite(Vec<ASTNode>),
+    /// A block without new scope
     Sequence(Vec<ASTNode>),
     ///
     LetBind(Box<LetBind>),
@@ -81,12 +83,11 @@ pub enum ASTKind {
 }
 
 impl ASTNode {
-    pub fn program(v: Vec<ASTNode>, meta: Span) -> Self {
-        Self { kind: ASTKind::Program(v), span: meta }
+    pub fn program(v: Vec<ASTNode>, span: Span) -> Self {
+        Self { kind: ASTKind::Program(v), span }
     }
-    pub fn suite(_v: Vec<ASTNode>, _meta: Span) -> Self {
-        todo!()
-        // Self { kind: ASTKind::Suite(v), meta }
+    pub fn suite(v: Vec<ASTNode>, span: Span) -> Self {
+        Self { kind: ASTKind::Suite(v), span }
     }
 
     pub fn empty_block() -> Self {
@@ -206,9 +207,12 @@ impl ASTNode {
         Self { kind: ASTKind::String(box s), span: meta }
     }
 
-    pub fn string_handler(literal: &str, handler: &str, meta: Span) -> ASTNode {
-        let s = StringLiteral { handler: handler.to_string(), literal: literal.to_string() };
-        Self { kind: ASTKind::String(box s), span: meta }
+    pub fn string_handler<S>(literal: S, handler: &str, span: Span) -> ASTNode
+    where
+        S: Into<String>,
+    {
+        let s = StringLiteral { handler: handler.to_string(), literal: literal.into() };
+        Self { kind: ASTKind::String(box s), span }
     }
     pub fn string_template(nodes: Vec<ASTNode>, span: Span) -> ASTNode {
         Self { kind: ASTKind::StringTemplate(nodes), span }

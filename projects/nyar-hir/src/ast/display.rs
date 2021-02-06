@@ -72,6 +72,9 @@ impl Display for ASTKind {
             ASTKind::LoopStatement(_) => {
                 todo!()
             }
+            ASTKind::Suite(_) => {
+                todo!()
+            }
         }
     }
 }

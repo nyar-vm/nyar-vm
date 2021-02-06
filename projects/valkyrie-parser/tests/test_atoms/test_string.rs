@@ -2,6 +2,7 @@ use super::*;
 
 const CHARACTERS: &str = r#"
 '';
+"";
 "'";
 '"';
 «"'»;
@@ -15,7 +16,13 @@ fn debug_characters() -> Result<()> {
 }
 
 const ESCAPES: &str = r#"
-"\n"
+'\x24'
+'\u03D6'
+'\U000024'
+'\n';
+'\a';
+'\
+';
 "#;
 
 #[test]
@@ -25,9 +32,12 @@ fn debug_escapes() -> Result<()> {
 }
 
 const MULTILINE: &str = r#"
-null
-true
-false
+json"""
+{
+    x: 1
+    y: 2
+}
+"""
 "#;
 
 #[test]
