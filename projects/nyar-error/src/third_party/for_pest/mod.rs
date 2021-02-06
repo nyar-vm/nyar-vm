@@ -11,8 +11,8 @@ where
 {
     fn from(e: Error<R>) -> Self {
         let span = match e.location {
-            InputLocation::Pos(s) => Span { start: 0, end: 0, file_id: 0 },
-            InputLocation::Span((s, e)) => Span { start: 0, end: 0, file_id: 0 },
+            InputLocation::Pos(s) => Span { start: s as u32, end: s as u32, file_id: 0 },
+            InputLocation::Span((s, e)) => Span { start: s as u32, end: e as u32, file_id: 0 },
         };
         let info = match e.variant {
             ErrorVariant::ParsingError { positives, negatives } => {

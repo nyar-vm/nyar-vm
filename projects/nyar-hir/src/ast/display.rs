@@ -16,13 +16,33 @@ impl Debug for ASTNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
             ASTKind::Nothing => f.write_str("<<unreachable Nothing>>"),
+            ASTKind::Suite(v) => {
+                f.write_str("Suite")?;
+                f.debug_list().entries(v.iter()).finish()
+            }
             ASTKind::Sequence(v) => {
-                f.write_str("<<unreachable Sequence>>")?;
+                f.write_str("Sequence")?;
                 f.debug_list().entries(v.iter()).finish()
             }
             ASTKind::Boolean(v) => Display::fmt(v, f),
             ASTKind::Number(v) => Display::fmt(v, f),
-            ASTKind::String(v) => Display::fmt(v, f),
+            ASTKind::String(v) => {
+                if v.handler.is_empty() {
+                    Debug::fmt(&v.literal, f)
+                }
+                else {
+                    Debug::fmt(v, f)
+                }
+            }
+            ASTKind::StringTemplate(v) => {
+                if v.is_empty() {
+                    f.write_str("''")
+                }
+                else {
+                    f.write_str("StringTemplate")?;
+                    f.debug_list().entries(v.iter()).finish()
+                }
+            }
             ASTKind::Symbol(v) => Display::fmt(v, f),
             _ => Debug::fmt(&self.kind, f),
         }
@@ -56,16 +76,6 @@ impl Display for ASTKind {
             ASTKind::DictExpression(_v) => {
                 todo!()
             }
-            ASTKind::Boolean(v) => write!(f, "{}", v),
-            ASTKind::Number(v) => write!(f, "{}", v),
-            ASTKind::String(v) => write!(f, "{}", v),
-            ASTKind::StringTemplate(_v) => {
-                todo!()
-            }
-            ASTKind::XMLTemplate(_v) => {
-                todo!()
-            }
-            ASTKind::Symbol(v) => write!(f, "{}", v),
             ASTKind::IfStatement(_) => {
                 todo!()
             }
@@ -75,6 +85,18 @@ impl Display for ASTKind {
             ASTKind::Suite(_) => {
                 todo!()
             }
+            ASTKind::Boolean(v) => Display::fmt(v, f),
+            ASTKind::Number(v) => Display::fmt(v, f),
+            ASTKind::String(v) => Display::fmt(v, f),
+            ASTKind::StringTemplate(_v) => {
+                todo!()
+            }
+            ASTKind::XMLTemplate(_v) => {
+                todo!()
+            }
+            ASTKind::Symbol(v) => write!(f, "{}", v),
+
+            ASTKind::Byte(v) => Display::fmt(v, f),
         }
     }
 }

@@ -74,6 +74,7 @@ pub enum ASTKind {
     ///
     Boolean(bool),
     Number(Box<NumberLiteral>),
+    Byte(Box<ByteLiteral>),
     String(Box<StringLiteral>),
     /// String Template
     StringTemplate(Vec<ASTNode>),
@@ -197,9 +198,12 @@ impl ASTNode {
         Self { kind: ASTKind::Number(box v), span: meta }
     }
 
-    pub fn bytes(literal: &str, mode: &str, meta: Span) -> Self {
-        let v = NumberLiteral { handler: mode.to_string(), value: literal.to_string() };
-        Self { kind: ASTKind::Number(box v), span: meta }
+    pub fn bytes<S>(literal: S, mode: char, meta: Span) -> Self
+    where
+        S: Into<String>,
+    {
+        let v = ByteLiteral { handler: mode, value: literal.into() };
+        Self { kind: ASTKind::Byte(box v), span: meta }
     }
 
     pub fn string(literal: &str, meta: Span) -> Self {

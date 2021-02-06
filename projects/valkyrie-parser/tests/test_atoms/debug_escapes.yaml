@@ -1,42 +1,18 @@
-Suite(
-    [
-        StringTemplate(
-            [],
-        ),
-    ],
-)
-Suite(
-    [
-        StringTemplate(
-            [],
-        ),
-    ],
-)
-Suite(
-    [
-        StringTemplate(
-            [],
-        ),
-    ],
-)
-Suite(
-    [
-        StringTemplate(
-            [],
-        ),
-    ],
-)
-Suite(
-    [
-        StringTemplate(
-            [],
-        ),
-    ],
-)
-Suite(
-    [
-        StringTemplate(
-            [],
-        ),
-    ],
-)
+Suite[
+    '',
+]
+Suite[
+    '',
+]
+Suite[
+    '',
+]
+Suite[
+    '',
+]
+Suite[
+    '',
+]
+Suite[
+    '',
+]

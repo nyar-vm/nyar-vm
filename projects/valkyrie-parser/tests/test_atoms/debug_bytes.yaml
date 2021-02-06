@@ -1,28 +1,32 @@
-AST::Suite: [
-    AST::Expression: {
-        expr: 0xFF,
-        eos: false,
-        range: "(2:1, 3:1)",
-    },
+Suite[
+    Byte(
+        ByteLiteral {
+            handler: 'x',
+            value: "FF",
+        },
+    ),
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 0o77,
-        eos: false,
-        range: "(3:1, 4:1)",
-    },
+Suite[
+    Byte(
+        ByteLiteral {
+            handler: 'o',
+            value: "77",
+        },
+    ),
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 0b11,
-        eos: false,
-        range: "(4:1, 5:1)",
-    },
+Suite[
+    Byte(
+        ByteLiteral {
+            handler: 'b',
+            value: "11",
+        },
+    ),
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 0a_b_c_d,
-        eos: false,
-        range: "(5:1, 6:1)",
-    },
+Suite[
+    Byte(
+        ByteLiteral {
+            handler: 'a',
+            value: "_b_c_d",
+        },
+    ),
 ]

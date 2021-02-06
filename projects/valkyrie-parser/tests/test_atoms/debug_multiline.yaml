@@ -1,10 +1,9 @@
-Suite(
-    [
-        json
-        {
-            x: 1
-            y: 2
-        }
-        ,
-    ],
-)
+Suite[
+    '',
+]
+Suite[
+    StringLiteral {
+        handler: "json",
+        literal: "\n{\n    x: 1\n    y: 2\n}\n",
+    },
+]

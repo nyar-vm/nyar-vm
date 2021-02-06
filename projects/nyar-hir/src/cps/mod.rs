@@ -77,6 +77,9 @@ impl CpsTransformer {
             ASTKind::Suite(_) => {
                 todo!()
             }
+            ASTKind::Byte(_) => {
+                todo!()
+            }
         }
     }
     fn cps_let(&mut self, _ast: &LetBind, _k: LambdaFunction) -> ASTNode {

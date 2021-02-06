@@ -1,17 +1,20 @@
 use nyar_error::Span;
-use nyar_hir::ast::StringTemplateBuilder;
+use nyar_hir::ast::{StringTemplateBuilder, Symbol};
+
+use crate::utils::trim_first_last;
 
 use super::*;
 
 impl ParsingContext {
     pub(crate) fn parse_data(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = self.get_span(&pairs);
         let pair = pairs.into_inner().nth(0).unwrap();
         match pair.as_rule() {
             Rule::string => self.parse_string(pair),
             Rule::Special => self.parse_special(pair),
             Rule::Number => self.parse_number(pair),
             Rule::Byte => self.parse_byte(pair),
-            Rule::symbol => self.parse_symbol(pair),
+            Rule::symbol => ASTNode::symbol(self.parse_symbol(pair), r),
             Rule::list => self.parse_list_or_tuple(pair, true),
             Rule::dict => self.parse_dict(pair),
             _ => debug_cases!(pair),
@@ -106,53 +109,30 @@ impl ParsingContext {
     }
 
     fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {
-        todo!()
-        // let r = self.get_span(&pairs);
-        // let s = pairs.as_str();
-        // let t = &s[2..s.len()];
-        // let h = s.chars().nth(1).unwrap();
-        // ASTNode::bytes(h, t, r)
+        let r = self.get_span(&pairs);
+        let s = pairs.as_str();
+        let t = &s[2..s.len()];
+        let h = s.chars().nth(1).unwrap();
+        ASTNode::bytes(t, h, r)
     }
 
     fn parse_special(&self, pairs: Pair<Rule>) -> ASTNode {
-        todo!()
-        // let r = self.get_span(&pairs);
-        // let pair = pairs.into_inner().nth(0).unwrap();
-        // match pair.as_rule() {
-        //     Rule::True => ASTNode::boolean(true, r),
-        //     Rule::False => ASTNode::boolean(false, r),
-        //     Rule::Null => ASTNode::null(r),
-        //     _ => unreachable!(),
-        // }
+        let r = self.get_span(&pairs);
+        match pairs.as_str() {
+            "true" => ASTNode::boolean(true, r),
+            "false" => ASTNode::boolean(false, r),
+            _ => unreachable!(),
+        }
     }
 
-    fn parse_symbol(&self, pairs: Pair<Rule>) -> ASTNode {
-        todo!()
+    fn parse_symbol(&self, pairs: Pair<Rule>) -> Symbol {
+        let pair = pairs.into_inner().next().unwrap();
+        match pair.as_rule() {
+            Rule::SYMBOL_XID => Symbol::atom(pair.as_str()),
+            Rule::SYMBOL_ESCAPE => Symbol::atom(trim_first_last(pair.as_str())),
+            _ => unreachable!(),
+        }
     }
-    //     let r = self.get_span(&pairs);
-    //     let mut scope = vec![];
-    //     match pairs.as_rule() {
-    //         Rule::SYMBOL => scope.push(pairs.as_str().to_string()),
-    //         _ => {
-    //             for pair in pairs.into_inner() {
-    //                 match pair.as_rule() {
-    //                     Rule::SYMBOL => scope.push(pair.as_str().to_string()),
-    //                     Rule::namespace => {
-    //                         for inner in pair.into_inner() {
-    //                             match inner.as_rule() {
-    //                                 Rule::Proportion => (),
-    //                                 Rule::SYMBOL => scope.push(inner.as_str().to_string()),
-    //                                 _ => unreachable!(),
-    //                             };
-    //                         }
-    //                     }
-    //                     _ => unreachable!(),
-    //                 };
-    //             }
-    //         }
-    //     }
-    //     ASTNode::symbol(&scope, r)
-    // }
 }
 
 impl ParsingContext {
@@ -169,10 +149,7 @@ impl ParsingContext {
                     };
                 }
                 Rule::StringSimple => {
-                    let mut chars = pair.as_str().chars();
-                    chars.next();
-                    chars.next_back();
-                    return ASTNode::string_handler(chars.as_str(), handler, r);
+                    return ASTNode::string_handler(trim_first_last(pair.as_str()), handler, r);
                 }
                 Rule::symbol => handler = pair.as_str(),
                 _ => unreachable!(),
@@ -199,24 +176,6 @@ impl ParsingContext {
                 Rule::Quotation => continue,
                 Rule::Apostrophe => continue,
                 Rule::StringItem => self.parse_string_item(pair, &mut builder),
-                // Rule::SYMBOL => h = pair.as_str(),
-                // Rule::StringEmpty => continue,
-                // Rule::StringNormal => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::StringText => t = unescape(inner.as_str()),
-                //             _ => continue,
-                //         };
-                //     }
-                // }
-                // Rule::StringLiteral => {
-                //     for inner in pair.into_inner() {
-                //         match inner.as_rule() {
-                //             Rule::StringLiteralText => t = unescape(inner.as_str()),
-                //             _ => continue,
-                //         };
-                //     }
-                // }
                 _ => debug_cases!(pair), // _ => unreachable!(),
             };
         }
@@ -225,6 +184,7 @@ impl ParsingContext {
     fn parse_string_item(&self, pairs: Pair<Rule>, builder: &mut StringTemplateBuilder) {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
+                Rule::expression => self.parse_expression(pair),
                 _ => debug_cases!(pair), // _ => unreachable!(),
             };
         }

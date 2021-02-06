@@ -40,6 +40,14 @@ impl Symbol {
         let name = path.pop().unwrap();
         Self { name, scope: path }
     }
+    pub fn join(names: Vec<Symbol>) -> Symbol {
+        for name in &names {
+            debug_assert!(name.scope.is_empty())
+        }
+        let mut path: Vec<_> = names.into_iter().map(|f| f.name).collect();
+        let name = path.pop().unwrap();
+        Self { name, scope: path }
+    }
 }
 
 #[test]
