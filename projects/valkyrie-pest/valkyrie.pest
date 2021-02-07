@@ -14,10 +14,12 @@ statement = {
 }
 /*====================================================================================================================*/
 emptyStatement = {eos}
-eos = {Semicolon | Separate}
+eos = {Separate|Semicolon}
 separator = {eos|Comma}
 comma_or_semi = _{Comma|Semicolon}
 block_or_stmt = _{block|Set ~ statement}
+Semicolon = @{";"}
+Separate  = @{";;"}
 /*====================================================================================================================*/
 //FIXME: 修复 nested using
 importStatement = {
@@ -25,17 +27,17 @@ importStatement = {
   | Import ~ Dot* ~ use_module_select
   | Import ~ use_module_string
 }
-use_alias = !{string ~ As ~ SYMBOL|SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~As~SYMBOL}
+use_alias = !{String ~ As ~ SYMBOL|SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~As~SYMBOL}
 use_module_select = !{SYMBOL ~ (ModuleSplit ~ SYMBOL)* ~(ModuleSplit ~ (module_block|Star))?}
-use_module_string = !{string ~ (ModuleSplit ~ (module_block|Star))?}
+use_module_string = !{String ~ (ModuleSplit ~ (module_block|Star))?}
 module_block = {"{"~module_tuple~ ( comma_or_semi? ~ module_tuple)* ~comma_or_semi?~"}"}
 module_tuple = {use_alias|use_module_select}
 ModuleSplit= _{Dot|Proportion}
 //!#C678DD: Import|As
-Import  = @{"assign"}
+Import  = @{"using"}
 As   = @{"as"}
 /*====================================================================================================================*/
-controlFlow = _{re_control|if_statement|for_statement}
+controlFlow = _{non_local_exit|if_statement|for_statement}
 block = !{"{" ~ statement+ ~ "}"}
 /*====================================================================================================================*/
 if_statement = {if_block ~ else_if_block* ~ else_block?}
@@ -55,7 +57,6 @@ case_statement = {
 }
 Match = @{"match"}
 Case = @{"case"}
-
 /*====================================================================================================================*/
 for_statement = {For ~ for_in_loop}
 for_in_loop = {SYMBOL~In~expr~block}
@@ -63,44 +64,29 @@ for_in_loop = {SYMBOL~In~expr~block}
 For = @{"for"}
 In = @{"in"}
 /*====================================================================================================================*/
-re_control = {
-    Return ~ expr
-  | Break
-  | Pass
-}
-
+non_local_exit = {("return"|"resume") ~ expr}
 //!#C678DD: Return|Yield|Break|Pass
-Return = @{"return"}
-Break = @{"break"}
-Pass = @{"continue"}
 /*====================================================================================================================*/
 ///#C678DD
 Type = @{"type"}
 /*====================================================================================================================*/
-classStatement = {Class ~ assign_pair ~ short_block?}
-traitStatement = {Trait ~ assign_pair ~ short_block?}
+classStatement = {"class" ~ assign_pair ~ short_block?}
+traitStatement = {"trait" ~ assign_pair ~ short_block?}
 
 short_block = {"{" ~ short_statement* ~ "}"}
 short_statement = {
     emptyStatement
-  | Def? ~ define_terms ~ eos?
+  | "def"? ~ define_terms ~ eos?
     // mut a = 1 ;
   | assign_pair ~ separator?
   | short_annotation ~ eos?
 }
 short_annotation = {annotation_call+~short_statement}
-//!#C678DD: Trait|Class
-Trait = @{"trait"}
-Class = @{"class"}
 /*====================================================================================================================*/
 extendStatement = {
-    Extend ~ symbol ~ parametric_types? ~ with_trait? ~ short_block
+    "extends" ~ Symbol ~ parametric_types? ~ with_trait? ~ short_block
 }
-with_trait = {With ~ symbol ~ parametric_types?}
-
-//!#C678DD: Extend|With
-Extend = @{"extend"}
-With = @{"with"}
+with_trait = {"with" ~ Symbol ~ parametric_types?}
 /*====================================================================================================================*/
 assignStatement = {
     // let (mut a: int, ) = 1;
@@ -115,12 +101,12 @@ assignStatement = {
   | Let ~ short_statement ~ eos?
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {Modifier* ~ symbol ~ type_hint?}
+assign_pair = {Modifier* ~ Symbol ~ type_hint?}
 
 ///#C678DD
 Let = @{"let"}
 /*====================================================================================================================*/
-defineStatement = {Def ~ define_terms}
+defineStatement = {"def" ~ define_terms}
 define_terms = _{
     assign_pair ~ parametric_types ~ define_parameter ~ type_hint? ~ parametric_types_term? ~ block_or_stmt?
   | assign_pair ~ define_parameter ~ type_hint? ~ block_or_stmt?
@@ -131,12 +117,11 @@ define_parameter = {
 }
 define_pair = {SYMBOL ~ type_hint? ~ (Set ~ expr)?}
 //!#C678DD: Def|Where
-Def = @{"def"}
 Where = @{"where"}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation = {annotation_call+~statement}
-annotation_call = @{At~(list|apply|symbol)}
+annotation_call = @{At~(list|apply|Symbol)}
 /*====================================================================================================================*/
 expression = {expr ~ eos?}
 expr = !{term ~ (Infix ~ term)*}
@@ -149,7 +134,7 @@ node = {
 // bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
 bracket_call = _{dot_call|slice|apply|apply_generic}
 bracket_once = _{dict|block}
-dot_call     = !{Dot ~ (Integer|symbol) }
+dot_call     = !{Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 apply    = !{"(" ~ ")" | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"}
 apply_kv = {SYMBOL~ Colon ~ expr | expr}
@@ -165,41 +150,38 @@ type_expr = _{term ~ (TypeInfix ~ term)*}
 //type_term = {Prefix* ~ type_node ~ Suffix*}
 //type_node = {"(" ~ type_expr ~ ")"|data}
 type_hint = {Colon ~ type_expr}
-generic_type = {"<" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ">"}
-parametric_types = {"<" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ ">"}
+generic_type = {"[" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ "]"}
+parametric_types = {"[" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ "]"}
 parametric_types_pair = {(Plus|Minus)? ~ SYMBOL}
 parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypePrefix = @{Plus|Minus}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
 /*====================================================================================================================*/
-data        = ${tuple|dict|block|list|Special|Byte|Number|string|symbol}
+data        = ${tuple|dict|block|list|Special|Byte|Complex|Decimal|Integer|String|Symbol}
 tuple       = !{"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 list        = !{"[" ~ "]" | "[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
 slice       = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
 index       =  {index_step|index_range|expr}
 index_range = !{expr? ~ Colon ~ expr?}
 index_step  = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
-dict        = !{"[" ~ "]" | "{" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "}"}
+dict        = !{"[" ~ "]" | "[" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "]"}
 key_value   = !{key_valid ~ Colon ~ expr}
-key_valid   = _{Integer | symbol | string}
-/*====================================================================================================================*/
-///#D19A66
-Special = !{"true" | "false"}
-Unit    = !{"("~")"}
+key_valid   = _{Integer | Symbol | String}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
-Number     = ${Complex|Decimal|Integer}
-Byte       = ${Zero ~ ASCII_ALPHA ~ (Underline? ~ ASCII_ALPHANUMERIC)+}
-Decimal    = ${Integer ~ Dot ~ Integer+}
+//!#D19A66: Special
+Byte    = ${Zero ~ ASCII_ALPHA ~ (Underline? ~ ASCII_ALPHANUMERIC)+}
+Decimal = ${Integer ~ Dot ~ Integer+}
 // DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
-Integer    = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline? ~ ASCII_DIGIT)*}
-Complex    =  {(Decimal|Integer)~ SYMBOL}
-Zero       = _{"0"}
+Integer = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline? ~ ASCII_DIGIT)*}
+Complex =  {(Decimal|Integer)~ SYMBOL}
+Zero    = _{"0"}
+Special = !{"true" | "false"}
 /*====================================================================================================================*/
 // https://en.wikipedia.org/wiki/Quotation_mark#Summary_table
 ///#98C379
-string         = ${symbol? ~ (StringTemplate|StringSimple)}
+String         = ${Symbol? ~ (StringTemplate|StringSimple)}
 StringTemplate = ${
     PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ StringItem* ~ POP
 }
@@ -221,13 +203,11 @@ StringSimple   = @{
 XmlEscaped = @{ "&" ~ ASCII_ALPHANUMERIC+ ~ Semicolon } // &lt;
 Apostrophe = @{"'"}
 Quotation  = @{"\""}
-Semicolon  = @{";"}
-// «
 /*====================================================================================================================*/
 ///#61AFEF
-symbol   = ${SYMBOL_XID|SYMBOL_ESCAPE}
-namepath = ${symbol ~ (Proportion ~ symbol)+}
-freepath = ${symbol ~ ((Proportion|Dot) ~ symbol)+}
+Symbol   = ${SYMBOL_XID|SYMBOL_ESCAPE}
+namepath = ${Symbol ~ (Proportion ~ Symbol)+}
+freepath = ${Symbol ~ ((Proportion|Dot) ~ Symbol)+}
 ///
 SYMBOL_XID = @{
     XID_START ~  XID_CONTINUE*
@@ -278,7 +258,7 @@ Solidus = @{"\\"}
 Proportion = @{"::"|"∷"}//U+2237
 Comma =@{","} //U+FF0C
 Dot = @{"."}
-Separate = @{";;"}
+
 
 Colon = @{":"} //U+FF1A
 ///#56B6C2

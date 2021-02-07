@@ -10,6 +10,12 @@ mod context;
 mod data;
 mod operators;
 
+use pest::Parser;
+
+#[derive(Parser)]
+#[grammar = "csv.pest"]
+pub struct ValkyrieParser;
+
 impl ParsingContext {
     pub fn get_ast(&self, text: &str) -> Result<ASTKind> {
         let pairs = ValkyrieParser::parse(Rule::program, text)?;

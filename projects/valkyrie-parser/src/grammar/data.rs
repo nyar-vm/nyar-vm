@@ -68,44 +68,43 @@ impl ParsingContext {
     }
 
     fn parse_number(&self, pairs: Pair<Rule>) -> ASTNode {
-        todo!()
-        // let r = self.get_span(&pairs);
-        // let (mut h, mut t, mut i) = Default::default();
-        // for pair in pairs.into_inner() {
-        //     match pair.as_rule() {
-        //         Rule::Integer => {
-        //             i = true;
-        //             t = pair.as_str().to_string();
-        //         }
-        //         Rule::Decimal => {
-        //             i = false;
-        //             t = pair.as_str().to_string();
-        //         }
-        //         // Rule::DecimalBad => {
-        //         //     // h = "dec";
-        //         //     let s = pair.as_str();
-        //         //     if s.starts_with('.') { t = "0".to_string() + s } else { t = s.to_string() + "0" }
-        //         // }
-        //         Rule::Complex => {
-        //             for inner in pair.into_inner() {
-        //                 match inner.as_rule() {
-        //                     Rule::Integer => {
-        //                         i = true;
-        //                         t = inner.as_str().to_string()
-        //                     }
-        //                     Rule::Decimal => {
-        //                         i = false;
-        //                         t = inner.as_str().to_string()
-        //                     }
-        //                     Rule::SYMBOL => h = inner.as_str(),
-        //                     _ => unreachable!(),
-        //                 };
-        //             }
-        //         }
-        //         _ => unreachable!(),
-        //     };
-        // }
-        // ASTNode::number(h, t.as_str(), i, r)
+        let r = self.get_span(&pairs);
+        let (mut h, mut t, mut i) = Default::default();
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::Integer => {
+                    i = true;
+                    t = pair.as_str().to_string();
+                }
+                Rule::Decimal => {
+                    i = false;
+                    t = pair.as_str().to_string();
+                }
+                // Rule::DecimalBad => {
+                //     // h = "dec";
+                //     let s = pair.as_str();
+                //     if s.starts_with('.') { t = "0".to_string() + s } else { t = s.to_string() + "0" }
+                // }
+                Rule::Complex => {
+                    for inner in pair.into_inner() {
+                        match inner.as_rule() {
+                            Rule::Integer => {
+                                i = true;
+                                t = inner.as_str().to_string()
+                            }
+                            Rule::Decimal => {
+                                i = false;
+                                t = inner.as_str().to_string()
+                            }
+                            Rule::SYMBOL => h = inner.as_str(),
+                            _ => unreachable!(),
+                        };
+                    }
+                }
+                _ => unreachable!(),
+            };
+        }
+        ASTNode::number(h, t.as_str(), i, r)
     }
 
     fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {
