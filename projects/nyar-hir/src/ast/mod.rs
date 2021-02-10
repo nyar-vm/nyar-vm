@@ -193,8 +193,11 @@ impl ASTNode {
         Self { kind: ASTKind::Symbol(box symbol), span: meta }
     }
 
-    pub fn number(literal: &str, handler: &str, meta: Span) -> Self {
-        let v = NumberLiteral { handler: handler.to_string(), value: literal.to_string() };
+    pub fn number<S>(literal: S, handler: &str, meta: Span) -> Self
+    where
+        S: Into<String>,
+    {
+        let v = NumberLiteral { handler: handler.to_string(), value: literal.into() };
         Self { kind: ASTKind::Number(box v), span: meta }
     }
 

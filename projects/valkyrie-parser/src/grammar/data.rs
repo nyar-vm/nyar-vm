@@ -1,8 +1,3 @@
-use nyar_error::Span;
-use nyar_hir::ast::{StringTemplateBuilder, Symbol};
-
-use crate::utils::trim_first_last;
-
 use super::*;
 
 impl ParsingContext {
@@ -10,11 +5,12 @@ impl ParsingContext {
         let r = self.get_span(&pairs);
         let pair = pairs.into_inner().nth(0).unwrap();
         match pair.as_rule() {
-            Rule::string => self.parse_string(pair),
+            Rule::String => self.parse_string(pair),
             Rule::Special => self.parse_special(pair),
-            Rule::Number => self.parse_number(pair),
+            Rule::Integer => ASTNode::number(self.parse_integer(pair), "", r),
             Rule::Byte => self.parse_byte(pair),
-            Rule::symbol => ASTNode::symbol(self.parse_symbol(pair), r),
+            Rule::Symbol => ASTNode::symbol(self.parse_symbol(pair), r),
+            Rule::namepath => ASTNode::symbol(self.parse_namepath(pair), r),
             Rule::list => self.parse_list_or_tuple(pair, true),
             Rule::dict => self.parse_dict(pair),
             _ => debug_cases!(pair),
@@ -26,6 +22,7 @@ impl ParsingContext {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
+                Rule::Comma => continue,
                 Rule::expr => vec.push(self.parse_expr(pair)),
                 Rule::key_value => {}
                 _ => debug_cases!(pair),
@@ -67,46 +64,12 @@ impl ParsingContext {
         }
     }
 
-    fn parse_number(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
-        let (mut h, mut t, mut i) = Default::default();
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::Integer => {
-                    i = true;
-                    t = pair.as_str().to_string();
-                }
-                Rule::Decimal => {
-                    i = false;
-                    t = pair.as_str().to_string();
-                }
-                // Rule::DecimalBad => {
-                //     // h = "dec";
-                //     let s = pair.as_str();
-                //     if s.starts_with('.') { t = "0".to_string() + s } else { t = s.to_string() + "0" }
-                // }
-                Rule::Complex => {
-                    for inner in pair.into_inner() {
-                        match inner.as_rule() {
-                            Rule::Integer => {
-                                i = true;
-                                t = inner.as_str().to_string()
-                            }
-                            Rule::Decimal => {
-                                i = false;
-                                t = inner.as_str().to_string()
-                            }
-                            Rule::SYMBOL => h = inner.as_str(),
-                            _ => unreachable!(),
-                        };
-                    }
-                }
-                _ => unreachable!(),
-            };
-        }
-        ASTNode::number(h, t.as_str(), i, r)
+    fn parse_integer(&self, pairs: Pair<Rule>) -> String {
+        pairs.as_str().chars().filter(|c| *c != '_').collect()
     }
-
+    fn parse_decimal(&self, pairs: Pair<Rule>) -> String {
+        self.parse_integer(pairs)
+    }
     fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);
         let s = pairs.as_str();
@@ -132,6 +95,11 @@ impl ParsingContext {
             _ => unreachable!(),
         }
     }
+    fn parse_namepath(&self, pairs: Pair<Rule>) -> Symbol {
+        Symbol::join(
+            pairs.into_inner().filter(|node| node.as_rule() == Rule::Symbol).map(|pair| self.parse_symbol(pair)).collect(),
+        )
+    }
 }
 
 impl ParsingContext {
@@ -150,7 +118,7 @@ impl ParsingContext {
                 Rule::StringSimple => {
                     return ASTNode::string_handler(trim_first_last(pair.as_str()), handler, r);
                 }
-                Rule::symbol => handler = pair.as_str(),
+                Rule::Symbol => handler = pair.as_str(),
                 _ => unreachable!(),
             };
         }

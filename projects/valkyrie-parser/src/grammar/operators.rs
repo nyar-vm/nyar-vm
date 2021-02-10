@@ -1,8 +1,13 @@
+use crate::Rule;
+use pest::prec_climber::{
+    Assoc::{Left, Right},
+    Operator, PrecClimber,
+};
 use std::lazy::SyncLazy;
-use valkyrie_pest::{Assoc::*, Operator, PrecClimber, Rule, Rule::*};
 
 pub static PREC_CLIMBER: SyncLazy<PrecClimber<Rule>> = SyncLazy::new(|| {
     //TODO: use macro
+    use crate::Rule::*;
     PrecClimber::new(vec![
         Operator::new(Set, Left),
         Operator::new(Plus, Left) | Operator::new(Minus, Left),

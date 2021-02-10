@@ -158,7 +158,7 @@ parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
 /*====================================================================================================================*/
-data        = ${tuple|dict|block|list|Special|Byte|Complex|Decimal|Integer|String|Symbol}
+data        = ${tuple|dict|block|list|Special|Byte|Complex|Decimal|Integer|String|namepath}
 tuple       = !{"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 list        = !{"[" ~ "]" | "[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
 slice       = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
@@ -171,7 +171,7 @@ key_valid   = _{Integer | Symbol | String}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
 //!#D19A66: Special
-Byte    = ${Zero ~ ASCII_ALPHA ~ (Underline? ~ ASCII_ALPHANUMERIC)+}
+Byte    = ${Zero ~ ASCII_ALPHA ~ ((Underline|Minus)? ~ ASCII_ALPHANUMERIC)+}
 Decimal = ${Integer ~ Dot ~ Integer+}
 // DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
 Integer = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline? ~ ASCII_DIGIT)*}
@@ -206,8 +206,8 @@ Quotation  = @{"\""}
 /*====================================================================================================================*/
 ///#61AFEF
 Symbol   = ${SYMBOL_XID|SYMBOL_ESCAPE}
-namepath = ${Symbol ~ (Proportion ~ Symbol)+}
-freepath = ${Symbol ~ ((Proportion|Dot) ~ Symbol)+}
+namepath = ${Symbol ~ (Proportion ~ Symbol)*}
+freepath = ${Symbol ~ ((Proportion|Dot) ~ Symbol)*}
 ///
 SYMBOL_XID = @{
     XID_START ~  XID_CONTINUE*

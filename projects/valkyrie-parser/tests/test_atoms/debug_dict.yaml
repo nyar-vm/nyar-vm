@@ -1,20 +1,9 @@
-AST::Suite: [
-    AST::Expression: {
-        expr: AST {
-            kind: None,
-            range: "(0:0, 0:0)",
-        },
-        eos: true,
-        range: "(2:1, 2:4)",
-    },
+Suite[
+    <<unreachable Nothing>>,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: AST {
-            kind: None,
-            range: "(0:0, 0:0)",
-        },
-        eos: true,
-        range: "(4:1, 6:3)",
-    },
+Suite[
+    <<unreachable Nothing>>,
+]
+Suite[
+    <<unreachable Nothing>>,
 ]

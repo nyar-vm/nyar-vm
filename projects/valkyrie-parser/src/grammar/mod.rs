@@ -1,20 +1,24 @@
+use pest::{iterators::Pair, Parser};
+
 pub use context::ParsingContext;
-use nyar_error::Result;
-use nyar_hir::{ast::Expression, ASTKind, ASTNode};
+use nyar_error::{NyarError, Result, Span};
+use nyar_hir::{
+    ast::{Expression, StringTemplateBuilder, Symbol},
+    ASTKind, ASTNode,
+};
 pub use operators::PREC_CLIMBER;
-use valkyrie_pest::{Pair, Parser, Rule, ValkyrieParser};
 
-use crate::{debug_cases, utils::unescape};
+use crate::{
+    debug_cases,
+    grammar::parser::ValkyrieParser,
+    utils::{trim_first_last, unescape},
+    Rule,
+};
 
-mod context;
-mod data;
-mod operators;
-
-use pest::Parser;
-
-#[derive(Parser)]
-#[grammar = "csv.pest"]
-pub struct ValkyrieParser;
+pub(crate) mod context;
+pub(crate) mod data;
+pub(crate) mod operators;
+pub(crate) mod parser;
 
 impl ParsingContext {
     pub fn get_ast(&self, text: &str) -> Result<ASTKind> {

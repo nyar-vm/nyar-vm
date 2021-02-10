@@ -1,0 +1,34 @@
+Suite[
+    <<unreachable Nothing>>,
+]
+Suite[
+    ListExpression(
+        [
+            1,
+            2,
+            3,
+        ],
+    ),
+]
+Suite[
+    ListExpression(
+        [
+            '',
+            '',
+            "‹›",
+        ],
+    ),
+]
+Suite[
+    ListExpression(
+        [
+            true,
+            <<unreachable Nothing>>,
+            ListExpression(
+                [
+                    <<unreachable Nothing>>,
+                ],
+            ),
+        ],
+    ),
+]

@@ -1,10 +1,13 @@
 #![feature(once_cell)]
 
-pub use grammar::ParsingContext;
+extern crate core;
+
+pub use self::grammar::context::ParsingContext;
+pub use crate::grammar::parser::Rule;
 pub use nyar_error::Result;
 pub use traits::ASTDump;
 
-pub mod grammar;
+mod grammar;
 pub mod utils;
 
 pub mod ast {

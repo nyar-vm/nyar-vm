@@ -1,6 +1,6 @@
-mod settings;
+use pest::iterators::Pair;
 
-use valkyrie_pest::{Pair, Rule};
+mod settings;
 
 pub fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> String {
     let indent = if is_newline { "  ".repeat(indent_level) } else { "".to_string() };
