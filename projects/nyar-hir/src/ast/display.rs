@@ -24,6 +24,8 @@ impl Debug for ASTNode {
                 f.write_str("Sequence")?;
                 f.debug_list().entries(v.iter()).finish()
             }
+            ASTKind::ListExpression(v) => write_tuple("List", v, f),
+            ASTKind::TupleExpression(v) => write_tuple("Tuple", v, f),
             ASTKind::Boolean(v) => Display::fmt(v, f),
             ASTKind::Number(v) => Display::fmt(v, f),
             ASTKind::String(v) => {
@@ -47,6 +49,14 @@ impl Debug for ASTNode {
             _ => Debug::fmt(&self.kind, f),
         }
     }
+}
+
+fn write_tuple(name: &str, v: &[ASTNode], f: &mut Formatter<'_>) -> fmt::Result {
+    let w = &mut f.debug_tuple(name);
+    for i in v {
+        w.field(i);
+    }
+    w.finish()
 }
 
 impl Display for ASTKind {

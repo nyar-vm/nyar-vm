@@ -1,9 +1,24 @@
 Suite[
-    ListExpression(
-        [
-            1,
-            2,
-            3,
-        ],
+    List(
+        1,
+        2,
+        3,
+    ),
+]
+Suite[
+    Tuple(
+        1,
+        2,
+        3,
+    ),
+]
+Suite[
+    <<unreachable Nothing>>,
+]
+Suite[
+    List(
+        1,
+        2,
+        3,
     ),
 ]

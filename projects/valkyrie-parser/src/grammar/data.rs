@@ -8,10 +8,12 @@ impl ParsingContext {
             Rule::String => self.parse_string(pair),
             Rule::Special => self.parse_special(pair),
             Rule::Integer => ASTNode::number(self.parse_integer(pair), "", r),
+            Rule::Decimal => ASTNode::number(self.parse_decimal(pair), "", r),
             Rule::Byte => self.parse_byte(pair),
             Rule::Symbol => ASTNode::symbol(self.parse_symbol(pair), r),
             Rule::namepath => ASTNode::symbol(self.parse_namepath(pair), r),
             Rule::list => self.parse_list_or_tuple(pair, true),
+            Rule::tuple => self.parse_list_or_tuple(pair, false),
             Rule::dict => self.parse_dict(pair),
             _ => debug_cases!(pair),
         }
@@ -32,18 +34,19 @@ impl ParsingContext {
     }
 
     fn parse_kv(&self, pairs: Pair<Rule>) -> ASTNode {
+        let r = self.get_span(&pairs);
+        let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::WHITESPACE | Rule::Colon => continue,
+                Rule::Symbol => k = ASTNode::symbol(self.parse_symbol(pair), r),
+                Rule::expr => v = self.parse_expr(pair),
+                _ => debug_cases!(pair),
+            };
+        }
         todo!()
-        // let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
-        // for pair in pairs.into_inner() {
-        //     match pair.as_rule() {
-        //         Rule::WHITESPACE | Rule::Colon => continue,
-        //         Rule::symbol => k = self.parse_symbol(pair),
-        //         Rule::expr => v = self.parse_expr(pair),
-        //         _ => debug_cases!(pair),
-        //     };
-        // }
         // match k.kind {
-        //     ASTKind::Nothing => k,
+        //     ASTKind::Nothing => unimplemented!(),
         //     _ => ASTNode::kv_pair(k, v),
         // }
     }

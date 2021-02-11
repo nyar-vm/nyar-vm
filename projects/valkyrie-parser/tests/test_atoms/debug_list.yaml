@@ -2,33 +2,33 @@ Suite[
     <<unreachable Nothing>>,
 ]
 Suite[
-    ListExpression(
-        [
-            1,
-            2,
-            3,
-        ],
+    Tuple,
+]
+Suite[
+    Tuple(
+        1,
     ),
 ]
 Suite[
-    ListExpression(
-        [
-            '',
-            '',
-            "‹›",
-        ],
+    List(
+        1,
+        2,
+        3,
     ),
 ]
 Suite[
-    ListExpression(
-        [
-            true,
+    List(
+        Tuple,
+        <<unreachable Nothing>>,
+        List(
             <<unreachable Nothing>>,
-            ListExpression(
-                [
-                    <<unreachable Nothing>>,
-                ],
-            ),
-        ],
+        ),
+    ),
+]
+Suite[
+    Tuple(
+        <<unreachable Nothing>>,
+        Tuple,
+        Tuple,
     ),
 ]
