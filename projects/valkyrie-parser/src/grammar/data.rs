@@ -1,4 +1,5 @@
 use super::*;
+use nyar_hir::ast::KVPair;
 
 impl ParsingContext {
     pub(crate) fn parse_data(&self, pairs: Pair<Rule>) -> ASTNode {
@@ -33,7 +34,7 @@ impl ParsingContext {
         return ASTNode::default();
     }
 
-    fn parse_kv(&self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_kv(&self, pairs: Pair<Rule>) -> KVPair {
         let r = self.get_span(&pairs);
         let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
         for pair in pairs.into_inner() {
@@ -44,11 +45,7 @@ impl ParsingContext {
                 _ => debug_cases!(pair),
             };
         }
-        todo!()
-        // match k.kind {
-        //     ASTKind::Nothing => unimplemented!(),
-        //     _ => ASTNode::kv_pair(k, v),
-        // }
+        ASTNode::kv_pair(k, v)
     }
 
     fn parse_list_or_tuple(&self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
@@ -154,7 +151,7 @@ impl ParsingContext {
     fn parse_string_item(&self, pairs: Pair<Rule>, builder: &mut StringTemplateBuilder) {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::expression => self.parse_expression(pair),
+                Rule::expression => builder.push_expression(self.parse_expression(pair).0),
                 _ => debug_cases!(pair), // _ => unreachable!(),
             };
         }

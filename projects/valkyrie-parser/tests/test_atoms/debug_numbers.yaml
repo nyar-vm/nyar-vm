@@ -1,77 +1,54 @@
-AST::Suite: [
-    AST::Expression: {
-        expr: 0,
-        eos: false,
-        range: "(2:1, 7:1)",
-    },
+Suite[
+    0,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 0.0,
-        eos: false,
-        range: "(7:1, 8:1)",
-    },
+Suite[
+    0.0,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 42f32,
-        eos: false,
-        range: "(8:1, 9:1)",
-    },
+Suite[
+    42,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 2147483647i32,
-        eos: false,
-        range: "(9:1, 10:1)",
-    },
+Suite[
+    f32,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 9223372036854775807i64,
-        eos: false,
-        range: "(10:1, 11:1)",
-    },
+Suite[
+    2147483647,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 170141183460469231731687303715884105727i128,
-        eos: false,
-        range: "(11:1, 12:1)",
-    },
+Suite[
+    i32,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 57896044618658097711785492504343953926634992332820282019728792003956564819967,
-        eos: false,
-        range: "(12:1, 13:1)",
-    },
+Suite[
+    9223372036854775807,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 123456,
-        eos: false,
-        range: "(13:1, 14:1)",
-    },
+Suite[
+    i64,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 123456i,
-        eos: false,
-        range: "(14:1, 15:1)",
-    },
+Suite[
+    170141183460469231731687303715884105727,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 1234.56im,
-        eos: false,
-        range: "(15:1, 16:1)",
-    },
+Suite[
+    i128,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 1234.56cm,
-        eos: false,
-        range: "(16:1, 17:1)",
-    },
+Suite[
+    57896044618658097711785492504343953926634992332820282019728792003956564819967,
+]
+Suite[
+    123456,
+]
+Suite[
+    123456,
+]
+Suite[
+    i,
+]
+Suite[
+    1234.56,
+]
+Suite[
+    im,
+]
+Suite[
+    1234.56,
+]
+Suite[
+    cm,
 ]

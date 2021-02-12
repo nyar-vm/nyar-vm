@@ -1,5 +1,7 @@
 Suite[
-    '',
+    StringTemplate[
+        y,
+    ],
 ]
 Suite[
     StringLiteral {

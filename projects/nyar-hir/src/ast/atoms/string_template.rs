@@ -18,8 +18,9 @@ impl StringTemplateBuilder {
     pub fn push_escape_u(&mut self, s: &str) {}
     pub fn push_escape_uu(&mut self, s: &str) {}
 
-    pub fn push_expression(&mut self) {
-        self.finish()
+    pub fn push_expression(&mut self, e: ASTNode) {
+        self.finish();
+        self.inner.push(e)
     }
     pub fn push_variable(&mut self) {
         self.finish()
