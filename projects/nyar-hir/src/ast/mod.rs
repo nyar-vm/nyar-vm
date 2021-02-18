@@ -11,10 +11,9 @@ use nyar_error::Span;
 pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
-        byte_literal::ByteLiteral,
         dict_literal::DictLiteral,
         kv_pair::KVPair,
-        number_literal::{DecimalLiteral, IntegerLiteral},
+        number_literal::{ByteLiteral, DecimalLiteral, IntegerLiteral},
         string_literal::StringLiteral,
         string_template::StringTemplateBuilder,
         symbol::Symbol,
@@ -128,16 +127,9 @@ impl ASTNode {
         Expression { base, eos }
     }
 
-    pub fn string_expression(_h: &str, _v: &[ASTNode], _meta: Span) -> Self {
+    pub fn push_infix_chain(self, op: &str, _rhs: ASTNode, _meta: Span) -> Self {
+        let op = Operator::parse_infix(op);
         todo!()
-        // let handler = if h.is_empty() { None } else { Some(String::from(h)) };
-        // let v = StringLiteral { handler, value: Vec::from(v) };
-        // Self { kind: ASTKind::StringExpression(box v), meta }
-    }
-
-    pub fn push_infix_chain(self, _op: &str, _rhs: ASTNode, _meta: Span) -> Self {
-        todo!()
-        // let op = Operator::parse(op, 0);
         //
         // let mut infix = match self.kind {
         //     ASTKind::CallInfix(e) if op.get_priority() == e.get_priority() => *e,

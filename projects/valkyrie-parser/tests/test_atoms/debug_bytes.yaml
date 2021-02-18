@@ -1,32 +1,12 @@
 Suite[
-    Byte(
-        ByteLiteral {
-            handler: 'x',
-            value: "FF",
-        },
-    ),
+    0xFF,
 ]
 Suite[
-    Byte(
-        ByteLiteral {
-            handler: 'o',
-            value: "77",
-        },
-    ),
+    0o77,
 ]
 Suite[
-    Byte(
-        ByteLiteral {
-            handler: 'b',
-            value: "11",
-        },
-    ),
+    0b11,
 ]
 Suite[
-    Byte(
-        ByteLiteral {
-            handler: 'a',
-            value: "_b_c_d",
-        },
-    ),
+    0a_b_c_d,
 ]

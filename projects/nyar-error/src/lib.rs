@@ -3,7 +3,7 @@
 
 mod errors;
 mod span;
-mod third_party;
+pub mod third_party;
 
 pub use self::{
     errors::{NyarError, NyarErrorKind, Result},

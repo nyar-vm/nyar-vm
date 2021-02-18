@@ -1,16 +1,30 @@
+use std::str::FromStr;
+
+use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair};
+
 use super::*;
-use nyar_hir::ast::KVPair;
 
 impl ParsingContext {
-    pub(crate) fn parse_data(&self, pairs: Pair<Rule>) -> ASTNode {
+    pub(crate) fn parse_data(&mut self, pairs: Pair<Rule>) -> ASTNode {
+        let r = self.get_span(&pairs);
+        match self.try_parse_data(pairs) {
+            Ok(o) => o,
+            Err(e) => {
+                self.errors.push(e);
+                ASTNode::null(r)
+            }
+        }
+    }
+
+    pub(crate) fn try_parse_data(&mut self, pairs: Pair<Rule>) -> Result<ASTNode> {
         let r = self.get_span(&pairs);
         let pair = pairs.into_inner().nth(0).unwrap();
-        match pair.as_rule() {
+        let value = match pair.as_rule() {
             Rule::String => self.parse_string(pair),
             Rule::Special => self.parse_special(pair),
-            Rule::Complex => self.parse_complex_number(),
-            Rule::Integer => ASTNode::number(self.parse_integer(pair), "", r),
-            Rule::Decimal => ASTNode::number(self.parse_decimal(pair), "", r),
+            Rule::Complex => self.parse_complex_number(pair)?,
+            Rule::Integer => self.parse_integer(pair)?.as_node(r),
+            Rule::Decimal => self.parse_decimal(pair)?.as_node(r),
             Rule::Byte => self.parse_byte(pair),
             Rule::Symbol => ASTNode::symbol(self.parse_symbol(pair), r),
             Rule::namepath => ASTNode::symbol(self.parse_namepath(pair), r),
@@ -18,15 +32,14 @@ impl ParsingContext {
             Rule::tuple => self.parse_list_or_tuple(pair, false),
             Rule::dict => self.parse_dict(pair),
             _ => debug_cases!(pair),
-        }
+        };
+        Ok(value)
     }
 
-    fn parse_dict(&self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_dict(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::WHITESPACE => continue,
-                Rule::Comma => continue,
                 Rule::expr => vec.push(self.parse_expr(pair)),
                 Rule::key_value => {}
                 _ => debug_cases!(pair),
@@ -35,7 +48,7 @@ impl ParsingContext {
         return ASTNode::default();
     }
 
-    fn parse_kv(&self, pairs: Pair<Rule>) -> KVPair {
+    fn parse_kv(&mut self, pairs: Pair<Rule>) -> KVPair {
         let r = self.get_span(&pairs);
         let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
         for pair in pairs.into_inner() {
@@ -49,12 +62,11 @@ impl ParsingContext {
         ASTNode::kv_pair(k, v)
     }
 
-    fn parse_list_or_tuple(&self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
+    fn parse_list_or_tuple(&mut self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
         let r = self.get_span(&pairs);
         let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::WHITESPACE | Rule::Comma => continue,
                 Rule::expr => vec.push(self.parse_expr(pair)),
                 _ => unreachable!(),
             };
@@ -64,14 +76,25 @@ impl ParsingContext {
             false => ASTNode::tuple(vec, r),
         }
     }
-    fn parse_complex_number(&self, pairs: Pair<Rule>) -> String {
-        pairs.as_str().chars().filter(|c| *c != '_').collect()
+    fn parse_complex_number(&self, pairs: Pair<Rule>) -> Result<ASTNode> {
+        let r = self.get_span(&pairs);
+        let mut pairs = pairs.into_inner();
+        unsafe {
+            let n = pairs.next().unwrap_unchecked();
+            let h = pairs.next().unwrap_unchecked().as_str();
+            let out = match n.as_rule() {
+                Rule::Integer => self.parse_integer(n)?.with_handler(h).as_node(r),
+                Rule::Decimal => self.parse_decimal(n)?.with_handler(h).as_node(r),
+                _ => unreachable!(),
+            };
+            return Ok(out);
+        }
     }
-    fn parse_integer(&self, pairs: Pair<Rule>) -> String {
-        pairs.as_str().chars().filter(|c| *c != '_').collect()
+    fn parse_integer(&self, pairs: Pair<Rule>) -> Result<IntegerLiteral> {
+        IntegerLiteral::from_str(pairs.as_str())
     }
-    fn parse_decimal(&self, pairs: Pair<Rule>) -> String {
-        self.parse_integer(pairs)
+    fn parse_decimal(&self, pairs: Pair<Rule>) -> Result<DecimalLiteral> {
+        DecimalLiteral::from_str(pairs.as_str())
     }
     fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);
@@ -106,7 +129,7 @@ impl ParsingContext {
 }
 
 impl ParsingContext {
-    fn parse_string(&self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_string(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);
         let mut handler = "";
         // let (mut h, mut t) = Default::default();
@@ -139,7 +162,7 @@ impl ParsingContext {
         }
         ASTNode::string_handler(builder, handler, span)
     }
-    fn parse_string_template(&self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_string_template(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let mut builder = StringTemplateBuilder::new(self.get_span(&pairs));
         for pair in pairs.into_inner() {
             match pair.as_rule() {
@@ -151,7 +174,7 @@ impl ParsingContext {
         }
         builder.build()
     }
-    fn parse_string_item(&self, pairs: Pair<Rule>, builder: &mut StringTemplateBuilder) {
+    fn parse_string_item(&mut self, pairs: Pair<Rule>, builder: &mut StringTemplateBuilder) {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::expression => builder.push_expression(self.parse_expression(pair).0),

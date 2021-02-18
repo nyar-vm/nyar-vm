@@ -9,7 +9,6 @@ license = "MPL-2.0"
 
 [dependencies]
 serde = { version = "1.0.143", features = ["derive"] }
-num = {version="0.4.0", features = ["serde"]}
 
 [dependencies.nyar-error]
 version = "0.1"

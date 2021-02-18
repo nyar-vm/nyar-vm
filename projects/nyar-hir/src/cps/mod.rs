@@ -74,10 +74,7 @@ impl CpsTransformer {
             ASTKind::LoopStatement(_) => {
                 unreachable!()
             }
-            ASTKind::Suite(_) => {
-                todo!()
-            }
-            ASTKind::Byte(_) => {
+            _ => {
                 todo!()
             }
         }

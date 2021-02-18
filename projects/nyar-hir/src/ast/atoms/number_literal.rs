@@ -1,54 +1,65 @@
+use nyar_error::{
+    third_party::{num::Zero, BigDecimal, BigInt},
+    NyarError,
+};
+
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IntegerLiteral {
     pub handler: String,
-    pub value: String,
+    pub value: BigInt,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DecimalLiteral {
     pub handler: String,
+    pub value: BigDecimal,
+}
+
+/// - `Number`: raw number represent
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ByteLiteral {
+    pub handler: char,
     pub value: String,
 }
 
 impl Default for IntegerLiteral {
     fn default() -> Self {
-        Self { handler: "".to_string(), value: "0".to_string() }
+        Self { handler: "".to_string(), value: BigInt::zero() }
     }
 }
 
 impl Default for DecimalLiteral {
     fn default() -> Self {
-        Self { handler: "".to_string(), value: "0".to_string() }
+        Self { handler: "".to_string(), value: BigDecimal::zero() }
     }
 }
 
-impl Display for IntegerLiteral {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.value, self.handler)
+impl FromStr for IntegerLiteral {
+    type Err = NyarError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self { handler: String::new(), value: BigInt::from_str(s)? })
     }
 }
 
-impl Display for DecimalLiteral {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.value, self.handler)
+impl FromStr for DecimalLiteral {
+    type Err = NyarError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self { handler: String::new(), value: BigDecimal::from_str(s)? })
     }
 }
 
 impl IntegerLiteral {
-    pub fn new<S>(number: &str) -> Self
-    where
-        S: Into<String>,
-    {
-        Self { handler: String::new(), value: number.into() }
+    pub fn with_handler(mut self, handler: &str) -> Self {
+        Self { handler: handler.to_string(), value: self.value }
     }
-    pub fn with_handler<S>(number: &str, handler: &str) -> Self
-    where
-        S: Into<String>,
-    {
-        Self { handler: handler.to_string(), value: number.into() }
-    }
+}
 
-    fn remove_underscore() {}
+impl DecimalLiteral {
+    pub fn with_handler(mut self, handler: &str) -> Self {
+        Self { handler: handler.to_string(), value: self.value }
+    }
 }

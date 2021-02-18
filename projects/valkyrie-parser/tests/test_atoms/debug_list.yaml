@@ -6,14 +6,14 @@ Suite[
 ]
 Suite[
     Tuple(
-        1,
+        1_,
     ),
 ]
 Suite[
     List(
-        1,
-        2,
-        3,
+        1_,
+        2_,
+        3_,
     ),
 ]
 Suite[
