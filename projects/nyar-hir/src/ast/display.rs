@@ -27,7 +27,7 @@ impl Debug for ASTNode {
             ASTKind::ListExpression(v) => write_tuple("List", v, f),
             ASTKind::TupleExpression(v) => write_tuple("Tuple", v, f),
             ASTKind::Boolean(v) => Display::fmt(v, f),
-            ASTKind::Number(v) => Display::fmt(v, f),
+            ASTKind::Integer(v) => Display::fmt(v, f),
             ASTKind::String(v) => {
                 if v.handler.is_empty() {
                     Debug::fmt(&v.literal, f)
@@ -96,7 +96,7 @@ impl Display for ASTKind {
                 todo!()
             }
             ASTKind::Boolean(v) => Display::fmt(v, f),
-            ASTKind::Number(v) => Display::fmt(v, f),
+            ASTKind::Integer(v) => Display::fmt(v, f),
             ASTKind::String(v) => Display::fmt(v, f),
             ASTKind::StringTemplate(_v) => {
                 todo!()

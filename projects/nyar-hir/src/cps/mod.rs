@@ -56,7 +56,7 @@ impl CpsTransformer {
             ASTKind::StringTemplate(_) => {
                 todo!()
             }
-            ASTKind::Boolean(_) | ASTKind::Number(_) | ASTKind::String(_) | ASTKind::Symbol(_) => k.call(ast),
+            ASTKind::Boolean(_) | ASTKind::Integer(_) | ASTKind::String(_) | ASTKind::Symbol(_) => k.call(ast),
             ASTKind::ListExpression(_) => {
                 todo!()
             }

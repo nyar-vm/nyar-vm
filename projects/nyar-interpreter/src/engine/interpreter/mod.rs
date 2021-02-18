@@ -1,5 +1,5 @@
 use crate::{engine::NyarEngine, ASTKind, ASTNode, Result, Value};
-use nyar_hir::ast::NumberLiteral;
+use nyar_hir::ast::IntegerLiteral;
 
 pub trait Evaluate {
     fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value>;
@@ -49,7 +49,7 @@ impl Evaluate for ASTKind {
     }
 }
 
-impl Evaluate for NumberLiteral {
+impl Evaluate for IntegerLiteral {
     fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value> {
         match (self.is_integer, &self.handler) {
             (true, Some(s)) => ctx.get_integer_handlers().parse_integer(s, &self.value),

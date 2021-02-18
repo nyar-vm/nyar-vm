@@ -8,6 +8,7 @@ impl ParsingContext {
         match pair.as_rule() {
             Rule::String => self.parse_string(pair),
             Rule::Special => self.parse_special(pair),
+            Rule::Complex => self.parse_complex_number(),
             Rule::Integer => ASTNode::number(self.parse_integer(pair), "", r),
             Rule::Decimal => ASTNode::number(self.parse_decimal(pair), "", r),
             Rule::Byte => self.parse_byte(pair),
@@ -63,7 +64,9 @@ impl ParsingContext {
             false => ASTNode::tuple(vec, r),
         }
     }
-
+    fn parse_complex_number(&self, pairs: Pair<Rule>) -> String {
+        pairs.as_str().chars().filter(|c| *c != '_').collect()
+    }
     fn parse_integer(&self, pairs: Pair<Rule>) -> String {
         pairs.as_str().chars().filter(|c| *c != '_').collect()
     }

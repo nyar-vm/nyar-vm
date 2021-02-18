@@ -11,8 +11,13 @@ use nyar_error::Span;
 pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
-        byte_literal::ByteLiteral, dict_literal::DictLiteral, kv_pair::KVPair, number_literal::NumberLiteral,
-        string_literal::StringLiteral, string_template::StringTemplateBuilder, symbol::Symbol,
+        byte_literal::ByteLiteral,
+        dict_literal::DictLiteral,
+        kv_pair::KVPair,
+        number_literal::{DecimalLiteral, IntegerLiteral},
+        string_literal::StringLiteral,
+        string_template::StringTemplateBuilder,
+        symbol::Symbol,
     },
     chain::*,
     control::*,
@@ -37,14 +42,16 @@ mod let_bind;
 mod looping;
 mod operator;
 
-pub type Range = std::ops::Range<u32>;
-
+///
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ASTNode {
+    /// The kind of this ast node
     pub kind: ASTKind,
+    /// The range and file of this ast node
     pub span: Span,
 }
 
+///
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ASTKind {
     /// Wrong node
@@ -69,17 +76,23 @@ pub enum ASTKind {
     TupleExpression(Vec<ASTNode>),
     /// `[1, 2, 3]`
     ListExpression(Vec<ASTNode>),
-    ///
+    /// `[a: 1, z: 26]`
     DictExpression(Box<DictLiteral>),
-    ///
+    /// Boolean literal, `true` and `false`
     Boolean(bool),
-    Number(Box<NumberLiteral>),
+    /// Byte like literal, start with `0x`
     Byte(Box<ByteLiteral>),
+    /// Integer literal, number without `.`
+    Integer(Box<IntegerLiteral>),
+    /// Decimal literal, number with `.`
+    Decimal(Box<DecimalLiteral>),
+    /// String literal
     String(Box<StringLiteral>),
     /// String Template
     StringTemplate(Vec<ASTNode>),
     /// XML Template
     XMLTemplate(Vec<ASTNode>),
+    /// A symbol path, needs context to resolve
     Symbol(Box<Symbol>),
 }
 
@@ -193,12 +206,8 @@ impl ASTNode {
         Self { kind: ASTKind::Symbol(box symbol), span: meta }
     }
 
-    pub fn number<S>(literal: S, handler: &str, meta: Span) -> Self
-    where
-        S: Into<String>,
-    {
-        let v = NumberLiteral { handler: handler.to_string(), value: literal.into() };
-        Self { kind: ASTKind::Number(box v), span: meta }
+    pub fn number(n: IntegerLiteral, meta: Span) -> Self {
+        Self { kind: ASTKind::Integer(box n), span: meta }
     }
 
     pub fn bytes<S>(literal: S, mode: char, meta: Span) -> Self
