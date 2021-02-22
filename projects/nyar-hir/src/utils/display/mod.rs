@@ -1,7 +1,7 @@
 mod atom;
 
 use crate::{
-    ast::{DecimalLiteral, IntegerLiteral},
+    ast::{ByteLiteral, DecimalLiteral, IntegerLiteral},
     ASTKind, ASTNode,
 };
 use std::fmt::{Debug, Display, Formatter};

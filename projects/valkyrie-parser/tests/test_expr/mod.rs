@@ -42,3 +42,24 @@ fn debug_dot_call() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(DOT_CALL);
     ast.save("tests/test_expr/debug_dot_call.yaml")
 }
+const BYTES: &str = r#"
+
+"#;
+
+#[test]
+fn debug_bytes() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(BYTES);
+    ast.save("tests/test_atoms/debug_bytes.yaml")
+}
+
+const SPECIALS: &str = r#"
+null
+true
+false
+"#;
+
+#[test]
+fn debug_specials() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(SPECIALS);
+    ast.save("tests/test_atoms/debug_specials.yaml")
+}

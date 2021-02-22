@@ -28,16 +28,31 @@ impl ParsingContext {
             Rule::Byte => self.parse_byte(pair),
             Rule::Symbol => ASTNode::symbol(self.parse_symbol(pair), r),
             Rule::namepath => ASTNode::symbol(self.parse_namepath(pair), r),
-            Rule::list => self.parse_list_or_tuple(pair, true),
-            Rule::tuple => self.parse_list_or_tuple(pair, false),
-            Rule::dict => self.parse_dict(pair),
+            Rule::tuple => self.parse_tuple(pair, false),
+            Rule::table => self.parse_table(pair),
             _ => debug_cases!(pair),
         };
         Ok(value)
     }
 
-    fn parse_dict(&mut self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_table(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let mut vec: Vec<ASTNode> = vec![];
+        pairs.into_inner().map(|pair| self.parse_table_item(pair))
+
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::expr => vec.push(self.parse_table_item(pair)),
+                Rule::key_value => {}
+                _ => debug_cases!(pair),
+            };
+        }
+        return ASTNode::default();
+    }
+
+    fn parse_table_item(&mut self, pairs: Pair<Rule>) -> ASTNode {
+        let mut vec: Vec<ASTNode> = vec![];
+        pairs.into_inner().map(|f| self.parse_table())
+
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::expr => vec.push(self.parse_expr(pair)),
@@ -62,7 +77,7 @@ impl ParsingContext {
         ASTNode::kv_pair(k, v)
     }
 
-    fn parse_list_or_tuple(&mut self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
+    fn parse_tuple(&mut self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
         let r = self.get_span(&pairs);
         let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {

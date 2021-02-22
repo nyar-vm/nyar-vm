@@ -119,7 +119,7 @@ Where = @{"where"}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation = {annotation_call+~statement}
-annotation_call = @{At~(list|apply|Symbol)}
+annotation_call = @{At~(apply|Symbol)}
 /*====================================================================================================================*/
 expression = {expr ~ eos?}
 expr = !{term ~ (Infix ~ term)*}
@@ -131,7 +131,7 @@ node = {
 }
 // bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
 bracket_call = _{dot_call|slice|apply|apply_generic}
-bracket_once = _{dict|block}
+bracket_once = _{table|block}
 dot_call     = !{Dot ~ (Integer|Symbol) }
 /*====================================================================================================================*/
 apply    = !{"(" ~ ")" | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"}
@@ -156,16 +156,17 @@ parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
 /*====================================================================================================================*/
-data        = ${tuple|dict|block|list|Special|Byte|Complex|Decimal|Integer|String|namepath}
-tuple       = !{"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
-list        = !{"[" ~ "]" | "[" ~ expr? ~ (Comma ~ expr)* ~ Comma? ~ "]"}
-slice       = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
+data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath}
+tuple       =  {"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
+table       =  {"[" ~ "]" | "[" ~ table_item? ~ (Comma ~ table_item)* ~ Comma? ~ "]"}
+table_item  = _{table_pair|expr}
+table_pair  =  {valid_key ~ Colon ~ expr}
+valid_key   =  {Integer | Symbol | String}
+/*====================================================================================================================*/
+slice       =  {"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
 index       =  {index_step|index_range|expr}
-index_range = !{expr? ~ Colon ~ expr?}
-index_step  = !{expr? ~ Colon ~ expr? ~ Colon ~ expr?}
-dict        = !{"[" ~ "]" | "[" ~ key_value? ~ (Comma ~ key_value)* ~ Comma? ~ "]"}
-key_value   = !{key_valid ~ Colon ~ expr}
-key_valid   = _{Integer | Symbol | String}
+index_range =  {expr? ~ Colon ~ expr?}
+index_step  =  {expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
 //!#D19A66: Special
@@ -173,7 +174,7 @@ Byte    = ${Zero ~ ASCII_ALPHA ~ (Underline|Minus|ASCII_ALPHANUMERIC)+}
 Decimal = ${Integer ~ Dot ~ Integer+}
 // DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
 Integer = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline|ASCII_DIGIT)*}
-Complex = ${(Decimal|Integer) ~ !Underline ~ Symbol}
+Complex = ${(Decimal|Integer) ~ Symbol}
 Zero    = _{"0"}
 Special = !{"true" | "false"}
 Underline = _{"_"}
@@ -210,7 +211,7 @@ freepath = ${Symbol ~ ((Proportion|Dot) ~ Symbol)*}
 ///
 SYMBOL_XID = @{(XID_START|Underline) ~  XID_CONTINUE*}
 ///
-SYMBOL_ESCAPE = @{Quote ~ !(Quote ~ ANY) ~ Quote}
+SYMBOL_ESCAPE = @{Quote ~ (!Quote ~ ANY)+ ~ Quote}
 Quote =@{"`"}
 /*====================================================================================================================*/
 //#7F848E

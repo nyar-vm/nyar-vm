@@ -1,6 +1,8 @@
 use super::*;
 
 const SYMBOLS: &str = r#"
+true;
+false;
 a;
 a::b;
 a::b::c;

@@ -1,4 +1,10 @@
 Suite[
+    true,
+]
+Suite[
+    false,
+]
+Suite[
     a,
 ]
 Suite[

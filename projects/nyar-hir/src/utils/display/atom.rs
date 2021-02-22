@@ -1,15 +1,22 @@
 use super::*;
-use crate::ast::ByteLiteral;
 
 impl Display for IntegerLiteral {
+    //noinspection DuplicatedCode
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}_{}", self.value, self.handler)
+        match self.handler.is_empty() {
+            true => write!(f, "{}", self.value),
+            false => write!(f, "{}_{}", self.value, self.handler),
+        }
     }
 }
 
 impl Display for DecimalLiteral {
+    //noinspection DuplicatedCode
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}_{}", self.value, self.handler)
+        match self.handler.is_empty() {
+            true => write!(f, "{}", self.value),
+            false => write!(f, "{}_{}", self.value, self.handler),
+        }
     }
 }
 
