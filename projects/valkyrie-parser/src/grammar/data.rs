@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair};
+use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, TableBuilder};
 
 use super::*;
 
@@ -28,7 +28,7 @@ impl ParsingContext {
             Rule::Byte => self.parse_byte(pair),
             Rule::Symbol => ASTNode::symbol(self.parse_symbol(pair), r),
             Rule::namepath => ASTNode::symbol(self.parse_namepath(pair), r),
-            Rule::tuple => self.parse_tuple(pair, false),
+            Rule::tuple => self.parse_tuple(pair),
             Rule::table => self.parse_table(pair),
             _ => debug_cases!(pair),
         };
@@ -36,60 +36,42 @@ impl ParsingContext {
     }
 
     fn parse_table(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let mut vec: Vec<ASTNode> = vec![];
-        pairs.into_inner().map(|pair| self.parse_table_item(pair))
-
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::expr => vec.push(self.parse_table_item(pair)),
-                Rule::key_value => {}
-                _ => debug_cases!(pair),
-            };
-        }
-        return ASTNode::default();
-    }
-
-    fn parse_table_item(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let mut vec: Vec<ASTNode> = vec![];
-        pairs.into_inner().map(|f| self.parse_table())
-
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::expr => vec.push(self.parse_expr(pair)),
-                Rule::key_value => {}
-                _ => debug_cases!(pair),
-            };
-        }
-        return ASTNode::default();
-    }
-
-    fn parse_kv(&mut self, pairs: Pair<Rule>) -> KVPair {
         let r = self.get_span(&pairs);
-        let (mut k, mut v) = (ASTNode::default(), ASTNode::default());
+        let mut table = TableBuilder::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::WHITESPACE | Rule::Colon => continue,
-                Rule::Symbol => k = ASTNode::symbol(self.parse_symbol(pair), r),
-                Rule::expr => v = self.parse_expr(pair),
-                _ => debug_cases!(pair),
-            };
-        }
-        ASTNode::kv_pair(k, v)
-    }
-
-    fn parse_tuple(&mut self, pairs: Pair<Rule>, is_list: bool) -> ASTNode {
-        let r = self.get_span(&pairs);
-        let mut vec: Vec<ASTNode> = vec![];
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::expr => vec.push(self.parse_expr(pair)),
+                Rule::expr => table.push_node(self.parse_expression(pair).0),
+                Rule::table_pair => {
+                    if let Err(e) = self.parse_kv(pair, &mut table) {
+                        self.errors.push(e)
+                    }
+                }
                 _ => unreachable!(),
             };
         }
-        match is_list {
-            true => ASTNode::list(vec, r),
-            false => ASTNode::tuple(vec, r),
-        }
+        return table.finish(r);
+    }
+
+    fn parse_kv(&mut self, pairs: Pair<Rule>, table: &mut TableBuilder) -> Result<()> {
+        let mut pairs = pairs.into_inner();
+        let (key, value) = unsafe {
+            let k = pairs.next().unwrap_unchecked();
+            let v = pairs.next().unwrap_unchecked();
+            (k, self.parse_expr(v))
+        };
+        let r = self.get_span(&key);
+        match key.as_rule() {
+            Rule::Symbol => table.push_symbol_key(self.parse_symbol(key), value, r),
+            Rule::Integer => table.push_pair(self.parse_integer(key)?, value, r),
+            _ => debug_cases!(key),
+        };
+        Ok(())
+    }
+
+    fn parse_tuple(&mut self, pairs: Pair<Rule>) -> ASTNode {
+        let r = self.get_span(&pairs);
+        let tuple = pairs.into_inner().filter(|f| f.as_rule() == Rule::expr).map(|pair| self.parse_expr(pair)).collect();
+        ASTNode::tuple(tuple, r)
     }
     fn parse_complex_number(&self, pairs: Pair<Rule>) -> Result<ASTNode> {
         let r = self.get_span(&pairs);

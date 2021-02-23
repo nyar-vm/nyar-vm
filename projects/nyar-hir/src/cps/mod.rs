@@ -57,14 +57,11 @@ impl CpsTransformer {
                 todo!()
             }
             ASTKind::Boolean(_) | ASTKind::Integer(_) | ASTKind::String(_) | ASTKind::Symbol(_) => k.call(ast),
-            ASTKind::ListExpression(_) => {
-                todo!()
-            }
             ASTKind::TupleExpression(_) => {
                 todo!()
             }
 
-            ASTKind::DictExpression(_) => {
+            ASTKind::TableExpression(_) => {
                 todo!()
             }
             ASTKind::IfStatement(_) => {

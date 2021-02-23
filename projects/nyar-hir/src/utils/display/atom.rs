@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::KVPair;
 
 impl Display for IntegerLiteral {
     //noinspection DuplicatedCode
@@ -23,5 +24,11 @@ impl Display for DecimalLiteral {
 impl Display for ByteLiteral {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(f, "0{}{}", self.handler, self.value)
+    }
+}
+
+impl Display for KVPair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.key, self.value)
     }
 }

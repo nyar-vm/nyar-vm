@@ -30,7 +30,7 @@ impl Debug for ASTNode {
                 f.write_str("Sequence")?;
                 f.debug_list().entries(v.iter()).finish()
             }
-            ASTKind::ListExpression(v) => write_tuple("List", v, f),
+            ASTKind::TableExpression(v) => write_tuple("Table", &v.inner, f),
             ASTKind::TupleExpression(v) => write_tuple("Tuple", v, f),
             ASTKind::Boolean(v) => Display::fmt(v, f),
             ASTKind::Integer(v) => Display::fmt(v, f),
@@ -67,6 +67,12 @@ fn write_tuple(name: &str, v: &[ASTNode], f: &mut Formatter<'_>) -> std::fmt::Re
     w.finish()
 }
 
+impl Display for ASTNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.kind, f)
+    }
+}
+
 impl Display for ASTKind {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
@@ -88,10 +94,7 @@ impl Display for ASTKind {
             ASTKind::TupleExpression(_v) => {
                 todo!()
             }
-            ASTKind::ListExpression(_v) => {
-                todo!()
-            }
-            ASTKind::DictExpression(_v) => {
+            ASTKind::TableExpression(_v) => {
                 todo!()
             }
             ASTKind::IfStatement(_) => {
@@ -114,7 +117,8 @@ impl Display for ASTKind {
             ASTKind::XMLTemplate(_v) => {
                 todo!()
             }
-            ASTKind::Symbol(v) => write!(f, "{}", v),
+            ASTKind::Symbol(v) => Display::fmt(v, f),
+            ASTKind::PairExpression(v) => Display::fmt(v, f),
         }
     }
 }

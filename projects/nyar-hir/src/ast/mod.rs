@@ -11,12 +11,11 @@ use nyar_error::Span;
 pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
-        dict_literal::DictLiteral,
-        kv_pair::KVPair,
         number_literal::{ByteLiteral, DecimalLiteral, IntegerLiteral},
         string_literal::StringLiteral,
         string_template::StringTemplateBuilder,
         symbol::Symbol,
+        table_literal::{KVPair, TableBuilder, TableExpression},
     },
     chain::*,
     control::*,
@@ -73,10 +72,10 @@ pub enum ASTKind {
     InfixExpression(Box<BinaryExpression>),
     /// `(1, 2, 3)`
     TupleExpression(Vec<ASTNode>),
-    /// `[1, 2, 3]`
-    ListExpression(Vec<ASTNode>),
     /// `[a: 1, z: 26]`
-    DictExpression(Box<DictLiteral>),
+    TableExpression(Box<TableExpression>),
+    ///
+    PairExpression(Box<KVPair>),
     /// Boolean literal, `true` and `false`
     Boolean(bool),
     /// Byte like literal, start with `0x`
@@ -163,7 +162,7 @@ impl ASTNode {
     }
 
     pub fn kv_pair(k: ASTNode, v: ASTNode) -> KVPair {
-        KVPair { k, v }
+        KVPair { key: k, value: v }
     }
 
     pub fn apply_slice(_indexes: &[ASTNode], _meta: Span) -> Self {
@@ -179,11 +178,8 @@ impl ASTNode {
     }
 
     pub fn list(v: Vec<ASTNode>, meta: Span) -> Self {
-        Self { kind: ASTKind::ListExpression(v), span: meta }
-    }
-
-    pub fn dict(v: DictLiteral, meta: Span) -> Self {
-        Self { kind: ASTKind::DictExpression(box v), span: meta }
+        let table = TableExpression { inner: v };
+        Self { kind: ASTKind::TableExpression(box table), span: meta }
     }
 
     pub fn tuple(v: Vec<ASTNode>, meta: Span) -> Self {

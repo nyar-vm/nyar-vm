@@ -161,7 +161,7 @@ tuple       =  {"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 table       =  {"[" ~ "]" | "[" ~ table_item? ~ (Comma ~ table_item)* ~ Comma? ~ "]"}
 table_item  = _{table_pair|expr}
 table_pair  =  {valid_key ~ Colon ~ expr}
-valid_key   =  {Integer | Symbol | String}
+valid_key   = _{Integer | Symbol | String}
 /*====================================================================================================================*/
 slice       =  {"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
 index       =  {index_step|index_range|expr}

@@ -1,7 +1,7 @@
 use nyar_error::Span;
 
 use crate::{
-    ast::{DecimalLiteral, IntegerLiteral},
+    ast::{DecimalLiteral, IntegerLiteral, KVPair},
     ASTKind, ASTNode,
 };
 
@@ -19,5 +19,6 @@ macro_rules! turn_node {
 
 turn_node! {
     IntegerLiteral => Integer,
-    DecimalLiteral => Decimal
+    DecimalLiteral => Decimal,
+    KVPair => PairExpression
 }
