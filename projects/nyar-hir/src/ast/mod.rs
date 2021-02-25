@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use nyar_error::Span;
 
+use crate::ast::expression::infix::InfixCall;
 pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
@@ -15,13 +16,12 @@ pub use crate::ast::{
         string_literal::StringLiteral,
         string_template::StringTemplateBuilder,
         symbol::Symbol,
-        table_literal::{KVPair, TableBuilder, TableExpression},
+        table_literal::{KVPair, TableExpression},
     },
     chain::*,
     control::*,
     expression::Expression,
     function::LambdaFunction,
-    infix::BinaryExpression,
     let_bind::LetBind,
     looping::{LoopStatement, WhileLoop},
     operator::{Infix, Operator, Postfix, Prefix},
@@ -32,10 +32,8 @@ mod atoms;
 mod chain;
 mod checking;
 mod control;
-mod display;
 mod expression;
 mod function;
-mod infix;
 mod let_bind;
 mod looping;
 mod operator;
@@ -69,7 +67,7 @@ pub enum ASTKind {
     ///
     LoopStatement(Box<LoopStatement>),
     ///
-    InfixExpression(Box<BinaryExpression>),
+    InfixExpression(Box<InfixCall>),
     /// `(1, 2, 3)`
     TupleExpression(Vec<ASTNode>),
     /// `[a: 1, z: 26]`
@@ -126,16 +124,14 @@ impl ASTNode {
         Expression { base, eos }
     }
 
-    pub fn push_infix_chain(self, op: &str, _rhs: ASTNode, _meta: Span) -> Self {
+    pub fn push_infix_chain(self, op: &str, rhs: ASTNode, span: Span) -> Self {
         let op = Operator::parse_infix(op);
-        todo!()
-        //
-        // let mut infix = match self.kind {
-        //     ASTKind::CallInfix(e) if op.get_priority() == e.get_priority() => *e,
-        //     _ => InfixCall { base: self, terms: vec![] },
-        // };
-        // infix.push_infix_pair(op, rhs);
-        // Self { kind: ASTKind::CallInfix(box infix), meta }
+        let mut infix = match self.kind {
+            ASTKind::InfixExpression(e) if op.get_priority() == e.get_priority() => *e,
+            _ => InfixCall { base: self, terms: vec![] },
+        };
+        infix.push_infix_pair(op, rhs);
+        Self { kind: ASTKind::InfixExpression(box infix), span }
     }
 
     pub fn push_unary_operations(self, prefix: &[String], suffix: &[String], span: Span) -> Self {

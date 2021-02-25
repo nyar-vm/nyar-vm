@@ -4,7 +4,7 @@ use crate::{
     ast::{ByteLiteral, DecimalLiteral, IntegerLiteral},
     ASTKind, ASTNode,
 };
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 
 impl Default for ASTNode {
     fn default() -> Self {
@@ -30,12 +30,11 @@ impl Debug for ASTNode {
                 f.write_str("Sequence")?;
                 f.debug_list().entries(v.iter()).finish()
             }
-            ASTKind::TableExpression(v) => write_tuple("Table", &v.inner, f),
+            ASTKind::TableExpression(v) => Debug::fmt(v, f),
             ASTKind::TupleExpression(v) => write_tuple("Tuple", v, f),
             ASTKind::Boolean(v) => Display::fmt(v, f),
             ASTKind::Integer(v) => Display::fmt(v, f),
             ASTKind::Decimal(v) => Display::fmt(v, f),
-            ASTKind::Byte(v) => Display::fmt(v, f),
             ASTKind::String(v) => {
                 if v.handler.is_empty() {
                     Debug::fmt(&v.literal, f)
@@ -46,7 +45,7 @@ impl Debug for ASTNode {
             }
             ASTKind::StringTemplate(v) => {
                 if v.is_empty() {
-                    f.write_str("''")
+                    f.write_str("\"\"")
                 }
                 else {
                     f.write_str("StringTemplate")?;
@@ -77,11 +76,13 @@ impl Display for ASTKind {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             ASTKind::Nothing => f.write_str("<<unreachable Nothing>>"),
-            ASTKind::Program(v) => {
-                f.write_str("Program")?;
-                f.debug_list().entries(v.iter()).finish()
+            ASTKind::Program(v) | ASTKind::Sequence(v) => {
+                for i in v {
+                    Display::fmt(i, f)?;
+                    f.write_char('\n')?
+                }
+                Ok(())
             }
-            ASTKind::Sequence(_v) => f.write_str("<<unreachable Sequence>>"),
             ASTKind::LetBind(_v) => {
                 todo!()
             }

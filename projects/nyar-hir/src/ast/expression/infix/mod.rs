@@ -1,10 +1,12 @@
-use super::*;
+use crate::ast::*;
+
+pub mod infix_call;
 
 ///
 /// ```v
 /// base (+ node1) (+ node2)
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct InfixCall {
     pub base: ASTNode,
     pub terms: Vec<(Operator, ASTNode)>,

@@ -1,5 +1,5 @@
 Suite[
-    <<unreachable Nothing>>,
+    Table,
 ]
 Suite[
     Tuple,
@@ -10,24 +10,24 @@ Suite[
     ),
 ]
 Suite[
-    List(
+    Table(
         1,
         2,
         3,
     ),
 ]
 Suite[
-    List(
+    Table(
         Tuple,
-        <<unreachable Nothing>>,
-        List(
-            <<unreachable Nothing>>,
+        Table,
+        Table(
+            Table,
         ),
     ),
 ]
 Suite[
     Tuple(
-        <<unreachable Nothing>>,
+        Table,
         Tuple,
         Tuple,
     ),

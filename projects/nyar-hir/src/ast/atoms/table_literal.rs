@@ -1,11 +1,11 @@
 use super::*;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TableExpression {
     pub inner: Vec<ASTNode>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct KVPair {
     pub key: ASTNode,
     pub value: ASTNode,
@@ -25,26 +25,34 @@ impl KVPair {
     // }
 }
 
-pub struct TableBuilder {
-    inner: Vec<ASTNode>,
-}
-
-impl Default for TableBuilder {
+impl Default for TableExpression {
     fn default() -> Self {
         Self { inner: vec![] }
     }
 }
 
-impl TableBuilder {
+impl Debug for KVPair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Pair").field("key", &self.key).field("value", &self.value).finish()
+    }
+}
+
+impl Debug for TableExpression {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut w = &mut f.debug_tuple("Table");
+        for node in &self.inner {
+            w = w.field(node)
+        }
+        w.finish()
+    }
+}
+
+impl TableExpression {
     pub fn push_node(&mut self, v: ASTNode) {
-        todo!()
+        self.inner.push(v);
     }
     pub fn push_pair(&mut self, k: ASTNode, v: ASTNode, r: Span) {
-        let pair = KVPair { key: k, value: v };
-        self.inner.push(pair.as_node(r));
-    }
-    pub fn finish(self, span: Span) -> ASTNode {
-        ASTNode { kind: ASTKind::TableExpression(box TableExpression { inner: self.inner }), span }
+        self.inner.push(KVPair { key: k, value: v }.as_node(r));
     }
 }
 

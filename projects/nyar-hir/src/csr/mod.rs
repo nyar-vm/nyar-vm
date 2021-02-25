@@ -1,13 +1,4 @@
-use crate::{
-    ast::{BinaryExpression, LetBind},
-    ASTKind,
-};
-
-impl BinaryExpression {
-    pub fn csr(&self) -> ASTKind {
-        todo!()
-    }
-}
+use crate::{ast::LetBind, ASTKind};
 
 impl LetBind {
     pub fn csr(&self) -> ASTKind {

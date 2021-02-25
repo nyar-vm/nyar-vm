@@ -1,24 +1,36 @@
 use nyar_error::Span;
 
 use crate::{
-    ast::{DecimalLiteral, IntegerLiteral, KVPair},
+    ast::{DecimalLiteral, IntegerLiteral, KVPair, Symbol, TableExpression},
     ASTKind, ASTNode,
 };
 
-macro_rules! turn_node {
-    ($($kind:ident => $node:ident),*) => {
-        $(
-            impl $kind {
-                pub fn as_node(self, span: Span) -> ASTNode {
-                    ASTNode { kind: ASTKind::$node(box self), span }
-                }
-            }
-        )*
-    };
+impl IntegerLiteral {
+    pub fn as_node(self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::Integer(box self), span }
+    }
 }
 
-turn_node! {
-    IntegerLiteral => Integer,
-    DecimalLiteral => Decimal,
-    KVPair => PairExpression
+impl DecimalLiteral {
+    pub fn as_node(self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::Decimal(box self), span }
+    }
+}
+
+impl KVPair {
+    pub fn as_node(self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::PairExpression(box self), span }
+    }
+}
+
+impl TableExpression {
+    pub fn as_node(self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::TableExpression(box self), span }
+    }
+}
+
+impl Symbol {
+    pub fn as_node(self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::Symbol(box self), span }
+    }
 }

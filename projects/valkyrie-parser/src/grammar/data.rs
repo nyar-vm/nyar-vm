@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, TableBuilder};
+use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, TableExpression};
 
 use super::*;
 
@@ -37,10 +37,10 @@ impl ParsingContext {
 
     fn parse_table(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);
-        let mut table = TableBuilder::default();
+        let mut table = TableExpression::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::expr => table.push_node(self.parse_expression(pair).0),
+                Rule::expr => table.push_node(self.parse_expr(pair)),
                 Rule::table_pair => {
                     if let Err(e) = self.parse_kv(pair, &mut table) {
                         self.errors.push(e)
@@ -49,20 +49,21 @@ impl ParsingContext {
                 _ => unreachable!(),
             };
         }
-        return table.finish(r);
+        return table.as_node(r);
     }
 
-    fn parse_kv(&mut self, pairs: Pair<Rule>, table: &mut TableBuilder) -> Result<()> {
+    fn parse_kv(&mut self, pairs: Pair<Rule>, table: &mut TableExpression) -> Result<()> {
+        let r = self.get_span(&pairs);
         let mut pairs = pairs.into_inner();
         let (key, value) = unsafe {
             let k = pairs.next().unwrap_unchecked();
             let v = pairs.next().unwrap_unchecked();
             (k, self.parse_expr(v))
         };
-        let r = self.get_span(&key);
+        let s = self.get_span(&key);
         match key.as_rule() {
-            Rule::Symbol => table.push_symbol_key(self.parse_symbol(key), value, r),
-            Rule::Integer => table.push_pair(self.parse_integer(key)?, value, r),
+            Rule::Symbol => table.push_pair(self.parse_symbol(key).as_node(s), value, r),
+            Rule::Integer => table.push_pair(self.parse_integer(key)?.as_node(s), value, r),
             _ => debug_cases!(key),
         };
         Ok(())

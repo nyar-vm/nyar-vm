@@ -1,9 +1,35 @@
 Suite[
-    <<unreachable Nothing>>,
+    Table,
 ]
 Suite[
-    <<unreachable Nothing>>,
+    Table(
+        PairExpression(
+            Pair {
+                key: 1,
+                value: 2,
+            },
+        ),
+        PairExpression(
+            Pair {
+                key: 3,
+                value: 4,
+            },
+        ),
+    ),
 ]
 Suite[
-    <<unreachable Nothing>>,
+    Table(
+        PairExpression(
+            Pair {
+                key: a,
+                value: 1,
+            },
+        ),
+        PairExpression(
+            Pair {
+                key: z,
+                value: 26,
+            },
+        ),
+    ),
 ]

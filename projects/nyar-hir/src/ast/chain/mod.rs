@@ -2,13 +2,11 @@ use super::*;
 
 mod apply_call;
 mod dict_call;
-mod infix_call;
 mod kont_call;
 mod slice_call;
 mod unary_call;
 
 pub use self::{
-    infix_call::InfixCall,
     slice_call::{IndexTerm, SliceTerm},
     unary_call::UnaryCall,
 };

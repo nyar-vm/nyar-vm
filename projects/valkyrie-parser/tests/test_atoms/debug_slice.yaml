@@ -1,8 +1,13 @@
 Suite[
-    List(
+    Table(
         1,
         2,
         3,
+    ),
+]
+Suite[
+    Table(
+        1,
     ),
 ]
 Suite[
@@ -13,10 +18,17 @@ Suite[
     ),
 ]
 Suite[
-    <<unreachable Nothing>>,
+    Table(
+        PairExpression(
+            Pair {
+                key: 1,
+                value: 2,
+            },
+        ),
+    ),
 ]
 Suite[
-    List(
+    Table(
         1,
         2,
         3,
