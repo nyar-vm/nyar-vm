@@ -1,0 +1,14 @@
+Suite[
+    Tuple(),
+]
+Suite[
+    Tuple(
+        1,
+    ),
+]
+Suite[
+    Tuple(
+        1,
+        2,
+    ),
+]

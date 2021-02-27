@@ -19,12 +19,10 @@ Suite[
 ]
 Suite[
     Table(
-        PairExpression(
-            Pair {
-                key: 1,
-                value: 2,
-            },
-        ),
+        Pair {
+            key: 1,
+            value: 2,
+        },
     ),
 ]
 Suite[

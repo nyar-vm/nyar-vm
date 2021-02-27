@@ -1,30 +1,30 @@
 use super::*;
 
-const LISTS: &str = r#"
-[];
+const TUPLES: &str = r#"
 ();
 (1, );
-[1, 2, 3, ];
-[(), [], [[]]];
-([], (), (()))
+(1, 2, )
+(true, (true,), ((true,(()))));
 "#;
 
 #[test]
 fn debug_list() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(LISTS);
-    ast.save("tests/test_atoms/debug_list.yaml")
+    let ast: ASTKind = ASTDump::parse(TUPLES);
+    ast.save("tests/test_atoms/debug_tuple.yaml")
 }
 
-const MAPS: &str = r#"
+const TABLES: &str = r#"
 [];
+[0, [], [[]]];
 [1: 2, 3: 4];
 [a: 1, z: 26];
+["啊": 1, "吧": 2];
 "#;
 
 #[test]
 fn debug_dict() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(MAPS);
-    ast.save("tests/test_atoms/debug_dict.yaml")
+    let ast: ASTKind = ASTDump::parse(TABLES);
+    ast.save("tests/test_atoms/debug_table.yaml")
 }
 
 const SLICE: &str = r#"

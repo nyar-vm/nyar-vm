@@ -31,22 +31,6 @@ impl Default for TableExpression {
     }
 }
 
-impl Debug for KVPair {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Pair").field("key", &self.key).field("value", &self.value).finish()
-    }
-}
-
-impl Debug for TableExpression {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut w = &mut f.debug_tuple("Table");
-        for node in &self.inner {
-            w = w.field(node)
-        }
-        w.finish()
-    }
-}
-
 impl TableExpression {
     pub fn push_node(&mut self, v: ASTNode) {
         self.inner.push(v);

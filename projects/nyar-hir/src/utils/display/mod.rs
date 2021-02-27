@@ -1,10 +1,11 @@
-mod atom;
+use std::fmt::{Debug, Display, Formatter, Write};
 
 use crate::{
     ast::{ByteLiteral, DecimalLiteral, IntegerLiteral},
     ASTKind, ASTNode,
 };
-use std::fmt::{Debug, Display, Formatter, Write};
+
+mod atom;
 
 impl Default for ASTNode {
     fn default() -> Self {
@@ -30,8 +31,10 @@ impl Debug for ASTNode {
                 f.write_str("Sequence")?;
                 f.debug_list().entries(v.iter()).finish()
             }
-            ASTKind::TableExpression(v) => Debug::fmt(v, f),
+
             ASTKind::TupleExpression(v) => write_tuple("Tuple", v, f),
+            ASTKind::TableExpression(v) => Debug::fmt(v, f),
+            ASTKind::PairExpression(v) => Debug::fmt(v, f),
             ASTKind::Boolean(v) => Display::fmt(v, f),
             ASTKind::Integer(v) => Display::fmt(v, f),
             ASTKind::Decimal(v) => Display::fmt(v, f),
@@ -58,10 +61,14 @@ impl Debug for ASTNode {
     }
 }
 
-fn write_tuple(name: &str, v: &[ASTNode], f: &mut Formatter<'_>) -> std::fmt::Result {
-    let w = &mut f.debug_tuple(name);
-    for i in v {
-        w.field(i);
+pub fn write_tuple(name: &str, v: &[ASTNode], f: &mut Formatter<'_>) -> std::fmt::Result {
+    if v.is_empty() {
+        f.write_str(name)?;
+        return f.write_str("()");
+    }
+    let mut w = &mut f.debug_tuple(name);
+    for node in v {
+        w = w.field(node)
     }
     w.finish()
 }

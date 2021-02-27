@@ -62,9 +62,13 @@ impl ParsingContext {
         };
         let s = self.get_span(&key);
         match key.as_rule() {
-            Rule::Symbol => table.push_pair(self.parse_symbol(key).as_node(s), value, r),
             Rule::Integer => table.push_pair(self.parse_integer(key)?.as_node(s), value, r),
-            _ => debug_cases!(key),
+            Rule::Symbol => table.push_pair(self.parse_symbol(key).as_node(s), value, r),
+            Rule::String => {
+                let symbol = Symbol::atom(trim_first_last(key.as_str())).as_node(s);
+                table.push_pair(symbol, value, r)
+            }
+            _ => unreachable!(),
         };
         Ok(())
     }
