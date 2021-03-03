@@ -40,6 +40,9 @@ impl NyarError {
     pub fn set_file_id(&mut self, file_id: u32) {
         self.span.file_id = file_id;
     }
+    pub fn with_span(mut self, span: Span) -> Self {
+        Self { kind: self.kind, span }
+    }
 }
 
 impl NyarError {

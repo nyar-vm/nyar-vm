@@ -22,10 +22,20 @@ pub enum Prefix {
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Infix {
+    // `+`
     Addition,
+    // `-`
     Subtraction,
+    // `*`
     Multiplication,
+    // `/`
     Division,
+    // `^`
+    Power,
+    // `++`
+    Concat,
+    // `--`
+    Remove,
 }
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
@@ -45,15 +55,13 @@ pub enum Operator {
 
 impl Operator {
     pub fn associativity(&self) -> OperatorAssociativity {
-        use OperatorAssociativity::Left;
+        use OperatorAssociativity::{Left, Right};
         match self {
             Operator::Prefix(_) => OperatorAssociativity::None,
             Operator::Postfix(_) => OperatorAssociativity::None,
             Operator::Infix(o) => match o {
-                Infix::Addition => Left,
-                Infix::Subtraction => Left,
-                Infix::Multiplication => Left,
-                Infix::Division => Left,
+                Infix::Power => Right,
+                _ => Left,
             },
         }
     }
@@ -62,10 +70,11 @@ impl Operator {
             Operator::Prefix(_) => 255,
             Operator::Postfix(_) => 255,
             Operator::Infix(o) => match o {
-                Infix::Addition => 100,
-                Infix::Subtraction => 100,
-                Infix::Multiplication => 110,
-                Infix::Division => 110,
+                Infix::Addition | Infix::Subtraction => 100,
+                Infix::Multiplication | Infix::Division => 110,
+                Infix::Power => 120,
+                Infix::Concat => 90,
+                Infix::Remove => 90,
             },
         }
     }

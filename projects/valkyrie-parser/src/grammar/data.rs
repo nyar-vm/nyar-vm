@@ -158,8 +158,8 @@ impl ParsingContext {
             match pair.as_rule() {
                 Rule::Quotation => continue,
                 Rule::Apostrophe => continue,
-                Rule::StringItem => builder.push_str(pair.as_str()),
-                _ => unreachable!(),
+                Rule::StringItem | Rule::StringAny => builder.push_str(pair.as_str()),
+                _ => debug_cases!(pair),
             };
         }
         ASTNode::string_handler(builder, handler, span)
@@ -167,21 +167,20 @@ impl ParsingContext {
     fn parse_string_template(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let mut builder = StringTemplateBuilder::new(self.get_span(&pairs));
         for pair in pairs.into_inner() {
+            let r = self.get_span(&pair);
             match pair.as_rule() {
                 Rule::Quotation => continue,
                 Rule::Apostrophe => continue,
-                Rule::StringItem => self.parse_string_item(pair, &mut builder),
-                _ => debug_cases!(pair), // _ => unreachable!(),
-            };
-        }
-        builder.build()
-    }
-    fn parse_string_item(&mut self, pairs: Pair<Rule>, builder: &mut StringTemplateBuilder) {
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
+                Rule::StringAny | Rule::StringUnicode => {
+                    if let Err(e) = builder.push_escape(pair.as_str(), r) {
+                        self.errors.push(e)
+                    }
+                }
+                Rule::namepath => builder.push_symbol(self.parse_namepath(pair), r),
                 Rule::expression => builder.push_expression(self.parse_expression(pair).0),
                 _ => debug_cases!(pair), // _ => unreachable!(),
             };
         }
+        builder.as_node()
     }
 }

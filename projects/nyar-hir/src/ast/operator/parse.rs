@@ -39,7 +39,9 @@ impl FromStr for Infix {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let out = match s {
             "+" => Self::Addition,
+            "++" => Self::Concat,
             "-" => Self::Subtraction,
+            "--" => Self::Remove,
             "*" => Self::Multiplication,
             "/" => Self::Division,
             _ => return Err(()),

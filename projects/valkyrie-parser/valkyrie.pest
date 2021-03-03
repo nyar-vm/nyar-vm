@@ -150,7 +150,7 @@ type_expr = _{term ~ (TypeInfix ~ term)*}
 type_hint = {Colon ~ type_expr}
 generic_type = {"[" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ "]"}
 parametric_types = {"[" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ "]"}
-parametric_types_pair = {(Plus|Minus)? ~ Symbol}
+parametric_types_pair = {(ADD|SUB)? ~ Symbol}
 parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypePrefix = @{Plus|Minus}
 //TypeSuffix = @{Question}
@@ -170,7 +170,7 @@ index_step  =  {expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
 //!#D19A66: Special
-Byte    = ${Zero ~ ASCII_ALPHA ~ (Underline|Minus|ASCII_ALPHANUMERIC)+}
+Byte    = ${Zero ~ ASCII_ALPHA ~ (Underline|SUB|ASCII_ALPHANUMERIC)+}
 Decimal = ${Integer ~ Dot ~ Integer+}
 // DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
 Integer = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline|ASCII_DIGIT)*}
@@ -185,22 +185,22 @@ String         = ${Symbol? ~ (StringTemplate|StringSimple)}
 StringTemplate = ${
     PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ StringItem* ~ POP
 }
-StringItem     = ${
-    "$" ~ ASCII_ALPHANUMERIC      | // $1, $a
-    "${" ~ expression ~ "}"       | // ${a}, ${1 + 1}
-    "\\x" ~ ASCII_ALPHANUMERIC{2} | // \x12
-    "\\u" ~ ASCII_ALPHANUMERIC{4} | // \u1234
-    "\\U" ~ ASCII_ALPHANUMERIC{6} | // \U123456
-    "\\" ~ ANY                    | // \r \n
-    !PEEK ~ ANY
+StringItem     = _{
+    "$" ~ Integer           | // $1, $a
+    "$" ~ namepath          | // $1, $a
+    "${" ~ expression ~ "}" | // ${a}, ${1 + 1}
+    StringUnicode           | // \u{20}
+    StringAny
 }
-StringSimple   = @{
+StringAny     = @{"\\" ~ ANY|!PEEK ~ ANY}
+StringUnicode = @{"\\u" ~ "{" ~ASCII_ALPHANUMERIC* ~ "}"}
+StringSimple  = @{
 //  "《" ~ (!"》" ~ ANY)* ~ "》" |
 //  "〈" ~ (!"〉" ~ ANY)* ~ "〉" |
     "«" ~ (!"»" ~ ANY)* ~ "»" |
     "‹" ~ (!"›" ~ ANY)* ~ "›"
 }
-XmlEscaped = @{ "&" ~ ASCII_ALPHANUMERIC+ ~ Semicolon } // &lt;
+XmlEscaped = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
 Apostrophe = @{"'"}
 Quotation  = @{"\""}
 /*====================================================================================================================*/
@@ -231,39 +231,43 @@ Separate   = _{";;"}
 Modifier = !{(!(Symbol~(Dot|Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~Symbol)}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
-    (Bang|Plus|Minus|Star)
+    (Bang|ADD|SUB|Star)
 }
 Suffix = @{
     DoubleBang
-  | (Bang | Question)
+  | (Bang | RAISE)
 }
 Infix = _{
     Set
-  | (Increase|Decrease)
-  | (Plus|Minus)
+  | (CONCAT|REMOVE)
+  | (LOGIC_AND|LOGIC_OR)
+  | (ADD|SUB)
   | (Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo)
   | Power
   | (Grater|GraterEqual|Equal)
   //| Dot
 }
 
+CONCAT = @{"++"}
+REMOVE = @{"--"}
 
+ADD = @{"+"}
+SUB = @{"-"}
 
-Or = @{"|"}
-LazyOr = @{"||"}
+AND = @{"&"}
+Or  = @{"|"}
+
+LOGIC_AND = @{"||"|"∧"}
+LOGIC_OR  = @{"&&"|"∨"}
 
 
 Star =@{"*"}
 Slash =@{"/"}
 Solidus = @{"\\"}
 
-
-
 Dot = @{"."}
 ///#56B6C2
-Question=@{"?"}
-
-
+RAISE = @{"?"}
 
 Load =@{"<<<"|"⋘"} //U+22D8
 Save =@{">>>"|"⋙"} //U+22D9
@@ -285,14 +289,6 @@ Set = @{"="}
 
 
 
-
-
-
-Plus =@{"+"}
-Minus =@{"-"}
-
-
-
 Multiply =@{Star | "×"} //U+00D7
 CenterDot = @{"⋅"} //U+22C5
 Kronecker =@{"⊗"} //U+2297
@@ -306,16 +302,14 @@ Power = @{"^"}
 Surd = @{"√"} //U+221A
 
 
-Increase =@{"++"}
-Decrease =@{"--"}
+
 
 
 To =@{"->"}
 Elvis =@{":?"}
 
 
-LogicOr =@{"||"|"∧"} //U+2227
-LogicAnd =@{"&&"|"∨"} //U+2228
+
 LogicNot =@{"¬"} //U+00AC
 LogicXor =@{"⊕"} //U+2295
 

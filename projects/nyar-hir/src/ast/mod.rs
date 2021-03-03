@@ -202,8 +202,11 @@ impl ASTNode {
         Self { kind: ASTKind::Byte(box v), span: meta }
     }
 
-    pub fn string(literal: &str, meta: Span) -> Self {
-        let s = StringLiteral { handler: String::new(), literal: literal.to_string() };
+    pub fn string<S>(literal: S, meta: Span) -> Self
+    where
+        S: Into<String>,
+    {
+        let s = StringLiteral { handler: String::new(), literal: literal.into() };
         Self { kind: ASTKind::String(box s), span: meta }
     }
 

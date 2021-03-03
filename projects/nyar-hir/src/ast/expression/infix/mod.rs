@@ -14,11 +14,11 @@ pub struct InfixCall {
 
 impl Debug for InfixCall {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let list = &mut f.debug_list();
-        list.entry(&self.base);
+        let mut list = &mut f.debug_tuple("InfixExpression");
+        list = list.field(&self.base);
         for (o, v) in &self.terms {
-            list.entry(o);
-            list.entry(v);
+            list = list.field(o);
+            list = list.field(v);
         }
         list.finish()
     }

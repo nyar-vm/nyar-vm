@@ -17,6 +17,9 @@ impl Debug for Infix {
             Infix::Subtraction => f.write_str("Subtraction::subtract"),
             Infix::Multiplication => f.write_str("Multiplication::multiply"),
             Infix::Division => f.write_str("Division::divide"),
+            Infix::Concat => f.write_str("Concat::concat"),
+            Infix::Remove => f.write_str("Remove::remove"),
+            Infix::Power => f.write_str("Power::power"),
         }
     }
 }

@@ -1,6 +1,10 @@
 Suite[
     StringTemplate[
+        "\n",
+        x,
+        "\n\n",
         y,
+        "\n${{}\n",
     ],
 ]
 Suite[

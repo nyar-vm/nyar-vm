@@ -16,9 +16,9 @@ fn debug_characters() -> Result<()> {
 }
 
 const ESCAPES: &str = r#"
-'\x24'
-'\u03D6'
-'\U000024'
+'\u{24}'
+'\u{03D6}'
+'\u{000024}'
 '\n';
 '\a';
 '\
@@ -36,6 +36,7 @@ const MULTILINE: &str = r#"
 $x
 
 ${y}
+${{}
 '''';
 
 

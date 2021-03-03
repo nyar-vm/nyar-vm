@@ -10,7 +10,8 @@ pub static PREC_CLIMBER: SyncLazy<PrecClimber<Rule>> = SyncLazy::new(|| {
     use crate::Rule::*;
     PrecClimber::new(vec![
         Operator::new(Set, Left),
-        Operator::new(Plus, Left) | Operator::new(Minus, Left),
+        Operator::new(CONCAT, Left) | Operator::new(REMOVE, Left),
+        Operator::new(ADD, Left) | Operator::new(SUB, Left),
         Operator::new(Multiply, Left) | Operator::new(CenterDot, Left),
         Operator::new(Power, Right),
         Operator::new(Dot, Left),

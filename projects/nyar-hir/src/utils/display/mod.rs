@@ -31,21 +31,18 @@ impl Debug for ASTNode {
                 f.write_str("Sequence")?;
                 f.debug_list().entries(v.iter()).finish()
             }
-
+            ASTKind::InfixExpression(v) => Debug::fmt(v, f),
             ASTKind::TupleExpression(v) => write_tuple("Tuple", v, f),
             ASTKind::TableExpression(v) => Debug::fmt(v, f),
             ASTKind::PairExpression(v) => Debug::fmt(v, f),
             ASTKind::Boolean(v) => Display::fmt(v, f),
+            ASTKind::Byte(v) => Debug::fmt(v, f),
             ASTKind::Integer(v) => Display::fmt(v, f),
             ASTKind::Decimal(v) => Display::fmt(v, f),
-            ASTKind::String(v) => {
-                if v.handler.is_empty() {
-                    Debug::fmt(&v.literal, f)
-                }
-                else {
-                    Debug::fmt(v, f)
-                }
-            }
+            ASTKind::String(v) => match v.handler.is_empty() {
+                true => Debug::fmt(&v.literal, f),
+                false => Debug::fmt(v, f),
+            },
             ASTKind::StringTemplate(v) => {
                 if v.is_empty() {
                     f.write_str("\"\"")
