@@ -1,70 +1,30 @@
-AST::Suite: [
-    AST::Expression: {
-        expr: a::b::c,
-        eos: false,
-        range: "(2:1, 3:1)",
-    },
+Suite[
+    a::b::c,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a::b::c,
-        eos: false,
-        range: "(3:1, 5:1)",
-    },
+Suite[
+    a::b::c,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a::b,
-        eos: false,
-        range: "(5:1, 6:1)",
-    },
+Suite[
+    a::b,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a::b,
-        eos: false,
-        range: "(6:1, 8:1)",
-    },
+Suite[
+    a::b,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(8:1, 9:1)",
-    },
+Suite[
+    a,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(9:1, 11:1)",
-    },
+Suite[
+    a,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(11:1, 13:1)",
-    },
+Suite[
+    a,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(13:1, 14:1)",
-    },
+Suite[
+    a,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(14:1, 15:1)",
-    },
+Suite[
+    a,
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(15:1, 16:1)",
-    },
+Suite[
+    a,
 ]

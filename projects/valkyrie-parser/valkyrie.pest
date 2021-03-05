@@ -132,7 +132,7 @@ node = {
 // bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
 bracket_call = _{dot_call|slice|apply|apply_generic}
 bracket_once = _{table|block}
-dot_call     = !{Dot ~ (Integer|Symbol) }
+dot_call     = !{Dot ~ (Integer|namepath) }
 /*====================================================================================================================*/
 apply    = !{"(" ~ ")" | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"}
 apply_kv = {Symbol~ Colon ~ expr | expr}

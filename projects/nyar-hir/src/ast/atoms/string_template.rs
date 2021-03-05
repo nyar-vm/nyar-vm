@@ -18,26 +18,28 @@ impl StringTemplateBuilder {
         Self { inner: vec![], buffer: "".to_string(), text_start: span.start, text_end: span.start, range: span }
     }
     pub fn push_escape(&mut self, s: &str, span: Span) -> Result<()> {
+        self.text_end = span.end;
         let mut cs = s.chars();
-        let c = if s.starts_with("\\u") {
+        if s.starts_with("\\u") {
             cs.nth(2);
             cs.next_back();
-            char::from_u32(u32::from_str_radix(cs.as_str(), 16)?)
+            let c = char::from_u32(u32::from_str_radix(cs.as_str(), 16)?).ok_or(string_error(s, span))?;
+            self.buffer.push(c)
         }
         else if s.starts_with("\\") {
-            match cs.nth(1) {
-                None => {}
-                Some(_) => {}
+            let c = cs.nth(1).ok_or(string_error(s, span))?;
+            match c {
+                '\n' => {}
+                'n' => self.buffer.push('\n'),
+                _ => self.buffer.push(c),
             }
         }
         else {
-            cs.nth(0)
+            let c = unsafe { cs.nth(0).unwrap_unchecked() };
+            self.buffer.push(c)
         };
-        self.buffer.push(c.ok_or(string_error(s, span))?);
-        self.text_end = span.end;
         Ok(())
     }
-    pub fn get_char() {}
 
     pub fn push_expression(&mut self, e: ASTNode) {
         self.finish();

@@ -1,7 +1,5 @@
 use crate::ast::*;
 
-pub mod infix_call;
-
 ///
 /// ```v
 /// base (+ node1) (+ node2)

@@ -1,11 +1,11 @@
 Suite[
-    StringTemplate[
+    StringTemplate(
         "\n",
         x,
         "\n\n",
         y,
         "\n${{}\n",
-    ],
+    ),
 ]
 Suite[
     StringLiteral {

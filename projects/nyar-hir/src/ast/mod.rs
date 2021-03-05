@@ -20,7 +20,7 @@ pub use crate::ast::{
     },
     chain::*,
     control::*,
-    expression::Expression,
+    expression::{dot::DotCall, Expression},
     function::LambdaFunction,
     let_bind::LetBind,
     looping::{LoopStatement, WhileLoop},
@@ -52,27 +52,55 @@ pub struct ASTNode {
 pub enum ASTKind {
     /// Wrong node
     Nothing,
-    ///
+    /// Entry point of codes
     Program(Vec<ASTNode>),
     /// A block with new scope
     Suite(Vec<ASTNode>),
     /// A block without new scope
     Sequence(Vec<ASTNode>),
-    ///
+    /// let lazy (mut a, b) = (1, 2)
     LetBind(Box<LetBind>),
     /// Lambda Function
     LambdaFunction(Box<LambdaFunction>),
-    ///
+    /// ```vk
+    /// if cond {
+    ///     then
+    /// }
+    /// else if cond {
+    ///     then
+    /// }
+    /// else {
+    ///     then
+    /// }
+    /// ```
     IfStatement(Box<IfStatement>),
-    ///
+    /// ```vk
+    /// loop {
+    ///    do some thing
+    ///    break
+    /// }
+    /// ```
     LoopStatement(Box<LoopStatement>),
-    ///
+    /// ```vk
+    /// a + b
+    /// ```
     InfixExpression(Box<InfixCall>),
-    /// `(1, 2, 3)`
+    /// ```vk
+    /// a.b::[G](args) {lambda}
+    /// ```
+    DotExpression(Box<DotCall>),
+    /// ```vk
+    /// (1, 2, 3)
+    /// ```
     TupleExpression(Vec<ASTNode>),
-    /// `[a: 1, z: 26]`
+    /// ```vk
+    /// [1, 2, 3]
+    /// [a: 1, z: 26]
+    /// ```
     TableExpression(Box<TableExpression>),
-    ///
+    /// ```vk
+    /// a: b
+    /// ```
     PairExpression(Box<KVPair>),
     /// Boolean literal, `true` and `false`
     Boolean(bool),

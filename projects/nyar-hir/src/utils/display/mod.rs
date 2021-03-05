@@ -43,15 +43,7 @@ impl Debug for ASTNode {
                 true => Debug::fmt(&v.literal, f),
                 false => Debug::fmt(v, f),
             },
-            ASTKind::StringTemplate(v) => {
-                if v.is_empty() {
-                    f.write_str("\"\"")
-                }
-                else {
-                    f.write_str("StringTemplate")?;
-                    f.debug_list().entries(v.iter()).finish()
-                }
-            }
+            ASTKind::StringTemplate(v) => write_tuple("StringTemplate", v, f),
             ASTKind::Symbol(v) => Display::fmt(v, f),
             _ => Debug::fmt(&self.kind, f),
         }
