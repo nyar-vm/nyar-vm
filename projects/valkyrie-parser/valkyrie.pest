@@ -19,21 +19,20 @@ separator = {eos|Comma}
 comma_or_semi = _{Comma|Semicolon}
 block_or_stmt = _{block|Set ~ statement}
 /*====================================================================================================================*/
-//FIXME: 修复 nested using
 importStatement = {
-    Import ~ Dot* ~ use_alias
-  | Import ~ Dot* ~ use_module_select
-  | Import ~ use_module_string
+    IMPORT ~ DOT* ~ use_alias
+  | IMPORT ~ DOT* ~ use_module_select
+  | IMPORT ~ use_module_string
 }
-use_alias = !{String ~ As ~ Symbol|Symbol ~ (ModuleSplit ~ Symbol)* ~As~Symbol}
+use_alias = !{String ~ AS ~ Symbol|Symbol ~ (ModuleSplit ~ Symbol)* ~AS~Symbol}
 use_module_select = !{Symbol ~ (ModuleSplit ~ Symbol)* ~(ModuleSplit ~ (module_block|Star))?}
 use_module_string = !{String ~ (ModuleSplit ~ (module_block|Star))?}
-module_block = {"{"~module_tuple~ ( comma_or_semi? ~ module_tuple)* ~comma_or_semi?~"}"}
+module_block = {"{" ~ module_tuple ~ ( comma_or_semi? ~ module_tuple)* ~ comma_or_semi? ~ "}"}
 module_tuple = {use_alias|use_module_select}
-ModuleSplit= _{Dot|Proportion}
+ModuleSplit= _{DOT|Proportion}
 //!#C678DD: Import|As
-Import  = @{"using"}
-As   = @{"as"}
+IMPORT = @{"using"}
+AS     = @{"as"}
 /*====================================================================================================================*/
 controlFlow = _{non_local_exit|if_statement|for_statement}
 block = !{"{" ~ statement+ ~ "}"}
@@ -56,20 +55,23 @@ case_statement = {
 Match = @{"match"}
 Case = @{"case"}
 /*====================================================================================================================*/
-for_statement = {For ~ for_in_loop}
-for_in_loop = {Symbol~In~expr~block}
-//!#C678DD: For|In
-For = @{"for"}
-In = @{"in"}
+//!#C678DD: WHILE|For|In
+for_statement = {FOR ~ Symbol ~ IN ~ expr_inline ~ block}
+while_statement = {WHILE ~ expr_inline ~ block}
+WHILE = @{"while"}
+FOR = @{"for"}
+IN = @{"in"}
 /*====================================================================================================================*/
-non_local_exit = {("return"|"resume") ~ expr}
+//!#C678DD: EXIT
+non_local_exit = {EXIT ~ expr}
+EXIT = @{"return"|"resume"}
 //!#C678DD: Return|Yield|Break|Pass
 /*====================================================================================================================*/
 ///#C678DD
 Type = @{"type"}
 /*====================================================================================================================*/
-classStatement = {"class" ~ assign_pair ~ short_block?}
-traitStatement = {"trait" ~ assign_pair ~ short_block?}
+classStatement = {CLASS ~ assign_pair ~ short_block?}
+traitStatement = {TRAIT ~ assign_pair ~ short_block?}
 
 short_block = {"{" ~ short_statement* ~ "}"}
 short_statement = {
@@ -80,29 +82,32 @@ short_statement = {
   | short_annotation ~ eos?
 }
 short_annotation = {annotation_call+~short_statement}
+CLASS = @{"class"}
+TRAIT = @{"trait"}
 /*====================================================================================================================*/
 extendStatement = {
-    "extends" ~ Symbol ~ parametric_types? ~ with_trait? ~ short_block
+    EXTENDS ~ Symbol ~ parametric_types? ~ with_trait? ~ short_block
 }
 with_trait = {"with" ~ Symbol ~ parametric_types?}
+EXTENDS = @{"extends"}
 /*====================================================================================================================*/
 assignStatement = {
     // let (mut a: int, ) = 1;
-    Let ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ Set ~ expr ~ eos?
+    LET ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ Set ~ expr ~ eos?
     // let (a: int, b: int)
     // let (a, b): (int, int)
-  | Let ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ eos?
+  | LET ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ eos?
     // let mut a: int, = 1;
-  | Let ~ assign_name ~ Set ~ expr ~ eos?
+  | LET ~ assign_name ~ Set ~ expr ~ eos?
     // let a, b: int;
-  | Let ~ assign_name ~ eos
-  | Let ~ short_statement ~ eos?
+  | LET ~ assign_name ~ eos
+  | LET ~ short_statement ~ eos?
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
 assign_pair = {Modifier* ~ Symbol ~ type_hint?}
 
 ///#C678DD
-Let = @{"let"}
+LET = @{"let"}
 /*====================================================================================================================*/
 defineStatement = {"def" ~ define_terms}
 define_terms = _{
@@ -118,30 +123,37 @@ define_pair = {Symbol ~ type_hint? ~ (Set ~ expr)?}
 Where = @{"where"}
 /*====================================================================================================================*/
 //!Orange:annotation_call
-annotation = {annotation_call+~statement}
-annotation_call = @{At~(apply|Symbol)}
+annotation      = {annotation_call+~statement}
+annotation_call = @{Sharp~(apply|Symbol)}
+macro_call      = @{At ~(apply|Symbol) }
+Sharp =@{"#"}
+At    =@{"@"}
 /*====================================================================================================================*/
 expression = {expr ~ eos?}
-expr = !{term ~ (Infix ~ term)*}
-term =  {Prefix* ~ node ~ Suffix*}
-node = {
+expr       = {term ~ (Infix ~ term)*}
+term       = {Prefix* ~ node ~ Suffix*}
+node       = {
     "(" ~ expr ~ ")"
   | data ~ bracket_once? ~ (bracket_call+ ~ bracket_once?)+
   | data
 }
-// bracket_call = ${data ~ ((!NEWLINE ~ WHITESPACE)* ~ (slice|apply))+}
-bracket_call = _{dot_call|slice|apply|apply_generic}
-bracket_once = _{table|block}
-dot_call     = !{Dot ~ (Integer|namepath) }
-/*====================================================================================================================*/
-apply    = !{"(" ~ ")" | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"}
-apply_kv = {Symbol~ Colon ~ expr | expr}
-apply_generic = !{
-    ("::" ~ generic_type)
+expr_inline  = {term_inline ~ (Infix ~ term_inline)*}
+term_inline  = {Prefix* ~ node_inline ~ Suffix*}
+node_inline  = {
+    "(" ~ expr ~ ")"
+  | data ~ bracket_call*
 }
+bracket_call = _{dot_call|static_call|slice|apply|generic_call}
+bracket_once = _{block}
+dot_call     =  {DOT ~ (Integer|namepath) }
+static_call  =  {"::" ~ namepath}
+generic_call = !{"::" ~ generic_type}
+/*====================================================================================================================*/
+apply           = !{"(" ~ ")" | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"}
+apply_kv        =  {Symbol~ Colon ~ expr | expr}
 ///#61AFEF
-function_name = {Symbol}
-function_module = {(namepath ~ Dot)? ~ (Symbol ~ Dot)*}
+function_name   = {Symbol}
+function_module = {(namepath ~ DOT)? ~ (Symbol ~ DOT)*}
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
 type_expr = _{term ~ (TypeInfix ~ term)*}
@@ -171,7 +183,7 @@ index_step  =  {expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
 //!#D19A66: Special
 Byte    = ${Zero ~ ASCII_ALPHA ~ (Underline|SUB|ASCII_ALPHANUMERIC)+}
-Decimal = ${Integer ~ Dot ~ Integer+}
+Decimal = ${Integer ~ DOT ~ Integer+}
 // DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
 Integer = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline|ASCII_DIGIT)*}
 Complex = ${(Decimal|Integer) ~ Symbol}
@@ -207,7 +219,7 @@ Quotation  = @{"\""}
 ///#61AFEF
 Symbol   = ${SYMBOL_XID|SYMBOL_ESCAPE}
 namepath = ${Symbol ~ (Proportion ~ Symbol)*}
-freepath = ${Symbol ~ ((Proportion|Dot) ~ Symbol)*}
+freepath = ${Symbol ~ ((Proportion|DOT) ~ Symbol)*}
 ///
 SYMBOL_XID = @{(XID_START|Underline) ~  XID_CONTINUE*}
 ///
@@ -228,7 +240,7 @@ Semicolon  = _{";"}
 Separate   = _{";;"}
 //!Orange: Modifier
 // Keywords = !{If|For}
-Modifier = !{(!(Symbol~(Dot|Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~Symbol)}
+Modifier = !{(!(Symbol~(DOT|Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~Symbol)}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
     (Bang|ADD|SUB|Star)
@@ -265,7 +277,7 @@ Star =@{"*"}
 Slash =@{"/"}
 Solidus = @{"\\"}
 
-Dot = @{"."}
+DOT = @{"."}
 ///#56B6C2
 RAISE = @{"?"}
 
@@ -321,5 +333,3 @@ Output =@{"%%"}
 DoubleBang =@{"!!"}
 Bang =@{"!"}
 
-Sharp =@{"#"}
-At    =@{"@"}

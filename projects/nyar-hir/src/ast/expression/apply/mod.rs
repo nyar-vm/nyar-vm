@@ -9,16 +9,15 @@ use super::*;
 /// }
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DotCall {
+pub struct ApplyCall {
     pub base: ASTNode,
-    pub symbol: Symbol,
     pub generic: Option<ASTNode>,
     pub arguments: Option<ASTNode>,
     pub continuation: Option<ASTNode>,
 }
 
 impl ChainBuilder {
-    pub fn push_dot_call(&mut self, s: Symbol) {
+    pub fn push_apply_call(&mut self) {
         match self.base.kind {
             _ => unimplemented!("{:?}", self.base.kind),
         }

@@ -116,6 +116,12 @@ impl Display for ASTKind {
             }
             ASTKind::Symbol(v) => Display::fmt(v, f),
             ASTKind::PairExpression(v) => Display::fmt(v, f),
+            ASTKind::DotExpression(_) => {
+                todo!()
+            }
+            ASTKind::ApplyExpression(_) => {
+                todo!()
+            }
         }
     }
 }

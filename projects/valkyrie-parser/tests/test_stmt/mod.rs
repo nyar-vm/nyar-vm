@@ -1,5 +1,8 @@
 use super::*;
 
+mod test_assign;
+mod test_import;
+
 const INPUT: &str = r#"
 if a {1}
 if a {1} else {2}

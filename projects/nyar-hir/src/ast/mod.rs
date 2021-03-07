@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use nyar_error::Span;
 
-use crate::ast::expression::infix::InfixCall;
 pub use crate::ast::{
     assign::ImportStatement,
     atoms::{
@@ -20,7 +19,7 @@ pub use crate::ast::{
     },
     chain::*,
     control::*,
-    expression::{dot::DotCall, Expression},
+    expression::{apply::ApplyCall, dot::DotCall, infix::InfixCall, ChainBuilder, Expression},
     function::LambdaFunction,
     let_bind::LetBind,
     looping::{LoopStatement, WhileLoop},
@@ -89,6 +88,10 @@ pub enum ASTKind {
     /// a.b::[G](args) {lambda}
     /// ```
     DotExpression(Box<DotCall>),
+    /// ```vk
+    /// a::[G](args) {lambda}
+    /// ```
+    ApplyExpression(Box<ApplyCall>),
     /// ```vk
     /// (1, 2, 3)
     /// ```

@@ -1,16 +1,16 @@
 use super::*;
 
 const INPUT: &str = r#"
-assign torch
-assign numpy as np
-assign pandas.database as db
+using torch
+using numpy as np
+using pandas.database as pd
 
-assign .mod
-assign ..mod as z
-assign lib.*
-assign mod::*
-assign "./mod" as y
-assign "../lib/mod"::{
+using mod
+using mod as z
+using lib.*
+using mod::*
+using mod as y
+using mod::{
 	a as b
 	c as d
 	e.f.{g as h}
