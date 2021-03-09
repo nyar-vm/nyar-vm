@@ -17,6 +17,19 @@ impl StringTemplateBuilder {
     pub fn new(span: Span) -> StringTemplateBuilder {
         Self { inner: vec![], buffer: "".to_string(), text_start: span.start, text_end: span.start, range: span }
     }
+    pub fn push_character(&mut self, s: &str, span: Span) -> Result<()> {
+        self.text_end = span.end;
+        let mut chars = s.chars();
+        match chars.count() {
+            1 => {
+                unsafe { self.buffer.push(chars.next().unwrap_unchecked()) }
+                Ok(())
+            }
+            0 => Err(NyarError::syntax_error("empty character").with_span(span)),
+            _ => Err(NyarError::syntax_error("too much characters").with_span(span)),
+        }
+    }
+
     pub fn push_escape(&mut self, s: &str, span: Span) -> Result<()> {
         self.text_end = span.end;
         let mut cs = s.chars();

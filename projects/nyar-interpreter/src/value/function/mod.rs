@@ -7,7 +7,7 @@ use crate::{
     NyarError, Result,
 };
 
-pub use self::{attributes::NyarFunctionAttributes, prototype::NyarFunction};
+pub use self::{attributes::FunctionAttributes, prototype::FunctionPrototype};
 
 mod attributes;
 mod prototype;
@@ -18,18 +18,19 @@ pub struct EffectHandler {
 }
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Argument;
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Statement;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FunctionInstance {
-    prototype: Rc<NyarFunction>,
+    prototype: Rc<FunctionPrototype>,
     args: Vec<Value>,
     kvs: IndexMap<String, Value>,
 }
 
 impl FunctionInstance {
-    pub fn new(f: Rc<NyarFunction>) -> Self {
+    pub fn new(f: Rc<FunctionPrototype>) -> Self {
         Self { prototype: f, args: vec![], kvs: IndexMap::new() }
     }
     pub fn fill_arguments(&mut self, args: Vec<Value>) -> Result<()> {

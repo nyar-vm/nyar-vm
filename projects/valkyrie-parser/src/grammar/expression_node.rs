@@ -110,9 +110,8 @@ impl ParsingContext {
 
 impl ParsingContext {
     fn parse_apply(&self, pairs: Pair<Rule>) -> ASTNode {
-
-        Argu
-        pairs.into_inner().filter(|f| f.as_rule() == Rule::apply_kv).map(|f| self.apply_kv(f)).collect()
+        // Argu
+        // pairs.into_inner().filter(|f| f.as_rule() == Rule::apply_kv).map(|f| self.apply_kv(f)).collect()
 
         let r = self.get_span(&pairs);
         let mut args = vec![];
@@ -126,7 +125,5 @@ impl ParsingContext {
         }
         return ASTNode::apply_call(args, r);
     }
-    fn apply_kv(&self, pairs: Pair<Rule>) {
-
-    }
+    fn apply_kv(&self, pairs: Pair<Rule>) {}
 }

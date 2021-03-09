@@ -132,55 +132,23 @@ impl ParsingContext {
 
 impl ParsingContext {
     fn parse_string(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
-        let mut handler = "";
-        // let (mut h, mut t) = Default::default();
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::StringTemplate => {
-                    return match handler.is_empty() {
-                        true => self.parse_string_template(pair),
-                        false => self.parse_string_raw(pair, handler, r),
-                    };
-                }
-                Rule::StringSimple => {
-                    return ASTNode::string_handler(trim_first_last(pair.as_str()), handler, r);
-                }
-                Rule::Symbol => handler = pair.as_str(),
-                _ => unreachable!(),
-            };
-        }
-        unreachable!()
-    }
-    fn parse_string_raw(&self, pairs: Pair<Rule>, handler: &str, span: Span) -> ASTNode {
-        let mut builder = String::with_capacity(pairs.as_str().len());
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::Quotation => continue,
-                Rule::Apostrophe => continue,
-                Rule::StringItem | Rule::StringAny => builder.push_str(pair.as_str()),
-                _ => debug_cases!(pair),
-            };
-        }
-        ASTNode::string_handler(builder, handler, span)
-    }
-    fn parse_string_template(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let mut builder = StringTemplateBuilder::new(self.get_span(&pairs));
         for pair in pairs.into_inner() {
-            let r = self.get_span(&pair);
-            match pair.as_rule() {
-                Rule::Quotation => continue,
-                Rule::Apostrophe => continue,
-                Rule::StringAny | Rule::StringUnicode => {
-                    if let Err(e) = builder.push_escape(pair.as_str(), r) {
-                        self.errors.push(e)
-                    }
-                }
-                Rule::namepath => builder.push_symbol(self.parse_namepath(pair), r),
-                Rule::expression => builder.push_expression(self.parse_expression(pair).0),
-                _ => debug_cases!(pair), // _ => unreachable!(),
-            };
+            if let Err(e) = builder.push_escape(pair.as_str(), r) {
+                self.errors.push(e)
+            }
         }
         builder.as_node()
+    }
+    fn parse_string_item(self, pair: Pair<Rule>, builder: &mut StringTemplateBuilder) -> Result<()> {
+        let r = self.get_span(&pair);
+        match pair.as_rule() {
+            Rule::any => builder.push_character(pair.as_str(), r)?,
+            Rule::StringUnicode => builder.push_escape(pair.as_str(), r)?,
+            Rule::namepath => builder.push_symbol(self.parse_namepath(pair), r),
+            Rule::expression => builder.push_expression(self.parse_expression(pair).0),
+            _ => debug_cases!(pair), // _ => unreachable!(),
+        };
+        Ok(())
     }
 }

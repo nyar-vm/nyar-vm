@@ -15,7 +15,7 @@ pub use self::{
 };
 
 use crate::{
-    value::{function::NyarFunction, variable::Variable},
+    value::{function::FunctionPrototype, variable::Variable},
     Result,
 };
 use nyar_hir::{NyarError, Range};

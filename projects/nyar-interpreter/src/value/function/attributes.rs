@@ -3,14 +3,14 @@ use crate::value::error::Level3;
 use std::lazy::SyncLazy;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct NyarFunctionAttributes {
+pub struct FunctionAttributes {
     pub currying: bool,
     pub extra_arguments: Level3,
     pub extra_keywords: Level3,
     pub override_keywords: Level3,
 }
 
-impl Default for NyarFunctionAttributes {
+impl Default for FunctionAttributes {
     fn default() -> Self {
         Self {
             currying: true,
@@ -21,10 +21,10 @@ impl Default for NyarFunctionAttributes {
     }
 }
 
-pub static NYAR_FUNCTION_ATTRIBUTES: SyncLazy<NyarFunctionAttributes> = SyncLazy::new(|| NyarFunctionAttributes::default());
+pub static NYAR_FUNCTION_ATTRIBUTES: SyncLazy<FunctionAttributes> = SyncLazy::new(|| FunctionAttributes::default());
 
-impl NyarFunction {
-    pub fn attributes(&self) -> &NyarFunctionAttributes {
+impl FunctionPrototype {
+    pub fn attributes(&self) -> &FunctionAttributes {
         match &self.attributes {
             None => &NYAR_FUNCTION_ATTRIBUTES,
             Some(s) => s,

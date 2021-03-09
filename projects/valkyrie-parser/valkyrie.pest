@@ -193,28 +193,26 @@ Underline = _{"_"}
 /*====================================================================================================================*/
 // https://en.wikipedia.org/wiki/Quotation_mark#Summary_table
 ///#98C379
-String         = ${Symbol? ~ (StringTemplate|StringSimple)}
-StringTemplate = ${
-    PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ StringItem* ~ POP
+String         = ${
+    Symbol? ~ PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ (StringItem|!PEEK ~ any)* ~ POP |
+    Symbol? ~"『" ~ (StringItem|!"』" ~ any)* ~ "』" |
+    Symbol? ~"「" ~ (StringItem|!"」" ~ any)* ~ "」" |
+    Symbol? ~"«" ~ (StringItem|!"»" ~ any)* ~ "»" |
+    Symbol? ~"‹" ~ (StringItem|!"›" ~ any)* ~ "›"
 }
 StringItem     = _{
     "$" ~ Integer           | // $1, $a
     "$" ~ namepath          | // $1, $a
     "${" ~ expression ~ "}" | // ${a}, ${1 + 1}
     StringUnicode           | // \u{20}
-    StringAny
+    StringEscape
 }
-StringAny     = @{"\\" ~ ANY|!PEEK ~ ANY}
+StringEscape  =@{"\\" ~ any}
 StringUnicode = @{"\\u" ~ "{" ~ASCII_ALPHANUMERIC* ~ "}"}
-StringSimple  = @{
-//  "《" ~ (!"》" ~ ANY)* ~ "》" |
-//  "〈" ~ (!"〉" ~ ANY)* ~ "〉" |
-    "«" ~ (!"»" ~ ANY)* ~ "»" |
-    "‹" ~ (!"›" ~ ANY)* ~ "›"
-}
-XmlEscaped = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
-Apostrophe = @{"'"}
-Quotation  = @{"\""}
+XmlEscaped    = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
+Quotation     = _{"\""}
+Apostrophe    = _{"'"}
+any           = @{ANY}
 /*====================================================================================================================*/
 ///#61AFEF
 Symbol   = ${SYMBOL_XID|SYMBOL_ESCAPE}

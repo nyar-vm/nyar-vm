@@ -2,35 +2,39 @@ use super::*;
 use crate::typing::Typing;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct NyarFunction {
+pub struct FunctionPrototype {
     /// f
-    pub(crate) name: String,
+    pub name: String,
     ///
-    pub(crate) attributes: Option<Box<NyarFunctionAttributes>>,
+    pub attributes: Option<Box<FunctionAttributes>>,
+    /// ```vk
     /// inline f(...)
-    /// pub(crate) modifiers: Vec<String>,
+    /// pub modifiers: Vector[String],
     /// f(self,...)
-    pub(crate) with_self: Argument,
+    /// ```
+    pub with_self: Argument,
     /// f<T>(...)
-    pub(crate) generic: Vec<Statement>,
+    pub generic: Vec<Statement>,
     /// f(a, b, c)
-    pub(crate) arguments: IndexMap<String, Argument>,
+    pub arguments: IndexMap<String, Argument>,
     /// f(a, b, c, < , ...)
-    pub(crate) position_only: Option<IndexMap<String, Argument>>,
+    pub position_only: Option<IndexMap<String, Argument>>,
     /// f(..., >, a, b, c)
-    pub(crate) keywords_only: Option<IndexMap<String, Argument>>,
+    pub keywords_only: Option<IndexMap<String, Argument>>,
     /// f(..list: T)
-    pub(crate) collect_list: Option<(String, Typing)>,
+    pub collect_list: Option<(String, Typing)>,
     /// f(...dict: T)
-    pub(crate) collect_dict: Option<(String, Typing)>,
+    pub collect_dict: Option<(String, Typing)>,
     /// f(...): T
-    pub(crate) return_type: Typing,
+    pub return_type: Typing,
     /// f(...): / {E}
-    pub(crate) effects: IndexMap<String, Rc<EffectHandler>>,
-    /// f<T, E>(...): T / {E} where ...
-    pub(crate) where_bounds: Vec<Statement>,
+    pub effects: IndexMap<String, Rc<EffectHandler>>,
+    /// ```vk
+    /// f[T, E](...): T / [E] where ...
+    /// ```
+    pub where_bounds: Vec<Statement>,
     /// f(...) {}
-    pub(crate) body: Statement,
+    pub body: Statement,
 }
 
 pub enum FunctionStatement {
@@ -38,7 +42,7 @@ pub enum FunctionStatement {
     Native,
 }
 
-impl NyarFunction {
+impl FunctionPrototype {
     fn check_attributes(&mut self) {
         if self.attributes.is_none() {
             self.attributes = Default::default()
