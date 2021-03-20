@@ -1,11 +1,7 @@
 use super::*;
 
 const ATOM: &str = r#"
-[
-    bool: true && false,
-    number: 0 + 0.0 + 0cm,
-    string: "" ++ ''
-]
+a.b();
 "#;
 
 #[test]

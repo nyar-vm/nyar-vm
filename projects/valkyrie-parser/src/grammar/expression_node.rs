@@ -45,16 +45,16 @@ impl ParsingContext {
             Rule::data => self.parse_data(head),
             _ => unreachable!(),
         };
-        let head = ChainBuilder::new(head);
+        let chain = ChainBuilder::new(head);
         for pair in pairs {
             return match pair.as_rule() {
                 Rule::apply => self.parse_apply(pair),
-                // Rule::bracket_call => self.parse_bracket_call(pair),
+                Rule::slice => self.parse_slice(pair),
                 // Rule::tuple => self.parse_list_or_tuple(pair, false),
                 _ => debug_cases!(pair),
             };
         }
-        return head.as_node();
+        return chain.as_node();
     }
 
     fn parse_bracket_call(&mut self, pairs: Pair<Rule>) -> ASTNode {
@@ -65,7 +65,7 @@ impl ParsingContext {
                 Rule::WHITESPACE => continue,
                 Rule::data => base = self.parse_data(pair),
                 Rule::apply => base = ASTNode::chain_join(base, self.parse_apply(pair)),
-                Rule::slice => base = ASTNode::chain_join(base, self.parse_slice(pair)),
+
                 Rule::dot_call => continue,
                 Rule::block => continue,
                 _ => debug_cases!(pair),
@@ -109,21 +109,23 @@ impl ParsingContext {
 }
 
 impl ParsingContext {
-    fn parse_apply(&self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_apply(&mut self, pairs: Pair<Rule>) -> ASTNode {
         // Argu
         // pairs.into_inner().filter(|f| f.as_rule() == Rule::apply_kv).map(|f| self.apply_kv(f)).collect()
 
         let r = self.get_span(&pairs);
         let mut args = vec![];
-        // let mut kv_pairs = vec![];
+        let mut kv_pairs = vec![];
         // let mut types = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                // Rule::apply_kv => args.push(self.parse_kv(pair)),
+                Rule::apply_kv => match self.parse_kv(pair) {
+                    Ok(o) => kv_pairs.push(o),
+                    Err(e) => self.push_error(e),
+                },
                 _ => debug_cases!(pair),
             };
         }
         return ASTNode::apply_call(args, r);
     }
-    fn apply_kv(&self, pairs: Pair<Rule>) {}
 }

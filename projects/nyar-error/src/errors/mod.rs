@@ -5,11 +5,11 @@ use std::{
 
 use crate::Span;
 
-pub use self::{error_kinds::NyarErrorKind, numeric_errors::ParseIntegerError};
+pub use self::error_kinds::NyarErrorKind;
 
 mod error_kinds;
 mod native_wrap;
-mod numeric_errors;
+mod parse_errors;
 
 pub type Result<T> = std::result::Result<T, NyarError>;
 
@@ -40,7 +40,7 @@ impl NyarError {
     pub fn set_file_id(&mut self, file_id: u32) {
         self.span.file_id = file_id;
     }
-    pub fn with_span(mut self, span: Span) -> Self {
+    pub fn with_span(self, span: Span) -> Self {
         Self { kind: self.kind, span }
     }
 }
@@ -89,11 +89,6 @@ impl NyarError {
             kind: Box::new(NyarErrorKind::InvalidIndex { index: index.into(), item_type: item_type.into() }),
             span: position,
         }
-    }
-
-    pub fn int_handler_not_found(handler: impl Into<String>, position: Span) -> NyarError {
-        let kind = ParseIntegerError::HandlerNotFound(handler.into());
-        Self { kind: Box::new(NyarErrorKind::ParseIntegerError { kind }), span: position }
     }
 
     pub fn variable_not_found(name: impl Into<String>, position: Span) -> NyarError {

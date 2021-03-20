@@ -1,34 +1,59 @@
 Suite[
-    Table(),
-]
-Suite[
-    Tuple(),
-]
-Suite[
-    Tuple(
-        1,
+    Table(
+        InfixExpression(
+            1,
+            Addition::add,
+            2,
+        ),
     ),
 ]
 Suite[
     Table(
-        1,
-        2,
+        InfixExpression(
+            1,
+            Addition::add,
+            2,
+        ),
         3,
     ),
 ]
 Suite[
     Table(
-        Tuple(),
+        InfixExpression(
+            1,
+            Addition::add,
+            2,
+        ),
+        3,
         Table(),
+    ),
+]
+Suite[
+    Table(
+        InfixExpression(
+            1,
+            Addition::add,
+            2,
+        ),
+        3,
         Table(
-            Table(),
+            4,
+            5,
         ),
     ),
 ]
 Suite[
-    Tuple(
-        Table(),
-        Tuple(),
-        Tuple(),
+    Table(
+        InfixExpression(
+            1,
+            Addition::add,
+            2,
+        ),
+        3,
+        Table(
+            4,
+            5,
+            Table(),
+        ),
     ),
 ]

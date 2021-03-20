@@ -1,8 +1,7 @@
 use super::*;
 
-mod test_data;
-mod test_dict;
-mod test_index;
+mod test_apply;
+mod test_dot;
 mod test_infix;
 mod test_unary;
 

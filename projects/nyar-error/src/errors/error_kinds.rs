@@ -16,7 +16,6 @@ pub enum NyarErrorKind {
     SyntaxError { info: String },
     IOError(std::io::Error),
     FormatError(std::fmt::Error),
-    ParseIntegerError { kind: ParseIntegerError },
     ParseDecimalError(std::num::ParseFloatError),
 }
 

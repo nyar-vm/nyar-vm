@@ -12,6 +12,9 @@ pub struct KVPair {
 }
 
 impl KVPair {
+    pub fn new(key: ASTNode, value: ASTNode) -> Self {
+        Self { key, value }
+    }
     pub fn key_name(&self) -> Option<String> {
         todo!()
     }

@@ -10,7 +10,7 @@ impl ParsingContext {
         match self.try_parse_data(pairs) {
             Ok(o) => o,
             Err(e) => {
-                self.errors.push(e);
+                self.push_error(e);
                 ASTNode::null(r)
             }
         }
@@ -42,8 +42,10 @@ impl ParsingContext {
             match pair.as_rule() {
                 Rule::expr => table.push_node(self.parse_expr(pair)),
                 Rule::table_pair => {
-                    if let Err(e) = self.parse_kv(pair, &mut table) {
-                        self.errors.push(e)
+                    let r = self.get_span(&pair);
+                    match self.parse_kv(pair) {
+                        Ok(pair) => table.push_pair(pair.key, pair.value, r),
+                        Err(e) => self.push_error(e),
                     }
                 }
                 _ => unreachable!(),
@@ -52,8 +54,7 @@ impl ParsingContext {
         return table.as_node(r);
     }
 
-    fn parse_kv(&mut self, pairs: Pair<Rule>, table: &mut TableExpression) -> Result<()> {
-        let r = self.get_span(&pairs);
+    pub(crate) fn parse_kv(&mut self, pairs: Pair<Rule>) -> Result<KVPair> {
         let mut pairs = pairs.into_inner();
         let (key, value) = unsafe {
             let k = pairs.next().unwrap_unchecked();
@@ -61,16 +62,16 @@ impl ParsingContext {
             (k, self.parse_expr(v))
         };
         let s = self.get_span(&key);
-        match key.as_rule() {
-            Rule::Integer => table.push_pair(self.parse_integer(key)?.as_node(s), value, r),
-            Rule::Symbol => table.push_pair(self.parse_symbol(key).as_node(s), value, r),
+        let pair = match key.as_rule() {
+            Rule::Integer => KVPair::new(self.parse_integer(key)?.as_node(s), value),
+            Rule::Symbol => KVPair::new(self.parse_symbol(key).as_node(s), value),
             Rule::String => {
                 let symbol = Symbol::atom(trim_first_last(key.as_str())).as_node(s);
-                table.push_pair(symbol, value, r)
+                KVPair::new(symbol, value)
             }
             _ => unreachable!(),
         };
-        Ok(())
+        Ok(pair)
     }
 
     fn parse_tuple(&mut self, pairs: Pair<Rule>) -> ASTNode {
@@ -134,17 +135,23 @@ impl ParsingContext {
     fn parse_string(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let mut builder = StringTemplateBuilder::new(self.get_span(&pairs));
         for pair in pairs.into_inner() {
-            if let Err(e) = builder.push_escape(pair.as_str(), r) {
-                self.errors.push(e)
+            let r = self.get_span(&pair);
+            if let Err(e) = self.parse_string_item(pair, &mut builder, r) {
+                self.push_error(e.with_span(r))
             }
         }
         builder.as_node()
     }
-    fn parse_string_item(self, pair: Pair<Rule>, builder: &mut StringTemplateBuilder) -> Result<()> {
-        let r = self.get_span(&pair);
+    fn parse_string_item(&mut self, pair: Pair<Rule>, builder: &mut StringTemplateBuilder, r: Span) -> Result<()> {
+        if builder.has_handler() {
+            builder.push_buffer(pair.as_str());
+            return Ok(());
+        }
         match pair.as_rule() {
+            Rule::Symbol => builder.push_handler(pair.as_str()),
             Rule::any => builder.push_character(pair.as_str(), r)?,
-            Rule::StringUnicode => builder.push_escape(pair.as_str(), r)?,
+            Rule::StringUnicode => builder.push_unicode(pair.as_str(), r)?,
+            Rule::StringEscape => builder.push_escape(pair.as_str(), r)?,
             Rule::namepath => builder.push_symbol(self.parse_namepath(pair), r),
             Rule::expression => builder.push_expression(self.parse_expression(pair).0),
             _ => debug_cases!(pair), // _ => unreachable!(),

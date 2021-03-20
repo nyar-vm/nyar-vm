@@ -1,6 +1,7 @@
 use super::*;
 
 mod test_assign;
+mod test_dict;
 mod test_import;
 
 const INPUT: &str = r#"

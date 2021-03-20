@@ -1,4 +1,4 @@
-use super::*;
+use crate::test_expr::*;
 
 const DICTS: &str = r#"
 {};

@@ -12,3 +12,15 @@ Suite[
         2,
     ),
 ]
+Suite[
+    Tuple(
+        true,
+        Tuple(
+            true,
+        ),
+        Tuple(
+            true,
+            Tuple(),
+        ),
+    ),
+]

@@ -6,54 +6,58 @@ use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StringTemplateBuilder {
-    pub inner: Vec<ASTNode>,
-    pub buffer: String,
-    pub text_start: u32,
-    pub text_end: u32,
-    pub range: Span,
+    inner: Vec<ASTNode>,
+    handler: String,
+    buffer: String,
+    text_start: u32,
+    text_end: u32,
+    range: Span,
 }
 
 impl StringTemplateBuilder {
     pub fn new(span: Span) -> StringTemplateBuilder {
-        Self { inner: vec![], buffer: "".to_string(), text_start: span.start, text_end: span.start, range: span }
+        Self {
+            inner: vec![],
+            handler: "".to_string(),
+            buffer: "".to_string(),
+            text_start: span.start,
+            text_end: span.start,
+            range: span,
+        }
+    }
+    pub fn push_buffer(&mut self, s: &str) {
+        self.buffer.push_str(s)
+    }
+    pub fn push_handler(&mut self, handler: &str) {
+        self.handler = handler.to_string()
+    }
+    pub fn has_handler(&self) -> bool {
+        !self.handler.is_empty()
     }
     pub fn push_character(&mut self, s: &str, span: Span) -> Result<()> {
         self.text_end = span.end;
-        let mut chars = s.chars();
-        match chars.count() {
-            1 => {
-                unsafe { self.buffer.push(chars.next().unwrap_unchecked()) }
-                Ok(())
-            }
-            0 => Err(NyarError::syntax_error("empty character").with_span(span)),
-            _ => Err(NyarError::syntax_error("too much characters").with_span(span)),
-        }
+        let c = char::from_str(s)?;
+        Ok(self.buffer.push(c))
     }
-
+    pub fn push_unicode(&mut self, s: &str, span: Span) -> Result<()> {
+        self.text_end = span.end;
+        let mut cs = s.chars();
+        cs.nth(2);
+        cs.next_back();
+        let c = char::from_u32(u32::from_str_radix(cs.as_str(), 16)?).ok_or(string_error(s, span))?;
+        Ok(self.buffer.push(c))
+    }
     pub fn push_escape(&mut self, s: &str, span: Span) -> Result<()> {
         self.text_end = span.end;
         let mut cs = s.chars();
-        if s.starts_with("\\u") {
-            cs.nth(2);
-            cs.next_back();
-            let c = char::from_u32(u32::from_str_radix(cs.as_str(), 16)?).ok_or(string_error(s, span))?;
-            self.buffer.push(c)
+        let c = cs.nth(1).ok_or(string_error(s, span))?;
+        match c {
+            '\n' => {}
+            'n' => self.buffer.push('\n'),
+            _ => self.buffer.push(c),
         }
-        else if s.starts_with("\\") {
-            let c = cs.nth(1).ok_or(string_error(s, span))?;
-            match c {
-                '\n' => {}
-                'n' => self.buffer.push('\n'),
-                _ => self.buffer.push(c),
-            }
-        }
-        else {
-            let c = unsafe { cs.nth(0).unwrap_unchecked() };
-            self.buffer.push(c)
-        };
         Ok(())
     }
-
     pub fn push_expression(&mut self, e: ASTNode) {
         self.finish();
         self.text_start = e.span.end;
@@ -81,7 +85,7 @@ fn string_error(t: &str, span: Span) -> NyarError {
 impl StringTemplateBuilder {
     pub fn as_node(&mut self) -> ASTNode {
         if self.inner.is_empty() {
-            return ASTNode::string(take(&mut self.buffer), self.range);
+            return ASTNode::string_handler(take(&mut self.buffer), &self.handler, self.range);
         }
         self.finish();
         ASTNode { kind: ASTKind::StringTemplate(self.inner.clone()), span: self.range }

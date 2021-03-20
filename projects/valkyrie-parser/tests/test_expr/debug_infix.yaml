@@ -1,122 +1,107 @@
-AST::Suite: [
-    AST::Expression: {
-        expr: AST::CallInfix {
-            chain: [
-                1,
-                +,
-                1,
-            ],
-            range: "(2:1, 2:6)",
+Suite[
+    InfixExpression(
+        1,
+        Addition::add,
+        1,
+    ),
+]
+Suite[
+    InfixExpression(
+        2,
+        Concat::concat,
+        2,
+    ),
+]
+Suite[
+    InfixExpression(
+        3,
+        Addition::add,
+        3,
+    ),
+]
+Suite[
+    InfixExpression(
+        4,
+        Concat::concat,
+        4,
+    ),
+]
+Suite[
+    InfixExpression(
+        4,
+        Addition::add,
+        4,
+    ),
+]
+Suite[
+    InfixExpression(
+        5,
+        Concat::concat,
+        5,
+    ),
+]
+Suite[
+    InfixExpression(
+        6,
+        Concat::concat,
+        6,
+    ),
+]
+Suite[
+    InfixExpression(
+        7,
+        Addition::add,
+        7,
+    ),
+]
+Suite[
+    InfixExpression(
+        8,
+        Concat::concat,
+        8,
+    ),
+]
+Suite[
+    InfixExpression(
+        9,
+        Concat::concat,
+        9,
+    ),
+]
+Suite[
+    true,
+]
+Suite[
+    InfixExpression(
+        0,
+        Addition::add,
+        0.0,
+        Addition::add,
+        ByteLiteral {
+            handler: 'c',
+            value: "m",
         },
-        eos: true,
-        range: "(2:1, 2:7)",
-    },
+    ),
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: 2,
-        eos: true,
-        range: "(3:1, 3:8)",
-    },
+Suite[
+    InfixExpression(
+        "",
+        Concat::concat,
+        "",
+    ),
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: AST::CallInfix {
-            chain: [
-                3,
-                +,
-                AST::CallUnary {
-                    base: 3,
-                    prefix: [
-                        +,
-                    ],
-                    suffix: [],
-                    range: "(4:5, 4:8)",
-                },
-            ],
-            range: "(4:1, 4:8)",
-        },
-        eos: true,
-        range: "(4:1, 4:9)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: 4,
-        eos: false,
-        range: "(5:1, 6:1)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: AST::CallInfix {
-            chain: [
-                4,
-                +,
-                AST::CallUnary {
-                    base: 4,
-                    prefix: [
-                        +,
-                        +,
-                    ],
-                    suffix: [],
-                    range: "(6:5, 6:9)",
-                },
-            ],
-            range: "(6:1, 6:9)",
-        },
-        eos: true,
-        range: "(6:1, 6:10)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: 5,
-        eos: true,
-        range: "(7:1, 7:10)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: 6,
-        eos: true,
-        range: "(8:1, 8:10)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: AST::CallInfix {
-            chain: [
-                7,
-                +,
-                AST::CallUnary {
-                    base: 7,
-                    prefix: [
-                        +,
-                        +,
-                        +,
-                    ],
-                    suffix: [],
-                    range: "(9:5, 9:10)",
-                },
-            ],
-            range: "(9:1, 9:10)",
-        },
-        eos: true,
-        range: "(9:1, 9:11)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: 8,
-        eos: true,
-        range: "(10:1, 10:11)",
-    },
-]
-AST::Suite: [
-    AST::Expression: {
-        expr: 9,
-        eos: true,
-        range: "(11:1, 11:11)",
-    },
+Suite[
+    InfixExpression(
+        StringTemplate(
+            "",
+            x,
+            "",
+        ),
+        Concat::concat,
+        StringTemplate(
+            "",
+            y,
+            "",
+        ),
+    ),
 ]
