@@ -116,7 +116,7 @@ impl ParsingContext {
         }
     }
 
-    fn parse_symbol(&self, pairs: Pair<Rule>) -> Symbol {
+    pub(crate) fn parse_symbol(&self, pairs: Pair<Rule>) -> Symbol {
         let pair = pairs.into_inner().next().unwrap();
         match pair.as_rule() {
             Rule::SYMBOL_XID => Symbol::atom(pair.as_str()),

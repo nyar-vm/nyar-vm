@@ -1,19 +1,5 @@
 use super::*;
 
-const LIST: &str = r#"
-[1 + 2];
-[1 + 2, 3,];
-[1 + 2, 3, []];
-[1 + 2, 3, [4,5]];
-[1 + 2, 3, [4,5,[]]];
-"#;
-
-#[test]
-fn debug_list() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(LIST);
-    ast.save("tests/test_expr/debug_list.yaml")
-}
-
 const SLICE: &str = r#"
 a[1 + 1];
 b[1 + 1] + 1;
@@ -26,6 +12,20 @@ e[1:2:3,[1,2,3]];
 fn debug_slice() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(SLICE);
     ast.save("tests/test_expr/debug_slice.yaml")
+}
+
+const BRACKETS: &str = r#"
+a(1)[2]
+b[1](2)
+
+Persion(20,"2",a, a: 2)
+
+"#;
+
+#[test]
+fn debug_expr_brackets() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(BRACKETS);
+    ast.save("tests/test_expr/debug_expr_brackets.yaml")
 }
 
 const INDEX: &str = r#"

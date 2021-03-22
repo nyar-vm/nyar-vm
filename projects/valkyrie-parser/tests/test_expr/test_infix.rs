@@ -30,7 +30,7 @@ const INFIX2: &str = r#"
 "#;
 
 #[test]
-fn debug_infix2() -> Result<()> {
+fn debug_infix_order() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(INFIX2);
     ast.save("tests/test_expr/debug_infix2.yaml")
 }
@@ -43,5 +43,5 @@ const MIX_INFIX: &str = r#"
 #[test]
 fn debug_mix_infix() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(MIX_INFIX);
-    ast.save("tests/test_expr/debug_mix_infix.yaml")
+    ast.save("tests/test_expr/debug_infix3.yaml")
 }

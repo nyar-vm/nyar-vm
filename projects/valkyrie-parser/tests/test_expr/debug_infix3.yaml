@@ -1,0 +1,18 @@
+Suite[
+    1,
+]
+Suite[
+    InfixExpression(
+        1,
+        Addition::add,
+        InfixExpression(
+            2,
+            Multiplication::multiply,
+            InfixExpression(
+                3,
+                Power::power,
+                4,
+            ),
+        ),
+    ),
+]

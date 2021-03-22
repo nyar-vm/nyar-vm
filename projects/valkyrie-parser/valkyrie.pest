@@ -149,11 +149,8 @@ dot_call     =  {DOT ~ (Integer|namepath) }
 static_call  =  {"::" ~ namepath}
 generic_call = !{"::" ~ generic_type}
 /*====================================================================================================================*/
-apply           = !{"(" ~ ")" | "(" ~ apply_kv ~ (Comma ~ apply_kv)* ~ Comma? ~")"}
-apply_kv        =  {Symbol~ Colon ~ expr | expr}
-///#61AFEF
-function_name   = {Symbol}
-function_module = {(namepath ~ DOT)? ~ (Symbol ~ DOT)*}
+apply        = !{"(" ~ ")" | "(" ~ apply_item ~ (Comma ~ apply_item)* ~ Comma? ~")"}
+apply_item   =  {Symbol ~ Colon ~ expr | expr}
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
 type_expr = _{term ~ (TypeInfix ~ term)*}
@@ -195,10 +192,10 @@ Underline = _{"_"}
 ///#98C379
 String         = ${
     Symbol? ~ PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ (StringItem|!PEEK ~ any)* ~ POP |
-    Symbol? ~"『" ~ (StringItem|!"』" ~ any)* ~ "』" |
-    Symbol? ~"「" ~ (StringItem|!"」" ~ any)* ~ "」" |
-    Symbol? ~"«" ~ (StringItem|!"»" ~ any)* ~ "»" |
-    Symbol? ~"‹" ~ (StringItem|!"›" ~ any)* ~ "›"
+    Symbol? ~ "『" ~ (StringItem|!"』" ~ any)* ~ "』" |
+    Symbol? ~ "「" ~ (StringItem|!"」" ~ any)* ~ "」" |
+    Symbol? ~ "«" ~ (StringItem|!"»" ~ any)* ~ "»" |
+    Symbol? ~ "‹" ~ (StringItem|!"›" ~ any)* ~ "›"
 }
 StringItem     = _{
     "$" ~ Integer           | // $1, $a

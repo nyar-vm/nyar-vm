@@ -5,39 +5,11 @@ mod test_dot;
 mod test_infix;
 mod test_unary;
 
-const BRACKETS: &str = r#"
-a(1)[2]
-b[1](2)
-
-Persion(20,"2",a, a: 2)
-
+const SIMPLE: &str = r#"
+Call(a, b: b)
 "#;
 
 #[test]
-fn debug_expr_brackets() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(BRACKETS);
-    ast.save("tests/test_expr/debug_expr_brackets.yaml")
-}
-
-const DOT_CALL: &str = r#"
-a::b::c
-a::b::c()
-
-a::b.c
-a::b.c()
-
-a.b::c
-a.b::c()
-
-a.b.c
-~~ a.(b.c)
-a.b.c()
-a.b().c()
-a().b().c()
-"#;
-
-#[test]
-fn debug_dot_call() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(DOT_CALL);
-    ast.save("tests/test_expr/debug_dot_call.yaml")
+fn debug_simple() {
+    let _: ASTKind = ASTDump::parse(SIMPLE);
 }

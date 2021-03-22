@@ -16,11 +16,3 @@ pub struct DotCall {
     pub arguments: Option<ASTNode>,
     pub continuation: Option<ASTNode>,
 }
-
-impl ChainBuilder {
-    pub fn push_dot_call(&mut self, s: Symbol) {
-        match self.base.kind {
-            _ => unimplemented!("{:?}", self.base.kind),
-        }
-    }
-}

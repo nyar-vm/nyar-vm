@@ -3,17 +3,12 @@ use pest::{iterators::Pair, Parser};
 pub use context::ParsingContext;
 use nyar_error::{NyarError, Result, Span};
 use nyar_hir::{
-    ast::{ChainBuilder, ChainCall, Expression, StringTemplateBuilder, Symbol},
+    ast::{StringTemplateBuilder, Symbol},
     ASTKind, ASTNode,
 };
 pub use operators::PREC_CLIMBER;
 
-use crate::{
-    debug_cases,
-    grammar::parser::ValkyrieParser,
-    utils::{trim_first_last, unescape},
-    Rule,
-};
+use crate::{debug_cases, grammar::parser::ValkyrieParser, utils::trim_first_last, Rule};
 
 pub(crate) mod context;
 pub(crate) mod data;

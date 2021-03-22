@@ -1,8 +1,8 @@
 use super::*;
 
-mod test_assign;
-mod test_dict;
-mod test_import;
+// mod test_assign;
+// mod test_dict;
+// mod test_import;
 
 const INPUT: &str = r#"
 if a {1}

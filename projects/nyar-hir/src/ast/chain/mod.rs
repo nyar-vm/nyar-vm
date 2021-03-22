@@ -1,49 +1,35 @@
 use super::*;
 
-mod apply_call;
-mod dict_call;
-mod kont_call;
-mod slice_call;
-mod unary_call;
-
 pub use self::{
     slice_call::{IndexTerm, SliceTerm},
     unary_call::UnaryCall,
 };
 
-#[derive(Debug, Clone)]
+pub(crate) mod apply_call;
+pub(crate) mod dict_call;
+pub(crate) mod kont_call;
+pub(crate) mod slice_call;
+pub(crate) mod unary_call;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChainCall {
     pub base: ASTNode,
-    /// one of calls
-    pub chain: Vec<ASTNode>,
+    pub chain: Vec<CallableItem>,
 }
 
-impl Default for ChainCall {
-    fn default() -> Self {
-        Self { base: Default::default(), chain: vec![] }
-    }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CallableItem {
+    ApplyCall(ApplyArgument),
 }
 
-impl AddAssign<ASTNode> for ChainCall {
-    fn add_assign(&mut self, rhs: ASTNode) {
-        self.chain.push(rhs)
+impl AddAssign<ApplyArgument> for ChainCall {
+    fn add_assign(&mut self, rhs: ApplyArgument) {
+        self.chain.push(CallableItem::ApplyCall(rhs));
     }
 }
 
 impl ChainCall {
     pub fn new(base: ASTNode) -> Self {
         Self { base, chain: vec![] }
-    }
-    pub fn push(&mut self, term: ASTNode) {
-        self.chain.push(term)
-    }
-    pub fn extend(&mut self, terms: &[ASTNode]) {
-        self.chain.extend_from_slice(terms)
-    }
-    pub fn join_chain_terms(_base: ASTNode, terms: &[ASTNode]) -> ASTNode {
-        assert_ne!(terms.len(), 0);
-        // let start = base.meta.start;
-        // let end = terms.iter().last().unwrap().meta.end;
-        todo!()
     }
 }

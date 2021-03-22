@@ -17,14 +17,18 @@ pub use crate::ast::{
         symbol::Symbol,
         table_literal::{KVPair, TableExpression},
     },
-    chain::*,
+    chain::{
+        apply_call::{ApplyArgument, ApplyCall},
+        *,
+    },
     control::*,
-    expression::{apply::ApplyCall, dot::DotCall, infix::InfixCall, ChainBuilder, Expression},
+    expression::{dot::DotCall, infix::InfixCall, Expression},
     function::LambdaFunction,
     let_bind::LetBind,
     looping::{LoopStatement, WhileLoop},
     operator::{Infix, Operator, Postfix, Prefix},
 };
+use std::collections::BTreeMap;
 
 mod assign;
 mod atoms;
@@ -85,13 +89,9 @@ pub enum ASTKind {
     /// ```
     InfixExpression(Box<InfixCall>),
     /// ```vk
-    /// a.b::[G](args) {lambda}
-    /// ```
-    DotExpression(Box<DotCall>),
-    /// ```vk
     /// a::[G](args) {lambda}
     /// ```
-    ApplyExpression(Box<ApplyCall>),
+    ApplyExpression(Box<ChainCall>),
     /// ```vk
     /// (1, 2, 3)
     /// ```
@@ -179,29 +179,8 @@ impl ASTNode {
         // Self { kind: ASTKind::CallUnary(box unary), meta: span, span: Default::default() }
     }
 
-    pub fn chain_join(self, terms: ASTNode) -> Self {
-        ChainCall::join_chain_terms(self, &[terms])
-    }
-
-    pub fn apply_call(_args: Vec<ASTNode>, _meta: Span) -> Self {
-        todo!()
-        // ASTNode { kind: ASTKind::CallApply(args), meta }
-    }
-
     pub fn kv_pair(k: ASTNode, v: ASTNode) -> KVPair {
         KVPair { key: k, value: v }
-    }
-
-    pub fn apply_slice(_indexes: &[ASTNode], _meta: Span) -> Self {
-        todo!()
-        // let kind = SliceTerm { terms: Vec::from(indexes) };
-        // ASTNode { kind: ASTKind::CallSlice(box kind), meta }
-    }
-
-    pub fn apply_index(_start: Option<ASTNode>, _end: Option<ASTNode>, _steps: Option<ASTNode>, _meta: Span) -> Self {
-        todo!()
-        // let kind = IndexTerm { start, end, steps };
-        // ASTNode { kind: ASTKind::CallIndex(box kind), meta }
     }
 
     pub fn list(v: Vec<ASTNode>, meta: Span) -> Self {

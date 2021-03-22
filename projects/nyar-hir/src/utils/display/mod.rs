@@ -79,47 +79,14 @@ impl Display for ASTKind {
                 }
                 Ok(())
             }
-            ASTKind::LetBind(_v) => {
-                todo!()
-            }
-            ASTKind::LambdaFunction(_v) => {
-                todo!()
-            }
-            ASTKind::InfixExpression(_v) => {
-                todo!()
-            }
-            ASTKind::TupleExpression(_v) => {
-                todo!()
-            }
-            ASTKind::TableExpression(_v) => {
-                todo!()
-            }
-            ASTKind::IfStatement(_) => {
-                todo!()
-            }
-            ASTKind::LoopStatement(_) => {
-                todo!()
-            }
-            ASTKind::Suite(_) => {
-                todo!()
-            }
             ASTKind::Boolean(v) => Display::fmt(v, f),
             ASTKind::Integer(v) => Display::fmt(v, f),
             ASTKind::Byte(v) => Display::fmt(v, f),
             ASTKind::Decimal(v) => Display::fmt(v, f),
             ASTKind::String(v) => Display::fmt(v, f),
-            ASTKind::StringTemplate(_v) => {
-                todo!()
-            }
-            ASTKind::XMLTemplate(_v) => {
-                todo!()
-            }
             ASTKind::Symbol(v) => Display::fmt(v, f),
             ASTKind::PairExpression(v) => Display::fmt(v, f),
-            ASTKind::DotExpression(_) => {
-                todo!()
-            }
-            ASTKind::ApplyExpression(_) => {
+            _ => {
                 todo!()
             }
         }

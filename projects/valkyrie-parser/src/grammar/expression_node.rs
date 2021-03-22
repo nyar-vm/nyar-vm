@@ -1,3 +1,5 @@
+use nyar_hir::ast::{ApplyArgument, ChainCall};
+
 use super::*;
 
 impl ParsingContext {
@@ -45,11 +47,10 @@ impl ParsingContext {
             Rule::data => self.parse_data(head),
             _ => unreachable!(),
         };
-        let chain = ChainBuilder::new(head);
+        let chain = ChainCall::new(head);
         for pair in pairs {
-            return match pair.as_rule() {
+            match pair.as_rule() {
                 Rule::apply => self.parse_apply(pair),
-                Rule::slice => self.parse_slice(pair),
                 // Rule::tuple => self.parse_list_or_tuple(pair, false),
                 _ => debug_cases!(pair),
             };
@@ -64,10 +65,7 @@ impl ParsingContext {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
                 Rule::data => base = self.parse_data(pair),
-                Rule::apply => base = ASTNode::chain_join(base, self.parse_apply(pair)),
-
-                Rule::dot_call => continue,
-                Rule::block => continue,
+                // Rule::apply => base = ASTNode::chain_join(base, self.parse_apply(pair)),
                 _ => debug_cases!(pair),
             };
         }
@@ -83,7 +81,8 @@ impl ParsingContext {
                 _ => debug_cases!(pair),
             };
         }
-        ASTNode::apply_slice(&list, r)
+        todo!()
+        // ASTNode::apply_slice(&list, r)
     }
 
     fn parse_index_term(&mut self, pairs: Pair<Rule>) -> ASTNode {
@@ -109,23 +108,30 @@ impl ParsingContext {
 }
 
 impl ParsingContext {
-    fn parse_apply(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        // Argu
-        // pairs.into_inner().filter(|f| f.as_rule() == Rule::apply_kv).map(|f| self.apply_kv(f)).collect()
-
-        let r = self.get_span(&pairs);
-        let mut args = vec![];
-        let mut kv_pairs = vec![];
-        // let mut types = vec![];
+    fn parse_apply(&mut self, pairs: Pair<Rule>) -> ApplyArgument {
+        let mut args = ApplyArgument::default();
         for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::apply_kv => match self.parse_kv(pair) {
-                    Ok(o) => kv_pairs.push(o),
-                    Err(e) => self.push_error(e),
-                },
-                _ => debug_cases!(pair),
-            };
+            assert_eq!(pair.as_rule(), Rule::apply_item);
+            match self.parse_apply_item(pair, &mut args) {
+                Ok(_) => (),
+                Err(e) => self.push_error(e),
+            }
         }
-        return ASTNode::apply_call(args, r);
+        args
+    }
+    fn parse_apply_item(&mut self, pairs: Pair<Rule>, args: &mut ApplyArgument) -> Result<()> {
+        let mut pairs = pairs.into_inner();
+        let value = unsafe {
+            let node = pairs.next_back().unwrap_unchecked();
+            self.parse_expr(node)
+        };
+        match pairs.next_back() {
+            Some(s) => {
+                let key = self.parse_symbol(s);
+                args.push_named(key, value);
+            }
+            None => args.push(value),
+        }
+        Ok(())
     }
 }
