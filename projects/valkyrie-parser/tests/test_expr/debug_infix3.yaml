@@ -1,17 +1,42 @@
 Suite[
-    1,
+    ApplyExpression(
+        ChainCall {
+            base: 1,
+            chain: [],
+        },
+    ),
 ]
 Suite[
     InfixExpression(
-        1,
+        ApplyExpression(
+            ChainCall {
+                base: 1,
+                chain: [],
+            },
+        ),
         Addition::add,
         InfixExpression(
-            2,
+            ApplyExpression(
+                ChainCall {
+                    base: 2,
+                    chain: [],
+                },
+            ),
             Multiplication::multiply,
             InfixExpression(
-                3,
+                ApplyExpression(
+                    ChainCall {
+                        base: 3,
+                        chain: [],
+                    },
+                ),
                 Power::power,
-                4,
+                ApplyExpression(
+                    ChainCall {
+                        base: 4,
+                        chain: [],
+                    },
+                ),
             ),
         ),
     ),

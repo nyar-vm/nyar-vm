@@ -1,15 +1,16 @@
 use super::*;
 
 pub use self::{
-    slice_call::{IndexTerm, SliceTerm},
+    apply_call::ApplyArgument,
+    slice_call::{IndexTerm, SliceArgument},
     unary_call::UnaryCall,
 };
 
-pub(crate) mod apply_call;
-pub(crate) mod dict_call;
-pub(crate) mod kont_call;
-pub(crate) mod slice_call;
-pub(crate) mod unary_call;
+mod apply_call;
+mod dict_call;
+mod kont_call;
+mod slice_call;
+mod unary_call;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChainCall {
@@ -20,16 +21,14 @@ pub struct ChainCall {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CallableItem {
     ApplyCall(ApplyArgument),
-}
-
-impl AddAssign<ApplyArgument> for ChainCall {
-    fn add_assign(&mut self, rhs: ApplyArgument) {
-        self.chain.push(CallableItem::ApplyCall(rhs));
-    }
+    SliceCall(SliceArgument),
 }
 
 impl ChainCall {
     pub fn new(base: ASTNode) -> Self {
         Self { base, chain: vec![] }
+    }
+    pub fn as_node(self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::ApplyExpression(box self), span }
     }
 }

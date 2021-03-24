@@ -1,12 +1,32 @@
 Suite[
-    1,
+    ApplyExpression(
+        ChainCall {
+            base: 1,
+            chain: [],
+        },
+    ),
 ]
 Suite[
-    2,
+    ApplyExpression(
+        ChainCall {
+            base: 2,
+            chain: [],
+        },
+    ),
 ]
 Suite[
-    3,
+    ApplyExpression(
+        ChainCall {
+            base: 3,
+            chain: [],
+        },
+    ),
 ]
 Suite[
-    4,
+    ApplyExpression(
+        ChainCall {
+            base: 4,
+            chain: [],
+        },
+    ),
 ]

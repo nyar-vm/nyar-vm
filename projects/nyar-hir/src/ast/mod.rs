@@ -17,10 +17,7 @@ pub use crate::ast::{
         symbol::Symbol,
         table_literal::{KVPair, TableExpression},
     },
-    chain::{
-        apply_call::{ApplyArgument, ApplyCall},
-        *,
-    },
+    chain::*,
     control::*,
     expression::{dot::DotCall, infix::InfixCall, Expression},
     function::LambdaFunction,

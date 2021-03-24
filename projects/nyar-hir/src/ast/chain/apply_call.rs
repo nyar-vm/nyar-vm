@@ -38,3 +38,9 @@ impl ApplyArgument {
         self.named.insert(name.name, node);
     }
 }
+
+impl AddAssign<ApplyArgument> for ChainCall {
+    fn add_assign(&mut self, rhs: ApplyArgument) {
+        self.chain.push(CallableItem::ApplyCall(rhs));
+    }
+}
