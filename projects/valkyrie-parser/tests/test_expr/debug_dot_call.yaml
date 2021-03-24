@@ -2,29 +2,95 @@ Suite[
     a::b::c,
 ]
 Suite[
-    a::b::c,
+    ChainCall(
+        a::b::c,
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+    ),
 ]
 Suite[
-    a::b,
+    ChainCall(
+        a::b,
+        "DotCall(c)",
+    ),
 ]
 Suite[
-    a::b,
+    ChainCall(
+        a::b,
+        "DotCall(c)",
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+    ),
 ]
 Suite[
-    a,
+    ChainCall(
+        a,
+        "DotCall(b::c)",
+    ),
 ]
 Suite[
-    a,
+    ChainCall(
+        a,
+        "DotCall(b::c)",
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+    ),
 ]
 Suite[
-    a,
+    ChainCall(
+        a,
+        "DotCall(b)",
+        "DotCall(c)",
+    ),
 ]
 Suite[
-    a,
+    ChainCall(
+        a,
+        "DotCall(b)",
+        "DotCall(c)",
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+    ),
 ]
 Suite[
-    a,
+    ChainCall(
+        a,
+        "DotCall(b)",
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+        "DotCall(c)",
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+    ),
 ]
 Suite[
-    a,
+    ChainCall(
+        a,
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+        "DotCall(b)",
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+        "DotCall(c)",
+        ApplyArgument {
+            positional: [],
+            named: {},
+        },
+    ),
 ]

@@ -1,32 +1,50 @@
 Suite[
-    ApplyExpression(
-        ChainCall {
-            base: 1,
-            chain: [],
+    ChainCall(
+        1,
+        UnaryArgument {
+            prefix: [
+                Positive::positive,
+            ],
+            suffix: [],
         },
     ),
 ]
 Suite[
-    ApplyExpression(
-        ChainCall {
-            base: 2,
-            chain: [],
+    ChainCall(
+        2,
+        UnaryArgument {
+            prefix: [],
+            suffix: [
+                unchecked,
+            ],
         },
     ),
 ]
 Suite[
-    ApplyExpression(
-        ChainCall {
-            base: 3,
-            chain: [],
+    ChainCall(
+        3,
+        UnaryArgument {
+            prefix: [
+                Positive::positive,
+            ],
+            suffix: [
+                unchecked,
+            ],
         },
     ),
 ]
 Suite[
-    ApplyExpression(
-        ChainCall {
-            base: 4,
-            chain: [],
+    ChainCall(
+        4,
+        UnaryArgument {
+            prefix: [
+                Negative::negative,
+                Positive::positive,
+            ],
+            suffix: [
+                unchecked,
+                unchecked,
+            ],
         },
     ),
 ]

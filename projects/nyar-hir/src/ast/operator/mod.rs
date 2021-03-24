@@ -44,6 +44,10 @@ pub enum Postfix {
     Increment,
     /// `--`
     Decrement,
+    /// `a!`
+    Unchecked,
+    /// `a?`
+    Raise,
 }
 
 #[derive(Copy, Clone, Serialize, Deserialize)]

@@ -19,7 +19,7 @@ pub use crate::ast::{
     },
     chain::*,
     control::*,
-    expression::{dot::DotCall, infix::InfixCall, Expression},
+    expression::{infix::InfixCall, Expression},
     function::LambdaFunction,
     let_bind::LetBind,
     looping::{LoopStatement, WhileLoop},

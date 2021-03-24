@@ -31,6 +31,7 @@ impl Debug for ASTNode {
                 f.write_str("Sequence")?;
                 f.debug_list().entries(v.iter()).finish()
             }
+            ASTKind::ApplyExpression(v) => Debug::fmt(v, f),
             ASTKind::InfixExpression(v) => Debug::fmt(v, f),
             ASTKind::TupleExpression(v) => write_tuple("Tuple", v, f),
             ASTKind::TableExpression(v) => Debug::fmt(v, f),
@@ -50,7 +51,7 @@ impl Debug for ASTNode {
     }
 }
 
-pub fn write_tuple(name: &str, v: &[ASTNode], f: &mut Formatter<'_>) -> std::fmt::Result {
+pub fn write_tuple(name: &str, v: &[impl Debug], f: &mut Formatter<'_>) -> std::fmt::Result {
     if v.is_empty() {
         f.write_str(name)?;
         return f.write_str("()");

@@ -1,106 +1,41 @@
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 1,
-                chain: [],
-            },
-        ),
+        1,
         Addition::add,
         InfixExpression(
-            ApplyExpression(
-                ChainCall {
-                    base: 2,
-                    chain: [],
-                },
-            ),
+            2,
             Multiplication::multiply,
-            ApplyExpression(
-                ChainCall {
-                    base: 3,
-                    chain: [],
-                },
-            ),
+            3,
         ),
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: InfixExpression(
-                    ApplyExpression(
-                        ChainCall {
-                            base: 1,
-                            chain: [],
-                        },
-                    ),
-                    Addition::add,
-                    ApplyExpression(
-                        ChainCall {
-                            base: 2,
-                            chain: [],
-                        },
-                    ),
-                ),
-                chain: [],
-            },
+        InfixExpression(
+            1,
+            Addition::add,
+            2,
         ),
         Multiplication::multiply,
-        ApplyExpression(
-            ChainCall {
-                base: 3,
-                chain: [],
-            },
-        ),
+        3,
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 1,
-                chain: [],
-            },
+        1,
+        Addition::add,
+        InfixExpression(
+            2,
+            Multiplication::multiply,
+            3,
         ),
         Addition::add,
         InfixExpression(
-            ApplyExpression(
-                ChainCall {
-                    base: 2,
-                    chain: [],
-                },
-            ),
+            4,
             Multiplication::multiply,
-            ApplyExpression(
-                ChainCall {
-                    base: 3,
-                    chain: [],
-                },
-            ),
-        ),
-        Addition::add,
-        InfixExpression(
-            ApplyExpression(
-                ChainCall {
-                    base: 4,
-                    chain: [],
-                },
-            ),
+            5,
             Multiplication::multiply,
-            ApplyExpression(
-                ChainCall {
-                    base: 5,
-                    chain: [],
-                },
-            ),
-            Multiplication::multiply,
-            ApplyExpression(
-                ChainCall {
-                    base: 6,
-                    chain: [],
-                },
-            ),
+            6,
         ),
     ),
 ]

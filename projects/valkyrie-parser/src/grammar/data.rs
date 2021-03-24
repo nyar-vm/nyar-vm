@@ -124,7 +124,7 @@ impl ParsingContext {
             _ => unreachable!(),
         }
     }
-    fn parse_namepath(&self, pairs: Pair<Rule>) -> Symbol {
+    pub(crate) fn parse_namepath(&self, pairs: Pair<Rule>) -> Symbol {
         Symbol::join(
             pairs.into_inner().filter(|node| node.as_rule() == Rule::Symbol).map(|pair| self.parse_symbol(pair)).collect(),
         )

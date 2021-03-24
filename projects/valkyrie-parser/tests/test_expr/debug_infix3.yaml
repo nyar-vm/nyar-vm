@@ -1,40 +1,34 @@
 Suite[
-    ApplyExpression(
-        ChainCall {
-            base: 1,
-            chain: [],
-        },
-    ),
+    1,
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 1,
-                chain: [],
+        ChainCall(
+            1,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
         Addition::add,
         InfixExpression(
-            ApplyExpression(
-                ChainCall {
-                    base: 2,
-                    chain: [],
-                },
-            ),
+            2,
             Multiplication::multiply,
             InfixExpression(
-                ApplyExpression(
-                    ChainCall {
-                        base: 3,
-                        chain: [],
-                    },
-                ),
+                3,
                 Power::power,
-                ApplyExpression(
-                    ChainCall {
-                        base: 4,
-                        chain: [],
+                ChainCall(
+                    4,
+                    UnaryArgument {
+                        prefix: [
+                            Negative::negative,
+                        ],
+                        suffix: [
+                            unchecked,
+                            unchecked,
+                        ],
                     },
                 ),
             ),

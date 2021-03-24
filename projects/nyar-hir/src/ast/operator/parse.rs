@@ -50,6 +50,7 @@ impl FromStr for Postfix {
         let out = match s {
             "+" => Self::Increment,
             "-" => Self::Decrement,
+            "!" => Self::Unchecked,
             _ => return Err(NyarError::syntax_error(format!("Unknown suffix {}", s))),
         };
         Ok(out)

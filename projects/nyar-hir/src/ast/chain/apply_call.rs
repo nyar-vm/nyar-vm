@@ -1,22 +1,5 @@
 use super::*;
 
-/// ```vk
-/// [].a
-/// [].a()
-/// [].a::[]()
-/// [].a::[]() {
-///    continuation
-/// }
-/// ```
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ApplyCall {
-    pub base: ASTNode,
-    pub generic: Option<ASTNode>,
-    pub arguments: Vec<ASTNode>,
-    pub options: BTreeMap<String, ASTNode>,
-    pub continuation: Option<ASTNode>,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApplyArgument {
     positional: Vec<ASTNode>,

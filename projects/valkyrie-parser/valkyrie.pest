@@ -143,13 +143,14 @@ node_inline  = {
     "(" ~ expr ~ ")"
   | data ~ bracket_call*
 }
-bracket_call = _{dot_call|static_call|slice|apply|generic_call}
+bracket_call = _{dot_call|index_call|static_call|generic_call|slice|apply}
 bracket_once = _{block}
-dot_call     =  {DOT ~ (Integer|namepath) }
-static_call  =  {"::" ~ namepath}
-generic_call = !{"::" ~ generic_type}
+dot_call     =  {DOT ~ namepath}
+index_call   =  {DOT ~ Integer}
+static_call  =  {"::" ~ Symbol}
+generic_call =  {"::" ~ generic_type}
 /*====================================================================================================================*/
-apply        = !{"(" ~ ")" | "(" ~ apply_item ~ (Comma ~ apply_item)* ~ Comma? ~")"}
+apply        =  {"(" ~ ")" | "(" ~ apply_item ~ (Comma ~ apply_item)* ~ Comma? ~")"}
 apply_item   =  {Symbol ~ Colon ~ expr | expr}
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
@@ -238,12 +239,13 @@ Separate   = _{";;"}
 Modifier = !{(!(Symbol~(DOT|Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~Symbol)}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
-    (Bang|ADD|SUB|Star)
+    (BANG|ADD|SUB|Star)
 }
-Suffix = @{
-    DoubleBang
-  | (Bang | RAISE)
-}
+//!#56B6C2: BANG|QUESTION
+Suffix   = @{BANG|QUESTION}
+BANG     = @{"!"}
+QUESTION = @{"?"}
+
 Infix = _{
     Set
   | (CONCAT|REMOVE)
@@ -273,8 +275,7 @@ Slash =@{"/"}
 Solidus = @{"\\"}
 
 DOT = @{"."}
-///#56B6C2
-RAISE = @{"?"}
+
 
 Load =@{"<<<"|"⋘"} //U+22D8
 Save =@{">>>"|"⋙"} //U+22D9
@@ -325,6 +326,5 @@ Ellipsis =@{"..."|"…"} // U+2026
 Output =@{"%%"}
 
 
-DoubleBang =@{"!!"}
-Bang =@{"!"}
+
 

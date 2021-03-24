@@ -1,252 +1,177 @@
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 1,
-                chain: [],
-            },
-        ),
+        1,
         Addition::add,
-        ApplyExpression(
-            ChainCall {
-                base: 1,
-                chain: [],
-            },
-        ),
+        1,
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 2,
-                chain: [],
-            },
-        ),
+        2,
         Concat::concat,
-        ApplyExpression(
-            ChainCall {
-                base: 2,
-                chain: [],
-            },
-        ),
+        2,
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 3,
-                chain: [],
-            },
-        ),
+        3,
         Addition::add,
-        ApplyExpression(
-            ChainCall {
-                base: 3,
-                chain: [],
+        ChainCall(
+            3,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 4,
-                chain: [],
-            },
-        ),
+        4,
         Concat::concat,
-        ApplyExpression(
-            ChainCall {
-                base: 4,
-                chain: [],
+        ChainCall(
+            4,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 4,
-                chain: [],
-            },
-        ),
+        4,
         Addition::add,
-        ApplyExpression(
-            ChainCall {
-                base: 4,
-                chain: [],
+        ChainCall(
+            4,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 5,
-                chain: [],
-            },
-        ),
+        5,
         Concat::concat,
-        ApplyExpression(
-            ChainCall {
-                base: 5,
-                chain: [],
+        ChainCall(
+            5,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 6,
-                chain: [],
-            },
-        ),
+        6,
         Concat::concat,
-        ApplyExpression(
-            ChainCall {
-                base: 6,
-                chain: [],
+        ChainCall(
+            6,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 7,
-                chain: [],
-            },
-        ),
+        7,
         Addition::add,
-        ApplyExpression(
-            ChainCall {
-                base: 7,
-                chain: [],
+        ChainCall(
+            7,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                    Positive::positive,
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 8,
-                chain: [],
-            },
-        ),
+        8,
         Concat::concat,
-        ApplyExpression(
-            ChainCall {
-                base: 8,
-                chain: [],
+        ChainCall(
+            8,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 9,
-                chain: [],
-            },
-        ),
+        9,
         Concat::concat,
-        ApplyExpression(
-            ChainCall {
-                base: 9,
-                chain: [],
+        ChainCall(
+            9,
+            UnaryArgument {
+                prefix: [
+                    Positive::positive,
+                    Positive::positive,
+                ],
+                suffix: [],
             },
         ),
     ),
 ]
 Suite[
-    ApplyExpression(
-        ChainCall {
-            base: true,
-            chain: [],
+    true,
+]
+Suite[
+    InfixExpression(
+        0,
+        Addition::add,
+        0.0,
+        Addition::add,
+        ByteLiteral {
+            handler: 'c',
+            value: "m",
         },
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: 0,
-                chain: [],
-            },
-        ),
-        Addition::add,
-        ApplyExpression(
-            ChainCall {
-                base: 0.0,
-                chain: [],
-            },
-        ),
-        Addition::add,
-        ApplyExpression(
-            ChainCall {
-                base: ByteLiteral {
-                    handler: 'c',
-                    value: "m",
-                },
-                chain: [],
-            },
-        ),
+        "",
+        Concat::concat,
+        "",
     ),
 ]
 Suite[
     InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: "",
-                chain: [],
-            },
+        StringTemplate(
+            "",
+            x,
+            "",
         ),
         Concat::concat,
-        ApplyExpression(
-            ChainCall {
-                base: "",
-                chain: [],
-            },
-        ),
-    ),
-]
-Suite[
-    InfixExpression(
-        ApplyExpression(
-            ChainCall {
-                base: StringTemplate(
-                    "",
-                    x,
-                    "",
-                ),
-                chain: [],
-            },
-        ),
-        Concat::concat,
-        ApplyExpression(
-            ChainCall {
-                base: StringTemplate(
-                    "",
-                    ApplyExpression(
-                        ChainCall {
-                            base: y,
-                            chain: [],
-                        },
-                    ),
-                    "",
-                ),
-                chain: [],
-            },
+        StringTemplate(
+            "",
+            y,
+            "",
         ),
     ),
 ]

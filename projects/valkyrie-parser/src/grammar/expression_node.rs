@@ -1,4 +1,4 @@
-use nyar_hir::ast::{ApplyArgument, ChainCall, SliceArgument};
+use nyar_hir::ast::{ApplyArgument, ChainCall, SliceArgument, UnaryArgument};
 
 use super::*;
 
@@ -24,22 +24,22 @@ impl ParsingContext {
 
     fn parse_term(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);
-        let mut base = ASTNode::default();
-        let mut prefix = vec![];
-        let mut suffix = vec![];
+        let mut chain = ChainCall::default();
+        let mut unary = UnaryArgument::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::WHITESPACE | Rule::COMMENT => continue,
-                Rule::node => base = self.parse_node(pair),
-                Rule::Prefix => prefix.push(pair.as_str().to_string()),
-                Rule::Suffix => suffix.push(pair.as_str().to_string()),
+                Rule::node => self.parse_node(pair, &mut chain),
+                Rule::Prefix => unary.push_prefix(pair.as_str()),
+                Rule::Suffix => unary.push_suffix(pair.as_str()),
                 _ => unreachable!(),
             };
         }
-        base.push_unary_operations(&prefix, &suffix, r)
+        chain += unary;
+        chain.as_node(r)
     }
 
-    fn parse_node(&mut self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_node(&mut self, pairs: Pair<Rule>, chain: &mut ChainCall) {
         let r = self.get_span(&pairs);
         let mut pairs = pairs.into_inner();
         let head = pairs.next().unwrap();
@@ -48,29 +48,20 @@ impl ParsingContext {
             Rule::data => self.parse_data(head),
             _ => unreachable!(),
         };
-        let mut chain = ChainCall::new(head);
+        chain.base = head;
         for pair in pairs {
             match pair.as_rule() {
-                Rule::apply => chain += self.parse_apply(pair),
-                Rule::slice => chain += self.parse_slice(pair),
+                Rule::COMMENT => continue,
+                Rule::apply => *chain += self.parse_apply(pair),
+                Rule::slice => *chain += self.parse_slice(pair),
+                Rule::dot_call => unsafe {
+                    let node = pair.into_inner().next_back().unwrap_unchecked();
+                    debug_assert!(node.as_rule() == Rule::namepath);
+                    *chain += self.parse_namepath(node)
+                },
                 _ => debug_cases!(pair),
             };
         }
-        return chain.as_node(r);
-    }
-
-    fn parse_bracket_call(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        // let r = self.get_span(&pairs);
-        let mut base = ASTNode::default();
-        for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::WHITESPACE => continue,
-                Rule::data => base = self.parse_data(pair),
-                // Rule::apply => base = ASTNode::chain_join(base, self.parse_apply(pair)),
-                _ => debug_cases!(pair),
-            };
-        }
-        return base;
     }
 }
 

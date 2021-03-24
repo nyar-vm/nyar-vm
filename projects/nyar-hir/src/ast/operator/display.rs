@@ -29,6 +29,8 @@ impl Debug for Postfix {
         match self {
             Postfix::Increment => f.write_str("Increment::increment"),
             Postfix::Decrement => f.write_str("Decrement::decrement"),
+            Postfix::Unchecked => f.write_str("unchecked"),
+            Postfix::Raise => f.write_str("raise"),
         }
     }
 }
