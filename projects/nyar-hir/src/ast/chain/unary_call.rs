@@ -4,10 +4,21 @@ use super::*;
 /// ```v
 /// ++base!!
 /// ```
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct UnaryArgument {
     pub prefix: Vec<Operator>,
     pub suffix: Vec<Operator>,
+}
+
+impl Debug for UnaryArgument {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let prefix: Vec<_> = self.prefix.iter().map(|f| f.to_string()).collect();
+        let suffix: Vec<_> = self.suffix.iter().map(|f| f.to_string()).collect();
+        f.debug_struct("UnaryArgument")
+            .field("prefix", &format!("[{}]", prefix.join(", ")))
+            .field("suffix", &format!("[{}]", suffix.join(", ")))
+            .finish()
+    }
 }
 
 impl Default for UnaryArgument {

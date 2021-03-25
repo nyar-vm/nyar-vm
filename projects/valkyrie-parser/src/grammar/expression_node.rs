@@ -97,23 +97,18 @@ impl ParsingContext {
 impl ParsingContext {
     fn parse_slice(&mut self, pairs: Pair<Rule>) -> SliceArgument {
         let mut args = SliceArgument::default();
-        let mut list = vec![];
         for pair in pairs.into_inner() {
+            assert_eq!(pair.as_rule(), Rule::index);
+            let pair = unsafe { pair.into_inner().next().unwrap_unchecked() };
             match pair.as_rule() {
-                Rule::index => list.push(self.parse_index_term(pair)),
+                Rule::expr => self.parse_index_expr(pair, &mut args),
                 _ => debug_cases!(pair),
-            };
+            }
         }
-        todo!()
-        // ASTNode::apply_slice(&list, r)
+        args
     }
-    fn parse_index_term(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let pair = pairs.into_inner().nth(0).unwrap();
-        match pair.as_rule() {
-            Rule::expr => self.parse_expr(pair),
-            Rule::index_step => self.parse_index_step(pair),
-            _ => debug_cases!(pair),
-        }
+    fn parse_index_expr(&mut self, pairs: Pair<Rule>, args: &mut SliceArgument) {
+        args.push_index(self.parse_expr(pairs))
     }
 
     fn parse_index_step(&mut self, pairs: Pair<Rule>) -> ASTNode {

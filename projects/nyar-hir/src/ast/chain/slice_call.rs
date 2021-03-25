@@ -4,20 +4,22 @@ use super::*;
 /// ```v
 /// a[1][2]
 /// ```
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SliceArgument {
-    pub terms: Vec<IndexTerm>,
+    pub terms: Vec<SliceTerm>,
 }
 
+/// Valid slice range
 ///
 /// ```v
-/// a[1][2]
+/// [index]
+/// [start:end]
+/// [start:end:step]
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct IndexTerm {
-    pub start: Option<ASTNode>,
-    pub end: Option<ASTNode>,
-    pub steps: Option<ASTNode>,
+pub enum SliceTerm {
+    Index { index: ASTNode },
+    Slice { start: ASTNode, end: ASTNode, steps: ASTNode },
 }
 
 impl AddAssign<SliceArgument> for ChainCall {
@@ -26,33 +28,9 @@ impl AddAssign<SliceArgument> for ChainCall {
     }
 }
 
-impl AddAssign<IndexTerm> for SliceArgument {
-    fn add_assign(&mut self, rhs: IndexTerm) {
+impl AddAssign<SliceTerm> for SliceArgument {
+    fn add_assign(&mut self, rhs: SliceTerm) {
         self.terms.push(rhs);
-    }
-}
-
-impl Debug for SliceArgument {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut w = &mut f.debug_struct("SliceArgument");
-        for (i, term) in self.terms.iter().enumerate() {
-            let key = &format!("{}.start", i);
-            w = match &term.start {
-                None => w.field(key, &"1"),
-                Some(s) => w.field(key, &s),
-            };
-            let key = &format!("{}.end", i);
-            w = match &term.end {
-                None => w.field(key, &"-1"),
-                Some(s) => w.field(key, &s),
-            };
-            let key = &format!("{}.steps", i);
-            w = match &term.steps {
-                None => w.field(key, &"1"),
-                Some(s) => w.field(key, &s),
-            };
-        }
-        w.finish()
     }
 }
 
@@ -62,14 +40,8 @@ impl Default for SliceArgument {
     }
 }
 
-impl IndexTerm {
-    // pub fn new(base: ASTNode) -> Self {
-    //     Self { base, terms: vec![] }
-    // }
-    // pub fn push(&mut self, term: ASTNode) {
-    //     self.terms.push(term)
-    // }
-    // pub fn extend(&mut self, terms: &[ASTNode]) {
-    //     self.terms.extend_from_slice(terms)
-    // }
+impl SliceArgument {
+    pub fn push_index(&mut self, index: ASTNode) {
+        self.terms.push(SliceTerm::Index { index });
+    }
 }

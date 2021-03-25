@@ -4,7 +4,7 @@ use super::*;
 
 pub use self::{
     apply_call::ApplyArgument,
-    slice_call::{IndexTerm, SliceArgument},
+    slice_call::{SliceArgument, SliceTerm},
     unary_call::UnaryArgument,
 };
 
@@ -44,8 +44,7 @@ pub enum CallableItem {
     /// ++a--
     /// ```
     UnaryCall(UnaryArgument),
-    DotSymbolCall(Symbol),
-    DotNumberCall(BigInt),
+    DotCall(Symbol),
     StaticCall(String),
 }
 
@@ -73,8 +72,7 @@ impl Debug for ChainCall {
                 CallableItem::ApplyCall(v) => w.field(v),
                 CallableItem::SliceCall(v) => w.field(v),
                 CallableItem::UnaryCall(v) => w.field(v),
-                CallableItem::DotSymbolCall(v) => w.field(&format!("DotCall({})", v)),
-                CallableItem::DotNumberCall(v) => w.field(&format!("DotCall({})", v)),
+                CallableItem::DotCall(v) => w.field(&format!("DotCall({})", v)),
                 CallableItem::StaticCall(v) => w.field(&format!("StaticCall({})", v)),
             }
         }

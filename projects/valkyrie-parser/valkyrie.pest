@@ -153,6 +153,11 @@ generic_call =  {"::" ~ generic_type}
 apply        =  {"(" ~ ")" | "(" ~ apply_item ~ (Comma ~ apply_item)* ~ Comma? ~")"}
 apply_item   =  {Symbol ~ Colon ~ expr | expr}
 /*====================================================================================================================*/
+slice       =  {"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
+index       =  {index_step|index_range|expr}
+index_range =  {expr? ~ Colon ~ expr?}
+index_step  =  {expr? ~ Colon ~ expr? ~ Colon ~ expr?}
+/*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
 type_expr = _{term ~ (TypeInfix ~ term)*}
 //type_term = {Prefix* ~ type_node ~ Suffix*}
@@ -172,11 +177,6 @@ table       =  {"[" ~ "]" | "[" ~ table_item? ~ (Comma ~ table_item)* ~ Comma? ~
 table_item  = _{table_pair|expr}
 table_pair  =  {valid_key ~ Colon ~ expr}
 valid_key   = _{Integer | Symbol | String}
-/*====================================================================================================================*/
-slice       =  {"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
-index       =  {index_step|index_range|expr}
-index_range =  {expr? ~ Colon ~ expr?}
-index_step  =  {expr? ~ Colon ~ expr? ~ Colon ~ expr?}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
 //!#D19A66: Special

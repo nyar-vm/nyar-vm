@@ -1,28 +1,58 @@
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(2:1, 4:1)",
-    },
+Suite[
+    ChainCall(
+        a,
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 1,
+                },
+            ],
+        },
+    ),
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(4:1, 8:1)",
-    },
+Suite[
+    ChainCall(
+        a,
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 2,
+                },
+            ],
+        },
+    ),
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(8:1, 11:1)",
-    },
+Suite[
+    ChainCall(
+        a,
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 3,
+                },
+                Index {
+                    index: 4,
+                },
+            ],
+        },
+    ),
 ]
-AST::Suite: [
-    AST::Expression: {
-        expr: a,
-        eos: false,
-        range: "(11:1, 14:1)",
-    },
+Suite[
+    ChainCall(
+        a,
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 5,
+                },
+            ],
+        },
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 6,
+                },
+            ],
+        },
+    ),
 ]

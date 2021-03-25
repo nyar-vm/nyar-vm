@@ -2,10 +2,8 @@ Suite[
     ChainCall(
         1,
         UnaryArgument {
-            prefix: [
-                Positive::positive,
-            ],
-            suffix: [],
+            prefix: "[+]",
+            suffix: "[]",
         },
     ),
 ]
@@ -13,10 +11,8 @@ Suite[
     ChainCall(
         2,
         UnaryArgument {
-            prefix: [],
-            suffix: [
-                unchecked,
-            ],
+            prefix: "[]",
+            suffix: "[!]",
         },
     ),
 ]
@@ -24,12 +20,8 @@ Suite[
     ChainCall(
         3,
         UnaryArgument {
-            prefix: [
-                Positive::positive,
-            ],
-            suffix: [
-                unchecked,
-            ],
+            prefix: "[+]",
+            suffix: "[!]",
         },
     ),
 ]
@@ -37,14 +29,8 @@ Suite[
     ChainCall(
         4,
         UnaryArgument {
-            prefix: [
-                Negative::negative,
-                Positive::positive,
-            ],
-            suffix: [
-                unchecked,
-                unchecked,
-            ],
+            prefix: "[-, +]",
+            suffix: "[!, !]",
         },
     ),
 ]

@@ -6,10 +6,8 @@ Suite[
         ChainCall(
             1,
             UnaryArgument {
-                prefix: [
-                    Positive::positive,
-                ],
-                suffix: [],
+                prefix: "[+]",
+                suffix: "[]",
             },
         ),
         Addition::add,
@@ -22,13 +20,8 @@ Suite[
                 ChainCall(
                     4,
                     UnaryArgument {
-                        prefix: [
-                            Negative::negative,
-                        ],
-                        suffix: [
-                            unchecked,
-                            unchecked,
-                        ],
+                        prefix: "[-]",
+                        suffix: "[!, !]",
                     },
                 ),
             ),
