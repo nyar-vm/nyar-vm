@@ -1,7 +1,7 @@
 use super::*;
 
 impl Display for Typing {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match (&self.typing, &self.effect) {
             (Some(t), Some(e)) => write!(f, "{} / {}", t, e),
             (Some(t), None) => write!(f, "{}", t),
@@ -12,7 +12,7 @@ impl Display for Typing {
 }
 
 impl Display for TypingExpression {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             Self::Null => {
                 write!(f, "null")
@@ -48,7 +48,7 @@ impl Display for TypingExpression {
 }
 
 impl Display for EffectExpression {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(f, "{{")?;
         for (index, term) in self.inner.iter().enumerate() {
             write!(f, "{:?}", term)?;

@@ -1,7 +1,7 @@
 use super::*;
 
 impl Debug for Operator {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Operator::Prefix(o) => Debug::fmt(o, f),
             Operator::Infix(o) => Debug::fmt(o, f),
@@ -11,7 +11,7 @@ impl Debug for Operator {
 }
 
 impl Debug for Prefix {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Prefix::Negative => f.write_str("Negative::negative"),
             Prefix::Positive => f.write_str("Positive::positive"),
@@ -21,7 +21,7 @@ impl Debug for Prefix {
 }
 
 impl Debug for Infix {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Infix::Addition => f.write_str("Addition::add"),
             Infix::Subtraction => f.write_str("Subtraction::subtract"),
@@ -35,7 +35,7 @@ impl Debug for Infix {
 }
 
 impl Debug for Postfix {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Postfix::Increment => f.write_str("Increment::increment"),
             Postfix::Decrement => f.write_str("Decrement::decrement"),
@@ -46,7 +46,7 @@ impl Debug for Postfix {
 }
 
 impl Display for Operator {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Operator::Prefix(o) => Display::fmt(o, f),
             Operator::Infix(o) => Display::fmt(o, f),
@@ -56,7 +56,7 @@ impl Display for Operator {
 }
 
 impl Display for Prefix {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Prefix::Negative => f.write_str("-"),
             Prefix::Positive => f.write_str("+"),
@@ -66,7 +66,7 @@ impl Display for Prefix {
 }
 
 impl Display for Infix {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Infix::Addition => f.write_str("+"),
             Infix::Subtraction => f.write_str("-"),
@@ -80,7 +80,7 @@ impl Display for Infix {
 }
 
 impl Display for Postfix {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Postfix::Increment => f.write_str("++"),
             Postfix::Decrement => f.write_str("--"),

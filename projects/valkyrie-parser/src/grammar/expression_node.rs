@@ -59,6 +59,7 @@ impl ParsingContext {
                     debug_assert!(node.as_rule() == Rule::namepath);
                     *chain += self.parse_namepath(node)
                 },
+                Rule::block => *chain += self.parse_block(pair),
                 _ => debug_cases!(pair),
             };
         }
@@ -97,11 +98,18 @@ impl ParsingContext {
 impl ParsingContext {
     fn parse_slice(&mut self, pairs: Pair<Rule>) -> SliceArgument {
         let mut args = SliceArgument::default();
+        // let mut start = None;
+        // let mut end = None;
+        // let mut step = None;
         for pair in pairs.into_inner() {
             assert_eq!(pair.as_rule(), Rule::index);
             let pair = unsafe { pair.into_inner().next().unwrap_unchecked() };
             match pair.as_rule() {
-                Rule::expr => self.parse_index_expr(pair, &mut args),
+                Rule::expr => {
+                    self.parse_index_expr(pair, &mut args);
+                    return args;
+                }
+                // Rule::index_step => self.parse_index_step(pair, &mut args),
                 _ => debug_cases!(pair),
             }
         }
@@ -111,7 +119,7 @@ impl ParsingContext {
         args.push_index(self.parse_expr(pairs))
     }
 
-    fn parse_index_step(&mut self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_index_step(&mut self, pairs: Pair<Rule>, args: &mut SliceArgument) {
         let mut vec: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
@@ -120,6 +128,5 @@ impl ParsingContext {
                 _ => debug_cases!(pair),
             };
         }
-        return ASTNode::default();
     }
 }

@@ -1,5 +1,5 @@
 use std::{
-    fmt::{self, Debug, Display, Formatter},
+    fmt::{Debug, Display, Formatter},
     ops::{AddAssign, Deref},
     str::FromStr,
 };
@@ -25,8 +25,8 @@ pub use crate::ast::{
     looping::{LoopStatement, WhileLoop},
     operator::{Infix, Operator, Postfix, Prefix},
 };
+use crate::utils::write_tuple;
 use std::collections::BTreeMap;
-
 mod assign;
 mod atoms;
 mod chain;
@@ -124,12 +124,12 @@ impl ASTNode {
     pub fn program(v: Vec<ASTNode>, span: Span) -> Self {
         Self { kind: ASTKind::Program(v), span }
     }
-    pub fn suite(v: Vec<ASTNode>, span: Span) -> Self {
+    pub fn block(v: Vec<ASTNode>, span: Span) -> Self {
         Self { kind: ASTKind::Suite(v), span }
     }
 
-    pub fn empty_block() -> Self {
-        todo!()
+    pub fn sequence(v: Vec<ASTNode>, span: Span) -> Self {
+        Self { kind: ASTKind::Suite(v), span }
     }
 
     pub fn if_statement(if_chain: IfStatement, meta: Span) -> Self {
@@ -160,20 +160,6 @@ impl ASTNode {
         };
         infix.push_infix_pair(op, rhs);
         Self { kind: ASTKind::InfixExpression(box infix), span }
-    }
-
-    pub fn push_unary_operations(self, prefix: &[String], suffix: &[String], span: Span) -> Self {
-        return self;
-        // if prefix.is_empty() && suffix.is_empty() {
-        //     return self.refine();
-        // }
-        // let mut unary = match self.kind {
-        //     ASTKind::CallUnary(u) => *u,
-        //     _ => UnaryCall::new(self),
-        // };
-        // unary.push_prefix(prefix);
-        // unary.push_suffix(suffix);
-        // Self { kind: ASTKind::CallUnary(box unary), meta: span, span: Default::default() }
     }
 
     pub fn kv_pair(k: ASTNode, v: ASTNode) -> KVPair {

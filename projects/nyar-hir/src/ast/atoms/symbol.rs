@@ -8,7 +8,7 @@ pub struct Symbol {
 }
 
 impl Display for Symbol {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         for s in &self.scope {
             write_identifier(s, f)?;
             f.write_str("::")?;
@@ -17,7 +17,7 @@ impl Display for Symbol {
     }
 }
 
-fn write_identifier(id: &str, f: &mut Formatter) -> fmt::Result {
+fn write_identifier(id: &str, f: &mut Formatter) -> std::fmt::Result {
     match is_valid_identifier(id) {
         true => write!(f, "{}", id),
         false => write!(f, "`{}`", id),

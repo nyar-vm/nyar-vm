@@ -54,7 +54,7 @@ impl ParsingContext {
                 _ => debug_cases!(pair),
             };
         }
-        return ASTNode::suite(nodes, r_all);
+        return ASTNode::block(nodes, r_all);
     }
 
     fn parse_import(&self, pairs: Pair<Rule>) -> ASTNode {
@@ -179,12 +179,12 @@ impl ParsingContext {
         let mut blocks: Vec<ASTNode> = vec![];
         let mut default = None;
         for pair in pairs.into_inner() {
+            let r = self.get_span(&pair);
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
-                Rule::If => (),
-                Rule::Else => (),
+                Rule::If | Rule::Else => continue,
                 Rule::expr => conditions.push(self.parse_expr(pair)),
-                Rule::block => blocks.push(self.parse_block(pair)),
+                Rule::block => blocks.push(ASTNode::block(self.parse_block(pair), r)),
                 _ => unreachable!(),
             }
         }
@@ -196,7 +196,7 @@ impl ParsingContext {
         // return ASTNode::if_statement(pairs, default, r);
     }
 
-    fn parse_block(&mut self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_block(&mut self, pairs: Pair<Rule>) -> Vec<ASTNode> {
         let mut pass: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
             match pair.as_rule() {
@@ -211,7 +211,7 @@ impl ParsingContext {
                 _ => debug_cases!(pair),
             };
         }
-        return ASTNode::default();
+        return pass;
     }
 
     fn parse_expression(&mut self, pairs: Pair<Rule>) -> (ASTNode, bool) {

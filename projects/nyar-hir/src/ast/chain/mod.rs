@@ -1,14 +1,14 @@
-use nyar_error::third_party::BigInt;
-
 use super::*;
 
 pub use self::{
     apply_call::ApplyArgument,
+    block_call::ContinuationArgument,
     slice_call::{SliceArgument, SliceTerm},
     unary_call::UnaryArgument,
 };
 
 mod apply_call;
+mod block_call;
 mod dict_call;
 mod dot_call;
 mod slice_call;
@@ -46,6 +46,7 @@ pub enum CallableItem {
     UnaryCall(UnaryArgument),
     DotCall(Symbol),
     StaticCall(String),
+    BlockCall(ContinuationArgument),
 }
 
 impl Default for ChainCall {
@@ -64,15 +65,16 @@ impl ChainCall {
 }
 
 impl Debug for ChainCall {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut w = &mut f.debug_tuple("ChainCall");
         w = w.field(&self.base);
         for node in &self.chain {
             w = match node {
+                CallableItem::DotCall(v) => w.field(&format!("DotCall({})", v)),
                 CallableItem::ApplyCall(v) => w.field(v),
                 CallableItem::SliceCall(v) => w.field(v),
                 CallableItem::UnaryCall(v) => w.field(v),
-                CallableItem::DotCall(v) => w.field(&format!("DotCall({})", v)),
+                CallableItem::BlockCall(v) => w.field(v),
                 CallableItem::StaticCall(v) => w.field(&format!("StaticCall({})", v)),
             }
         }

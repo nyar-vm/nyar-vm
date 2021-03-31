@@ -22,7 +22,7 @@ pub struct NyarError {
 impl Error for NyarError {}
 
 impl Display for NyarError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         writeln!(f, "{:?}", self.kind)?;
         // match &self.span {
         //     Some(r) => write!(f, "--> ({}:{}, {}:{})", r.start.0, r.start.1, r.end.0, r.end.1)?,

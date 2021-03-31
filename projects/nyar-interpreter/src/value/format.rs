@@ -6,7 +6,7 @@ use Value::*;
 pub const MAX_LENGTH_OF_LINE: usize = 144;
 
 impl Display for Value {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         self.to_doc().render_fmt(MAX_LENGTH_OF_LINE, f)
     }
 }

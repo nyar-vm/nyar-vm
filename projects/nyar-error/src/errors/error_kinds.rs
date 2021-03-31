@@ -20,7 +20,7 @@ pub enum NyarErrorKind {
 }
 
 impl Display for NyarErrorKind {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             NyarErrorKind::IOError(e) => {
                 write!(f, "{}", e)

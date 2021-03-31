@@ -11,7 +11,7 @@ pub struct InfixCall {
 }
 
 impl Debug for InfixCall {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         let mut list = &mut f.debug_tuple("InfixExpression");
         list = list.field(&self.base);
         for (o, v) in &self.terms {

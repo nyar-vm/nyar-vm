@@ -11,7 +11,7 @@ pub struct UnaryArgument {
 }
 
 impl Debug for UnaryArgument {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let prefix: Vec<_> = self.prefix.iter().map(|f| f.to_string()).collect();
         let suffix: Vec<_> = self.suffix.iter().map(|f| f.to_string()).collect();
         f.debug_struct("UnaryArgument")

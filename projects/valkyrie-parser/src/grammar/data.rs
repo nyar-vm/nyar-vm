@@ -30,6 +30,7 @@ impl ParsingContext {
             Rule::namepath => ASTNode::symbol(self.parse_namepath(pair), r),
             Rule::tuple => self.parse_tuple(pair),
             Rule::table => self.parse_table(pair),
+            Rule::block => ASTNode::block(self.parse_block(pair), r),
             _ => debug_cases!(pair),
         };
         Ok(value)

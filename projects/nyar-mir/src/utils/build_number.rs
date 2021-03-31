@@ -10,7 +10,7 @@
 // }
 //
 // impl Debug for Position {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> std::fmt::Result {
 //         write!(f, "({}:{}, {}:{})", self.start.0, self.start.1, self.end.0, self.end.1)
 //     }
 // }

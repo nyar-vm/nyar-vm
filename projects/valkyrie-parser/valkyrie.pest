@@ -35,7 +35,7 @@ IMPORT = @{"using"}
 AS     = @{"as"}
 /*====================================================================================================================*/
 controlFlow = _{non_local_exit|if_statement|for_statement}
-block = !{"{" ~ statement+ ~ "}"}
+block = !{"{" ~ statement* ~ "}"}
 /*====================================================================================================================*/
 if_statement = {if_block ~ else_if_block* ~ else_block?}
 if_block = _{If ~ condition ~ block}
@@ -154,9 +154,12 @@ apply        =  {"(" ~ ")" | "(" ~ apply_item ~ (Comma ~ apply_item)* ~ Comma? ~
 apply_item   =  {Symbol ~ Colon ~ expr | expr}
 /*====================================================================================================================*/
 slice       =  {"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
-index       =  {index_step|index_range|expr}
-index_range =  {expr? ~ Colon ~ expr?}
-index_step  =  {expr? ~ Colon ~ expr? ~ Colon ~ expr?}
+index       =  {index_steps|index_range|expr}
+index_range = _{index_start? ~ Colon ~ index_end?}
+index_steps = _{index_start? ~ Colon ~ index_end? ~ Colon ~ index_step?}
+index_start =  {expr}
+index_end   =  {expr}
+index_step  =  {expr}
 /*====================================================================================================================*/
 //!#E06C75: type_hint|generic_type|parametric_types_pair
 type_expr = _{term ~ (TypeInfix ~ term)*}

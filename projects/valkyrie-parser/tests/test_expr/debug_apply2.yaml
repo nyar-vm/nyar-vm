@@ -1,0 +1,12 @@
+Suite[
+    ChainCall(
+        a,
+        ApplyArgument {
+            positional: [
+                Suite[],
+            ],
+            named: {},
+        },
+        Continuation(),
+    ),
+]

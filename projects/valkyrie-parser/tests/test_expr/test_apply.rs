@@ -15,20 +15,32 @@ fn debug_slice() -> Result<()> {
 }
 
 const BRACKETS: &str = r#"
-a(1)[2]
-b[1](2)
-
-Persion(20,"2",a, a: 2)
-
+a(1)[2]{3}
+a(1){2}[3]
+a[1](2){3}
+a[1]{2}(3)
+a{1}(2)[3]
+a{1}[2](3)
 "#;
 
 #[test]
-fn debug_expr_brackets() -> Result<()> {
+fn debug_apply() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(BRACKETS);
-    ast.save("tests/test_expr/debug_expr_brackets.yaml")
+    ast.save("tests/test_expr/debug_apply.yaml")
+}
+
+const APPLY: &str = r#"
+a({}) {}
+"#;
+
+#[test]
+fn debug_apply2() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(APPLY);
+    ast.save("tests/test_expr/debug_apply2.yaml")
 }
 
 const INDEX: &str = r#"
+Persion(20,"2",a, a: 2)
 a[1]
 
 a   [

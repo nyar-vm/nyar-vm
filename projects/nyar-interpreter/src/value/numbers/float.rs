@@ -67,13 +67,13 @@ impl<F: Float> DerefMut for FloatWrapper<F> {
 
 impl<F: Float + Debug> Debug for FloatWrapper<F> {
     #[inline(always)]
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.0, f)
     }
 }
 
 impl<F: Float + Display + LowerExp + From<f32>> Display for FloatWrapper<F> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         let abs = self.0.abs();
         if abs > Self::MAX_NATURAL_FLOAT_FOR_DISPLAY.into() || abs < Self::MIN_NATURAL_FLOAT_FOR_DISPLAY.into() {
             write!(f, "{:e}", self.0)

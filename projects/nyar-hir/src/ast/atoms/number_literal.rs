@@ -53,13 +53,13 @@ impl FromStr for DecimalLiteral {
 }
 
 impl IntegerLiteral {
-    pub fn with_handler(mut self, handler: &str) -> Self {
+    pub fn with_handler(self, handler: &str) -> Self {
         Self { handler: handler.to_string(), value: self.value }
     }
 }
 
 impl DecimalLiteral {
-    pub fn with_handler(mut self, handler: &str) -> Self {
+    pub fn with_handler(self, handler: &str) -> Self {
         Self { handler: handler.to_string(), value: self.value }
     }
 }

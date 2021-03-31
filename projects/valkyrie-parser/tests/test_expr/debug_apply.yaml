@@ -1,0 +1,138 @@
+Suite[
+    ChainCall(
+        a,
+        ApplyArgument {
+            positional: [
+                1,
+            ],
+            named: {},
+        },
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 2,
+                },
+            ],
+        },
+        [
+            Suite[
+                3,
+            ],
+        ],
+    ),
+]
+Suite[
+    ChainCall(
+        a,
+        ApplyArgument {
+            positional: [
+                1,
+            ],
+            named: {},
+        },
+        [
+            Suite[
+                2,
+            ],
+        ],
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 3,
+                },
+            ],
+        },
+    ),
+]
+Suite[
+    ChainCall(
+        a,
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 1,
+                },
+            ],
+        },
+        ApplyArgument {
+            positional: [
+                2,
+            ],
+            named: {},
+        },
+        [
+            Suite[
+                3,
+            ],
+        ],
+    ),
+]
+Suite[
+    ChainCall(
+        a,
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 1,
+                },
+            ],
+        },
+        [
+            Suite[
+                2,
+            ],
+        ],
+        ApplyArgument {
+            positional: [
+                3,
+            ],
+            named: {},
+        },
+    ),
+]
+Suite[
+    ChainCall(
+        a,
+        [
+            Suite[
+                1,
+            ],
+        ],
+        ApplyArgument {
+            positional: [
+                2,
+            ],
+            named: {},
+        },
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 3,
+                },
+            ],
+        },
+    ),
+]
+Suite[
+    ChainCall(
+        a,
+        [
+            Suite[
+                1,
+            ],
+        ],
+        SliceArgument {
+            terms: [
+                Index {
+                    index: 2,
+                },
+            ],
+        },
+        ApplyArgument {
+            positional: [
+                3,
+            ],
+            named: {},
+        },
+    ),
+]

@@ -12,7 +12,7 @@ pub struct DefaultDecimalHandler {
 }
 
 impl Debug for DefaultDecimalHandler {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         f.debug_list().entries(self.handlers.keys()).finish()
     }
 }
