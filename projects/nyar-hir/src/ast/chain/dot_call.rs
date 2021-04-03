@@ -11,6 +11,9 @@ impl ChainCall {
         let n = ASTNode::number(number, span);
         self.chain.push(CallableItem::SliceCall(SliceArgument { terms: vec![SliceTerm::Index { index: n }] }));
     }
+    pub fn dot_symbol_call(&mut self, symbol: Symbol) {
+        self.chain.push(CallableItem::DotCall(symbol));
+    }
 
     pub fn static_call(&mut self, rhs: Symbol) {
         debug_assert!(rhs.scope.is_empty());

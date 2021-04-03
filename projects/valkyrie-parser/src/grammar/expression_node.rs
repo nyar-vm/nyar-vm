@@ -1,4 +1,6 @@
-use nyar_hir::ast::{ApplyArgument, ChainCall, SliceArgument, UnaryArgument};
+use nyar_hir::ast::{ApplyArgument, ChainCall, ContinuationArgument, SliceArgument, UnaryArgument};
+
+use crate::utils::union_node;
 
 use super::*;
 
@@ -13,7 +15,6 @@ impl ParsingContext {
                 // Rule::WHITESPACE => ASTNode::empty_statement(r),
                 Rule::expr => self.parse_expr(pair),
                 Rule::term => self.parse_term(pair),
-                Rule::bracket_call => debug_cases!(pair),
                 _ => debug_cases!(pair),
             },
             |left: ASTNode, op: Pair<Rule>, right: ASTNode| {
@@ -51,18 +52,49 @@ impl ParsingContext {
         chain.base = head;
         for pair in pairs {
             match pair.as_rule() {
+                Rule::WHITESPACE => continue,
                 Rule::COMMENT => continue,
-                Rule::apply => *chain += self.parse_apply(pair),
-                Rule::slice => *chain += self.parse_slice(pair),
-                Rule::dot_call => unsafe {
-                    let node = pair.into_inner().next_back().unwrap_unchecked();
-                    debug_assert!(node.as_rule() == Rule::namepath);
-                    *chain += self.parse_namepath(node)
-                },
-                Rule::block => *chain += self.parse_block(pair),
+                Rule::callable => self.parse_callable(pair, chain),
+                Rule::block => chain.push_continuation(self.parse_block(pair)),
                 _ => debug_cases!(pair),
             };
         }
+    }
+    fn parse_callable(&mut self, pairs: Pair<Rule>, chain: &mut ChainCall) {
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::WHITESPACE => continue,
+                Rule::COMMENT => continue,
+                Rule::DOT => continue,
+                Rule::apply => *chain += self.parse_apply(pair),
+                Rule::slice => *chain += self.parse_slice(pair),
+                Rule::dot_call => self.dot_call(pair, chain),
+                // Rule::block => *chain += self.parse_block(pair),
+                _ => debug_cases!(pair),
+            };
+        }
+    }
+}
+
+impl ParsingContext {
+    fn dot_call(&mut self, pairs: Pair<Rule>, chain: &mut ChainCall) {
+        let r = self.get_span(&pairs);
+        let node = union_node(pairs);
+        match node.as_rule() {
+            Rule::namepath => chain.dot_symbol_call(self.parse_namepath(node)),
+            Rule::Integer => chain.dot_number_call(self.parse_integer(node), r),
+            // Rule::WHITESPACE | Rule::DOT => continue,
+            // Rule::COMMENT => continue,
+            // Rule::apply => *chain += self.parse_apply(pair),
+            // Rule::slice => *chain += self.parse_slice(pair),
+            // Rule::dot_call => unsafe {
+            //     let node = pair.into_inner().next_back().unwrap_unchecked();
+            //     debug_assert!(node.as_rule() == Rule::namepath);
+            //     *chain += self.parse_namepath(node)
+            // },
+            // Rule::block => *chain += self.parse_block(pair),
+            _ => debug_cases!(node),
+        };
     }
 }
 

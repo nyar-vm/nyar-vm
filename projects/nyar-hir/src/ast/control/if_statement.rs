@@ -1,7 +1,6 @@
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-
 pub struct IfStatement {
     pub pairs: Vec<(ASTNode, Vec<ASTNode>)>,
     pub default: Option<Vec<ASTNode>>,

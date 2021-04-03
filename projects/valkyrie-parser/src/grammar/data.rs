@@ -22,9 +22,9 @@ impl ParsingContext {
         let value = match pair.as_rule() {
             Rule::String => self.parse_string(pair),
             Rule::Special => self.parse_special(pair),
-            Rule::Complex => self.parse_complex_number(pair)?,
-            Rule::Integer => self.parse_integer(pair)?.as_node(r),
-            Rule::Decimal => self.parse_decimal(pair)?.as_node(r),
+            Rule::Complex => self.parse_complex_number(pair),
+            Rule::Integer => self.parse_integer(pair).as_node(r),
+            Rule::Decimal => self.parse_decimal(pair).as_node(r),
             Rule::Byte => self.parse_byte(pair),
             Rule::Symbol => ASTNode::symbol(self.parse_symbol(pair), r),
             Rule::namepath => ASTNode::symbol(self.parse_namepath(pair), r),
@@ -64,7 +64,7 @@ impl ParsingContext {
         };
         let s = self.get_span(&key);
         let pair = match key.as_rule() {
-            Rule::Integer => KVPair::new(self.parse_integer(key)?.as_node(s), value),
+            Rule::Integer => KVPair::new(self.parse_integer(key).as_node(s), value),
             Rule::Symbol => KVPair::new(self.parse_symbol(key).as_node(s), value),
             Rule::String => {
                 let symbol = Symbol::atom(trim_first_last(key.as_str())).as_node(s);
@@ -80,25 +80,38 @@ impl ParsingContext {
         let tuple = pairs.into_inner().filter(|f| f.as_rule() == Rule::expr).map(|pair| self.parse_expr(pair)).collect();
         ASTNode::tuple(tuple, r)
     }
-    fn parse_complex_number(&self, pairs: Pair<Rule>) -> Result<ASTNode> {
+    fn parse_complex_number(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);
         let mut pairs = pairs.into_inner();
         unsafe {
             let n = pairs.next().unwrap_unchecked();
             let h = pairs.next().unwrap_unchecked().as_str();
-            let out = match n.as_rule() {
-                Rule::Integer => self.parse_integer(n)?.with_handler(h).as_node(r),
-                Rule::Decimal => self.parse_decimal(n)?.with_handler(h).as_node(r),
+            match n.as_rule() {
+                Rule::Integer => self.parse_integer(n).with_handler(h).as_node(r),
+                Rule::Decimal => self.parse_decimal(n).with_handler(h).as_node(r),
                 _ => unreachable!(),
-            };
-            return Ok(out);
+            }
         }
     }
-    fn parse_integer(&self, pairs: Pair<Rule>) -> Result<IntegerLiteral> {
-        IntegerLiteral::from_str(pairs.as_str())
+    pub fn parse_integer(&mut self, pairs: Pair<Rule>) -> IntegerLiteral {
+        let r = self.get_span(&pairs);
+        match IntegerLiteral::from_str(pairs.as_str()) {
+            Ok(o) => o,
+            Err(e) => {
+                self.push_error(e.with_span(r));
+                Default::default()
+            }
+        }
     }
-    fn parse_decimal(&self, pairs: Pair<Rule>) -> Result<DecimalLiteral> {
-        DecimalLiteral::from_str(pairs.as_str())
+    fn parse_decimal(&mut self, pairs: Pair<Rule>) -> DecimalLiteral {
+        let r = self.get_span(&pairs);
+        match DecimalLiteral::from_str(pairs.as_str()) {
+            Ok(o) => o,
+            Err(e) => {
+                self.push_error(e.with_span(r));
+                Default::default()
+            }
+        }
     }
     fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);

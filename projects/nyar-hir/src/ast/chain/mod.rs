@@ -39,13 +39,38 @@ pub enum CallableItem {
     /// }
     /// ```
     ApplyCall(ApplyArgument),
+    /// ```vk
+    /// a.1
+    /// a[1]
+    /// a[b]
+    /// a[start:end:steps]
+    /// ```
     SliceCall(SliceArgument),
     /// ```vk
     /// ++a--
     /// ```
     UnaryCall(UnaryArgument),
+    /// ```vk
+    /// a
+    /// a::b()
+    /// a::[]()
+    /// a::[]() {
+    ///    continuation
+    /// }
+    /// ```
     DotCall(Symbol),
+    /// ```vk
+    /// a.b
+    /// ```
     StaticCall(String),
+    /// ```vk
+    /// a
+    /// a::b {}
+    /// a::[]()
+    /// a::[]() {
+    ///    continuation
+    /// }
+    /// ```
     BlockCall(ContinuationArgument),
 }
 

@@ -1,3 +1,4 @@
+use crate::Rule;
 use pest::iterators::Pair;
 
 mod settings;
@@ -28,6 +29,13 @@ pub fn trim_first_last(input: &str) -> &str {
     chars.next();
     chars.next_back();
     chars.as_str()
+}
+
+pub fn union_node(pairs: Pair<Rule>) -> Pair<Rule> {
+    let mut pairs = pairs.into_inner();
+    let pair = unsafe { pairs.next().unwrap_unchecked() };
+    debug_assert!(pairs.next().is_none());
+    return pair;
 }
 
 #[macro_export]

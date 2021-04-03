@@ -11,6 +11,18 @@ pub struct KVPair {
     pub value: ASTNode,
 }
 
+impl Debug for TableExpression {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write_tuple("Table", &self.inner, f)
+    }
+}
+
+impl Debug for KVPair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pair").field("key", &self.key).field("value", &self.value).finish()
+    }
+}
+
 impl KVPair {
     pub fn new(key: ASTNode, value: ASTNode) -> Self {
         Self { key, value }
