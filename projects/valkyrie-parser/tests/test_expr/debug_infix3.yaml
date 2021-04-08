@@ -3,12 +3,10 @@ Suite[
 ]
 Suite[
     InfixExpression(
-        ChainCall(
-            1,
-            UnaryArgument {
-                prefix: "[+]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +)
+            (prefix )
+        
         ),
         Addition::add,
         InfixExpression(
@@ -17,12 +15,10 @@ Suite[
             InfixExpression(
                 3,
                 Power::power,
-                ChainCall(
-                    4,
-                    UnaryArgument {
-                        prefix: "[-]",
-                        suffix: "[!, !]",
-                    },
+                (chain-call
+                    (suffix -)
+                    (prefix !, !)
+                
                 ),
             ),
         ),

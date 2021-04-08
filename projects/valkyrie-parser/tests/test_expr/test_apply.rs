@@ -38,25 +38,3 @@ fn debug_apply2() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(APPLY);
     ast.save("tests/test_expr/debug_apply2.yaml")
 }
-
-const INDEX: &str = r#"
-Persion(20,"2",a, a: 2)
-a[1]
-
-a   [
-    2
-    ]
-
-a
-[3,4]
-
-a
-[5]
-[6]
-"#;
-
-#[test]
-fn debug_index() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(INDEX);
-    ast.save("tests/test_expr/debug_index.yaml")
-}

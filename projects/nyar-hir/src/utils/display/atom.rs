@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::{KVPair, TableExpression};
+use crate::ast::KVPair;
 
 impl Display for IntegerLiteral {
     //noinspection DuplicatedCode

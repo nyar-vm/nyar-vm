@@ -1,58 +1,38 @@
 Suite[
-    ChainCall(
-        a,
-        SliceArgument {
-            terms: [
-                Index {
-                    index: 1,
-                },
-            ],
-        },
+    (chain-call
+        (index-call 1)
+    
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        SliceArgument {
-            terms: [
-                Index {
-                    index: 2,
-                },
-            ],
-        },
+    (chain-call
+        (index-call 1)
+    
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        SliceArgument {
-            terms: [
-                Index {
-                    index: 3,
-                },
-                Index {
-                    index: 4,
-                },
-            ],
-        },
+    (chain-call
+        (index-call 1)
+    
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        SliceArgument {
-            terms: [
-                Index {
-                    index: 5,
-                },
-            ],
-        },
-        SliceArgument {
-            terms: [
-                Index {
-                    index: 6,
-                },
-            ],
-        },
+    (chain-call
+        (index-call 2)
+    
+    ),
+]
+Suite[
+    (chain-call
+        (index-call 3)
+    
+    ),
+]
+Suite[
+    (chain-call
+        (index-call 5)
+    
+        (index-call 6)
+    
     ),
 ]

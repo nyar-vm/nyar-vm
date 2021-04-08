@@ -9,6 +9,7 @@ license = "MPL-2.0"
 
 [dependencies]
 serde = {version = "1.0.143", features = ["derive"]}
+textwrap = "0.15.0"
 num = {version="0.4.0", features = ["serde"], optional = true}
 bigdecimal = {version="0.3.0", features = ["serde"], optional = true}
 

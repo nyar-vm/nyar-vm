@@ -11,13 +11,15 @@ pub struct UnaryArgument {
 }
 
 impl Debug for UnaryArgument {
+    /// ```v
+    /// suffix (!)
+    /// prefix (+, -)
+    /// ```
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let prefix: Vec<_> = self.prefix.iter().map(|f| f.to_string()).collect();
         let suffix: Vec<_> = self.suffix.iter().map(|f| f.to_string()).collect();
-        f.debug_struct("UnaryArgument")
-            .field("prefix", &format!("[{}]", prefix.join(", ")))
-            .field("suffix", &format!("[{}]", suffix.join(", ")))
-            .finish()
+        writeln!(f, "(suffix {})", prefix.join(", "))?;
+        writeln!(f, "(prefix {})", suffix.join(", "))
     }
 }
 

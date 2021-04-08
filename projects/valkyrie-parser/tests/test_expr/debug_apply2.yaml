@@ -1,12 +1,6 @@
 Suite[
-    ChainCall(
-        a,
-        ApplyArgument {
-            positional: [
-                Suite[],
-            ],
-            named: {},
-        },
-        Continuation(),
+    (chain-call
+        ApplyArgument { positional: [Suite[]], named: {} }
+        Continuation()
     ),
 ]

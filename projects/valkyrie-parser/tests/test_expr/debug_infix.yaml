@@ -16,12 +16,10 @@ Suite[
     InfixExpression(
         3,
         Addition::add,
-        ChainCall(
-            3,
-            UnaryArgument {
-                prefix: "[+]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +)
+            (prefix )
+        
         ),
     ),
 ]
@@ -29,12 +27,10 @@ Suite[
     InfixExpression(
         4,
         Concat::concat,
-        ChainCall(
-            4,
-            UnaryArgument {
-                prefix: "[+]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +)
+            (prefix )
+        
         ),
     ),
 ]
@@ -42,12 +38,10 @@ Suite[
     InfixExpression(
         4,
         Addition::add,
-        ChainCall(
-            4,
-            UnaryArgument {
-                prefix: "[+, +]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +, +)
+            (prefix )
+        
         ),
     ),
 ]
@@ -55,12 +49,10 @@ Suite[
     InfixExpression(
         5,
         Concat::concat,
-        ChainCall(
-            5,
-            UnaryArgument {
-                prefix: "[+]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +)
+            (prefix )
+        
         ),
     ),
 ]
@@ -68,12 +60,10 @@ Suite[
     InfixExpression(
         6,
         Concat::concat,
-        ChainCall(
-            6,
-            UnaryArgument {
-                prefix: "[+, +]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +, +)
+            (prefix )
+        
         ),
     ),
 ]
@@ -81,12 +71,10 @@ Suite[
     InfixExpression(
         7,
         Addition::add,
-        ChainCall(
-            7,
-            UnaryArgument {
-                prefix: "[+, +, +]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +, +, +)
+            (prefix )
+        
         ),
     ),
 ]
@@ -94,12 +82,10 @@ Suite[
     InfixExpression(
         8,
         Concat::concat,
-        ChainCall(
-            8,
-            UnaryArgument {
-                prefix: "[+, +]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +, +)
+            (prefix )
+        
         ),
     ),
 ]
@@ -107,12 +93,10 @@ Suite[
     InfixExpression(
         9,
         Concat::concat,
-        ChainCall(
-            9,
-            UnaryArgument {
-                prefix: "[+, +]",
-                suffix: "[]",
-            },
+        (chain-call
+            (suffix +, +)
+            (prefix )
+        
         ),
     ),
 ]

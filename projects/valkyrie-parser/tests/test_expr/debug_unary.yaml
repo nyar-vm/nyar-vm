@@ -1,36 +1,28 @@
 Suite[
-    ChainCall(
-        1,
-        UnaryArgument {
-            prefix: "[+]",
-            suffix: "[]",
-        },
+    (chain-call
+        (suffix +)
+        (prefix )
+    
     ),
 ]
 Suite[
-    ChainCall(
-        2,
-        UnaryArgument {
-            prefix: "[]",
-            suffix: "[!]",
-        },
+    (chain-call
+        (suffix )
+        (prefix !)
+    
     ),
 ]
 Suite[
-    ChainCall(
-        3,
-        UnaryArgument {
-            prefix: "[+]",
-            suffix: "[!]",
-        },
+    (chain-call
+        (suffix +)
+        (prefix !)
+    
     ),
 ]
 Suite[
-    ChainCall(
-        4,
-        UnaryArgument {
-            prefix: "[-, +]",
-            suffix: "[!, !]",
-        },
+    (chain-call
+        (suffix -, +)
+        (prefix !, !)
+    
     ),
 ]

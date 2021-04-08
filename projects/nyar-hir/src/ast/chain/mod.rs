@@ -1,3 +1,5 @@
+use nyar_error::third_party::debug_indent;
+
 use super::*;
 
 pub use self::{
@@ -91,18 +93,29 @@ impl ChainCall {
 
 impl Debug for ChainCall {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut w = &mut f.debug_tuple("ChainCall");
-        w = w.field(&self.base);
+        writeln!(f, "(chain-call")?;
         for node in &self.chain {
-            w = match node {
-                CallableItem::DotCall(v) => w.field(&format!("DotCall({})", v)),
-                CallableItem::ApplyCall(v) => w.field(v),
-                CallableItem::SliceCall(v) => w.field(v),
-                CallableItem::UnaryCall(v) => w.field(v),
-                CallableItem::BlockCall(v) => w.field(v),
-                CallableItem::StaticCall(v) => w.field(&format!("StaticCall({})", v)),
+            match node {
+                CallableItem::DotCall(v) => writeln!(f, "    (dot-call {})", v)?,
+                CallableItem::ApplyCall(v) => debug_indent(v, f)?,
+                CallableItem::SliceCall(v) => debug_indent(v, f)?,
+                CallableItem::UnaryCall(v) => debug_indent(v, f)?,
+                CallableItem::BlockCall(v) => debug_indent(v, f)?,
+                CallableItem::StaticCall(v) => writeln!(f, "    (static-call {})", v)?,
             }
         }
-        w.finish()
+        write!(f, ")")
+    }
+}
+
+impl Debug for SliceArgument {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for node in &self.terms {
+            match node {
+                SliceTerm::Index { index } => writeln!(f, "(index-call {})", index)?,
+                SliceTerm::Slice { start, end, steps } => writeln!(f, "(slice-call {} {} {})", start, end, steps)?,
+            }
+        }
+        Ok(())
     }
 }

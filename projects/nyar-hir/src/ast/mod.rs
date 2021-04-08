@@ -39,7 +39,7 @@ mod looping;
 mod operator;
 
 ///
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ASTNode {
     /// The kind of this ast node
     pub kind: ASTKind,

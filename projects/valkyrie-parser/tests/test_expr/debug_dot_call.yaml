@@ -2,95 +2,59 @@ Suite[
     a::b::c,
 ]
 Suite[
-    ChainCall(
-        a::b::c,
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
+    (chain-call
+        ApplyArgument { positional: [], named: {} }
     ),
 ]
 Suite[
-    ChainCall(
-        a::b,
-        "DotCall(c)",
+    (chain-call
+        (dot-call c)
     ),
 ]
 Suite[
-    ChainCall(
-        a::b,
-        "DotCall(c)",
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
+    (chain-call
+        (dot-call c)
+        ApplyArgument { positional: [], named: {} }
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        "DotCall(b::c)",
+    (chain-call
+        (dot-call b::c)
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        "DotCall(b::c)",
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
+    (chain-call
+        (dot-call b::c)
+        ApplyArgument { positional: [], named: {} }
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        "DotCall(b)",
-        "DotCall(c)",
+    (chain-call
+        (dot-call b)
+        (dot-call c)
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        "DotCall(b)",
-        "DotCall(c)",
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
+    (chain-call
+        (dot-call b)
+        (dot-call c)
+        ApplyArgument { positional: [], named: {} }
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        "DotCall(b)",
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
-        "DotCall(c)",
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
+    (chain-call
+        (dot-call b)
+        ApplyArgument { positional: [], named: {} }
+        (dot-call c)
+        ApplyArgument { positional: [], named: {} }
     ),
 ]
 Suite[
-    ChainCall(
-        a,
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
-        "DotCall(b)",
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
-        "DotCall(c)",
-        ApplyArgument {
-            positional: [],
-            named: {},
-        },
+    (chain-call
+        ApplyArgument { positional: [], named: {} }
+        (dot-call b)
+        ApplyArgument { positional: [], named: {} }
+        (dot-call c)
+        ApplyArgument { positional: [], named: {} }
     ),
 ]

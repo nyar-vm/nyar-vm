@@ -47,12 +47,12 @@ If        = @{"if"}
 Else      = @{"else"}
 /*====================================================================================================================*/
 match_statement = {
-    Match ~ expression ~ "{" ~ case_statement+ ~ "}"
+    MATCH ~ expression ~ "{" ~ case_statement+ ~ "}"
 }
 case_statement = {
     Colon ~ statement
 }
-Match = @{"match"}
+MATCH = @{"match"|"catch"}
 Case = @{"case"}
 /*====================================================================================================================*/
 //!#C678DD: WHILE|For|In
@@ -134,26 +134,30 @@ expr       = {term ~ (Infix ~ term)*}
 term       = {Prefix* ~ node ~ Suffix*}
 node       = {
     "(" ~ expr ~ ")"
-  | data ~ bracket_once? ~ (bracket_call+ ~ bracket_once?)+
+  | data ~ call_once? ~ (callable+ ~ call_once?)+
   | data
 }
-expr_inline  = {term_inline ~ (Infix ~ term_inline)*}
-term_inline  = {Prefix* ~ node_inline ~ Suffix*}
-node_inline  = {
+node_inline = {
     "(" ~ expr ~ ")"
-  | data ~ bracket_call*
+  | data ~ callable*
 }
-bracket_call = _{dot_call|index_call|static_call|generic_call|slice|apply}
-bracket_once = _{block}
-dot_call     =  {DOT ~ namepath}
-index_call   =  {DOT ~ Integer}
-static_call  =  {"::" ~ Symbol}
-generic_call =  {"::" ~ generic_type}
+expr_inline = {term_inline ~ (Infix ~ term_inline)*}
+term_inline = {Prefix* ~ node_inline ~ Suffix*}
+callable    = ${
+    DOT ~ COMMENT* ~ dot_call
+  | Proportion ~ COMMENT* ~ static_call
+  | slice
+  | apply
+}
+call_once   = _{block}
+dot_call    = !{namepath|Integer|block|match_call}
+static_call = !{Symbol|generic_type}
+match_call  = !{MATCH ~ "{" ~ case_statement+ ~ "}"}
 /*====================================================================================================================*/
-apply        =  {"(" ~ ")" | "(" ~ apply_item ~ (Comma ~ apply_item)* ~ Comma? ~")"}
-apply_item   =  {Symbol ~ Colon ~ expr | expr}
+apply       = !{"(" ~ ")" | "(" ~ apply_item ~ (Comma ~ apply_item)* ~ Comma? ~")"}
+apply_item  =  {Symbol ~ Colon ~ expr | expr}
 /*====================================================================================================================*/
-slice       =  {"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
+slice       = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
 index       =  {index_steps|index_range|expr}
 index_range = _{index_start? ~ Colon ~ index_end?}
 index_steps = _{index_start? ~ Colon ~ index_end? ~ Colon ~ index_step?}
