@@ -1,28 +1,8 @@
-Suite[
-    (chain-call
-        (suffix +)
-        (prefix )
-    
-    ),
-]
-Suite[
-    (chain-call
-        (suffix )
-        (prefix !)
-    
-    ),
-]
-Suite[
-    (chain-call
-        (suffix +)
-        (prefix !)
-    
-    ),
-]
-Suite[
-    (chain-call
-        (suffix -, +)
-        (prefix !, !)
-    
-    ),
-]
+(scoped-block
+(chain-call <<unimplemented UnaryArgument>>))
+(scoped-block
+(chain-call <<unimplemented UnaryArgument>>))
+(scoped-block
+(chain-call <<unimplemented UnaryArgument>>))
+(scoped-block
+(chain-call <<unimplemented UnaryArgument>>))

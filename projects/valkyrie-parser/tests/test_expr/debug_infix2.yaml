@@ -1,41 +1,187 @@
-Suite[
-    InfixExpression(
-        1,
-        Addition::add,
-        InfixExpression(
-            2,
-            Multiplication::multiply,
-            3,
-        ),
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 1,
+                                },
+                            ),
+                            span: 1:2,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: InfixExpression(
+                                InfixExpression(
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 2,
+                                            },
+                                        ),
+                                        span: 5:6,
+                                    },
+                                    Multiplication::multiply,
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 3,
+                                            },
+                                        ),
+                                        span: 9:10,
+                                    },
+                                ),
+                            ),
+                            span: 1:10,
+                        },
+                    ),
+                ),
+                span: 1:10,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        InfixExpression(
-            1,
-            Addition::add,
-            2,
-        ),
-        Multiplication::multiply,
-        3,
+    span: 1:11,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: InfixExpression(
+                                InfixExpression(
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 1,
+                                            },
+                                        ),
+                                        span: 13:14,
+                                    },
+                                    Addition::add,
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 2,
+                                            },
+                                        ),
+                                        span: 15:16,
+                                    },
+                                ),
+                            ),
+                            span: 13:16,
+                        },
+                        Multiplication::multiply,
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 3,
+                                },
+                            ),
+                            span: 20:21,
+                        },
+                    ),
+                ),
+                span: 12:21,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        1,
-        Addition::add,
-        InfixExpression(
-            2,
-            Multiplication::multiply,
-            3,
-        ),
-        Addition::add,
-        InfixExpression(
-            4,
-            Multiplication::multiply,
-            5,
-            Multiplication::multiply,
-            6,
-        ),
+    span: 12:22,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 1,
+                                },
+                            ),
+                            span: 23:24,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: InfixExpression(
+                                InfixExpression(
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 2,
+                                            },
+                                        ),
+                                        span: 27:28,
+                                    },
+                                    Multiplication::multiply,
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 3,
+                                            },
+                                        ),
+                                        span: 31:32,
+                                    },
+                                ),
+                            ),
+                            span: 23:44,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: InfixExpression(
+                                InfixExpression(
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 4,
+                                            },
+                                        ),
+                                        span: 35:36,
+                                    },
+                                    Multiplication::multiply,
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 5,
+                                            },
+                                        ),
+                                        span: 39:40,
+                                    },
+                                    Multiplication::multiply,
+                                    ASTNode {
+                                        kind: Integer(
+                                            IntegerLiteral {
+                                                handler: "",
+                                                value: 6,
+                                            },
+                                        ),
+                                        span: 43:44,
+                                    },
+                                ),
+                            ),
+                            span: 23:44,
+                        },
+                    ),
+                ),
+                span: 23:44,
+            },
+        ],
     ),
-]
+    span: 23:45,
+}

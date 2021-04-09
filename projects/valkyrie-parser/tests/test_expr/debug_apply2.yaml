@@ -1,6 +1,2 @@
-Suite[
-    (chain-call
-        ApplyArgument { positional: [Suite[]], named: {} }
-        Continuation()
-    ),
-]
+(scoped-block
+(chain-call <<unimplemented ApplyArgument>> <<unimplemented ContinuationArgument>>))

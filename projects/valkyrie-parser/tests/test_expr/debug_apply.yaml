@@ -1,48 +1,12 @@
-Suite[
-    (chain-call
-        ApplyArgument { positional: [1], named: {} }
-        (index-call 2)
-    
-        Continuation(Suite[3])
-    ),
-]
-Suite[
-    (chain-call
-        ApplyArgument { positional: [1], named: {} }
-        Continuation(Suite[2])
-        (index-call 3)
-    
-    ),
-]
-Suite[
-    (chain-call
-        (index-call 1)
-    
-        ApplyArgument { positional: [2], named: {} }
-        Continuation(Suite[3])
-    ),
-]
-Suite[
-    (chain-call
-        (index-call 1)
-    
-        Continuation(Suite[2])
-        ApplyArgument { positional: [3], named: {} }
-    ),
-]
-Suite[
-    (chain-call
-        Continuation(Suite[1])
-        ApplyArgument { positional: [2], named: {} }
-        (index-call 3)
-    
-    ),
-]
-Suite[
-    (chain-call
-        Continuation(Suite[1])
-        (index-call 2)
-    
-        ApplyArgument { positional: [3], named: {} }
-    ),
-]
+(scoped-block
+(chain-call <<unimplemented ApplyArgument>> <<unimplemented SliceArgument>> <<unimplemented ContinuationArgument>>))
+(scoped-block
+(chain-call <<unimplemented ApplyArgument>> <<unimplemented ContinuationArgument>> <<unimplemented SliceArgument>>))
+(scoped-block
+(chain-call <<unimplemented SliceArgument>> <<unimplemented ApplyArgument>> <<unimplemented ContinuationArgument>>))
+(scoped-block
+(chain-call <<unimplemented SliceArgument>> <<unimplemented ContinuationArgument>> <<unimplemented ApplyArgument>>))
+(scoped-block
+(chain-call <<unimplemented ContinuationArgument>> <<unimplemented ApplyArgument>> <<unimplemented SliceArgument>>))
+(scoped-block
+(chain-call <<unimplemented ContinuationArgument>> <<unimplemented SliceArgument>> <<unimplemented ApplyArgument>>))

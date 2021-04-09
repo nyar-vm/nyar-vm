@@ -1,7 +1,11 @@
 use std::fmt::{Debug, Display, Formatter, Write};
 
+use pretty::{Arena, DocAllocator, DocBuilder};
+
+use nyar_error::Result;
+
 use crate::{
-    ast::{ByteLiteral, DecimalLiteral, IntegerLiteral},
+    ast::{ByteLiteral, DecimalLiteral, IntegerLiteral, Symbol},
     ASTKind, ASTNode,
 };
 
@@ -20,34 +24,103 @@ impl From<ASTKind> for ASTNode {
     }
 }
 
-impl Debug for ASTNode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            ASTKind::Nothing => f.write_str("<<unreachable Nothing>>"),
+impl ASTNode {
+    pub fn pretty_print(&self, width: usize) -> Result<String> {
+        self.kind.pretty_print(width)
+    }
+}
+
+impl ASTKind {
+    pub fn pretty_print(&self, width: usize) -> Result<String> {
+        let mut out = String::new();
+        let arena = Arena::new();
+        let doc = self.v_format(&arena);
+        doc.render_fmt(width, &mut out)?;
+        Ok(out)
+    }
+}
+
+trait VLanguage {
+    fn v_format<'a, 'b>(&'a self, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>>;
+
+    fn hard_head<'a, 'b>(&self, name: &'static str, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>> {
+        arena.text("(").append(name).append(arena.hardline())
+    }
+
+    fn soft_head<'a, 'b>(name: &'static str, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>> {
+        arena.text("(").append(name).append(arena.softline())
+    }
+
+    fn inline_head<'a, 'b>(name: &'static str, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>> {
+        arena.text("(").append(name).append(arena.line())
+    }
+}
+
+impl VLanguage for ASTKind {
+    fn v_format<'a, 'b>(&'a self, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>> {
+        match self {
+            ASTKind::Nothing => arena.text("<<unreachable Nothing>>"),
+            ASTKind::Program(v) => {
+                let items = v.iter().map(|item| item.v_format(arena));
+                arena.intersperse(items, arena.hardline()).group()
+            }
             ASTKind::Suite(v) => {
-                f.write_str("Suite")?;
-                f.debug_list().entries(v.iter()).finish()
+                let items = v.iter().map(|item| item.v_format(arena));
+                let head = self.hard_head("scoped-block", arena);
+                let body = arena.intersperse(items, arena.line()).nest(1).group();
+                head.append(body).append(arena.text(")"))
             }
             ASTKind::Sequence(v) => {
-                f.write_str("Sequence")?;
-                f.debug_list().entries(v.iter()).finish()
+                let items = v.iter().map(|item| item.v_format(arena));
+                arena.intersperse(items, arena.line()).group()
             }
-            ASTKind::ApplyExpression(v) => Debug::fmt(v, f),
-            ASTKind::InfixExpression(v) => Debug::fmt(v, f),
-            ASTKind::TupleExpression(v) => write_tuple("Tuple", v, f),
-            ASTKind::TableExpression(v) => Debug::fmt(v, f),
-            ASTKind::PairExpression(v) => Debug::fmt(v, f),
-            ASTKind::Boolean(v) => Display::fmt(v, f),
-            ASTKind::Byte(v) => Debug::fmt(v, f),
-            ASTKind::Integer(v) => Display::fmt(v, f),
-            ASTKind::Decimal(v) => Display::fmt(v, f),
-            ASTKind::String(v) => match v.handler.is_empty() {
-                true => Debug::fmt(&v.literal, f),
-                false => Debug::fmt(v, f),
-            },
-            ASTKind::StringTemplate(v) => write_tuple("StringTemplate", v, f),
-            ASTKind::Symbol(v) => Display::fmt(v, f),
-            _ => Debug::fmt(&self.kind, f),
+            ASTKind::LetBind(_) => {
+                unimplemented!()
+            }
+            ASTKind::LambdaFunction(_) => {
+                unimplemented!()
+            }
+            ASTKind::IfStatement(_) => {
+                unimplemented!()
+            }
+            ASTKind::LoopStatement(_) => {
+                unimplemented!()
+            }
+            ASTKind::InfixExpression(_) => {
+                unimplemented!()
+            }
+            ASTKind::ApplyExpression(v) => v.v_format(arena),
+            ASTKind::TupleExpression(_) => {
+                unimplemented!()
+            }
+            ASTKind::TableExpression(_) => {
+                unimplemented!()
+            }
+            ASTKind::PairExpression(_) => {
+                unimplemented!()
+            }
+            ASTKind::Boolean(_) => {
+                unimplemented!()
+            }
+            ASTKind::Byte(_) => {
+                unimplemented!()
+            }
+            ASTKind::Integer(_) => {
+                unimplemented!()
+            }
+            ASTKind::Decimal(_) => {
+                unimplemented!()
+            }
+            ASTKind::String(_) => {
+                unimplemented!()
+            }
+            ASTKind::StringTemplate(_) => {
+                unimplemented!()
+            }
+            ASTKind::XMLTemplate(_) => {
+                unimplemented!()
+            }
+            ASTKind::Symbol(v) => v.v_format(arena),
         }
     }
 }
@@ -62,35 +135,4 @@ pub fn write_tuple(name: &str, v: &[impl Debug], f: &mut Formatter<'_>) -> std::
         w = w.field(node)
     }
     w.finish()
-}
-
-impl Display for ASTNode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.kind, f)
-    }
-}
-
-impl Display for ASTKind {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        match self {
-            ASTKind::Nothing => f.write_str("<<unreachable Nothing>>"),
-            ASTKind::Program(v) | ASTKind::Sequence(v) => {
-                for i in v {
-                    Display::fmt(i, f)?;
-                    f.write_char('\n')?
-                }
-                Ok(())
-            }
-            ASTKind::Boolean(v) => Display::fmt(v, f),
-            ASTKind::Integer(v) => Display::fmt(v, f),
-            ASTKind::Byte(v) => Display::fmt(v, f),
-            ASTKind::Decimal(v) => Display::fmt(v, f),
-            ASTKind::String(v) => Display::fmt(v, f),
-            ASTKind::Symbol(v) => Display::fmt(v, f),
-            ASTKind::PairExpression(v) => Display::fmt(v, f),
-            _ => {
-                todo!()
-            }
-        }
-    }
 }

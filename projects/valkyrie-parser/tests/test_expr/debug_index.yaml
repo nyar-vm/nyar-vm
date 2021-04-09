@@ -1,38 +1,12 @@
-Suite[
-    (chain-call
-        (index-call 1)
-    
-    ),
-]
-Suite[
-    (chain-call
-        (index-call 1)
-    
-    ),
-]
-Suite[
-    (chain-call
-        (index-call 1)
-    
-    ),
-]
-Suite[
-    (chain-call
-        (index-call 2)
-    
-    ),
-]
-Suite[
-    (chain-call
-        (index-call 3)
-    
-    ),
-]
-Suite[
-    (chain-call
-        (index-call 5)
-    
-        (index-call 6)
-    
-    ),
-]
+(scoped-block
+(chain-call <<unimplemented SliceArgument>>))
+(scoped-block
+(chain-call <<unimplemented SliceArgument>>))
+(scoped-block
+(chain-call <<unimplemented SliceArgument>>))
+(scoped-block
+(chain-call <<unimplemented SliceArgument>>))
+(scoped-block
+(chain-call <<unimplemented SliceArgument>>))
+(scoped-block
+(chain-call <<unimplemented SliceArgument>> <<unimplemented SliceArgument>>))

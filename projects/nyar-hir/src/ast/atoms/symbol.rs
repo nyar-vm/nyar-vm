@@ -7,27 +7,6 @@ pub struct Symbol {
     pub scope: Vec<String>,
 }
 
-impl Display for Symbol {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        for s in &self.scope {
-            write_identifier(s, f)?;
-            f.write_str("::")?;
-        }
-        write_identifier(&self.name, f)
-    }
-}
-
-fn write_identifier(id: &str, f: &mut Formatter) -> std::fmt::Result {
-    match is_valid_identifier(id) {
-        true => write!(f, "{}", id),
-        false => write!(f, "`{}`", id),
-    }
-}
-
-fn is_valid_identifier(id: &str) -> bool {
-    id.chars().all(|c| c.is_alphanumeric() || c == '_')
-}
-
 impl Symbol {
     pub fn atom<S>(name: S) -> Symbol
     where
@@ -48,10 +27,4 @@ impl Symbol {
         let name = path.pop().unwrap();
         Self { name, scope: path }
     }
-}
-
-#[test]
-fn test_display() {
-    assert_eq!(Symbol::path(vec!["a", "b", "c"]).to_string(), "a::b::c");
-    assert_eq!(Symbol::path(vec!["a", "b", "℃"]).to_string(), "a::b::`℃`");
 }

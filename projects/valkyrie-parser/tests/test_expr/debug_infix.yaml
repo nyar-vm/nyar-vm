@@ -1,139 +1,510 @@
-Suite[
-    InfixExpression(
-        1,
-        Addition::add,
-        1,
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 1,
+                                },
+                            ),
+                            span: 1:2,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 1,
+                                },
+                            ),
+                            span: 5:6,
+                        },
+                    ),
+                ),
+                span: 1:6,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        2,
-        Concat::concat,
-        2,
+    span: 1:7,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 2,
+                                },
+                            ),
+                            span: 8:9,
+                        },
+                        Concat::concat,
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 2,
+                                },
+                            ),
+                            span: 13:14,
+                        },
+                    ),
+                ),
+                span: 8:14,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        3,
-        Addition::add,
-        (chain-call
-            (suffix +)
-            (prefix )
-        
-        ),
+    span: 8:15,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 3,
+                                },
+                            ),
+                            span: 16:17,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: ApplyExpression(
+                                (chain-call
+                                    (suffix +)
+                                    (prefix )
+                                
+                                ),
+                            ),
+                            span: 20:23,
+                        },
+                    ),
+                ),
+                span: 16:23,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        4,
-        Concat::concat,
-        (chain-call
-            (suffix +)
-            (prefix )
-        
-        ),
+    span: 16:24,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 4,
+                                },
+                            ),
+                            span: 25:26,
+                        },
+                        Concat::concat,
+                        ASTNode {
+                            kind: ApplyExpression(
+                                (chain-call
+                                    (suffix +)
+                                    (prefix )
+                                
+                                ),
+                            ),
+                            span: 29:33,
+                        },
+                    ),
+                ),
+                span: 25:33,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        4,
-        Addition::add,
-        (chain-call
-            (suffix +, +)
-            (prefix )
-        
-        ),
+    span: 25:33,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 4,
+                                },
+                            ),
+                            span: 33:34,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: ApplyExpression(
+                                (chain-call
+                                    (suffix +, +)
+                                    (prefix )
+                                
+                                ),
+                            ),
+                            span: 37:41,
+                        },
+                    ),
+                ),
+                span: 33:41,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        5,
-        Concat::concat,
-        (chain-call
-            (suffix +)
-            (prefix )
-        
-        ),
+    span: 33:42,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 5,
+                                },
+                            ),
+                            span: 43:44,
+                        },
+                        Concat::concat,
+                        ASTNode {
+                            kind: ApplyExpression(
+                                (chain-call
+                                    (suffix +)
+                                    (prefix )
+                                
+                                ),
+                            ),
+                            span: 48:51,
+                        },
+                    ),
+                ),
+                span: 43:51,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        6,
-        Concat::concat,
-        (chain-call
-            (suffix +, +)
-            (prefix )
-        
-        ),
+    span: 43:52,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 6,
+                                },
+                            ),
+                            span: 53:54,
+                        },
+                        Concat::concat,
+                        ASTNode {
+                            kind: ApplyExpression(
+                                (chain-call
+                                    (suffix +, +)
+                                    (prefix )
+                                
+                                ),
+                            ),
+                            span: 57:61,
+                        },
+                    ),
+                ),
+                span: 53:61,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        7,
-        Addition::add,
-        (chain-call
-            (suffix +, +, +)
-            (prefix )
-        
-        ),
+    span: 53:62,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 7,
+                                },
+                            ),
+                            span: 63:64,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: ApplyExpression(
+                                (chain-call
+                                    (suffix +, +, +)
+                                    (prefix )
+                                
+                                ),
+                            ),
+                            span: 67:72,
+                        },
+                    ),
+                ),
+                span: 63:72,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        8,
-        Concat::concat,
-        (chain-call
-            (suffix +, +)
-            (prefix )
-        
-        ),
+    span: 63:73,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 8,
+                                },
+                            ),
+                            span: 74:75,
+                        },
+                        Concat::concat,
+                        ASTNode {
+                            kind: ApplyExpression(
+                                (chain-call
+                                    (suffix +, +)
+                                    (prefix )
+                                
+                                ),
+                            ),
+                            span: 79:83,
+                        },
+                    ),
+                ),
+                span: 74:83,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        9,
-        Concat::concat,
-        (chain-call
-            (suffix +, +)
-            (prefix )
-        
-        ),
+    span: 74:84,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 9,
+                                },
+                            ),
+                            span: 85:86,
+                        },
+                        Concat::concat,
+                        ASTNode {
+                            kind: ApplyExpression(
+                                (chain-call
+                                    (suffix +, +)
+                                    (prefix )
+                                
+                                ),
+                            ),
+                            span: 89:94,
+                        },
+                    ),
+                ),
+                span: 85:94,
+            },
+        ],
     ),
-]
-Suite[
-    true,
-]
-Suite[
-    InfixExpression(
-        0,
-        Addition::add,
-        0.0,
-        Addition::add,
-        ByteLiteral {
-            handler: 'c',
-            value: "m",
-        },
+    span: 85:95,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: Boolean(
+                    true,
+                ),
+                span: 96:100,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        "",
-        Concat::concat,
-        "",
+    span: 96:110,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: Integer(
+                                IntegerLiteral {
+                                    handler: "",
+                                    value: 0,
+                                },
+                            ),
+                            span: 111:112,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: Decimal(
+                                DecimalLiteral {
+                                    handler: "",
+                                    value: BigDecimal("0.0"),
+                                },
+                            ),
+                            span: 115:118,
+                        },
+                        Addition::add,
+                        ASTNode {
+                            kind: Byte(
+                                ByteLiteral {
+                                    handler: 'c',
+                                    value: "m",
+                                },
+                            ),
+                            span: 121:124,
+                        },
+                    ),
+                ),
+                span: 111:124,
+            },
+        ],
     ),
-]
-Suite[
-    InfixExpression(
-        StringTemplate(
-            "",
-            x,
-            "",
-        ),
-        Concat::concat,
-        StringTemplate(
-            "",
-            y,
-            "",
-        ),
+    span: 111:125,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: String(
+                                StringLiteral {
+                                    handler: "",
+                                    literal: "",
+                                },
+                            ),
+                            span: 126:128,
+                        },
+                        Concat::concat,
+                        ASTNode {
+                            kind: String(
+                                StringLiteral {
+                                    handler: "",
+                                    literal: "",
+                                },
+                            ),
+                            span: 132:134,
+                        },
+                    ),
+                ),
+                span: 126:134,
+            },
+        ],
     ),
-]
+    span: 126:135,
+}
+ASTNode {
+    kind: Suite(
+        [
+            ASTNode {
+                kind: InfixExpression(
+                    InfixExpression(
+                        ASTNode {
+                            kind: StringTemplate(
+                                [
+                                    ASTNode {
+                                        kind: String(
+                                            StringLiteral {
+                                                handler: "",
+                                                literal: "",
+                                            },
+                                        ),
+                                        span: 136:136,
+                                    },
+                                    ASTNode {
+                                        kind: Symbol(
+                                            Symbol {
+                                                name: "x",
+                                                scope: [],
+                                            },
+                                        ),
+                                        span: 138:139,
+                                    },
+                                    ASTNode {
+                                        kind: String(
+                                            StringLiteral {
+                                                handler: "",
+                                                literal: "",
+                                            },
+                                        ),
+                                        span: 139:136,
+                                    },
+                                ],
+                            ),
+                            span: 136:140,
+                        },
+                        Concat::concat,
+                        ASTNode {
+                            kind: StringTemplate(
+                                [
+                                    ASTNode {
+                                        kind: String(
+                                            StringLiteral {
+                                                handler: "",
+                                                literal: "",
+                                            },
+                                        ),
+                                        span: 144:144,
+                                    },
+                                    ASTNode {
+                                        kind: Symbol(
+                                            Symbol {
+                                                name: "y",
+                                                scope: [],
+                                            },
+                                        ),
+                                        span: 147:148,
+                                    },
+                                    ASTNode {
+                                        kind: String(
+                                            StringLiteral {
+                                                handler: "",
+                                                literal: "",
+                                            },
+                                        ),
+                                        span: 148:144,
+                                    },
+                                ],
+                            ),
+                            span: 144:150,
+                        },
+                    ),
+                ),
+                span: 136:150,
+            },
+        ],
+    ),
+    span: 136:151,
+}

@@ -16,7 +16,7 @@ mod dot_call;
 mod slice_call;
 mod unary_call;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChainCall {
     pub base: ASTNode,
     pub chain: Vec<CallableItem>,
@@ -88,34 +88,5 @@ impl ChainCall {
             return self.base;
         }
         ASTNode { kind: ASTKind::ApplyExpression(box self), span }
-    }
-}
-
-impl Debug for ChainCall {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "(chain-call")?;
-        for node in &self.chain {
-            match node {
-                CallableItem::DotCall(v) => writeln!(f, "    (dot-call {})", v)?,
-                CallableItem::ApplyCall(v) => debug_indent(v, f)?,
-                CallableItem::SliceCall(v) => debug_indent(v, f)?,
-                CallableItem::UnaryCall(v) => debug_indent(v, f)?,
-                CallableItem::BlockCall(v) => debug_indent(v, f)?,
-                CallableItem::StaticCall(v) => writeln!(f, "    (static-call {})", v)?,
-            }
-        }
-        write!(f, ")")
-    }
-}
-
-impl Debug for SliceArgument {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for node in &self.terms {
-            match node {
-                SliceTerm::Index { index } => writeln!(f, "(index-call {})", index)?,
-                SliceTerm::Slice { start, end, steps } => writeln!(f, "(slice-call {} {} {})", start, end, steps)?,
-            }
-        }
-        Ok(())
     }
 }

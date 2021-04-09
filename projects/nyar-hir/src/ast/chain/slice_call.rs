@@ -4,7 +4,7 @@ use super::*;
 /// ```v
 /// a[1][2]
 /// ```
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SliceArgument {
     pub terms: Vec<SliceTerm>,
 }
