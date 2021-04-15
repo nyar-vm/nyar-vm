@@ -10,7 +10,7 @@ const TUPLES: &str = r#"
 #[test]
 fn debug_tuple() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(TUPLES);
-    ast.save("tests/test_atoms/debug_tuple.yaml")
+    ast.save("tests/test_atoms/debug_tuple.clj")
 }
 
 const TABLES: &str = r#"
@@ -24,5 +24,5 @@ const TABLES: &str = r#"
 #[test]
 fn debug_table() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(TABLES);
-    ast.save("tests/test_atoms/debug_table.yaml")
+    ast.save("tests/test_atoms/debug_table.clj")
 }

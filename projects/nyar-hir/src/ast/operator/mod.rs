@@ -10,7 +10,7 @@ pub enum OperatorAssociativity {
     Right,
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Prefix {
     /// `-`
     Negative,
@@ -20,7 +20,7 @@ pub enum Prefix {
     Not,
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Infix {
     // `+`
     Addition,
@@ -38,7 +38,7 @@ pub enum Infix {
     Remove,
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Postfix {
     /// `++`
     Increment,
@@ -50,7 +50,7 @@ pub enum Postfix {
     Raise,
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Operator {
     Prefix(Prefix),
     Infix(Infix),

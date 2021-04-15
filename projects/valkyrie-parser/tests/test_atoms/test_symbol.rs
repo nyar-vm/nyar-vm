@@ -14,5 +14,5 @@ a::b::c;
 #[test]
 fn debug_symbols() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(SYMBOLS);
-    ast.save("tests/test_atoms/debug_symbols.yaml")
+    ast.save("tests/test_atoms/debug_symbols.clj")
 }

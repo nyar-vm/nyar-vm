@@ -1,16 +1,20 @@
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::{
+    fmt::{Debug, Display, Formatter, Write},
+    ops::Deref,
+};
 
-use pretty::{Arena, DocAllocator, DocBuilder};
+use pretty::{Arena, DocAllocator, DocBuilder, Pretty};
 
 use nyar_error::Result;
 
 use crate::{
-    ast::{ByteLiteral, DecimalLiteral, IntegerLiteral, Symbol},
+    ast::{ByteLiteral, DecimalLiteral, InfixCall, IntegerLiteral, Symbol},
     ASTKind, ASTNode,
 };
 
 mod atom;
 mod call;
+mod expr;
 
 impl Default for ASTNode {
     fn default() -> Self {
@@ -33,31 +37,52 @@ impl ASTNode {
 impl ASTKind {
     pub fn pretty_print(&self, width: usize) -> Result<String> {
         let mut out = String::new();
-        let arena = Arena::new();
-        let doc = self.v_format(&arena);
-        doc.render_fmt(width, &mut out)?;
+        let fmt = PrettyFormatter { arena: &Default::default() };
+        self.v_format(&fmt).render_fmt(width, &mut out)?;
         Ok(out)
     }
 }
 
-trait VLanguage {
-    fn v_format<'a, 'b>(&'a self, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>>;
+struct PrettyFormatter<'a> {
+    arena: &'a Arena<'a>,
+}
 
-    fn hard_head<'a, 'b>(&self, name: &'static str, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>> {
-        arena.text("(").append(name).append(arena.hardline())
-    }
+impl<'a> Deref for PrettyFormatter<'a> {
+    type Target = &'a Arena<'a>;
 
-    fn soft_head<'a, 'b>(name: &'static str, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>> {
-        arena.text("(").append(name).append(arena.softline())
-    }
-
-    fn inline_head<'a, 'b>(name: &'static str, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>> {
-        arena.text("(").append(name).append(arena.line())
+    fn deref(&self) -> &Self::Target {
+        &self.arena
     }
 }
 
+impl<'a> PrettyFormatter<'a> {
+    pub fn hard_block<S, I>(&self, name: S, items: I) -> DocBuilder<'a, Arena<'a>>
+    where
+        S: Into<String>,
+        I: IntoIterator,
+        I::Item: Pretty<'a, Arena<'a>, ()>,
+    {
+        let head = self.text("(").append(name.into());
+        let body = self.hardline().append(self.intersperse(items, self.hardline())).nest(4).group();
+        head.append(body).append(")")
+    }
+    pub fn inline_block<I>(&self, name: &'static str, items: I) -> DocBuilder<'a, Arena<'a>>
+    where
+        I: IntoIterator,
+        I::Item: Pretty<'a, Arena<'a>, ()>,
+    {
+        let head = self.text("(").append(name).append(self.space());
+        let body = self.intersperse(items, self.text(", ")).group();
+        head.append(body).append(")")
+    }
+}
+
+trait VLanguage {
+    fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>>;
+}
+
 impl VLanguage for ASTKind {
-    fn v_format<'a, 'b>(&'a self, arena: &'b Arena<'b>) -> DocBuilder<'b, Arena<'b>> {
+    fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>> {
         match self {
             ASTKind::Nothing => arena.text("<<unreachable Nothing>>"),
             ASTKind::Program(v) => {
@@ -66,9 +91,7 @@ impl VLanguage for ASTKind {
             }
             ASTKind::Suite(v) => {
                 let items = v.iter().map(|item| item.v_format(arena));
-                let head = self.hard_head("scoped-block", arena);
-                let body = arena.intersperse(items, arena.line()).nest(1).group();
-                head.append(body).append(arena.text(")"))
+                arena.hard_block("block scoped", items)
             }
             ASTKind::Sequence(v) => {
                 let items = v.iter().map(|item| item.v_format(arena));
@@ -86,9 +109,7 @@ impl VLanguage for ASTKind {
             ASTKind::LoopStatement(_) => {
                 unimplemented!()
             }
-            ASTKind::InfixExpression(_) => {
-                unimplemented!()
-            }
+            ASTKind::InfixExpression(v) => v.v_format(arena),
             ASTKind::ApplyExpression(v) => v.v_format(arena),
             ASTKind::TupleExpression(_) => {
                 unimplemented!()
@@ -99,27 +120,13 @@ impl VLanguage for ASTKind {
             ASTKind::PairExpression(_) => {
                 unimplemented!()
             }
-            ASTKind::Boolean(_) => {
-                unimplemented!()
-            }
-            ASTKind::Byte(_) => {
-                unimplemented!()
-            }
-            ASTKind::Integer(_) => {
-                unimplemented!()
-            }
-            ASTKind::Decimal(_) => {
-                unimplemented!()
-            }
-            ASTKind::String(_) => {
-                unimplemented!()
-            }
-            ASTKind::StringTemplate(_) => {
-                unimplemented!()
-            }
-            ASTKind::XMLTemplate(_) => {
-                unimplemented!()
-            }
+            ASTKind::Boolean(v) => arena.as_string(v),
+            ASTKind::Byte(v) => v.v_format(arena),
+            ASTKind::Integer(v) => v.v_format(arena),
+            ASTKind::Decimal(v) => v.v_format(arena),
+            ASTKind::String(v) => v.v_format(arena),
+            ASTKind::StringTemplate(v) => arena.hard_block("template-string", v.iter().map(|item| item.v_format(arena))),
+            ASTKind::XMLTemplate(v) => arena.hard_block("template-xml", v.iter().map(|item| item.v_format(arena))),
             ASTKind::Symbol(v) => v.v_format(arena),
         }
     }

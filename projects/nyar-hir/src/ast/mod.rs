@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt::{Debug, Display, Formatter},
     ops::{AddAssign, Deref},
     str::FromStr,
@@ -26,7 +27,7 @@ pub use crate::ast::{
     operator::{Infix, Operator, Postfix, Prefix},
 };
 use crate::utils::write_tuple;
-use std::collections::BTreeMap;
+
 mod assign;
 mod atoms;
 mod chain;
@@ -154,11 +155,13 @@ impl ASTNode {
 
     pub fn push_infix_chain(self, op: &str, rhs: ASTNode, span: Span) -> Self {
         let op = Operator::parse_infix(op);
-        let mut infix = match self.kind {
-            ASTKind::InfixExpression(e) if op.get_priority() == e.get_priority() => *e,
-            _ => InfixCall { base: self, terms: vec![] },
+        let infix = match self.kind {
+            ASTKind::InfixExpression(mut e) if op == e.operator => {
+                e.terms.push(rhs);
+                *e
+            }
+            _ => InfixCall::new(self, op, rhs),
         };
-        infix.push_infix_pair(op, rhs);
         Self { kind: ASTKind::InfixExpression(box infix), span }
     }
 

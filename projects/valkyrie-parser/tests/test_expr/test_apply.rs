@@ -11,7 +11,7 @@ e[1:2:3,[1,2,3]];
 #[test]
 fn debug_slice() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(SLICE);
-    ast.save("tests/test_expr/debug_slice.yaml")
+    ast.save("tests/test_expr/debug_slice.clj")
 }
 
 const BRACKETS: &str = r#"
@@ -26,7 +26,7 @@ a{1}[2](3)
 #[test]
 fn debug_apply() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(BRACKETS);
-    ast.save("tests/test_expr/debug_apply.yaml")
+    ast.save("tests/test_expr/debug_apply.clj")
 }
 
 const APPLY: &str = r#"
@@ -36,5 +36,5 @@ a({}) {}
 #[test]
 fn debug_apply2() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(APPLY);
-    ast.save("tests/test_expr/debug_apply2.yaml")
+    ast.save("tests/test_expr/debug_apply2.clj")
 }

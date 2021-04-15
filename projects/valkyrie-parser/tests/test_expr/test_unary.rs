@@ -10,5 +10,5 @@ const UNARY: &str = r#"
 #[test]
 fn debug_unary() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(UNARY);
-    ast.save("tests/test_expr/debug_unary.yaml")
+    ast.save("tests/test_expr/debug_unary.clj")
 }

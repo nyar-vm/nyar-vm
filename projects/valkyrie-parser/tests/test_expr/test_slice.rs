@@ -22,5 +22,5 @@ a
 #[test]
 fn debug_index() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(INDEX);
-    ast.save("tests/test_expr/debug_index.yaml")
+    ast.save("tests/test_expr/debug_index.clj")
 }
