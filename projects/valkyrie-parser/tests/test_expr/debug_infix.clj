@@ -52,7 +52,7 @@
     (infix-call +
         0
         0.0
-        0cm))
+        (byte-literal c m)))
 (block scoped
     (infix-call ++
         ""

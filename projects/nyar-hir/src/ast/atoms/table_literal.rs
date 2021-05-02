@@ -1,26 +1,14 @@
 use super::*;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TableExpression {
     pub inner: Vec<ASTNode>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KVPair {
     pub key: ASTNode,
     pub value: ASTNode,
-}
-
-impl Debug for TableExpression {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write_tuple("Table", &self.inner, f)
-    }
-}
-
-impl Debug for KVPair {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Pair").field("key", &self.key).field("value", &self.value).finish()
-    }
 }
 
 impl KVPair {

@@ -1,24 +1,16 @@
-Suite[
-    true,
-]
-Suite[
-    false,
-]
-Suite[
-    a,
-]
-Suite[
-    a::b,
-]
-Suite[
-    a::b::c,
-]
-Suite[
-    我,
-]
-Suite[
-    我::的,
-]
-Suite[
-    我::的::库,
-]
+(block scoped
+    true)
+(block scoped
+    false)
+(block scoped
+    a)
+(block scoped
+    a::b)
+(block scoped
+    a::b::c)
+(block scoped
+    我)
+(block scoped
+    我::的)
+(block scoped
+    我::的::库)

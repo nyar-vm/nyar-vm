@@ -1,4 +1,4 @@
-use crate::ast::{KVPair, StringLiteral};
+use crate::ast::{KVPair, StringLiteral, TableExpression};
 
 use super::*;
 
@@ -62,7 +62,7 @@ impl Display for DecimalLiteral {
 
 impl VLanguage for ByteLiteral {
     fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>> {
-        arena.as_string(self)
+        arena.inline_block("byte-literal", [arena.as_string(self.handler), arena.as_string(&self.value)].into_iter(), " ")
     }
 }
 
@@ -83,9 +83,18 @@ impl Display for StringLiteral {
         write!(f, "{}{:?}", self.handler, self.literal)
     }
 }
-//
-// impl Display for KVPair {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "{}: {}", self.key, self.value)
-//     }
-// }
+
+impl VLanguage for TableExpression {
+    fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>> {
+        if self.inner.is_empty() {
+            return arena.text("(table-literal nothing)");
+        }
+        arena.hard_block("table-literal", self.inner.iter().map(|f| f.v_format(arena)))
+    }
+}
+
+impl VLanguage for KVPair {
+    fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>> {
+        arena.hard_block("pair", [self.key.v_format(arena), self.value.v_format(arena)].into_iter())
+    }
+}

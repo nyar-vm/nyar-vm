@@ -19,7 +19,7 @@ pub struct SliceArgument {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SliceTerm {
     Index { index: ASTNode },
-    Slice { start: ASTNode, end: ASTNode, steps: ASTNode },
+    Slice { start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode> },
 }
 
 impl AddAssign<SliceArgument> for ChainCall {
@@ -43,5 +43,8 @@ impl Default for SliceArgument {
 impl SliceArgument {
     pub fn push_index(&mut self, index: ASTNode) {
         self.terms.push(SliceTerm::Index { index });
+    }
+    pub fn push_slice(&mut self, start: Option<ASTNode>, end: Option<ASTNode>, steps: Option<ASTNode>) {
+        self.terms.push(SliceTerm::Slice { start, end, steps });
     }
 }

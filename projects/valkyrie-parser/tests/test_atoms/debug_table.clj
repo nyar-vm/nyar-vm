@@ -1,48 +1,32 @@
-Suite[
-    Table(),
-]
-Suite[
-    Table(
-        0,
-        Table(),
-        Table(
-            Table(),
-        ),
-    ),
-]
-Suite[
-    Table(
-        Pair {
-            key: 1,
-            value: 2,
-        },
-        Pair {
-            key: 3,
-            value: 4,
-        },
-    ),
-]
-Suite[
-    Table(
-        Pair {
-            key: a,
-            value: 1,
-        },
-        Pair {
-            key: z,
-            value: 26,
-        },
-    ),
-]
-Suite[
-    Table(
-        Pair {
-            key: 啊,
-            value: 1,
-        },
-        Pair {
-            key: 吧,
-            value: 2,
-        },
-    ),
-]
+(block scoped
+    (table-literal nothing))
+(block scoped
+    (table-literal
+        0
+        (table-literal nothing)
+        (table-literal
+            (table-literal nothing))))
+(block scoped
+    (table-literal
+        (pair
+            1
+            2)
+        (pair
+            3
+            4)))
+(block scoped
+    (table-literal
+        (pair
+            a
+            1)
+        (pair
+            z
+            26)))
+(block scoped
+    (table-literal
+        (pair
+            啊
+            1)
+        (pair
+            吧
+            2)))

@@ -1,18 +1,12 @@
-Suite[
-    "",
-]
-Suite[
-    "",
-]
-Suite[
-    "'",
-]
-Suite[
-    "\"",
-]
-Suite[
-    "\"'",
-]
-Suite[
-    "'\"",
-]
+(block scoped
+    "")
+(block scoped
+    "")
+(block scoped
+    "'")
+(block scoped
+    "\"")
+(block scoped
+    "\"'")
+(block scoped
+    "'\"")

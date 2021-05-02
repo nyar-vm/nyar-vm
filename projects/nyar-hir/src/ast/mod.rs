@@ -26,7 +26,6 @@ pub use crate::ast::{
     looping::{LoopStatement, WhileLoop},
     operator::{Infix, Operator, Postfix, Prefix},
 };
-use crate::utils::write_tuple;
 
 mod assign;
 mod atoms;
@@ -119,6 +118,18 @@ pub enum ASTKind {
     XMLTemplate(Vec<ASTNode>),
     /// A symbol path, needs context to resolve
     Symbol(Box<Symbol>),
+}
+
+impl Default for ASTNode {
+    fn default() -> Self {
+        Self { kind: ASTKind::Nothing, span: Default::default() }
+    }
+}
+
+impl From<ASTKind> for ASTNode {
+    fn from(kind: ASTKind) -> Self {
+        Self { kind, span: Default::default() }
+    }
 }
 
 impl ASTNode {

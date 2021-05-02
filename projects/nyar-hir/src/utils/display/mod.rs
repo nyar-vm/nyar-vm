@@ -1,5 +1,5 @@
 use std::{
-    fmt::{Debug, Display, Formatter, Write},
+    fmt::{Display, Formatter},
     ops::Deref,
 };
 
@@ -15,18 +15,6 @@ use crate::{
 mod atom;
 mod call;
 mod expr;
-
-impl Default for ASTNode {
-    fn default() -> Self {
-        Self { kind: ASTKind::Nothing, span: Default::default() }
-    }
-}
-
-impl From<ASTKind> for ASTNode {
-    fn from(kind: ASTKind) -> Self {
-        Self { kind, span: Default::default() }
-    }
-}
 
 impl ASTNode {
     pub fn pretty_print(&self, width: usize) -> Result<String> {
@@ -66,13 +54,13 @@ impl<'a> PrettyFormatter<'a> {
         let body = self.hardline().append(self.intersperse(items, self.hardline())).nest(4).group();
         head.append(body).append(")")
     }
-    pub fn inline_block<I>(&self, name: &'static str, items: I) -> DocBuilder<'a, Arena<'a>>
+    pub fn inline_block<I>(&self, name: &'static str, items: I, separator: &'static str) -> DocBuilder<'a, Arena<'a>>
     where
         I: IntoIterator,
         I::Item: Pretty<'a, Arena<'a>, ()>,
     {
         let head = self.text("(").append(name).append(self.space());
-        let body = self.intersperse(items, self.text(", ")).group();
+        let body = self.intersperse(items, self.text(separator)).group();
         head.append(body).append(")")
     }
 }
@@ -85,10 +73,7 @@ impl VLanguage for ASTKind {
     fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>> {
         match self {
             ASTKind::Nothing => arena.text("<<unreachable Nothing>>"),
-            ASTKind::Program(v) => {
-                let items = v.iter().map(|item| item.v_format(arena));
-                arena.intersperse(items, arena.hardline()).group()
-            }
+            ASTKind::Program(v) => arena.intersperse(v.iter().map(|item| item.v_format(arena)), arena.hardline()).group(),
             ASTKind::Suite(v) => {
                 let items = v.iter().map(|item| item.v_format(arena));
                 arena.hard_block("block scoped", items)
@@ -111,15 +96,14 @@ impl VLanguage for ASTKind {
             }
             ASTKind::InfixExpression(v) => v.v_format(arena),
             ASTKind::ApplyExpression(v) => v.v_format(arena),
-            ASTKind::TupleExpression(_) => {
-                unimplemented!()
+            ASTKind::TupleExpression(v) => {
+                if v.is_empty() {
+                    return arena.text("(tuple-literal nothing)");
+                }
+                arena.hard_block("tuple-literal", v.iter().map(|item| item.v_format(arena)))
             }
-            ASTKind::TableExpression(_) => {
-                unimplemented!()
-            }
-            ASTKind::PairExpression(_) => {
-                unimplemented!()
-            }
+            ASTKind::TableExpression(v) => v.v_format(arena),
+            ASTKind::PairExpression(v) => v.v_format(arena),
             ASTKind::Boolean(v) => arena.as_string(v),
             ASTKind::Byte(v) => v.v_format(arena),
             ASTKind::Integer(v) => v.v_format(arena),
@@ -130,16 +114,4 @@ impl VLanguage for ASTKind {
             ASTKind::Symbol(v) => v.v_format(arena),
         }
     }
-}
-
-pub fn write_tuple(name: &str, v: &[impl Debug], f: &mut Formatter<'_>) -> std::fmt::Result {
-    if v.is_empty() {
-        f.write_str(name)?;
-        return f.write_str("()");
-    }
-    let mut w = &mut f.debug_tuple(name);
-    for node in v {
-        w = w.field(node)
-    }
-    w.finish()
 }

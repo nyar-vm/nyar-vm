@@ -1,26 +1,17 @@
-Suite[
-    Tuple(),
-]
-Suite[
-    Tuple(
-        1,
-    ),
-]
-Suite[
-    Tuple(
-        1,
-        2,
-    ),
-]
-Suite[
-    Tuple(
-        true,
-        Tuple(
-            true,
-        ),
-        Tuple(
-            true,
-            Tuple(),
-        ),
-    ),
-]
+(block scoped
+    (tuple-literal nothing))
+(block scoped
+    (tuple-literal
+        1))
+(block scoped
+    (tuple-literal
+        1
+        2))
+(block scoped
+    (tuple-literal
+        true
+        (tuple-literal
+            true)
+        (tuple-literal
+            true
+            (tuple-literal nothing))))
