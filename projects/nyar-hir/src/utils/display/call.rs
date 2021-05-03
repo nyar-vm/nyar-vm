@@ -83,7 +83,7 @@ impl VLanguage for UnaryArgument {
 
 impl VLanguage for Operator {
     fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>> {
-        arena.as_string(self.to_string())
+        arena.as_string(self)
     }
 }
 

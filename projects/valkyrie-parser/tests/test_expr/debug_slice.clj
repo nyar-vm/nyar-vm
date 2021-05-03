@@ -58,6 +58,20 @@
             (slice
                 1
                 -1
+                1))))
+(block scoped
+    (chain-call
+        (slice-call
+            (slice
+                1
+                -1
+                1))))
+(block scoped
+    (chain-call
+        (slice-call
+            (slice
+                1
+                -1
                 (chain-call
                     (suffix-call ))))))
 (block scoped

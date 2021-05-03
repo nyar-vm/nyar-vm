@@ -6,7 +6,10 @@ statement = {
   | classStatement ~ eos?
   | traitStatement ~ eos?
   | extendStatement ~ eos?
-  | controlFlow ~ eos?
+  | non_local_exit ~ eos?
+  | if_statement ~ eos?
+  | for_statement ~ eos?
+  | while_statement ~ eos?
   | assignStatement ~ eos?
   | defineStatement ~ eos?
   | annotation ~ eos?
@@ -34,15 +37,33 @@ ModuleSplit= _{DOT|Proportion}
 IMPORT = @{"using"}
 AS     = @{"as"}
 /*====================================================================================================================*/
-controlFlow = _{non_local_exit|if_statement|for_statement}
+//!#C678DD: WHILE|FOR|IN
+for_statement = {
+    FOR ~ Symbol ~ IN ~ expr_inline ~ block ~ else_block?
+}
+while_statement = {
+    WHILE ~ block ~ else_block?
+  | WHILE ~ expr_inline? ~ block ~ else_block?
+}
+WHILE = @{"while"}
+FOR = @{"for"}
+IN = @{"in"}
+/*====================================================================================================================*/
+//!#C678DD: EXIT
+non_local_exit = {EXIT ~ expr}
+EXIT = @{"return"|"resume"}
+//!#C678DD: Return|Yield|Break|Pass
+
+
+/*====================================================================================================================*/
 block = !{"{" ~ statement* ~ "}"}
 /*====================================================================================================================*/
-if_statement = {if_block ~ else_if_block* ~ else_block?}
-if_block = _{If ~ condition ~ block}
-else_if_block = _{Else ~ If ~ condition ~ block}
-else_block = _{Else ~ block}
+if_statement  = {if_block ~ else_if_block* ~ else_block?}
+if_block      = {If ~ condition ~ block}
+else_if_block = {Else ~ If ~ condition ~ block}
+else_block    = {Else ~ block}
 //!#C678DD: If|Else
-condition = _{"(" ~ expr ~ ")"|expr}
+condition = _{expr_inline}
 If        = @{"if"}
 Else      = @{"else"}
 /*====================================================================================================================*/
@@ -55,17 +76,6 @@ case_statement = {
 MATCH = @{"match"|"catch"}
 Case = @{"case"}
 /*====================================================================================================================*/
-//!#C678DD: WHILE|For|In
-for_statement = {FOR ~ Symbol ~ IN ~ expr_inline ~ block}
-while_statement = {WHILE ~ expr_inline ~ block}
-WHILE = @{"while"}
-FOR = @{"for"}
-IN = @{"in"}
-/*====================================================================================================================*/
-//!#C678DD: EXIT
-non_local_exit = {EXIT ~ expr}
-EXIT = @{"return"|"resume"}
-//!#C678DD: Return|Yield|Break|Pass
 /*====================================================================================================================*/
 ///#C678DD
 Type = @{"type"}

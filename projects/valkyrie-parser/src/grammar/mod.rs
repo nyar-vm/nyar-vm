@@ -11,6 +11,7 @@ pub use operators::PREC_CLIMBER;
 use crate::{debug_cases, grammar::parser::ValkyrieParser, utils::trim_first_last, Rule};
 
 pub(crate) mod context;
+pub(crate) mod control_flow;
 pub(crate) mod data;
 pub(crate) mod expression_node;
 pub(crate) mod operators;
@@ -45,6 +46,7 @@ impl ParsingContext {
                     nodes.extend(s.iter().cloned());
                 }
                 Rule::if_statement => nodes.push(self.parse_if(pair)),
+                Rule::while_statement => nodes.push(self.parse_while(pair)),
                 Rule::expression => match self.parse_expression(pair) {
                     (node, e) => {
                         nodes.push(node);
@@ -171,29 +173,6 @@ impl ParsingContext {
         //     }
         // }
         // return vec;
-    }
-
-    fn parse_if(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
-        let mut conditions: Vec<ASTNode> = vec![];
-        let mut blocks: Vec<ASTNode> = vec![];
-        let mut default = None;
-        for pair in pairs.into_inner() {
-            let r = self.get_span(&pair);
-            match pair.as_rule() {
-                Rule::WHITESPACE => continue,
-                Rule::If | Rule::Else => continue,
-                Rule::expr => conditions.push(self.parse_expr(pair)),
-                Rule::block => blocks.push(ASTNode::block(self.parse_block(pair), r)),
-                _ => unreachable!(),
-            }
-        }
-        if conditions.len() != blocks.len() {
-            default = Some(blocks.pop().unwrap())
-        }
-        todo!()
-        // let pairs = conditions.into_iter().zip(blocks.into_iter()).collect();
-        // return ASTNode::if_statement(pairs, default, r);
     }
 
     fn parse_block(&mut self, pairs: Pair<Rule>) -> Vec<ASTNode> {

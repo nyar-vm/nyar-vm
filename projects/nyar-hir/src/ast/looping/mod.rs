@@ -8,7 +8,7 @@ pub struct LoopStatement {
 
 #[derive(Clone, Debug)]
 pub struct WhileLoop {
-    condition: ASTNode,
+    condition: Option<ASTNode>,
     body: Vec<ASTNode>,
     else_trigger: Option<Vec<ASTNode>>,
 }
@@ -20,31 +20,44 @@ pub struct ForInLoop {
     else_trigger: Option<Vec<ASTNode>>,
 }
 
+impl Default for WhileLoop {
+    fn default() -> Self {
+        Self { condition: None, body: vec![], else_trigger: None }
+    }
+}
+
 impl WhileLoop {
-    pub fn new(condition: ASTNode, body: Vec<ASTNode>, span: Span) -> ASTNode {
-        Self { condition, body, else_trigger: None }.de_sugar(span)
+    pub fn push_condition(&mut self, condition: ASTNode) {
+        self.condition = Some(condition);
     }
-    pub fn while_else(condition: ASTNode, body: Vec<ASTNode>, else_trigger: Vec<ASTNode>, span: Span) -> ASTNode {
-        Self { condition, body, else_trigger: Some(else_trigger) }.de_sugar(span)
+    pub fn push_body(&mut self, body: Vec<ASTNode>) {
+        self.body = body
     }
+    pub fn push_else(&mut self, body: Vec<ASTNode>) {
+        self.else_trigger = Some(body);
+    }
+
     fn de_sugar(&self, span: Span) -> ASTNode {
-        if self.condition.is_true() {
+        let cond = self.condition.clone().unwrap_or(ASTNode::boolean(true, span));
+        if cond.is_true() {
             return ASTNode::loop_statement(self.body.clone(), span);
         }
         let loop_body = self.de_sugar_loop(span);
         match &self.else_trigger {
             None => loop_body,
-            Some(s) => {
-                let if_body = IfStatement::if_else(self.condition.clone(), vec![loop_body], s.clone());
-                ASTNode::if_statement(if_body, span)
-            }
+            Some(s) => IfStatement::if_else(cond.clone(), vec![loop_body], s.clone()).as_node(span),
         }
     }
-    fn de_sugar_loop(&self, meta: Span) -> ASTNode {
-        let break_body = vec![ASTNode::control_break(self.condition.span.clone())];
-        let cond = IfStatement::if_else(self.condition.clone(), self.body.clone(), break_body);
-        let if_body = ASTNode::if_statement(cond, meta.clone());
-        ASTNode::loop_statement(vec![if_body], meta.clone())
+    fn de_sugar_loop(&self, span: Span) -> ASTNode {
+        let cond = self.condition.clone().unwrap_or(ASTNode::boolean(true, span));
+        let break_body = vec![ASTNode::control_break(cond.span.clone())];
+        let cond = IfStatement::if_else(cond.clone(), self.body.clone(), break_body);
+        let if_body = cond.as_node(span.clone());
+        ASTNode::loop_statement(vec![if_body], span.clone())
+    }
+
+    pub fn as_node(&self, span: Span) -> ASTNode {
+        self.de_sugar(span)
     }
 }
 
@@ -62,16 +75,13 @@ impl ForInLoop {
         let loop_body = self.de_sugar_loop(span);
         match &self.else_trigger {
             None => loop_body,
-            Some(s) => {
-                let if_body = IfStatement::if_else(self.condition.clone(), vec![loop_body], s.clone());
-                ASTNode::if_statement(if_body, span)
-            }
+            Some(s) => IfStatement::if_else(self.condition.clone(), vec![loop_body], s.clone()).as_node(span),
         }
     }
     fn de_sugar_loop(&self, meta: Span) -> ASTNode {
         let break_body = vec![ASTNode::control_break(self.condition.span.clone())];
         let cond = IfStatement::if_else(self.condition.clone(), self.body.clone(), break_body);
-        let if_body = ASTNode::if_statement(cond, meta.clone());
+        let if_body = cond.as_node(meta.clone());
         ASTNode::loop_statement(vec![if_body], meta.clone())
     }
 }

@@ -15,9 +15,8 @@ impl ASTDump for ASTKind {
         cfg.get_ast(input).unwrap()
     }
     fn save(&self, path: &str) -> Result<()> {
-        let mut out = self.pretty_print(9999)?;
-        let mut file = File::create(path)?;
-        file.write_all(out.as_bytes())?;
+        let out = self.pretty_print(9999)?;
+        File::create(path)?.write_all(out.as_bytes())?;
         Ok(())
     }
 }

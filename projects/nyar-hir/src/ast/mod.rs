@@ -144,20 +144,8 @@ impl ASTNode {
         Self { kind: ASTKind::Suite(v), span }
     }
 
-    pub fn if_statement(if_chain: IfStatement, meta: Span) -> Self {
-        Self { kind: ASTKind::IfStatement(box if_chain), span: meta }
-    }
-
     pub fn loop_statement(loop_chain: Vec<ASTNode>, meta: Span) -> Self {
         Self { kind: ASTKind::LoopStatement(box LoopStatement { body: loop_chain }), span: meta }
-    }
-
-    pub fn while_loop_statement(condition: ASTNode, body: Vec<ASTNode>, span: Span) -> Self {
-        WhileLoop::new(condition, body, span)
-    }
-
-    pub fn while_else_statement(condition: ASTNode, body: Vec<ASTNode>, else_trigger: Vec<ASTNode>, span: Span) -> Self {
-        WhileLoop::while_else(condition, body, else_trigger, span)
     }
 
     pub fn expression(base: ASTNode, eos: bool) -> Expression {

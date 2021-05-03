@@ -4,7 +4,12 @@ use super::*;
 pub struct IfStatement {
     pub pairs: Vec<(ASTNode, Vec<ASTNode>)>,
     pub default: Option<Vec<ASTNode>>,
-    // annotations: Option<Box<ASTKind>>,
+}
+
+impl Default for IfStatement {
+    fn default() -> Self {
+        Self { pairs: vec![], default: None }
+    }
 }
 
 impl IfStatement {
@@ -16,12 +21,13 @@ impl IfStatement {
     pub fn if_else(condition: ASTNode, body: Vec<ASTNode>, default: Vec<ASTNode>) -> Self {
         Self { pairs: vec![(condition, body)], default: Some(default) }
     }
-    pub fn with_else_if(mut self, condition: ASTNode, body: Vec<ASTNode>) -> Self {
-        self.pairs.push((condition, body));
-        self
+    pub fn push_else_if(&mut self, condition: ASTNode, body: Vec<ASTNode>) {
+        self.pairs.push((condition, body))
     }
-    pub fn with_else(mut self, default: Vec<ASTNode>) -> Self {
+    pub fn push_else(&mut self, default: Vec<ASTNode>) {
         self.default = Some(default);
-        self
+    }
+    pub fn as_node(&self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::IfStatement(box self.clone()), span }
     }
 }

@@ -14,6 +14,7 @@ use crate::{
 
 mod atom;
 mod call;
+mod control;
 mod expr;
 
 impl ASTNode {
@@ -54,12 +55,14 @@ impl<'a> PrettyFormatter<'a> {
         let body = self.hardline().append(self.intersperse(items, self.hardline())).nest(4).group();
         head.append(body).append(")")
     }
-    pub fn inline_block<I>(&self, name: &'static str, items: I, separator: &'static str) -> DocBuilder<'a, Arena<'a>>
+
+    pub fn inline_block<S, I>(&self, name: S, items: I, separator: &'static str) -> DocBuilder<'a, Arena<'a>>
     where
+        S: Into<String>,
         I: IntoIterator,
         I::Item: Pretty<'a, Arena<'a>, ()>,
     {
-        let head = self.text("(").append(name).append(self.space());
+        let head = self.text("(").append(name.into()).append(self.space());
         let body = self.intersperse(items, self.text(separator)).group();
         head.append(body).append(")")
     }
@@ -88,12 +91,8 @@ impl VLanguage for ASTKind {
             ASTKind::LambdaFunction(_) => {
                 unimplemented!()
             }
-            ASTKind::IfStatement(_) => {
-                unimplemented!()
-            }
-            ASTKind::LoopStatement(_) => {
-                unimplemented!()
-            }
+            ASTKind::IfStatement(v) => v.v_format(arena),
+            ASTKind::LoopStatement(v) => v.v_format(arena),
             ASTKind::InfixExpression(v) => v.v_format(arena),
             ASTKind::ApplyExpression(v) => v.v_format(arena),
             ASTKind::TupleExpression(v) => {

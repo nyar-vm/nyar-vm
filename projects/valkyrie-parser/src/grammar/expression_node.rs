@@ -14,7 +14,7 @@ impl ParsingContext {
             |pair: Pair<Rule>| match pair.as_rule() {
                 // Rule::WHITESPACE => ASTNode::empty_statement(r),
                 Rule::expr => self.parse_expr(pair),
-                Rule::term => self.parse_term(pair),
+                Rule::term| Rule::term_inline => self.parse_term(pair),
                 _ => debug_cases!(pair),
             },
             |left: ASTNode, op: Pair<Rule>, right: ASTNode| {
@@ -30,7 +30,7 @@ impl ParsingContext {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::WHITESPACE | Rule::COMMENT => continue,
-                Rule::node => self.parse_node(pair, &mut chain),
+                Rule::node | Rule::node_inline => self.parse_node(pair, &mut chain),
                 Rule::Prefix => unary.push_prefix(pair.as_str()),
                 Rule::Suffix => unary.push_suffix(pair.as_str()),
                 _ => unreachable!(),
