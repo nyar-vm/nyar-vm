@@ -10,24 +10,23 @@ impl ParsingContext {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
                 Rule::If | Rule::Else => continue,
-                Rule::if_block => self.if_then(pair, &mut args),
-                Rule::else_if_block => self.if_then(pair, &mut args),
-                Rule::else_block => self.else_then(pair, &mut args),
+                Rule::if_block => self.true_then(pair, &mut args),
+                Rule::else_if_block => self.true_then(pair, &mut args),
+                Rule::else_block => args.push_else(self.else_then(pair)),
                 _ => debug_cases!(pair),
             }
         }
         args.as_node(r)
     }
-    fn if_then(&mut self, pairs: Pair<Rule>, args: &mut IfStatement) {
+    fn true_then(&mut self, pairs: Pair<Rule>, args: &mut IfStatement) {
         let mut pairs = pairs.into_inner();
         let block = unsafe { self.parse_block(pairs.next_back().unwrap_unchecked()) };
         let cond = unsafe { self.parse_expr(pairs.next_back().unwrap_unchecked()) };
         args.push_else_if(cond, block);
     }
-    fn else_then(&mut self, pairs: Pair<Rule>, args: &mut IfStatement) {
+    fn else_then(&mut self, pairs: Pair<Rule>) -> Vec<ASTNode> {
         let mut pairs = pairs.into_inner();
-        let block = unsafe { self.parse_block(pairs.next_back().unwrap_unchecked()) };
-        args.push_else(block);
+        unsafe { self.parse_block(pairs.next_back().unwrap_unchecked()) }
     }
 }
 
@@ -41,20 +40,10 @@ impl ParsingContext {
                 Rule::WHILE => continue,
                 Rule::block => args.push_body(self.parse_block(pair)),
                 Rule::expr_inline => args.push_condition(self.parse_expr(pair)),
+                Rule::else_block => args.push_else(self.else_then(pair)),
                 _ => debug_cases!(pair),
             }
         }
         args.as_node(r)
     }
-    // fn if_then(&mut self, pairs: Pair<Rule>, args: &mut IfStatement) {
-    //     let mut pairs = pairs.into_inner();
-    //     let block = unsafe { self.parse_block(pairs.next_back().unwrap_unchecked()) };
-    //     let cond = unsafe { self.parse_expr(pairs.next_back().unwrap_unchecked()) };
-    //     args.push_else_if(cond, block);
-    // }
-    // fn else_then(&mut self, pairs: Pair<Rule>, args: &mut IfStatement) {
-    //     let mut pairs = pairs.into_inner();
-    //     let block = unsafe { self.parse_block(pairs.next_back().unwrap_unchecked()) };
-    //     args.push_else(block);
-    // }
 }

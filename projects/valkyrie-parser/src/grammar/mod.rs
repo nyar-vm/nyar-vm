@@ -36,7 +36,6 @@ impl ParsingContext {
         let mut eos = true;
         let mut nodes: Vec<ASTNode> = vec![];
         for pair in pairs.into_inner() {
-            let r = self.get_span(&pair);
             match pair.as_rule() {
                 Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
                 // Rule::emptyStatement => nodes.push(ASTNode::program(r)),

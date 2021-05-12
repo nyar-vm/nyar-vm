@@ -1,7 +1,7 @@
 use crate::ParsingContext;
 use nyar_error::Result;
 use nyar_hir::ASTKind;
-use std::{fmt::Write as _, fs::File, io::Write};
+use std::{fs::File, io::Write};
 
 pub trait ASTDump {
     fn parse(input: &str) -> Self;

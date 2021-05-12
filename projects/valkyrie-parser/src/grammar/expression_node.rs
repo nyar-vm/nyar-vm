@@ -1,4 +1,4 @@
-use nyar_hir::ast::{ApplyArgument, ChainCall, ContinuationArgument, SliceArgument, UnaryArgument};
+use nyar_hir::ast::{ApplyArgument, ChainCall, SliceArgument, UnaryArgument};
 
 use crate::utils::union_node;
 
@@ -41,7 +41,6 @@ impl ParsingContext {
     }
 
     fn parse_node(&mut self, pairs: Pair<Rule>, chain: &mut ChainCall) {
-        let r = self.get_span(&pairs);
         let mut pairs = pairs.into_inner();
         let head = pairs.next().unwrap();
         let head = match head.as_rule() {

@@ -36,16 +36,23 @@ impl WhileLoop {
     pub fn push_else(&mut self, body: Vec<ASTNode>) {
         self.else_trigger = Some(body);
     }
-
+    pub fn get_condition(&self) -> ASTNode {
+        match &self.condition {
+            None => ASTNode::boolean(true, Span::default()),
+            Some(s) => s.clone(),
+        }
+    }
+    pub fn always_true(&self) -> bool {
+        self.get_condition().is_true()
+    }
     fn de_sugar(&self, span: Span) -> ASTNode {
-        let cond = self.condition.clone().unwrap_or(ASTNode::boolean(true, span));
-        if cond.is_true() {
+        if self.always_true() {
             return ASTNode::loop_statement(self.body.clone(), span);
         }
         let loop_body = self.de_sugar_loop(span);
         match &self.else_trigger {
             None => loop_body,
-            Some(s) => IfStatement::if_else(cond.clone(), vec![loop_body], s.clone()).as_node(span),
+            Some(s) => IfStatement::if_else(self.get_condition(), vec![loop_body], s.clone()).as_node(span),
         }
     }
     fn de_sugar_loop(&self, span: Span) -> ASTNode {
@@ -55,7 +62,6 @@ impl WhileLoop {
         let if_body = cond.as_node(span.clone());
         ASTNode::loop_statement(vec![if_body], span.clone())
     }
-
     pub fn as_node(&self, span: Span) -> ASTNode {
         self.de_sugar(span)
     }

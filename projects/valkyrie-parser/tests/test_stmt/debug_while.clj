@@ -41,7 +41,11 @@
     ],
 })
 (block scoped
-    LoopStatement {
+    (switch
+        (case
+            a)
+        (then
+            LoopStatement {
     body: [
         ASTNode {
             kind: IfStatement(
@@ -141,7 +145,10 @@
                     ),
                 },
             ),
-            span: 50:137,
+            span: 50:157,
         },
     ],
 })
+        (else
+            (block scoped
+                nothing))))

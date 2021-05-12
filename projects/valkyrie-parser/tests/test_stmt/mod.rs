@@ -34,6 +34,9 @@ while a > 0 {
         continue
     }
 }
+else {
+    nothing
+}
 "#;
 
 #[test]
