@@ -17,8 +17,7 @@ a.b = c
 "#;
 
 #[test]
-fn debug_let() {
-    unimplemented!()
-    // let ast: ASTKind = ASTDump::parse(BYTES);
-    // ast.save(file!());
+fn debug_let() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(LET);
+    ast.save("tests/test_stmt/debug_let.clj")
 }

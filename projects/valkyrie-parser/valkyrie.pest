@@ -2,7 +2,7 @@ program = _{SOI~statement* ~ EOI}
 
 statement = {
     emptyStatement
-  | importStatement ~ eos?
+  | import_statement ~ eos?
   | classStatement ~ eos?
   | traitStatement ~ eos?
   | extendStatement ~ eos?
@@ -22,20 +22,24 @@ separator = {eos|Comma}
 comma_or_semi = _{Comma|Semicolon}
 block_or_stmt = _{block|Set ~ statement}
 /*====================================================================================================================*/
-importStatement = {
-    IMPORT ~ DOT* ~ use_alias
-  | IMPORT ~ DOT* ~ use_module_select
+import_statement = {
+    IMPORT ~ use_alias
+  | IMPORT ~ module_block
   | IMPORT ~ use_module_string
+  | IMPORT ~ use_module_select
 }
-use_alias = !{String ~ AS ~ Symbol|Symbol ~ (ModuleSplit ~ Symbol)* ~AS~Symbol}
-use_module_select = !{Symbol ~ (ModuleSplit ~ Symbol)* ~(ModuleSplit ~ (module_block|Star))?}
-use_module_string = !{String ~ (ModuleSplit ~ (module_block|Star))?}
-module_block = {"{" ~ module_tuple ~ ( comma_or_semi? ~ module_tuple)* ~ comma_or_semi? ~ "}"}
-module_tuple = {use_alias|use_module_select}
-ModuleSplit= _{DOT|Proportion}
-//!#C678DD: Import|As
-IMPORT = @{"using"}
-AS     = @{"as"}
+use_alias = {use_namepath ~ AS ~ Symbol}
+use_module_select = {use_namepath ~ (use_split ~ module_block)?}
+use_module_string = {String ~ (use_split? ~ module_block)?}
+module_block =  {"{" ~ (module_tuple|comma_or_semi)* ~ "}"}
+module_tuple = _{use_alias|use_module_select}
+use_split    = _{DOT|Proportion}
+use_symbol   = _{use_special|Symbol}
+use_namepath = _{use_symbol ~ (use_split ~ use_symbol)*}
+//!#C678DD: IMPORT|AS|use_special
+IMPORT = @{"using" ~ ("!"|"?"|"*")?}
+AS     = @{"as!"|"as?"|"as*"|"as"}
+use_special = @{"depot"|"self"|"*"}
 /*====================================================================================================================*/
 //!#C678DD: WHILE|FOR|IN
 for_statement = {
@@ -53,8 +57,6 @@ IN = @{"in"}
 non_local_exit = {EXIT ~ expr}
 EXIT = @{"return"|"resume"}
 //!#C678DD: Return|Yield|Break|Pass
-
-
 /*====================================================================================================================*/
 block = !{"{" ~ statement* ~ "}"}
 /*====================================================================================================================*/
@@ -76,17 +78,19 @@ case_statement = {
 MATCH = @{"match"|"catch"}
 Case = @{"case"}
 /*====================================================================================================================*/
-/*====================================================================================================================*/
 ///#C678DD
 Type = @{"type"}
 /*====================================================================================================================*/
-classStatement = {CLASS ~ assign_pair ~ short_block?}
-traitStatement = {TRAIT ~ assign_pair ~ short_block?}
+forall_statement = {FORALL ~ (expr ~ Colon ~ expr ~ eos?)+}
+FORALL = @{"forall"|"∀"}
+/*====================================================================================================================*/
+classStatement = {CLASS ~ assign_pair ~ class_block?}
+traitStatement = {TRAIT ~ assign_pair ~ class_block?}
 
-short_block = {"{" ~ short_statement* ~ "}"}
+class_block = {"{" ~ short_statement* ~ "}"}
 short_statement = {
     emptyStatement
-  | "def"? ~ define_terms ~ eos?
+  | DEFINE? ~ define_terms ~ eos?
     // mut a = 1 ;
   | assign_pair ~ separator?
   | short_annotation ~ eos?
@@ -96,7 +100,7 @@ CLASS = @{"class"}
 TRAIT = @{"trait"}
 /*====================================================================================================================*/
 extendStatement = {
-    EXTENDS ~ Symbol ~ parametric_types? ~ with_trait? ~ short_block
+    EXTENDS ~ Symbol ~ parametric_types? ~ with_trait? ~ class_block
 }
 with_trait = {"with" ~ Symbol ~ parametric_types?}
 EXTENDS = @{"extends"}
@@ -114,23 +118,26 @@ assignStatement = {
   | LET ~ short_statement ~ eos?
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {Modifier* ~ Symbol ~ type_hint?}
+assign_pair = {MODIFIERS* ~ Symbol ~ type_hint?}
 
 ///#C678DD
 LET = @{"let"}
 /*====================================================================================================================*/
-defineStatement = {"def" ~ define_terms}
+defineStatement = {DEFINE}
 define_terms = _{
-    assign_pair ~ parametric_types ~ define_parameter ~ type_hint? ~ parametric_types_term? ~ block_or_stmt?
-  | assign_pair ~ define_parameter ~ type_hint? ~ block_or_stmt?
+    MODIFIERS* ~ freepath
 }
+parametric_types = {"[" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ "]"}
+parametric_types_pair = {(ADD|SUB)? ~ Symbol}
+
 define_parameter = {
     "(" ~ define_pair ~ (Comma ~ define_pair)* ~ Comma? ~ ")"
   | "(" ~ ")"
 }
 define_pair = {Symbol ~ type_hint? ~ (Set ~ expr)?}
-//!#C678DD: Def|Where
-Where = @{"where"}
+return_type = {(Colon|To) ~ type_expr}
+//!#C678DD: DEFINE|WHERE
+DEFINE = @{"def"}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation      = {annotation_call+~statement}
@@ -181,9 +188,6 @@ type_expr = _{term ~ (TypeInfix ~ term)*}
 //type_node = {"(" ~ type_expr ~ ")"|data}
 type_hint = {Colon ~ type_expr}
 generic_type = {"[" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ "]"}
-parametric_types = {"[" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ "]"}
-parametric_types_pair = {(ADD|SUB)? ~ Symbol}
-parametric_types_term = {Where ~ (expr ~ Colon ~ expr ~ eos?)+}
 //TypePrefix = @{Plus|Minus}
 //TypeSuffix = @{Question}
 TypeInfix = @{Or}
@@ -229,13 +233,12 @@ Quotation     = _{"\""}
 Apostrophe    = _{"'"}
 any           = @{ANY}
 /*====================================================================================================================*/
-///#61AFEF
+//!#61AFEF: SYMBOL_XID
+//!#56B6C2: SYMBOL_ESCAPE
 Symbol   = ${SYMBOL_XID|SYMBOL_ESCAPE}
 namepath = ${Symbol ~ (Proportion ~ Symbol)*}
 freepath = ${Symbol ~ ((Proportion|DOT) ~ Symbol)*}
-///
 SYMBOL_XID = @{(XID_START|Underline) ~  XID_CONTINUE*}
-///
 SYMBOL_ESCAPE = @{Quote ~ (!Quote ~ ANY)+ ~ Quote}
 Quote =@{"`"}
 /*====================================================================================================================*/
@@ -253,7 +256,7 @@ Semicolon  = _{";"}
 Separate   = _{";;"}
 //!Orange: Modifier
 // Keywords = !{If|For}
-Modifier = !{(!(Symbol~(DOT|Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~Symbol)}
+MODIFIERS = @{(!(Symbol~(DOT|Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~ Symbol)}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
     (BANG|ADD|SUB|Star)

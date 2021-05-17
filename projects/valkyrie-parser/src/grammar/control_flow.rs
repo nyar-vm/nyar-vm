@@ -47,3 +47,21 @@ impl ParsingContext {
         args.as_node(r)
     }
 }
+
+impl ParsingContext {
+    pub(crate) fn parse_for(&mut self, pairs: Pair<Rule>) -> ASTNode {
+        let r = self.get_span(&pairs);
+        let mut args = WhileLoop::default();
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::WHITESPACE => continue,
+                Rule::FOR => continue,
+                // Rule::block => args.push_body(self.parse_block(pair)),
+                // Rule::expr_inline => args.push_condition(self.parse_expr(pair)),
+                // Rule::else_block => args.push_else(self.else_then(pair)),
+                _ => debug_cases!(pair),
+            }
+        }
+        args.as_node(r)
+    }
+}

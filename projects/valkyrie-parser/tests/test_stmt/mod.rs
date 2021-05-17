@@ -1,8 +1,8 @@
 use super::*;
 
-// mod test_assign;
+mod test_assign;
 // mod test_dict;
-// mod test_import;
+mod test_import;
 
 const INPUT1: &str = r#"
 if a {1}
@@ -43,4 +43,22 @@ else {
 fn debug_while() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(INPUT2);
     ast.save("tests/test_stmt/debug_while.clj")
+}
+
+const INPUT3: &str = r#"
+for i in j {
+    looping
+}
+for i in j {
+    looping
+}
+else {
+    nothing
+}
+"#;
+
+#[test]
+fn debug_for() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(INPUT3);
+    ast.save("tests/test_stmt/debug_for.clj")
 }

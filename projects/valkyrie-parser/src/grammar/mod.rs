@@ -1,5 +1,6 @@
 use pest::{iterators::Pair, Parser};
 
+use crate::{debug_cases, grammar::parser::ValkyrieParser, utils::trim_first_last, Rule};
 pub use context::ParsingContext;
 use nyar_error::{NyarError, Result, Span};
 use nyar_hir::{
@@ -7,8 +8,11 @@ use nyar_hir::{
     ASTKind, ASTNode,
 };
 pub use operators::PREC_CLIMBER;
-
-use crate::{debug_cases, grammar::parser::ValkyrieParser, utils::trim_first_last, Rule};
+use pest::prec_climber::{
+    Assoc::{Left, Right},
+    Operator, PrecClimber,
+};
+use std::lazy::SyncLazy;
 
 pub(crate) mod context;
 pub(crate) mod control_flow;
@@ -39,13 +43,14 @@ impl ParsingContext {
             match pair.as_rule() {
                 Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
                 // Rule::emptyStatement => nodes.push(ASTNode::program(r)),
-                Rule::importStatement => nodes.push(self.parse_import(pair)),
+                Rule::import_statement => nodes.push(self.parse_import(pair)),
                 Rule::assignStatement => {
                     let s = self.parse_assign(pair);
                     nodes.extend(s.iter().cloned());
                 }
                 Rule::if_statement => nodes.push(self.parse_if(pair)),
                 Rule::while_statement => nodes.push(self.parse_while(pair)),
+                Rule::for_statement => nodes.push(self.parse_for(pair)),
                 Rule::expression => match self.parse_expression(pair) {
                     (node, e) => {
                         nodes.push(node);
@@ -58,38 +63,6 @@ impl ParsingContext {
         return ASTNode::block(nodes, r_all);
     }
 
-    fn parse_import(&self, pairs: Pair<Rule>) -> ASTNode {
-        let _r = self.get_span(&pairs);
-        unimplemented!()
-        //     let mut root = 0;
-        //     for pair in pairs.into_inner() {
-        //         match pair.as_rule() {
-        //             Rule::Dot => {
-        //                 root += 1;
-        //                 continue;
-        //             }
-        //             Rule::use_alias => {
-        //                 let mut nodes: Vec<String> = vec![];
-        //                 for inner in pair.into_inner() {
-        //                     let node = match inner.as_rule() {
-        //                         Rule::SYMBOL => inner.as_str().to_string(),
-        //                         _ => continue,
-        //                     };
-        //                     nodes.push(node)
-        //                 }
-        //                 let alias = nodes.pop().unwrap();
-        //                 return AST::ImportStatement {
-        //                     data: ImportStatement::LocalAlias { root, path: nodes, alias },
-        //                     annotations: None,
-        //                 };
-        //             }
-        //             Rule::use_module_select => debug_cases!(pair),
-        //             Rule::use_module_string => debug_cases!(pair),
-        //             _ => continue,
-        //         };
-        //     }
-        //     return AST::None;
-    }
     //
     fn parse_assign(&self, pairs: Pair<Rule>) -> Vec<ASTNode> {
         // let r = self.get_span(&pairs);

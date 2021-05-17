@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use nyar_error::Span;
 
 pub use crate::ast::{
-    assign::ImportStatement,
+    assign::{
+        assign::{AssignBlock, LetBindSimple, LetBindStatement},
+        import::{ImportBuilder, ImportStatement},
+    },
     atoms::{
         number_literal::{ByteLiteral, DecimalLiteral, IntegerLiteral},
         string_literal::StringLiteral,
@@ -58,6 +61,8 @@ pub enum ASTKind {
     Suite(Vec<ASTNode>),
     /// A block without new scope
     Sequence(Vec<ASTNode>),
+    /// Import
+    ImportStatement(Box<ImportStatement>),
     /// let lazy (mut a, b) = (1, 2)
     LetBind(Box<LetBind>),
     /// Lambda Function
