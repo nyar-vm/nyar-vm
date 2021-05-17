@@ -1,11 +1,13 @@
 use super::*;
+use nyar_error::Span;
 
 use crate::{value::Symbol, Value};
 
 #[derive(Clone, Debug)]
 pub struct ModuleInstance {
+    pub is_primary: bool,
     pub name: Option<String>,
-    pub context: Option<Box<NyarContext>>,
+    pub context: NyarContext,
     pub symbol_table: HashMap<String, Symbol>,
 }
 
@@ -59,7 +61,7 @@ impl ModuleInstance {
 }
 
 impl ModuleInstance {
-    pub fn get_variable(&self, name: &str, r: Option<Range>) -> Result<Variable> {
+    pub fn get_variable(&self, name: &str, r: Span) -> Result<Variable> {
         unimplemented!()
         // match self.variable_table.get(name) {
         //     Some(s) => Ok(s.to_owned()),
@@ -72,7 +74,7 @@ impl ModuleInstance {
         // }
     }
 
-    pub fn set_variable(&mut self, name: String, value: Variable, r: Option<Range>) -> Result<()> {
+    pub fn set_variable(&mut self, name: String, value: Variable, r: Span) -> Result<()> {
         unimplemented!()
         // if let Some(v) = self.variable_table.get(&name) {
         //     if !v.is_mutable() {

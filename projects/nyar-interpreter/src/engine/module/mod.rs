@@ -8,7 +8,7 @@ mod manager;
 mod optimized;
 
 pub use self::{
-    context::{DefaultDecimalHandler, DefaultIntegerHandler, NyarContext, NyarIndexSystem, NYAR_CONTEXT_PRESET},
+    context::{DefaultDecimalHandler, IntegerHandlerManager, NyarContext, NyarIndexSystem, NYAR_CONTEXT_PRESET},
     flags::NyarReadWrite,
     instance::ModuleInstance,
     manager::ModuleManager,
@@ -16,9 +16,8 @@ pub use self::{
 
 use crate::{
     value::{function::FunctionPrototype, variable::Variable},
-    Result,
+    NyarError, Result,
 };
-use nyar_hir::{NyarError, Range};
 use shredder::{
     marker::{GcDrop, GcSafe},
     plumbing::check_gc_drop,

@@ -26,7 +26,7 @@ pub use crate::ast::{
     expression::{infix::InfixCall, Expression},
     function::LambdaFunction,
     let_bind::LetBind,
-    looping::{LoopStatement, WhileLoop},
+    looping::{ForInLoop, LoopStatement, WhileLoop},
     operator::{Infix, Operator, Postfix, Prefix},
 };
 

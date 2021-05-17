@@ -20,12 +20,20 @@ impl Default for ModuleManager {
 }
 
 impl ModuleManager {
-    pub fn new(name: &str) -> Self {
-        Self { root_name: Some(String::from(name)), ..Self::default() }
+    pub const THIS_PACKAGE: &'static str = "depot";
+
+    pub fn new<S>(name: S) -> Self
+    where
+        S: Into<String>,
+    {
+        Self { root_name: Some(name.into), ..Self::default() }
     }
     #[inline]
-    pub fn get_package_name(&self) -> Option<String> {
-        self.root_name.to_owned()
+    pub fn get_package_name(&self) -> &str {
+        match &self.root_name {
+            None => THIS_PACKAGE,
+            Some(s) => s.as_str(),
+        }
     }
     #[inline]
     pub fn count(&self) -> usize {

@@ -34,3 +34,9 @@ impl TypingExpression {
         }
     }
 }
+
+impl Value {
+    pub fn as_type(&self) -> Typing {
+        todo!()
+    }
+}

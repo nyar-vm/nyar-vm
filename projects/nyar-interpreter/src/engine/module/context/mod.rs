@@ -5,11 +5,11 @@ mod decimal_handler;
 mod integer_handler;
 
 pub use self::{
-    decimal_handler::{parse_f32, parse_f64, DefaultDecimalHandler, BUILD_IN_DECIMAL_PARSERS},
-    integer_handler::{DefaultIntegerHandler, BUILD_IN_INTEGER_PARSERS},
+    decimal_handler::{DefaultDecimalHandler, BUILD_IN_DECIMAL_PARSERS},
+    integer_handler::{IntegerHandlerManager, BUILD_IN_INTEGER_PARSERS},
 };
 use crate::engine::{module::NyarReadWrite, NyarEngine};
-use std::lazy::SyncLazy;
+use std::{lazy::SyncLazy, rc::Weak, sync::Arc};
 
 #[derive(Copy, Clone, Debug)]
 pub enum NyarIndexSystem {
@@ -51,9 +51,7 @@ pub struct NyarContext {
 
     pub clean_prelude_modules: Option<bool>,
 
-    pub default_integer_handler: Option<String>,
-
-    pub integer_handlers: Option<DefaultIntegerHandler>,
+    pub integer_handler: IntegerHandlerManager,
 
     pub default_decimal_handler: Option<String>,
 
@@ -79,8 +77,7 @@ impl Default for NyarContext {
             uniform_function_call_syntax: None,
             clean_inherit_modules: None,
             clean_prelude_modules: None,
-            default_integer_handler: None,
-            integer_handlers: None,
+            integer_handler: Default::default(),
             default_decimal_handler: None,
             decimal_handlers: None,
             default_string_handler: None,
@@ -95,8 +92,8 @@ pub static NYAR_CONTEXT_PRESET: SyncLazy<NyarContext> = SyncLazy::new(|| NyarCon
     uniform_function_call_syntax: Some(true),
     clean_inherit_modules: Some(false),
     clean_prelude_modules: Some(false),
-    default_integer_handler: Some(String::from("int")),
-    integer_handlers: Some((*BUILD_IN_INTEGER_PARSERS).clone()),
+    integer_handler: Some(String::from("int")),
+    integer_handler: Some((*BUILD_IN_INTEGER_PARSERS).clone()),
     default_decimal_handler: Some(String::from("dec")),
     decimal_handlers: Some((*BUILD_IN_DECIMAL_PARSERS).clone()),
     default_string_handler: None,
@@ -163,27 +160,22 @@ macro_rules! wrap_context {
 
 impl ModuleInstance {
     pub fn get_integer_handler(&self, pkg: &ModuleManager) -> String {
-        match self.context.as_ref().and_then(|ctx| ctx.default_integer_handler.as_ref()) {
+        match self.context.as_ref().and_then(|ctx| ctx.integer_handler.as_ref()) {
             Some(s) => return s.to_owned(),
             None => {}
         }
         for shared in pkg.get_ancestors_modules().iter().rev() {
-            match shared
-                .read()
-                .ok()
-                .as_ref()
-                .and_then(|ctx| ctx.context.as_ref())
-                .and_then(|ctx| ctx.default_integer_handler.as_ref())
+            match shared.read().ok().as_ref().and_then(|ctx| ctx.context.as_ref()).and_then(|ctx| ctx.integer_handler.as_ref())
             {
                 Some(s) => return s.to_owned(),
                 None => {}
             }
         }
-        return NYAR_CONTEXT_PRESET.default_integer_handler.to_owned().unwrap();
+        return NYAR_CONTEXT_PRESET.integer_handler.to_owned().unwrap();
     }
     #[inline]
     pub fn set_integer_handler(&mut self, new: String) {
-        self.get_context_mut().default_integer_handler = Some(new)
+        self.get_context_mut().integer_handler = Some(new)
     }
 }
 
@@ -213,5 +205,5 @@ wrap_context!(uniform_function_call_syntax, get_ufcs, set_ufcs, bool);
 wrap_context!(index_system, get_index_system, set_index_system, NyarIndexSystem);
 // wrap_context!(default_integer_handler, get_integer_handler, set_integer_handler, String);
 wrap_context!(default_decimal_handler, get_decimal_handler, set_decimal_handler, String);
-wrap_context!(integer_handlers, get_integer_handlers, set_integer_handlers, DefaultIntegerHandler);
+wrap_context!(integer_handler, get_integer_handlers, set_integer_handlers, IntegerHandlerManager);
 wrap_context!(decimal_handlers, get_decimal_handlers, set_decimal_handlers, DefaultDecimalHandler);

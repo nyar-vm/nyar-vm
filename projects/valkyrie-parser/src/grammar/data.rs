@@ -142,8 +142,8 @@ impl ParsingContext {
         let mut out = vec![];
         for i in pairs.into_inner() {
             match i.as_rule() {
+                Rule::DOT | Rule::Proportion => continue,
                 Rule::Symbol => out.push(self.parse_symbol(i)),
-                Rule::DOT => continue,
                 Rule::use_special => out.push(Symbol::atom(i.as_str())),
                 _ => debug_cases!(i),
             }

@@ -1,23 +1,28 @@
 pub mod class;
 pub mod error;
+mod format;
+mod from_native;
 pub mod function;
+mod lists;
+pub mod maybe;
 pub mod numbers;
 pub mod symbol;
 pub mod utils;
 pub mod variable;
 
-mod format;
-mod from_native;
-
-pub use self::{class::NyarClass, numbers::FloatWrapper, symbol::Symbol};
-
-use std::fmt::{self, Debug, Display, Formatter};
+pub use self::{class::NyarClass, symbol::Symbol};
+use crate::Result;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    fmt::{self, Debug, Display, Formatter},
+};
 
 use self::function::FunctionInstance;
 use crate::utils::OrderedMap;
 use bigdecimal::BigDecimal;
 use num::{BigInt, BigUint};
 
+// use crate::value::maybe::{Maybe, Validation};
 use shredder::{
     marker::{GcDrop, GcSafe},
     plumbing::check_gc_drop,
@@ -30,31 +35,21 @@ pub type SharedValue = Gc<RwLock<Value>>;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Value {
     Null,
+    Unit,
     Boolean(bool),
 
-    UnsignedInteger8(u8),
-    UnsignedInteger16(u16),
-    UnsignedInteger32(u32),
-    UnsignedInteger64(u64),
-    UnsignedInteger128(u128),
-    Integer8(i8),
-    Integer16(i16),
-    Integer32(i32),
-    Integer64(i64),
-    Integer128(i128),
-    Integer(Arc<BigInt>),
-    Decimal32(FloatWrapper<f32>),
-
-    Decimal64(FloatWrapper<f64>),
-    Decimal(Arc<BigDecimal>),
+    Integer(BigInt),
+    Decimal(BigDecimal),
 
     Character(char),
-    String(Arc<String>),
+    String(String),
 
     List(Vec<Self>),
+    Vector(Vec<Self>),
+    Tuple(Vec<Self>),
     Suite(Vec<Self>),
-    Object(Box<OrderedMap<String, Self>>),
-    Function(Box<FunctionInstance>),
+    Object(OrderedMap<String, Self>),
+    Function(FunctionInstance),
     // CustomClass(Box<dyn Class>),
 }
 

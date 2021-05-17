@@ -35,7 +35,7 @@ impl ParsingContext {
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::COMMENT => continue,
-                Rule::DOT => continue,
+                Rule::DOT | Rule::Proportion => continue,
                 Rule::use_namepath => builder.push_symbol_path(self.parse_namepath(pair)),
                 Rule::module_block => builder.push_block(self.module_block(pair)),
                 _ => debug_cases!(pair),
@@ -58,8 +58,8 @@ impl ParsingContext {
         let mut builder = ImportBuilder::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::DOT => continue,
                 Rule::AS => continue,
+                Rule::DOT | Rule::Proportion => continue,
                 Rule::use_namepath => builder.push_symbol_path(self.parse_namepath(pair)),
                 Rule::Symbol => builder.push_alias(self.parse_symbol(pair)),
                 _ => debug_cases!(pair),

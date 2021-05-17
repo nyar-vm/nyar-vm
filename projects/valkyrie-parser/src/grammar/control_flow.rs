@@ -1,4 +1,4 @@
-use nyar_hir::ast::{IfStatement, WhileLoop};
+use nyar_hir::ast::{ForInLoop, IfStatement, WhileLoop};
 
 use super::*;
 
@@ -51,7 +51,7 @@ impl ParsingContext {
 impl ParsingContext {
     pub(crate) fn parse_for(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);
-        let mut args = WhileLoop::default();
+        let mut args = ForInLoop::default();
         for pair in pairs.into_inner() {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,

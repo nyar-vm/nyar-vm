@@ -23,13 +23,8 @@ impl Value {
             Boolean(v) => RcDoc::as_string(v),
 
             Integer(v) => RcDoc::as_string(v),
-            Integer32(v) => RcDoc::text(v.to_string()).append(RcDoc::text("_i32")),
-            Integer64(v) => RcDoc::text(v.to_string()).append(RcDoc::text("_i64")),
-            Integer128(v) => RcDoc::text(v.to_string()).append(RcDoc::text("_i128")),
 
             Decimal(v) => RcDoc::as_string(v),
-            Decimal32(a) => RcDoc::text(a.unwrap().to_string()).append(RcDoc::text("_f32")),
-            Decimal64(a) => RcDoc::text(a.unwrap().to_string()).append(RcDoc::text("_f64")),
 
             List(xs) => RcDoc::text("[")
                 .append(RcDoc::intersperse(xs.into_iter().map(|x| x.to_doc()), RcDoc::text(", ")).nest(1).group())
@@ -51,63 +46,12 @@ unsafe impl Scan for Value {
                 scanner.scan(v);
                 check_gc_drop(v);
             }
-            // Character(v) => {
-            //     scanner.scan(v);
-            //     check_gc_drop(v);
-            // }
-            Integer8(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            Integer16(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            Integer32(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            Integer64(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            Integer128(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            IntegerSized(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            UnsignedInteger8(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            UnsignedInteger16(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            UnsignedInteger32(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            UnsignedInteger64(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            UnsignedInteger128(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            UnsignedIntegerSized(v) => {
-                scanner.scan(v);
-                check_gc_drop(v);
-            }
-            Decimal32(_) => {}
-            Decimal64(_) => {}
             Integer(_) => {}
-            UnsignedInteger(_) => {}
             Decimal(_) => {}
+            Character(v) => {
+                scanner.scan(v);
+                check_gc_drop(v);
+            }
             String(v) => {
                 scanner.scan(v);
                 check_gc_drop(v);

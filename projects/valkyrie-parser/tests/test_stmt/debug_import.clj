@@ -3,12 +3,10 @@
 (block scoped
     )
 (block scoped
-    (using using .python::torch as tf))
+    (using python::torch as tf))
 (block scoped
-    (using using self as script)
-    (using using other))
-(block scoped
-    )
+    (using "script/path" self as script)
+    (using "script/path" other))
 (block scoped
     )
 (block scoped
@@ -16,6 +14,8 @@
 (block scoped
     )
 (block scoped
-    (using using .lib5::a as b)
-    (using using .lib5::c as d)
-    (using using .lib5::e::f::g as h))
+    )
+(block scoped
+    (using lib5::a as b)
+    (using lib5::c as d)
+    (using lib5::e::f::g as h))

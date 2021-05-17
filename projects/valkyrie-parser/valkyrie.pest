@@ -249,7 +249,7 @@ Comment1   = @{Tilde ~ (!NEWLINE ~ ANY)* }
 CommentN   = @{PUSH(Tilde{3,}) ~ (!(Tilde ~ PEEK) ~ ANY)* ~ POP}
 Tilde      = @{"~"}
 /*====================================================================================================================*/
-Proportion = _{"::"|"∷"} //U+2237
+Proportion = @{"::"|"∷"} //U+2237
 Comma      = _{","} //U+FF0C
 Colon      = _{":"} //U+FF1A
 Semicolon  = _{";"}

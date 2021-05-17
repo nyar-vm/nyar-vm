@@ -1,5 +1,4 @@
 use super::*;
-use crate::value::FloatWrapper;
 use bigdecimal::BigDecimal;
 use std::{
     fmt::{self, Debug, Formatter},
@@ -49,19 +48,18 @@ pub fn build_decimal_parsers() -> DefaultDecimalHandler {
 }
 
 pub fn parse_f32(input: &str) -> Result<Value> {
-    Ok(Value::Decimal32(FloatWrapper::new(input.parse::<f32>()?)))
+    Err(NyarError::msg("unimplemented"))
+    // Ok(Value::Decimal32(FloatWrapper::new(input.parse::<f32>()?)))
 }
 
 pub fn parse_f64(input: &str) -> Result<Value> {
-    Ok(Value::Decimal64(FloatWrapper::new(input.parse::<f64>()?)))
+    Err(NyarError::msg("unimplemented"))
+    // Ok(Value::Decimal64(FloatWrapper::new(input.parse::<f64>()?)))
 }
 
 pub fn parse_dec(input: &str) -> Result<Value> {
-    let i = match BigDecimal::parse_bytes(input.as_bytes(), 10) {
-        Some(s) => s,
-        None => {
-            return Err(NyarError::msg("TODO: Int parse error"));
-        }
-    };
-    Ok(Value::Decimal(box i))
+    match BigDecimal::parse_bytes(input.as_bytes(), 10) {
+        Some(s) => Ok(Value::Decimal(s)),
+        None => Err(NyarError::syntax_error("Can not parse `{}` as decimal")),
+    }
 }

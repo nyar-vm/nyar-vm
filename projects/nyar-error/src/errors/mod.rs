@@ -84,19 +84,19 @@ impl NyarError {
         Self { kind: Box::new(NyarErrorKind::IfNonBoolean), span: position }
     }
 
-    pub fn invalid_index(index: impl Into<String>, item_type: impl Into<String>, position: Span) -> NyarError {
-        Self {
-            kind: Box::new(NyarErrorKind::InvalidIndex { index: index.into(), item_type: item_type.into() }),
-            span: position,
-        }
+    pub fn invalid_index<S>(msg: S, position: Span) -> NyarError
+    where
+        S: Into<String>,
+    {
+        Self { kind: Box::new(NyarErrorKind::InvalidIndex { message: msg.into() }), span: position }
     }
 
     pub fn variable_not_found(name: impl Into<String>, position: Span) -> NyarError {
         Self { kind: Box::new(NyarErrorKind::VariableNotFound { name: name.into() }), span: position }
     }
 
-    pub fn write_unwritable_object(name: impl Into<String>, position: Span) -> NyarError {
-        Self { kind: Box::new(NyarErrorKind::WriteUnwritable { name: name.into() }), span: position }
+    pub fn read_write_error(name: impl Into<String>) -> NyarError {
+        Self { kind: Box::new(NyarErrorKind::ReadWriteError { message: name.into() }), span: Default::default() }
     }
 
     pub fn msg(text: impl Into<String>) -> NyarError {

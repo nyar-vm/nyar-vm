@@ -6,12 +6,12 @@ pub enum NyarErrorKind {
     InvalidOperationPrefix { op: String, item_type: String },
     InvalidOperationSuffix { op: String, item_type: String },
     InvalidCast { item_type: String },
-    InvalidIndex { index: String, item_type: String },
+    InvalidIndex { message: String },
     InvalidIterator { item_type: String },
     IfLost,
     IfNonBoolean,
     VariableNotFound { name: String },
-    WriteUnwritable { name: String },
+    ReadWriteError { message: String },
     CustomErrorText { text: String },
     SyntaxError { info: String },
     IOError(std::io::Error),
@@ -34,8 +34,8 @@ impl Display for NyarErrorKind {
             NyarErrorKind::InvalidOperationSuffix { op, item_type } => {
                 write!(f, "InvalidOperation: Unable to apply suffix operator `{}` on type `{}`", op, item_type)
             }
-            NyarErrorKind::InvalidIndex { index, item_type } => {
-                write!(f, "IndexError: Unable to get index {} on type `{}`", index, item_type)
+            NyarErrorKind::InvalidIndex { message } => {
+                write!(f, "IndexError: {}", message)
             }
             NyarErrorKind::InvalidIterator { item_type } => {
                 write!(f, "IteratorError: Type `{}` is not an iterable element", item_type)
@@ -58,7 +58,7 @@ impl Display for NyarErrorKind {
             NyarErrorKind::VariableNotFound { name } => {
                 write!(f, "MissingError: Cannot find variable `{}`", name)
             }
-            NyarErrorKind::WriteUnwritable { name } => {
+            NyarErrorKind::ReadWriteError { message: name } => {
                 write!(f, "WriteError: Attempt to write a non-writable item `{}`", name)
             }
             NyarErrorKind::CustomErrorText { text } => write!(f, "{}", text),

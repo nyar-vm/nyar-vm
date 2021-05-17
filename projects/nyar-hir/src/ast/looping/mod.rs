@@ -1,7 +1,6 @@
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-
 pub struct LoopStatement {
     pub body: Vec<ASTNode>,
 }
@@ -18,6 +17,12 @@ pub struct ForInLoop {
     condition: ASTNode,
     body: Vec<ASTNode>,
     else_trigger: Option<Vec<ASTNode>>,
+}
+
+impl Default for ForInLoop {
+    fn default() -> Self {
+        Self { condition: Default::default(), body: vec![], else_trigger: None }
+    }
 }
 
 impl Default for WhileLoop {
@@ -89,5 +94,9 @@ impl ForInLoop {
         let cond = IfStatement::if_else(self.condition.clone(), self.body.clone(), break_body);
         let if_body = cond.as_node(meta.clone());
         ASTNode::loop_statement(vec![if_body], meta.clone())
+    }
+    //noinspection RsSelfConvention
+    pub fn as_node(self, span: Span) -> ASTNode {
+        self.de_sugar(span)
     }
 }

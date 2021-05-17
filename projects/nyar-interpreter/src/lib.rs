@@ -4,8 +4,9 @@
 #![feature(arc_new_cyclic)]
 #![feature(const_fn_trait_bound)]
 
-pub use nyar_hir::{ASTKind, ASTNode, NyarError, Result};
-pub use value::Value;
+pub use self::value::Value;
+pub use nyar_error::{NyarError, Result};
+pub use nyar_hir::{ASTKind, ASTNode};
 
 pub mod engine;
 pub mod typing;

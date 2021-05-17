@@ -2,7 +2,6 @@ use crate::ast::{
     ApplyArgument, CallableItem, ChainCall, ContinuationArgument, ImportStatement, Operator, SliceArgument, SliceTerm,
     UnaryArgument,
 };
-use std::fmt::Debug;
 
 use super::*;
 
@@ -25,14 +24,13 @@ impl VLanguage for ImportStatement {
 
 impl Display for ImportStatement {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str("using ")?;
         let alias = match self {
             ImportStatement::Symbol { name, alias } => {
                 write!(f, "using {}", name)?;
                 alias
             }
             ImportStatement::Script { path, name, alias } => {
-                write!(f, "using {}.{}", path, name)?;
+                write!(f, "using {:?} {}", path, name)?;
                 alias
             }
         };

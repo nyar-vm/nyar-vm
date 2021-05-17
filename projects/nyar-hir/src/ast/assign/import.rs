@@ -1,5 +1,3 @@
-use std::ops::Add;
-
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -59,27 +57,31 @@ impl ImportBuilder {
     //noinspection RsSelfConvention
     pub fn as_node(self, span: Span) -> Vec<ASTNode> {
         let (parent, nodes) = self.detach();
-        let mut out = vec![];
-        for child in nodes {
-            child.push_nodes(&parent, &mut out);
-        }
-        out.into_iter().map(ImportStatement::from).map(|f| f.as_node(span)).collect()
+        nodes
+            .into_iter()
+            .map(|f| f.concat_child(&parent))
+            .flatten()
+            .map(ImportStatement::from)
+            .map(|f| f.as_node(span))
+            .collect()
     }
     fn detach(self) -> (ImportBuilder, Vec<ImportBuilder>) {
         let ImportBuilder { path, symbol: name, alias, block } = self;
         (ImportBuilder { path, symbol: name, alias, block: vec![] }, block)
     }
-    fn push_nodes(self, parent: &Self, nodes: &mut Vec<Self>) {
+    fn concat_child(self, parent: &Self) -> Vec<ImportBuilder> {
         let (this, block) = self.detach();
-        let parent =
-            Self { path: parent.path.clone(), symbol: parent.symbol.concat(this.symbol), alias: this.alias, block: vec![] };
+        let parent = Self {
+            //
+            path: parent.path.clone(),
+            symbol: parent.symbol.concat(this.symbol),
+            alias: this.alias,
+            block: vec![],
+        };
         if block.is_empty() {
-            return nodes.push(parent);
+            return vec![parent];
         }
-        for child in block {
-            println!("{:?}", nodes);
-            child.push_nodes(&parent, nodes);
-        }
+        block.into_iter().map(|f| f.concat_child(&parent)).flatten().collect()
     }
 }
 
@@ -87,9 +89,9 @@ impl From<ImportBuilder> for ImportStatement {
     fn from(builder: ImportBuilder) -> Self {
         debug_assert!(builder.block.is_empty());
         if builder.path.is_empty() {
-            return ImportStatement::Script { path: builder.path, name: builder.symbol, alias: builder.alias };
+            return ImportStatement::Symbol { name: builder.symbol, alias: builder.alias };
         }
-        ImportStatement::Symbol { name: builder.symbol, alias: builder.alias }
+        ImportStatement::Script { path: builder.path, name: builder.symbol, alias: builder.alias }
     }
 }
 
