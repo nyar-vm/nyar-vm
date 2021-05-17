@@ -1,6 +1,8 @@
 use crate::ast::{
-    ApplyArgument, CallableItem, ChainCall, ContinuationArgument, Operator, SliceArgument, SliceTerm, UnaryArgument,
+    ApplyArgument, CallableItem, ChainCall, ContinuationArgument, ImportStatement, Operator, SliceArgument, SliceTerm,
+    UnaryArgument,
 };
+use std::fmt::Debug;
 
 use super::*;
 
@@ -14,6 +16,32 @@ use super::*;
 //         }
 //     }
 // }
+
+impl VLanguage for ImportStatement {
+    fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>> {
+        arena.as_string(format!("({})", self))
+    }
+}
+
+impl Display for ImportStatement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("using ")?;
+        let alias = match self {
+            ImportStatement::Symbol { name, alias } => {
+                write!(f, "using {}", name)?;
+                alias
+            }
+            ImportStatement::Script { path, name, alias } => {
+                write!(f, "using {}.{}", path, name)?;
+                alias
+            }
+        };
+        if let Some(alias) = alias {
+            write!(f, " as {}", alias)?;
+        }
+        Ok(())
+    }
+}
 
 impl VLanguage for ChainCall {
     fn v_format<'a, 'b>(&'a self, arena: &'b PrettyFormatter<'b>) -> DocBuilder<'b, Arena<'b>> {

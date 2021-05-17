@@ -43,7 +43,7 @@ impl ParsingContext {
             match pair.as_rule() {
                 Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
                 // Rule::emptyStatement => nodes.push(ASTNode::program(r)),
-                Rule::import_statement => nodes.push(self.parse_import(pair)),
+                Rule::import_statement => nodes.extend(self.parse_import(pair)),
                 Rule::assignStatement => {
                     let s = self.parse_assign(pair);
                     nodes.extend(s.iter().cloned());
