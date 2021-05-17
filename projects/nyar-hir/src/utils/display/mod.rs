@@ -111,6 +111,9 @@ impl VLanguage for ASTKind {
             ASTKind::StringTemplate(v) => arena.hard_block("template-string", v.iter().map(|item| item.v_format(arena))),
             ASTKind::XMLTemplate(v) => arena.hard_block("template-xml", v.iter().map(|item| item.v_format(arena))),
             ASTKind::Symbol(v) => v.v_format(arena),
+            ASTKind::ImportStatement(_) => {
+                unimplemented!()
+            }
         }
     }
 }

@@ -35,7 +35,7 @@ module_block =  {"{" ~ (module_tuple|comma_or_semi)* ~ "}"}
 module_tuple = _{use_alias|use_module_select}
 use_split    = _{DOT|Proportion}
 use_symbol   = _{use_special|Symbol}
-use_namepath = _{use_symbol ~ (use_split ~ use_symbol)*}
+use_namepath =  {use_symbol ~ (use_split ~ use_symbol)*}
 //!#C678DD: IMPORT|AS|use_special
 IMPORT = @{"using" ~ ("!"|"?"|"*")?}
 AS     = @{"as!"|"as?"|"as*"|"as"}
@@ -219,14 +219,14 @@ String         = ${
     Symbol? ~ "«" ~ (StringItem|!"»" ~ any)* ~ "»" |
     Symbol? ~ "‹" ~ (StringItem|!"›" ~ any)* ~ "›"
 }
-StringItem     = _{
+StringItem    = _{
     "$" ~ Integer           | // $1, $a
     "$" ~ namepath          | // $1, $a
     "${" ~ expression ~ "}" | // ${a}, ${1 + 1}
     StringUnicode           | // \u{20}
     StringEscape
 }
-StringEscape  =@{"\\" ~ any}
+StringEscape  = @{"\\" ~ any}
 StringUnicode = @{"\\u" ~ "{" ~ASCII_ALPHANUMERIC* ~ "}"}
 XmlEscaped    = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
 Quotation     = _{"\""}

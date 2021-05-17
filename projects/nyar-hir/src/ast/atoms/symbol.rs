@@ -7,6 +7,12 @@ pub struct Symbol {
     pub scope: Vec<String>,
 }
 
+impl Default for Symbol {
+    fn default() -> Self {
+        Self { name: "".to_string(), scope: vec![] }
+    }
+}
+
 impl Symbol {
     pub fn atom<S>(name: S) -> Symbol
     where

@@ -139,14 +139,21 @@ impl ParsingContext {
         }
     }
     pub(crate) fn parse_namepath(&self, pairs: Pair<Rule>) -> Symbol {
-        Symbol::join(
-            pairs.into_inner().filter(|node| node.as_rule() == Rule::Symbol).map(|pair| self.parse_symbol(pair)).collect(),
-        )
+        let mut out = vec![];
+        for i in pairs.into_inner() {
+            match i.as_rule() {
+                Rule::Symbol => out.push(self.parse_symbol(i)),
+                Rule::DOT => continue,
+                Rule::use_special => out.push(Symbol::atom(i.as_str())),
+                _ => debug_cases!(i),
+            }
+        }
+        Symbol::join(out)
     }
 }
 
 impl ParsingContext {
-    fn parse_string(&mut self, pairs: Pair<Rule>) -> ASTNode {
+    pub(crate) fn parse_string(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let mut builder = StringTemplateBuilder::new(self.get_span(&pairs));
         for pair in pairs.into_inner() {
             let r = self.get_span(&pair);
