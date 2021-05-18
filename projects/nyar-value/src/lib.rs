@@ -1,5 +1,3 @@
-extern crate core;
-
 use nyar_error::NyarError;
 
 pub use self::{

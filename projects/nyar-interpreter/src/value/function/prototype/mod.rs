@@ -3,40 +3,47 @@ use std::collections::{BTreeMap, LinkedList};
 use nyar_error::Span;
 use nyar_hir::ast::Symbol;
 
-use crate::{typing::Typing, value::Symbol};
+use crate::{typing::Typing, value::Symbol, SymbolColor};
 
 use super::*;
 
 mod builder;
 
 pub struct FunctionDispatcher {
-    name: Option<Symbol>,
+    name: String,
     prototypes: LinkedList<FunctionPrototype>,
+}
+
+pub struct LambdaFunction {
+    prototype: FunctionPrototype,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FunctionPrototype {
-    name: Option<String>,
     /// Jump to which position
-    definition_span: Span,
+    pub definition_span: Span,
+    /// Show which color
+    pub color: SymbolColor,
     ///
-    pub attributes: Option<Box<FunctionAttributes>>,
+    pub attributes: FunctionAttributes,
     /// ```vk
     /// inline f(...)
     /// pub modifiers: Vector[String],
     /// f(self,...)
     /// ```
-    pub with_self: Argument,
-    /// f<T>(...)
+    pub with_self: FunctionParameter,
+    /// ```vk
+    /// f[T](...)
+    /// ```
     pub generic: Vec<Statement>,
     /// f(a, b, c)
-    pub arguments: IndexMap<String, Argument>,
+    pub arguments: IndexMap<String, FunctionParameter>,
     /// f(a, b, c, < , ...)
-    pub position_only: Option<IndexMap<String, Argument>>,
+    pub position_only: IndexMap<String, FunctionParameter>,
     /// f(..., >, a, b, c)
-    pub keywords_only: Option<IndexMap<String, Argument>>,
+    pub keywords_only: IndexMap<String, FunctionParameter>,
     /// f(..list: T)
-    pub collect_list: Option<(String, Typing)>,
+    pub collect_list: FunctionParameter,
     /// f(...dict: T)
     pub collect_dict: Option<(String, Typing)>,
     /// f(...): T
@@ -50,6 +57,9 @@ pub struct FunctionPrototype {
     /// f(...) {}
     pub body: Statement,
 }
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FunctionParameter {}
 
 pub enum FunctionStatement {
     Nyar,

@@ -17,8 +17,6 @@ mod prototype;
 pub struct EffectHandler {
     effects: HashMap<String, String>,
 }
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Argument;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Statement;

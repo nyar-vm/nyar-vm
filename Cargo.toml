@@ -6,12 +6,11 @@ default-members = [
     "projects/nyar-mir",
     "projects/nyar-error",
     "projects/nyar-interpreter",
-    "projects/nyar-js",
     "projects/valkyrie-parser",
 ]
 exclude = [
-   "projects/nyar-value",
-   "projects/nyar-macro",
+    "projects/nyar-value",
+    "projects/nyar-macro",
 ]
 
 [profile.release]
