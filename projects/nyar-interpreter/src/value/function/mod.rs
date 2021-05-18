@@ -3,13 +3,14 @@ use std::{collections::HashMap, rc::Rc};
 use indexmap::IndexMap;
 
 use crate::{
-    value::{error::Level3, Value},
+    value::{error::ErrorLevels, Value},
     NyarError, Result,
 };
 
 pub use self::{attributes::FunctionAttributes, prototype::FunctionPrototype};
 
 mod attributes;
+mod instances;
 mod prototype;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -44,8 +45,8 @@ impl FunctionInstance {
     }
     pub fn fill_named_arguments(&mut self, args: HashMap<String, Value>) -> Result<()> {
         match self.allow_override_keywords() {
-            Level3::Allow => self.kvs.extend(args),
-            Level3::Warning => {
+            ErrorLevels::Allow => self.kvs.extend(args),
+            ErrorLevels::Warning => {
                 for (k, v) in args.into_iter() {
                     if self.kvs.contains_key(k.as_str()) {
                         println!("noooop!")
@@ -53,7 +54,7 @@ impl FunctionInstance {
                     self.kvs.insert(k, v);
                 }
             }
-            Level3::Deny => {
+            ErrorLevels::Deny => {
                 for (k, v) in args.into_iter() {
                     if self.kvs.contains_key(k.as_str()) {
                         return Err(NyarError::msg("GG"));
@@ -72,14 +73,14 @@ impl FunctionInstance {
 
     pub fn check_valid(&self) -> Result<()> {
         match self.allow_extra_arguments() {
-            Level3::Allow => {}
-            Level3::Warning => {}
-            Level3::Deny => {}
+            ErrorLevels::Allow => {}
+            ErrorLevels::Warning => {}
+            ErrorLevels::Deny => {}
         }
         match self.allow_extra_keywords() {
-            Level3::Allow => {}
-            Level3::Warning => {}
-            Level3::Deny => {}
+            ErrorLevels::Allow => {}
+            ErrorLevels::Warning => {}
+            ErrorLevels::Deny => {}
         }
         Ok(())
     }

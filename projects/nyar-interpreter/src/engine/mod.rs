@@ -2,14 +2,14 @@ mod gc;
 mod interpreter;
 pub mod module;
 
-pub use self::module::{ModuleInstance, ModuleManager, SharedModule};
+pub use self::module::{ModuleInstance, PackageManager, SharedModule};
 
 use crate::{engine::interpreter::Evaluate, ASTNode, Result, Value};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct NyarEngine {
-    pub(crate) import_pkg: HashMap<String, ModuleManager>,
-    pub(crate) current_pkg: ModuleManager,
+    pub(crate) import_pkg: HashMap<String, Arc<PackageManager>>,
+    pub(crate) current_pkg: PackageManager,
     pub(crate) runtime_stack: Vec<Value>,
 }
 

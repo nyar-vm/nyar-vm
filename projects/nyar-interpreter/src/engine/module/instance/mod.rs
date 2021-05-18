@@ -3,17 +3,9 @@ use nyar_error::Span;
 
 use crate::{value::Symbol, Value};
 
-#[derive(Clone, Debug)]
-pub struct ModuleInstance {
-    pub is_primary: bool,
-    pub name: Option<String>,
-    pub context: NyarContext,
-    pub symbol_table: HashMap<String, Symbol>,
-}
-
 impl Default for ModuleInstance {
     fn default() -> Self {
-        Self { name: None, context: Default::default(), symbol_table: Default::default() }
+        Self { is_primary: false, namespace: None, file: None, context: Default::default(), symbol_table: Default::default() }
     }
 }
 
@@ -23,8 +15,8 @@ unsafe impl GcDrop for ModuleInstance {}
 
 unsafe impl Scan for ModuleInstance {
     fn scan(&self, scanner: &mut shredder::Scanner<'_>) {
-        scanner.scan(&self.name);
-        check_gc_drop(&self.name);
+        scanner.scan(&self.namespace);
+        check_gc_drop(&self.namespace);
         // scanner.scan(&self.context);
         // shredder::plumbing::check_gc_drop(__binding_0);
         scanner.scan(&self.symbol_table);
@@ -34,7 +26,7 @@ unsafe impl Scan for ModuleInstance {
 
 impl ModuleInstance {
     pub fn new_module(name: &str) -> Self {
-        Self { name: Some(String::from(name)), ..Self::default() }
+        Self { namespace: Some(String::from(name)), ..Self::default() }
     }
     pub fn new_scope() -> Self {
         Self::default()

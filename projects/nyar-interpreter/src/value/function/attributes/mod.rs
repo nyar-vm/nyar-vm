@@ -1,22 +1,23 @@
 use super::*;
-use crate::value::error::Level3;
+use crate::value::error::ErrorLevels;
+use nyar_error::ErrorLevels;
 use std::lazy::SyncLazy;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FunctionAttributes {
     pub currying: bool,
-    pub extra_arguments: Level3,
-    pub extra_keywords: Level3,
-    pub override_keywords: Level3,
+    pub extra_arguments: ErrorLevels,
+    pub extra_keywords: ErrorLevels,
+    pub override_keywords: ErrorLevels,
 }
 
 impl Default for FunctionAttributes {
     fn default() -> Self {
         Self {
             currying: true,
-            extra_arguments: Level3::Warning,
-            extra_keywords: Level3::Warning,
-            override_keywords: Level3::Warning,
+            extra_arguments: ErrorLevels::Warning,
+            extra_keywords: ErrorLevels::Warning,
+            override_keywords: ErrorLevels::Warning,
         }
     }
 }
@@ -38,15 +39,15 @@ impl FunctionInstance {
         self.prototype.attributes().currying
     }
     #[inline]
-    pub fn allow_extra_arguments(&self) -> Level3 {
+    pub fn allow_extra_arguments(&self) -> ErrorLevels {
         self.prototype.attributes().extra_arguments
     }
     #[inline]
-    pub fn allow_extra_keywords(&self) -> Level3 {
+    pub fn allow_extra_keywords(&self) -> ErrorLevels {
         self.prototype.attributes().extra_keywords
     }
     #[inline]
-    pub fn allow_override_keywords(&self) -> Level3 {
+    pub fn allow_override_keywords(&self) -> ErrorLevels {
         self.prototype.attributes().override_keywords
     }
 }

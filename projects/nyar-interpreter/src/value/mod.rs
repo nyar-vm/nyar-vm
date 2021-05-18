@@ -10,7 +10,7 @@ pub mod symbol;
 pub mod utils;
 pub mod variable;
 
-pub use self::{class::NyarClass, symbol::Symbol};
+pub use self::class::NyarClass;
 use crate::Result;
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -23,6 +23,7 @@ use bigdecimal::BigDecimal;
 use num::{BigInt, BigUint};
 
 // use crate::value::maybe::{Maybe, Validation};
+use crate::value::function::FunctionPrototype;
 use shredder::{
     marker::{GcDrop, GcSafe},
     plumbing::check_gc_drop,
@@ -49,6 +50,7 @@ pub enum Value {
     Tuple(Vec<Self>),
     Suite(Vec<Self>),
     Object(OrderedMap<String, Self>),
+    FunctionDefinition(FunctionPrototype),
     Function(FunctionInstance),
     // CustomClass(Box<dyn Class>),
 }

@@ -1,10 +1,24 @@
+use std::collections::{BTreeMap, LinkedList};
+
+use nyar_error::Span;
+use nyar_hir::ast::Symbol;
+
+use crate::{typing::Typing, value::Symbol};
+
 use super::*;
-use crate::typing::Typing;
+
+mod builder;
+
+pub struct FunctionDispatcher {
+    name: Option<Symbol>,
+    prototypes: LinkedList<FunctionPrototype>,
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct FunctionPrototype {
-    /// f
-    pub name: String,
+    name: Option<String>,
+    /// Jump to which position
+    definition_span: Span,
     ///
     pub attributes: Option<Box<FunctionAttributes>>,
     /// ```vk
@@ -42,6 +56,12 @@ pub enum FunctionStatement {
     Native,
 }
 
+impl Default for FunctionPrototype {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
 impl FunctionPrototype {
     fn check_attributes(&mut self) {
         if self.attributes.is_none() {
@@ -52,7 +72,6 @@ impl FunctionPrototype {
     pub fn set_currying(&mut self, level: i8) {
         self.check_attributes();
         let v = &mut self.attributes.as_mut().unwrap().currying;
-
         match level {
             0 => (),
             x if x > 0 => *v = true,
@@ -64,9 +83,9 @@ impl FunctionPrototype {
         let v = &mut self.attributes.as_mut().unwrap().override_keywords;
         match level {
             0 => (),
-            x if x > 0 => *v = Level3::Allow,
-            -1 => *v = Level3::Warning,
-            _ => *v = Level3::Deny,
+            x if x > 0 => *v = ErrorLevels::Allow,
+            -1 => *v = ErrorLevels::Warning,
+            _ => *v = ErrorLevels::Deny,
         }
     }
 }

@@ -9,6 +9,9 @@ pub use nyar_error::{NyarError, Result};
 pub use nyar_hir::{ASTKind, ASTNode};
 
 pub mod engine;
+mod symbols;
 pub mod typing;
 pub mod utils;
 pub mod value;
+
+pub use self::symbols::SymbolColor;

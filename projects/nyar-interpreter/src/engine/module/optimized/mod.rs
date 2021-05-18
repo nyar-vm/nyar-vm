@@ -13,8 +13,8 @@ impl OptimizedModule {
     }
 }
 
-impl From<ModuleManager> for OptimizedModule {
-    fn from(src: ModuleManager) -> Self {
+impl From<PackageManager> for OptimizedModule {
+    fn from(src: PackageManager) -> Self {
         let mut path = vec![];
         let mut map = PatriciaMap::default();
         let root = match src.get_package_name() {

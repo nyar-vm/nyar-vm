@@ -159,7 +159,7 @@ macro_rules! wrap_context {
 }
 
 impl ModuleInstance {
-    pub fn get_integer_handler(&self, pkg: &ModuleManager) -> String {
+    pub fn get_integer_handler(&self, pkg: &PackageManager) -> String {
         match self.context.as_ref().and_then(|ctx| ctx.integer_handler.as_ref()) {
             Some(s) => return s.to_owned(),
             None => {}

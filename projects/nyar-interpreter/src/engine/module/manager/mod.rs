@@ -1,25 +1,20 @@
 use super::*;
 
-use crate::engine::NyarEngine;
+use crate::{engine::NyarEngine, value::Symbol};
 use indextree::{Ancestors, Arena, Children, Descendants, Node, NodeId};
-use std::{collections::HashSet, iter::FromIterator};
+use std::{
+    collections::{BTreeMap, HashSet},
+    iter::FromIterator,
+    sync::Arc,
+};
 
-pub struct ModuleManager {
-    arena: Arena<SharedModule>,
-    root_name: Option<String>,
-    root_module: NodeId,
-    current_module: NodeId,
-}
-
-impl Default for ModuleManager {
+impl Default for PackageManager {
     fn default() -> Self {
-        let mut arena = Arena::new();
-        let root = arena.new_node(Gc::new(RwLock::new(ModuleInstance::default())));
-        Self { arena, root_name: None, root_module: root, current_module: root }
+        Self { arena: Default::default() }
     }
 }
 
-impl ModuleManager {
+impl PackageManager {
     pub const THIS_PACKAGE: &'static str = "depot";
 
     pub fn new<S>(name: S) -> Self
@@ -41,7 +36,7 @@ impl ModuleManager {
     }
 }
 
-impl ModuleManager {
+impl PackageManager {
     #[inline]
     fn get(&self, id: NodeId) -> &Node<SharedModule> {
         self.arena.get(id).unwrap()
@@ -120,7 +115,7 @@ impl ModuleManager {
     }
 }
 
-impl ModuleManager {
+impl PackageManager {
     pub fn new_child_module(&mut self, name: &str) -> Result<()> {
         if self.get_children_names_set().contains(name) {
             return Err(NyarError::msg("submodule already exists"));
@@ -157,7 +152,7 @@ impl ModuleManager {
     }
 }
 
-impl ModuleManager {
+impl PackageManager {
     pub fn switch_to_parent_module(&mut self) -> Result<()> {
         let id = self.get_parent_id();
         if self.current_module == self.root_module {
@@ -192,7 +187,7 @@ impl ModuleManager {
     }
 }
 
-impl ModuleManager {}
+impl PackageManager {}
 
 impl NyarEngine {
     #[inline]

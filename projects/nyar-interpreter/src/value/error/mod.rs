@@ -1,6 +1,6 @@
 mod log_level;
 
-pub use log_level::Level3;
+pub use log_level::ErrorLevels;
 
 // pub type Result<T> = std::result::Result<T, NyarError>;
 //

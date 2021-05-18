@@ -1,3 +1,9 @@
+use std::{
+    array::IntoIter,
+    iter::{Chain, Cloned},
+    slice::Iter,
+};
+
 use super::*;
 
 /// A Symbol
@@ -42,13 +48,11 @@ impl Symbol {
     /// => a::b::c::d
     /// ```
     pub fn concat(&self, other: Symbol) -> Symbol {
-        let name = other.name;
-        let scope = if self.name.is_empty() {
-            self.scope.iter().cloned().chain(other.scope.into_iter()).collect()
-        }
-        else {
-            self.scope.iter().cloned().chain([self.name.clone()].into_iter()).chain(other.scope.into_iter()).collect()
+        let rhs = other.scope.into_iter();
+        let scope = match self.name.as_str() {
+            "" => self.scope.iter().cloned().chain(rhs).collect(),
+            s @ _ => self.scope.iter().chain([s.to_string()].iter()).cloned().chain(rhs).collect(),
         };
-        Self { name, scope }
+        Self { name: other.name, scope }
     }
 }
