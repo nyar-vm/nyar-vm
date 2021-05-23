@@ -23,9 +23,18 @@ fn debug_let() -> Result<()> {
 }
 
 const DEFINE: &str = r#"
-def a(self, <, >);
-def a a::def.def[](self);
+def function() {}
 
+def eager function() {}
+def function(self, <, >) {}
+def function(input: Integer = 0) {}
+
+def function() -> Integer {}
+def function() / DivideZero {}
+
+def eager function(mut self, <, input: Integer = 0, >, ^list: List) -> Integer / [DivideZero, ParseError] {
+
+}
 "#;
 
 #[test]

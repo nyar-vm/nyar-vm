@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, TableExpression};
+use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, SymbolNode, TableExpression};
 
 use super::*;
 

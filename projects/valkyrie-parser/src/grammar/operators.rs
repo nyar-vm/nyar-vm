@@ -10,7 +10,7 @@ pub static PREC_CLIMBER: SyncLazy<PrecClimber<Rule>> = SyncLazy::new(|| {
         Operator::new(CONCAT, Left) | Operator::new(REMOVE, Left),
         Operator::new(ADD, Left) | Operator::new(SUB, Left),
         Operator::new(Multiply, Left) | Operator::new(CenterDot, Left),
-        Operator::new(Power, Right),
+        Operator::new(POWER, Right),
     ])
 });
 

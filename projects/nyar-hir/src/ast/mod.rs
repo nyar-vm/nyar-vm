@@ -23,14 +23,17 @@ pub use crate::ast::{
         integer_literal::IntegerLiteral,
         string_literal::StringLiteral,
         string_template::StringTemplateBuilder,
-        symbol::Symbol,
+        symbol::{Symbol, SymbolNode},
         table_literal::{KVPair, TableExpression},
     },
     chain::*,
     control::*,
+    definition::{
+        function::{DefineBuilder, DefineFunction},
+        LetBind,
+    },
     expression::{infix::InfixCall, Expression},
     function::LambdaFunction,
-    let_bind::LetBind,
     looping::{ForInLoop, LoopStatement, WhileLoop},
     operator::{Infix, Operator, Postfix, Prefix},
 };
@@ -40,9 +43,9 @@ mod atoms;
 mod chain;
 mod checking;
 mod control;
+mod definition;
 mod expression;
 mod function;
-mod let_bind;
 mod looping;
 mod operator;
 
@@ -70,6 +73,18 @@ pub enum ASTKind {
     ImportStatement(Box<ImportStatement>),
     /// let lazy (mut a, b) = (1, 2)
     LetBind(Box<LetBind>),
+    /// ```vk
+    /// if cond {
+    ///     then
+    /// }
+    /// else if cond {
+    ///     then
+    /// }
+    /// else {
+    ///     then
+    /// }
+    /// ```
+    DefineFunction(Box<DefineFunction>),
     /// Lambda Function
     LambdaFunction(Box<LambdaFunction>),
     /// ```vk

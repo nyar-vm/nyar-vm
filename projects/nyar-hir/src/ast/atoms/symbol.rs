@@ -1,10 +1,8 @@
-use std::{
-    array::IntoIter,
-    iter::{Chain, Cloned},
-    slice::Iter,
-};
-
 use super::*;
+
+/// A symbol with it's position
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct SymbolNode(pub Symbol, pub Span);
 
 /// A Symbol
 #[derive(Clone, Debug, Serialize, Deserialize)]

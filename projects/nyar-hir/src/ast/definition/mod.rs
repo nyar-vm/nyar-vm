@@ -1,5 +1,7 @@
 use super::*;
 
+pub(crate) mod function;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 
 pub struct LetBind {

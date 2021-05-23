@@ -36,10 +36,12 @@ module_tuple = _{use_alias|use_module_select}
 use_split    = _{DOT|Proportion}
 use_symbol   = _{use_special|Symbol}
 use_namepath =  {use_symbol ~ (use_split ~ use_symbol)*}
-//!#C678DD: IMPORT|AS|use_special
+//!#C678DD: IMPORT|AS|SELF|DEPOT
 IMPORT       = @{"using" ~ ("!"|"?"|"*")?}
 AS           = @{"as!"|"as?"|"as*"|"as"}
-use_special  = @{"depot"|"self"|"*"}
+use_special  = @{"depot"|SELF|"*"}
+SELF         = @{"self"}
+DEPOT        = @{"depot"}
 /*====================================================================================================================*/
 //!#C678DD: WHILE|FOR|IN
 for_statement = {
@@ -87,15 +89,8 @@ FORALL = @{"forall"|"∀"}
 classStatement = {CLASS ~ assign_pair ~ class_block?}
 traitStatement = {TRAIT ~ assign_pair ~ class_block?}
 
-class_block = {"{" ~ short_statement* ~ "}"}
-short_statement = {
-    emptyStatement
-  | DEFINE? ~ define_symbol ~ eos?
-    // mut a = 1 ;
-  | assign_pair ~ separator?
-  | short_annotation ~ eos?
-}
-short_annotation = {annotation_call+~short_statement}
+class_block = {"{" ~ (define_free|short_annotation|assign_pair|eos)* ~ "}"}
+short_annotation = {annotation_call}
 CLASS = @{"class"}
 TRAIT = @{"trait"}
 /*====================================================================================================================*/
@@ -115,7 +110,6 @@ assign_statement = {
   | LET ~ assign_name ~ Set ~ assign_rhs ~ eos?
     // let a, b: int;
   | LET ~ assign_name ~ eos
-  | LET ~ short_statement ~ eos?
 }
 assign_rhs = _{
     if_statement|match_statement|expr
@@ -126,21 +120,31 @@ assign_pair = {MODIFIERS* ~ Symbol ~ type_hint?}
 ///#C678DD
 LET = @{"let"}
 /*====================================================================================================================*/
-//!#C678DD: DEFINE|define_special
-define_statement = {forall_statement? ~ DEFINE  ~ define_rest}
-define_free      = {forall_statement? ~ DEFINE? ~ define_rest}
-define_rest      = _{define_symbol ~ parametric_types? ~ define_parameter}
-define_symbol    = {MODIFIERS* ~ namepath ~ (DOT ~ Symbol)?}
+//!#C678DD: DEFINE
+define_statement = {
+    forall_statement? ~ DEFINE ~ MODIFIERS* ~ Symbol ~
+    parametric_types? ~ define_parameter ~ return_type? ~ return_effect? ~ block
+}
+define_free = {
+    forall_statement? ~ DEFINE? ~ MODIFIERS* ~ Symbol ~
+    parametric_types? ~ define_parameter ~ return_type? ~ return_effect? ~ block?
+}
 parametric_types = {"[" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ "]"}
 parametric_types_pair = {(ADD|SUB)? ~ Symbol}
 define_parameter = {
     "(" ~ define_pair ~ (Comma ~ define_pair)* ~ Comma? ~ ")"
   | "(" ~ ")"
 }
-define_pair      = {(define_special|Symbol) ~ type_hint? ~ (Set ~ expr)?}
+define_pair      = {MODIFIERS* ~ DEFINE_MARK? ~ (DEFINE_SPECIAL|Symbol) ~ type_hint? ~ (Set ~ expr)?}
 return_type      = {(Colon|To) ~ type_expr}
+return_effect    = {
+    Slash ~ type_expr
+  | Slash ~ "[" ~ "]"
+  | Slash ~ "[" ~ type_expr ~ (Comma ~ type_expr) ~ Comma? ~ "]"
+}
 DEFINE           = @{"def"}
-define_special   = @{"self" | "<" | ">"}
+DEFINE_SPECIAL   = ${SELF | LT | GT}
+DEFINE_MARK      = ${"..."|".."|POWER}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation      = {annotation_call+~statement}
@@ -148,6 +152,16 @@ annotation_call = @{Sharp~(apply|Symbol)}
 macro_call      = @{At ~(apply|Symbol) }
 Sharp =@{"#"}
 At    =@{"@"}
+/*====================================================================================================================*/
+//!#E06C75: type_hint|generic_type|parametric_types_pair
+type_expr = {type_term ~ (TypeInfix ~ type_term)*}
+type_term = {Prefix* ~ type_node ~ Suffix*}
+type_node = {"(" ~ type_expr ~ ")"|data}
+type_hint = {Colon ~ type_expr}
+generic_type = {"[" ~ type_expr ~ (Comma ~ type_expr)* ~ Comma? ~ "]"}
+//TypePrefix = @{Plus|Minus}
+//TypeSuffix = @{Question}
+TypeInfix = @{Or}
 /*====================================================================================================================*/
 expression = {expr ~ eos?}
 expr       = {term ~ (Infix ~ term)*}
@@ -184,16 +198,6 @@ index_steps = _{index_start? ~ Colon ~ index_end? ~ Colon ~ index_step?}
 index_start =  {expr}
 index_end   =  {expr}
 index_step  =  {expr}
-/*====================================================================================================================*/
-//!#E06C75: type_hint|generic_type|parametric_types_pair
-type_expr = _{term ~ (TypeInfix ~ term)*}
-//type_term = {Prefix* ~ type_node ~ Suffix*}
-//type_node = {"(" ~ type_expr ~ ")"|data}
-type_hint = {Colon ~ type_expr}
-generic_type = {"[" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ "]"}
-//TypePrefix = @{Plus|Minus}
-//TypeSuffix = @{Question}
-TypeInfix = @{Or}
 /*====================================================================================================================*/
 data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath}
 tuple       =  {"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
@@ -276,8 +280,8 @@ Infix = _{
   | (LOGIC_AND|LOGIC_OR)
   | (ADD|SUB)
   | (Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo)
-  | Power
-  | (Grater|GraterEqual|Equal)
+  | POWER
+  | (GT|GraterEqual|Equal)
   //| Dot
 }
 
@@ -300,15 +304,15 @@ Solidus = @{"\\"}
 
 DOT = @{"."}
 
-
+//!#56B6C2: LT|GT
 Load =@{"<<<"|"⋘"} //U+22D8
 Save =@{">>>"|"⋙"} //U+22D9
 LeftShift =@{"<<"|"≪"} //U+226A
 RightShift =@{">>"|"≫"} //U+226B
 LessEqual =@{"<="}
 GraterEqual =@{">="}
-Less =@{"<"}
-Grater =@{">"}
+LT =@{"<"}
+GT =@{">"}
 
 
 
@@ -329,16 +333,14 @@ Divide = @{Slash | "÷"} //U+00F7
 Quotient = @{"//"}
 Modulo = @{"%"}
 
-
-Power = @{"^"}
-Surd = @{"√"} //U+221A
-
-
+//!#56B6C2: POWER|SURD
+POWER = @{"^"}
+SURD = @{"√"} //U+221A
 
 
 
-To =@{"->"}
-Elvis =@{":?"}
+
+To =@{"->"|"→"}
 
 
 
