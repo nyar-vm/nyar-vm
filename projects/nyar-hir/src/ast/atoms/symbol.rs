@@ -55,4 +55,8 @@ impl Symbol {
         };
         Self { name: other.name, scope }
     }
+    //noinspection RsSelfConvention
+    pub fn as_node(self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::Symbol(box self), span }
+    }
 }

@@ -9,6 +9,7 @@ pub use nyar_error::{NyarError, Result};
 pub use nyar_hir::{ASTKind, ASTNode};
 
 pub mod engine;
+mod evaluate;
 mod symbols;
 pub mod typing;
 pub mod utils;

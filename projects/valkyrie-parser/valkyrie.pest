@@ -10,8 +10,8 @@ statement = {
   | if_statement ~ eos?
   | for_statement ~ eos?
   | while_statement ~ eos?
-  | assignStatement ~ eos?
-  | defineStatement ~ eos?
+  | assign_statement ~ eos?
+  | define_statement ~ eos?
   | annotation ~ eos?
   | expression
 }
@@ -37,9 +37,9 @@ use_split    = _{DOT|Proportion}
 use_symbol   = _{use_special|Symbol}
 use_namepath =  {use_symbol ~ (use_split ~ use_symbol)*}
 //!#C678DD: IMPORT|AS|use_special
-IMPORT = @{"using" ~ ("!"|"?"|"*")?}
-AS     = @{"as!"|"as?"|"as*"|"as"}
-use_special = @{"depot"|"self"|"*"}
+IMPORT       = @{"using" ~ ("!"|"?"|"*")?}
+AS           = @{"as!"|"as?"|"as*"|"as"}
+use_special  = @{"depot"|"self"|"*"}
 /*====================================================================================================================*/
 //!#C678DD: WHILE|FOR|IN
 for_statement = {
@@ -90,7 +90,7 @@ traitStatement = {TRAIT ~ assign_pair ~ class_block?}
 class_block = {"{" ~ short_statement* ~ "}"}
 short_statement = {
     emptyStatement
-  | DEFINE? ~ define_terms ~ eos?
+  | DEFINE? ~ define_symbol ~ eos?
     // mut a = 1 ;
   | assign_pair ~ separator?
   | short_annotation ~ eos?
@@ -105,17 +105,20 @@ extendStatement = {
 with_trait = {"with" ~ Symbol ~ parametric_types?}
 EXTENDS = @{"extends"}
 /*====================================================================================================================*/
-assignStatement = {
+assign_statement = {
     // let (mut a: int, ) = 1;
-    LET ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ Set ~ expr ~ eos?
+    LET ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ Set ~ assign_rhs ~ eos?
     // let (a: int, b: int)
     // let (a, b): (int, int)
   | LET ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ eos?
     // let mut a: int, = 1;
-  | LET ~ assign_name ~ Set ~ expr ~ eos?
+  | LET ~ assign_name ~ Set ~ assign_rhs ~ eos?
     // let a, b: int;
   | LET ~ assign_name ~ eos
   | LET ~ short_statement ~ eos?
+}
+assign_rhs = _{
+    if_statement|match_statement|expr
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
 assign_pair = {MODIFIERS* ~ Symbol ~ type_hint?}
@@ -123,21 +126,21 @@ assign_pair = {MODIFIERS* ~ Symbol ~ type_hint?}
 ///#C678DD
 LET = @{"let"}
 /*====================================================================================================================*/
-defineStatement = {DEFINE}
-define_terms = _{
-    MODIFIERS* ~ freepath
-}
+//!#C678DD: DEFINE|define_special
+define_statement = {forall_statement? ~ DEFINE  ~ define_rest}
+define_free      = {forall_statement? ~ DEFINE? ~ define_rest}
+define_rest      = _{define_symbol ~ parametric_types? ~ define_parameter}
+define_symbol    = {MODIFIERS* ~ namepath ~ (DOT ~ Symbol)?}
 parametric_types = {"[" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ "]"}
 parametric_types_pair = {(ADD|SUB)? ~ Symbol}
-
 define_parameter = {
     "(" ~ define_pair ~ (Comma ~ define_pair)* ~ Comma? ~ ")"
   | "(" ~ ")"
 }
-define_pair = {Symbol ~ type_hint? ~ (Set ~ expr)?}
-return_type = {(Colon|To) ~ type_expr}
-//!#C678DD: DEFINE|WHERE
-DEFINE = @{"def"}
+define_pair      = {(define_special|Symbol) ~ type_hint? ~ (Set ~ expr)?}
+return_type      = {(Colon|To) ~ type_expr}
+DEFINE           = @{"def"}
+define_special   = @{"self" | "<" | ">"}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation      = {annotation_call+~statement}
@@ -254,9 +257,10 @@ Comma      = _{","} //U+FF0C
 Colon      = _{":"} //U+FF1A
 Semicolon  = _{";"}
 Separate   = _{";;"}
-//!Orange: Modifier
-// Keywords = !{If|For}
-MODIFIERS = @{(!(Symbol~(DOT|Set|Comma|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~ Symbol)}
+//!Orange: MODIFIERS
+MODIFIERS = @{
+    !(Symbol~(DOT|Set|Comma|Proportion|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~ Symbol
+}
 //!#56B6C2: Prefix|Infix|Postfix
 Prefix = @{
     (BANG|ADD|SUB|Star)

@@ -38,13 +38,10 @@ pub enum Value {
     Null,
     Unit,
     Boolean(bool),
-
     Integer(BigInt),
     Decimal(BigDecimal),
-
     Character(char),
     String(String),
-
     List(Vec<Self>),
     Vector(Vec<Self>),
     Tuple(Vec<Self>),

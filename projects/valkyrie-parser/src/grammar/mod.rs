@@ -17,6 +17,7 @@ use std::lazy::SyncLazy;
 pub(crate) mod context;
 pub(crate) mod control_flow;
 pub(crate) mod data;
+pub(crate) mod define;
 pub(crate) mod expression_node;
 pub(crate) mod operators;
 pub(crate) mod parser;
@@ -44,10 +45,11 @@ impl ParsingContext {
                 Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
                 // Rule::emptyStatement => nodes.push(ASTNode::program(r)),
                 Rule::import_statement => nodes.extend(self.parse_import(pair)),
-                Rule::assignStatement => {
+                Rule::assign_statement => {
                     let s = self.parse_assign(pair);
                     nodes.extend(s.iter().cloned());
                 }
+                Rule::define_statement => nodes.push(self.parse_define(pair)),
                 Rule::if_statement => nodes.push(self.parse_if(pair)),
                 Rule::while_statement => nodes.push(self.parse_while(pair)),
                 Rule::for_statement => nodes.push(self.parse_for(pair)),

@@ -1,11 +1,14 @@
+use nyar_error::{
+    third_party::{num::Zero, BigDecimal, BigInt},
+    NyarError,
+};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fmt::{Debug, Display, Formatter},
     ops::{AddAssign, Deref},
     str::FromStr,
 };
-
-use serde::{Deserialize, Serialize};
 
 use nyar_error::Span;
 
@@ -15,7 +18,9 @@ pub use crate::ast::{
         import::{ImportBuilder, ImportStatement},
     },
     atoms::{
-        number_literal::{ByteLiteral, DecimalLiteral, IntegerLiteral},
+        byte_literal::ByteLiteral,
+        decimal_literal::DecimalLiteral,
+        integer_literal::IntegerLiteral,
         string_literal::StringLiteral,
         string_template::StringTemplateBuilder,
         symbol::Symbol,
