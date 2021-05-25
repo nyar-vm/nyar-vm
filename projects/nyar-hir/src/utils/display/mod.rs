@@ -15,6 +15,7 @@ use crate::{
 mod atom;
 mod call;
 mod control;
+mod difinition;
 mod expr;
 
 impl ASTNode {
@@ -112,6 +113,7 @@ impl VLanguage for ASTKind {
             ASTKind::XMLTemplate(v) => arena.hard_block("template-xml", v.iter().map(|item| item.v_format(arena))),
             ASTKind::Symbol(v) => v.v_format(arena),
             ASTKind::ImportStatement(v) => v.v_format(arena),
+            ASTKind::DefineFunction(v) => v.v_format(arena),
         }
     }
 }

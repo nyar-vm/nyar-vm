@@ -1,8 +1,9 @@
 use nyar_hir::ast::ImportBuilder;
+use std::sync::LazyLock;
 
 use super::*;
 
-pub static PREC_CLIMBER: SyncLazy<PrecClimber<Rule>> = SyncLazy::new(|| {
+pub static PREC_CLIMBER: LazyLock<PrecClimber<Rule>> = LazyLock::new(|| {
     //TODO: use macro
     use crate::Rule::*;
     PrecClimber::new(vec![

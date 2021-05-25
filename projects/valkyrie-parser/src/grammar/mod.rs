@@ -12,7 +12,6 @@ use pest::prec_climber::{
     Assoc::{Left, Right},
     Operator, PrecClimber,
 };
-use std::lazy::SyncLazy;
 
 pub(crate) mod context;
 pub(crate) mod control_flow;

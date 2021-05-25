@@ -1,5 +1,5 @@
 use nyar_error::{
-    third_party::{num::Zero, BigDecimal, BigInt},
+    third_party::{num::Zero, BigDecimal},
     NyarError,
 };
 use serde::{Deserialize, Serialize};
@@ -28,10 +28,7 @@ pub use crate::ast::{
     },
     chain::*,
     control::*,
-    definition::{
-        function::{DefineBuilder, DefineFunction},
-        LetBind,
-    },
+    definition::{function::FunctionDefinition, LetBind},
     expression::{infix::InfixCall, Expression},
     function::LambdaFunction,
     looping::{ForInLoop, LoopStatement, WhileLoop},
@@ -84,7 +81,7 @@ pub enum ASTKind {
     ///     then
     /// }
     /// ```
-    DefineFunction(Box<DefineFunction>),
+    DefineFunction(Box<FunctionDefinition>),
     /// Lambda Function
     LambdaFunction(Box<LambdaFunction>),
     /// ```vk

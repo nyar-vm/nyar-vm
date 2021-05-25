@@ -1,28 +1,29 @@
 use super::*;
 
-pub struct DefineFunction {
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FunctionDefinition {
     pub symbol: SymbolNode,
+    pub modifiers: Vec<String>,
+    pub block: Vec<ASTNode>,
 }
 
-pub struct DefineBuilder {
-    symbol: SymbolNode,
-    block: Vec<ASTNode>,
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FunctionParameter {
+    pub symbol: SymbolNode,
+    pub modifiers: Vec<String>,
+    pub default: Option<ASTNode>,
 }
 
-impl Default for DefineBuilder {
-    fn default() -> Self {
-        DefineBuilder { symbol: Default::default(), block: vec![] }
-    }
+pub enum FunctionParameterKind {
+    Normal,
 }
 
-impl DefineBuilder {
+impl FunctionDefinition {
     pub fn push_symbol(&mut self, symbol: Symbol, span: Span) {
         self.symbol = SymbolNode(symbol, span)
     }
-    pub fn push_block(&mut self, block: Vec<ASTNode>, span: Span) {
-        self.block = block;
-    }
-    pub fn as_node(&self, span: Span) -> ASTNode {
-        ASTNode { kind: ASTKind::Define(box self.clone()), span }
+    //noinspection RsSelfConvention
+    pub fn as_node(self, span: Span) -> ASTNode {
+        ASTNode { kind: ASTKind::DefineFunction(box self), span }
     }
 }

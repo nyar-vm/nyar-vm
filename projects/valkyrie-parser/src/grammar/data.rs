@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, SymbolNode, TableExpression};
+use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, TableExpression};
 
 use super::*;
 
@@ -137,6 +137,9 @@ impl ParsingContext {
             Rule::SYMBOL_ESCAPE => Symbol::atom(trim_first_last(pair.as_str())),
             _ => unreachable!(),
         }
+    }
+    pub(crate) fn parse_modifiers(&self, pairs: Pair<Rule>) -> Vec<String> {
+        pairs.into_inner().filter(|f| f.as_rule() == Rule::Symbol).map(|pair| self.parse_symbol(pair).name).collect()
     }
     pub(crate) fn parse_namepath(&self, pairs: Pair<Rule>) -> Symbol {
         let mut out = vec![];
