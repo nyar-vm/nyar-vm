@@ -76,6 +76,13 @@ impl ParsingContext {
 }
 
 impl ParsingContext {
+    pub(crate) fn parse_effect_type(&mut self, pairs: Pair<Rule>) -> Vec<ASTNode> {
+        let _ = pairs.into_inner().filter(|pair| pair.as_rule() == Rule::type_expr);
+        vec![]
+    }
+}
+
+impl ParsingContext {
     fn dot_call(&mut self, pairs: Pair<Rule>, chain: &mut ChainCall) {
         let r = self.get_span(&pairs);
         let node = union_node(pairs);

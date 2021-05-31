@@ -9,7 +9,6 @@ pub use self::{
 
 mod apply_call;
 mod block_call;
-mod dict_call;
 mod dot_call;
 mod slice_call;
 mod unary_call;

@@ -11,6 +11,7 @@ if a {1} else if b {2}
 if a {1} else if b {2} else {3}
 if a {1} else if b {2} else if c {3}
 if a {1} else if b {2} else if c {3} else {4}
+if \\\*\\\ a \\\*\\\ {1} \\\*\\\ else \\\*\\\ if \\\*\\\ b \\\*\\\ {2} \\\*\\\ else \\\*\\\ {3}
 "#;
 
 #[test]

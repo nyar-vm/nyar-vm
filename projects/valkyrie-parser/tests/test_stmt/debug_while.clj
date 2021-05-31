@@ -152,3 +152,5 @@
         (else
             (block scoped
                 nothing))))
+(block scoped
+    while)

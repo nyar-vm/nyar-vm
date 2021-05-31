@@ -4,7 +4,7 @@ const INPUT: &str = r#"
 using std;
 using `python`.numpy as npy
 using {
-    ~ wow!
+    \\ wow!
     `python`.torch as tf
 }
 using "script/path" {

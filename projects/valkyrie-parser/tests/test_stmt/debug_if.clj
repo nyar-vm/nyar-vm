@@ -82,3 +82,5 @@
         (else
             (block scoped
                 4))))
+(block scoped
+    if)

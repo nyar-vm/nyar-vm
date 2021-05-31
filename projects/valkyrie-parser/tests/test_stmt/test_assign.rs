@@ -26,11 +26,11 @@ const DEFINE: &str = r#"
 def function() {}
 
 def eager function() {}
-def function(self, <, >) {}
+def function(self, ...list: List , <, >) {}
 def function(input: Integer = 0) {}
 
-def function() -> Integer {}
-def function() / DivideZero {}
+def \\\*\\\ function() -> Integer \\\*\\\ {}
+def \\\*\\\ function() / DivideZero \\\*\\\ {}
 
 def eager function(mut self, <, input: Integer = 0, >, ^list: List) -> Integer / [DivideZero, ParseError] {
 

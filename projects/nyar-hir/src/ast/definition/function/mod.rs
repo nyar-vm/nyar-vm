@@ -16,11 +16,11 @@ pub struct FunctionParameter {
     pub default: Option<ASTNode>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum FunctionParameterKind {
-    Normal,
-    DelimiterPositional,
-    DelimiterNamed,
+    BothAvailable,
+    PositionalOnly,
+    NamedOnly,
     Deconstruct2,
     Deconstruct3,
     Receiver,
@@ -28,7 +28,7 @@ pub enum FunctionParameterKind {
 
 impl Default for FunctionParameterKind {
     fn default() -> Self {
-        Self::DelimiterPositional
+        Self::PositionalOnly
     }
 }
 
@@ -46,17 +46,15 @@ impl FunctionParameter {
     pub fn push_symbol(&mut self, symbol: Symbol, span: Span) {
         self.symbol = SymbolNode(symbol, span)
     }
-    pub fn push_special(&mut self, symbol: &str, span: Span) {
-        match symbol {
-            "self" => self.symbol = SymbolNode(Symbol::atom("self"), span),
-            "<" => self.kind = FunctionParameterKind::DelimiterPositional,
-            ">" => self.kind = FunctionParameterKind::DelimiterNamed,
-            _ => {}
-        }
-    }
     pub fn is_delimiter(&self) -> bool {
-        match self.kind {
-            FunctionParameterKind::DelimiterPositional | FunctionParameterKind::DelimiterNamed => true,
+        self.kind.is_delimiter()
+    }
+}
+
+impl FunctionParameterKind {
+    pub fn is_delimiter(&self) -> bool {
+        match self {
+            FunctionParameterKind::PositionalOnly | FunctionParameterKind::NamedOnly => true,
             _ => false,
         }
     }

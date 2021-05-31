@@ -8,6 +8,7 @@
         5:13,
     ),
     modifiers: [],
+    parameters: [],
     block: [],
 })
 (block scoped
@@ -22,6 +23,7 @@
     modifiers: [
         "eager",
     ],
+    parameters: [],
     block: [],
 })
 (block scoped
@@ -34,6 +36,32 @@
         48:56,
     ),
     modifiers: [],
+    parameters: [
+        FunctionParameter {
+            kind: PositionalOnly,
+            symbol: SymbolNode(
+                Symbol {
+                    name: "self",
+                    scope: [],
+                },
+                57:61,
+            ),
+            modifiers: [],
+            default: None,
+        },
+        FunctionParameter {
+            kind: Deconstruct3,
+            symbol: SymbolNode(
+                Symbol {
+                    name: "list",
+                    scope: [],
+                },
+                66:70,
+            ),
+            modifiers: [],
+            default: None,
+        },
+    ],
     block: [],
 })
 (block scoped
@@ -43,9 +71,33 @@
             name: "function",
             scope: [],
         },
-        76:84,
+        92:100,
     ),
     modifiers: [],
+    parameters: [
+        FunctionParameter {
+            kind: PositionalOnly,
+            symbol: SymbolNode(
+                Symbol {
+                    name: "input",
+                    scope: [],
+                },
+                101:106,
+            ),
+            modifiers: [],
+            default: Some(
+                ASTNode {
+                    kind: Integer(
+                        IntegerLiteral {
+                            handler: "",
+                            value: 0,
+                        },
+                    ),
+                    span: 118:119,
+                },
+            ),
+        },
+    ],
     block: [],
 })
 (block scoped
@@ -55,34 +107,60 @@
             name: "function",
             scope: [],
         },
-        113:121,
-    ),
-    modifiers: [],
-    block: [],
-})
-(block scoped
-    FunctionDefinition {
-    symbol: SymbolNode(
-        Symbol {
-            name: "function",
-            scope: [],
-        },
-        142:150,
-    ),
-    modifiers: [],
-    block: [],
-})
-(block scoped
-    FunctionDefinition {
-    symbol: SymbolNode(
-        Symbol {
-            name: "function",
-            scope: [],
-        },
-        180:188,
+        228:236,
     ),
     modifiers: [
         "eager",
+    ],
+    parameters: [
+        FunctionParameter {
+            kind: PositionalOnly,
+            symbol: SymbolNode(
+                Symbol {
+                    name: "self",
+                    scope: [],
+                },
+                241:245,
+            ),
+            modifiers: [
+                "mut",
+            ],
+            default: None,
+        },
+        FunctionParameter {
+            kind: BothAvailable,
+            symbol: SymbolNode(
+                Symbol {
+                    name: "input",
+                    scope: [],
+                },
+                250:255,
+            ),
+            modifiers: [],
+            default: Some(
+                ASTNode {
+                    kind: Integer(
+                        IntegerLiteral {
+                            handler: "",
+                            value: 0,
+                        },
+                    ),
+                    span: 267:268,
+                },
+            ),
+        },
+        FunctionParameter {
+            kind: Receiver,
+            symbol: SymbolNode(
+                Symbol {
+                    name: "list",
+                    scope: [],
+                },
+                274:278,
+            ),
+            modifiers: [],
+            default: None,
+        },
     ],
     block: [],
 })
