@@ -28,7 +28,10 @@ pub use crate::ast::{
     },
     chain::*,
     control::*,
-    definition::{function::FunctionDefinition, LetBind},
+    definition::{
+        function::{FunctionDefinition, FunctionParameter, FunctionParameterKind},
+        LetBind,
+    },
     expression::{infix::InfixCall, Expression},
     function::LambdaFunction,
     looping::{ForInLoop, LoopStatement, WhileLoop},

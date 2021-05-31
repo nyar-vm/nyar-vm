@@ -131,6 +131,7 @@ define_free = {
 }
 parametric_types = {"[" ~ parametric_types_pair ~ (Comma ~ parametric_types_pair)* ~ "]"}
 parametric_types_pair = {(ADD|SUB)? ~ Symbol}
+/// (a, <, b , >, c)
 define_parameter = {
     "(" ~ define_pair ~ (Comma ~ define_pair)* ~ Comma? ~ ")"
   | "(" ~ ")"
@@ -143,8 +144,10 @@ return_effect    = {
   | Slash ~ "[" ~ type_expr ~ (Comma ~ type_expr) ~ Comma? ~ "]"
 }
 DEFINE           = @{"def"}
-DEFINE_SPECIAL   = ${SELF | LT | GT}
-DEFINE_MARK      = ${"..."|".."|POWER}
+DEFINE_SPECIAL   = ${LT | GT}
+DEFINE_MARK      = ${DOT3|DOT2|POWER}
+DOT3 = @{"..."}
+DOT2 = @{".."}
 /*====================================================================================================================*/
 //!Orange:annotation_call
 annotation      = {annotation_call+~statement}

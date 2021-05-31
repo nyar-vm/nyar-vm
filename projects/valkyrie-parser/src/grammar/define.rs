@@ -1,4 +1,4 @@
-use nyar_hir::ast::FunctionDefinition;
+use nyar_hir::ast::{FunctionDefinition, FunctionParameter, FunctionParameterKind, SymbolNode};
 
 use super::*;
 
@@ -36,8 +36,9 @@ impl ParsingContext {
         }
     }
     fn define_parameter(&self, pairs: Pair<Rule>, builder: &mut FunctionDefinition) {
-        for i in pairs.into_inner().filter(|f| f.as_rule() == Rule::define_pair) {
-            self.define_pair(i, builder)
+        let mut mode = FunctionParameterKind::default();
+        for item in pairs.into_inner().filter(|f| f.as_rule() == Rule::define_pair).map(|f| self.define_pair(f)) {
+            self.define_pair(i, mode)
         }
     }
     fn return_type(&mut self, pairs: Pair<Rule>, builder: &mut FunctionDefinition) {
@@ -46,14 +47,18 @@ impl ParsingContext {
     fn return_effect(&mut self, pairs: Pair<Rule>, builder: &mut FunctionDefinition) {
         let _ = pairs.into_inner().filter(|pair| pair.as_rule() == Rule::type_expr);
     }
-    fn define_pair(&self, pairs: Pair<Rule>, builder: &mut FunctionDefinition) {
+    fn define_pair(&self, pairs: Pair<Rule>, mode: &mut FunctionParameterKind) -> Option<FunctionParameter> {
+        let mut builder = FunctionParameter::default();
         for pair in pairs.into_inner() {
+            let r = self.get_span(&pair);
             match pair.as_rule() {
-                Rule::DEFINE_SPECIAL => match pair.as_str() {
-                    _ => unimplemented!("{}", pair.as_str()),
-                },
+                Rule::DEFINE_SPECIAL => builder.push_special(pair.as_str(), mode, r),
                 _ => debug_cases!(pair),
             }
+        }
+        match builder.is_delimiter() {
+            true => None,
+            false => Some(builder),
         }
     }
 }

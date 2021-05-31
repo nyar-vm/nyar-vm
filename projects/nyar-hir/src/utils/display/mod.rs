@@ -15,7 +15,7 @@ use crate::{
 mod atom;
 mod call;
 mod control;
-mod difinition;
+mod definition;
 mod expr;
 
 impl ASTNode {
