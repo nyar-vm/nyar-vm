@@ -16,6 +16,7 @@ impl Debug for Prefix {
             Prefix::Negative => f.write_str("Negative::negative"),
             Prefix::Positive => f.write_str("Positive::positive"),
             Prefix::Not => f.write_str("Not::not"),
+            Prefix::Fraction(a, b) => write!(f, "{a}/{b}"),
         }
     }
 }
@@ -30,6 +31,10 @@ impl Debug for Infix {
             Infix::Concat => f.write_str("Concat::concat"),
             Infix::Remove => f.write_str("Remove::remove"),
             Infix::Power => f.write_str("Power::power"),
+            Infix::In(true) => f.write_str("Container::contains"),
+            Infix::In(false) => f.write_str("!Container::contains"),
+            Infix::Is(true) => f.write_str("Instance::instanceof"),
+            Infix::Is(false) => f.write_str("!Instance::instanceof"),
         }
     }
 }
@@ -61,6 +66,7 @@ impl Display for Prefix {
             Prefix::Negative => f.write_str("-"),
             Prefix::Positive => f.write_str("+"),
             Prefix::Not => f.write_str("!"),
+            Prefix::Fraction(a, b) => write!(f, "{a}/{b}"),
         }
     }
 }
@@ -75,6 +81,10 @@ impl Display for Infix {
             Infix::Concat => f.write_str("++"),
             Infix::Remove => f.write_str("--"),
             Infix::Power => f.write_str("^"),
+            Infix::In(true) => f.write_str("∈"),
+            Infix::In(false) => f.write_str("∉"),
+            Infix::Is(true) => f.write_str("∈"),
+            Infix::Is(false) => f.write_str("∉"),
         }
     }
 }

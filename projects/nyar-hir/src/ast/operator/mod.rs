@@ -12,6 +12,7 @@ pub enum OperatorAssociativity {
 
 #[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Prefix {
+    Fraction(u8, u8),
     /// `-`
     Negative,
     /// `+`
@@ -36,6 +37,8 @@ pub enum Infix {
     Concat,
     // `--`
     Remove,
+    In(bool),
+    Is(bool),
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -79,6 +82,8 @@ impl Operator {
                 Infix::Power => 120,
                 Infix::Concat => 90,
                 Infix::Remove => 90,
+                Infix::In(_) => {80}
+                Infix::Is(_) => {80}
             },
         }
     }

@@ -15,6 +15,11 @@ true && false;
 0 + 0.0 + 0cm;
 "" ++ '';
 "$x" ++ '${y}';
+a >> a;
+a in a;
+a not in a;
+a is A;
+a is not a;
 "#;
 
 #[test]

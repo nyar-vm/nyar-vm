@@ -41,7 +41,7 @@ IMPORT       = @{"using" ~ ("!"|"?"|"*")?}
 AS           = @{"as!"|"as?"|"as*"|"as"}
 use_special  = @{"depot"|"self"|"*"}
 /*====================================================================================================================*/
-//!#C678DD: WHILE|FOR|IN
+//!#C678DD: WHILE|FOR
 for_statement = {
     FOR ~ Symbol ~ IN ~ expr_inline ~ block ~ else_block?
 }
@@ -51,7 +51,6 @@ while_statement = {
 }
 WHILE = @{"while"}
 FOR = @{"for"}
-IN = @{"in"}
 /*====================================================================================================================*/
 //!#C678DD: EXIT
 non_local_exit = {EXIT ~ expr}
@@ -158,18 +157,18 @@ type_pair    = {Symbol ~ Colon ~ type_expr}
 generic_type = {"[" ~ type_pair ~ (Comma ~ type_pair)* ~ Comma? ~ "]"}
 //TypePrefix = @{Plus|Minus}
 //TypeSuffix = @{Question}
-TypeInfix = @{Or}
+TypeInfix = @{"|"|"&"}
 /*====================================================================================================================*/
-expr_inline = {term_inline ~ (Infix ~ term_inline)*}
-term_inline = {Prefix* ~ node_inline ~ Suffix*}
-node_inline = {
+expr_inline = !{term_inline ~ (Infix ~ term_inline)*}
+term_inline =  {Prefix* ~ node_inline ~ Suffix*}
+node_inline =  {
     "(" ~ expr ~ ")"
   | data ~ call_inline*
 }
 call_inline = {DOT ~ (namepath|Integer) | Proportion ~ static_call | slice | apply}
 /*====================================================================================================================*/
 expression = {expr ~ eos?}
-expr       = {term ~ (Infix ~ term)*}
+expr       = !{term ~ (Infix ~ term)*}
 term       = {Prefix* ~ node ~ Suffix*}
 node       = {
     "(" ~ expr ~ ")"
@@ -198,12 +197,32 @@ index_start =  {expr}
 index_end   =  {expr}
 index_step  =  {expr}
 /*====================================================================================================================*/
-data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath}
+data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath|XML}
 tuple       =  {"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 table       =  {"[" ~ "]" | "[" ~ table_item? ~ (Comma ~ table_item)* ~ Comma? ~ "]"}
 table_item  = _{table_pair|expr}
 table_pair  =  {valid_key ~ Colon ~ expr}
 valid_key   = _{Integer | Symbol | String}
+/*====================================================================================================================*/
+//!#56B6C2: XC|XS|XE
+XML = !{xml}
+xml = _{XML_SELF | XML_TEXT | XML_CODE}
+XML_SELF = !{LT ~ namepath ~ XE}
+XML_TEXT = !{XML_SL ~ XML_ITEM* ~ XML_END}
+XML_CODE = !{XML_CL ~ XML_ITEM* ~ XML_END}
+XML_SL   = !{LT ~ namepath ~ GT}
+XML_CL   = !{XC ~ namepath ~ GT}
+XML_END  = !{XS ~ namepath ~ GT}
+XML_ITEM = ${
+    xml                     |
+    "{" ~ expr_inline ~ "}" | // ${a}, ${1 + 1}
+    StringUnicode           | // \u{20}
+    StringEscape            |
+    !(XC|XS|LT) ~ any
+}
+XC =@{"<!"}
+XS =@{"</"}
+XE =@{"/>"}
 /*====================================================================================================================*/
 // https://en.wikipedia.org/wiki/Quotation_mark#Summary_table
 ///#98C379
@@ -277,17 +296,21 @@ QUESTION = @{"?"}
 
 Infix = _{
     Set
-  | (CONCAT|REMOVE)
-  | (LOGIC_AND|LOGIC_OR)
-  | (ADD|SUB)
-  | (Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo)
+  | "+"{1,2}|"-"{1,2}
+  | LOGIC_AND|LOGIC_OR|AND|Or
+  | Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo
   | POWER
-  | (GT|GraterEqual|Equal)
+  | ">"{1,3}|GraterEqual|LT|GT|Equal
+  | NOT_IS|IS|NOT_IN|IN
   //| Dot
 }
 
-CONCAT = @{"++"}
-REMOVE = @{"--"}
+//!#C678DD: NOT_IS|NOT_IN|IN|IS
+IS = @{"is"|"∈"}
+NOT_IS = !{"is" ~ "not"|"∉"}
+IN = @{"in"|"∈"}
+NOT_IN = !{"not" ~ "in"|"∉"}
+
 
 ADD = @{"+"}
 SUB = @{"-"}
@@ -297,7 +320,6 @@ Or  = @{"|"}
 
 LOGIC_AND = @{"||"|"∧"}
 LOGIC_OR  = @{"&&"|"∨"}
-
 
 Star  = @{"*"}
 Slash = @{"/"}
