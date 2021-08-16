@@ -168,7 +168,7 @@ node_inline =  {
 call_inline = {DOT ~ (namepath|Integer) | Proportion ~ static_call | slice | apply}
 /*====================================================================================================================*/
 expression  =  {expr ~ eos?}
-expr        = !{(!XML ~ term) ~ (Infix ~ (!XML ~ term))*|XML}
+expr        =  {term ~ (Infix ~ (!XML ~ term))*}
 term        =  {Prefix* ~ node ~ Suffix*}
 node        =  {
     "(" ~ expr ~ ")"
@@ -197,7 +197,7 @@ index_start =  {expr}
 index_end   =  {expr}
 index_step  =  {expr}
 /*====================================================================================================================*/
-data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath}
+data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath|XML}
 tuple       =  {"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 table       =  {"[" ~ "]" | "[" ~ table_item? ~ (Comma ~ table_item)* ~ Comma? ~ "]"}
 table_item  = _{table_pair|expr}
@@ -209,7 +209,7 @@ valid_key   = _{Integer | Symbol | String}
 XML      = !{xml}
 xml      = _{XML_SELF | XML_TEXT | XML_CODE}
 XML_TEXT = ${XML_TS ~ XML_TEXT_ITEM* ~ XML_END}
-XML_CODE = ${XML_CS ~ XML_CODE_ITEM* ~ XML_END}
+XML_CODE = !{XML_CS ~ XML_CODE_ITEM* ~ XML_END}
 XML_SELF = !{"<" ~ namepath ~ XML_PAIR* ~ "/>"}
 XML_TS   = !{"<" ~ namepath ~ XML_PAIR* ~ ">"}
 XML_CS   = !{"<$" ~ namepath ~ XML_PAIR* ~ ">"}
@@ -217,16 +217,17 @@ XML_END  = !{"</" ~ namepath ~ ">"}
 XML_TEXT_ITEM = ${
     xml            |
     XML_ESCAPE     |
-    "$" ~ Symbol   | // $1, $a
+    "$" ~ namepath | // $1, $a
     STRING_SLOT    | // ${a}, ${1 + 1}
     STRING_UNICODE | // \u{20}
     STRING_ESCAPE  | // \a
     XML_RAW
 }
-XML_CODE_ITEM = ${xml|expression}
-XML_ESCAPE = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
-XML_PAIR = {(Symbol ~ (Colon|Set))? ~ term_inline}
-XML_RAW = @{!("</"|"<$"|"<") ~ (ANY)+}
+XML_CODE_ITEM = ${xml|statement}
+XML_ESCAPE    = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
+XML_PAIR      = {(XML_SYMBOL ~ Set)? ~ term_inline}
+XML_SYMBOL    = {Symbol ~ (DOT ~ Symbol)*}
+XML_RAW       = @{!("</"|"<$"|"<") ~ ANY}
 /*====================================================================================================================*/
 // https://en.wikipedia.org/wiki/Quotation_mark#Summary_table
 ///#98C379
@@ -238,7 +239,7 @@ String         = ${
     Symbol? ~ "‹" ~ (StringItem|!"›" ~ any)* ~ "›"
 }
 StringItem     = _{
-    "$" ~ Symbol   | // $1, $a
+    "$" ~ namepath | // $1, $a
     STRING_SLOT    | // ${a}, ${1 + 1}
     STRING_UNICODE | // \u{20}
     STRING_ESCAPE
@@ -270,7 +271,7 @@ SYMBOL_XID = @{(XID_START|Underline) ~  XID_CONTINUE*}
 SYMBOL_ESCAPE = @{Quote ~ (!Quote ~ ANY)+ ~ Quote}
 Quote =@{"`"}
 /*====================================================================================================================*/
-//#7F848E
+//!#7F848E: COMMENT
 WHITESPACE = _{NEWLINE|WHITE_SPACE}
 COMMENT    = ${CommentN|Comment1}
 Comment1   = @{Solidus ~ (!NEWLINE ~ ANY)* }
@@ -299,7 +300,8 @@ QUESTION = @{"?"}
 
 Infix = _{
     Set
-  | "+"{1,2}|"-"{1,2}
+  | CONCAT|ADD
+  | REMOVE|SUB
   | LOGIC_AND|LOGIC_OR|AND|Or
   | Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo
   | POWER
@@ -317,6 +319,8 @@ NOT_IN = !{"not" ~ "in"|"∉"}
 
 ADD = @{"+"}
 SUB = @{"-"}
+CONCAT = @{"++"}
+REMOVE = @{"--"}
 
 AND = @{"&"}
 Or  = @{"|"}

@@ -25,6 +25,7 @@ pub use crate::ast::{
         string_template::StringTemplateBuilder,
         symbol::{Symbol, SymbolNode},
         table_literal::{KVPair, TableExpression},
+        xml_template::XMLTemplateBuilder,
     },
     chain::*,
     control::*,

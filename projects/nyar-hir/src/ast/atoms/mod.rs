@@ -5,5 +5,6 @@ pub(crate) mod string_literal;
 pub(crate) mod string_template;
 pub(crate) mod symbol;
 pub(crate) mod table_literal;
+pub(crate) mod xml_template;
 
 use super::*;

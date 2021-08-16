@@ -53,3 +53,17 @@ fn debug_multiline() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(MULTILINE);
     ast.save("tests/test_atoms/debug_multiline.clj")
 }
+
+const XML: &str = r#"
+<ul>
+    <li>first item</li>
+    <li>second item</li>
+    <li>third item</li>
+</ul>
+"#;
+
+#[test]
+fn debug_xml() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(XML);
+    ast.save("tests/test_atoms/debug_xml.clj")
+}

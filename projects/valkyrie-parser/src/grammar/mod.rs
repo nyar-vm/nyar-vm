@@ -1,6 +1,11 @@
 use pest::{iterators::Pair, Parser};
 
-use crate::{debug_cases, grammar::parser::ValkyrieParser, utils::trim_first_last, Rule};
+use crate::{
+    debug_cases,
+    grammar::parser::ValkyrieParser,
+    utils::{trim_first_last, TokenExtension},
+    Rule,
+};
 pub use context::ParsingContext;
 use nyar_error::{NyarError, Result, Span};
 use nyar_hir::{

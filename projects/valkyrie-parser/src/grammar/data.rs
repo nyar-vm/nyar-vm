@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, TableExpression};
+use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, TableExpression, XMLTemplateBuilder};
 
 use super::*;
 
@@ -31,6 +31,7 @@ impl ParsingContext {
             Rule::tuple => self.parse_tuple(pair),
             Rule::table => self.parse_table(pair),
             Rule::block => ASTNode::block(self.parse_block(pair), r),
+            Rule::XML => self.parse_xml(pair),
             _ => debug_cases!(pair),
         };
         Ok(value)
@@ -172,14 +173,32 @@ impl ParsingContext {
             return Ok(());
         }
         match pair.as_rule() {
-            Rule::Symbol => builder.push_handler(pair.as_str()),
+            // Rule::Symbol => builder.push_handler(pair.as_str()),
+            Rule::STRING_SLOT => builder.push_expression(self.string_slot(pair)),
             Rule::any => builder.push_character(pair.as_str(), r)?,
-            Rule::StringUnicode => builder.push_unicode(pair.as_str(), r)?,
-            Rule::StringEscape => builder.push_escape(pair.as_str(), r)?,
+            Rule::STRING_UNICODE => builder.push_unicode(pair.as_str(), r)?,
+            Rule::STRING_ESCAPE => builder.push_escape(pair.as_str(), r)?,
             Rule::namepath => builder.push_symbol(self.parse_namepath(pair), r),
-            Rule::expression => builder.push_expression(self.parse_expression(pair).0),
+            // Rule::expression => builder.push_expression(self.parse_expression(pair).0),
             _ => debug_cases!(pair), // _ => unreachable!(),
         };
         Ok(())
+    }
+    fn string_slot(&mut self, pairs: Pair<Rule>) -> ASTNode {
+        let expr = pairs.into_inner().filter(|pair| pair.as_rule() == Rule::expr_inline).next().unwrap();
+        self.parse_expr(expr)
+    }
+}
+
+impl ParsingContext {
+    pub(crate) fn parse_xml(&mut self, pairs: Pair<Rule>) -> ASTNode {
+        let mut builder = XMLTemplateBuilder::default();
+        for pair in pairs.into_inner() {
+            match pair.as_rule() {
+                Rule::XML_TEXT => continue,
+                _ => debug_cases!(pair), // _ => unreachable!(),
+            }
+        }
+        ASTNode::default()
     }
 }

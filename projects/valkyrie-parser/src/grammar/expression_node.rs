@@ -12,7 +12,6 @@ impl ParsingContext {
         PREC_CLIMBER.climb(
             pairs.into_inner().filter(|p| p.as_rule() != Rule::WHITESPACE),
             |pair: Pair<Rule>| match pair.as_rule() {
-                // Rule::WHITESPACE => ASTNode::empty_statement(r),
                 Rule::expr => self.parse_expr(pair),
                 Rule::term| Rule::term_inline => self.parse_term(pair),
                 _ => debug_cases!(pair),
