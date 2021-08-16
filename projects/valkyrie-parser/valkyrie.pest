@@ -159,7 +159,7 @@ generic_type = {"[" ~ type_pair ~ (Comma ~ type_pair)* ~ Comma? ~ "]"}
 //TypeSuffix = @{Question}
 TypeInfix = @{"|"|"&"}
 /*====================================================================================================================*/
-expr_inline = !{term_inline ~ (Infix ~ term_inline)*}
+expr_inline = !{(!XML ~ term_inline) ~ (Infix ~ (!XML ~ term_inline))*}
 term_inline =  {Prefix* ~ node_inline ~ Suffix*}
 node_inline =  {
     "(" ~ expr ~ ")"
@@ -167,10 +167,10 @@ node_inline =  {
 }
 call_inline = {DOT ~ (namepath|Integer) | Proportion ~ static_call | slice | apply}
 /*====================================================================================================================*/
-expression = {expr ~ eos?}
-expr       = !{term ~ (Infix ~ term)*}
-term       = {Prefix* ~ node ~ Suffix*}
-node       = {
+expression  =  {expr ~ eos?}
+expr        = !{(!XML ~ term) ~ (Infix ~ (!XML ~ term))*|XML}
+term        =  {Prefix* ~ node ~ Suffix*}
+node        =  {
     "(" ~ expr ~ ")"
   | data ~ call_once? ~ (callable+ ~ call_once?)+
   | data
@@ -197,55 +197,58 @@ index_start =  {expr}
 index_end   =  {expr}
 index_step  =  {expr}
 /*====================================================================================================================*/
-data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath|XML}
+data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath}
 tuple       =  {"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
 table       =  {"[" ~ "]" | "[" ~ table_item? ~ (Comma ~ table_item)* ~ Comma? ~ "]"}
 table_item  = _{table_pair|expr}
 table_pair  =  {valid_key ~ Colon ~ expr}
 valid_key   = _{Integer | Symbol | String}
 /*====================================================================================================================*/
-//!#56B6C2: XC|XS|XE
-XML = !{xml}
-xml = _{XML_SELF | XML_TEXT | XML_CODE}
-XML_SELF = !{LT ~ namepath ~ XE}
-XML_TEXT = !{XML_SL ~ XML_ITEM* ~ XML_END}
-XML_CODE = !{XML_CL ~ XML_ITEM* ~ XML_END}
-XML_SL   = !{LT ~ namepath ~ GT}
-XML_CL   = !{XC ~ namepath ~ GT}
-XML_END  = !{XS ~ namepath ~ GT}
-XML_ITEM = ${
-    xml                     |
-    "{" ~ expr_inline ~ "}" | // ${a}, ${1 + 1}
-    StringUnicode           | // \u{20}
-    StringEscape            |
-    !(XC|XS|LT) ~ any
+//!Orange: XML_ESCAPE|STRING_UNICODE|STRING_ESCAPE
+//!Red: XML_HEAD
+XML      = !{xml}
+xml      = _{XML_SELF | XML_TEXT | XML_CODE}
+XML_TEXT = ${XML_TS ~ XML_TEXT_ITEM* ~ XML_END}
+XML_CODE = ${XML_CS ~ XML_CODE_ITEM* ~ XML_END}
+XML_SELF = !{"<" ~ namepath ~ XML_PAIR* ~ "/>"}
+XML_TS   = !{"<" ~ namepath ~ XML_PAIR* ~ ">"}
+XML_CS   = !{"<$" ~ namepath ~ XML_PAIR* ~ ">"}
+XML_END  = !{"</" ~ namepath ~ ">"}
+XML_TEXT_ITEM = ${
+    xml            |
+    XML_ESCAPE     |
+    "$" ~ Symbol   | // $1, $a
+    STRING_SLOT    | // ${a}, ${1 + 1}
+    STRING_UNICODE | // \u{20}
+    STRING_ESCAPE  | // \a
+    XML_RAW
 }
-XC =@{"<!"}
-XS =@{"</"}
-XE =@{"/>"}
+XML_CODE_ITEM = ${xml|expression}
+XML_ESCAPE = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
+XML_PAIR = {(Symbol ~ (Colon|Set))? ~ term_inline}
+XML_RAW = @{!("</"|"<$"|"<") ~ (ANY)+}
 /*====================================================================================================================*/
 // https://en.wikipedia.org/wiki/Quotation_mark#Summary_table
 ///#98C379
-String        = ${
+String         = ${
     Symbol? ~ PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ (StringItem|!PEEK ~ any)* ~ POP |
     Symbol? ~ "『" ~ (StringItem|!"』" ~ any)* ~ "』" |
     Symbol? ~ "「" ~ (StringItem|!"」" ~ any)* ~ "」" |
     Symbol? ~ "«" ~ (StringItem|!"»" ~ any)* ~ "»" |
     Symbol? ~ "‹" ~ (StringItem|!"›" ~ any)* ~ "›"
 }
-StringItem    = _{
-    "$" ~ Integer           | // $1, $a
-    "$" ~ namepath          | // $1, $a
-    "${" ~ expression ~ "}" | // ${a}, ${1 + 1}
-    StringUnicode           | // \u{20}
-    StringEscape
+StringItem     = _{
+    "$" ~ Symbol   | // $1, $a
+    STRING_SLOT    | // ${a}, ${1 + 1}
+    STRING_UNICODE | // \u{20}
+    STRING_ESCAPE
 }
-StringEscape  = @{"\\" ~ any}
-StringUnicode = @{"\\u" ~ "{" ~ASCII_ALPHANUMERIC* ~ "}"}
-Quotation     = _{"\""}
-Apostrophe    = _{"'"}
-any           = @{ANY}
-// XmlEscaped = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
+Quotation      = _{"\""}
+Apostrophe     = _{"'"}
+STRING_ESCAPE  = @{"\\" ~ any}
+STRING_SLOT    = !{"${" ~ expr_inline ~ "}"}
+STRING_UNICODE = @{"\\u" ~ "{" ~ASCII_ALPHANUMERIC* ~ "}"}
+any            = @{ANY}
 /*====================================================================================================================*/
 //!#D19A66: Integer|Decimal|DecimalBad|Byte
 //!#D19A66: Special
@@ -330,7 +333,7 @@ DOT  = @{"."}
 DOT2 = @{".."}
 DOT3 = @{"..."}
 
-//!#56B6C2: LT|GT
+
 Load =@{"<<<"|"⋘"} //U+22D8
 Save =@{">>>"|"⋙"} //U+22D9
 LeftShift =@{"<<"|"≪"} //U+226A
