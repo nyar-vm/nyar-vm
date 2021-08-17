@@ -2,6 +2,7 @@
 #![feature(generators)]
 #![feature(box_syntax)]
 #![feature(try_blocks)]
+#![feature(never_type)]
 
 extern crate core;
 

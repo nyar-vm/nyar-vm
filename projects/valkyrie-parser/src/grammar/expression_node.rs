@@ -1,20 +1,18 @@
 use nyar_hir::ast::{ApplyArgument, ChainCall, SliceArgument, UnaryArgument};
 
-use crate::utils::union_node;
-
 use super::*;
 
 impl ParsingContext {
     #[rustfmt::skip]
-    pub(crate) fn parse_expr(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
+    pub(crate) fn parse_expr(&mut self, pairs: Token) -> Result<ASTNode> {
+        let r = pairs.span;
         // println!("{:#?}", token);
         PREC_CLIMBER.climb(
             pairs.into_inner().filter(|p| p.as_rule() != Rule::WHITESPACE),
             |pair: Pair<Rule>| match pair.as_rule() {
                 Rule::expr => self.parse_expr(pair),
                 Rule::term| Rule::term_inline => self.parse_term(pair),
-                _ => debug_cases!(pair),
+                _ => pair.debug_cases()?,
             },
             |left: ASTNode, op: Pair<Rule>, right: ASTNode| {
                 left.push_infix_chain(op.as_str(), right, r)
@@ -22,16 +20,15 @@ impl ParsingContext {
         )
     }
 
-    fn parse_term(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
+    fn parse_term(&mut self, pairs: Token) -> ASTNode {
         let mut chain = ChainCall::default();
         let mut unary = UnaryArgument::default();
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             match pair.as_rule() {
                 Rule::WHITESPACE | Rule::COMMENT => continue,
                 Rule::node | Rule::node_inline => self.parse_node(pair, &mut chain),
-                Rule::Prefix => unary.push_prefix(pair.as_str()),
-                Rule::Suffix => unary.push_suffix(pair.as_str()),
+                Rule::Prefix => unary.push_prefix(pair.text),
+                Rule::Suffix => unary.push_suffix(pair.text),
                 _ => unreachable!(),
             };
         }
@@ -39,7 +36,7 @@ impl ParsingContext {
         chain.as_node(r)
     }
 
-    fn parse_node(&mut self, pairs: Pair<Rule>, chain: &mut ChainCall) {
+    fn parse_node(&mut self, pairs: Token, chain: &mut ChainCall) {
         let mut pairs = pairs.into_inner();
         let head = pairs.next().unwrap();
         let head = match head.as_rule() {
@@ -54,12 +51,12 @@ impl ParsingContext {
                 Rule::COMMENT => continue,
                 Rule::callable => self.parse_callable(pair, chain),
                 Rule::block => chain.push_continuation(self.parse_block(pair)),
-                _ => debug_cases!(pair),
+                _ => pair.debug_cases()?,
             };
         }
     }
-    fn parse_callable(&mut self, pairs: Pair<Rule>, chain: &mut ChainCall) {
-        for pair in pairs.into_inner() {
+    fn parse_callable(&mut self, pairs: Token, chain: &mut ChainCall) {
+        for pair in &pairs {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
                 Rule::COMMENT => continue,
@@ -68,24 +65,23 @@ impl ParsingContext {
                 Rule::slice => *chain += self.parse_slice(pair),
                 Rule::dot_call => self.dot_call(pair, chain),
                 // Rule::block => *chain += self.parse_block(pair),
-                _ => debug_cases!(pair),
+                _ => pair.debug_cases()?,
             };
         }
     }
 }
 
 impl ParsingContext {
-    pub(crate) fn parse_effect_type(&mut self, pairs: Pair<Rule>) -> Vec<ASTNode> {
+    pub(crate) fn parse_effect_type(&mut self, pairs: Token) -> Vec<ASTNode> {
         let _ = pairs.into_inner().filter(|pair| pair.as_rule() == Rule::type_expr);
         vec![]
     }
 }
 
 impl ParsingContext {
-    fn dot_call(&mut self, pairs: Pair<Rule>, chain: &mut ChainCall) {
-        let r = self.get_span(&pairs);
-        let node = union_node(pairs);
-        match node.as_rule() {
+    fn dot_call(&mut self, pairs: Token, chain: &mut ChainCall) -> Result<()> {
+        let node = pairs.first()?;
+        match node.rule {
             Rule::namepath => chain.dot_symbol_call(self.parse_namepath(node)),
             Rule::Integer => chain.dot_number_call(self.parse_integer(node), r),
             // Rule::WHITESPACE | Rule::DOT => continue,
@@ -98,24 +94,25 @@ impl ParsingContext {
             //     *chain += self.parse_namepath(node)
             // },
             // Rule::block => *chain += self.parse_block(pair),
-            _ => debug_cases!(node),
+            _ => node.debug_cases()?,
         };
+        Ok(())
     }
 }
 
 impl ParsingContext {
-    fn parse_apply(&mut self, pairs: Pair<Rule>) -> ApplyArgument {
+    fn parse_apply(&mut self, pairs: Token) -> Result<ApplyArgument> {
         let mut args = ApplyArgument::default();
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             assert_eq!(pair.as_rule(), Rule::apply_item);
             match self.parse_apply_item(pair, &mut args) {
                 Ok(_) => (),
                 Err(e) => self.push_error(e),
             }
         }
-        args
+        Ok(args)
     }
-    fn parse_apply_item(&mut self, pairs: Pair<Rule>, args: &mut ApplyArgument) -> Result<()> {
+    fn parse_apply_item(&mut self, pairs: Token, args: &mut ApplyArgument) -> Result<()> {
         let mut pairs = pairs.into_inner();
         let value = unsafe {
             let node = pairs.next_back().unwrap_unchecked();
@@ -133,32 +130,32 @@ impl ParsingContext {
 }
 
 impl ParsingContext {
-    fn parse_slice(&mut self, pairs: Pair<Rule>) -> SliceArgument {
+    fn parse_slice(&mut self, pairs: Token) -> Result<SliceArgument> {
         let mut args = SliceArgument::default();
-        for pair in pairs.into_inner() {
+        for pair in &pairs.filter_node() {
             assert_eq!(pair.as_rule(), Rule::index);
             self.parse_index(pair, &mut args);
         }
         args
     }
-    fn parse_index(&mut self, pairs: Pair<Rule>, args: &mut SliceArgument) {
+    fn parse_index(&mut self, pairs: Token, args: &mut SliceArgument) -> Result<()> {
         let mut start = None;
         let mut end = None;
         let mut step = None;
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
                 Rule::COMMENT => continue,
-                Rule::index_start => start = Some(self.parse_expr(union_node(pair))),
-                Rule::index_end => end = Some(self.parse_expr(union_node(pair))),
-                Rule::index_step => step = Some(self.parse_expr(union_node(pair))),
+                Rule::index_start => start = Some(self.parse_expr(pair.first()?)),
+                Rule::index_end => end = Some(self.parse_expr(pair.first()?)),
+                Rule::index_step => step = Some(self.parse_expr(pair.first()?)),
                 Rule::expr => {
                     args.push_index(self.parse_expr(pair));
-                    return;
+                    return Ok(());
                 }
-                _ => debug_cases!(pair),
+                _ => pair.debug_cases()?,
             };
         }
-        args.push_slice(start, end, step)
+        try { args.push_slice(start, end, step) }
     }
 }

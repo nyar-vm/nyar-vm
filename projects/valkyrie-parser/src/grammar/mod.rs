@@ -1,11 +1,12 @@
-use pest::{iterators::Pair, Parser};
-
-use crate::{
-    debug_cases,
-    grammar::parser::ValkyrieParser,
-    utils::{trim_first_last, TokenExtension},
-    Rule,
+use pest::{
+    iterators::Pair,
+    prec_climber::{
+        Assoc::{Left, Right},
+        Operator, PrecClimber,
+    },
+    Parser,
 };
+
 pub use context::ParsingContext;
 use nyar_error::{NyarError, Result, Span};
 use nyar_hir::{
@@ -13,9 +14,11 @@ use nyar_hir::{
     ASTKind, ASTNode,
 };
 pub use operators::PREC_CLIMBER;
-use pest::prec_climber::{
-    Assoc::{Left, Right},
-    Operator, PrecClimber,
+
+use crate::{
+    grammar::parser::ValkyrieParser,
+    utils::{trim_first_last, Token},
+    Rule,
 };
 
 pub(crate) mod context;
@@ -33,18 +36,21 @@ impl ParsingContext {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::WHITESPACE | Rule::COMMENT | Rule::EOI => continue,
-                Rule::statement => nodes.push(self.parse_statement(pair)),
-                _ => debug_cases!(pair),
+                Rule::statement => {
+                    let token = Token::from_pair(&pair, self.file_id);
+                    nodes.push(self.parse_statement(token))
+                }
+                _ => pair.debug_cases()?,
             };
         }
-        Ok(ASTKind::Program(nodes))
+        try { ASTKind::Program(nodes) }
     }
 
-    fn parse_statement(&mut self, pairs: Pair<Rule>) -> ASTNode {
+    fn parse_statement(&mut self, pairs: Token) -> ASTNode {
         let r_all = self.get_span(&pairs);
         let mut eos = true;
         let mut nodes: Vec<ASTNode> = vec![];
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             match pair.as_rule() {
                 Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
                 // Rule::emptyStatement => nodes.push(ASTNode::program(r)),
@@ -63,14 +69,14 @@ impl ParsingContext {
                         eos = e
                     }
                 },
-                _ => debug_cases!(pair),
+                _ => pair.debug_cases()?,
             };
         }
         return ASTNode::block(nodes, r_all);
     }
 
     //
-    fn parse_assign(&self, pairs: Pair<Rule>) -> Vec<ASTNode> {
+    fn parse_assign(&self, pairs: Token) -> Vec<ASTNode> {
         // let r = self.get_span(&token);
         // let mut vec = vec![];
         // let mut syms = vec![];
@@ -102,7 +108,7 @@ impl ParsingContext {
         //             syms.push(mods)
         //         }
         //         Rule::statement => init = Some(self.parse_statement(pair)),
-        //         _ => debug_cases!(pair),
+        //         _ => pair.debug_cases()?,
         //     };
         // }
         todo!()
@@ -153,9 +159,9 @@ impl ParsingContext {
         // return vec;
     }
 
-    fn parse_block(&mut self, pairs: Pair<Rule>) -> Vec<ASTNode> {
+    fn parse_block(&mut self, pairs: Token) -> Vec<ASTNode> {
         let mut pass: Vec<ASTNode> = vec![];
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             match pair.as_rule() {
                 Rule::expr => {
                     let node = self.parse_expr(pair);
@@ -165,21 +171,21 @@ impl ParsingContext {
                     let node = self.parse_statement(pair);
                     pass.push(node);
                 }
-                _ => debug_cases!(pair),
+                _ => pair.debug_cases()?,
             };
         }
         return pass;
     }
 
-    fn parse_expression(&mut self, pairs: Pair<Rule>) -> (ASTNode, bool) {
+    fn parse_expression(&mut self, pairs: Token) -> (ASTNode, bool) {
         let mut base = ASTNode::default();
         let mut eos = false;
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
                 Rule::expr => base = self.parse_expr(pair),
                 Rule::eos => eos = true,
-                _ => debug_cases!(pair),
+                _ => pair.debug_cases()?,
             };
         }
         return (base, eos);

@@ -1,11 +1,8 @@
 use pest::iterators::Pair;
-
-use crate::Rule;
-
 mod settings;
 mod token;
 
-pub use self::token::TokenExtension;
+pub use self::token::{Token, Tokens};
 
 pub fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> String {
     let indent = if is_newline { "  ".repeat(indent_level) } else { "".to_string() };
@@ -33,21 +30,4 @@ pub fn trim_first_last(input: &str) -> &str {
     chars.next();
     chars.next_back();
     chars.as_str()
-}
-
-pub fn union_node(pairs: Pair<Rule>) -> Pair<Rule> {
-    let mut pairs = pairs.into_inner();
-    let pair = unsafe { pairs.next().unwrap_unchecked() };
-    debug_assert!(pairs.next().is_none());
-    return pair;
-}
-
-#[macro_export]
-macro_rules! debug_cases {
-    ($i:ident) => {{
-        println!("Rule::{:?}=>continue,", $i.as_rule());
-        println!("Span: {:?}", $i.as_span());
-        println!("Text: {}", $i.as_str());
-        unreachable!();
-    }};
 }

@@ -5,8 +5,7 @@ use nyar_hir::ast::{DecimalLiteral, IntegerLiteral, KVPair, TableExpression, XML
 use super::*;
 
 impl ParsingContext {
-    pub(crate) fn parse_data(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
+    pub(crate) fn parse_data(&mut self, pairs: Token) -> ASTNode {
         match self.try_parse_data(pairs) {
             Ok(o) => o,
             Err(e) => {
@@ -16,8 +15,7 @@ impl ParsingContext {
         }
     }
 
-    pub(crate) fn try_parse_data(&mut self, pairs: Pair<Rule>) -> Result<ASTNode> {
-        let r = self.get_span(&pairs);
+    pub(crate) fn try_parse_data(&mut self, pairs: Token) -> Result<ASTNode> {
         let pair = pairs.into_inner().nth(0).unwrap();
         let value = match pair.as_rule() {
             Rule::String => self.parse_string(pair),
@@ -32,15 +30,14 @@ impl ParsingContext {
             Rule::table => self.parse_table(pair),
             Rule::block => ASTNode::block(self.parse_block(pair), r),
             Rule::XML => self.parse_xml(pair),
-            _ => debug_cases!(pair),
+            _ => pair.debug_cases()?,
         };
         Ok(value)
     }
 
-    fn parse_table(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
+    fn parse_table(&mut self, pairs: Token) -> ASTNode {
         let mut table = TableExpression::default();
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             match pair.as_rule() {
                 Rule::expr => table.push_node(self.parse_expr(pair)),
                 Rule::table_pair => {
@@ -56,7 +53,7 @@ impl ParsingContext {
         return table.as_node(r);
     }
 
-    pub(crate) fn parse_kv(&mut self, pairs: Pair<Rule>) -> Result<KVPair> {
+    pub(crate) fn parse_kv(&mut self, pairs: Token) -> Result<KVPair> {
         let mut pairs = pairs.into_inner();
         let (key, value) = unsafe {
             let k = pairs.next().unwrap_unchecked();
@@ -76,13 +73,11 @@ impl ParsingContext {
         Ok(pair)
     }
 
-    fn parse_tuple(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
+    fn parse_tuple(&mut self, pairs: Token) -> ASTNode {
         let tuple = pairs.into_inner().filter(|f| f.as_rule() == Rule::expr).map(|pair| self.parse_expr(pair)).collect();
         ASTNode::tuple(tuple, r)
     }
-    fn parse_complex_number(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
+    fn parse_complex_number(&mut self, pairs: Token) -> ASTNode {
         let mut pairs = pairs.into_inner();
         unsafe {
             let n = pairs.next().unwrap_unchecked();
@@ -94,8 +89,7 @@ impl ParsingContext {
             }
         }
     }
-    pub fn parse_integer(&mut self, pairs: Pair<Rule>) -> IntegerLiteral {
-        let r = self.get_span(&pairs);
+    pub fn parse_integer(&mut self, pairs: Token) -> IntegerLiteral {
         match IntegerLiteral::from_str(pairs.as_str()) {
             Ok(o) => o,
             Err(e) => {
@@ -104,62 +98,59 @@ impl ParsingContext {
             }
         }
     }
-    fn parse_decimal(&mut self, pairs: Pair<Rule>) -> DecimalLiteral {
-        let r = self.get_span(&pairs);
-        match DecimalLiteral::from_str(pairs.as_str()) {
+    fn parse_decimal(&mut self, pairs: Token) -> DecimalLiteral {
+        match DecimalLiteral::from_str(pairs.text) {
             Ok(o) => o,
             Err(e) => {
-                self.push_error(e.with_span(r));
+                self.push_error(e.with_span(pairs.span));
                 Default::default()
             }
         }
     }
-    fn parse_byte(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
-        let s = pairs.as_str();
+    fn parse_byte(&self, pairs: Token) -> ASTNode {
+        let s = pairs.text;
         let t = &s[2..s.len()];
         let h = s.chars().nth(1).unwrap();
         ASTNode::bytes(t, h, r)
     }
 
-    fn parse_special(&self, pairs: Pair<Rule>) -> ASTNode {
-        let r = self.get_span(&pairs);
-        match pairs.as_str() {
+    fn parse_special(&self, pairs: Token) -> ASTNode {
+        match pairs.text {
             "true" => ASTNode::boolean(true, r),
             "false" => ASTNode::boolean(false, r),
             _ => unreachable!(),
         }
     }
 
-    pub(crate) fn parse_symbol(&self, pairs: Pair<Rule>) -> Symbol {
+    pub(crate) fn parse_symbol(&self, pairs: Token) -> Symbol {
         let pair = pairs.first().unwrap();
         match pair.as_rule() {
-            Rule::SYMBOL_XID => Symbol::atom(pair.as_str()),
-            Rule::SYMBOL_ESCAPE => Symbol::atom(trim_first_last(pair.as_str())),
+            Rule::SYMBOL_XID => Symbol::atom(pair.text),
+            Rule::SYMBOL_ESCAPE => Symbol::atom(trim_first_last(pair.text)),
             _ => unreachable!(),
         }
     }
-    pub(crate) fn parse_modifiers(&self, pairs: Pair<Rule>) -> Vec<String> {
+    pub(crate) fn parse_modifiers(&self, pairs: Token) -> Vec<String> {
         self.filter_node(&pairs, Rule::Symbol).map(|pair| self.parse_symbol(pair).name).collect()
     }
-    pub(crate) fn parse_namepath(&self, pairs: Pair<Rule>) -> Symbol {
+    pub(crate) fn parse_namepath(&self, pairs: Token) -> Result<Symbol> {
         let mut out = vec![];
-        for i in pairs.into_inner() {
-            match i.as_rule() {
+        for pair in &pairs {
+            match pair.rule {
                 Rule::DOT | Rule::Proportion => continue,
-                Rule::Symbol => out.push(self.parse_symbol(i)),
-                Rule::use_special => out.push(Symbol::atom(i.as_str())),
-                _ => debug_cases!(i),
+                Rule::Symbol => out.push(self.parse_symbol(pair)),
+                Rule::use_special => out.push(Symbol::atom(pair.text)),
+                _ => pair.debug_cases()?,
             }
         }
-        Symbol::join(out)
+        try { Symbol::join(out) }
     }
 }
 
 impl ParsingContext {
-    pub(crate) fn parse_string(&mut self, pairs: Pair<Rule>) -> ASTNode {
+    pub(crate) fn parse_string(&mut self, pairs: Token) -> ASTNode {
         let mut builder = StringTemplateBuilder::new(self.get_span(&pairs));
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             let r = self.get_span(&pair);
             if let Err(e) = self.parse_string_item(pair, &mut builder, r) {
                 self.push_error(e.with_span(r))
@@ -167,36 +158,36 @@ impl ParsingContext {
         }
         builder.as_node()
     }
-    fn parse_string_item(&mut self, pair: Pair<Rule>, builder: &mut StringTemplateBuilder, r: Span) -> Result<()> {
+    fn parse_string_item(&mut self, pair: Token, builder: &mut StringTemplateBuilder, r: Span) -> Result<()> {
         if builder.has_handler() {
-            builder.push_buffer(pair.as_str());
+            builder.push_buffer(pair.text);
             return Ok(());
         }
         try {
-            match pair.as_rule() {
-                Rule::Symbol => builder.push_handler(pair.as_str()),
+            match pair.rule {
+                Rule::Symbol => builder.push_handler(pair.text),
                 Rule::STRING_SLOT => builder.push_expression(self.string_slot(pair)),
-                Rule::any => builder.push_character(pair.as_str(), r)?,
-                Rule::STRING_UNICODE => builder.push_unicode(pair.as_str(), r)?,
-                Rule::STRING_ESCAPE => builder.push_escape(pair.as_str(), r)?,
+                Rule::any => builder.push_character(pair.text, r)?,
+                Rule::STRING_UNICODE => builder.push_unicode(pair.text, r)?,
+                Rule::STRING_ESCAPE => builder.push_escape(pair.text, r)?,
                 Rule::namepath => builder.push_symbol(self.parse_namepath(pair), r),
-                _ => debug_cases!(pair),
+                _ => pair.debug_cases()?,
             }
         }
     }
-    fn string_slot(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        self.filter_node(&pairs, Rule::expr_inline).map(|pair| self.parse_expr(pair)).next().unwrap()
+    fn string_slot(&mut self, pairs: Token) -> Result<ASTNode> {
+        self.parse_expr(pairs.first()?)
     }
 }
 
 impl ParsingContext {
-    pub(crate) fn parse_xml(&mut self, pairs: Pair<Rule>) -> ASTNode {
+    pub(crate) fn parse_xml(&mut self, pairs: Token) -> ASTNode {
         let mut builder = XMLTemplateBuilder::default();
-        for pair in pairs.into_inner() {
+        for pair in &pairs {
             let r = self.get_span(&pair);
             let _ = match pair.as_rule() {
-                Rule::XML_TEXT => builder.push_character(pair.as_str(), r),
-                _ => debug_cases!(pair), // _ => unreachable!(),
+                Rule::XML_TEXT => builder.push_character(pair.text, r),
+                _ => pair.debug_cases()?, // _ => unreachable!(),
             };
         }
         ASTNode::default()

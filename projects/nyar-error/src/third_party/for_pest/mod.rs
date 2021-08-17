@@ -1,5 +1,6 @@
 use pest::{
     error::{Error, ErrorVariant, InputLocation},
+    iterators::Pair,
     RuleType,
 };
 
@@ -21,5 +22,15 @@ where
             ErrorVariant::CustomError { message } => message,
         };
         NyarError { kind: box NyarErrorKind::SyntaxError { info }, span }
+    }
+}
+
+impl Span {
+    pub fn from_pair<R>(pair: &Pair<R>, file: u32) -> Self
+    where
+        R: RuleType,
+    {
+        let span = pair.as_span();
+        Self { start: span.start() as u32, end: span.end() as u32, file_id: file }
     }
 }
