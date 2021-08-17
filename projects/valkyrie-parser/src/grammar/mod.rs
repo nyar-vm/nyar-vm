@@ -71,13 +71,13 @@ impl ParsingContext {
 
     //
     fn parse_assign(&self, pairs: Pair<Rule>) -> Vec<ASTNode> {
-        // let r = self.get_span(&pairs);
+        // let r = self.get_span(&token);
         // let mut vec = vec![];
         // let mut syms = vec![];
         // let mut types = vec![];
         // let mut typing = false;
         // let mut init: Option<AST> = None;
-        // for pair in pairs.into_inner() {
+        // for pair in token.into_inner() {
         //     match pair.as_rule() {
         //         Rule::Set | Rule::Colon | Rule::Comma => continue,
         //         Rule::Let | Rule::WHITESPACE => continue,

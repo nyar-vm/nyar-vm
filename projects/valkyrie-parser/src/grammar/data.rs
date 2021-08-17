@@ -132,7 +132,7 @@ impl ParsingContext {
     }
 
     pub(crate) fn parse_symbol(&self, pairs: Pair<Rule>) -> Symbol {
-        let pair = pairs.into_inner().next().unwrap();
+        let pair = pairs.first().unwrap();
         match pair.as_rule() {
             Rule::SYMBOL_XID => Symbol::atom(pair.as_str()),
             Rule::SYMBOL_ESCAPE => Symbol::atom(trim_first_last(pair.as_str())),
@@ -140,7 +140,7 @@ impl ParsingContext {
         }
     }
     pub(crate) fn parse_modifiers(&self, pairs: Pair<Rule>) -> Vec<String> {
-        pairs.into_inner().filter(|f| f.as_rule() == Rule::Symbol).map(|pair| self.parse_symbol(pair).name).collect()
+        self.filter_node(&pairs, Rule::Symbol).map(|pair| self.parse_symbol(pair).name).collect()
     }
     pub(crate) fn parse_namepath(&self, pairs: Pair<Rule>) -> Symbol {
         let mut out = vec![];
@@ -172,21 +172,20 @@ impl ParsingContext {
             builder.push_buffer(pair.as_str());
             return Ok(());
         }
-        match pair.as_rule() {
-            // Rule::Symbol => builder.push_handler(pair.as_str()),
-            Rule::STRING_SLOT => builder.push_expression(self.string_slot(pair)),
-            Rule::any => builder.push_character(pair.as_str(), r)?,
-            Rule::STRING_UNICODE => builder.push_unicode(pair.as_str(), r)?,
-            Rule::STRING_ESCAPE => builder.push_escape(pair.as_str(), r)?,
-            Rule::namepath => builder.push_symbol(self.parse_namepath(pair), r),
-            // Rule::expression => builder.push_expression(self.parse_expression(pair).0),
-            _ => debug_cases!(pair), // _ => unreachable!(),
-        };
-        Ok(())
+        try {
+            match pair.as_rule() {
+                Rule::Symbol => builder.push_handler(pair.as_str()),
+                Rule::STRING_SLOT => builder.push_expression(self.string_slot(pair)),
+                Rule::any => builder.push_character(pair.as_str(), r)?,
+                Rule::STRING_UNICODE => builder.push_unicode(pair.as_str(), r)?,
+                Rule::STRING_ESCAPE => builder.push_escape(pair.as_str(), r)?,
+                Rule::namepath => builder.push_symbol(self.parse_namepath(pair), r),
+                _ => debug_cases!(pair),
+            }
+        }
     }
     fn string_slot(&mut self, pairs: Pair<Rule>) -> ASTNode {
-        let expr = pairs.into_inner().filter(|pair| pair.as_rule() == Rule::expr_inline).next().unwrap();
-        self.parse_expr(expr)
+        self.filter_node(&pairs, Rule::expr_inline).map(|pair| self.parse_expr(pair)).next().unwrap()
     }
 }
 
@@ -194,10 +193,11 @@ impl ParsingContext {
     pub(crate) fn parse_xml(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let mut builder = XMLTemplateBuilder::default();
         for pair in pairs.into_inner() {
-            match pair.as_rule() {
-                Rule::XML_TEXT => continue,
+            let r = self.get_span(&pair);
+            let _ = match pair.as_rule() {
+                Rule::XML_TEXT => builder.push_character(pair.as_str(), r),
                 _ => debug_cases!(pair), // _ => unreachable!(),
-            }
+            };
         }
         ASTNode::default()
     }

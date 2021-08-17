@@ -49,8 +49,10 @@ impl XMLTemplateBuilder {
     }
     pub fn push_character(&mut self, s: &str, span: Span) -> Result<()> {
         self.text_end = span.end;
-        let c = char::from_str(s)?;
-        Ok(self.buffer.push(c))
+        try {
+            let c = char::from_str(s)?;
+            self.buffer.push(c)
+        }
     }
     pub fn push_unicode(&mut self, s: &str, span: Span) -> Result<()> {
         self.text_end = span.end;

@@ -1,6 +1,7 @@
 #![feature(once_cell)]
 #![feature(generators)]
 #![feature(box_syntax)]
+#![feature(try_blocks)]
 
 extern crate core;
 

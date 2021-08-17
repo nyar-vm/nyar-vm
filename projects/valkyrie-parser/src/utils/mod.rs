@@ -2,10 +2,10 @@ use pest::iterators::Pair;
 
 use crate::Rule;
 
-mod pairs;
 mod settings;
+mod token;
 
-pub use self::pairs::TokenExtension;
+pub use self::token::TokenExtension;
 
 pub fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> String {
     let indent = if is_newline { "  ".repeat(indent_level) } else { "".to_string() };

@@ -8,7 +8,7 @@ impl ParsingContext {
     #[rustfmt::skip]
     pub(crate) fn parse_expr(&mut self, pairs: Pair<Rule>) -> ASTNode {
         let r = self.get_span(&pairs);
-        // println!("{:#?}", pairs);
+        // println!("{:#?}", token);
         PREC_CLIMBER.climb(
             pairs.into_inner().filter(|p| p.as_rule() != Rule::WHITESPACE),
             |pair: Pair<Rule>| match pair.as_rule() {

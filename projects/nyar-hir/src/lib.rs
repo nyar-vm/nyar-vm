@@ -1,5 +1,6 @@
 #![feature(box_syntax)]
 #![feature(trivial_bounds)]
+#![feature(try_blocks)]
 
 extern crate core;
 
