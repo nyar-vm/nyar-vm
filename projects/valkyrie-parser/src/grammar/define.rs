@@ -3,7 +3,7 @@ use nyar_hir::ast::{FunctionDefinition, FunctionParameter, FunctionParameterKind
 use super::*;
 
 impl ParsingContext {
-    pub(crate) fn parse_define(&mut self, pairs: Token) -> ASTNode {
+    pub(crate) fn parse_define(&mut self, pairs: Token) -> Result<ASTNode> {
         let mut builder = FunctionDefinition::default();
         for pair in &pairs {
             let r = self.get_span(&pair);
@@ -13,8 +13,8 @@ impl ParsingContext {
                 Rule::Slash => continue,
                 Rule::To => continue,
                 Rule::define_parameter => self.define_parameter(pair, &mut builder),
-                Rule::Symbol => builder.push_symbol(self.parse_symbol(pair), r),
-                Rule::block => builder.block = self.parse_block(pair),
+                Rule::Symbol => builder.push_symbol(self.parse_symbol(pair)?, r),
+                Rule::block => builder.block = self.parse_block(pair)?,
                 Rule::MODIFIERS => builder.modifiers = self.parse_modifiers(pair),
                 Rule::type_expr => continue,
                 Rule::effect_type => {
@@ -23,35 +23,34 @@ impl ParsingContext {
                 _ => pair.debug_cases()?,
             }
         }
-        builder.as_node(r)
+        Ok(builder.as_node(pairs.span))
     }
     fn define_parameter(&mut self, pairs: Token, builder: &mut FunctionDefinition) {
         let mut mode = FunctionParameterKind::default();
-        for item in pairs.into_inner().filter(|f| f.as_rule() == Rule::define_pair) {
+        for item in pairs.filter_node(Rule::define_pair) {
             match self.define_pair(item, &mut mode) {
-                Some(s) => builder.parameters.push(s),
-                None => {}
+                Ok(s) => builder.parameters.push(s),
+                Err(e) => self.push_error(e),
             }
         }
     }
-    fn define_pair(&mut self, pairs: Token, mode: &mut FunctionParameterKind) -> Option<FunctionParameter> {
+    fn define_pair(&mut self, pairs: Token, mode: &mut FunctionParameterKind) -> Result<FunctionParameter> {
         let mut this_mode = *mode;
         let mut builder = FunctionParameter::default();
         for pair in &pairs {
-            let r = self.get_span(&pair);
             match pair.as_rule() {
                 Rule::Set => continue,
-                Rule::Symbol => builder.push_symbol(self.parse_symbol(pair), r),
+                Rule::Symbol => builder.push_symbol(self.parse_symbol(pair)?, pair.span),
                 Rule::MODIFIERS => builder.modifiers = self.parse_modifiers(pair),
                 Rule::type_hint => continue,
-                Rule::expr_inline => builder.default = Some(self.parse_expr(pair)),
+                Rule::expr_inline => builder.default = Some(self.parse_expr(pair)?),
                 Rule::DEFINE_SPECIAL => {
                     match pair.text {
                         "<" => *mode = FunctionParameterKind::BothAvailable,
                         ">" => *mode = FunctionParameterKind::NamedOnly,
                         _ => {}
                     }
-                    return None;
+                    return Err(NyarError::msg(""));
                 }
                 Rule::DEFINE_MARK => match pair.text {
                     "^" => this_mode = FunctionParameterKind::Receiver,
@@ -63,6 +62,6 @@ impl ParsingContext {
             }
         }
         builder.kind = this_mode;
-        Some(builder)
+        Ok(builder)
     }
 }

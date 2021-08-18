@@ -23,11 +23,3 @@ pub fn format_pair(pair: Pair<&str>, indent_level: usize, is_newline: bool) -> S
 pub fn unescape(s: &str) -> &str {
     return s;
 }
-
-/// Remove first and last character of string
-pub fn trim_first_last(input: &str) -> &str {
-    let mut chars = input.chars();
-    chars.next();
-    chars.next_back();
-    chars.as_str()
-}

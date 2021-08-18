@@ -4,48 +4,52 @@ use super::*;
 
 impl ParsingContext {
     #[rustfmt::skip]
-    pub(crate) fn parse_expr(&mut self, pairs: Token) -> Result<ASTNode> {
-        let r = pairs.span;
-        // println!("{:#?}", token);
+    pub fn parse_expr(&mut self, pairs: Token) -> Result<ASTNode> {
+        let mut inner = vec![];
+        for i in &pairs {
+            match i.rule {
+                Rule::WHITESPACE => continue,
+                _ => inner.push(i)
+            }
+        }
         PREC_CLIMBER.climb(
-            pairs.into_inner().filter(|p| p.as_rule() != Rule::WHITESPACE),
+            inner.into_iter(),
             |pair: Pair<Rule>| match pair.as_rule() {
-                Rule::expr => self.parse_expr(pair),
-                Rule::term| Rule::term_inline => self.parse_term(pair),
+                // Rule::expr => self.parse_expr(pair),
+                // Rule::term | Rule::term_inline => self.parse_term(pair),
                 _ => pair.debug_cases()?,
             },
             |left: ASTNode, op: Pair<Rule>, right: ASTNode| {
-                left.push_infix_chain(op.as_str(), right, r)
+                left.push_infix_chain(op.as_str(), right, pairs.span)
             },
         )
     }
 
-    fn parse_term(&mut self, pairs: Token) -> ASTNode {
+    fn parse_term(&mut self, pairs: Token) -> Result<ASTNode> {
         let mut chain = ChainCall::default();
         let mut unary = UnaryArgument::default();
         for pair in &pairs {
             match pair.as_rule() {
                 Rule::WHITESPACE | Rule::COMMENT => continue,
-                Rule::node | Rule::node_inline => self.parse_node(pair, &mut chain),
+                Rule::node | Rule::node_inline => self.parse_node(pair, &mut chain)?,
                 Rule::Prefix => unary.push_prefix(pair.text),
                 Rule::Suffix => unary.push_suffix(pair.text),
-                _ => unreachable!(),
+                _ => pair.debug_cases()?,
             };
         }
         chain += unary;
-        chain.as_node(r)
+        Ok(chain.as_node(pairs.span))
     }
 
-    fn parse_node(&mut self, pairs: Token, chain: &mut ChainCall) {
-        let mut pairs = pairs.into_inner();
-        let head = pairs.next().unwrap();
-        let head = match head.as_rule() {
-            Rule::expr => self.parse_expr(head),
+    fn parse_node(&mut self, pairs: Token, chain: &mut ChainCall) -> Result<()> {
+        let head = pairs.first()?;
+        let head = match head.rule {
+            Rule::expr => self.parse_expr(head)?,
             Rule::data => self.parse_data(head),
-            _ => unreachable!(),
+            _ => head.debug_cases()?,
         };
         chain.base = head;
-        for pair in pairs {
+        for pair in pairs.into_iter().skip(1) {
             match pair.as_rule() {
                 Rule::WHITESPACE => continue,
                 Rule::COMMENT => continue,
@@ -82,8 +86,8 @@ impl ParsingContext {
     fn dot_call(&mut self, pairs: Token, chain: &mut ChainCall) -> Result<()> {
         let node = pairs.first()?;
         match node.rule {
-            Rule::namepath => chain.dot_symbol_call(self.parse_namepath(node)),
-            Rule::Integer => chain.dot_number_call(self.parse_integer(node), r),
+            Rule::namepath => chain.dot_symbol_call(self.parse_namepath(node)?),
+            Rule::Integer => chain.dot_number_call(self.parse_integer(node)?, node.span),
             // Rule::WHITESPACE | Rule::DOT => continue,
             // Rule::COMMENT => continue,
             // Rule::apply => *chain += self.parse_apply(pair),
@@ -101,16 +105,15 @@ impl ParsingContext {
 }
 
 impl ParsingContext {
-    fn parse_apply(&mut self, pairs: Token) -> Result<ApplyArgument> {
+    fn parse_apply(&mut self, pairs: Token) -> ApplyArgument {
         let mut args = ApplyArgument::default();
-        for pair in &pairs {
-            assert_eq!(pair.as_rule(), Rule::apply_item);
+        for pair in pairs.filter_node(Rule::apply_item) {
             match self.parse_apply_item(pair, &mut args) {
                 Ok(_) => (),
                 Err(e) => self.push_error(e),
             }
         }
-        Ok(args)
+        args
     }
     fn parse_apply_item(&mut self, pairs: Token, args: &mut ApplyArgument) -> Result<()> {
         let mut pairs = pairs.into_inner();
@@ -132,11 +135,10 @@ impl ParsingContext {
 impl ParsingContext {
     fn parse_slice(&mut self, pairs: Token) -> Result<SliceArgument> {
         let mut args = SliceArgument::default();
-        for pair in &pairs.filter_node() {
-            assert_eq!(pair.as_rule(), Rule::index);
+        for pair in &pairs.filter_node(Rule::index) {
             self.parse_index(pair, &mut args);
         }
-        args
+        Ok(args)
     }
     fn parse_index(&mut self, pairs: Token, args: &mut SliceArgument) -> Result<()> {
         let mut start = None;

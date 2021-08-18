@@ -2,10 +2,9 @@ use std::{collections::BTreeSet, iter::FromIterator};
 
 use pest::iterators::{Pair, Pairs};
 
-use gen_iter::gen_iter;
 use nyar_error::{NyarError, Result, Span};
 
-use crate::{ParsingContext, Rule};
+use crate::Rule;
 
 pub struct Rules {
     rules: BTreeSet<Rule>,
@@ -31,16 +30,10 @@ pub struct Tokens<'i> {
     file_id: u32,
 }
 
-impl<'i> From<Pair<'i, Rule>> for Token<'i> {
-    fn from(pair: Pair<'i, Rule>) -> Self {
-        Self { rule: pair.as_rule(), text: pair.text, span: Default::default(), file_id: 0, pair }
-    }
-}
-
 impl<'i> Token<'i> {
     pub fn new(pair: Pair<'i, Rule>, file: u32) -> Self {
         let span = Span::from_pair(&pair, file);
-        Self { rule: pair.as_rule(), text: pair.text, file_id: file, span, pair }
+        Self { rule: pair.as_rule(), text: pair.as_str(), file_id: file, span, pair }
     }
     pub fn debug_cases(&self) -> Result<!> {
         let msg = format!("Unreachable:\nRule::{:?}=>continue,\nSpan: {:?}\nText: {}", self.rule, self.span, self.text);
@@ -61,7 +54,7 @@ impl<'i> Token<'i> {
                     unreachable!();
                 }
                 else {
-                    Err(NyarError::msg("first element not found"))
+                    return Err(NyarError::msg("first element not found"));
                 }
             }
         };
@@ -76,7 +69,28 @@ impl<'i> Token<'i> {
                     unreachable!();
                 }
                 else {
-                    Err(NyarError::msg("last element not found"))
+                    return Err(NyarError::msg("last element not found"));
+                }
+            }
+        };
+        try { Self::new(item, self.file_id) }
+    }
+
+    pub fn nth(&self, id: isize) -> Result<Self> {
+        let mut iter = self.pair.clone().into_inner();
+        let item = match id {
+            _ if id > 0 => iter.nth(1 + id as usize),
+            _ if id < 0 => iter.nth(1 - id as usize),
+            _ => iter.nth(0),
+        };
+        let item = match item {
+            Some(s) => s,
+            None => {
+                if cfg!(debug_assertions) {
+                    unreachable!();
+                }
+                else {
+                    return Err(NyarError::msg("nth element not found"));
                 }
             }
         };
@@ -91,20 +105,27 @@ impl<'i> Token<'i> {
         let tokens = self.clone().into_iter();
         let mut out = vec![];
         for token in tokens {
-            if rules.contains(token.rule) {
+            if rules.contains(&token.rule) {
                 out.push(token)
             }
         }
         out
     }
+
+    pub fn text_inner(&self) -> &str {
+        let mut chars = self.text.chars();
+        chars.next();
+        chars.next_back();
+        chars.as_str()
+    }
 }
 
 impl<'a, 'i> IntoIterator for &'a Token<'i> {
     type Item = Token<'i>;
-    type IntoIter = &'a Tokens<'i>;
+    type IntoIter = Tokens<'i>;
 
     fn into_iter(self) -> Self::IntoIter {
-        &Tokens { pairs: self.pair.clone().into_inner(), file_id: self.file_id }
+        Tokens { pairs: self.pair.clone().into_inner(), file_id: self.file_id }
     }
 }
 
