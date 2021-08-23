@@ -178,7 +178,7 @@ impl ASTNode {
         Expression { base, eos }
     }
 
-    pub fn push_infix_chain(self, op: &str, rhs: ASTNode, span: Span) -> Self {
+    pub fn push_infix_chain(self, op: &str, rhs: ASTNode) -> Self {
         let op = Operator::parse_infix(op);
         let infix = match self.kind {
             ASTKind::InfixExpression(mut e) if op == e.operator => {
@@ -187,7 +187,7 @@ impl ASTNode {
             }
             _ => InfixCall::new(self, op, rhs),
         };
-        Self { kind: ASTKind::InfixExpression(box infix), span }
+        infix.as_node()
     }
 
     pub fn kv_pair(k: ASTNode, v: ASTNode) -> KVPair {

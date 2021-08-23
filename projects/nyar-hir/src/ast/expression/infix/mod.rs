@@ -17,4 +17,9 @@ impl InfixCall {
     pub fn get_priority(&self) -> u8 {
         self.operator.get_priority()
     }
+    //noinspection RsSelfConvention
+    pub fn as_node(self) -> ASTNode {
+        let span = ASTNode::join_span(&self.terms);
+        ASTNode { kind: ASTKind::InfixExpression(box self), span }
+    }
 }

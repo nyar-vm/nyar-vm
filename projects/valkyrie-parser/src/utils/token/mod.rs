@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, iter::FromIterator};
+use std::{
+    collections::BTreeSet,
+    fmt::{Display, Formatter},
+    iter::FromIterator,
+};
 
 use pest::iterators::{Pair, Pairs};
 
@@ -18,11 +22,17 @@ impl From<Rule> for Rules {
 
 #[derive(Debug, Clone)]
 pub struct Token<'i> {
-    pair: Pair<'i, Rule>,
+    pub(crate) pair: Pair<'i, Rule>,
     pub rule: Rule,
     pub text: &'i str,
     pub span: Span,
     pub file_id: u32,
+}
+
+impl<'i> Display for Token<'i> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{:?}", self.into_iter().map(|f| f.rule).collect::<Vec<_>>())
+    }
 }
 
 pub struct Tokens<'i> {
@@ -35,8 +45,9 @@ impl<'i> Token<'i> {
         let span = Span::from_pair(&pair, file);
         Self { rule: pair.as_rule(), text: pair.as_str(), file_id: file, span, pair }
     }
+    #[track_caller]
     pub fn debug_cases(&self) -> Result<!> {
-        let msg = format!("Unreachable:\nRule::{:?}=>continue,\nSpan: {:?}\nText: {}", self.rule, self.span, self.text);
+        let msg = format!("Rule::{:?}=>continue,\nSpan: {:?}\nText: {}", self.rule, self.span, self.text);
         if cfg!(debug_assertions) {
             println!("{}", msg);
             unreachable!();
@@ -62,7 +73,7 @@ impl<'i> Token<'i> {
     }
     #[track_caller]
     pub fn last(&self) -> Result<Self> {
-        let item = match self.pair.into_inner().next() {
+        let item = match self.pair.clone().into_inner().next_back() {
             Some(s) => s,
             None => {
                 if cfg!(debug_assertions) {
@@ -75,12 +86,12 @@ impl<'i> Token<'i> {
         };
         try { Self::new(item, self.file_id) }
     }
-
+    #[track_caller]
     pub fn nth(&self, id: isize) -> Result<Self> {
         let mut iter = self.pair.clone().into_inner();
         let item = match id {
-            _ if id > 0 => iter.nth(1 + id as usize),
-            _ if id < 0 => iter.nth(1 - id as usize),
+            _ if id > 0 => iter.nth((id - 1) as usize),
+            _ if id < 0 => iter.nth_back((-id - 1) as usize),
             _ => iter.nth(0),
         };
         let item = match item {
@@ -117,6 +128,12 @@ impl<'i> Token<'i> {
         chars.next();
         chars.next_back();
         chars.as_str()
+    }
+}
+
+impl<'i> Tokens<'i> {
+    pub fn new(pairs: Pairs<'i, Rule>, file: u32) -> Self {
+        Self { pairs, file_id: file }
     }
 }
 

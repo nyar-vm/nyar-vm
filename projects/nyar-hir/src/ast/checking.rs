@@ -24,3 +24,11 @@ impl ASTKind {
         matches!(self, ASTKind::Boolean(_))
     }
 }
+
+impl ASTNode {
+    pub fn join_span(items: &[Self]) -> Span {
+        let head = items.first().map(|f| f.span).unwrap_or_default();
+        let tail = items.last().map(|f| f.span).unwrap_or_default();
+        Span { start: head.start, end: tail.end, file_id: head.file_id }
+    }
+}

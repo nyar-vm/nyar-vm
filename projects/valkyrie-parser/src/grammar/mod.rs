@@ -15,7 +15,11 @@ use nyar_hir::{
 };
 pub use operators::PREC_CLIMBER;
 
-use crate::{grammar::parser::ValkyrieParser, utils::Token, Rule};
+use crate::{
+    grammar::parser::ValkyrieParser,
+    utils::{Token, Tokens},
+    Rule,
+};
 
 pub(crate) mod context;
 pub(crate) mod control_flow;
@@ -27,38 +31,36 @@ pub(crate) mod parser;
 
 impl ParsingContext {
     pub fn get_ast(&mut self, text: &str) -> Result<ASTKind> {
-        let pairs = ValkyrieParser::parse(Rule::program, text)?;
+        let result = ValkyrieParser::parse(Rule::program, text)?;
+        let pairs = Tokens::new(result, self.file_id);
         let mut nodes: Vec<ASTNode> = vec![];
         for pair in pairs {
-            match pair.as_rule() {
+            match pair.rule {
                 Rule::WHITESPACE | Rule::COMMENT | Rule::EOI => continue,
-                Rule::statement => {
-                    let token = Token::new(pair, self.file_id);
-                    nodes.push(self.parse_statement(token))
-                }
+                Rule::statement => nodes.push(self.parse_statement(&pair)?),
                 _ => pair.debug_cases()?,
             };
         }
         try { ASTKind::Program(nodes) }
     }
 
-    fn parse_statement(&mut self, pairs: Token) -> Result<ASTNode> {
+    fn parse_statement(&mut self, pairs: &Token) -> Result<ASTNode> {
         let mut eos = true;
         let mut nodes: Vec<ASTNode> = vec![];
-        for pair in &pairs {
+        for pair in pairs {
             match pair.rule {
                 Rule::eos | Rule::WHITESPACE | Rule::EOI => continue,
                 // Rule::emptyStatement => nodes.push(ASTNode::program(r)),
-                Rule::import_statement => nodes.extend(self.parse_import(pair)),
+                Rule::import_statement => nodes.extend(self.parse_import(&pair)),
                 Rule::assign_statement => {
                     let s = self.parse_assign(pair);
                     nodes.extend(s.iter().cloned());
                 }
-                Rule::define_statement => nodes.push(self.parse_define(pair)?),
-                Rule::if_statement => nodes.push(self.parse_if(pair)?),
-                Rule::while_statement => nodes.push(self.parse_while(pair)?),
-                Rule::for_statement => nodes.push(self.parse_for(pair)?),
-                Rule::expression => match self.parse_expression(pair) {
+                Rule::define_statement => nodes.push(self.parse_define(&pair)?),
+                Rule::if_statement => nodes.push(self.parse_if(&pair)?),
+                Rule::while_statement => nodes.push(self.parse_while(&pair)?),
+                Rule::for_statement => nodes.push(self.parse_for(&pair)?),
+                Rule::expression => match self.parse_expression(&pair)? {
                     (node, e) => {
                         nodes.push(node);
                         eos = e
@@ -78,7 +80,7 @@ impl ParsingContext {
         // let mut typing = false;
         // let mut init: Option<AST> = None;
         // for pair in token.into_inner() {
-        //     match pair.as_rule() {
+        //     match pair.rule {
         //         Rule::Set | Rule::Colon | Rule::Comma => continue,
         //         Rule::Let | Rule::WHITESPACE => continue,
         //         Rule::type_expr => {
@@ -153,25 +155,34 @@ impl ParsingContext {
         // return vec;
     }
 
-    pub fn parse_block(&mut self, pairs: Token) -> Vec<ASTNode> {
+    pub fn parse_block(&mut self, pairs: &Token) -> Vec<ASTNode> {
         let mut pass: Vec<ASTNode> = vec![];
-        for pair in &pairs {
-            match pair.as_rule() {
-                Rule::expr => pass.push(self.parse_expr(pair)?),
-                Rule::statement => pass.push(self.parse_statement(pair)),
-                _ => pair.debug_cases()?,
+        for pair in pairs {
+            match pair.rule {
+                Rule::expr => match self.parse_expr(&pair) {
+                    Ok(o) => pass.push(o),
+                    Err(e) => self.push_error(e),
+                },
+                Rule::statement => match self.parse_statement(&pair) {
+                    Ok(o) => pass.push(o),
+                    Err(e) => self.push_error(e),
+                },
+                _ => match pair.debug_cases() {
+                    Ok(_) => {}
+                    Err(e) => self.push_error(e),
+                },
             };
         }
         return pass;
     }
 
-    fn parse_expression(&mut self, pairs: Token) -> Result<(ASTNode, bool)> {
+    fn parse_expression(&mut self, pairs: &Token) -> Result<(ASTNode, bool)> {
         let mut base = ASTNode::default();
         let mut eos = false;
-        for pair in &pairs {
-            match pair.as_rule() {
+        for pair in pairs {
+            match pair.rule {
                 Rule::WHITESPACE => continue,
-                Rule::expr => base = self.parse_expr(pair),
+                Rule::expr => base = self.parse_expr(&pair)?,
                 Rule::eos => eos = true,
                 _ => pair.debug_cases()?,
             };

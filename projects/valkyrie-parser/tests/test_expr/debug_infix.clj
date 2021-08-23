@@ -75,3 +75,5 @@
     a)
 (block scoped
     a)
+(block scoped
+    a)
