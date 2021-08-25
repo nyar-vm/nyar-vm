@@ -26,6 +26,7 @@ pub(crate) mod control_flow;
 pub(crate) mod data;
 pub(crate) mod define;
 pub(crate) mod expression_node;
+mod match_catch;
 pub(crate) mod operators;
 pub(crate) mod parser;
 
@@ -60,12 +61,8 @@ impl ParsingContext {
                 Rule::if_statement => nodes.push(self.parse_if(&pair)?),
                 Rule::while_statement => nodes.push(self.parse_while(&pair)?),
                 Rule::for_statement => nodes.push(self.parse_for(&pair)?),
-                Rule::expression => match self.parse_expression(&pair)? {
-                    (node, e) => {
-                        nodes.push(node);
-                        eos = e
-                    }
-                },
+                Rule::expr => nodes.push(self.parse_expr(&pair)?),
+                Rule::match_statement => nodes.push(self.parse_match(&pair)?),
                 _ => pair.debug_cases()?,
             };
         }

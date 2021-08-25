@@ -7,13 +7,15 @@ statement = {
   | traitStatement ~ eos?
   | extendStatement ~ eos?
   | non_local_exit ~ eos?
-  | if_statement ~ eos?
   | for_statement ~ eos?
   | while_statement ~ eos?
   | assign_statement ~ eos?
   | define_statement ~ eos?
   | annotation ~ eos?
-  | expression
+  | assign_rhs ~ eos?
+}
+assign_rhs = _{
+    if_statement|match_statement|expr
 }
 /*====================================================================================================================*/
 emptyStatement = {eos}
@@ -60,22 +62,30 @@ EXIT = @{"return"|"resume"}
 block = !{"{" ~ statement* ~ "}"}
 /*====================================================================================================================*/
 if_statement  = {if_block ~ else_if_block* ~ else_block?}
-if_block      = {If ~ condition ~ block}
-else_if_block = {Else ~ If ~ condition ~ block}
-else_block    = {Else ~ block}
-//!#C678DD: If|Else
+if_block      = {IF ~ condition ~ block}
+else_if_block = {ELSE ~ IF ~ condition ~ block}
+else_block    = {ELSE ~ block}
+//!#C678DD: IF|ELSE
 condition = _{expr_inline}
-If        = @{"if"}
-Else      = @{"else"}
+IF        = @{"if"}
+ELSE      = @{"else"}
 /*====================================================================================================================*/
+//!#C678DD: MATCH|CASE|WITH
 match_statement = {
-    MATCH ~ expression ~ "{" ~ case_statement+ ~ "}"
+    MATCH ~ expr_inline ~ "{" ~ match_item* ~ "}"
 }
-case_statement = {
-    Colon ~ statement
+match_item = _ {
+    WITH ~ effect_type
+  | case_statement
+  | ELSE ~ Colon ~ statement
+}
+case_statement = {CASE ~ case_item ~ Colon ~ statement}
+case_item = {
+   (Symbol ~ "@")? ~ table|tuple|Symbol
 }
 MATCH = @{"match"|"catch"}
-Case = @{"case"}
+CASE = @{"case"}
+WITH = @{"with"}
 /*====================================================================================================================*/
 ///#C678DD
 Type = @{"type"}
@@ -114,9 +124,6 @@ assign_statement = {
   | LET ~ assign_name ~ Set ~ assign_rhs ~ eos?
     // let a, b: int;
   | LET ~ assign_name ~ eos
-}
-assign_rhs = _{
-    if_statement|match_statement|expr
 }
 assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
 assign_pair = {MODIFIERS* ~ Symbol ~ type_hint?}
@@ -167,7 +174,6 @@ node_inline =  {
 }
 call_inline = {DOT ~ (namepath|Integer) | Proportion ~ static_call | slice | apply}
 /*====================================================================================================================*/
-expression  =  {expr ~ eos?}
 expr        =  {term ~ (Infix ~ (!XML ~ term))*}
 term        =  {Prefix* ~ node ~ Suffix*}
 node        =  {
@@ -275,7 +281,7 @@ Quote =@{"`"}
 WHITESPACE = _{NEWLINE|WHITE_SPACE}
 COMMENT    = ${CommentN|Comment1}
 Comment1   = @{Solidus ~ (!NEWLINE ~ ANY)* }
-CommentN   = @{PUSH(Solidus{3,}) ~ (!(Solidus ~ PEEK) ~ ANY)* ~ POP}
+CommentN   = @{PUSH(Solidus{3,}) ~ (!PEEK ~ ANY)* ~ POP}
 Solidus    = @{"\\"}
 /*====================================================================================================================*/
 Proportion = @{"::"|"∷"} //U+2237
@@ -294,7 +300,6 @@ Prefix = ${
 Suffix   = ${BANG|QUESTION|Superscript}
 Superscript = @{("⁺"|"⁻")?~("⁰"|"¹"|"²"|"³"|"⁴"|"⁵"|"⁶"|"⁷"|"⁸"|"⁹")+}
 FRACTION = @{"¼"|"½"|"¾"|"⅐"|"⅑"|"⅒"|"⅓"|"⅔"|"⅕"|"⅖"|"⅗"|"⅘"|"⅙"|"⅚"|"⅛"|"⅜"|"⅝"|"⅞"}
-SYMBOLS  = @{"㎍"}
 BANG     = @{"!"|"¡"}
 QUESTION = @{"?"}
 

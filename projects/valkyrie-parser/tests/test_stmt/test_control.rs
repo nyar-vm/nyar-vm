@@ -44,3 +44,17 @@ fn debug_for() -> Result<()> {
     let ast: ASTKind = ASTDump::parse(INPUT3);
     ast.save("tests/test_stmt/debug_for.clj")
 }
+
+const INPUT4: &str = r#"
+match a {
+    with [a]
+    case a: a
+    else: 1
+}
+"#;
+
+#[test]
+fn debug_match() -> Result<()> {
+    let ast: ASTKind = ASTDump::parse(INPUT4);
+    ast.save("tests/test_stmt/debug_match.clj")
+}

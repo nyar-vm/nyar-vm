@@ -8,7 +8,7 @@ impl ParsingContext {
         for pair in pairs {
             match pair.rule {
                 Rule::WHITESPACE => continue,
-                Rule::If | Rule::Else => continue,
+                Rule::IF | Rule::ELSE => continue,
                 Rule::if_block => self.true_then(&pair, &mut args)?,
                 Rule::else_if_block => self.true_then(&pair, &mut args)?,
                 Rule::else_block => args.push_else(self.else_then(&pair)?),
