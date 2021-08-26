@@ -15,7 +15,7 @@ impl InfixCall {
         Self { operator, terms: vec![lhs, rhs] }
     }
     pub fn get_priority(&self) -> u8 {
-        self.operator.get_priority()
+        self.operator.priority()
     }
     //noinspection RsSelfConvention
     pub fn as_node(self) -> ASTNode {

@@ -16,6 +16,7 @@ pub use crate::ast::{
     assign::{
         assign::{AssignBlock, LetBindSimple, LetBindStatement},
         import::{ImportBuilder, ImportStatement},
+        match_statement::{BuilderStatement, CatchStatement, MatchStatement},
     },
     atoms::{
         byte_literal::ByteLiteral,
@@ -36,7 +37,7 @@ pub use crate::ast::{
     expression::{infix::InfixCall, Expression},
     function::LambdaFunction,
     looping::{ForInLoop, LoopStatement, WhileLoop},
-    operator::{Infix, Operator, Postfix, Prefix},
+    operator::{Infix, Operator, OperatorAssociativity, Postfix, Prefix},
 };
 
 mod assign;

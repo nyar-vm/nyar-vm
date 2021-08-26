@@ -1,5 +1,3 @@
-use nyar_error::NyarError;
-
 use super::*;
 
 impl Operator {
@@ -15,44 +13,35 @@ impl Operator {
 }
 
 impl FromStr for Prefix {
-    type Err = NyarError;
+    type Err = !;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let out = match s {
-            "!" => Self::Not,
-            "+" => Self::Positive,
-            "-" => Self::Negative,
-            _ => return Err(NyarError::syntax_error(format!("Unknown prefix {}", s))),
-        };
-        Ok(out)
+        try {
+            match s {
+                _ => Self { symbol: s.to_string(), priority: 0 },
+            }
+        }
     }
 }
 
 impl FromStr for Infix {
-    type Err = NyarError;
+    type Err = !;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let out = match s {
-            "+" => Self::Addition,
-            "++" => Self::Concat,
-            "-" => Self::Subtraction,
-            "--" => Self::Remove,
-            "*" => Self::Multiplication,
-            "/" => Self::Division,
-            "^" => Self::Power,
-            _ => return Err(NyarError::syntax_error(format!("Unknown infix {}", s))),
-        };
-        Ok(out)
+        try {
+            match s {
+                "^" => Self { symbol: s.to_string(), priority: 120, associativity: OperatorAssociativity::Right },
+                _ => Self { symbol: s.to_string(), priority: 100, associativity: OperatorAssociativity::Left },
+            }
+        }
     }
 }
 
 impl FromStr for Postfix {
-    type Err = NyarError;
+    type Err = !;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let out = match s {
-            "+" => Self::Increment,
-            "-" => Self::Decrement,
-            "!" => Self::Unchecked,
-            _ => return Err(NyarError::syntax_error(format!("Unknown suffix {}", s))),
-        };
-        Ok(out)
+        try {
+            match s {
+                _ => Self { symbol: s.to_string(), priority: 255 },
+            }
+        }
     }
 }
