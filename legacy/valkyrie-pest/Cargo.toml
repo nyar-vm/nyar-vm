@@ -12,12 +12,12 @@ pest = "2.2.1"
 pest_derive = "2.2.1"
 
 [dependencies.nyar-error]
-path = "../nyar-error"
+path = "../../projects/nyar-error"
 version = "0.1"
 features = ["pest"]
 
 [dependencies.nyar-hir]
-path = "../nyar-hir"
+path = "../../projects/nyar-hir"
 version = "0.2"
 
 [dev-dependencies]

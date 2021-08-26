@@ -4,18 +4,4 @@
 #![feature(try_blocks)]
 #![feature(never_type)]
 
-extern crate core;
-
-pub use self::grammar::context::ParsingContext;
-pub use crate::grammar::parser::Rule;
-pub use nyar_error::Result;
-pub use traits::ASTDump;
-
-mod grammar;
-pub mod utils;
-
-pub mod ast {
-    pub use nyar_hir::ast::*;
-}
-
-mod traits;
+mod parser;

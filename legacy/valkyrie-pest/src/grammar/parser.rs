@@ -1,5 +1,5 @@
 use pest_derive::Parser;
 
 #[derive(Parser)]
-#[grammar = "../valkyrie.pest"]
+#[grammar = "../valkyrie.peg"]
 pub struct ValkyrieParser;
