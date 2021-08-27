@@ -1,395 +1,84 @@
-program = _{SOI~statement* ~ EOI}
+@export
+ValkyrieParser = {statements:SwarmStatements} $;
 
-statement = {
-    emptyStatement
-  | import_statement ~ eos?
-  | classStatement ~ eos?
-  | traitStatement ~ eos?
-  | extendStatement ~ eos?
-  | non_local_exit ~ eos?
-  | for_statement ~ eos?
-  | while_statement ~ eos?
-  | assign_statement ~ eos?
-  | define_statement ~ eos?
-  | annotation ~ eos?
-  | assign_rhs ~ eos?
-}
-assign_rhs = _{
-    if_statement|match_statement|expr
-}
-/*====================================================================================================================*/
-emptyStatement = {eos}
-eos = {Semicolon}
-separator = {eos|Comma}
-comma_or_semi = _{Comma|Semicolon}
-block_or_stmt = _{block|Set ~ statement}
-/*====================================================================================================================*/
-import_statement = {
-    IMPORT ~ use_alias
-  | IMPORT ~ module_block
-  | IMPORT ~ use_module_string
-  | IMPORT ~ use_module_select
-}
-use_alias = {use_namepath ~ AS ~ Symbol}
-use_module_select = {use_namepath ~ (use_split ~ module_block)?}
-use_module_string = {String ~ (use_split? ~ module_block)?}
-module_block =  {"{" ~ (module_tuple|comma_or_semi)* ~ "}"}
-module_tuple = _{use_alias|use_module_select}
-use_split    = _{DOT|Proportion}
-use_symbol   = _{use_special|Symbol}
-use_namepath =  {use_symbol ~ (use_split ~ use_symbol)*}
-//!#C678DD: IMPORT|AS|use_special|SELF|DEPOT
-IMPORT       = @{"using" ~ ("!"|"?"|"*")?}
-AS           = @{"as!"|"as?"|"as*"|"as"}
-use_special  = @{"depot"|"self"|"*"}
-/*====================================================================================================================*/
-//!#C678DD: WHILE|FOR
-for_statement = {
-    FOR ~ Symbol ~ IN ~ expr_inline ~ block ~ else_block?
-}
-while_statement = {
-    WHILE ~ block ~ else_block?
-  | WHILE ~ expr_inline? ~ block ~ else_block?
-}
-WHILE = @{"while"}
-FOR = @{"for"}
-/*====================================================================================================================*/
-//!#C678DD: EXIT
-non_local_exit = {EXIT ~ expr}
-EXIT = @{"return"|"resume"}
-//!#C678DD: Return|Yield|Break|Pass
-/*====================================================================================================================*/
-block = !{"{" ~ statement* ~ "}"}
-/*====================================================================================================================*/
-if_statement  = {if_block ~ else_if_block* ~ else_block?}
-if_block      = {IF ~ condition ~ block}
-else_if_block = {ELSE ~ IF ~ condition ~ block}
-else_block    = {ELSE ~ block}
-//!#C678DD: IF|ELSE
-condition = _{expr_inline}
-IF        = @{"if"}
-ELSE      = @{"else"}
-/*====================================================================================================================*/
-//!#C678DD: MATCH|CASE|WITH
-match_statement = {
-    MATCH ~ expr_inline ~ "{" ~ match_item* ~ "}"
-}
-match_item = _ {
-    WITH ~ effect_type
-  | case_statement
-  | ELSE ~ Colon ~ statement
-}
-case_statement = {CASE ~ case_item ~ Colon ~ statement}
-case_item = {
-   (Symbol ~ "@")? ~ table|tuple|Symbol
-}
-MATCH = @{"match"|"catch"}
-CASE = @{"case"}
-WITH = @{"with"}
-/*====================================================================================================================*/
-///#C678DD
-Type = @{"type"}
-/*====================================================================================================================*/
-forall_statement = {FORALL ~ (expr ~ Colon ~ expr ~ eos?)+}
-FORALL = @{"forall"|"∀"}
-/*====================================================================================================================*/
-classStatement = {CLASS ~ assign_pair ~ class_block?}
-traitStatement = {TRAIT ~ assign_pair ~ class_block?}
+ValkyrieStatements =
+	@:NamespaceDeclare |
+	@:DefineDeclare
 
-class_block = {"{" ~ (define_free|short_annotation|assign_pair|eos)* ~ "}"}
-short_annotation = {annotation_call}
-CLASS = @{"class"}
-TRAIT = @{"trait"}
-/*====================================================================================================================*/
-extendStatement = {
-    EXTENDS ~ Symbol ~ generic_type? ~ with_trait? ~ class_block
-}
-with_trait = {"with" ~ Symbol ~ generic_type?}
-EXTENDS = @{"extends"}
-/*====================================================================================================================*/
-//!Orange:annotation_call
-annotation      = {annotation_call+~statement}
-annotation_call = @{Sharp~(apply|Symbol)}
-macro_call      = @{At ~(apply|Symbol) }
-Sharp =@{"#"}
-At    =@{"@"}
-/*====================================================================================================================*/
-assign_statement = {
-    // let (mut a: int, ) = 1;
-    LET ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ Set ~ assign_rhs ~ eos?
-    // let (a: int, b: int)
-    // let (a, b): (int, int)
-  | LET ~ "(" ~ assign_name ~ ")" ~ type_hint? ~ eos?
-    // let mut a: int, = 1;
-  | LET ~ assign_name ~ Set ~ assign_rhs ~ eos?
-    // let a, b: int;
-  | LET ~ assign_name ~ eos
-}
-assign_name = _{assign_pair ~ (Comma ~ assign_pair)* ~ Comma?}
-assign_pair = {MODIFIERS* ~ Symbol ~ type_hint?}
-
-///#C678DD
-LET = @{"let"}
-/*====================================================================================================================*/
-//!#C678DD: DEFINE
-define_statement = {
-    forall_statement? ~ DEFINE ~ MODIFIERS* ~ Symbol ~
-    generic_type? ~ define_parameter ~ ((Colon|To) ~ type_expr)? ~ (Slash ~ effect_type)? ~ block
-}
-define_free = {
-    forall_statement? ~ DEFINE? ~ MODIFIERS* ~ Symbol ~
-    generic_type? ~ define_parameter ~ ((Colon|To) ~ type_expr)? ~ (Slash ~ effect_type)? ~ block?
-}
-/// (a, <, b , >, c)
-define_parameter = {
-    "(" ~ define_pair ~ (Comma ~ define_pair)* ~ Comma? ~ ")"
-  | "(" ~ ")"
-}
-define_pair      = {MODIFIERS* ~ DEFINE_MARK? ~ (DEFINE_SPECIAL|Symbol) ~ type_hint? ~ (Set ~ expr_inline)?}
-DEFINE           = @{"def"}
-DEFINE_SPECIAL   = ${LT | GT}
-DEFINE_MARK      = ${DOT3|DOT2|POWER}
-/*====================================================================================================================*/
-//!#E06C75: type_hint|generic_type|parametric_types_pair
-type_expr   = {type_term ~ (TypeInfix ~ type_term)*}
-type_term   = {Prefix* ~ type_node ~ Suffix*}
-type_node   = {"(" ~ type_expr ~ ")"|data}
-type_hint   = {Colon ~ type_expr}
-effect_type = {
-    type_expr
-  | "[" ~ "]"
-  | "[" ~ type_expr ~ (Comma ~ type_expr) ~ Comma? ~ "]"
-}
-type_pair    = {Symbol ~ Colon ~ type_expr}
-generic_type = {"[" ~ type_pair ~ (Comma ~ type_pair)* ~ Comma? ~ "]"}
-//TypePrefix = @{Plus|Minus}
-//TypeSuffix = @{Question}
-TypeInfix = @{"|"|"&"}
-/*====================================================================================================================*/
-expr_inline = !{(!XML ~ term_inline) ~ (Infix ~ (!XML ~ term_inline))*}
-term_inline =  {Prefix* ~ node_inline ~ Suffix*}
-node_inline =  {
-    "(" ~ expr ~ ")"
-  | data ~ call_inline*
-}
-call_inline = {DOT ~ (namepath|Integer) | Proportion ~ static_call | slice | apply}
-/*====================================================================================================================*/
-expr        =  {term ~ (Infix ~ (!XML ~ term))*}
-term        =  {Prefix* ~ node ~ Suffix*}
-node        =  {
-    "(" ~ expr ~ ")"
-  | data ~ call_once? ~ (callable+ ~ call_once?)+
-  | data
-}
-callable    = ${
-    DOT ~ COMMENT* ~ dot_call
-  | Proportion ~ COMMENT* ~ static_call
-  | slice
-  | apply
-}
-call_once   = _{block}
-dot_call    = !{namepath|Integer|block|match_call}
-static_call = !{Symbol|generic_type}
-match_call  = !{MATCH ~ "{" ~ case_statement+ ~ "}"}
-/*====================================================================================================================*/
-apply       = !{"(" ~ ")" | "(" ~ apply_item ~ (Comma ~ apply_item)* ~ Comma? ~")"}
-apply_item  =  {Symbol ~ Colon ~ expr | expr}
-/*====================================================================================================================*/
-slice       = !{"[" ~ index ~ (Comma ~ index)* ~ Comma? ~ "]"}
-index       =  {index_steps|index_range|expr}
-index_range = _{index_start? ~ Colon ~ index_end?}
-index_steps = _{index_start? ~ Colon ~ index_end? ~ Colon ~ index_step?}
-index_start =  {expr}
-index_end   =  {expr}
-index_step  =  {expr}
-/*====================================================================================================================*/
-data        =  {tuple|table|block|Special|Byte|Complex|Decimal|Integer|String|namepath|XML}
-tuple       =  {"(" ~ ")" | "(" ~ expr ~ (Comma ~ expr)* ~ Comma? ~ ")"}
-table       =  {"[" ~ "]" | "[" ~ table_item? ~ (Comma ~ table_item)* ~ Comma? ~ "]"}
-table_item  = _{table_pair|expr}
-table_pair  =  {valid_key ~ Colon ~ expr}
-valid_key   = _{Integer | Symbol | String}
-/*====================================================================================================================*/
-//!Orange: XML_ESCAPE|STRING_UNICODE|STRING_ESCAPE
-//!Red: XML_HEAD
-XML      = !{xml}
-xml      = _{XML_SELF | XML_TEXT | XML_CODE}
-XML_TEXT = ${XML_TS ~ XML_TEXT_ITEM* ~ XML_END}
-XML_CODE = !{XML_CS ~ XML_CODE_ITEM* ~ XML_END}
-XML_SELF = !{"<" ~ namepath ~ XML_PAIR* ~ "/>"}
-XML_TS   = !{"<" ~ namepath ~ XML_PAIR* ~ ">"}
-XML_CS   = !{"<$" ~ namepath ~ XML_PAIR* ~ ">"}
-XML_END  = !{"</" ~ namepath ~ ">"}
-XML_TEXT_ITEM = ${
-    xml            |
-    XML_ESCAPE     |
-    "$" ~ namepath | // $1, $a
-    STRING_SLOT    | // ${a}, ${1 + 1}
-    STRING_UNICODE | // \u{20}
-    STRING_ESCAPE  | // \a
-    XML_RAW
-}
-XML_CODE_ITEM = ${xml|statement}
-XML_ESCAPE    = @{AND ~ ASCII_ALPHANUMERIC+ ~ Semicolon}
-XML_PAIR      = {(XML_SYMBOL ~ Set)? ~ term_inline}
-XML_SYMBOL    = {Symbol ~ (DOT ~ Symbol)*}
-XML_RAW       = @{!("</"|"<$"|"<") ~ ANY}
-/*====================================================================================================================*/
-// https://en.wikipedia.org/wiki/Quotation_mark#Summary_table
-///#98C379
-String         = ${
-    Symbol? ~ PUSH(Quotation{3,}|Apostrophe{3,}|Quotation|Apostrophe) ~ (StringItem|!PEEK ~ any)* ~ POP |
-    Symbol? ~ "『" ~ (StringItem|!"』" ~ any)* ~ "』" |
-    Symbol? ~ "「" ~ (StringItem|!"」" ~ any)* ~ "」" |
-    Symbol? ~ "«" ~ (StringItem|!"»" ~ any)* ~ "»" |
-    Symbol? ~ "‹" ~ (StringItem|!"›" ~ any)* ~ "›"
-}
-StringItem     = _{
-    "$" ~ namepath | // $1, $a
-    STRING_SLOT    | // ${a}, ${1 + 1}
-    STRING_UNICODE | // \u{20}
-    STRING_ESCAPE
-}
-Quotation      = _{"\""}
-Apostrophe     = _{"'"}
-STRING_ESCAPE  = @{"\\" ~ any}
-STRING_SLOT    = !{"${" ~ expr_inline ~ "}"}
-STRING_UNICODE = @{"\\u" ~ "{" ~ASCII_ALPHANUMERIC* ~ "}"}
-any            = @{ANY}
-/*====================================================================================================================*/
-//!#D19A66: Integer|Decimal|DecimalBad|Byte
-//!#D19A66: Special
-Byte    = ${Zero ~ ASCII_ALPHA ~ (Underline|SUB|ASCII_ALPHANUMERIC)+}
-Decimal = ${Integer ~ DOT ~ Integer+}
-// DecimalBad = ${Integer ~ Dot|Dot ~ Integer+}
-Integer = @{Zero|ASCII_NONZERO_DIGIT ~ (Underline|ASCII_DIGIT)*}
-Complex = ${(Decimal|Integer) ~ Symbol}
-Zero    = _{"0"}
-Special = !{"true" | "false"}
-Underline = _{"_"}
-/*====================================================================================================================*/
-//!#61AFEF: SYMBOL_XID
-//!#56B6C2: SYMBOL_ESCAPE|SYMBOL_EXTRA
-Symbol   = ${SYMBOL_XID|SYMBOL_ESCAPE|SYMBOL_EXTRA}
-namepath = ${Symbol ~ (Proportion ~ Symbol)*}
-freepath = ${Symbol ~ ((Proportion|DOT) ~ Symbol)*}
-SYMBOL_XID = @{(XID_START|Underline) ~  XID_CONTINUE*}
-SYMBOL_ESCAPE = @{Quote ~ (!Quote ~ ANY)+ ~ Quote}
-SYMBOL_EXTRA = @{
-    // "ℯ"|"ħ"|"ø"
-    "_"
-}
-Quote =@{"`"}
-/*====================================================================================================================*/
-//!#7F848E: COMMENT
-WHITESPACE = _{NEWLINE|WHITE_SPACE}
-COMMENT    = ${CommentN|Comment1}
-Comment1   = @{Solidus ~ (!NEWLINE ~ ANY)* }
-CommentN   = @{PUSH(Solidus{3,}) ~ (!PEEK ~ ANY)* ~ POP}
-Solidus    = @{"\\"}
-/*====================================================================================================================*/
-Proportion = @{"::"|"∷"} //U+2237
-Comma      = _{","} //U+FF0C
-Colon      = _{":"} //U+FF1A
-Semicolon  = _{";"|";;"}
-//!Orange: MODIFIERS
-MODIFIERS = @{
-    !(Symbol~(DOT|Set|Comma|Proportion|Colon|Semicolon|"{"|"}"|"("|")"|"<"|">")) ~ Symbol
-}
-//!#56B6C2: Prefix|Infix|Postfix
-Prefix = ${
-    "¬"|"!"|"+"|"-"|FRACTION
-}
-//!#56B6C2: BANG|QUESTION
-Suffix   = ${"!"|"?"|Superscript|"℃"|"℉"|"%"|"‰"|"‱"}
-Superscript = @{("⁺"|"⁻")?~("⁰"|"¹"|"²"|"³"|"⁴"|"⁵"|"⁶"|"⁷"|"⁸"|"⁹")+}
-FRACTION = @{"⅟"|"½"|"⅓"|"⅔"|"¼"|"¾"|"⅕"|"⅖"|"⅗"|"⅘"|"⅙"|"⅚"|"⅐"|"⅛"|"⅜"|"⅝"|"⅞"|"⅑"|"⅒"}
-Infix = _{
-    Set
-  | CONCAT|ADD
-  | REMOVE|SUB
-  | LOGIC_AND|LOGIC_OR|AND|Or
-  | Multiply|CenterDot|Kronecker|TensorProduct|Divide|Quotient|Modulo
-  | POWER
-  | ">"{1,3}|GraterEqual|LT|GT|Equal
-  | NOT_IS|IS|NOT_IN|IN
-  //| Dot
-}
-
-//!#C678DD: NOT_IS|NOT_IN|IN|IS
-IS = @{"is"|"⊴"} // ⪨ =
-NOT_IS = !{"is" ~ "not"|"⋬"}
-IN = @{"in"|"∈"}
-NOT_IN = !{"not" ~ "in"|"∉"}
-
-
-ADD = @{"+"}
-SUB = @{"-"}
-CONCAT = @{"++"}
-REMOVE = @{"--"}
-
-AND = @{"&"}
-Or  = @{"|"}
-
-LOGIC_AND = @{"||"|"∧"}
-LOGIC_OR  = @{"&&"|"∨"}
-
-Star  = @{"*"}
-Slash = @{"/"}
-Tilde = @{"~"}
-
-//!#56B6C2: DOT2|DOT3
-DOT  = @{"."}
-DOT2 = @{".."}
-DOT3 = @{"..."}
-
-
-Load =@{"<<<"|"⋘"} //U+22D8
-Save =@{">>>"|"⋙"} //U+22D9
-LeftShift =@{"<<"|"≪"} //U+226A
-RightShift =@{">>"|"≫"} //U+226B
-LessEqual =@{"<="}
-GraterEqual =@{">="}
-LT =@{"<"}
-GT =@{">"}
+;
 
 
 
-Equivalent =@{"==="}
-NotEquivalent =@{"=!="}
-Equal =@{"=="}
-NotEqual =@{"!="|"≠"} //U+2260
-///#56B6C2
-Set = @{"="}
+NamespaceDeclare = "namespace" namespace:NamespaceNode;
+
+DefineDeclare = "def" namespace:NamespaceNode [parameters:DefineArguments] body:BlockNode;
+
+DefineArguments = '(' ')' | '(' args:DefineArgument [',' args:DefineArgument] ')';
+DefineArgument = name:IdentifierNode [':' type:TypeNode] ['=' value:ExpressionNode ];
 
 
-
-Multiply =@{Star | "×"} //U+00D7
-CenterDot = @{"⋅"} //U+22C5
-Kronecker =@{"⊗"} //U+2297
-TensorProduct=@{"⊙"} //U+2299
-Divide = @{Slash | "÷"} //U+00F7
-Quotient = @{"//"}
-Modulo = @{"%"}
-
-//!#56B6C2: POWER|SURD
-POWER = @{"^"}
-SURD = @{"√"} //U+221A
+BlockNode = '{' '}' | '{' statements:BlockStatementNode [statements:BlockStatementNode] '}';
+BlockStatementNode =
+	@:NumberNode |
+	@:StringNode
+;
 
 
+TypeNode = id:IdentifierNode;
+
+ExpressionNode = StringNode;
 
 
-To =@{"->"|"→"}
+ValueNode =
+@:NumberNode |
+@:StringNode
+;
 
 
+KeyValueNode = key:KeyNode ':' value:ValueNode;
 
-LogicNot =@{"¬"} //U+00AC
-LogicXor =@{"⊕"} //U+2295
+@position
+KeyNode =
+@:IdentifierNode |
+@:StringNode
+;
 
-Ellipsis =@{"..."|"…"} // U+2026
+@position
+StringNode = [hint:IdentifierNode] '\"' '\"';
 
-Output =@{"%%"}
+@position
+@no_skip_ws
+NumberNode = num:Num [hint:IdentifierNode];
+
+@string
+@position
+@no_skip_ws
+Num = ['+'|'-'] {'0'..'9'}+ [Dot {'0'..'9'}+];
+
+@position
+NamespaceNode = path:IdentifierNode {NamespaceSplit path:IdentifierNode};
+NamespaceSplit = '.' | '-' | '::';
+
+@string
+@position
+@no_skip_ws
+IdentifierNode = (XID_START | '_') {XID_CONTINUE};
+
+@string
+@position
+SpecialNode = 'null' | 'default' | 'true' | 'false';
 
 
+@char
+@check(unicode_ident::is_xid_start)
+XID_START = char;
 
+@char
+@check(unicode_ident::is_xid_continue)
+XID_CONTINUE = char;
 
+@char
+Dot = '.' | '。';
+
+@char
+Split = ';' | ',' | '，';

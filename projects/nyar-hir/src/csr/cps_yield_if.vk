@@ -19,7 +19,7 @@ class Generator {
     constructor(v) {
         v = v
     }
-    def next() {
+    def next() {      
         k()
     }
     def yield_0() {
@@ -59,24 +59,3 @@ let gene = f(true)
 gene.next()
 gene.next()
 
-
-
-def f() {
-    let x = 0;
-    loop {
-        yield x
-        x += 1
-    }
-}
-
-
-def f() {
-    let x = 0
-    loop_k()
-}
-
-def loop_k() {
-    yield x
-    x += 1
-    loop_k()
-}

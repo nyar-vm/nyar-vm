@@ -1,4 +1,5 @@
 def test_loop1(i) {
+	#label(__k1)
 	loop {
 	    if (i > 0) {
 	        i -= 1
@@ -11,25 +12,42 @@ def test_loop1(i) {
 	i + 1
 }
 
+//==============================================================================
+
 class __csr_test_loop1 {
 	i,
 }
 
 extends __csr_test_loop1 {
 	__k1() {
-	    i + 1
-	}
-	__k2() {
 	    if (i > 0) {
 	        i -= 1
-	        self.__k2() // continue
+	        __k1() // continue
 	    }
 	    else {
-	        self.__k1() // break
+	        return
 	    }
 	}
 	__main(i) {
 	    i = 0
-	    self.__k2()
+	    __k1()
+	    i + 1
 	}
+}
+
+//==============================================================================
+
+def __main(i) {
+	__k1(i)
+	i + 1
+}
+
+def __k1 {
+    if (i > 0) {
+        i -= 1
+        __k1() // continue
+    }
+    else {
+        return // break
+    }
 }
