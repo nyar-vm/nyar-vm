@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{NyarClass, NyarValue};
 
 impl NyarValue {

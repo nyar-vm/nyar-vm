@@ -19,7 +19,7 @@ pub enum NyarIndexSystem {
     OffsetSystem,
 }
 
-pub type StringCallback = fn(&str) -> Result<Value>;
+pub type StringCallback = fn(&str) -> NyarResult<Value>;
 
 #[derive(Clone, Debug)]
 pub struct NyarContext {

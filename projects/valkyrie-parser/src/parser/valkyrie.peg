@@ -1,10 +1,9 @@
 @export
-ValkyrieParser = {statements:SwarmStatements} $;
+VkParser = {statements:VkStatements} $;
 
-ValkyrieStatements =
+VkStatements =
 	@:NamespaceDeclare |
 	@:DefineDeclare
-
 ;
 
 

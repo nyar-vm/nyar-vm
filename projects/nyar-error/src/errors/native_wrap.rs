@@ -1,26 +1,12 @@
 use super::*;
 
-macro_rules! native_error {
-    ($native:ty => $error:ident) => {
-        impl From<$native> for NyarError {
-            fn from(e: $native) -> Self {
-                Self {
-                    kind: box NyarErrorKind::$error(e),
-                    span: Default::default(),
-                }
-            }
-        }
-    };
-    {$($native:ty => $error:ident,)*} => {
-        $(native_error!($native => $error);)*
-    };
-    {$($native:ty => $error:ident), *} => {
-        native_error!($($native => $error,)*);
-    };
+impl From<std::io::Error> for NyarError {
+    fn from(e: std::io::Error) -> Self {
+        Self { kind: box NyarErrorKind::IOError(e), span: Default::default() }
+    }
 }
-
-native_error! {
-    std::io::Error  => IOError,
-    std::fmt::Error => FormatError,
-    std::num::ParseFloatError => ParseDecimalError,
+impl From<std::fmt::Error> for NyarError {
+    fn from(e: std::fmt::Error) -> Self {
+        Self { kind: box NyarErrorKind::FormatError(e), span: Default::default() }
+    }
 }

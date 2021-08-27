@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
 
 use convert_case::{Case, Casing};
-use shredder::Scan;
 use smartstring::{LazyCompact, SmartString};
 
 use nyar_macro::sync_value_type;

@@ -1,14 +1,6 @@
-use std::{
-    fmt::{Display, Formatter},
-    rc::Rc,
-    sync::Arc,
-};
+use std::fmt::{Display, Formatter};
 
 use num::{BigInt, Integer, One, Zero};
-use shredder::{
-    marker::{GcDrop, GcSafe},
-    Scan, Scanner,
-};
 
 use nyar_macro::sync_value_type;
 

@@ -1,6 +1,9 @@
+use miette::{Diagnostic, IntoDiagnostic, LabeledSpan, NamedSource, Result, Severity, SourceCode};
 use std::{
+    char::ParseCharError,
     error::Error,
-    fmt::{Display, Formatter},
+    fmt::{Display, Formatter, Write},
+    num::{ParseFloatError, ParseIntError},
 };
 
 use crate::Span;
@@ -9,9 +12,9 @@ pub use self::error_kinds::NyarErrorKind;
 
 mod error_kinds;
 mod native_wrap;
-mod parse_errors;
+pub mod parse_errors;
 
-pub type Result<T> = std::result::Result<T, NyarError>;
+pub type NyarResult<T> = std::result::Result<T, NyarError>;
 
 #[derive(Debug)]
 pub struct NyarError {

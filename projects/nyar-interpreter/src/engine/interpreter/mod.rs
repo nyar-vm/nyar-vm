@@ -1,18 +1,18 @@
-use crate::{engine::NyarEngine, ASTKind, ASTNode, Result, Value};
+use crate::{engine::NyarEngine, ASTKind, ASTNode, NyarResult, Value};
 use nyar_hir::ast::IntegerLiteral;
 
 pub trait Evaluate {
-    fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value>;
+    fn evaluate(&self, ctx: &mut NyarEngine) -> NyarResult<Value>;
 }
 
 impl Evaluate for ASTNode {
-    fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value> {
+    fn evaluate(&self, ctx: &mut NyarEngine) -> NyarResult<Value> {
         self.kind.evaluate(ctx)
     }
 }
 
 impl Evaluate for ASTKind {
-    fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value> {
+    fn evaluate(&self, ctx: &mut NyarEngine) -> NyarResult<Value> {
         let value = match self {
             // Self::Program(v) | Self::Suite(v) => {
             //     let mut out = vec![];
@@ -51,7 +51,7 @@ impl Evaluate for ASTKind {
 }
 
 impl Evaluate for IntegerLiteral {
-    fn evaluate(&self, ctx: &mut NyarEngine) -> Result<Value> {
+    fn evaluate(&self, ctx: &mut NyarEngine) -> NyarResult<Value> {
         ctx.get_integer_handlers().parse_integer(s, &self.value)
     }
 }

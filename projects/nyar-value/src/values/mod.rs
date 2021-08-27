@@ -1,20 +1,15 @@
 use std::{
-    collections::{HashMap, LinkedList},
     fmt::{Debug, Display, Formatter},
-    ops::{Deref, Not},
-    sync::{Arc, Mutex},
-    time::Instant,
+    ops::Not,
 };
+
+use shredder::{Gc, Scan};
+
+pub use crate::values::{byte_array::NyarBlob, dict::NyarDict, integer::NyarInteger, listing::NyarList, string::NyarString};
+use crate::NyarCast;
 
 mod byte_array;
 mod dict;
-use indexmap::IndexMap;
-use num::BigInt;
-use shredder::{atomic::AtomicGc, Gc, Scan};
-use smartstring::{LazyCompact, SmartString};
-
-pub use crate::values::{byte_array::NyarBlob, dict::NyarDict, integer::NyarInteger, listing::NyarList, string::NyarString};
-use crate::{NyarCast, NyarClass};
 
 mod integer;
 mod listing;

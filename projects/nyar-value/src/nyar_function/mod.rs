@@ -1,10 +1,6 @@
-use std::{
-    any::{type_name, Any, TypeId},
-    collections::BTreeMap,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
-use nyar_error::Result;
+use nyar_error::NyarResult;
 use FunctionTable::{Dispatch, Overload, Principal};
 
 use crate::NyarValue;
@@ -84,7 +80,7 @@ pub struct FunctionContext {}
 
 pub trait FunctionObject {
     fn match_typing(&self, types: &[NyarType]) -> bool;
-    fn apply(&self, input: FunctionInput, ctx: FunctionContext) -> Result<NyarValue>;
+    fn apply(&self, input: FunctionInput, ctx: FunctionContext) -> NyarResult<NyarValue>;
     /// 参数不足不报错
     fn is_curry(&self) -> bool {
         false
@@ -102,7 +98,7 @@ pub struct NativeFunction {
     name: String,
     typing: Vec<NyarType>,
     typing_ret: NyarType,
-    function: fn(FunctionInput) -> Result<NyarValue>,
+    function: fn(FunctionInput) -> NyarResult<NyarValue>,
 }
 
 ///

@@ -18,7 +18,7 @@ pub struct Array {
 }
 
 impl Value {
-    pub fn as_index(&self) -> Result<(u64, bool)> {
+    pub fn as_index(&self) -> NyarResult<(u64, bool)> {
         match self {
             Value::Integer(v) => {
                 let (s, i) = v.into_parts();
@@ -41,7 +41,7 @@ impl Value {
 }
 
 impl Vector {
-    pub fn get_index(n: SharedValue) -> Result<Self> {
+    pub fn get_index(n: SharedValue) -> NyarResult<Self> {
         let a = n.read()?.as_index()?;
     }
 }

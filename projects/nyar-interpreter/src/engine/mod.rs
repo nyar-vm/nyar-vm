@@ -4,7 +4,7 @@ pub mod module;
 
 pub use self::module::{ModuleInstance, PackageManager, SharedModule};
 
-use crate::{engine::interpreter::Evaluate, ASTNode, Result, Value};
+use crate::{engine::interpreter::Evaluate, ASTNode, NyarResult, Value};
 use std::{collections::HashMap, sync::Arc};
 
 pub struct NyarEngine {
@@ -20,7 +20,7 @@ impl Default for NyarEngine {
 }
 
 impl NyarEngine {
-    pub fn evaluate(&mut self, ast: &ASTNode) -> Result<Value> {
+    pub fn evaluate(&mut self, ast: &ASTNode) -> NyarResult<Value> {
         ast.evaluate(self)
     }
     pub fn goto(&mut self) {}

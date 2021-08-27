@@ -8,8 +8,8 @@ repository = "https://github.com/nyar-lang/NyarNative"
 license = "MPL-2.0"
 
 [dependencies]
-pest = "2.2.1"
-pest_derive = "2.2.1"
+peginator = "0.6.0"
+unicode-ident = "1.0.6"
 
 [dependencies.nyar-error]
 path = "../nyar-error"
