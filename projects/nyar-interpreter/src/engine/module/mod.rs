@@ -15,7 +15,7 @@ pub use self::{
 };
 use crate::{
     value::{function::FunctionPrototype, variable::Variable, Symbol},
-    NyarError, Result,
+    NyarError3, Result,
 };
 use shredder::{
     marker::{GcDrop, GcSafe},

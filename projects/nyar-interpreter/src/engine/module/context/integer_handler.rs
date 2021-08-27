@@ -63,7 +63,7 @@ pub fn build_integer_parsers() -> IntegerHandlerManager {
         let i = match BigInt::parse_bytes(input.as_bytes(), 10) {
             Some(s) => s,
             None => {
-                return Err(NyarError::msg("TODO: Int parse error"));
+                return Err(NyarError3::msg("TODO: Int parse error"));
             }
         };
         Ok(Value::Integer(i))

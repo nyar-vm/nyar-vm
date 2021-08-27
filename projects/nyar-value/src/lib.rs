@@ -1,4 +1,4 @@
-use nyar_error::NyarError;
+use nyar_error::NyarError3;
 
 pub use self::{
     nyar_class::{CustomClass, NyarClass},
@@ -14,4 +14,4 @@ mod nyar_variants;
 mod traits;
 mod values;
 
-pub type NyarResult<T = NyarValue> = Result<T, NyarError>;
+pub type NyarResult<T = NyarValue> = Result<T, NyarError3>;

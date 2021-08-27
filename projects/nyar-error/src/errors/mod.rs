@@ -6,11 +6,9 @@ use std::{
     ops::Range,
 };
 
-use crate::NyarError2;
-use miette::{LabeledSpan, NamedSource};
-use url::Url;
+use miette::{Diagnostic, LabeledSpan, NamedSource};
 
-use crate::Span;
+use crate::{NyarError, Span};
 
 pub use self::error_kinds::NyarErrorKind;
 
@@ -19,17 +17,17 @@ pub mod internal_error;
 mod native_wrap;
 pub mod parse_errors;
 
-pub type Result<T> = std::result::Result<T, NyarError>;
+pub type Result<T> = std::result::Result<T, NyarError3>;
 
 #[derive(Debug)]
-pub struct NyarError {
+pub struct NyarError3 {
     pub kind: Box<NyarErrorKind>,
     pub span: Span,
 }
 
-impl Error for NyarError {}
+impl Error for NyarError3 {}
 
-impl Display for NyarError {
+impl Display for NyarError3 {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         writeln!(f, "{:?}", self.kind)?;
         // match &self.span {
@@ -40,7 +38,7 @@ impl Display for NyarError {
     }
 }
 
-impl NyarError {
+impl NyarError3 {
     pub fn set_range(&mut self, start: u32, end: u32) {
         self.span.start = start;
         self.span.end = end;
@@ -53,12 +51,12 @@ impl NyarError {
     }
 }
 
-impl NyarError {
-    pub fn syntax_error(msg: impl Into<String>) -> NyarError {
+impl NyarError3 {
+    pub fn syntax_error(msg: impl Into<String>) -> NyarError3 {
         Self { kind: box NyarErrorKind::SyntaxError { info: msg.into() }, span: Default::default() }
     }
 
-    pub fn invalid_operation(op: &str, lhs: Option<String>, rhs: Option<String>, position: Span) -> NyarError {
+    pub fn invalid_operation(op: &str, lhs: Option<String>, rhs: Option<String>, position: Span) -> NyarError3 {
         match (lhs, rhs) {
             (Some(a), Some(b)) => Self {
                 kind: Box::new(NyarErrorKind::InvalidOperationInfix { op: op.to_string(), lhs: a, rhs: b }),
@@ -76,38 +74,38 @@ impl NyarError {
         }
     }
 
-    pub fn invalid_iterator(item_type: impl Into<String>, position: Span) -> NyarError {
+    pub fn invalid_iterator(item_type: impl Into<String>, position: Span) -> NyarError3 {
         Self { kind: Box::new(NyarErrorKind::InvalidIterator { item_type: item_type.into() }), span: position }
     }
 
-    pub fn invalid_cast(item_type: impl Into<String>, position: Span) -> NyarError {
+    pub fn invalid_cast(item_type: impl Into<String>, position: Span) -> NyarError3 {
         Self { kind: Box::new(NyarErrorKind::InvalidCast { item_type: item_type.into() }), span: position }
     }
 
-    pub fn if_lost(position: Span) -> NyarError {
+    pub fn if_lost(position: Span) -> NyarError3 {
         Self { kind: box NyarErrorKind::IfLost, span: position }
     }
 
-    pub fn if_non_bool(position: Span) -> NyarError {
+    pub fn if_non_bool(position: Span) -> NyarError3 {
         Self { kind: Box::new(NyarErrorKind::IfNonBoolean), span: position }
     }
 
-    pub fn invalid_index<S>(msg: S, position: Span) -> NyarError
+    pub fn invalid_index<S>(msg: S, position: Span) -> NyarError3
     where
         S: Into<String>,
     {
         Self { kind: Box::new(NyarErrorKind::InvalidIndex { message: msg.into() }), span: position }
     }
 
-    pub fn variable_not_found(name: impl Into<String>, position: Span) -> NyarError {
+    pub fn variable_not_found(name: impl Into<String>, position: Span) -> NyarError3 {
         Self { kind: Box::new(NyarErrorKind::VariableNotFound { name: name.into() }), span: position }
     }
 
-    pub fn read_write_error(name: impl Into<String>) -> NyarError {
+    pub fn read_write_error(name: impl Into<String>) -> NyarError3 {
         Self { kind: Box::new(NyarErrorKind::ReadWriteError { message: name.into() }), span: Default::default() }
     }
 
-    pub fn msg(text: impl Into<String>) -> NyarError {
+    pub fn msg(text: impl Into<String>) -> NyarError3 {
         Self { kind: Box::new(NyarErrorKind::CustomErrorText { text: text.into() }), span: Default::default() }
     }
 }

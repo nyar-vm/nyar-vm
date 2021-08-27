@@ -30,7 +30,7 @@ impl DefaultDecimalHandler {
         let parser = match self.handlers.get(handler) {
             Some(s) => s,
             None => {
-                return Err(NyarError::msg("TODO: No such dec handler"));
+                return Err(NyarError3::msg("TODO: No such dec handler"));
             }
         };
         return parser(value);
@@ -48,18 +48,18 @@ pub fn build_decimal_parsers() -> DefaultDecimalHandler {
 }
 
 pub fn parse_f32(input: &str) -> Result<Value> {
-    Err(NyarError::msg("unimplemented"))
+    Err(NyarError3::msg("unimplemented"))
     // Ok(Value::Decimal32(FloatWrapper::new(input.parse::<f32>()?)))
 }
 
 pub fn parse_f64(input: &str) -> Result<Value> {
-    Err(NyarError::msg("unimplemented"))
+    Err(NyarError3::msg("unimplemented"))
     // Ok(Value::Decimal64(FloatWrapper::new(input.parse::<f64>()?)))
 }
 
 pub fn parse_dec(input: &str) -> Result<Value> {
     match BigDecimal::parse_bytes(input.as_bytes(), 10) {
         Some(s) => Ok(Value::Decimal(s)),
-        None => Err(NyarError::syntax_error("Can not parse `{}` as decimal")),
+        None => Err(NyarError3::syntax_error("Can not parse `{}` as decimal")),
     }
 }

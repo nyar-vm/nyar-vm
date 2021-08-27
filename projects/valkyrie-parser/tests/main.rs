@@ -14,7 +14,7 @@ fn ready() {
 
 #[test]
 fn test() -> ReportResult {
-    let mut out = ValkyrieParser::parse("def main() { println!(\"Hello, world!\"); }", "test.vk")?;
+    let out = ValkyrieParser::parse_file("tests/basic.vk")?;
 
     Ok(())
 }

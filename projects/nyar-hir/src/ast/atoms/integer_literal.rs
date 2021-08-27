@@ -1,6 +1,6 @@
 use nyar_error::{
     third_party::{num::Zero, BigInt},
-    NyarError,
+    NyarError3,
 };
 
 use super::*;
@@ -18,7 +18,7 @@ impl Default for IntegerLiteral {
 }
 
 impl FromStr for IntegerLiteral {
-    type Err = NyarError;
+    type Err = NyarError3;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self { handler: String::new(), value: BigInt::from_str(s)? })

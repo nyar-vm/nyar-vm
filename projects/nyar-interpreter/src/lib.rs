@@ -5,7 +5,7 @@
 #![feature(const_fn_trait_bound)]
 
 pub use self::value::Value;
-pub use nyar_error::{NyarError, Result};
+pub use nyar_error::{NyarError3, Result};
 pub use nyar_hir::{ASTKind, ASTNode};
 
 pub mod engine;

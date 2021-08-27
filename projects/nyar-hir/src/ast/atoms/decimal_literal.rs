@@ -20,7 +20,7 @@ impl Default for DecimalLiteral {
 }
 
 impl FromStr for DecimalLiteral {
-    type Err = NyarError;
+    type Err = NyarError3;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self { handler: String::new(), value: BigDecimal::from_str(s)? })

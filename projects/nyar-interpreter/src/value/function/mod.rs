@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 
 use crate::{
     value::{error::ErrorLevels, Value},
-    NyarError, Result,
+    NyarError3, Result,
 };
 
 pub use self::{attributes::FunctionAttributes, prototype::FunctionPrototype};
@@ -55,7 +55,7 @@ impl FunctionInstance {
             ErrorLevels::Deny => {
                 for (k, v) in args.into_iter() {
                     if self.kvs.contains_key(k.as_str()) {
-                        return Err(NyarError::msg("GG"));
+                        return Err(NyarError3::msg("GG"));
                     }
                     self.kvs.insert(k, v);
                 }

@@ -3,21 +3,41 @@ VkParser = {statements:VkStatements} $;
 
 VkStatements =
 	@:NamespaceDeclare |
-	@:DefineDeclare
+	@:DefStatement
 ;
+
 
 
 
 NamespaceDeclare = "namespace" namespace:NamespaceNode;
 
-DefineDeclare = "def" namespace:NamespaceNode [parameters:DefineArguments] body:BlockNode;
+
+
+
+LoopStatement = "loop" body:BlockNode;
+
+WhileStatement = "while" condition:ExpressionNode body:BlockNode;
+
+
+
+
+
+
+
+
+
+
+DefStatement = "def" namespace:NamespaceNode [parameters:DefineArguments] body:BlockNode;
 
 DefineArguments = '(' ')' | '(' args:DefineArgument [',' args:DefineArgument] ')';
 DefineArgument = name:IdentifierNode [':' type:TypeNode] ['=' value:ExpressionNode ];
 
 
 BlockNode = '{' '}' | '{' statements:BlockStatementNode [statements:BlockStatementNode] '}';
+
 BlockStatementNode =
+	@:LoopStatement |
+	@:WhileStatement |
 	@:NumberNode |
 	@:StringNode
 ;
@@ -29,8 +49,8 @@ ExpressionNode = StringNode;
 
 
 ValueNode =
-@:NumberNode |
-@:StringNode
+	@:NumberNode |
+	@:StringNode
 ;
 
 
@@ -38,8 +58,8 @@ KeyValueNode = key:KeyNode ':' value:ValueNode;
 
 @position
 KeyNode =
-@:IdentifierNode |
-@:StringNode
+	@:IdentifierNode |
+	@:StringNode
 ;
 
 @position
@@ -52,11 +72,15 @@ NumberNode = num:Num [hint:IdentifierNode];
 @string
 @position
 @no_skip_ws
-Num = ['+'|'-'] {'0'..'9'}+ [Dot {'0'..'9'}+];
+Num = {'0'..'9'}+ [Dot {'0'..'9'}+];
 
 @position
 NamespaceNode = path:IdentifierNode {NamespaceSplit path:IdentifierNode};
-NamespaceSplit = '.' | '-' | '::';
+
+@position
+NamespaceDot = path:IdentifierNode {(NamespaceSplit|Dot) path:IdentifierNode};
+
+NamespaceSplit = '::';
 
 @string
 @position

@@ -1,6 +1,6 @@
 use nyar_error::{
     third_party::{num::Zero, BigDecimal},
-    NyarError,
+    NyarError3,
 };
 use serde::{Deserialize, Serialize};
 use std::{

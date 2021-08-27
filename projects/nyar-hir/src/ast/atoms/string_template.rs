@@ -1,6 +1,6 @@
 use std::mem::take;
 
-use nyar_error::{NyarError, Result};
+use nyar_error::{NyarError3, Result};
 
 use super::*;
 
@@ -77,9 +77,9 @@ impl StringTemplateBuilder {
     }
 }
 
-fn string_error(t: &str, span: Span) -> NyarError {
+fn string_error(t: &str, span: Span) -> NyarError3 {
     let msg = format!("`{}` does not a valid string element", t);
-    return NyarError::syntax_error(msg).with_span(span);
+    return NyarError3::syntax_error(msg).with_span(span);
 }
 
 impl StringTemplateBuilder {

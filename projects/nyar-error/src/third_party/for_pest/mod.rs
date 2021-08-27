@@ -4,9 +4,9 @@ use pest::{
     RuleType,
 };
 
-use crate::{NyarError, NyarErrorKind, Span};
+use crate::{NyarError3, NyarErrorKind, Span};
 
-impl<R> From<Error<R>> for NyarError
+impl<R> From<Error<R>> for NyarError3
 where
     R: RuleType,
 {
@@ -21,7 +21,7 @@ where
             }
             ErrorVariant::CustomError { message } => message,
         };
-        NyarError { kind: box NyarErrorKind::SyntaxError { info }, span }
+        NyarError3 { kind: box NyarErrorKind::SyntaxError { info }, span }
     }
 }
 

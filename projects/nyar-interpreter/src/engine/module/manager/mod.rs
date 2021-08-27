@@ -118,7 +118,7 @@ impl PackageManager {
 impl PackageManager {
     pub fn new_child_module(&mut self, name: &str) -> Result<()> {
         if self.get_children_names_set().contains(name) {
-            return Err(NyarError::msg("submodule already exists"));
+            return Err(NyarError3::msg("submodule already exists"));
         }
         let module = ModuleInstance::new_module(name);
         let id = self.arena.new_node(Gc::new(RwLock::new(module)));
@@ -127,7 +127,7 @@ impl PackageManager {
     }
     pub fn new_child_module_then_switch(&mut self, name: &str) -> Result<()> {
         if self.get_children_names_set().contains(name) {
-            return Err(NyarError::msg("submodule already exists"));
+            return Err(NyarError3::msg("submodule already exists"));
         }
         let module = ModuleInstance::new_module(name);
         let id = self.arena.new_node(Gc::new(RwLock::new(module)));
@@ -156,7 +156,7 @@ impl PackageManager {
     pub fn switch_to_parent_module(&mut self) -> Result<()> {
         let id = self.get_parent_id();
         if self.current_module == self.root_module {
-            return Err(NyarError::msg("root module has no father module!"));
+            return Err(NyarError3::msg("root module has no father module!"));
         }
         self.current_module = id;
         Ok(())
@@ -175,7 +175,7 @@ impl PackageManager {
                 _ => {}
             }
         }
-        return Err(NyarError::msg("no such module"));
+        return Err(NyarError3::msg("no such module"));
     }
     pub fn switch_by_path(&mut self, path: &str) -> Result<()> {
         let _root = self.arena.get(self.root_module).unwrap();

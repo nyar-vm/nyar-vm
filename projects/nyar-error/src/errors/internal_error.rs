@@ -16,8 +16,10 @@ impl Display for InternalError {
     }
 }
 
-impl From<()> for NyarError2 {
+impl Diagnostic for InternalError {}
+
+impl From<()> for NyarError {
     fn from(e: ()) -> Self {
-        NyarError2::InternalError(box InternalError { message: "Internal error".to_string() })
+        NyarError::InternalError(box InternalError { message: "Internal error".to_string() })
     }
 }

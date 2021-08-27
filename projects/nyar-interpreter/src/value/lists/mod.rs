@@ -3,7 +3,7 @@ use std::{convert::TryFrom, num::TryFromIntError};
 use bigdecimal::num_bigint::{Sign, TryFromBigIntError};
 use num::Signed;
 
-use nyar_error::NyarError;
+use nyar_error::NyarError3;
 
 use super::*;
 
@@ -26,7 +26,7 @@ impl Value {
                     Ok(o) => o,
                     Err(_) => {
                         let msg = format!("index `{}` is overflow", v);
-                        return Err(NyarError::invalid_index(msg, Default::default()));
+                        return Err(NyarError3::invalid_index(msg, Default::default()));
                     }
                 };
                 let out = matches!(s, Sign::NoSign | Sign::Plus);
@@ -34,7 +34,7 @@ impl Value {
             }
             _ => {
                 let msg = format!("type `{}` is not a valid index type", self.as_type());
-                Err(NyarError::invalid_index(msg, Default::default()))
+                Err(NyarError3::invalid_index(msg, Default::default()))
             }
         }
     }
