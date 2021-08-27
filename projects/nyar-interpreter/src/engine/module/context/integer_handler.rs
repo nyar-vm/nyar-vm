@@ -7,7 +7,7 @@ use std::{
     fmt::{Debug, Formatter},
 };
 
-pub type IntegerHandler = fn(&BigInt) -> NyarResult<Value>;
+pub type IntegerHandler = fn(&BigInt) -> Result<Value>;
 
 #[derive(Clone)]
 pub struct IntegerHandlerManager {
@@ -30,7 +30,7 @@ impl IntegerHandlerManager {
     pub fn register_handler(&mut self, k: &str, v: IntegerHandler) {
         self.handlers.insert(String::from(k), v);
     }
-    pub fn parse_integer(&self, literal: &IntegerLiteral) -> NyarResult<Value> {}
+    pub fn parse_integer(&self, literal: &IntegerLiteral) -> Result<Value> {}
 }
 
 pub static BUILD_IN_INTEGER_PARSERS: SyncLazy<IntegerHandlerManager> = SyncLazy::new(|| build_integer_parsers());

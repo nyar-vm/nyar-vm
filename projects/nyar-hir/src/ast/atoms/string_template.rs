@@ -1,6 +1,6 @@
 use std::mem::take;
 
-use nyar_error::{NyarError, NyarResult};
+use nyar_error::{NyarError, Result};
 
 use super::*;
 
@@ -34,12 +34,12 @@ impl StringTemplateBuilder {
     pub fn has_handler(&self) -> bool {
         !self.handler.is_empty()
     }
-    pub fn push_character(&mut self, s: &str, span: Span) -> NyarResult<()> {
+    pub fn push_character(&mut self, s: &str, span: Span) -> Result<()> {
         self.text_end = span.end;
         let c = char::from_str(s)?;
         Ok(self.buffer.push(c))
     }
-    pub fn push_unicode(&mut self, s: &str, span: Span) -> NyarResult<()> {
+    pub fn push_unicode(&mut self, s: &str, span: Span) -> Result<()> {
         self.text_end = span.end;
         let mut cs = s.chars();
         cs.nth(2);
@@ -47,7 +47,7 @@ impl StringTemplateBuilder {
         let c = char::from_u32(u32::from_str_radix(cs.as_str(), 16)?).ok_or(string_error(s, span))?;
         Ok(self.buffer.push(c))
     }
-    pub fn push_escape(&mut self, s: &str, span: Span) -> NyarResult<()> {
+    pub fn push_escape(&mut self, s: &str, span: Span) -> Result<()> {
         self.text_end = span.end;
         let mut cs = s.chars();
         let c = cs.nth(1).ok_or(string_error(s, span))?;

@@ -26,7 +26,7 @@ impl DefaultDecimalHandler {
     pub fn insert(&mut self, k: &str, v: StringCallback) -> Option<StringCallback> {
         self.handlers.insert(String::from(k), v)
     }
-    pub fn parse_decimal(&self, handler: &str, value: &str) -> NyarResult<Value> {
+    pub fn parse_decimal(&self, handler: &str, value: &str) -> Result<Value> {
         let parser = match self.handlers.get(handler) {
             Some(s) => s,
             None => {
@@ -47,17 +47,17 @@ pub fn build_decimal_parsers() -> DefaultDecimalHandler {
     return handlers;
 }
 
-pub fn parse_f32(input: &str) -> NyarResult<Value> {
+pub fn parse_f32(input: &str) -> Result<Value> {
     Err(NyarError::msg("unimplemented"))
     // Ok(Value::Decimal32(FloatWrapper::new(input.parse::<f32>()?)))
 }
 
-pub fn parse_f64(input: &str) -> NyarResult<Value> {
+pub fn parse_f64(input: &str) -> Result<Value> {
     Err(NyarError::msg("unimplemented"))
     // Ok(Value::Decimal64(FloatWrapper::new(input.parse::<f64>()?)))
 }
 
-pub fn parse_dec(input: &str) -> NyarResult<Value> {
+pub fn parse_dec(input: &str) -> Result<Value> {
     match BigDecimal::parse_bytes(input.as_bytes(), 10) {
         Some(s) => Ok(Value::Decimal(s)),
         None => Err(NyarError::syntax_error("Can not parse `{}` as decimal")),

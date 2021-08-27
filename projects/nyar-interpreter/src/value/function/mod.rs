@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 
 use crate::{
     value::{error::ErrorLevels, Value},
-    NyarError, NyarResult,
+    NyarError, Result,
 };
 
 pub use self::{attributes::FunctionAttributes, prototype::FunctionPrototype};
@@ -32,7 +32,7 @@ impl FunctionInstance {
     pub fn new(f: Rc<FunctionPrototype>) -> Self {
         Self { prototype: f, args: vec![], kvs: IndexMap::new() }
     }
-    pub fn fill_arguments(&mut self, args: Vec<Value>) -> NyarResult<()> {
+    pub fn fill_arguments(&mut self, args: Vec<Value>) -> Result<()> {
         self.args.extend(args);
         self.check_valid()?;
         // The non-curried function must fill all parameters at once!
@@ -41,7 +41,7 @@ impl FunctionInstance {
         }
         Ok(())
     }
-    pub fn fill_named_arguments(&mut self, args: HashMap<String, Value>) -> NyarResult<()> {
+    pub fn fill_named_arguments(&mut self, args: HashMap<String, Value>) -> Result<()> {
         match self.allow_override_keywords() {
             ErrorLevels::Allow => self.kvs.extend(args),
             ErrorLevels::Warning => {
@@ -69,7 +69,7 @@ impl FunctionInstance {
         Ok(())
     }
 
-    pub fn check_valid(&self) -> NyarResult<()> {
+    pub fn check_valid(&self) -> Result<()> {
         match self.allow_extra_arguments() {
             ErrorLevels::Allow => {}
             ErrorLevels::Warning => {}
@@ -82,10 +82,10 @@ impl FunctionInstance {
         }
         Ok(())
     }
-    pub fn check_ready(&self) -> NyarResult<()> {
+    pub fn check_ready(&self) -> Result<()> {
         Ok(())
     }
-    pub fn evaluate(&self) -> NyarResult<Value> {
+    pub fn evaluate(&self) -> Result<Value> {
         self.check_ready()?;
         unimplemented!()
     }

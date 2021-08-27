@@ -53,7 +53,7 @@ impl ModuleInstance {
 }
 
 impl ModuleInstance {
-    pub fn get_variable(&self, name: &str, r: Span) -> NyarResult<Variable> {
+    pub fn get_variable(&self, name: &str, r: Span) -> Result<Variable> {
         unimplemented!()
         // match self.variable_table.get(name) {
         //     Some(s) => Ok(s.to_owned()),
@@ -66,7 +66,7 @@ impl ModuleInstance {
         // }
     }
 
-    pub fn set_variable(&mut self, name: String, value: Variable, r: Span) -> NyarResult<()> {
+    pub fn set_variable(&mut self, name: String, value: Variable, r: Span) -> Result<()> {
         unimplemented!()
         // if let Some(v) = self.variable_table.get(&name) {
         //     if !v.is_mutable() {

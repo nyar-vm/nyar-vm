@@ -116,7 +116,7 @@ impl PackageManager {
 }
 
 impl PackageManager {
-    pub fn new_child_module(&mut self, name: &str) -> NyarResult<()> {
+    pub fn new_child_module(&mut self, name: &str) -> Result<()> {
         if self.get_children_names_set().contains(name) {
             return Err(NyarError::msg("submodule already exists"));
         }
@@ -125,7 +125,7 @@ impl PackageManager {
         self.current_module.append(id, &mut self.arena);
         Ok(())
     }
-    pub fn new_child_module_then_switch(&mut self, name: &str) -> NyarResult<()> {
+    pub fn new_child_module_then_switch(&mut self, name: &str) -> Result<()> {
         if self.get_children_names_set().contains(name) {
             return Err(NyarError::msg("submodule already exists"));
         }
@@ -136,14 +136,14 @@ impl PackageManager {
         Ok(())
     }
 
-    pub fn new_child_scope(&mut self) -> NyarResult<()> {
+    pub fn new_child_scope(&mut self) -> Result<()> {
         let module = ModuleInstance::new_scope();
         let id = self.arena.new_node(Gc::new(RwLock::new(module)));
         self.current_module.append(id, &mut self.arena);
         Ok(())
     }
 
-    pub fn new_child_scope_then_switch(&mut self) -> NyarResult<()> {
+    pub fn new_child_scope_then_switch(&mut self) -> Result<()> {
         let module = ModuleInstance::new_scope();
         let id = self.arena.new_node(Gc::new(RwLock::new(module)));
         self.current_module.append(id, &mut self.arena);
@@ -153,7 +153,7 @@ impl PackageManager {
 }
 
 impl PackageManager {
-    pub fn switch_to_parent_module(&mut self) -> NyarResult<()> {
+    pub fn switch_to_parent_module(&mut self) -> Result<()> {
         let id = self.get_parent_id();
         if self.current_module == self.root_module {
             return Err(NyarError::msg("root module has no father module!"));
@@ -161,11 +161,11 @@ impl PackageManager {
         self.current_module = id;
         Ok(())
     }
-    pub fn switch_to_root_module(&mut self) -> NyarResult<()> {
+    pub fn switch_to_root_module(&mut self) -> Result<()> {
         self.current_module = self.root_module;
         Ok(())
     }
-    pub fn switch_to_child_module(&mut self, name: &str) -> NyarResult<()> {
+    pub fn switch_to_child_module(&mut self, name: &str) -> Result<()> {
         for node in self.get_children_id() {
             match &self.get_node_name(node) {
                 Some(s) if s.as_str() == name => {
@@ -177,7 +177,7 @@ impl PackageManager {
         }
         return Err(NyarError::msg("no such module"));
     }
-    pub fn switch_by_path(&mut self, path: &str) -> NyarResult<()> {
+    pub fn switch_by_path(&mut self, path: &str) -> Result<()> {
         let _root = self.arena.get(self.root_module).unwrap();
         for _i in path.split("::") {
             unimplemented!()
@@ -191,23 +191,23 @@ impl PackageManager {}
 
 impl NyarEngine {
     #[inline]
-    pub fn new_child_module(&mut self, name: &str) -> NyarResult<()> {
+    pub fn new_child_module(&mut self, name: &str) -> Result<()> {
         self.current_pkg.new_child_module(name)
     }
     #[inline]
-    pub fn new_child_module_then_switch(&mut self, name: &str) -> NyarResult<()> {
+    pub fn new_child_module_then_switch(&mut self, name: &str) -> Result<()> {
         self.current_pkg.new_child_module_then_switch(name)
     }
     #[inline]
-    pub fn new_child_scope(&mut self) -> NyarResult<()> {
+    pub fn new_child_scope(&mut self) -> Result<()> {
         self.current_pkg.new_child_scope()
     }
     #[inline]
-    pub fn new_child_scope_then_switch(&mut self) -> NyarResult<()> {
+    pub fn new_child_scope_then_switch(&mut self) -> Result<()> {
         self.current_pkg.new_child_scope_then_switch()
     }
     #[inline]
-    pub fn switch_to_root_module(&mut self) -> NyarResult<()> {
+    pub fn switch_to_root_module(&mut self) -> Result<()> {
         self.current_pkg.switch_to_root_module()
     }
 }

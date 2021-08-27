@@ -1,5 +1,7 @@
+use miette::Diagnostic;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
+
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Span {
     /// span start offset

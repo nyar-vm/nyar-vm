@@ -1,8 +1,8 @@
-use std::ops::Range;
+use std::{ops::Range, path::Path};
 
 use peginator::PegParser;
 
-use nyar_error::{NamedSource, ParseError, Result};
+use nyar_error::{NamedSource, NyarResult, ParseError};
 use nyar_hir::ASTNode;
 
 use crate::{parser::valkyrie::VkParser, ValkyrieParser};
@@ -16,8 +16,16 @@ pub struct ParseContext {
 }
 
 impl ValkyrieParser {
-    pub fn parse(input: &str, file_name: &str) -> Result<ASTNode> {
+    pub fn parse(input: &str, file_name: &str) -> NyarResult<ASTNode> {
         let mut ctx = ParseContext { source: input.to_string(), file_name: file_name.to_string() };
+        ctx.parse()?;
+        todo!()
+    }
+    pub fn parse_file<P: AsRef<Path>>(path: P) -> NyarResult<ASTNode> {
+        let path = path.as_ref().canonicalize()?;
+        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+
+        let mut ctx = ParseContext { source: std::fs::read_to_string(path)?, file_name };
         ctx.parse()?;
         todo!()
     }
@@ -25,12 +33,12 @@ impl ValkyrieParser {
 
 impl ParseContext {
     pub fn parse_error(&self, msg: impl Into<String>, span: Range<usize>) -> ParseError {
-        ParseError::new(msg.into(), NamedSource::new(self.file_name.clone(), self.source.clone()), span)
+        ParseError { message: msg.into(), file: NamedSource::new(self.file_name.clone(), self.source.clone()), url: (), span }
     }
 }
 
 impl ParseContext {
-    pub fn parse(&mut self) -> Result<()> {
+    pub fn parse(&mut self) -> NyarResult<()> {
         let stmts = match VkParser::parse(&self.file_name) {
             Ok(o) => o.statements,
             Err(e) => Err(self.parse_error(e.specifics.to_string(), Range { start: e.position, end: e.position }))?,
@@ -40,11 +48,4 @@ impl ParseContext {
         }
         todo!()
     }
-}
-
-#[test]
-fn test() -> Result<()> {
-    let mut out = ValkyrieParser::parse("fn main() { println!(\"Hello, world!\"); }", "test.vk")?;
-
-    Ok(())
 }

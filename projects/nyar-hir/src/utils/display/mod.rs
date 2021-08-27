@@ -5,7 +5,7 @@ use std::{
 
 use pretty::{Arena, DocAllocator, DocBuilder, Pretty};
 
-use nyar_error::NyarResult;
+use nyar_error::Result;
 
 use crate::{
     ast::{ByteLiteral, DecimalLiteral, InfixCall, IntegerLiteral, Symbol},
@@ -19,13 +19,13 @@ mod definition;
 mod expr;
 
 impl ASTNode {
-    pub fn pretty_print(&self, width: usize) -> NyarResult<String> {
+    pub fn pretty_print(&self, width: usize) -> Result<String> {
         self.kind.pretty_print(width)
     }
 }
 
 impl ASTKind {
-    pub fn pretty_print(&self, width: usize) -> NyarResult<String> {
+    pub fn pretty_print(&self, width: usize) -> Result<String> {
         let mut out = String::new();
         let fmt = PrettyFormatter { arena: &Default::default() };
         self.v_format(&fmt).render_fmt(width, &mut out)?;

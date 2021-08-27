@@ -8,6 +8,7 @@ repository = "https://github.com/nyar-lang/NyarNative"
 license = "MPL-2.0"
 
 [dependencies]
+url = "2.3.1"
 diagnostic = "0.5.1"
 serde = { version = "1.0.152", features = ["derive"] }
 num = { version = "0.4.0", features = ["serde"], optional = true }

@@ -11,7 +11,7 @@ pub mod utils;
 pub mod variable;
 
 pub use self::class::NyarClass;
-use crate::NyarResult;
+use crate::Result;
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::{self, Debug, Display, Formatter},

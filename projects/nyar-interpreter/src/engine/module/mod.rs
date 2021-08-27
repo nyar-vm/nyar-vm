@@ -15,7 +15,7 @@ pub use self::{
 };
 use crate::{
     value::{function::FunctionPrototype, variable::Variable, Symbol},
-    NyarError, NyarResult,
+    NyarError, Result,
 };
 use shredder::{
     marker::{GcDrop, GcSafe},
@@ -33,7 +33,7 @@ pub struct PackageManager {
 }
 
 impl PackageManager {
-    pub fn polymer(&mut self) -> NyarResult<()> {
+    pub fn polymer(&mut self) -> Result<()> {
         for (_, module) in self.arena.iter_mut() {
             module.polymer()?;
         }
@@ -42,7 +42,7 @@ impl PackageManager {
 }
 
 impl ModulePolymer {
-    pub fn polymer(self) -> NyarResult<Self> {
+    pub fn polymer(self) -> Result<Self> {
         match self {
             ModulePolymer::Dynamic { primary, provider } => {}
             ModulePolymer::Static { cache } => Ok(Self::Static { cache }),

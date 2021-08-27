@@ -1,19 +1,20 @@
-use std::ops::Range;
-
 use super::*;
+use crate::NyarResult;
+use std::fs::read_to_string;
 
 #[derive(Debug)]
 pub struct ParseError {
-    message: String,
-    file: NamedSource,
-    span: Range<usize>,
+    /// The message to display to the user
+    pub message: String,
+    /// The path of the file relative to the workspace
+    pub file: String,
+    /// Absolute path
+    pub url: Url,
+    /// Where the error occurred
+    pub span: Range<usize>,
 }
 
-impl ParseError {
-    pub fn new(message: String, source: NamedSource, position: Range<usize>) -> Self {
-        Self { message, file: source, span: Range { start: position.start, end: position.end } }
-    }
-}
+impl Error for ParseError {}
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -21,26 +22,18 @@ impl Display for ParseError {
     }
 }
 
-impl Error for ParseError {}
+impl ParseError {
+    pub fn label(&self) -> Vec<LabeledSpan> {
+        vec![LabeledSpan::new(Some(self.message.clone()), self.span.start, self.span.end)]
+    }
+    pub fn text(&self) -> NyarResult<String> {
+        read_to_string(self.url.to_file_path()?)?
+    }
+}
 
-impl Diagnostic for ParseError {
-    fn code<'a>(&'a self) -> Option<Box<dyn Display + 'a>> {
-        Some(box "E9000")
-    }
-    fn help<'a>(&'a self) -> Option<Box<dyn Display + 'a>> {
-        Some(box &self.message)
-    }
-    fn url<'a>(&'a self) -> Option<Box<dyn Display + 'a>> {
-        Some(box format!("https://docs.rs/E9000"))
-    }
-    fn severity(&self) -> Option<Severity> {
-        Some(Severity::Error)
-    }
-    fn source_code(&self) -> Option<&dyn SourceCode> {
-        Some(&self.file)
-    }
-    fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan> + '_>> {
-        Some(box vec![LabeledSpan::new(Some(self.message.clone()), self.span.start, self.span.end)].into_iter())
+impl From<ParseError> for NyarError2 {
+    fn from(e: ParseError) -> Self {
+        NyarError2::ParseError(box e)
     }
 }
 
