@@ -1,25 +1,11 @@
 use super::*;
 
 const INFIX: &str = r#"
-1 + 1;
-2 ++ 2;
-3 + + 3;
-4 +++ 4
-4 + ++ 4;
-5 ++ + 5;
-6 ++++ 6;
-7 + +++ 7;
-8 ++ ++ 8;
-9 +++ + 9;
 true && false;
 0 + 0.0 + 0cm;
 "" ++ '';
 "$x" ++ '${y}';
 a >> a;
-a in a;
-a not in a;
-a is A;
-a is not a;
 "#;
 
 #[test]
@@ -29,9 +15,7 @@ fn debug_infix() -> Result<()> {
 }
 
 const INFIX2: &str = r#"
-1 + 2 * 3;
-(1+2) * 3;
-1 + 2 * 3 + 4 * 5 * 6;
+
 "#;
 
 #[test]
@@ -41,8 +25,7 @@ fn debug_infix_order() -> Result<()> {
 }
 
 const MIX_INFIX: &str = r#"
-1 > 2 > 3;
-+1+2*3^-4!!;
+
 "#;
 
 #[test]

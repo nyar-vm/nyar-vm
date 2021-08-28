@@ -3,5 +3,9 @@ namespace basic;
 def fibonacci() {
     let mut a = 0;
     let mut b = 1;
-
+    loop {
+        yield b
+        b = a + b
+        a = b - a
+    }
 }

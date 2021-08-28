@@ -38,13 +38,12 @@ impl ParseContext {
 
 impl ParseContext {
     pub fn parse(&mut self) -> NyarResult<()> {
-        VkParser::parse(&self.source).unwrap();
         let stmts = match VkParser::parse(&self.source) {
             Ok(o) => o.statements,
             Err(e) => Err(self.parse_error(e.specifics.to_string(), Range { start: e.position, end: e.position }))?,
         };
         for stmt in stmts {
-            println!("{:?}", stmt);
+            println!("{:#?}", stmt);
         }
         Ok(())
     }
