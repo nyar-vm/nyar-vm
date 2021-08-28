@@ -1,4 +1,4 @@
-use miette::{Severity, SourceCode};
+use miette::SourceCode;
 
 use super::*;
 

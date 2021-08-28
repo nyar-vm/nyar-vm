@@ -1,5 +1,3 @@
-use crate::NyarResult;
-
 use super::*;
 
 #[derive(Debug)]
@@ -19,7 +17,7 @@ impl Display for InternalError {
 impl Diagnostic for InternalError {}
 
 impl From<()> for NyarError {
-    fn from(e: ()) -> Self {
+    fn from(_: ()) -> Self {
         NyarError::InternalError(box InternalError { message: "Internal error".to_string() })
     }
 }

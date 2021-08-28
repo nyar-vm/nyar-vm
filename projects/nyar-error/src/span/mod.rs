@@ -1,4 +1,3 @@
-use miette::Diagnostic;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 

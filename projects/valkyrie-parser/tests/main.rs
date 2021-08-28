@@ -16,5 +16,7 @@ fn ready() {
 fn test() -> ReportResult {
     let out = ValkyrieParser::parse_file("tests/basic.vk")?;
 
+    println!("{:#?}", out);
+
     Ok(())
 }

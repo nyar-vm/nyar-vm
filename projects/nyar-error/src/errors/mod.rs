@@ -1,7 +1,7 @@
 use std::{
     char::ParseCharError,
     error::Error,
-    fmt::{Display, Formatter, Write},
+    fmt::{Display, Formatter},
     num::{ParseFloatError, ParseIntError},
     ops::Range,
 };

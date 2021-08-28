@@ -1,5 +1,5 @@
 use std::{
-    any::{type_name, type_name_of_val},
+    any::type_name_of_val,
     error::Error,
     fmt::{Debug, Display, Formatter},
 };

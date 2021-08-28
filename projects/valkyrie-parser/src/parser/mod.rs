@@ -16,15 +16,13 @@ mod valkyrie;
 
 pub struct ParseContext {
     source: String,
-    file_name: String,
     path: PathBuf,
 }
 
 impl ValkyrieParser {
     pub fn parse_file<P: AsRef<Path>>(path: P) -> NyarResult<ASTNode> {
         let path = path.as_ref().canonicalize()?;
-        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-        let mut ctx = ParseContext { source: read_to_string(&path)?, file_name, path };
+        let mut ctx = ParseContext { source: read_to_string(&path)?, path };
         ctx.parse()?;
         Ok(ASTNode::default())
     }
@@ -40,7 +38,8 @@ impl ParseContext {
 
 impl ParseContext {
     pub fn parse(&mut self) -> NyarResult<()> {
-        let stmts = match VkParser::parse(&self.file_name) {
+        VkParser::parse(&self.source).unwrap();
+        let stmts = match VkParser::parse(&self.source) {
             Ok(o) => o.statements,
             Err(e) => Err(self.parse_error(e.specifics.to_string(), Range { start: e.position, end: e.position }))?,
         };
