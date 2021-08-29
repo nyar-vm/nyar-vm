@@ -1,0 +1,13 @@
+while {
+    looping
+}
+while true {
+    looping
+}
+while a > 0 {
+    looping
+}
+else {
+    nothing
+}
+while /* */ a /* */ > /* */ 0 /* */ { }/* */ else /* */ { }

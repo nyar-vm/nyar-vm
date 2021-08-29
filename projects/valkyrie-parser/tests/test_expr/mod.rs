@@ -2,7 +2,6 @@ use super::*;
 
 mod test_apply;
 mod test_dot;
-mod test_infix;
 
 const SIMPLE: &str = r#"
 Call(a, b: b)
