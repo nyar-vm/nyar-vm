@@ -1,11 +1,12 @@
 namespace basic;
 
-def fibonacci() {
+def fibonacci(): Iterator[Integer] {
     let mut a = 0;
     let mut b = 1;
     loop {
         yield b
-        b = a + b
+        b = b + a
         a = b - a
     }
 }
+
