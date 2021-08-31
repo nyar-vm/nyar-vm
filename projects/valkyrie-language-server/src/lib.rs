@@ -1,19 +1,45 @@
-use axum::{extract::State, routing::get, Router};
+use std::{net::SocketAddr, str::FromStr};
 
-// the application state
-//
-// here you can put configuration, database connection pools, or whatever
-// state you need
-//
-// see "When states need to implement `Clone`" for more details on why we need
-// `#[derive(Clone)]` here.
-#[derive(Clone)]
-struct AppState {}
+use axum::Server;
+use clap::Parser;
 
-async fn handler(
-    // access the state via the `State` extractor
-    // extracting a state of the wrong type results in a compile error
-    State(state): State<AppState>,
-) {
-    // use `state`...
+use nyar_error::NyarResult;
+
+pub mod local;
+pub mod remote;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+pub struct App {
+    #[arg(short, long)]
+    local: Option<String>,
+    #[arg(short, long)]
+    remote: Option<String>,
+    #[arg(short, long)]
+    socket: Option<String>,
+}
+
+impl App {
+    pub async fn run(&self) -> NyarResult<()> {
+        let mut socket = SocketAddr::from(([0, 0, 0, 1], 9600));
+        match &self.socket {
+            Some(s) => match SocketAddr::from_str(s) {
+                Ok(o) => socket = o,
+                Err(e) => {
+                    println!("Invalid socket address `{}`, fallback to `{}`", e, socket)
+                }
+            },
+            None => {}
+        }
+        match &self.local {
+            None => {
+                todo!()
+            }
+            Some(s) => {
+                let router = local::LanguageServer::start(s)?;
+                Server::bind(&socket).serve(router.into_make_service()).await.unwrap();
+            }
+        }
+        Ok(())
+    }
 }

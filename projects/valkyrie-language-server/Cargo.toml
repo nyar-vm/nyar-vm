@@ -14,6 +14,14 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.0.32", features = ["derive"] }
 tokio = { version = "1.15.0", features = ["full"] }
+url = "2.3.1"
+axum = { version = "0.6.1" }
+reqwest = { version = "0.11", features = ["json"] }
+
+[dependencies.nyar-error]
+#version = "0.1.2"
+path = "../nyar-error"
+
 
 [dev-dependencies]
 
