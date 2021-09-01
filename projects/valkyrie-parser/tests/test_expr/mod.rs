@@ -1,7 +1,6 @@
 use super::*;
 
 mod test_apply;
-mod test_dot;
 
 const SIMPLE: &str = r#"
 Call(a, b: b)

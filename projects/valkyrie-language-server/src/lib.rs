@@ -1,3 +1,5 @@
+#![feature(trivial_bounds)]
+
 use std::{net::SocketAddr, str::FromStr};
 
 use axum::Server;
@@ -21,7 +23,7 @@ pub struct App {
 
 impl App {
     pub async fn run(&self) -> NyarResult<()> {
-        let mut socket = SocketAddr::from(([0, 0, 0, 1], 9600));
+        let mut socket = SocketAddr::from(([127, 0, 0, 1], 9600));
         match &self.socket {
             Some(s) => match SocketAddr::from_str(s) {
                 Ok(o) => socket = o,

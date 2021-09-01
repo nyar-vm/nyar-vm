@@ -3,12 +3,15 @@ use std::{
     sync::Arc,
 };
 
-use axum::{Extension, Router};
+use axum::{routing::post, Extension, Router};
 use tokio::sync::Mutex;
+use tower::ServiceBuilder;
 
 use nyar_error::NyarResult;
 
-use crate::App;
+use crate::local::document::create_user;
+
+mod document;
 
 pub type LanguageState = Arc<Mutex<LanguageServer>>;
 
@@ -25,10 +28,15 @@ impl LanguageServer {
         if !path.join("fleet.json5").exists() {}
         let server = LanguageServer { workspace: path, prelude: "".to_string() };
         let state = Arc::new(Mutex::new(server));
-        Router::new().route("/", get(handler)).layer(AddExtensionLayer::new(state))
+        let service = ServiceBuilder::new()
+            // .layer(TraceLayer::new_for_http())
+            .layer(Extension(state));
+        let router = Router::new() //
+            .route("/document", post(create_user))
+            .layer(service);
+        Ok(router)
     }
-}
-
-pub async fn start_local(Extension(state): Extension<LanguageState>) {
-    let server = state.lock().await;
+    pub fn cache_path(&self) -> PathBuf {
+        self.workspace.join("target/language-server/")
+    }
 }

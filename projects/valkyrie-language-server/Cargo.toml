@@ -13,13 +13,15 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.0.32", features = ["derive"] }
+serde = { version = "1.0.130", features = ["derive"] }
 tokio = { version = "1.15.0", features = ["full"] }
-url = "2.3.1"
-axum = { version = "0.6.1" }
-reqwest = { version = "0.11", features = ["json"] }
+axum = { version = "0.6.1", features = [] }
+axum-macros = "0.3.0"
+tower = "0.4.13"
+#reqwest = { version = "0.11", features = ["json"] }
 
 [dependencies.nyar-error]
-#version = "0.1.2"
+#version = "0.1.3"
 path = "../nyar-error"
 
 

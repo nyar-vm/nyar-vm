@@ -28,7 +28,7 @@ pub struct FunctionPrototype {
     pub attributes: FunctionAttributes,
     /// ```vk
     /// inline f(...)
-    /// pub modifiers: Vector[String],
+    /// public modifiers: Vector[String],
     /// f(self,...)
     /// ```
     pub with_self: FunctionParameter,
@@ -36,25 +36,41 @@ pub struct FunctionPrototype {
     /// f[T](...)
     /// ```
     pub generic: Vec<Statement>,
+    /// ```vk
     /// f(a, b, c)
+    /// ```
     pub arguments: IndexMap<String, FunctionParameter>,
+    /// ```vk
     /// f(a, b, c, < , ...)
+    /// ```
     pub position_only: IndexMap<String, FunctionParameter>,
+    /// ```vk
     /// f(..., >, a, b, c)
+    /// ```
     pub keywords_only: IndexMap<String, FunctionParameter>,
+    /// ```vk
     /// f(..list: T)
-    pub collect_list: FunctionParameter,
+    /// ```
+    pub collect_list: Option<(String, Typing)>,
+    /// ```vk
     /// f(...dict: T)
+    /// ```
     pub collect_dict: Option<(String, Typing)>,
+    /// ```vk
     /// f(...): T
+    /// ```
     pub return_type: Typing,
+    /// ```vk
     /// f(...): / {E}
+    /// ```
     pub effects: IndexMap<String, Rc<EffectHandler>>,
     /// ```vk
     /// f[T, E](...): T / [E] where ...
     /// ```
     pub where_bounds: Vec<Statement>,
+    /// ```vk
     /// f(...) {}
+    /// ```
     pub body: Statement,
 }
 
@@ -64,12 +80,6 @@ pub struct FunctionParameter {}
 pub enum FunctionStatement {
     Nyar,
     Native,
-}
-
-impl Default for FunctionPrototype {
-    fn default() -> Self {
-        todo!()
-    }
 }
 
 impl FunctionPrototype {

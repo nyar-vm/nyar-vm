@@ -1,20 +1,5 @@
 use super::*;
 
-const BRACKETS: &str = r#"
-a(1)[2]{3}
-a(1){2}[3]
-a[1](2){3}
-a[1]{2}(3)
-a{1}(2)[3]
-a{1}[2](3)
-"#;
-
-#[test]
-fn debug_apply() -> Result<()> {
-    let ast: ASTKind = ASTDump::parse(BRACKETS);
-    ast.save("tests/test_expr/debug_apply.clj")
-}
-
 const SLICE: &str = r#"
 a[1]
 a[[1]]
