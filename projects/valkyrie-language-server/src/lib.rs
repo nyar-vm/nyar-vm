@@ -28,7 +28,7 @@ impl App {
             Some(s) => match SocketAddr::from_str(s) {
                 Ok(o) => socket = o,
                 Err(e) => {
-                    println!("Invalid socket address `{}`, fallback to `{}`", e, socket)
+                    println!("Invalid socket address `{}`, fallback to `{}`", s, socket)
                 }
             },
             None => {}

@@ -1,8 +1,20 @@
-use axum::{extract::Query, http::StatusCode, Extension, Json};
+use axum::{http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::fmt::Write;
 
-use crate::local::LanguageState;
+mod jetbrain;
+
+pub async fn request_document(
+    Json(request): Json<IDocument>,
+    // Extension(state): Extension<LanguageState>,
+) -> (StatusCode, Json<ODocument>) {
+    request.to_typed().render_jetbrain()
+}
+
+#[derive(Clone, Debug, Serialize, Default)]
+pub struct ODocument {
+    pub content: String,
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct IDocument {
@@ -11,25 +23,19 @@ pub struct IDocument {
     pub namepath: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct ODocument {
-    pub content: String,
+pub enum TypedDocument {
+    Nothing,
+    Keywords(String),
 }
 
-// #[axum_macros::debug_handler]
-// pub async fn request_document(
-//     Json(request): Json<IDocument>,
-//     Extension(state): Extension<LanguageState>,
-// ) -> (StatusCode, Json<ODocument>) {
-//     let server = state.lock().await;
-//     (StatusCode::OK, Json(ODocument { content: format!("{:?}", request) }))
-// }
-#[derive(Deserialize)]
-pub struct CreateUser {
-    email: String,
-    password: String,
-}
-
-pub async fn create_user(Json(payload): Json<CreateUser>) {
-    // ...
+impl IDocument {
+    pub fn to_typed(&self) -> TypedDocument {
+        match self.kind.as_str() {
+            "keyword" => match self.namepath.first() {
+                None => TypedDocument::Nothing,
+                Some(s) => TypedDocument::Keywords(s.to_string()),
+            },
+            _ => TypedDocument::Nothing,
+        }
+    }
 }

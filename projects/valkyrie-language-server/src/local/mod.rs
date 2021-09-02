@@ -9,7 +9,7 @@ use tower::ServiceBuilder;
 
 use nyar_error::NyarResult;
 
-use crate::local::document::create_user;
+use crate::local::document::request_document;
 
 mod document;
 
@@ -32,7 +32,7 @@ impl LanguageServer {
             // .layer(TraceLayer::new_for_http())
             .layer(Extension(state));
         let router = Router::new() //
-            .route("/document", post(create_user))
+            .route("/document", post(request_document))
             .layer(service);
         Ok(router)
     }
