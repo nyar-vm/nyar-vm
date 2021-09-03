@@ -1,4 +1,5 @@
 #![feature(trivial_bounds)]
+#![feature(never_type)]
 
 use std::{net::SocketAddr, str::FromStr};
 
@@ -28,7 +29,7 @@ impl App {
         match &self.socket {
             Some(s) => match SocketAddr::from_str(s) {
                 Ok(o) => socket = o,
-                Err(e) => {
+                Err(_) => {
                     println!("Invalid socket address `{}`, fallback to `{}`", s, socket)
                 }
             },

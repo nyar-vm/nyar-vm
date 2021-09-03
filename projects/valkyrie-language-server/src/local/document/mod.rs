@@ -25,14 +25,19 @@ pub struct IDocument {
 pub enum TypedDocument {
     Nothing,
     Keywords(String),
+    Operator(String),
 }
 
 impl IDocument {
     pub fn to_typed(&self) -> TypedDocument {
         match self.kind.as_str() {
             "keyword" => match self.namepath.first() {
-                None => TypedDocument::Nothing,
                 Some(s) => TypedDocument::Keywords(s.to_string()),
+                None => TypedDocument::Nothing,
+            },
+            "operator" => match self.namepath.first() {
+                Some(s) => TypedDocument::Operator(s.to_string()),
+                None => TypedDocument::Nothing,
             },
             _ => TypedDocument::Nothing,
         }
