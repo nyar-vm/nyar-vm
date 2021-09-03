@@ -9,6 +9,7 @@ use nyar_error::NyarResult;
 
 pub mod local;
 pub mod remote;
+pub mod utils;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

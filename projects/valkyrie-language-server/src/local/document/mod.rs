@@ -1,13 +1,12 @@
 use axum::{http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
 
 mod jetbrain;
 
 pub async fn request_document(
     Json(request): Json<IDocument>,
     // Extension(state): Extension<LanguageState>,
-) -> (StatusCode, Json<ODocument>) {
+) -> Result<Json<ODocument>, StatusCode> {
     request.to_typed().render_jetbrain()
 }
 
