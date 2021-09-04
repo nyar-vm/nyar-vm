@@ -25,6 +25,11 @@ tower = "0.4.13"
 path = "../nyar-error"
 
 
+[dependencies.valkyrie-parser]
+#version = "0.1.3"
+path = "../valkyrie-parser"
+
+
 [dev-dependencies]
 
 [build-dependencies]

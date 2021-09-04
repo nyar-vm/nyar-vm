@@ -1,5 +1,11 @@
+use std::str::FromStr;
+
 use axum::{http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
+
+use valkyrie_parser::{ValkyrieKeyword, ValkyrieOperator};
+
+use crate::utils::ColoredWriter;
 
 mod jetbrain;
 
@@ -7,7 +13,10 @@ pub async fn request_document(
     Json(request): Json<IDocument>,
     // Extension(state): Extension<LanguageState>,
 ) -> Result<Json<ODocument>, StatusCode> {
-    request.to_typed().render_jetbrain()
+    match request.as_typed() {
+        Some(s) => s.render_jetbrain(),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Default)]
@@ -23,23 +32,24 @@ pub struct IDocument {
 }
 
 pub enum TypedDocument {
-    Nothing,
-    Keywords(String),
-    Operator(String),
+    Keywords(ValkyrieKeyword),
+    Operator(ValkyrieOperator),
 }
 
 impl IDocument {
-    pub fn to_typed(&self) -> TypedDocument {
+    pub fn as_typed(&self) -> Option<TypedDocument> {
         match self.kind.as_str() {
-            "keyword" => match self.namepath.first() {
-                Some(s) => TypedDocument::Keywords(s.to_string()),
-                None => TypedDocument::Nothing,
-            },
-            "operator" => match self.namepath.first() {
-                Some(s) => TypedDocument::Operator(s.to_string()),
-                None => TypedDocument::Nothing,
-            },
-            _ => TypedDocument::Nothing,
+            "keyword" => {
+                let first = self.namepath.first()?;
+                let token = ValkyrieKeyword::from_str(first).ok()?;
+                Some(TypedDocument::Keywords(token))
+            }
+            "operator" => {
+                let first = self.namepath.first()?;
+                let token = ValkyrieOperator::from_str(first).ok()?;
+                Some(TypedDocument::Operator(token))
+            }
+            _ => None,
         }
     }
 }
