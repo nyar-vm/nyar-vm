@@ -34,6 +34,7 @@ pub struct IDocument {
 pub enum TypedDocument {
     Keywords(ValkyrieKeyword),
     Operator(ValkyrieOperator),
+    Trait { namepath: Vec<String> },
 }
 
 impl IDocument {
@@ -49,6 +50,7 @@ impl IDocument {
                 let token = ValkyrieOperator::from_str(first).ok()?;
                 Some(TypedDocument::Operator(token))
             }
+            "trait" => Some(TypedDocument::Trait { namepath: self.namepath.clone() }),
             _ => None,
         }
     }

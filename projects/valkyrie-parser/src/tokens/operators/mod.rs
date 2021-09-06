@@ -25,12 +25,13 @@ impl FromStr for ValkyrieOperator {
 
 impl ValkyrieOperator {
     pub fn literal(&self) -> &str {
+        // Ligatures are not supported in document
         match self {
             ValkyrieOperator::Add => "+",
             ValkyrieOperator::Subtract => "-",
-            ValkyrieOperator::Multiply => "*",
-            ValkyrieOperator::Divide => "/",
-            ValkyrieOperator::Return => "->",
+            ValkyrieOperator::Multiply => "×",
+            ValkyrieOperator::Divide => "÷",
+            ValkyrieOperator::Return => "→",
         }
     }
     pub fn name(&self) -> &str {

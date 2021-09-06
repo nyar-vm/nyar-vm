@@ -35,7 +35,13 @@ impl ColoredWriter {
         self.buffer.push_str(&format!("<span style=\"color: #{}\">{}</span>", self.schema.bad, text));
     }
     pub fn write_keyword(&mut self, text: &str) {
-        write!(self.buffer, "<span style='color:#{color}'>{text}</span>", color = self.schema.keyword, text = text).ok();
+        self.buffer.push_str(&format!("<span style=\"color: #{}\">{}</span>", self.schema.keyword, text));
+    }
+    pub fn write_modifiers<T: AsRef<str>>(&mut self, text: &[T]) {
+        for modifier in text.iter() {
+            self.buffer.push_str(&format!("<span style=\"color: #{}\">{}</span>", self.schema.keyword, modifier.as_ref()));
+            self.buffer.push_str(" ");
+        }
     }
     pub fn write_class(&mut self, text: &str) {
         write!(self.buffer, "<span style='color:#{color}'>{text}</span>", color = self.schema.class, text = text).ok();
