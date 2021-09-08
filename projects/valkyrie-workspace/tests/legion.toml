@@ -1,0 +1,14 @@
+[workspace]
+members = ["projects/*"]
+default-members = [
+    "projects/valkyrie-errors",
+]
+exclude = [
+    "projects/nyar-value",
+    "projects/nyar-macro",
+    "legacy/valkyrie-pest",
+]
+
+[profile.release]
+lto = true
+opt-level = "s"

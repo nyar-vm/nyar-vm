@@ -1,0 +1,7 @@
+namespace* tests.literal.special;
+
+null;
+true;
+false;
+
+identifier;

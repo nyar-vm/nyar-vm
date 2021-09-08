@@ -1,0 +1,9 @@
+namespace* tests.literal.escape;
+
+'\u{24}';
+'\u{03D6}';
+'\u{000024}';
+'\n';
+'\a';
+'\
+';

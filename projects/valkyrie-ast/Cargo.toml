@@ -1,0 +1,27 @@
+[package]
+name = "valkyrie-ast"
+version = "0.0.0"
+authors = ["Aster <192607617@qq.com>"]
+description = "..."
+repository = "https://github.com/oovm/sub_projects"
+documentation = "https://docs.rs/sub_projects"
+readme = "Readme.md"
+license = "MPL-2.0"
+edition = "2021"
+
+[dependencies]
+indexmap = "1.9.2"
+itertools = "0.10.5"
+serde = { version = "1.0.152", features = ["derive"] }
+
+[dependencies.valkyrie-errors]
+#version = "0.0.0"
+path = "../valkyrie-errors"
+features = ["num"]
+
+
+[dev-dependencies]
+peginator_codegen = "0.6.0"
+
+[features]
+default = []

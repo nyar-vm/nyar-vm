@@ -1,9 +1,0 @@
-Suite[
-    null,
-]
-Suite[
-    true,
-]
-Suite[
-    false,
-]

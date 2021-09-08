@@ -1,6 +1,6 @@
 [package]
 name = "valkyrie-parser"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["192608617@qq.com"]
 edition = "2018"
 description = "Lexer and token definitions for Valkyrie language"
@@ -11,15 +11,14 @@ license = "MPL-2.0"
 peginator = "0.6.0"
 unicode-ident = "1.0.6"
 
-[dependencies.nyar-error]
-#version = "0.1.4"
-path = "../nyar-error"
-features = []
+[dependencies.valkyrie-errors]
+version = "0.0.1"
+path = "../valkyrie-errors"
+features = ["peginator"]
 
-[dependencies.nyar-hir]
-#version = "0.2.2"
-path = "../nyar-hir"
-
+[dependencies.valkyrie-ast]
+version = "0.0.0"
+path = "../valkyrie-ast"
 
 [dev-dependencies]
 

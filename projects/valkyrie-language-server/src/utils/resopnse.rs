@@ -1,4 +1,4 @@
-
+use axum::http::StatusCode;
 
 pub struct JsonResponse<T> {
     code: StatusCode,

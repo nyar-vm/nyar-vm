@@ -1,0 +1,25 @@
+[package]
+name = "legion-workspace"
+version = "0.2.2"
+authors = ["192607617@qq.com"]
+edition = "2021"
+description = "High level intermediate representation for Nyar"
+repository = "https://github.com/nyar-lang/NyarNative"
+license = "MPL-2.0"
+
+[dependencies]
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.91"
+serde-types = "0.1.1"
+toml = "0.7.0"
+json5 = "0.4.1"
+
+[dependencies.diagnostic-quick]
+version = "0.3.6"
+features = []
+
+
+[dev-dependencies]
+
+[features]
+default = []

@@ -1,0 +1,23 @@
+[package]
+name = "valkyrie-std-io"
+version = "0.0.0"
+authors = ["Aster <192607617@qq.com>"]
+description = "..."
+repository = "https://github.com/oovm/sub_projects"
+documentation = "https://docs.rs/sub_projects"
+readme = "Readme.md"
+license = "MPL-2.0"
+edition = "2021"
+
+[dependencies]
+inwelling = "0.3.0"
+tokio = { version = "1.25.0", features = ["full"] }
+
+[dependencies.valkyrie-types]
+version = "0.0.0"
+path = "../valkyrie-types"
+
+[dev-dependencies]
+
+[features]
+default = []

@@ -20,14 +20,14 @@ axum-macros = "0.3.2"
 tower = "0.4.13"
 #reqwest = { version = "0.11", features = ["json"] }
 
-[dependencies.nyar-error]
-version = "0.1.4"
-path = "../nyar-error"
-
-
-[dependencies.valkyrie-parser]
-version = "0.2.0"
-path = "../valkyrie-parser"
+#[dependencies.nyar-error]
+#version = "0.1.4"
+#path = "../nyar-error"
+#
+#
+#[dependencies.valkyrie-parser]
+#version = "0.2.0"
+#path = "../valkyrie-parser"
 
 
 [dev-dependencies]

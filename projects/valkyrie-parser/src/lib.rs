@@ -1,7 +1,12 @@
+use valkyrie_errors::{FileID, ValkyrieError};
+
 pub use self::tokens::{keywords::ValkyrieKeyword, operators::ValkyrieOperator};
 
 mod parser;
 mod tokens;
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct ValkyrieParser {}
+#[derive(Debug, Default)]
+pub struct ValkyrieParser {
+    file: FileID,
+    errors: Vec<ValkyrieError>,
+}

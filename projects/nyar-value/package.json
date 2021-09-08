@@ -1,6 +1,0 @@
-{
-    "private": true,
-    "scripts": {
-        "up": "cargo publish --allow-dirty"
-    }
-}
