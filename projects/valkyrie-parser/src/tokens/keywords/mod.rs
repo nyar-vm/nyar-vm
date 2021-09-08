@@ -62,4 +62,7 @@ impl ValkyrieKeyword {
             ValkyrieKeyword::LetBind => "let",
         }
     }
+    pub fn document(&self) -> String {
+        "A keyword is a reserved word that cannot be used as an identifier.".to_string()
+    }
 }

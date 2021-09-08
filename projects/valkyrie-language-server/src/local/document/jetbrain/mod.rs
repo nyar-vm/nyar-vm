@@ -16,7 +16,7 @@ fn render_keywords(keyword: &ValkyrieKeyword) -> String {
     w.write_modifiers(&["keyword"]);
     w.write_attribute(keyword.name());
     w.write_newline();
-    w.write_text("A keyword is a reserved word that cannot be used as an identifier.");
+    w.write_text(&keyword.document());
     w.finish()
 }
 

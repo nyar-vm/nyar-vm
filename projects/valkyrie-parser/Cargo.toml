@@ -3,7 +3,7 @@ name = "valkyrie-parser"
 version = "0.2.0"
 authors = ["192608617@qq.com"]
 edition = "2018"
-description = "..."
+description = "Lexer and token definitions for Valkyrie language"
 repository = "https://github.com/nyar-lang/NyarNative"
 license = "MPL-2.0"
 
@@ -12,13 +12,14 @@ peginator = "0.6.0"
 unicode-ident = "1.0.6"
 
 [dependencies.nyar-error]
+#version = "0.1.4"
 path = "../nyar-error"
-version = "0.1"
-features = ["pest"]
+features = []
 
 [dependencies.nyar-hir]
+#version = "0.2.2"
 path = "../nyar-hir"
-version = "0.2"
+
 
 [dev-dependencies]
 

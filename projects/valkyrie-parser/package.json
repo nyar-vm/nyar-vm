@@ -1,0 +1,9 @@
+{
+    "name": "native-nyar",
+    "private": true,
+    "scripts": {
+        "serve": "cargo run -- -l F:\\Python\\vk-intellij\\src\\design\\lang -s localhost:9600",
+        "install": "cargo build --release",
+        "p": "cargo publish --allow-dirty"
+    }
+}

@@ -27,7 +27,7 @@ bigdecimal = "0.3.0"
 pretty = "0.11.3"
 # Manage mudule resolve
 indextree = "4.5.0"
-patricia_tree = "0.4.0"
+patricia_tree = "0.5.5"
 
 
 
