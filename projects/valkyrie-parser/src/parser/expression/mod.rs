@@ -1,6 +1,6 @@
 use valkyrie_ast::{BinaryExpression, UnaryExpression};
 
-use crate::parser::valkyrie::{ExprNode, ExpressionNode, TermNode};
+use crate::parser::valkyrie::{ExpressionNode, ExprNode, TermNode};
 
 use super::*;
 
@@ -12,8 +12,7 @@ impl ExpressionNode {
         let lhs = self.expr.visit(parser)?;
         if self.infix.is_empty() {
             return Ok(lhs);
-        }
-        else {
+        } else {
             let binary = BinaryExpression {};
             Ok(binary.to_node(parser.file, &Range::default()))
         }
@@ -25,8 +24,7 @@ impl ExprNode {
         if self.prefix.is_empty() && self.suffix.is_empty() {
             // must automic
             self.term.visit(parser)
-        }
-        else {
+        } else {
             let unary = UnaryExpression {};
             Ok(unary.to_node(parser.file, &Range::default()))
         }
@@ -36,13 +34,12 @@ impl ExprNode {
 impl TermNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         match self {
-            TermNode::ExpressionNode(_) => {
-                todo!()
+            TermNode::ExpressionNode(e) => {
+                e.visit(parser)
             }
             TermNode::IdentifierNode(v) => Ok(v.visit(parser).to_node()),
             TermNode::NumberNode(v) => {
-                println!("NumberNode: {:?}", v);
-                todo!()
+                Ok(v.visit(parser))
             }
             TermNode::StringNode(_) => {
                 todo!()
@@ -55,6 +52,21 @@ impl TermNode {
                     _ => panic!("Unknown special node: {}", s.string),
                 };
                 Ok(out)
+            }
+            TermNode::TupleStatement(v) => {
+                let mut out = vec![];
+                for term in &v.args {
+                    out.push(term.visit(parser)?)
+                }
+                Ok(ValkyrieASTNode::tuple(out, parser.file, &v.position))
+            }
+            TermNode::MatrixStatement(v) => {
+                for arg in &v.args {
+                    for ar in &arg.args {
+                        println!("{:?}", ar.visit(parser)?);
+                    }
+                }
+                todo!()
             }
         }
     }

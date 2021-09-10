@@ -44,7 +44,7 @@ ControlFlowNode =
 	| "yield" "from" value:ExpressionNode
 	| "yield" "break"
 	;
-
+#=======================================================================================================================
 @position
 ExpressionNode = expr:*ExprNode {infix:ExprInfix};
 
@@ -56,6 +56,8 @@ ExprNode = {prefix:Prefix} term:TermNode {suffix:Suffix};
 
 
 TermNode = '(' @:ExpressionNode ')'
+	| @:TupleStatement
+	| @:MatrixStatement
 	| @:StringNode
 	| @:SpecialNode
 	| @:IdentifierNode
@@ -82,9 +84,15 @@ InfixOperators =
 @string
 @position
 Suffix = '?' | '!';
-
-
-
+#=======================================================================================================================
+@position
+TupleStatement = '('  ')'
+	| '(' args:ExpressionNode {',' args:ExpressionNode} [','] ')';
+@position
+MatrixStatement = '[' ']'
+	| '[' args:VectorStatement {';' args:VectorStatement} [';'] ']';
+@position
+VectorStatement = args:ExpressionNode {',' args:ExpressionNode} [','];
 #=======================================================================================================================
 LambdaStatement = "lambda" [parameters:DefineArguments];
 

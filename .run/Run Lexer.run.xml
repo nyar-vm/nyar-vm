@@ -1,18 +1,19 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="PEG" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
-    <option name="command" value="test --package nyar-value --test main peg_codegen -- --ignored --exact" />
-    <option name="workingDirectory" value="file://$PROJECT_DIR$/projects/nyar-value" />
+  <configuration default="false" name="Run Lexer" type="CargoCommandRunConfiguration" factoryName="Cargo Command" singleton="false">
+    <option name="command" value="test --package valkyrie-parser --test main" />
+    <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <option name="channel" value="DEFAULT" />
     <option name="requiredFeatures" value="true" />
     <option name="allFeatures" value="false" />
     <option name="emulateTerminal" value="true" />
     <option name="withSudo" value="false" />
     <option name="buildTarget" value="REMOTE" />
-    <option name="backtrace" value="SHORT" />
+    <option name="backtrace" value="FULL" />
     <envs />
     <option name="isRedirectInput" value="false" />
     <option name="redirectInputPath" value="" />
     <method v="2">
+      <option name="RunConfigurationTask" enabled="true" run_configuration_name="PEG" run_configuration_type="CargoCommandRunConfiguration" />
       <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
     </method>
   </configuration>

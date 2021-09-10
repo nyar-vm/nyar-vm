@@ -27,6 +27,10 @@ pub enum ValkyrieASTKind {
     Namespace(Box<NamespaceDeclare>),
     Binary(Box<BinaryExpression>),
     Unary(Box<UnaryExpression>),
+    // ()
+    // (1, )
+    // (1, 2, 3)
+    Tuple(Vec<ValkyrieASTNode>),
     Identifier(Box<ValkyrieIdentifierNode>),
     Integer(Box<ValkyrieIntegerNode>),
     Boolean(bool),

@@ -20,6 +20,11 @@ impl Debug for ValkyrieASTKind {
             ValkyrieASTKind::Null => {
                 write!(f, "null")
             }
+            ValkyrieASTKind::Tuple(v) => {
+                f.debug_struct("Tuple")
+                    .field("nodes", v)
+                    .finish()
+            }
         }
     }
 }

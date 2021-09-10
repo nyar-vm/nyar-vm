@@ -7,4 +7,7 @@ impl ValkyrieASTNode {
     pub fn boolean(b: bool, file: FileID, range: &Range<usize>) -> Self {
         ValkyrieASTKind::Boolean(b).to_node(file, range)
     }
+    pub fn tuple(nodes: Vec<ValkyrieASTNode>, file: FileID, range: &Range<usize>) -> Self {
+        ValkyrieASTKind::Tuple(nodes).to_node(file, range)
+    }
 }
