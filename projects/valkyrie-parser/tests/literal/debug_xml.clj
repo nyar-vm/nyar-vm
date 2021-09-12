@@ -1,2 +1,0 @@
-(block scoped
-    <<unreachable Nothing>>)

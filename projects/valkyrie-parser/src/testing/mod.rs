@@ -2,7 +2,7 @@ use valkyrie_errors::{TextManager, ValkyrieResult};
 
 use crate::ValkyrieParser;
 
-#[track_caller]
+
 pub fn debug_lexer(files: &[&str]) -> ValkyrieResult {
     let mut parser = ValkyrieParser::default();
     let mut problems = vec![];

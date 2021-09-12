@@ -57,7 +57,7 @@ ExprNode = {prefix:Prefix} term:TermNode {suffix:Suffix};
 
 TermNode = '(' @:ExpressionNode ')'
 	| @:TupleStatement
-	| @:MatrixStatement
+	| @:ListStatement
 	| @:StringNode
 	| @:SpecialNode
 	| @:IdentifierNode
@@ -89,10 +89,8 @@ Suffix = '?' | '!';
 TupleStatement = '('  ')'
 	| '(' args:ExpressionNode {',' args:ExpressionNode} [','] ')';
 @position
-MatrixStatement = '[' ']'
-	| '[' args:VectorStatement {';' args:VectorStatement} [';'] ']';
-@position
-VectorStatement = args:ExpressionNode {',' args:ExpressionNode} [','];
+ListStatement = '[' ']'
+	| '[' args:ExpressionNode {';' args:ExpressionNode} [';'] ']';
 #=======================================================================================================================
 LambdaStatement = "lambda" [parameters:DefineArguments];
 
