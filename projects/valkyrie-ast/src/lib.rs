@@ -10,6 +10,7 @@ pub use crate::{
     expression_level::{identifier::ValkyrieIdentifierNode, integer::ValkyrieIntegerNode, BinaryExpression, UnaryExpression},
     package_level::{NamespaceDeclare, NamespaceKind},
 };
+pub use crate::expression_level::list::HeterogeneousList;
 
 mod display;
 mod expression_level;
@@ -30,7 +31,7 @@ pub enum ValkyrieASTKind {
     // ()
     // (1, )
     // (1, 2, 3)
-    Tuple(Vec<ValkyrieASTNode>),
+    HList(Box<HeterogeneousList>),
     Identifier(Box<ValkyrieIdentifierNode>),
     Integer(Box<ValkyrieIntegerNode>),
     Boolean(bool),
