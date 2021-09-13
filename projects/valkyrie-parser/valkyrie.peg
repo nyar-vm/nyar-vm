@@ -66,32 +66,33 @@ TermNode = '(' @:ExpressionNode ')'
 @string @position
 SpecialNode = 'null' | 'default' | 'true' | 'false';
 
-@string
-@position
-Prefix = '!' | '+' | '-' | '⅟' | '¬';
-
-@string
-@position
+@string @position
+Prefix = '!' | '+' | '-' | '⅟' | '¬'
+	;
+@string @position
 InfixOperators =
 	'is' ['not'] | ['not'] 'in' |
 	'++=' | '++' | '+=' | '+' |
 	'--=' | '--' | '-=' | '-' |
-	'*' | '*=' | '/' | '/=' |
-	'^=' | '^' | '<<' | '<<=' | '>>' | '>>=' |
-	'==' | '!=' | '>=' | '<=' | '>' | '<' | '=' |
-	'&&' | '||' | '∨' | '⊽' | '⊻' | '∧' | '⊼' | '⩟'
+	'*=' | '*' |
+	'/=' | '/' |
+	'^=' | '^' |
+	'<<=' | '<<<' | '<<' | '<=' | '<' |
+	'>>=' | '>>>' | '>>' | '>=' | '>' |
+	'==' | '=' |
+	'&&' | '∧' | '⊼' | '⩟' | '&' |
+	'||' | '∨' | '⊽' | '⊻' | '|'
 	;
-
-@string
-@position
-Suffix = '?' | '!';
+@string @position
+Suffix = '?' | '!' | '%'| '‰'| '‱'| '℃'| '℉' | '°' | '′'| '″' | '‴' | '⁗'
+	;
 #=======================================================================================================================
 @position
 TupleStatement = '('  ')'
 	| '(' args:ExpressionNode {',' args:ExpressionNode} [','] ')';
 @position
 ListStatement = '[' ']'
-	| '[' args:ExpressionNode {';' args:ExpressionNode} [';'] ']';
+	| '[' args:ExpressionNode {',' args:ExpressionNode} [','] ']';
 #=======================================================================================================================
 LambdaStatement = "lambda" [parameters:DefineArguments];
 

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use valkyrie_errors::{IBig, FileID, FileSpan};
 use std::fmt::{Display, Formatter};
 use valkyrie_errors::FBig;
-use crate::{ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifierNode};
-use crate::expression_level::list::HeterogeneousList;
+use crate::{HeterogeneousList, ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifierNode};
+
 
 pub mod dict;
 pub mod binary;

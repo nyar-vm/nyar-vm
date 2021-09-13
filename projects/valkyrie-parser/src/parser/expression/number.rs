@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
-use valkyrie_ast::{ValkyrieIdentifierNode, ValkyrieIntegerNode};
-use valkyrie_errors::BigInt;
+use valkyrie_ast::{ValkyrieDecimalNode, ValkyrieIdentifierNode, ValkyrieIntegerNode};
+use valkyrie_errors::{FBig, IBig};
 
 use crate::parser::valkyrie::{NumberNode, NumberVariant};
 
@@ -14,16 +14,19 @@ impl NumberNode {
             None => ValkyrieIdentifierNode::default(),
         };
         match &self.variant {
-            NumberVariant::IntegerNode(s) => match BigInt::from_str(&s.string) {
-                Ok(o) => ValkyrieIntegerNode { hint, value: o }.to_node(parser.file, &s.position),
+            NumberVariant::IntegerNode(v) => match IBig::from_str(&v.string) {
+                Ok(o) => ValkyrieIntegerNode { hint, value: o }.to_node(parser.file, &v.position),
                 Err(e) => {
-                    parser.push_error(e.to_string(), &s.position);
-                    parser.bad_node(&s.position)
+                    parser.push_error(e.to_string(), &v.position);
+                    parser.bad_node(&v.position)
                 }
             },
-            NumberVariant::DecimalNode(v) => {
-                println!("DecimalNode: {:?}", v);
-                todo!()
+            NumberVariant::DecimalNode(v) => match FBig::from_str(&v.string) {
+                Ok(o) => ValkyrieDecimalNode { hint, value: o }.to_node(parser.file, &v.position),
+                Err(e) => {
+                    parser.push_error(e.to_string(), &v.position);
+                    parser.bad_node(&v.position)
+                }
             }
             NumberVariant::ByteNode(v) => {
                 println!("ByteNode: {:?}", v);
