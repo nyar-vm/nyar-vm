@@ -12,6 +12,8 @@ use crate::{FileID, FileSpan, ValkyrieError, ValkyrieErrorKind, ValkyrieReport};
 
 #[cfg(feature = "num")]
 mod for_num;
+#[cfg(feature = "dashu")]
+mod for_dashu;
 #[cfg(feature = "peginator")]
 mod for_peginator;
 
@@ -77,3 +79,6 @@ wrap_parse_error!(peginator::ParseError);
 
 #[cfg(feature = "num")]
 wrap_parse_error!(num::bigint::ParseBigIntError);
+
+// #[cfg(feature = "dashu")]
+// wrap_parse_error!(num::bigint::ParseBigIntError);

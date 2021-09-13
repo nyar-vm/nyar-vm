@@ -78,7 +78,8 @@ InfixOperators =
 	'--=' | '--' | '-=' | '-' |
 	'*' | '*=' | '/' | '/=' |
 	'^=' | '^' | '<<' | '<<=' | '>>' | '>>=' |
-	'==' | '!=' | '>=' | '<=' | '>' | '<' | '='
+	'==' | '!=' | '>=' | '<=' | '>' | '<' | '=' |
+	'&&' | '||' | '∨' | '⊽' | '⊻' | '∧' | '⊼' | '⩟'
 	;
 
 @string
@@ -122,8 +123,8 @@ NumberNode = variant:NumberVariant [hint:IdentifierNode];
 
 NumberVariant =
 	@:ByteNode |
-	@:IntegerNode |
-	@:DecimalNode ;
+	@:DecimalNode |
+	@:IntegerNode ;
 
 @string @position @no_skip_ws
 IntegerNode = '0' | '1'..'9' { '0'..'9' | '_'};

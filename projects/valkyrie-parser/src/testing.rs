@@ -1,3 +1,4 @@
+use std::io::stderr;
 use valkyrie_errors::{TextManager, ValkyrieResult};
 
 use crate::ValkyrieParser;
@@ -18,7 +19,7 @@ pub fn debug_lexer(files: &[&str]) -> ValkyrieResult {
         problems.push(e.as_report())
     }
     for problem in problems {
-        problem.eprint(&mut text)?
+        problem.write(&mut text, stderr().lock())?;
     }
     Ok(())
 }

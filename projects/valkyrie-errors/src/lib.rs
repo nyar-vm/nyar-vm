@@ -1,6 +1,9 @@
+#[cfg(feature = "dashu")]
+pub use dashu::{float::FBig, integer::IBig};
+pub use url::Url;
+
 #[cfg(feature = "num")]
 pub use num::BigInt;
-pub use url::Url;
 
 pub use crate::{
     duplicates::DuplicateError,

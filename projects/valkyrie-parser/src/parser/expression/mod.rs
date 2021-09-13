@@ -60,13 +60,12 @@ impl TermNode {
                 }
                 Ok(ValkyrieASTNode::tuple(out, parser.file, &v.position))
             }
-            TermNode::MatrixStatement(v) => {
-                for arg in &v.args {
-                    for ar in &arg.args {
-                        println!("{:?}", ar.visit(parser)?);
-                    }
+            TermNode::ListStatement(v) => {
+                let mut out = vec![];
+                for term in &v.args {
+                    out.push(term.visit(parser)?)
                 }
-                todo!()
+                Ok(ValkyrieASTNode::list(out, parser.file, &v.position))
             }
         }
     }

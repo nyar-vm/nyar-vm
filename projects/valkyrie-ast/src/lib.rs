@@ -7,10 +7,13 @@ use serde::{Deserialize, Serialize};
 use valkyrie_errors::FileSpan;
 
 pub use crate::{
-    expression_level::{identifier::ValkyrieIdentifierNode, integer::ValkyrieIntegerNode, BinaryExpression, UnaryExpression},
+    expression_level::{identifier::ValkyrieIdentifierNode, integer::ValkyrieIntegerNode, },
     package_level::{NamespaceDeclare, NamespaceKind},
 };
+pub use crate::expression_level::binary::BinaryExpression;
+pub use crate::expression_level::decimal::ValkyrieDecimalNode;
 pub use crate::expression_level::list::HeterogeneousList;
+pub use crate::expression_level::unary::UnaryExpression;
 
 mod display;
 mod expression_level;
@@ -34,6 +37,7 @@ pub enum ValkyrieASTKind {
     HList(Box<HeterogeneousList>),
     Identifier(Box<ValkyrieIdentifierNode>),
     Integer(Box<ValkyrieIntegerNode>),
+    Decimal(Box<ValkyrieDecimalNode>),
     Boolean(bool),
     Null,
 }

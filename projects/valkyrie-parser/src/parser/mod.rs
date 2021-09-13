@@ -1,4 +1,4 @@
-use std::{ops::Range, path::PathBuf};
+use std::{ops::Range, };
 
 use peginator::PegParser;
 
@@ -75,7 +75,7 @@ impl NamespaceDeclareNode {
 }
 
 impl LetStatement {
-    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
+    pub fn visit(&self, _parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         todo!()
     }
 }

@@ -1,4 +1,7 @@
 use super::*;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BinaryExpression {}
+
 
 impl BinaryExpression {
     pub fn to_node(self, file: FileID, range: &Range<usize>) -> ValkyrieASTNode {

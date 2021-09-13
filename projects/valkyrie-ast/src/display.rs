@@ -16,6 +16,7 @@ impl Debug for ValkyrieASTKind {
             ValkyrieASTKind::Binary(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Identifier(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Integer(v) => Debug::fmt(v, f),
+            ValkyrieASTKind::Decimal(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Boolean(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Null => {
                 write!(f, "null")
@@ -31,7 +32,21 @@ impl Debug for ValkyrieASTKind {
 
 impl Display for ValkyrieASTKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match self {
+            ValkyrieASTKind::Statement(_) => {todo!()}
+            ValkyrieASTKind::Namespace(_) => {todo!()}
+            ValkyrieASTKind::Binary(_) => {todo!()}
+            ValkyrieASTKind::Unary(_) => {todo!()}
+            ValkyrieASTKind::HList(_) => {todo!()}
+            ValkyrieASTKind::Identifier(_) => {todo!()}
+            ValkyrieASTKind::Decimal(v) => {Display::fmt(v, f)}
+            ValkyrieASTKind::Integer(v) => {Display::fmt(v, f)}
+            ValkyrieASTKind::Boolean(_) => {todo!()}
+            ValkyrieASTKind::Null => {
+                f.write_str("null")
+            }
+
+        }
     }
 }
 
