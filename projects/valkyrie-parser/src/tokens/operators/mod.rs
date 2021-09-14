@@ -3,24 +3,50 @@ use super::*;
 pub enum ValkyrieOperator {
     Add,
     Subtract,
-    Multiply,
-    Divide,
+    // infix operator `∗ ⋆ ⋆`
+    MultiplyBroadcast,
+    // infix operator `÷ / ⁄ ∕`
+    Slash,
+    // function return operator `→`
     Return,
+    Is(bool),
+    // a in b
+    In(bool),
+    // a contains b
+    Contains(bool),
 }
 
 impl FromStr for ValkyrieOperator {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "+" => Ok(ValkyrieOperator::Add),
-            "-" => Ok(ValkyrieOperator::Subtract),
-            "*" => Ok(ValkyrieOperator::Multiply),
-            "/" => Ok(ValkyrieOperator::Divide),
-            "->" => Ok(ValkyrieOperator::Return),
-            _ => Err(s.to_string()),
+        let o = match normalize_operator(s).as_str() {
+            "+" => ValkyrieOperator::Add,
+            "-" => ValkyrieOperator::Subtract,
+            "*" => ValkyrieOperator::MultiplyBroadcast,
+            "/" => ValkyrieOperator::Slash,
+            "->" => ValkyrieOperator::Return,
+            "in" => ValkyrieOperator::In(true),
+            s if s.starts_with("not") && s.ends_with("in") => ValkyrieOperator::In(false),
+            "is" => ValkyrieOperator::Is(true),
+            s if s.starts_with("is") && s.ends_with("not") => ValkyrieOperator::Is(false),
+            _ => Err(s.to_string())?,
+        };
+        Ok(o)
+    }
+}
+
+fn normalize_operator(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for char in s.chars() {
+        match char {
+            '⋆' | '∗' => out.push('*'),
+            '÷' | '⁄' | '∕' => out.push('/'),
+            '→' => out.push_str("->"),
+            _ => out.push(char),
         }
     }
+    out
 }
 
 impl ValkyrieOperator {
@@ -29,8 +55,8 @@ impl ValkyrieOperator {
         match self {
             ValkyrieOperator::Add => "+",
             ValkyrieOperator::Subtract => "-",
-            ValkyrieOperator::Multiply => "×",
-            ValkyrieOperator::Divide => "÷",
+            ValkyrieOperator::MultiplyBroadcast => "×",
+            ValkyrieOperator::Slash => "÷",
             ValkyrieOperator::Return => "→",
         }
     }
@@ -38,8 +64,8 @@ impl ValkyrieOperator {
         match self {
             ValkyrieOperator::Add => "plus",
             ValkyrieOperator::Subtract => "minus",
-            ValkyrieOperator::Multiply => "multiply",
-            ValkyrieOperator::Divide => "divide",
+            ValkyrieOperator::MultiplyBroadcast => "multiply",
+            ValkyrieOperator::Slash => "divide",
             ValkyrieOperator::Return => "return",
         }
     }

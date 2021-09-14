@@ -12,6 +12,16 @@
 | U+2212  | `-a`    | `A.minus(a)`    |
 | U+2212  | `a − b` | `A.minus(a)`    |
 
+
+## Division Operators
+
+| Unicode | Usage   | Expand                   |
+|:--------|:--------|:-------------------------|
+| U+00F7  | `a ÷ b` | `A.divide(a)`            |
+| U+002F  | `a / b` | `A.divide(a)`            |
+| U+2044  | `a ⁄ b` | `A.divide(a)`            |
+| U+2215  | `a ∕ b` | `A.divide(a)`            |
+
 ## Product Operators
 
 | Unicode | Usage   | Expand                   | Comment     |
@@ -29,7 +39,6 @@
 | U+2317  | `A ⌗ B` | `A.cartesian_product(B)` | recommended |
 | U+22C4  | `a ⊙ b` |                          | reserved    |
 | U+2A00  | `a ⨀ b` |                          | reserved    |
-|
 | U+22A0  | `A ⊠ B` |                          | reserved    |
 | U+22C9  | `A ⋉ B` |                          | reserved    |
 | U+22CA  | `A ⋊ B` |                          | reserved    |
