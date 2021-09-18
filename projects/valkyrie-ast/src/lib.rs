@@ -7,16 +7,16 @@ use serde::{Deserialize, Serialize};
 use valkyrie_errors::FileSpan;
 
 pub use crate::{
-    expression_level::{identifier::ValkyrieIdentifierNode, integer::ValkyrieIntegerNode, },
+    expression_level::{
+        binary::BinaryExpression, decimal::ValkyrieDecimalNode, identifier::ValkyrieIdentifierNode,
+        integer::ValkyrieIntegerNode, list::HeterogeneousList, unary::UnaryExpression,
+    },
+    operators::ValkyrieOperator,
     package_level::{NamespaceDeclare, NamespaceKind},
 };
-pub use crate::expression_level::binary::BinaryExpression;
-pub use crate::expression_level::decimal::ValkyrieDecimalNode;
-pub use crate::expression_level::list::HeterogeneousList;
-pub use crate::expression_level::unary::UnaryExpression;
-
 mod display;
 mod expression_level;
+mod operators;
 mod package_level;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use peginator_codegen::Compile;
 
+mod operators;
+
 use valkyrie_errors::{Url, ValkyrieResult};
 
 #[test]

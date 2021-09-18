@@ -1,6 +1,11 @@
-use valkyrie_ast::{BinaryExpression, UnaryExpression};
 
-use crate::parser::valkyrie::{ExpressionNode, ExprNode, TermNode};
+
+use valkyrie_ast::{BinaryExpression, UnaryExpression, ValkyrieOperator};
+
+use crate::{
+    parser::valkyrie::{ExprNode, ExpressionNode, TermNode},
+    ValkyrieOperator,
+};
 
 use super::*;
 
@@ -12,8 +17,18 @@ impl ExpressionNode {
         let lhs = self.expr.visit(parser)?;
         if self.infix.is_empty() {
             return Ok(lhs);
-        } else {
+        }
+        else {
             let binary = BinaryExpression {};
+
+            for term in &self.infix {
+
+
+                ExpressionUnknownOrder::Infix(ValkyrieOperator::normalize(&term.infix))
+
+                ValkyrieOperator::from_str(&term.op.string).unwrap();
+            }
+
             Ok(binary.to_node(parser.file, &Range::default()))
         }
     }
@@ -24,7 +39,8 @@ impl ExprNode {
         if self.prefix.is_empty() && self.suffix.is_empty() {
             // must automic
             self.term.visit(parser)
-        } else {
+        }
+        else {
             let unary = UnaryExpression {};
             Ok(unary.to_node(parser.file, &Range::default()))
         }
@@ -34,13 +50,9 @@ impl ExprNode {
 impl TermNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         match self {
-            TermNode::ExpressionNode(e) => {
-                e.visit(parser)
-            }
+            TermNode::ExpressionNode(e) => e.visit(parser),
             TermNode::IdentifierNode(v) => Ok(v.visit(parser).to_node()),
-            TermNode::NumberNode(v) => {
-                Ok(v.visit(parser))
-            }
+            TermNode::NumberNode(v) => Ok(v.visit(parser)),
             TermNode::StringNode(_) => {
                 todo!()
             }
