@@ -1,15 +1,5 @@
 use super::*;
 
-// From this
-#[derive(Debug)]
-pub enum ExpressionUnknownOrder {
-    Infix(String),
-    Prefix(String),
-    Suffix(String),
-    Value(ValkyrieASTNode),
-    Group(Vec<ExpressionUnknownOrder>),
-}
-
 #[derive(Debug)]
 pub enum BinOpKind {
     Add, // +
@@ -27,83 +17,88 @@ pub enum UnOp {
     Try, // ?
 }
 
-pub struct ExpressionOrderResolve {}
+impl ValkyrieOperator {
+    pub fn affix(&self) -> Affix {
+        match self {
+            ValkyrieOperator::Add => Affix::Infix(Precedence(2), Neither),
+            ValkyrieOperator::Subtract => Affix::Infix(Precedence(2), Neither),
+            ValkyrieOperator::MultiplyBroadcast => Affix::Infix(Precedence(2), Neither),
+            ValkyrieOperator::Slash => Affix::Infix(Precedence(2), Neither),
+            ValkyrieOperator::Return => Affix::Infix(Precedence(2), Neither),
+            ValkyrieOperator::Is(_) => Affix::Infix(Precedence(2), Neither),
+            ValkyrieOperator::In(_) => Affix::Infix(Precedence(2), Neither),
+            ValkyrieOperator::Contains(_) => Affix::Infix(Precedence(2), Neither),
+        }
+    }
+}
 
 #[allow(unused_variables)]
 impl<I> PrattParser<I> for ExpressionOrderResolve
 where
-    I: Iterator<Item = ExpressionUnknownOrder>,
+    I: Iterator<Item = UnknownOrder>,
 {
     type Error = SyntaxError;
-    type Input = ExpressionUnknownOrder;
+    type Input = UnknownOrder;
     type Output = ValkyrieASTNode;
 
-    fn query(&mut self, tree: &ExpressionUnknownOrder) -> ValkyrieResult<Affix> {
+    fn query(&mut self, tree: &UnknownOrder) -> ValkyrieResult<Affix> {
         let affix = match tree {
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(2), Associativity::Neither),
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(3), Associativity::Left),
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(3), Associativity::Left),
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(4), Associativity::Left),
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(4), Associativity::Left),
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Postfix(Precedence(5)),
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Prefix(Precedence(6)),
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Prefix(Precedence(6)),
-            ExpressionUnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(7), Associativity::Right),
-            ExpressionUnknownOrder::Group(_) => Affix::Nilfix,
-            ExpressionUnknownOrder::Value(_) => Affix::Nilfix,
+            UnknownOrder::Infix(v) => match v.as_str() {
+                &_ => Affix::Infix(Precedence(2), Neither),
+            },
+            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(3), Left),
+            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(3), Left),
+            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(4), Left),
+            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(4), Left),
+            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Postfix(Precedence(5)),
+            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Prefix(Precedence(6)),
+            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Prefix(Precedence(6)),
+            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(7), Right),
+            UnknownOrder::Group(_) => Affix::Nilfix,
+            UnknownOrder::Value(_) => Affix::Nilfix,
             _ => unreachable!(),
         };
         Ok(affix)
     }
 
     // Construct a primary expression, e.g. a number
-    fn primary(&mut self, tree: ExpressionUnknownOrder) -> ValkyrieResult<ValkyrieASTNode> {
+    fn primary(&mut self, tree: UnknownOrder) -> ValkyrieResult<ValkyrieASTNode> {
         let expr = match tree {
-            ExpressionUnknownOrder::Value(atom) => atom,
-            ExpressionUnknownOrder::Group(group) => self.parse(&mut group.into_iter()).unwrap(),
+            UnknownOrder::Value(atom) => atom,
+            UnknownOrder::Group(group) => self.parse(&mut group.into_iter()).unwrap(),
             _ => unreachable!(),
         };
         Ok(expr)
     }
 
     // Construct a binary infix expression, e.g. 1+1
-    fn infix(
-        &mut self,
-        lhs: ValkyrieASTNode,
-        tree: ExpressionUnknownOrder,
-        rhs: ValkyrieASTNode,
-    ) -> ValkyrieResult<ValkyrieASTNode> {
+    fn infix(&mut self, lhs: ValkyrieASTNode, tree: UnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
         let op = match tree {
-            ExpressionUnknownOrder::Infix('+') => BinOpKind::Add,
-            ExpressionUnknownOrder::Infix('-') => BinOpKind::Sub,
-            ExpressionUnknownOrder::Infix('*') => BinOpKind::Mul,
-            ExpressionUnknownOrder::Infix('/') => BinOpKind::Div,
-            ExpressionUnknownOrder::Infix('^') => BinOpKind::Pow,
-            ExpressionUnknownOrder::Infix('=') => BinOpKind::Eq,
+            UnknownOrder::Infix('+') => BinOpKind::Add,
+            UnknownOrder::Infix('-') => BinOpKind::Sub,
+            UnknownOrder::Infix('*') => BinOpKind::Mul,
+            UnknownOrder::Infix('/') => BinOpKind::Div,
+            UnknownOrder::Infix('^') => BinOpKind::Pow,
+            UnknownOrder::Infix('=') => BinOpKind::Eq,
             _ => unreachable!(),
         };
         Ok(ValkyrieASTNode::BinOp(Box::new(lhs), op, Box::new(rhs)))
     }
-    fn prefix(&mut self, tree: ExpressionUnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
+    fn prefix(&mut self, tree: UnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
         let op = match tree {
-            ExpressionUnknownOrder::Infix('+') => BinOpKind::Add,
-            ExpressionUnknownOrder::Infix('-') => BinOpKind::Sub,
-            ExpressionUnknownOrder::Infix('*') => BinOpKind::Mul,
-            ExpressionUnknownOrder::Infix('/') => BinOpKind::Div,
-            ExpressionUnknownOrder::Infix('^') => BinOpKind::Pow,
-            ExpressionUnknownOrder::Infix('=') => BinOpKind::Eq,
+            UnknownOrder::Infix('+') => BinOpKind::Add,
+            UnknownOrder::Infix('-') => BinOpKind::Sub,
+            UnknownOrder::Infix('*') => BinOpKind::Mul,
+            UnknownOrder::Infix('/') => BinOpKind::Div,
+            UnknownOrder::Infix('^') => BinOpKind::Pow,
+            UnknownOrder::Infix('=') => BinOpKind::Eq,
             _ => unreachable!(),
         };
         Ok(ValkyrieASTNode::BinOp(Box::new(lhs), op, Box::new(rhs)))
     }
-    fn postfix(&mut self, lhs: ValkyrieASTNode, tree: ExpressionUnknownOrder) -> ValkyrieResult<ValkyrieASTNode> {
+    fn postfix(&mut self, lhs: ValkyrieASTNode, tree: UnknownOrder) -> ValkyrieResult<ValkyrieASTNode> {
         let op = match tree {
-            ExpressionUnknownOrder::Infix('+') => BinOpKind::Add,
-            ExpressionUnknownOrder::Infix('-') => BinOpKind::Sub,
-            ExpressionUnknownOrder::Infix('*') => BinOpKind::Mul,
-            ExpressionUnknownOrder::Infix('/') => BinOpKind::Div,
-            ExpressionUnknownOrder::Infix('^') => BinOpKind::Pow,
-            ExpressionUnknownOrder::Infix('=') => BinOpKind::Eq,
+            UnknownOrder::Infix('+') => BinOpKind::Add,
             _ => unreachable!(),
         };
         Ok(ValkyrieASTNode::BinOp(Box::new(lhs), op, Box::new(rhs)))

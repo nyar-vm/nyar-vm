@@ -1,6 +1,4 @@
-
-
-use valkyrie_ast::{BinaryExpression, UnaryExpression, ValkyrieOperator};
+use valkyrie_ast::{BinaryExpression, UnaryExpression, UnknownOrder, ValkyrieOperator};
 
 use crate::{
     parser::valkyrie::{ExprNode, ExpressionNode, TermNode},
@@ -22,10 +20,7 @@ impl ExpressionNode {
             let binary = BinaryExpression {};
 
             for term in &self.infix {
-
-
-                ExpressionUnknownOrder::Infix(ValkyrieOperator::normalize(&term.infix))
-
+                let e = UnknownOrder::Infix(ValkyrieOperator::parse_infix(&term.infix));
                 ValkyrieOperator::from_str(&term.op.string).unwrap();
             }
 

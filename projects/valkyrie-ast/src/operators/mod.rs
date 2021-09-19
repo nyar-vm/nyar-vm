@@ -1,6 +1,26 @@
-use pratt::{Affix, Associativity, PrattParser, Precedence};
-use valkyrie_errors::SyntaxError;
+use pratt::{
+    Affix,
+    Associativity::{self, Left, Neither, Right},
+    PrattParser, Precedence,
+};
+
+use valkyrie_errors::{SyntaxError, ValkyrieResult};
+
+use crate::ValkyrieASTNode;
+
 mod resolver;
+
+pub struct ExpressionOrderResolve {}
+
+// From this
+#[derive(Debug)]
+pub enum UnknownOrder {
+    Infix(String),
+    Prefix(String),
+    Suffix(String),
+    Value(ValkyrieASTNode),
+    Group(Vec<UnknownOrder>),
+}
 
 pub enum ValkyrieOperator {
     Add,
@@ -18,11 +38,16 @@ pub enum ValkyrieOperator {
     Contains(bool),
 }
 
-impl FromStr for ValkyrieOperator {
-    type Err = SyntaxError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let o = match normalize_operator(s).as_str() {
+impl ValkyrieOperator {
+    pub fn parse_prefix(s: &str) -> ValkyrieResult<Self> {
+        let out = match Self::normalize(s).as_str() {
+            "not" => ValkyrieOperator::Is(false),
+            _ => Err(SyntaxError::new(format!("Unknown prefix `{}`", s)))?,
+        };
+        Ok(out)
+    }
+    pub fn parse_infix(s: &str) -> ValkyrieResult<Self> {
+        let out = match Self::normalize(s).as_str() {
             "+" => ValkyrieOperator::Add,
             "-" => ValkyrieOperator::Subtract,
             "*" => ValkyrieOperator::MultiplyBroadcast,
@@ -32,9 +57,17 @@ impl FromStr for ValkyrieOperator {
             s if s.starts_with("not") && s.ends_with("in") => ValkyrieOperator::In(false),
             "is" => ValkyrieOperator::Is(true),
             s if s.starts_with("is") && s.ends_with("not") => ValkyrieOperator::Is(false),
-            _ => Err(SyntaxError::new(format!("Unknown operator `{}`", s)))?,
+            _ => Err(SyntaxError::new(format!("Unknown infix `{}`", s)))?,
         };
-        Ok(o)
+        Ok(out)
+    }
+    pub fn parse_suffix(s: &str) -> ValkyrieResult<Self> {
+        let out = match Self::normalize(s).as_str() {
+            "contains" => ValkyrieOperator::Contains(true),
+            s if s.starts_with("not") && s.ends_with("contains") => ValkyrieOperator::Contains(false),
+            _ => Err(SyntaxError::new(format!("Unknown suffix `{}`", s)))?,
+        };
+        Ok(out)
     }
 }
 

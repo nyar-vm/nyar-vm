@@ -11,9 +11,10 @@ pub use crate::{
         binary::BinaryExpression, decimal::ValkyrieDecimalNode, identifier::ValkyrieIdentifierNode,
         integer::ValkyrieIntegerNode, list::HeterogeneousList, unary::UnaryExpression,
     },
-    operators::ValkyrieOperator,
+    operators::{UnknownOrder, ValkyrieOperator},
     package_level::{NamespaceDeclare, NamespaceKind},
 };
+
 mod display;
 mod expression_level;
 mod operators;
