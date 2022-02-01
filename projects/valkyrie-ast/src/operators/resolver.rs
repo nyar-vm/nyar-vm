@@ -1,4 +1,5 @@
 use super::*;
+use crate::BinaryExpression;
 
 #[derive(Debug)]
 pub enum BinOpKind {
@@ -43,28 +44,18 @@ where
 
     fn query(&mut self, tree: &UnknownOrder) -> ValkyrieResult<Affix> {
         let affix = match tree {
-            UnknownOrder::Infix(v) => match v.as_str() {
-                &_ => Affix::Infix(Precedence(2), Neither),
-            },
-            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(3), Left),
-            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(3), Left),
-            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(4), Left),
-            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(4), Left),
-            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Postfix(Precedence(5)),
-            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Prefix(Precedence(6)),
-            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Prefix(Precedence(6)),
-            UnknownOrder::Infix(ValkyrieOperator::Add) => Affix::Infix(Precedence(7), Right),
+            UnknownOrder::Prefix(o) => o.affix(),
+            UnknownOrder::Infix(o) => o.affix(),
+            UnknownOrder::Suffix(o) => o.affix(),
             UnknownOrder::Group(_) => Affix::Nilfix,
             UnknownOrder::Value(_) => Affix::Nilfix,
-            _ => unreachable!(),
         };
         Ok(affix)
     }
 
-    // Construct a primary expression, e.g. a number
     fn primary(&mut self, tree: UnknownOrder) -> ValkyrieResult<ValkyrieASTNode> {
         let expr = match tree {
-            UnknownOrder::Value(atom) => atom,
+            UnknownOrder::Value(node) => node,
             UnknownOrder::Group(group) => self.parse(&mut group.into_iter()).unwrap(),
             _ => unreachable!(),
         };
@@ -73,16 +64,10 @@ where
 
     // Construct a binary infix expression, e.g. 1+1
     fn infix(&mut self, lhs: ValkyrieASTNode, tree: UnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
-        let op = match tree {
-            UnknownOrder::Infix('+') => BinOpKind::Add,
-            UnknownOrder::Infix('-') => BinOpKind::Sub,
-            UnknownOrder::Infix('*') => BinOpKind::Mul,
-            UnknownOrder::Infix('/') => BinOpKind::Div,
-            UnknownOrder::Infix('^') => BinOpKind::Pow,
-            UnknownOrder::Infix('=') => BinOpKind::Eq,
+        match tree {
+            UnknownOrder::Infix(op) => Ok(BinaryExpression::combine(lhs, op, rhs)),
             _ => unreachable!(),
-        };
-        Ok(ValkyrieASTNode::BinOp(Box::new(lhs), op, Box::new(rhs)))
+        }
     }
     fn prefix(&mut self, tree: UnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
         let op = match tree {

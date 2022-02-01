@@ -15,9 +15,9 @@ pub struct ExpressionOrderResolve {}
 // From this
 #[derive(Debug)]
 pub enum UnknownOrder {
-    Infix(String),
-    Prefix(String),
-    Suffix(String),
+    Infix(ValkyrieOperator),
+    Prefix(ValkyrieOperator),
+    Suffix(ValkyrieOperator),
     Value(ValkyrieASTNode),
     Group(Vec<UnknownOrder>),
 }
