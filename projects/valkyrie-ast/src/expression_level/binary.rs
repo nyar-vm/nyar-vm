@@ -14,16 +14,27 @@ impl BinaryExpression {
         self.terms.push((op, rhs));
     }
     pub fn combine(lhs: ValkyrieASTNode, op: ValkyrieOperator, rhs: ValkyrieASTNode) -> ValkyrieASTNode {
-        match (lhs, rhs) {
-            (ValkyrieASTKind::Binary(a), ValkyrieASTKind::Binary(b)) => {
-                let mut a = *a;
-                a.extend(op, *b);
-                a.to_node(a.span.file, &Range { start: a.span.head, end: b.span.tail })
+        let file = lhs.span.file;
+        let head = lhs.span.head;
+        let tail = rhs.span.tail;
+        let binary = match (lhs, rhs) {
+            (ValkyrieASTKind::Binary(mut a), ValkyrieASTKind::Binary(b)) => {
+                a.extend(op, b.base);
+                a.terms.extend(b.terms);
+                a
             }
-            (ValkyrieASTKind::Binary(a), b) => {}
-            (a, ValkyrieASTKind::Binary(b)) => {}
-            (a, b) => {}
-        }
+            (ValkyrieASTKind::Binary(mut a), b) => {
+                a.extend(op, b);
+                a
+            }
+            (a, ValkyrieASTKind::Binary(b)) => {
+                let mut new = Self::new(a, op, b.base);
+                new.terms.extend(b.terms);
+                new
+            }
+            (a, b) => Self::new(a, op, b),
+        };
+        binary.to_node(file, &Range { start: head, end: tail })
     }
 
     pub fn to_node(self, file: FileID, range: &Range<usize>) -> ValkyrieASTNode {

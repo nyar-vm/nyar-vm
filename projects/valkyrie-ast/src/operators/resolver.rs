@@ -1,5 +1,6 @@
+use crate::{BinaryExpression, UnaryExpression};
+
 use super::*;
-use crate::BinaryExpression;
 
 #[derive(Debug)]
 pub enum BinOpKind {
@@ -65,27 +66,20 @@ where
     // Construct a binary infix expression, e.g. 1+1
     fn infix(&mut self, lhs: ValkyrieASTNode, tree: UnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
         match tree {
-            UnknownOrder::Infix(op) => Ok(BinaryExpression::combine(lhs, op, rhs)),
+            UnknownOrder::Infix(o) => Ok(BinaryExpression::combine(lhs, o, rhs)),
             _ => unreachable!(),
         }
     }
     fn prefix(&mut self, tree: UnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
-        let op = match tree {
-            UnknownOrder::Infix('+') => BinOpKind::Add,
-            UnknownOrder::Infix('-') => BinOpKind::Sub,
-            UnknownOrder::Infix('*') => BinOpKind::Mul,
-            UnknownOrder::Infix('/') => BinOpKind::Div,
-            UnknownOrder::Infix('^') => BinOpKind::Pow,
-            UnknownOrder::Infix('=') => BinOpKind::Eq,
+        match tree {
+            UnknownOrder::Prefix(o) => Ok(UnaryExpression::combine(rhs, o)),
             _ => unreachable!(),
-        };
-        Ok(ValkyrieASTNode::BinOp(Box::new(lhs), op, Box::new(rhs)))
+        }
     }
     fn postfix(&mut self, lhs: ValkyrieASTNode, tree: UnknownOrder) -> ValkyrieResult<ValkyrieASTNode> {
-        let op = match tree {
-            UnknownOrder::Infix('+') => BinOpKind::Add,
+        match tree {
+            UnknownOrder::Prefix(o) => Ok(UnaryExpression::combine(lhs, o)),
             _ => unreachable!(),
-        };
-        Ok(ValkyrieASTNode::BinOp(Box::new(lhs), op, Box::new(rhs)))
+        }
     }
 }
