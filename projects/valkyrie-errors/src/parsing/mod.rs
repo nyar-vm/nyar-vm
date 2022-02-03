@@ -10,12 +10,15 @@ use ariadne::{Color, ReportKind};
 
 use crate::{FileID, FileSpan, ValkyrieError, ValkyrieErrorKind, ValkyrieReport};
 
-#[cfg(feature = "num")]
-mod for_num;
 #[cfg(feature = "dashu")]
 mod for_dashu;
+#[cfg(feature = "num")]
+mod for_num;
 #[cfg(feature = "peginator")]
 mod for_peginator;
+
+#[cfg(feature = "pratt")]
+mod for_pratt;
 
 #[derive(Clone, Debug)]
 pub struct SyntaxError {

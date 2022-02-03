@@ -5,7 +5,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use valkyrie_errors::{FBig, FileID, FileSpan, IBig};
+use valkyrie_errors::{FileID, FileSpan};
 
 use crate::{HeterogeneousList, ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifierNode};
 

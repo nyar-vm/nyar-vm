@@ -1,10 +1,3 @@
-#[cfg(feature = "dashu")]
-pub use dashu::{float::FBig, integer::IBig};
-pub use url::Url;
-
-#[cfg(feature = "num")]
-pub use num::BigInt;
-
 pub use crate::{
     duplicates::DuplicateError,
     errors::{ValkyrieError, ValkyrieErrorKind, ValkyrieReport, ValkyrieResult},
@@ -15,6 +8,16 @@ pub use crate::{
     parsing::SyntaxError,
     runtime::RuntimeError,
 };
+
+pub mod third_party {
+    #[cfg(feature = "dashu")]
+    pub use dashu::{float::FBig, integer::IBig};
+    #[cfg(feature = "num")]
+    pub use num::BigInt;
+    #[cfg(feature = "pratt")]
+    pub use pratt::{Affix, Associativity, PrattParser, Precedence};
+    pub use url::Url;
+}
 
 mod errors;
 

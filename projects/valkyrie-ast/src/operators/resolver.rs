@@ -1,5 +1,15 @@
 use super::*;
 
+#[derive(Default)]
+pub struct ExpressionOrderResolver {}
+
+impl ExpressionOrderResolver {
+    pub fn resolve(terms: Vec<UnknownOrder>) -> ValkyrieResult<ValkyrieASTNode> {
+        let mut this = ExpressionOrderResolver {};
+        Ok(this.parse(terms.into_iter())?)
+    }
+}
+
 impl OperatorKind {
     pub fn affix(&self) -> Affix {
         match self {

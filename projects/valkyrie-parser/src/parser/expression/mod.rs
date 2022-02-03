@@ -1,4 +1,4 @@
-use valkyrie_ast::{BinaryExpression, OperatorKind, UnaryExpression, UnknownOrder, ValkyrieOperator};
+use valkyrie_ast::{BinaryExpression, ExpressionOrderResolver, OperatorKind, UnaryExpression, UnknownOrder, ValkyrieOperator};
 
 use crate::parser::valkyrie::{ExprNode, ExpressionNode, TermNode};
 
@@ -9,15 +9,14 @@ mod number;
 
 impl ExpressionNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
-        let mut resolve = vec![];
-        self.expr.visit(parser, &mut resolve)?;
+        let mut todo = vec![];
+        self.expr.visit(parser, &mut todo)?;
         for term in self.infix {
             let o = ValkyrieOperator::infix(&term.infix.string, parser.file, &term.infix.position)?;
-            resolve.push(UnknownOrder::Infix(o));
-            term.expr.visit(parser)?;
+            todo.push(UnknownOrder::Infix(o));
+            term.expr.visit(parser, &mut todo)?;
         }
-
-        let mut resolve = ExpressionOrderResolve::new(resolve);
+        ExpressionOrderResolver::res(todo.into_iter())?
     }
 }
 

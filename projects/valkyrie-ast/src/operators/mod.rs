@@ -1,19 +1,12 @@
 use std::ops::Range;
 
-use pratt::{
-    Affix,
-    Associativity::{Left, Right},
-    PrattParser, Precedence,
-};
 use serde::{Deserialize, Serialize};
 
 use valkyrie_errors::{FileID, FileSpan, SyntaxError, ValkyrieResult};
 
 use crate::{BinaryExpression, UnaryExpression, ValkyrieASTNode};
 
-mod resolver;
-
-pub struct ExpressionOrderResolver {}
+pub mod resolver;
 
 // From this
 #[derive(Debug)]
