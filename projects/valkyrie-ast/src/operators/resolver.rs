@@ -1,41 +1,45 @@
-use crate::{BinaryExpression, UnaryExpression};
-
 use super::*;
 
-#[derive(Debug)]
-pub enum BinOpKind {
-    Add, // +
-    Sub, // -
-    Mul, // *
-    Div, // /
-    Pow, // ^
-    Eq,  // =
-}
-
-#[derive(Debug)]
-pub enum UnOp {
-    Not, // !
-    Neg, // -
-    Try, // ?
-}
-
-impl ValkyrieOperator {
+impl OperatorKind {
     pub fn affix(&self) -> Affix {
         match self {
-            ValkyrieOperator::Add => Affix::Infix(Precedence(2), Neither),
-            ValkyrieOperator::Subtract => Affix::Infix(Precedence(2), Neither),
-            ValkyrieOperator::MultiplyBroadcast => Affix::Infix(Precedence(2), Neither),
-            ValkyrieOperator::Slash => Affix::Infix(Precedence(2), Neither),
-            ValkyrieOperator::Return => Affix::Infix(Precedence(2), Neither),
-            ValkyrieOperator::Is(_) => Affix::Infix(Precedence(2), Neither),
-            ValkyrieOperator::In(_) => Affix::Infix(Precedence(2), Neither),
-            ValkyrieOperator::Contains(_) => Affix::Infix(Precedence(2), Neither),
+            OperatorKind::Add => Affix::Infix(Precedence(2), Left),
+            OperatorKind::Subtract => Affix::Infix(Precedence(2), Left),
+            OperatorKind::MultiplyBroadcast => Affix::Infix(Precedence(2), Right),
+            OperatorKind::Slash => Affix::Infix(Precedence(2), Left),
+            OperatorKind::Return => Affix::Infix(Precedence(2), Left),
+            OperatorKind::Is(_) => Affix::Infix(Precedence(2), Left),
+            OperatorKind::In(_) => Affix::Infix(Precedence(2), Left),
+            OperatorKind::Contains(_) => Affix::Infix(Precedence(2), Left),
         }
     }
 }
 
-#[allow(unused_variables)]
-impl<I> PrattParser<I> for ExpressionOrderResolve
+impl ValkyrieOperator {
+    pub fn affix(&self) -> Affix {
+        self.kind.affix()
+    }
+    pub fn is_prefix(&self) -> bool {
+        match self.affix() {
+            Affix::Prefix(_) => true,
+            _ => false,
+        }
+    }
+    pub fn is_infix(&self) -> bool {
+        match self.affix() {
+            Affix::Infix(_, _) => true,
+            _ => false,
+        }
+    }
+    pub fn is_suffix(&self) -> bool {
+        match self.affix() {
+            Affix::Postfix(_) => true,
+            _ => false,
+        }
+    }
+}
+
+impl<I> PrattParser<I> for ExpressionOrderResolver
 where
     I: Iterator<Item = UnknownOrder>,
 {
@@ -43,7 +47,7 @@ where
     type Input = UnknownOrder;
     type Output = ValkyrieASTNode;
 
-    fn query(&mut self, tree: &UnknownOrder) -> ValkyrieResult<Affix> {
+    fn query(&mut self, tree: &UnknownOrder) -> Result<Affix, SyntaxError> {
         let affix = match tree {
             UnknownOrder::Prefix(o) => o.affix(),
             UnknownOrder::Infix(o) => o.affix(),
@@ -54,7 +58,7 @@ where
         Ok(affix)
     }
 
-    fn primary(&mut self, tree: UnknownOrder) -> ValkyrieResult<ValkyrieASTNode> {
+    fn primary(&mut self, tree: UnknownOrder) -> Result<ValkyrieASTNode, SyntaxError> {
         let expr = match tree {
             UnknownOrder::Value(node) => node,
             UnknownOrder::Group(group) => self.parse(&mut group.into_iter()).unwrap(),
@@ -63,20 +67,24 @@ where
         Ok(expr)
     }
 
-    // Construct a binary infix expression, e.g. 1+1
-    fn infix(&mut self, lhs: ValkyrieASTNode, tree: UnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
+    fn infix(
+        &mut self,
+        lhs: ValkyrieASTNode,
+        tree: UnknownOrder,
+        rhs: ValkyrieASTNode,
+    ) -> Result<ValkyrieASTNode, SyntaxError> {
         match tree {
             UnknownOrder::Infix(o) => Ok(BinaryExpression::combine(lhs, o, rhs)),
             _ => unreachable!(),
         }
     }
-    fn prefix(&mut self, tree: UnknownOrder, rhs: ValkyrieASTNode) -> ValkyrieResult<ValkyrieASTNode> {
+    fn prefix(&mut self, tree: UnknownOrder, rhs: ValkyrieASTNode) -> Result<ValkyrieASTNode, SyntaxError> {
         match tree {
             UnknownOrder::Prefix(o) => Ok(UnaryExpression::combine(rhs, o)),
             _ => unreachable!(),
         }
     }
-    fn postfix(&mut self, lhs: ValkyrieASTNode, tree: UnknownOrder) -> ValkyrieResult<ValkyrieASTNode> {
+    fn postfix(&mut self, lhs: ValkyrieASTNode, tree: UnknownOrder) -> Result<ValkyrieASTNode, SyntaxError> {
         match tree {
             UnknownOrder::Prefix(o) => Ok(UnaryExpression::combine(lhs, o)),
             _ => unreachable!(),

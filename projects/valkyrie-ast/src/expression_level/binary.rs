@@ -1,4 +1,5 @@
 use super::*;
+use crate::ValkyrieOperator;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BinaryExpression {
@@ -17,22 +18,24 @@ impl BinaryExpression {
         let file = lhs.span.file;
         let head = lhs.span.head;
         let tail = rhs.span.tail;
-        let binary = match (lhs, rhs) {
+        let binary = match (lhs.kind, rhs.kind) {
             (ValkyrieASTKind::Binary(mut a), ValkyrieASTKind::Binary(b)) => {
                 a.extend(op, b.base);
                 a.terms.extend(b.terms);
                 a
             }
             (ValkyrieASTKind::Binary(mut a), b) => {
-                a.extend(op, b);
+                a.extend(op, ValkyrieASTNode { kind: b, span: rhs.span });
                 a
             }
             (a, ValkyrieASTKind::Binary(b)) => {
-                let mut new = Self::new(a, op, b.base);
+                let mut new = Self::new(ValkyrieASTNode { kind: a, span: lhs.span }, op, b.base);
                 new.terms.extend(b.terms);
-                new
+                box new
             }
-            (a, b) => Self::new(a, op, b),
+            (a, b) => {
+                box Self::new(ValkyrieASTNode { kind: a, span: lhs.span }, op, ValkyrieASTNode { kind: b, span: rhs.span })
+            }
         };
         binary.to_node(file, &Range { start: head, end: tail })
     }

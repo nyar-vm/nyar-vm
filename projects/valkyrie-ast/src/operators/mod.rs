@@ -1,16 +1,19 @@
+use std::ops::Range;
+
 use pratt::{
     Affix,
-    Associativity::{self, Left, Neither, Right},
+    Associativity::{Left, Right},
     PrattParser, Precedence,
 };
+use serde::{Deserialize, Serialize};
 
-use valkyrie_errors::{SyntaxError, ValkyrieResult};
+use valkyrie_errors::{FileID, FileSpan, SyntaxError, ValkyrieResult};
 
-use crate::ValkyrieASTNode;
+use crate::{BinaryExpression, UnaryExpression, ValkyrieASTNode};
 
 mod resolver;
 
-pub struct ExpressionOrderResolve {}
+pub struct ExpressionOrderResolver {}
 
 // From this
 #[derive(Debug)]
@@ -22,7 +25,14 @@ pub enum UnknownOrder {
     Group(Vec<UnknownOrder>),
 }
 
-pub enum ValkyrieOperator {
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct ValkyrieOperator {
+    pub kind: OperatorKind,
+    pub span: FileSpan,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum OperatorKind {
     Add,
     Subtract,
     // infix operator `∗ ⋆ ⋆`
@@ -39,39 +49,54 @@ pub enum ValkyrieOperator {
 }
 
 impl ValkyrieOperator {
+    pub fn prefix(s: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
+        let kind = OperatorKind::parse_prefix(s)?;
+        Ok(Self { kind, span: FileSpan { file, head: range.start, tail: range.end } })
+    }
+    pub fn infix(s: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
+        let kind = OperatorKind::parse_infix(s)?;
+        Ok(Self { kind, span: FileSpan { file, head: range.start, tail: range.end } })
+    }
+    pub fn suffix(s: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
+        let kind = OperatorKind::parse_suffix(s)?;
+        Ok(Self { kind, span: FileSpan { file, head: range.start, tail: range.end } })
+    }
+}
+
+impl OperatorKind {
     pub fn parse_prefix(s: &str) -> ValkyrieResult<Self> {
         let out = match Self::normalize(s).as_str() {
-            "not" => ValkyrieOperator::Is(false),
+            "not" => OperatorKind::Is(false),
             _ => Err(SyntaxError::new(format!("Unknown prefix `{}`", s)))?,
         };
         Ok(out)
     }
     pub fn parse_infix(s: &str) -> ValkyrieResult<Self> {
         let out = match Self::normalize(s).as_str() {
-            "+" => ValkyrieOperator::Add,
-            "-" => ValkyrieOperator::Subtract,
-            "*" => ValkyrieOperator::MultiplyBroadcast,
-            "/" => ValkyrieOperator::Slash,
-            "->" => ValkyrieOperator::Return,
-            "in" => ValkyrieOperator::In(true),
-            s if s.starts_with("not") && s.ends_with("in") => ValkyrieOperator::In(false),
-            "is" => ValkyrieOperator::Is(true),
-            s if s.starts_with("is") && s.ends_with("not") => ValkyrieOperator::Is(false),
+            "+" => OperatorKind::Add,
+            "-" => OperatorKind::Subtract,
+            "*" => OperatorKind::MultiplyBroadcast,
+            "/" => OperatorKind::Slash,
+            "->" => OperatorKind::Return,
+            "in" => OperatorKind::In(true),
+            s if s.starts_with("not") && s.ends_with("in") => OperatorKind::In(false),
+            "is" => OperatorKind::Is(true),
+            s if s.starts_with("is") && s.ends_with("not") => OperatorKind::Is(false),
             _ => Err(SyntaxError::new(format!("Unknown infix `{}`", s)))?,
         };
         Ok(out)
     }
     pub fn parse_suffix(s: &str) -> ValkyrieResult<Self> {
         let out = match Self::normalize(s).as_str() {
-            "contains" => ValkyrieOperator::Contains(true),
-            s if s.starts_with("not") && s.ends_with("contains") => ValkyrieOperator::Contains(false),
+            "contains" => OperatorKind::Contains(true),
+            s if s.starts_with("not") && s.ends_with("contains") => OperatorKind::Contains(false),
             _ => Err(SyntaxError::new(format!("Unknown suffix `{}`", s)))?,
         };
         Ok(out)
     }
 }
 
-impl ValkyrieOperator {
+impl OperatorKind {
     pub fn normalize(s: &str) -> String {
         let mut out = String::with_capacity(s.len());
         let mut chars = s.chars().peekable();
@@ -94,7 +119,7 @@ impl ValkyrieOperator {
                 //
                 '∋' | '∍' | '∊' | '∈' | '∉' | '∌' => out.push_str("in"),
                 s if s.is_whitespace() => continue,
-                _ => out.push(char),
+                _ => out.push(c),
             }
         }
 
@@ -102,40 +127,40 @@ impl ValkyrieOperator {
     }
 }
 
-impl ValkyrieOperator {
+impl OperatorKind {
     pub fn literal(&self) -> &str {
         // Ligatures are not supported in document
         match self {
-            ValkyrieOperator::Add => "+",
-            ValkyrieOperator::Subtract => "-",
-            ValkyrieOperator::MultiplyBroadcast => "×",
-            ValkyrieOperator::Slash => "÷",
-            ValkyrieOperator::Return => "→",
-            ValkyrieOperator::Is(_) => {
+            OperatorKind::Add => "+",
+            OperatorKind::Subtract => "-",
+            OperatorKind::MultiplyBroadcast => "×",
+            OperatorKind::Slash => "÷",
+            OperatorKind::Return => "→",
+            OperatorKind::Is(_) => {
                 todo!()
             }
-            ValkyrieOperator::In(_) => {
+            OperatorKind::In(_) => {
                 todo!()
             }
-            ValkyrieOperator::Contains(_) => {
+            OperatorKind::Contains(_) => {
                 todo!()
             }
         }
     }
     pub fn name(&self) -> &str {
         match self {
-            ValkyrieOperator::Add => "plus",
-            ValkyrieOperator::Subtract => "minus",
-            ValkyrieOperator::MultiplyBroadcast => "multiply",
-            ValkyrieOperator::Slash => "divide",
-            ValkyrieOperator::Return => "return",
-            ValkyrieOperator::Is(_) => {
+            OperatorKind::Add => "plus",
+            OperatorKind::Subtract => "minus",
+            OperatorKind::MultiplyBroadcast => "multiply",
+            OperatorKind::Slash => "divide",
+            OperatorKind::Return => "return",
+            OperatorKind::Is(_) => {
                 todo!()
             }
-            ValkyrieOperator::In(_) => {
+            OperatorKind::In(_) => {
                 todo!()
             }
-            ValkyrieOperator::Contains(_) => {
+            OperatorKind::Contains(_) => {
                 todo!()
             }
         }

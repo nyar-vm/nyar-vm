@@ -1,3 +1,5 @@
+use crate::ValkyrieOperator;
+
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -11,17 +13,15 @@ impl UnaryExpression {
         Self { base: rhs, term: vec![op] }
     }
     pub fn combine(base: ValkyrieASTNode, op: ValkyrieOperator) -> ValkyrieASTNode {
-        let file = base.span.file;
-        let head = base.span.head;
-        let tail = base.span.tail;
-        let unary = match base {
+        let span = base.span;
+        let unary = match base.kind {
             ValkyrieASTKind::Unary(mut a) => {
                 a.term.push(op);
                 a
             }
-            a => Self::new(a, op),
+            a => box Self::new(ValkyrieASTNode { kind: a, span }, op),
         };
-        unary.to_node(file, &Range { start: head, end: tail })
+        unary.to_node(base.span.file, &Range { start: base.span.head, end: op.span.tail })
     }
 
     pub fn to_node(self, file: FileID, range: &Range<usize>) -> ValkyrieASTNode {

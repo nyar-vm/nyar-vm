@@ -1,9 +1,6 @@
-use valkyrie_ast::{BinaryExpression, UnaryExpression, UnknownOrder, ValkyrieOperator};
+use valkyrie_ast::{BinaryExpression, OperatorKind, UnaryExpression, UnknownOrder, ValkyrieOperator};
 
-use crate::{
-    parser::valkyrie::{ExprNode, ExpressionNode, TermNode},
-    ValkyrieOperator,
-};
+use crate::parser::valkyrie::{ExprNode, ExpressionNode, TermNode};
 
 use super::*;
 
@@ -12,33 +9,31 @@ mod number;
 
 impl ExpressionNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
-        let lhs = self.expr.visit(parser)?;
-        if self.infix.is_empty() {
-            return Ok(lhs);
+        let mut resolve = vec![];
+        self.expr.visit(parser, &mut resolve)?;
+        for term in self.infix {
+            let o = ValkyrieOperator::infix(&term.infix.string, parser.file, &term.infix.position)?;
+            resolve.push(UnknownOrder::Infix(o));
+            term.expr.visit(parser)?;
         }
-        else {
-            let binary = BinaryExpression {};
 
-            for term in &self.infix {
-                let e = UnknownOrder::Infix(ValkyrieOperator::parse_infix(&term.infix));
-                ValkyrieOperator::from_str(&term.op.string).unwrap();
-            }
-
-            Ok(binary.to_node(parser.file, &Range::default()))
-        }
+        let mut resolve = ExpressionOrderResolve::new(resolve);
     }
 }
 
 impl ExprNode {
-    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
-        if self.prefix.is_empty() && self.suffix.is_empty() {
-            // must automic
-            self.term.visit(parser)
+    pub fn visit(&self, parser: &mut ValkyrieParser, terms: &mut Vec<UnknownOrder>) -> ValkyrieResult {
+        for prefix in self.prefix {
+            let o = ValkyrieOperator::prefix(&prefix.string, parser.file, &prefix.position)?;
+            terms.push(UnknownOrder::Prefix(o));
         }
-        else {
-            let unary = UnaryExpression {};
-            Ok(unary.to_node(parser.file, &Range::default()))
+        let term = self.term.visit(parser)?;
+        terms.push(UnknownOrder::Value(term));
+        for suffix in self.suffix {
+            let o = ValkyrieOperator::suffix(&suffix.string, parser.file, &suffix.position)?;
+            terms.push(UnknownOrder::Suffix(o));
         }
+        Ok(())
     }
 }
 

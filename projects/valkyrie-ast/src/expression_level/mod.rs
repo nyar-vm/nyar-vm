@@ -1,10 +1,13 @@
-use std::ops::Range;
+use std::{
+    fmt::{Display, Formatter},
+    ops::Range,
+};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{HeterogeneousList, ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifierNode, ValkyrieOperator};
-use std::fmt::{Display, Formatter};
 use valkyrie_errors::{FBig, FileID, FileSpan, IBig};
+
+use crate::{HeterogeneousList, ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifierNode};
 
 pub mod binary;
 pub mod decimal;
