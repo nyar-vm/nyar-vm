@@ -4,7 +4,7 @@ use peginator_codegen::Compile;
 
 mod operators;
 
-use valkyrie_errors::{Url, ValkyrieResult};
+use valkyrie_errors::{third_party::Url, ValkyrieResult};
 
 #[test]
 fn build_parser() -> ValkyrieResult {

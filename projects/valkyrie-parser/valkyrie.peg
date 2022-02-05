@@ -139,9 +139,7 @@ IntegerNode = '0' | '1'..'9' { '0'..'9' | '_'};
 @string @position @no_skip_ws
 DecimalNode = IntegerNode [Dot {'0'..'9' | '_'}];
 @string @position @no_skip_ws
-ByteNode = '0'..'9' ('a'..'f' | 'A'..'F') { '0'..'9' | 'a'..'f' | 'A'..'F' }+;
-
-Num = {'0'..'9'}+ [Dot {'0'..'9'}+];
+ByteNode = '0' ('b' | 'B' | 'x' | 'X') { '0'..'9' | 'a'..'f' | 'A'..'F' }+;
 
 @position
 NamespaceNode = path:IdentifierNode {NamespaceSplit path:IdentifierNode};

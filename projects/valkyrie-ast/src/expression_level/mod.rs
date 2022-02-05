@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use valkyrie_errors::{FileID, FileSpan};
 
-use crate::{HeterogeneousList, ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifierNode};
+use crate::{HeterogeneousList, ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifier};
+
+use valkyrie_errors::third_party::{FBig, IBig};
 
 pub mod binary;
 pub mod decimal;

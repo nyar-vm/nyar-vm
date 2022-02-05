@@ -8,8 +8,8 @@ use valkyrie_errors::FileSpan;
 
 pub use crate::{
     expression_level::{
-        binary::BinaryExpression, decimal::ValkyrieDecimalNode, identifier::ValkyrieIdentifierNode,
-        integer::ValkyrieIntegerNode, list::HeterogeneousList, unary::UnaryExpression,
+        binary::BinaryExpression, decimal::ValkyrieDecimalNode, identifier::ValkyrieIdentifier, integer::ValkyrieIntegerNode,
+        list::HeterogeneousList, unary::UnaryExpression,
     },
     operators::{resolver::ExpressionOrderResolver, OperatorKind, UnknownOrder, ValkyrieOperator},
     package_level::{NamespaceDeclare, NamespaceKind},
@@ -36,7 +36,7 @@ pub enum ValkyrieASTKind {
     // (1, )
     // (1, 2, 3)
     HList(Box<HeterogeneousList>),
-    Identifier(Box<ValkyrieIdentifierNode>),
+    Identifier(Box<ValkyrieIdentifier>),
     Integer(Box<ValkyrieIntegerNode>),
     Decimal(Box<ValkyrieDecimalNode>),
     Boolean(bool),

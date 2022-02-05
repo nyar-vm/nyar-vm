@@ -1,10 +1,12 @@
-use std::fmt::{Display, Formatter};
+use std::str::FromStr;
+
+use valkyrie_errors::{SyntaxError, ValkyrieResult};
 
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValkyrieIntegerNode {
-    pub hint: ValkyrieIdentifierNode,
+    pub hint: ValkyrieIdentifier,
     pub value: IBig,
 }
 
@@ -19,6 +21,15 @@ impl ValkyrieIntegerNode {
         ValkyrieASTNode {
             kind: ValkyrieASTKind::Integer(box self),
             span: FileSpan { file, head: range.start, tail: range.end },
+        }
+    }
+}
+
+impl ValkyrieASTNode {
+    pub fn integer(num: &str, file: FileID, range: &Range<usize>, hint: Option<ValkyrieIdentifier>) -> ValkyrieResult<Self> {
+        match IBig::from_str(num) {
+            Ok(o) => Ok(ValkyrieIntegerNode { hint: hint.unwrap_or_default(), value: o }.to_node(file, range)),
+            Err(e) => Err(SyntaxError::from(e).with_file(file).with_range(range))?,
         }
     }
 }

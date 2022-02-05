@@ -2,7 +2,14 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
-use valkyrie_errors::{FileID, FileSpan, SyntaxError, ValkyrieResult};
+use valkyrie_errors::{
+    third_party::{
+        Affix,
+        Associativity::{Left, Right},
+        PrattParser, Precedence,
+    },
+    FileID, FileSpan, SyntaxError, ValkyrieResult,
+};
 
 use crate::{BinaryExpression, UnaryExpression, ValkyrieASTNode};
 
@@ -24,7 +31,7 @@ pub struct ValkyrieOperator {
     pub span: FileSpan,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum OperatorKind {
     Add,
     Subtract,
@@ -43,43 +50,50 @@ pub enum OperatorKind {
 
 impl ValkyrieOperator {
     pub fn prefix(s: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
-        let kind = OperatorKind::parse_prefix(s)?;
-        Ok(Self { kind, span: FileSpan { file, head: range.start, tail: range.end } })
+        match OperatorKind::parse_prefix(s) {
+            Ok(o) => Ok(Self { kind: o, span: FileSpan { file, head: range.start, tail: range.end } }),
+            Err(e) => Err(e.with_file(file).with_range(range))?,
+        }
     }
     pub fn infix(s: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
         let kind = OperatorKind::parse_infix(s)?;
         Ok(Self { kind, span: FileSpan { file, head: range.start, tail: range.end } })
     }
     pub fn suffix(s: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
-        let kind = OperatorKind::parse_suffix(s)?;
-        Ok(Self { kind, span: FileSpan { file, head: range.start, tail: range.end } })
+        match OperatorKind::parse_suffix(s) {
+            Ok(o) => Ok(Self { kind: o, span: FileSpan { file, head: range.start, tail: range.end } }),
+            Err(e) => Err(e.with_file(file).with_range(range))?,
+        }
     }
 }
 
 impl OperatorKind {
-    pub fn parse_prefix(s: &str) -> ValkyrieResult<Self> {
+    pub fn parse_prefix(s: &str) -> Result<Self, SyntaxError> {
         let out = match Self::normalize(s).as_str() {
             "not" => OperatorKind::Is(false),
             _ => Err(SyntaxError::new(format!("Unknown prefix `{}`", s)))?,
         };
         Ok(out)
     }
-    pub fn parse_infix(s: &str) -> ValkyrieResult<Self> {
-        let out = match Self::normalize(s).as_str() {
+    pub fn parse_infix(s: &str) -> Result<Self, SyntaxError> {
+        let normed = Self::normalize(s);
+        let out = match normed.as_str() {
             "+" => OperatorKind::Add,
             "-" => OperatorKind::Subtract,
             "*" => OperatorKind::MultiplyBroadcast,
             "/" => OperatorKind::Slash,
             "->" => OperatorKind::Return,
-            "in" => OperatorKind::In(true),
+            "∈" => OperatorKind::In(true),
+            "!∈" => OperatorKind::In(false),
             s if s.starts_with("not") && s.ends_with("in") => OperatorKind::In(false),
-            "is" => OperatorKind::Is(true),
+            "<:" => OperatorKind::Is(true),
+            "!<:" => OperatorKind::Is(false),
             s if s.starts_with("is") && s.ends_with("not") => OperatorKind::Is(false),
-            _ => Err(SyntaxError::new(format!("Unknown infix `{}`", s)))?,
+            _ => Err(SyntaxError::new(format!("Unknown infix `{}`", normed)))?,
         };
         Ok(out)
     }
-    pub fn parse_suffix(s: &str) -> ValkyrieResult<Self> {
+    pub fn parse_suffix(s: &str) -> Result<Self, SyntaxError> {
         let out = match Self::normalize(s).as_str() {
             "contains" => OperatorKind::Contains(true),
             s if s.starts_with("not") && s.ends_with("contains") => OperatorKind::Contains(false),
@@ -110,7 +124,9 @@ impl OperatorKind {
                     _ => {}
                 },
                 //
-                '∋' | '∍' | '∊' | '∈' | '∉' | '∌' => out.push_str("in"),
+                '∊' | '∈' => out.push_str("∈"),
+                '∉' => out.push_str("!∈"),
+                '∋' | '∍' => out.push_str("∋"),
                 s if s.is_whitespace() => continue,
                 _ => out.push(c),
             }

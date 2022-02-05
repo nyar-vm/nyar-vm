@@ -1,12 +1,17 @@
-use std::{ops::Range, };
+use std::{ops::Range, str::FromStr};
 
 use peginator::PegParser;
 
-use valkyrie_ast::{NamespaceDeclare, ValkyrieASTNode};
+use valkyrie_ast::{
+    ExpressionOrderResolver, NamespaceDeclare, UnknownOrder, ValkyrieASTNode, ValkyrieIdentifier, ValkyrieOperator,
+};
 use valkyrie_errors::{FileID, FileSpan, SyntaxError, ValkyrieError, ValkyrieResult};
 
 use crate::{
-    parser::valkyrie::{IdentifierNode, LetStatement, NamespaceDeclareNode, VkParser, VkStatements},
+    parser::valkyrie::{
+        ExprNode, ExpressionNode, IdentifierNode, LetStatement, NamespaceDeclareNode, NumberNode, NumberVariant, TermNode,
+        VkParser, VkStatements,
+    },
     ValkyrieParser,
 };
 
@@ -36,6 +41,20 @@ impl ValkyrieParser {
     }
     pub fn bad_node(&self, span: &Range<usize>) -> ValkyrieASTNode {
         ValkyrieASTNode::null(self.file, span)
+    }
+    // If the node is damaged, it will not affect the subsequent analysis
+    pub fn safe_node(
+        &mut self,
+        maybe: ValkyrieResult<ValkyrieASTNode>,
+        span: &Range<usize>,
+    ) -> ValkyrieResult<ValkyrieASTNode> {
+        match maybe {
+            Ok(o) => Ok(o),
+            Err(e) => {
+                self.errors.push(e);
+                Ok(self.bad_node(span))
+            }
+        }
     }
 }
 

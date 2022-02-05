@@ -1,7 +1,3 @@
-use valkyrie_ast::{BinaryExpression, ExpressionOrderResolver, OperatorKind, UnaryExpression, UnknownOrder, ValkyrieOperator};
-
-use crate::parser::valkyrie::{ExprNode, ExpressionNode, TermNode};
-
 use super::*;
 
 mod identifier;
@@ -11,24 +7,24 @@ impl ExpressionNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         let mut todo = vec![];
         self.expr.visit(parser, &mut todo)?;
-        for term in self.infix {
+        for term in &self.infix {
             let o = ValkyrieOperator::infix(&term.infix.string, parser.file, &term.infix.position)?;
             todo.push(UnknownOrder::Infix(o));
             term.expr.visit(parser, &mut todo)?;
         }
-        ExpressionOrderResolver::res(todo.into_iter())?
+        ExpressionOrderResolver::resolve(todo)
     }
 }
 
 impl ExprNode {
     pub fn visit(&self, parser: &mut ValkyrieParser, terms: &mut Vec<UnknownOrder>) -> ValkyrieResult {
-        for prefix in self.prefix {
+        for prefix in &self.prefix {
             let o = ValkyrieOperator::prefix(&prefix.string, parser.file, &prefix.position)?;
             terms.push(UnknownOrder::Prefix(o));
         }
         let term = self.term.visit(parser)?;
         terms.push(UnknownOrder::Value(term));
-        for suffix in self.suffix {
+        for suffix in &self.suffix {
             let o = ValkyrieOperator::suffix(&suffix.string, parser.file, &suffix.position)?;
             terms.push(UnknownOrder::Suffix(o));
         }
@@ -41,7 +37,10 @@ impl TermNode {
         match self {
             TermNode::ExpressionNode(e) => e.visit(parser),
             TermNode::IdentifierNode(v) => Ok(v.visit(parser).to_node()),
-            TermNode::NumberNode(v) => Ok(v.visit(parser)),
+            TermNode::NumberNode(v) => {
+                let maybe = v.visit(parser);
+                parser.safe_node(maybe, &v.position)
+            }
             TermNode::StringNode(_) => {
                 todo!()
             }

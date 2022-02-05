@@ -1,6 +1,5 @@
-use std::str::FromStr;
 use valkyrie_errors::ValkyrieResult;
-use valkyrie_parser::{testing::debug_lexer, ValkyrieOperator};
+use valkyrie_parser::testing::debug_lexer;
 
 #[test]
 fn test_unary() {
@@ -17,9 +16,4 @@ fn test_binary() -> ValkyrieResult {
         "tests/expression/infix3.vk",
         "tests/expression/infix4.vk",
     ])
-}
-
-#[test]
-fn operators() {
-    ValkyrieOperator::from_str("+").unwrap();
 }
