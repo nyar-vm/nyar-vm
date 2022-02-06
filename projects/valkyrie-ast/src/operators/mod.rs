@@ -56,8 +56,10 @@ impl ValkyrieOperator {
         }
     }
     pub fn infix(s: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
-        let kind = OperatorKind::parse_infix(s)?;
-        Ok(Self { kind, span: FileSpan { file, head: range.start, tail: range.end } })
+        match OperatorKind::parse_infix(s) {
+            Ok(o) => Ok(Self { kind: o, span: FileSpan { file, head: range.start, tail: range.end } }),
+            Err(e) => Err(e.with_file(file).with_range(range))?,
+        }
     }
     pub fn suffix(s: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
         match OperatorKind::parse_suffix(s) {
@@ -88,6 +90,7 @@ impl OperatorKind {
             s if s.starts_with("not") && s.ends_with("in") => OperatorKind::In(false),
             "<:" => OperatorKind::Is(true),
             "!<:" => OperatorKind::Is(false),
+            "<:!" => OperatorKind::Is(false),
             s if s.starts_with("is") && s.ends_with("not") => OperatorKind::Is(false),
             _ => Err(SyntaxError::new(format!("Unknown infix `{}`", normed)))?,
         };

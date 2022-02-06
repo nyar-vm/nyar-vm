@@ -7,10 +7,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::{FileID, ValkyrieResult};
 use ariadne::{Cache, Label, Source};
 use serde::{Deserialize, Serialize};
 use url::Url;
+
+use crate::{FileID, ValkyrieResult};
 
 pub mod list;
 
@@ -23,6 +24,7 @@ pub struct TextManager {
 
 pub struct TextItem {
     path: String,
+    text: Arc<String>,
     source: Arc<Source>,
 }
 
@@ -45,16 +47,18 @@ impl TextManager {
         Ok(self.add_text(relative_path, text))
     }
     pub fn add_text(&mut self, file: impl Into<String>, text: impl Into<String>) -> FileID {
+        let text = Arc::new(text.into());
+        let source = Arc::new(Source::from(text.as_str()));
         let id = self.max_id;
         self.max_id += 1;
-        self.text_map.insert(id, TextItem { path: file.into(), source: Arc::new(Source::from(text.into())) });
+        self.text_map.insert(id, TextItem { path: file.into(), text, source });
         id
     }
     // no file and empty file is eqv
-    pub fn get_text(&self, id: FileID) -> String {
+    pub fn get_text(&self, id: FileID) -> &str {
         match self.text_map.get(&id) {
-            Some(s) => s.source.chars().collect(),
-            None => String::new(),
+            Some(s) => s.text.as_ref(),
+            None => "",
         }
     }
 }

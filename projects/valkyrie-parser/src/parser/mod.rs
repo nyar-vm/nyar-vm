@@ -1,10 +1,8 @@
-use std::{ops::Range, str::FromStr};
+use std::ops::Range;
 
 use peginator::PegParser;
 
-use valkyrie_ast::{
-    ExpressionOrderResolver, NamespaceDeclare, UnknownOrder, ValkyrieASTNode, ValkyrieIdentifier, ValkyrieOperator,
-};
+use valkyrie_ast::{ExpressionOrderResolver, NamespaceDeclare, UnknownOrder, ValkyrieASTNode, ValkyrieOperator};
 use valkyrie_errors::{FileID, FileSpan, SyntaxError, ValkyrieError, ValkyrieResult};
 
 use crate::{

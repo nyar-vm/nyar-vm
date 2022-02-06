@@ -4,7 +4,7 @@ default-members = [
     #    "projects/nyar-hir",
     #    "projects/nyar-mir",
     #    "projects/nyar-error",
-    #    "projects/nyar-interpreter",
+    "projects/valkyrie-parser",
     "projects/valkyrie-errors",
 ]
 exclude = [

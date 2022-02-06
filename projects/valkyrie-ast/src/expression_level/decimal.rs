@@ -1,7 +1,4 @@
 use super::*;
-use crate::ValkyrieIntegerNode;
-use std::str::FromStr;
-use valkyrie_errors::{SyntaxError, ValkyrieResult};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValkyrieDecimalNode {

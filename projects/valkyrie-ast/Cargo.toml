@@ -2,7 +2,7 @@
 name = "valkyrie-ast"
 version = "0.0.0"
 authors = ["Aster <192607617@qq.com>"]
-description = "..."
+description = "Abstract Syntax Tree of valkyrie language"
 repository = "https://github.com/oovm/sub_projects"
 documentation = "https://docs.rs/sub_projects"
 readme = "Readme.md"
