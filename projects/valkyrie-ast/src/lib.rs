@@ -39,6 +39,7 @@ pub enum ValkyrieASTKind {
     Identifier(Box<ValkyrieIdentifier>),
     Integer(Box<ValkyrieIntegerNode>),
     Decimal(Box<ValkyrieDecimalNode>),
+    Bytes(Vec<u8>),
     Boolean(bool),
     Null,
 }

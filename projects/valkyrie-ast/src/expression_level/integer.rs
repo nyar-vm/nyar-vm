@@ -32,4 +32,32 @@ impl ValkyrieASTNode {
             Err(e) => Err(SyntaxError::from(e).with_file(file).with_range(range))?,
         }
     }
+    pub fn binary(num: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
+        assert!(num.starts_with("0b"));
+        let num = &num[2..];
+        let mut buffer = vec![];
+        for byte in num.as_bytes().chunks(8) {
+            let mut byte = byte.iter().map(|b| *b as char).collect::<String>();
+            while byte.len() < 8 {
+                byte.insert(0, '0');
+            }
+            let byte = u8::from_str_radix(&byte, 2).unwrap();
+            buffer.push(byte);
+        }
+        Ok(ValkyrieASTNode { kind: ValkyrieASTKind::Bytes(buffer), span: FileSpan::new(file, range) })
+    }
+    pub fn hex(num: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {
+        assert!(num.starts_with("0x"));
+        let num = &num[2..];
+        let mut buffer = vec![];
+        for byte in num.as_bytes().chunks(2) {
+            let mut byte = byte.iter().map(|b| *b as char).collect::<String>();
+            while byte.len() < 2 {
+                byte.insert(0, '0');
+            }
+            let byte = u8::from_str_radix(&byte, 16).unwrap();
+            buffer.push(byte);
+        }
+        Ok(ValkyrieASTNode { kind: ValkyrieASTKind::Bytes(buffer), span: FileSpan::new(file, range) })
+    }
 }

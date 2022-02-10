@@ -13,14 +13,31 @@ impl ExpressionOrderResolver {
 impl OperatorKind {
     pub fn affix(&self) -> Affix {
         match self {
-            OperatorKind::Add => Affix::Infix(Precedence(2), Left),
-            OperatorKind::Subtract => Affix::Infix(Precedence(2), Left),
-            OperatorKind::MultiplyBroadcast => Affix::Infix(Precedence(2), Right),
-            OperatorKind::Slash => Affix::Infix(Precedence(2), Left),
+            // suffix
+
+            // prefix
+            OperatorKind::Positive => Affix::Prefix(Precedence(20100)),
+            OperatorKind::Negative => Affix::Prefix(Precedence(20100)),
+            OperatorKind::RootOf(_) => Affix::Prefix(Precedence(20100)),
+            OperatorKind::Not => Affix::Prefix(Precedence(20100)),
+            // infix power
+            OperatorKind::Power => Affix::Infix(Precedence(10200), Right),
+            // infix times
+            OperatorKind::MultiplyBroadcast => Affix::Infix(Precedence(10100), Right),
+            OperatorKind::Slash => Affix::Infix(Precedence(10100), Left),
+            // infix add/subtract
+            OperatorKind::Add => Affix::Infix(Precedence(10000), Left),
+            OperatorKind::Subtract => Affix::Infix(Precedence(10000), Left),
+            // infix add/subtract
             OperatorKind::Return => Affix::Infix(Precedence(2), Left),
             OperatorKind::Is(_) => Affix::Infix(Precedence(2), Left),
             OperatorKind::In(_) => Affix::Infix(Precedence(2), Left),
             OperatorKind::Contains(_) => Affix::Infix(Precedence(2), Left),
+            OperatorKind::Concat => Affix::Infix(Precedence(2), Left),
+            OperatorKind::Greater => Affix::Infix(Precedence(2), Left),
+            OperatorKind::GreaterEqual => Affix::Infix(Precedence(2), Left),
+            OperatorKind::Less => Affix::Infix(Precedence(2), Left),
+            OperatorKind::LessEqual => Affix::Infix(Precedence(2), Left),
         }
     }
 }

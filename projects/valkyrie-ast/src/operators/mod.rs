@@ -33,12 +33,35 @@ pub struct ValkyrieOperator {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum OperatorKind {
+    // prefix positive
+    Positive,
+    // prefix negative
+    Negative,
+    // prefix operator `√ ∛ ∜`
+    RootOf(u8),
+    //
+    Not,
+    // +
     Add,
+    // ++
+    Concat,
+    //
     Subtract,
+    // >
+    Greater,
+    // >=
+    GreaterEqual,
+    // <
+    Less,
+    // <=
+    LessEqual,
     // infix operator `∗ ⋆ ⋆`
     MultiplyBroadcast,
     // infix operator `÷ / ⁄ ∕`
     Slash,
+
+    Power,
+
     // function return operator `→`
     Return,
     Is(bool),
@@ -72,7 +95,8 @@ impl ValkyrieOperator {
 impl OperatorKind {
     pub fn parse_prefix(s: &str) -> Result<Self, SyntaxError> {
         let out = match Self::normalize(s).as_str() {
-            "not" => OperatorKind::Is(false),
+            "+" => OperatorKind::Positive,
+            "-" => OperatorKind::Negative,
             _ => Err(SyntaxError::new(format!("Unknown prefix `{}`", s)))?,
         };
         Ok(out)
@@ -81,9 +105,21 @@ impl OperatorKind {
         let normed = Self::normalize(s);
         let out = match normed.as_str() {
             "+" => OperatorKind::Add,
+            "++" => OperatorKind::Concat,
             "-" => OperatorKind::Subtract,
             "*" => OperatorKind::MultiplyBroadcast,
             "/" => OperatorKind::Slash,
+            // root of
+            "√" => OperatorKind::RootOf(2),
+            "∛" => OperatorKind::RootOf(3),
+            "∜" => OperatorKind::RootOf(4),
+            // comparison
+            "^" => OperatorKind::Power,
+            ">" => OperatorKind::Greater,
+            ">=" => OperatorKind::GreaterEqual,
+            "<" => OperatorKind::Less,
+            "<=" => OperatorKind::LessEqual,
+            // other
             "->" => OperatorKind::Return,
             "∈" => OperatorKind::In(true),
             "!∈" => OperatorKind::In(false),
@@ -157,6 +193,9 @@ impl OperatorKind {
             OperatorKind::Contains(_) => {
                 todo!()
             }
+            _ => {
+                todo!("{:?}", self)
+            }
         }
     }
     pub fn name(&self) -> &str {
@@ -169,12 +208,7 @@ impl OperatorKind {
             OperatorKind::Is(_) => {
                 todo!()
             }
-            OperatorKind::In(_) => {
-                todo!()
-            }
-            OperatorKind::Contains(_) => {
-                todo!()
-            }
+            _ => todo!("{:?}", self),
         }
     }
 }

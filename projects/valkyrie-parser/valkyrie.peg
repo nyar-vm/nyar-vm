@@ -130,7 +130,8 @@ StringNode = [hint:IdentifierNode] '\"' '\"';
 NumberNode = variant:NumberVariant [hint:IdentifierNode];
 
 NumberVariant =
-	@:ByteNode |
+	@:ByteBin |
+	@:ByteHex |
 	@:DecimalNode |
 	@:IntegerNode ;
 
@@ -139,8 +140,10 @@ IntegerNode = '0' | '1'..'9' { '0'..'9' | '_'};
 @string @position @no_skip_ws
 DecimalNode = IntegerNode [Dot {'0'..'9' | '_'}];
 @string @position @no_skip_ws
-ByteNode = '0' ('b' | 'B' | 'x' | 'X') { '0'..'9' | 'a'..'f' | 'A'..'F' }+;
-
+ByteBin = '0' ('b' | 'B') { '0'..'9' | 'a'..'f' | 'A'..'F' }+;
+@string @position @no_skip_ws
+ByteHex = '0' ('x' | 'X') { '0'..'9' | 'a'..'f' | 'A'..'F' }+;
+#=======================================================================================================================
 @position
 NamespaceNode = path:IdentifierNode {NamespaceSplit path:IdentifierNode};
 

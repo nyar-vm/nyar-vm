@@ -83,5 +83,5 @@ wrap_parse_error!(peginator::ParseError);
 #[cfg(feature = "num")]
 wrap_parse_error!(num::bigint::ParseBigIntError);
 
-// #[cfg(feature = "dashu")]
-// wrap_parse_error!(num::bigint::ParseBigIntError);
+#[cfg(feature = "dashu")]
+wrap_parse_error!(dashu::base::ParseError);

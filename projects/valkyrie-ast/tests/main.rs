@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use peginator_codegen::Compile;
 
+mod number;
 mod operators;
 
 use valkyrie_errors::{third_party::Url, ValkyrieResult};

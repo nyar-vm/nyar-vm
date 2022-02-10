@@ -2,10 +2,8 @@ use valkyrie_parser::testing::debug_lexer;
 
 #[test]
 fn test_atomic() {
-    debug_lexer(&[
-        "tests/literal/symbol.vk", "tests/literal/number.vk", "tests/literal/string.vk", "tests/literal/escape.vk"])
+    debug_lexer(&["tests/literal/symbol.vk", "tests/literal/number.vk", "tests/literal/string.vk", "tests/literal/escape.vk"])
         .unwrap();
-
 }
 
 #[test]

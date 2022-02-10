@@ -21,11 +21,8 @@ impl Debug for ValkyrieASTKind {
             ValkyrieASTKind::Null => {
                 write!(f, "null")
             }
-            ValkyrieASTKind::HList(v) => {
-                f.debug_struct("Tuple")
-                    .field("nodes", v)
-                    .finish()
-            }
+            ValkyrieASTKind::HList(v) => f.debug_struct("Tuple").field("nodes", v).finish(),
+            ValkyrieASTKind::Bytes(v) => f.debug_struct("Bytes").field("nodes", v).finish(),
         }
     }
 }
@@ -33,19 +30,37 @@ impl Debug for ValkyrieASTKind {
 impl Display for ValkyrieASTKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValkyrieASTKind::Statement(_) => {todo!()}
-            ValkyrieASTKind::Namespace(_) => {todo!()}
-            ValkyrieASTKind::Binary(_) => {todo!()}
-            ValkyrieASTKind::Unary(_) => {todo!()}
-            ValkyrieASTKind::HList(_) => {todo!()}
-            ValkyrieASTKind::Identifier(_) => {todo!()}
-            ValkyrieASTKind::Decimal(v) => {Display::fmt(v, f)}
-            ValkyrieASTKind::Integer(v) => {Display::fmt(v, f)}
-            ValkyrieASTKind::Boolean(_) => {todo!()}
-            ValkyrieASTKind::Null => {
-                f.write_str("null")
+            ValkyrieASTKind::Statement(_) => {
+                todo!()
             }
-
+            ValkyrieASTKind::Namespace(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::Binary(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::Unary(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::HList(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::Identifier(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::Decimal(v) => Display::fmt(v, f),
+            ValkyrieASTKind::Integer(v) => Display::fmt(v, f),
+            ValkyrieASTKind::Boolean(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::Null => f.write_str("null"),
+            ValkyrieASTKind::Bytes(v) => {
+                write!(f, "0x")?;
+                for byte in v {
+                    write!(f, "{:02x}", byte)?;
+                }
+                Ok(())
+            }
         }
     }
 }

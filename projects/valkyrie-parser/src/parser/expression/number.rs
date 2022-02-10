@@ -9,10 +9,8 @@ impl NumberNode {
         match &self.variant {
             NumberVariant::IntegerNode(v) => ValkyrieASTNode::integer(&v.string, parser.file, &v.position, hint),
             NumberVariant::DecimalNode(v) => ValkyrieASTNode::decimal(&v.string, parser.file, &v.position, hint),
-            NumberVariant::ByteNode(v) => {
-                println!("ByteNode: {:?}", v);
-                todo!()
-            }
+            NumberVariant::ByteBin(v) => ValkyrieASTNode::binary(&v.string, parser.file, &v.position),
+            NumberVariant::ByteHex(v) => ValkyrieASTNode::hex(&v.string, parser.file, &v.position),
         }
     }
 }
