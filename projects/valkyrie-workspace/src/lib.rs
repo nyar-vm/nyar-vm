@@ -9,8 +9,4 @@ pub struct LegionConfig {
     pub workspace: Workspace,
 }
 
-
-pub struct ValkyrieFile {
-
-}
-
+pub struct ValkyrieFile {}

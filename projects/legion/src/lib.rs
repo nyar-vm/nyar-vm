@@ -8,5 +8,3 @@ mod workspace;
 pub struct LegionConfig {
     pub workspace: Workspace,
 }
-
-

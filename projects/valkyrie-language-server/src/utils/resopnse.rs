@@ -8,10 +8,6 @@ pub struct JsonResponse<T> {
 
 impl From<T> for JsonResponse<T> {
     fn from(data: T) -> Self {
-        Self {
-            code: StatusCode::OK,
-            message: String::new(),
-            data,
-        }
+        Self { code: StatusCode::OK, message: String::new(), data }
     }
 }

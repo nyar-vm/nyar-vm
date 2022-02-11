@@ -9,7 +9,6 @@ pub struct ValkyrieFile {
     _wrap: std::fs::PathBuf,
 }
 
-
 pub struct ValkyrieFileHandler {
     _wrap: std::fs::File,
 }
@@ -87,7 +86,6 @@ pub trait ValkyrieClass {
 pub trait ValkyrieVariant {
     fn type_names() -> Vec<String>;
 }
-
 
 pub trait ValkyrieUnionType {
     fn type_names() -> Vec<String>;

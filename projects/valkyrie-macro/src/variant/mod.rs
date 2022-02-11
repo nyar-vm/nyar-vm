@@ -1,7 +1,3 @@
-
-
 mod result;
 
-pub struct DynamicVariant {
-
-}
+pub struct DynamicVariant {}

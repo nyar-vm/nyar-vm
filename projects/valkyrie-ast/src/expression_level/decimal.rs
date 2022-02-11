@@ -1,11 +1,14 @@
-use valkyrie_errors::ValkyrieError;
+use valkyrie_errors::{
+    third_party::{DBig, HalfAway},
+    ValkyrieError,
+};
 
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValkyrieDecimalNode {
     pub hint: ValkyrieIdentifier,
-    pub value: FBig,
+    pub value: FBig<HalfAway, 2>,
 }
 
 impl Display for ValkyrieDecimalNode {
@@ -25,8 +28,11 @@ impl ValkyrieDecimalNode {
 
 impl ValkyrieASTNode {
     pub fn decimal(num: &str, file: FileID, range: &Range<usize>, hint: Option<ValkyrieIdentifier>) -> ValkyrieResult<Self> {
-        match FBig::from_str(num) {
-            Ok(o) => Ok(ValkyrieDecimalNode { hint: hint.unwrap_or_default(), value: o }.to_node(file, range)),
+        match DBig::from_str(num) {
+            Ok(o) => {
+                Ok(ValkyrieDecimalNode { hint: hint.unwrap_or_default(), value: o.to_binary().value() }.to_node(file, range))
+            }
+
             Err(_) => Err(ValkyrieError::syntax_error(format!("Invalid decimal number: {}", num), FileSpan::new(file, range))),
         }
     }

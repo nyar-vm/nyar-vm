@@ -1,5 +1,3 @@
-
-
 pub enum ValkyrieResult<T, E> {
     Success(ValkyrieSuccess<T>),
     Failure(ValkyrieFailure<E>),

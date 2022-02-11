@@ -11,7 +11,13 @@ pub use crate::{
 
 pub mod third_party {
     #[cfg(feature = "dashu")]
-    pub use dashu::{float::FBig, integer::IBig};
+    pub use dashu::{
+        float::{
+            round::mode::{HalfAway, HalfEven},
+            DBig, FBig,
+        },
+        integer::IBig,
+    };
     #[cfg(feature = "num")]
     pub use num::BigInt;
     #[cfg(feature = "pratt")]

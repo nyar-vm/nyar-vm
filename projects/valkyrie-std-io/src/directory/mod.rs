@@ -4,7 +4,6 @@ pub struct ValkyrieDirectory {
     _wrap: PathBuf,
 }
 
-
 impl ValkyrieDirectory {
     // parent returns the parent directory of the current directory.
     pub fn parent(&self) -> Option<ValkyrieDirectory> {

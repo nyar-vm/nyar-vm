@@ -1,5 +1,4 @@
-use std::io::Result;
-use std::path::Ancestors;
+use std::{io::Result, path::Ancestors};
 
 mod path;
 
@@ -10,7 +9,6 @@ mod directory;
 pub struct ValkyrieDirectory {
     _wrap: std::fs::PathBuf,
 }
-
 
 impl ValkyrieDirectory {
     // parent returns the parent directory of the current directory.
