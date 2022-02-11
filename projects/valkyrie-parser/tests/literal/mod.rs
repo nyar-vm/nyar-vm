@@ -1,4 +1,4 @@
-use valkyrie_parser::testing::debug_lexer;
+use crate::debug_lexer;
 
 #[test]
 fn test_atomic() {

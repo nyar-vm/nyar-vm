@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["192608617@qq.com"]
 edition = "2018"
 description = "Valkyrie Language Server"
-repository = "https://github.com/nyar-lang/NyarNative"
+repository = "https://github.com/nyar-vm/valkyrie.rs"
 license = "MPL-2.0"
 
 [[bin]]

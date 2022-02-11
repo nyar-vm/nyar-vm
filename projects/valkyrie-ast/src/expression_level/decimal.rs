@@ -1,3 +1,5 @@
+use valkyrie_errors::ValkyrieError;
+
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -25,7 +27,7 @@ impl ValkyrieASTNode {
     pub fn decimal(num: &str, file: FileID, range: &Range<usize>, hint: Option<ValkyrieIdentifier>) -> ValkyrieResult<Self> {
         match FBig::from_str(num) {
             Ok(o) => Ok(ValkyrieDecimalNode { hint: hint.unwrap_or_default(), value: o }.to_node(file, range)),
-            Err(e) => Err(SyntaxError::from(e).with_file(file).with_range(range))?,
+            Err(_) => Err(ValkyrieError::syntax_error(format!("Invalid decimal number: {}", num), FileSpan::new(file, range))),
         }
     }
 }

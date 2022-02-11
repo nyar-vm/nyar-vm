@@ -1,9 +1,9 @@
 [package]
 name = "valkyrie-errors"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Aster <192607617@qq.com>"]
 description = "Error types for valkyrie language"
-repository = "https://github.com/nyar-vm/valkyrie-std"
+repository = "https://github.com/nyar-vm/valkyrie.rs"
 documentation = "https://docs.rs/valkyrie-errors"
 readme = "Readme.md"
 license = "MPL-2.0"

@@ -1,5 +1,5 @@
+use crate::debug_lexer;
 use valkyrie_errors::ValkyrieResult;
-use valkyrie_parser::testing::debug_lexer;
 
 #[test]
 fn test_unary() {

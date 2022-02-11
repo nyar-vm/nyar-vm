@@ -138,7 +138,7 @@ NumberVariant =
 @string @position @no_skip_ws
 IntegerNode = '0' | '1'..'9' { '0'..'9' | '_'};
 @string @position @no_skip_ws
-DecimalNode = IntegerNode [Dot {'0'..'9' | '_'}];
+DecimalNode = IntegerNode Dot {'0'..'9' | '_'};
 @string @position @no_skip_ws
 ByteBin = '0' ('b' | 'B') { '0'..'9' | 'a'..'f' | 'A'..'F' }+;
 @string @position @no_skip_ws

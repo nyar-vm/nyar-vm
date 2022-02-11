@@ -4,7 +4,7 @@ version = "0.2.1"
 authors = ["192608617@qq.com"]
 edition = "2018"
 description = "Lexer and token definitions for Valkyrie language"
-repository = "https://github.com/nyar-lang/NyarNative"
+repository = "https://github.com/nyar-vm/valkyrie.rs"
 license = "MPL-2.0"
 
 [dependencies]
@@ -12,7 +12,7 @@ peginator = "0.6.0"
 unicode-ident = "1.0.6"
 
 [dependencies.valkyrie-errors]
-version = "0.0.1"
+#version = "0.0.1"
 path = "../valkyrie-errors"
 features = ["peginator"]
 

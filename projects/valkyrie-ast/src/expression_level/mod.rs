@@ -4,7 +4,7 @@ use std::{
     ops::Range,
     str::FromStr,
 };
-use valkyrie_errors::{SyntaxError, ValkyrieResult};
+use valkyrie_errors::ValkyrieResult;
 
 use valkyrie_errors::{FileID, FileSpan};
 

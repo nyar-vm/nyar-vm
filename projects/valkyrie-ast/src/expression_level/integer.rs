@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use valkyrie_errors::{SyntaxError, ValkyrieResult};
+use valkyrie_errors::{ValkyrieError, ValkyrieResult};
 
 use super::*;
 
@@ -29,7 +29,7 @@ impl ValkyrieASTNode {
     pub fn integer(num: &str, file: FileID, range: &Range<usize>, hint: Option<ValkyrieIdentifier>) -> ValkyrieResult<Self> {
         match IBig::from_str(num) {
             Ok(o) => Ok(ValkyrieIntegerNode { hint: hint.unwrap_or_default(), value: o }.to_node(file, range)),
-            Err(e) => Err(SyntaxError::from(e).with_file(file).with_range(range))?,
+            Err(_) => Err(ValkyrieError::syntax_error(format!("Invalid integer number: {}", num), FileSpan::new(file, range)))?,
         }
     }
     pub fn binary(num: &str, file: FileID, range: &Range<usize>) -> ValkyrieResult<Self> {

@@ -4,7 +4,7 @@ version = "0.2.2"
 authors = ["192607617@qq.com"]
 edition = "2021"
 description = "High level intermediate representation for Nyar"
-repository = "https://github.com/nyar-lang/NyarNative"
+repository = "https://github.com/nyar-vm/valkyrie.rs"
 license = "MPL-2.0"
 
 [dependencies]
