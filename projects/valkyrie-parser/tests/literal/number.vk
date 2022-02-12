@@ -19,8 +19,3 @@ namespace* tests.literal.number;
 114 + 514i + 1919j + 810k
 1234.56cm
 1234.56埃米
-
-0xFF;
-0o77;
-0b11;
-0a_b_c_d;

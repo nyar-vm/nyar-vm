@@ -121,10 +121,23 @@ KeyNode =
 	@:IdentifierNode |
 	@:StringNode
 ;
-
+#=======================================================================================================================
 @position
-StringNode = [hint:IdentifierNode] '\"' '\"';
+StringNode = [hint:IdentifierNode] raw:RawString;
+@position
+RawString = '"' {!'"' StringItem} '"' | "'" {!"'" StringItem} "'";
 
+StringItem = @:ESCAPE2 | @:UNICODE4 | @:UNICODE8 | @:StringAny;
+
+@string
+ESCAPE2 = '\\' char;
+@string
+UNICODE4 = '\\' 'u' HEX HEX HEX HEX;
+@string
+UNICODE8 = '\\' 'U' HEX HEX HEX HEX HEX HEX HEX HEX;
+@char
+StringAny = char;
+#=======================================================================================================================
 @position
 @no_skip_ws
 NumberNode = variant:NumberVariant [hint:IdentifierNode];
@@ -140,9 +153,11 @@ IntegerNode = '0' | '1'..'9' { '0'..'9' | '_'};
 @string @position @no_skip_ws
 DecimalNode = IntegerNode Dot {'0'..'9' | '_'};
 @string @position @no_skip_ws
-ByteBin = '0' ('b' | 'B') { '0'..'9' | 'a'..'f' | 'A'..'F' }+;
+ByteBin = '0' ('b' | 'B') { HEX }+;
 @string @position @no_skip_ws
-ByteHex = '0' ('x' | 'X') { '0'..'9' | 'a'..'f' | 'A'..'F' }+;
+ByteHex = '0' ('x' | 'X') { HEX }+;
+
+HEX = '0'..'9' | 'a'..'f' | 'A'..'F';
 #=======================================================================================================================
 @position
 NamespaceNode = path:IdentifierNode {NamespaceSplit path:IdentifierNode};

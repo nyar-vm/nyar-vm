@@ -62,6 +62,8 @@ pub enum OperatorKind {
 
     Power,
 
+    LogicGate(u8),
+
     // function return operator `→`
     Return,
     Is(bool),
@@ -127,6 +129,8 @@ impl OperatorKind {
             "<:" => OperatorKind::Is(true),
             "!<:" => OperatorKind::Is(false),
             "<:!" => OperatorKind::Is(false),
+            // logic
+            "&&" => OperatorKind::LogicGate(0b1101),
             s if s.starts_with("is") && s.ends_with("not") => OperatorKind::Is(false),
             _ => Err(SyntaxError::new(format!("Unknown infix `{}`", normed)))?,
         };
