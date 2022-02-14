@@ -33,15 +33,29 @@ pub struct ValkyrieOperator {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum OperatorKind {
-    // prefix positive
-    Positive,
-    // prefix negative
-    Negative,
-    // prefix operator `√ ∛ ∜`
-    RootOf(u8),
-    //
+    // suffix operator: `a!`
+    Bang,
+    // suffix operator: `a?`
+    Question,
+    // suffix operator: `a%, b‰, c‱`
+    DivideByDecimalPower(u8),
+    // suffix operator: `℃'
+    Celsius,
+    // suffix operator: '℉`
+    Fahrenheit,
+    // suffix operator: `!a`
     Not,
-    // +
+    // suffix operator: `⇵a`
+    Flip,
+    // prefix positive: `⇆a`
+    Reverse,
+    // prefix positive: `+a`
+    Positive,
+    // prefix negative: `-a`
+    Negative,
+    // prefix operator: `√a, ∛b, ∜c`
+    RootOf(u8),
+    // infix operator: `+`
     Add,
     // ++
     Concat,
@@ -57,16 +71,19 @@ pub enum OperatorKind {
     LessEqual,
     // infix operator `∗ ⋆ ⋆`
     MultiplyBroadcast,
-    // infix operator `÷ / ⁄ ∕`
-    Slash,
-
+    // infix operator `/ ⁄ ∕`
+    Divide,
+    // infix operator `÷`
+    Quotient,
+    // infix operator `^`
     Power,
-
     LogicGate(u8),
 
     // function return operator `→`
     Return,
     Is(bool),
+    //
+    As,
     // a in b, a ∊
     In(bool),
     // a contains b
@@ -110,7 +127,7 @@ impl OperatorKind {
             "++" => OperatorKind::Concat,
             "-" => OperatorKind::Subtract,
             "*" => OperatorKind::MultiplyBroadcast,
-            "/" => OperatorKind::Slash,
+            "/" => OperatorKind::Divide,
             // root of
             "√" => OperatorKind::RootOf(2),
             "∛" => OperatorKind::RootOf(3),
@@ -129,8 +146,14 @@ impl OperatorKind {
             "<:" => OperatorKind::Is(true),
             "!<:" => OperatorKind::Is(false),
             "<:!" => OperatorKind::Is(false),
-            // logic
-            "&&" => OperatorKind::LogicGate(0b1101),
+            // logic gate
+            "∧" | "&&" => OperatorKind::LogicGate(0b0001),
+            "⊼" => OperatorKind::LogicGate(0b0100),
+            "⩟" => OperatorKind::LogicGate(0b0000),
+            "∨" | "||" => OperatorKind::LogicGate(0b0111),
+            "⊽" => OperatorKind::LogicGate(0b0010),
+            "⊻" => OperatorKind::LogicGate(0b0110),
+            // "==" => OperatorKind::Equal,
             s if s.starts_with("is") && s.ends_with("not") => OperatorKind::Is(false),
             _ => Err(SyntaxError::new(format!("Unknown infix `{}`", normed)))?,
         };
@@ -186,7 +209,7 @@ impl OperatorKind {
             OperatorKind::Add => "+",
             OperatorKind::Subtract => "-",
             OperatorKind::MultiplyBroadcast => "×",
-            OperatorKind::Slash => "÷",
+            OperatorKind::Divide => "÷",
             OperatorKind::Return => "→",
             OperatorKind::Is(_) => {
                 todo!()
@@ -207,7 +230,7 @@ impl OperatorKind {
             OperatorKind::Add => "plus",
             OperatorKind::Subtract => "minus",
             OperatorKind::MultiplyBroadcast => "multiply",
-            OperatorKind::Slash => "divide",
+            OperatorKind::Divide => "divide",
             OperatorKind::Return => "return",
             OperatorKind::Is(_) => {
                 todo!()

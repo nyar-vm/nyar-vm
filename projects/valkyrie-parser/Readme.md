@@ -3,24 +3,35 @@
 - a is a scalar
 - A is a vector
 
-| Unicode | Usage   | Expand          |
-|:--------|:--------|:----------------|
-| U+22C8  | `A ⋈ B` | `A.concat(B)`   |             |
-| U+2A1D  | `A ⨝ B` | `A.concat(B)`   |             |
-| U+002D  | `-a`    | `A.negative(a)` |
-| U+002D  | `a - b` | `A.negative(a)` |
-| U+2212  | `-a`    | `A.minus(a)`    |
-| U+2212  | `a − b` | `A.minus(a)`    |
+| Unicode | Usage    | Expand          |
+|:--------|:---------|:----------------|
+| U+22C8  | `A ++ B` | `A.concat(B)`   |             
+| U+2A1D  | `A ++ B` | `A.concat(B)`   |             
+| U+2295  | `A ⊕ B`  | `A.bit_xor(B)`  |             
+| U+002D  | `-a`     | `A.negative(a)` |
+| U+002D  | `a - b`  | `A.negative(a)` |
+| U+2212  | `-a`     | `A.minus(a)`    |
+| U+2212  | `a − b`  | `A.minus(a)`    |
+
+## Bitwise Operators
+
+| Unicode | Usage     | Expand                 |
+|:--------|:----------|:-----------------------|
+| U+2295  | `a ⊕ b`   | `a.bit_xor(b)`         |
+| U+0026  | `a & b`   | `a.bit_and(b)`         |
+| U+007C  | `a \|  b` | `a.bit_or(b)`          |
+| U+003E  | `a >> b`  | `a.bit_shift_right(b)` | 
+| U+003E  | `a >>> b` | `a.bit_shift_right(b)` |
 
 
 ## Division Operators
 
-| Unicode | Usage   | Expand                   |
-|:--------|:--------|:-------------------------|
-| U+00F7  | `a ÷ b` | `A.divide(a)`            |
-| U+002F  | `a / b` | `A.divide(a)`            |
-| U+2044  | `a ⁄ b` | `A.divide(a)`            |
-| U+2215  | `a ∕ b` | `A.divide(a)`            |
+| Unicode | Usage   | Expand        |
+|:--------|:--------|:--------------|
+| U+00F7  | `a ÷ b` | `A.divide(a)` |
+| U+002F  | `a / b` | `A.divide(a)` |
+| U+2044  | `a ⁄ b` | `A.divide(a)` |
+| U+2215  | `a ∕ b` | `A.divide(a)` |
 
 ## Product Operators
 
@@ -124,8 +135,6 @@ $±$
 | U+2033  | `a″`  | `A.second()` |
 | U+2034  | `a‴`  | `A.third()`  |
 | U+2057  | `a⁗`  | `A.fourth()` |
-
-
 
 ## Matrix
 

@@ -23,6 +23,8 @@ impl Debug for ValkyrieASTKind {
             }
             ValkyrieASTKind::HList(v) => f.debug_struct("Tuple").field("nodes", v).finish(),
             ValkyrieASTKind::Bytes(v) => f.debug_struct("Bytes").field("nodes", v).finish(),
+            ValkyrieASTKind::StringInterpolation(v) => Debug::fmt(v, f),
+            ValkyrieASTKind::String(v) => Debug::fmt(v, f),
         }
     }
 }
@@ -50,9 +52,10 @@ impl Display for ValkyrieASTKind {
             }
             ValkyrieASTKind::Decimal(v) => Display::fmt(v, f),
             ValkyrieASTKind::Integer(v) => Display::fmt(v, f),
-            ValkyrieASTKind::Boolean(_) => {
-                todo!()
-            }
+            ValkyrieASTKind::Boolean(v) => match v {
+                true => f.write_str("true"),
+                false => f.write_str("false"),
+            },
             ValkyrieASTKind::Null => f.write_str("null"),
             ValkyrieASTKind::Bytes(v) => {
                 write!(f, "0x")?;
@@ -60,6 +63,12 @@ impl Display for ValkyrieASTKind {
                     write!(f, "{:02x}", byte)?;
                 }
                 Ok(())
+            }
+            ValkyrieASTKind::StringInterpolation(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::String(_) => {
+                todo!()
             }
         }
     }

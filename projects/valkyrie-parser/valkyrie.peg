@@ -125,14 +125,14 @@ KeyNode =
 @position
 StringNode = [hint:IdentifierNode] raw:RawString;
 @position
-RawString = '"' {!'"' StringItem} '"' | "'" {!"'" StringItem} "'";
+RawString =
+'"' {!'"' item:StringItem} '"' | "'" {!"'" item:StringItem} "'";
 
-StringItem = @:ESCAPE2 | @:UNICODE4 | @:UNICODE8 | @:StringAny;
+StringItem = @:ESCAPE_U | @:ESCAPE_C | @:StringAny;
 
-@string
-ESCAPE2 = '\\' char;
-@string
-UNICODE4 = '\\' 'u' HEX HEX HEX HEX;
+ESCAPE_C = '\\' char:StringAny;
+ESCAPE_U = '\\' 'u' '{' {hex:HEX} '}';
+
 @string
 UNICODE8 = '\\' 'U' HEX HEX HEX HEX HEX HEX HEX HEX;
 @char
@@ -157,6 +157,7 @@ ByteBin = '0' ('b' | 'B') { HEX }+;
 @string @position @no_skip_ws
 ByteHex = '0' ('x' | 'X') { HEX }+;
 
+@char
 HEX = '0'..'9' | 'a'..'f' | 'A'..'F';
 #=======================================================================================================================
 @position

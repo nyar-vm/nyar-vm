@@ -2,6 +2,7 @@ use super::*;
 
 mod identifier;
 mod number;
+mod string;
 
 impl ExpressionNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
@@ -41,8 +42,9 @@ impl TermNode {
                 let maybe = v.visit(parser);
                 parser.safe_node(maybe, &v.position)
             }
-            TermNode::StringNode(_) => {
-                todo!()
+            TermNode::StringNode(v) => {
+                let maybe = v.visit(parser);
+                parser.safe_node(maybe, &v.position)
             }
             TermNode::SpecialNode(s) => {
                 let out = match s.string.as_str() {

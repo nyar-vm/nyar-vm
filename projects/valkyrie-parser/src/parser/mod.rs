@@ -7,8 +7,8 @@ use valkyrie_errors::{FileID, FileSpan, SyntaxError, ValkyrieError, ValkyrieResu
 
 use crate::{
     parser::valkyrie::{
-        ExprNode, ExpressionNode, IdentifierNode, LetStatement, NamespaceDeclareNode, NumberNode, NumberVariant, TermNode,
-        VkParser, VkStatements,
+        ExprNode, ExpressionNode, IdentifierNode, LetStatement, NamespaceDeclareNode, NumberNode, NumberVariant, StringItem,
+        StringNode, TermNode, VkParser, VkStatements,
     },
     ValkyrieParser,
 };
