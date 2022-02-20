@@ -14,7 +14,7 @@ impl Debug for ValkyrieASTKind {
             ValkyrieASTKind::Namespace(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Unary(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Binary(v) => Debug::fmt(v, f),
-            ValkyrieASTKind::Identifier(v) => Debug::fmt(v, f),
+            ValkyrieASTKind::Namepath(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Integer(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Decimal(v) => Debug::fmt(v, f),
             ValkyrieASTKind::Boolean(v) => Debug::fmt(v, f),
@@ -47,7 +47,7 @@ impl Display for ValkyrieASTKind {
             ValkyrieASTKind::HList(_) => {
                 todo!()
             }
-            ValkyrieASTKind::Identifier(_) => {
+            ValkyrieASTKind::Namepath(_) => {
                 todo!()
             }
             ValkyrieASTKind::Decimal(v) => Display::fmt(v, f),

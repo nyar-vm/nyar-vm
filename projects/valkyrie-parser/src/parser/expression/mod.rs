@@ -37,7 +37,7 @@ impl TermNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         match self {
             TermNode::ExpressionNode(e) => e.visit(parser),
-            TermNode::IdentifierNode(v) => Ok(v.visit(parser).to_node()),
+            TermNode::Namepath(v) => Ok(v.visit(parser).to_node()),
             TermNode::NumberNode(v) => {
                 let maybe = v.visit(parser);
                 parser.safe_node(maybe, &v.position)

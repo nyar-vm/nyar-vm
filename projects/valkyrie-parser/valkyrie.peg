@@ -60,7 +60,7 @@ TermNode = '(' @:ExpressionNode ')'
 	| @:ListStatement
 	| @:StringNode
 	| @:SpecialNode
-	| @:IdentifierNode
+	| @:Namepath
 	| @:NumberNode;
 
 @string @position
@@ -131,6 +131,8 @@ RawString =
 StringItem = @:ESCAPE_U | @:ESCAPE_C | @:StringAny;
 
 ESCAPE_C = '\\' char:StringAny;
+
+@position
 ESCAPE_U = '\\' 'u' '{' {hex:HEX} '}';
 
 @string

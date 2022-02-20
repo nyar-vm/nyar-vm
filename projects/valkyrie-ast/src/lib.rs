@@ -38,7 +38,7 @@ pub enum ValkyrieASTKind {
     HList(Box<HeterogeneousList>),
     StringInterpolation(Box<ValkyrieStringNode>),
     String(String),
-    Identifier(Box<ValkyrieIdentifier>),
+    Namepath(Vec<ValkyrieIdentifier>),
     Integer(Box<ValkyrieIntegerNode>),
     Decimal(Box<ValkyrieDecimalNode>),
     Bytes(Vec<u8>),
