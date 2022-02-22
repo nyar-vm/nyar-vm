@@ -48,7 +48,7 @@ impl TermNode {
                 parser.safe_node(maybe, &v.position)
             }
             TermNode::SpecialNode(v) => Ok(v.visit(parser)),
-            TermNode::TableStatement(v) => Ok(v.visit(parser)),
+            TermNode::TableStatement(v) => v.visit(parser),
             TermNode::ListStatement(v) => {
                 let mut out = vec![];
                 for term in &v.args {

@@ -1,13 +1,14 @@
-use crate::parser::valkyrie::{KeyNode, KeyValueNode, TableStatement, ValueNode};
 use valkyrie_ast::HeterogeneousList;
+
+use crate::parser::valkyrie::{KeyNode, KeyValueNode, TableStatement, ValueNode};
 
 use super::*;
 
 impl TableStatement {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         let mut pairs = vec![];
-        for row in &self.args {
-            pairs.push(row.visit(parser)?)
+        for _row in &self.args {
+            // pairs.push(row.visit(parser)?)
         }
         Ok(ValkyrieASTNode::dict(pairs, parser.file, &self.position))
     }
@@ -24,10 +25,13 @@ impl KeyValueNode {
 impl KeyNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         match self {
-            KeyNode::IdentifierNode(v) => v.visit(parser),
+            KeyNode::IdentifierNode(v) => {
+                v.visit(parser);
+                unimplemented!()
+            }
             KeyNode::StringNode(v) => {
-                // v.visit(parser).asstr
-                todo!()
+                v.visit(parser)?;
+                unimplemented!()
             }
         }
         todo!()
@@ -37,8 +41,14 @@ impl KeyNode {
 impl ValueNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         match self {
-            ValueNode::IntegerNode(v) => {}
-            ValueNode::StringNode(_) => {}
+            ValueNode::IntegerNode(v) => {
+                v.visit(parser)?;
+                unimplemented!()
+            }
+            ValueNode::StringNode(v) => {
+                v.visit(parser)?;
+                unimplemented!()
+            }
         }
         todo!()
     }

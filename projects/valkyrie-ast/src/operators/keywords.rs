@@ -1,4 +1,4 @@
-use super::*;
+use std::str::FromStr;
 
 pub enum ValkyrieKeyword {
     Type,

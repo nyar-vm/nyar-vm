@@ -3,8 +3,10 @@ use std::io::stderr;
 use valkyrie_errors::{TextManager, ValkyrieResult};
 use valkyrie_parser::ValkyrieParser;
 
+mod declaration;
 mod expression;
 mod literal;
+mod statement;
 
 #[test]
 fn ready() {

@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Run Lexer" type="CargoCommandRunConfiguration" factoryName="Cargo Command" singleton="false">
+  <configuration default="false" name="Run Lexer" type="CargoCommandRunConfiguration" factoryName="Cargo Command" singleton="true">
     <option name="command" value="test --package valkyrie-parser --test main  -- --exact" />
     <option name="workingDirectory" value="file://$PROJECT_DIR$" />
     <option name="channel" value="DEFAULT" />

@@ -1,7 +1,7 @@
 use std::ops::Range;
 
+use crate::ValkyrieIdentifier;
 use serde::{Deserialize, Serialize};
-
 use valkyrie_errors::{
     third_party::{
         Affix,
@@ -13,6 +13,8 @@ use valkyrie_errors::{
 
 use crate::{BinaryExpression, UnaryExpression, ValkyrieASTNode};
 
+pub mod annotaiton;
+pub mod keywords;
 pub mod resolver;
 
 // From this
@@ -114,6 +116,9 @@ impl ValkyrieOperator {
 impl OperatorKind {
     pub fn parse_prefix(s: &str) -> Result<Self, SyntaxError> {
         let out = match Self::normalize(s).as_str() {
+            "√" => OperatorKind::RootOf(2),
+            "∛" => OperatorKind::RootOf(3),
+            "∜" => OperatorKind::RootOf(4),
             "+" => OperatorKind::Positive,
             "-" => OperatorKind::Negative,
             _ => Err(SyntaxError::new(format!("Unknown prefix `{}`", s)))?,
@@ -129,20 +134,20 @@ impl OperatorKind {
             "*" => OperatorKind::MultiplyBroadcast,
             "/" => OperatorKind::Divide,
             // root of
-            "√" => OperatorKind::RootOf(2),
-            "∛" => OperatorKind::RootOf(3),
-            "∜" => OperatorKind::RootOf(4),
-            // comparison
             "^" => OperatorKind::Power,
-            ">" => OperatorKind::Greater,
-            ">=" => OperatorKind::GreaterEqual,
+            // comparison
             "<" => OperatorKind::Less,
             "<=" => OperatorKind::LessEqual,
+            "<<" => OperatorKind::Less,
+            ">" => OperatorKind::Greater,
+            ">=" => OperatorKind::GreaterEqual,
+            ">>" => OperatorKind::Less,
             // other
             "->" => OperatorKind::Return,
-            "∈" => OperatorKind::In(true),
-            "!∈" => OperatorKind::In(false),
-            s if s.starts_with("not") && s.ends_with("in") => OperatorKind::In(false),
+            "∊" | "∈" => OperatorKind::In(true),
+            "∉" | "!∈" => OperatorKind::In(false),
+            "∍" | "∋" => OperatorKind::Contains(true),
+            "∌" | "!∋" => OperatorKind::Contains(false),
             "<:" => OperatorKind::Is(true),
             "!<:" => OperatorKind::Is(false),
             "<:!" => OperatorKind::Is(false),
@@ -161,8 +166,8 @@ impl OperatorKind {
     }
     pub fn parse_suffix(s: &str) -> Result<Self, SyntaxError> {
         let out = match Self::normalize(s).as_str() {
-            "contains" => OperatorKind::Contains(true),
-            s if s.starts_with("not") && s.ends_with("contains") => OperatorKind::Contains(false),
+            "!" => OperatorKind::Bang,
+            "?" => OperatorKind::Question,
             _ => Err(SyntaxError::new(format!("Unknown suffix `{}`", s)))?,
         };
         Ok(out)
@@ -190,9 +195,6 @@ impl OperatorKind {
                     _ => {}
                 },
                 //
-                '∊' | '∈' => out.push_str("∈"),
-                '∉' => out.push_str("!∈"),
-                '∋' | '∍' => out.push_str("∋"),
                 s if s.is_whitespace() => continue,
                 _ => out.push(c),
             }

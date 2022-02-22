@@ -5,6 +5,8 @@ use valkyrie_errors::FileID;
 
 use crate::{ValkyrieASTKind, ValkyrieASTNode};
 
+mod classes;
+
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum NamespaceKind {
     // In the v language, there only one shared namespace

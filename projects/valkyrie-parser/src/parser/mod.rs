@@ -13,6 +13,7 @@ use crate::{
     ValkyrieParser,
 };
 
+mod declaration;
 mod expression;
 #[allow(non_camel_case_types)]
 mod valkyrie;
@@ -59,7 +60,10 @@ impl ValkyrieParser {
 impl VkStatements {
     pub fn visit(&self, parser: &mut ValkyrieParser, out: &mut Vec<ValkyrieASTNode>) -> ValkyrieResult {
         match self {
-            VkStatements::Semicolon(_) => {}
+            VkStatements::NamespaceDeclareNode(v) => out.push(v.visit(parser)?),
+            VkStatements::ClassStatement(v) => {
+                out.push(v.visit(parser)?);
+            }
             VkStatements::ControlFlowNode(_) => {
                 todo!()
             }
@@ -71,11 +75,10 @@ impl VkStatements {
             VkStatements::LoopStatement(_) => {
                 todo!()
             }
-            VkStatements::NamespaceDeclareNode(v) => out.push(v.visit(parser)?),
-
             VkStatements::WhileStatement(_) => {
                 todo!()
             }
+            VkStatements::Semicolon(_) => {}
         }
         Ok(())
     }

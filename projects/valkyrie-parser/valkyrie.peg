@@ -3,6 +3,7 @@ VkParser = {statements:VkStatements} $;
 
 VkStatements =
 	@:NamespaceDeclareNode |
+	@:ClassStatement |
 	@:DefStatement |
 	@:LetStatement |
 	@:LoopStatement |
@@ -16,6 +17,8 @@ VkStatements =
 NamespaceDeclareNode = kw:KwNamespace namespace:NamepathFree;
 @no_skip_ws @string
 KwNamespace = "namespace" ['!' | '*'];
+#=======================================================================================================================
+ClassStatement = "class" namespace:NamespaceNode body:BlockNode;
 #=======================================================================================================================
 LoopStatement = "loop" body:BlockNode;
 
