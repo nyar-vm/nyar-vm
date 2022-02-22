@@ -57,6 +57,7 @@ ExprNode = {prefix:Prefix} term:TermNode {suffix:Suffix};
 
 TermNode = '(' @:ExpressionNode ')'
 	| @:TupleStatement
+	| @:TableStatement
 	| @:ListStatement
 	| @:StringNode
 	| @:SpecialNode
@@ -100,6 +101,9 @@ TupleStatement = '('  ')'
 @position
 ListStatement = '[' ']'
 	| '[' args:ExpressionNode {',' args:ExpressionNode} [','] ']';
+@position
+TableStatement = '[' ']'
+	| '[' args:KeyValueNode {',' args:KeyValueNode} [','] ']';
 #=======================================================================================================================
 LambdaStatement = "lambda" [parameters:DefineArguments];
 
@@ -126,17 +130,23 @@ KeyNode =
 StringNode = [hint:IdentifierNode] raw:RawString;
 @position
 RawString =
-'"' {!'"' item:StringItem} '"' | "'" {!"'" item:StringItem} "'";
+	'"' {!'"' item:StringItem} '"' |
+	"'" {!"'" item:StringItem} "'";
 
-StringItem = @:ESCAPE_U | @:ESCAPE_C | @:StringAny;
+StringItem =
+	@:ESCAPE_U |
+	@:ESCAPE_C |
+	@:STRING_T |
+	@:StringAny;
 
 ESCAPE_C = '\\' char:StringAny;
 
 @position
 ESCAPE_U = '\\' 'u' '{' {hex:HEX} '}';
 
-@string
-UNICODE8 = '\\' 'U' HEX HEX HEX HEX HEX HEX HEX HEX;
+
+STRING_T = '{' expr:ExpressionNode '}';
+
 @char
 StringAny = char;
 #=======================================================================================================================

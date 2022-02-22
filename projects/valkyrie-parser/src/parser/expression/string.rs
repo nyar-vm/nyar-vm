@@ -1,3 +1,5 @@
+use std::mem::take;
+
 use super::*;
 
 impl StringNode {
@@ -6,26 +8,35 @@ impl StringNode {
             Some(s) => Some(s.visit(parser)),
             None => None,
         };
-        let mut pure_string = true;
-        let mut buffer = String::new();
+        let mut t_buffer = vec![];
+        let mut s_buffer = String::new();
         for item in &self.raw.item {
-            item.visit(parser, &mut buffer, &mut pure_string)?
+            item.visit(parser, &mut t_buffer, &mut s_buffer)?
         }
-        match pure_string {
+        match t_buffer.is_empty() {
             true => {
-                let string = ValkyrieASTNode::string(buffer, parser.file, &self.raw.position);
+                let string = ValkyrieASTNode::string(s_buffer, parser.file, &self.raw.position);
                 match hint {
                     Some(s) => Ok(ValkyrieASTNode::string_interpolation(vec![string], s, parser.file, &self.raw.position)),
                     None => Ok(string),
                 }
             }
-            false => Ok(ValkyrieASTNode::string(buffer, parser.file, &self.raw.position)),
+            false => {
+                let text = ValkyrieASTNode::string(take(&mut s_buffer), parser.file, &Range::default());
+                t_buffer.push(text);
+                Ok(ValkyrieASTNode::string_interpolation(t_buffer, hint.unwrap_or_default(), parser.file, &self.raw.position))
+            }
         }
     }
 }
 
 impl StringItem {
-    pub fn visit(&self, parser: &mut ValkyrieParser, s_buffer: &mut String, pure_flag: &mut bool) -> ValkyrieResult {
+    pub fn visit(
+        &self,
+        parser: &mut ValkyrieParser,
+        t_buffer: &mut Vec<ValkyrieASTNode>,
+        s_buffer: &mut String,
+    ) -> ValkyrieResult {
         match self {
             StringItem::ESCAPE_U(c) => {
                 let str = c.hex.iter().collect::<String>();
@@ -43,6 +54,11 @@ impl StringItem {
             }
             StringItem::StringAny(c) => {
                 s_buffer.push(*c);
+            }
+            StringItem::STRING_T(v) => {
+                let text = ValkyrieASTNode::string(take(s_buffer), parser.file, &Range::default());
+                t_buffer.push(text);
+                t_buffer.push(v.expr.visit(parser)?);
             }
         }
         Ok(())

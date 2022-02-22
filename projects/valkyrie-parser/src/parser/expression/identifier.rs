@@ -1,5 +1,6 @@
-use crate::parser::valkyrie::Namepath;
 use valkyrie_ast::ValkyrieIdentifier;
+
+use crate::parser::valkyrie::{Namepath, SpecialNode};
 
 use super::*;
 
@@ -14,13 +15,22 @@ impl IdentifierNode {
 
 impl Namepath {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieASTNode {
-        let mut out = String::new();
-        for (i, item) in self.items.iter().enumerate() {
-            if i > 0 {
-                out.push('.');
-            }
-            out.push_str(&item.get_identifier());
+        let mut out = vec![];
+        for name in &self.path {
+            out.push(name.visit(parser))
         }
-        ValkyrieIdentifier::new(out, parser.file, &self.position)
+        ValkyrieASTNode::namepath(out, parser.file, &self.position)
+    }
+}
+
+impl SpecialNode {
+    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieASTNode {
+        let out = match self.string.as_str() {
+            "true" => ValkyrieASTNode::boolean(true, parser.file, &self.position),
+            "false" => ValkyrieASTNode::boolean(false, parser.file, &self.position),
+            "null" => ValkyrieASTNode::null(parser.file, &self.position),
+            _ => panic!("Unknown special node: {}", self.string),
+        };
+        out
     }
 }

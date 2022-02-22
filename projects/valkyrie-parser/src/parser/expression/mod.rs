@@ -3,6 +3,7 @@ use super::*;
 mod identifier;
 mod number;
 mod string;
+mod table;
 
 impl ExpressionNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
@@ -37,7 +38,7 @@ impl TermNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         match self {
             TermNode::ExpressionNode(e) => e.visit(parser),
-            TermNode::Namepath(v) => Ok(v.visit(parser).to_node()),
+            TermNode::Namepath(v) => Ok(v.visit(parser)),
             TermNode::NumberNode(v) => {
                 let maybe = v.visit(parser);
                 parser.safe_node(maybe, &v.position)
@@ -46,14 +47,14 @@ impl TermNode {
                 let maybe = v.visit(parser);
                 parser.safe_node(maybe, &v.position)
             }
-            TermNode::SpecialNode(s) => {
-                let out = match s.string.as_str() {
-                    "true" => ValkyrieASTNode::boolean(true, parser.file, &s.position),
-                    "false" => ValkyrieASTNode::boolean(false, parser.file, &s.position),
-                    "null" => ValkyrieASTNode::null(parser.file, &s.position),
-                    _ => panic!("Unknown special node: {}", s.string),
-                };
-                Ok(out)
+            TermNode::SpecialNode(v) => Ok(v.visit(parser)),
+            TermNode::TableStatement(v) => Ok(v.visit(parser)),
+            TermNode::ListStatement(v) => {
+                let mut out = vec![];
+                for term in &v.args {
+                    out.push(term.visit(parser)?)
+                }
+                Ok(ValkyrieASTNode::list(out, parser.file, &v.position))
             }
             TermNode::TupleStatement(v) => {
                 let mut out = vec![];
@@ -61,13 +62,6 @@ impl TermNode {
                     out.push(term.visit(parser)?)
                 }
                 Ok(ValkyrieASTNode::tuple(out, parser.file, &v.position))
-            }
-            TermNode::ListStatement(v) => {
-                let mut out = vec![];
-                for term in &v.args {
-                    out.push(term.visit(parser)?)
-                }
-                Ok(ValkyrieASTNode::list(out, parser.file, &v.position))
             }
         }
     }

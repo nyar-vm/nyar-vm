@@ -8,8 +8,7 @@ pub struct ValkyrieStringNode {
 
 impl Display for ValkyrieStringNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
-        // write!(f, "{}{}", self.value, self.hint.name)
+        write!(f, "{}{:?}", self.hint.name, self.value)
     }
 }
 

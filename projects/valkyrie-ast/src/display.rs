@@ -21,6 +21,7 @@ impl Debug for ValkyrieASTKind {
             ValkyrieASTKind::Null => {
                 write!(f, "null")
             }
+            ValkyrieASTKind::HDict(v) => Debug::fmt(v, f),
             ValkyrieASTKind::HList(v) => f.debug_struct("Tuple").field("nodes", v).finish(),
             ValkyrieASTKind::Bytes(v) => f.debug_struct("Bytes").field("nodes", v).finish(),
             ValkyrieASTKind::StringInterpolation(v) => Debug::fmt(v, f),
@@ -42,6 +43,9 @@ impl Display for ValkyrieASTKind {
                 todo!()
             }
             ValkyrieASTKind::Unary(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::HDict(_) => {
                 todo!()
             }
             ValkyrieASTKind::HList(_) => {
