@@ -3,7 +3,7 @@ use crate::ValkyrieIdentifier;
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct ClassDeclare {
+pub struct ClassDeclare {
     pub name: String,
     pub modifiers: Vec<ValkyrieIdentifier>,
     pub extends: Option<String>,
@@ -11,7 +11,7 @@ struct ClassDeclare {
     pub statements: Vec<ValkyrieASTNode>,
 }
 
-struct ClassItemDeclare {
+pub struct ClassItemDeclare {
     pub name: String,
     pub modifiers: Vec<ValkyrieIdentifier>,
     pub ty: ValkyrieASTNode,

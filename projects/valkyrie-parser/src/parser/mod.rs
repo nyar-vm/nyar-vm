@@ -13,11 +13,12 @@ use crate::{
     ValkyrieParser,
 };
 
+mod control_flow;
 mod declaration;
 mod expression;
 #[allow(non_camel_case_types)]
 mod valkyrie;
-
+use crate::parser::valkyrie::{ForStatement, LoopStatement, WhileStatement};
 impl ValkyrieParser {
     pub fn parse_file(&mut self, file: FileID, text: &str) -> ValkyrieResult<Vec<ValkyrieASTNode>> {
         self.file = file;
@@ -64,20 +65,26 @@ impl VkStatements {
             VkStatements::ClassStatement(v) => {
                 out.push(v.visit(parser)?);
             }
+            VkStatements::LoopStatement(v) => {
+                out.push(v.visit(parser)?);
+            }
+            VkStatements::WhileStatement(v) => {
+                out.push(v.visit(parser)?);
+            }
+            VkStatements::ForStatement(v) => {
+                out.push(v.visit(parser)?);
+            }
+
             VkStatements::ControlFlowNode(_) => {
                 todo!()
             }
+
             VkStatements::DefStatement(_) => {
                 todo!()
             }
             VkStatements::ExpressionNode(v) => out.push(v.visit(parser)?),
             VkStatements::LetStatement(v) => out.push(v.visit(parser)?),
-            VkStatements::LoopStatement(_) => {
-                todo!()
-            }
-            VkStatements::WhileStatement(_) => {
-                todo!()
-            }
+
             VkStatements::Semicolon(_) => {}
         }
         Ok(())

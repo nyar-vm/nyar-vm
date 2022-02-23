@@ -8,6 +8,7 @@ VkStatements =
 	@:LetStatement |
 	@:LoopStatement |
 	@:WhileStatement |
+	@:ForStatement |
 	@:ControlFlowNode |
 	@:ExpressionNode |
 	@:Semicolon
@@ -21,8 +22,8 @@ KwNamespace = "namespace" ['!' | '*'];
 ClassStatement = "class" namespace:NamespaceNode body:BlockNode;
 #=======================================================================================================================
 LoopStatement = "loop" body:BlockNode;
-
 WhileStatement = "while" condition:ExpressionNode body:BlockNode;
+ForStatement = "for" pattern:PatternNode "in" value:ExpressionNode body:BlockNode;
 #=======================================================================================================================
 DefStatement = "def" namespace:NamespaceNode [parameters:DefineArguments] body:BlockNode;
 
