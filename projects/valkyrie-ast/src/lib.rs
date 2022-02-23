@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use valkyrie_errors::FileSpan;
 
 pub use crate::{
-    control_flow::{for_loop::ForLoop, match_case::MatchCase, which_case::WhichCase, while_loop::WhileLoop},
+    control_flow::{
+        for_loop::ForLoop, match_case::MatchCase, pattern::ValkyriePattern, which_case::WhichCase, while_loop::WhileLoop,
+    },
     expression_level::{
         binary::BinaryExpression, decimal::ValkyrieDecimalNode, dict::HeterogeneousDict, identifier::ValkyrieIdentifier,
         integer::ValkyrieIntegerNode, list::HeterogeneousList, string::ValkyrieStringNode, unary::UnaryExpression,

@@ -19,10 +19,14 @@ NamespaceDeclareNode = kw:KwNamespace namespace:NamepathFree;
 @no_skip_ws @string
 KwNamespace = "namespace" ['!' | '*'];
 #=======================================================================================================================
+@position
 ClassStatement = "class" namespace:NamespaceNode body:BlockNode;
 #=======================================================================================================================
+@position
 LoopStatement = "loop" body:BlockNode;
+@position
 WhileStatement = "while" condition:ExpressionNode body:BlockNode;
+@position
 ForStatement = "for" pattern:PatternNode "in" value:ExpressionNode body:BlockNode;
 #=======================================================================================================================
 DefStatement = "def" namespace:NamespaceNode [parameters:DefineArguments] body:BlockNode;

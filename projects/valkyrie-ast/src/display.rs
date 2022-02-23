@@ -26,6 +26,11 @@ impl Debug for ValkyrieASTKind {
             ValkyrieASTKind::Bytes(v) => f.debug_struct("Bytes").field("nodes", v).finish(),
             ValkyrieASTKind::StringInterpolation(v) => Debug::fmt(v, f),
             ValkyrieASTKind::String(v) => Debug::fmt(v, f),
+            ValkyrieASTKind::Class(v) => Debug::fmt(v, f),
+            ValkyrieASTKind::For(v) => Debug::fmt(v, f),
+            ValkyrieASTKind::While(v) => Debug::fmt(v, f),
+            ValkyrieASTKind::Match(v) => Debug::fmt(v, f),
+            ValkyrieASTKind::Which(v) => Debug::fmt(v, f),
         }
     }
 }
@@ -72,6 +77,21 @@ impl Display for ValkyrieASTKind {
                 todo!()
             }
             ValkyrieASTKind::String(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::Class(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::For(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::While(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::Match(_) => {
+                todo!()
+            }
+            ValkyrieASTKind::Which(_) => {
                 todo!()
             }
         }
