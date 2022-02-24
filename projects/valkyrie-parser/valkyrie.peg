@@ -9,6 +9,7 @@ VkStatements =
 	@:LoopStatement |
 	@:WhileStatement |
 	@:ForStatement |
+	@:IfStatement |
 	@:ControlFlowNode |
 	@:ExpressionNode |
 	@:Semicolon
@@ -20,16 +21,21 @@ NamespaceDeclareNode = kw:KwNamespace namespace:NamepathFree;
 KwNamespace = "namespace" ['!' | '*'];
 #=======================================================================================================================
 @position
-ClassStatement = "class" namespace:NamespaceNode body:BlockNode;
+ClassStatement = "class" namespace:Namepath body:BlockNode;
 #=======================================================================================================================
 @position
 LoopStatement = "loop" body:BlockNode;
 @position
-WhileStatement = "while" condition:ExpressionNode body:BlockNode;
+WhileStatement = "while" condition:ExpressionNode body:BlockNode [else:ElseStatement];
 @position
-ForStatement = "for" pattern:PatternNode "in" value:ExpressionNode body:BlockNode;
+ForStatement = "for" pattern:PatternNode "in" value:ExpressionNode body:BlockNode [else:ElseStatement];
 #=======================================================================================================================
-DefStatement = "def" namespace:NamespaceNode [parameters:DefineArguments] body:BlockNode;
+@position
+IfStatement = "if" condition:ExpressionNode body:BlockNode [else:ElseStatement];
+ElseIfStatement = "else" "if" condition:ExpressionNode body:BlockNode [else:ElseStatement];
+ElseStatement = "else" body:BlockNode;
+#=======================================================================================================================
+DefStatement = "def" namespace:Namepath [parameters:DefineArguments] body:BlockNode;
 
 DefineArguments = '(' ')' | '(' args:DefineArgument [',' args:DefineArgument] ')';
 DefineArgument = name:IdentifierNode [':' type:TypeNode] ['=' value:ExpressionNode ];
@@ -181,7 +187,7 @@ ByteHex = '0' ('x' | 'X') { HEX }+;
 HEX = '0'..'9' | 'a'..'f' | 'A'..'F';
 #=======================================================================================================================
 @position
-NamespaceNode = path:IdentifierNode {NamespaceSplit path:IdentifierNode};
+NamespaceStar = path:IdentifierNode {NamespaceSplit path:IdentifierNode};
 
 @position
 Namepath = path:IdentifierNode {NamespaceSplit path:IdentifierNode};

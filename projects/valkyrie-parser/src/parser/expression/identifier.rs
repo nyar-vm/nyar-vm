@@ -14,12 +14,15 @@ impl IdentifierNode {
 }
 
 impl Namepath {
-    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieASTNode {
+    pub fn extract(&self) -> Vec<ValkyrieIdentifier> {
         let mut out = vec![];
         for name in &self.path {
-            out.push(name.visit(parser))
+            out.push(name.visit(&mut ValkyrieParser::default()))
         }
-        ValkyrieASTNode::namepath(out, parser.file, &self.position)
+        out
+    }
+    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieASTNode {
+        ValkyrieASTNode::namepath(self.extract(), parser.file, &self.position)
     }
 }
 

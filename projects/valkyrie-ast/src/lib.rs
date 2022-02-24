@@ -18,7 +18,10 @@ pub use crate::{
         annotaiton::ValkyrieAnnotation, keywords::ValkyrieKeyword, resolver::ExpressionOrderResolver, OperatorKind,
         UnknownOrder, ValkyrieOperator,
     },
-    package_level::{classes::ClassDeclare, NamespaceDeclare, NamespaceKind},
+    package_level::{
+        class_field::ClassFieldDeclare, class_method::ClassMethodDeclare, classes::ClassDeclare, NamespaceDeclare,
+        NamespaceKind,
+    },
 };
 
 mod control_flow;

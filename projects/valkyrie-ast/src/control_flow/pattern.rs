@@ -1,4 +1,7 @@
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValkyriePattern {}
+pub enum ValkyriePattern {
+    Expression(ValkyrieASTNode),
+    CasePattern,
+}

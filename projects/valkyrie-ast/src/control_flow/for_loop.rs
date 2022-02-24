@@ -30,4 +30,7 @@ impl ForLoop {
     pub fn mut_otherwise(&mut self) -> &mut Vec<ValkyrieASTNode> {
         &mut self.otherwise
     }
+    pub fn to_node(self, file: FileID, range: &Range<usize>) -> ValkyrieASTNode {
+        ValkyrieASTKind::For(box self.clone()).to_node(file, range)
+    }
 }

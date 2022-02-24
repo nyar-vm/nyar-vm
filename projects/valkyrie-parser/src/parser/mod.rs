@@ -7,8 +7,8 @@ use valkyrie_errors::{FileID, FileSpan, SyntaxError, ValkyrieError, ValkyrieResu
 
 use crate::{
     parser::valkyrie::{
-        ExprNode, ExpressionNode, IdentifierNode, LetStatement, NamespaceDeclareNode, NumberNode, NumberVariant, StringItem,
-        StringNode, TermNode, VkParser, VkStatements,
+        ExprNode, ExpressionNode, ForStatement, IdentifierNode, LetStatement, LoopStatement, NamespaceDeclareNode, NumberNode,
+        NumberVariant, StringItem, StringNode, TermNode, VkParser, VkStatements, WhileStatement,
     },
     ValkyrieParser,
 };
@@ -18,7 +18,7 @@ mod declaration;
 mod expression;
 #[allow(non_camel_case_types)]
 mod valkyrie;
-use crate::parser::valkyrie::{ForStatement, LoopStatement, WhileStatement};
+
 impl ValkyrieParser {
     pub fn parse_file(&mut self, file: FileID, text: &str) -> ValkyrieResult<Vec<ValkyrieASTNode>> {
         self.file = file;
@@ -62,19 +62,13 @@ impl VkStatements {
     pub fn visit(&self, parser: &mut ValkyrieParser, out: &mut Vec<ValkyrieASTNode>) -> ValkyrieResult {
         match self {
             VkStatements::NamespaceDeclareNode(v) => out.push(v.visit(parser)?),
-            VkStatements::ClassStatement(v) => {
-                out.push(v.visit(parser)?);
+            VkStatements::ClassStatement(v) => out.push(v.visit(parser)?),
+            VkStatements::LoopStatement(v) => out.push(v.visit(parser)?),
+            VkStatements::WhileStatement(v) => out.push(v.visit(parser)?),
+            VkStatements::ForStatement(v) => out.push(v.visit(parser)?),
+            VkStatements::IfStatement(_) => {
+                todo!()
             }
-            VkStatements::LoopStatement(v) => {
-                out.push(v.visit(parser)?);
-            }
-            VkStatements::WhileStatement(v) => {
-                out.push(v.visit(parser)?);
-            }
-            VkStatements::ForStatement(v) => {
-                out.push(v.visit(parser)?);
-            }
-
             VkStatements::ControlFlowNode(_) => {
                 todo!()
             }

@@ -3,8 +3,11 @@ use std::{ops::Range, str::FromStr};
 
 use valkyrie_errors::FileID;
 
-use crate::{ValkyrieASTKind, ValkyrieASTNode};
+use crate::{ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifier};
+use std::slice::Iter;
 
+pub mod class_field;
+pub mod class_method;
 pub mod classes;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]

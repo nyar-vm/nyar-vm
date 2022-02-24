@@ -1,6 +1,7 @@
-use crate::{ValkyrieASTNode, ValkyrieKeyword, ValkyriePattern};
+use crate::{ValkyrieASTKind, ValkyrieASTNode, ValkyriePattern};
 use serde::{Deserialize, Serialize};
-use std::slice::Iter;
+use std::{ops::Range, slice::Iter};
+use valkyrie_errors::FileID;
 
 pub mod for_loop;
 pub mod match_case;
