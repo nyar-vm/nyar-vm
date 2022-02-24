@@ -22,6 +22,9 @@ impl ValkyrieIdentifier {
     pub fn new(name: impl Into<String>, file: FileID, range: &Range<usize>) -> Self {
         Self { name: name.into(), span: FileSpan { file, head: range.start, tail: range.end } }
     }
+    pub fn to_node(self, file: FileID, range: &Range<usize>) -> ValkyrieASTNode {
+        ValkyrieASTKind::Namepath(vec![self]).to_node(file, range)
+    }
 }
 
 impl ValkyrieASTNode {

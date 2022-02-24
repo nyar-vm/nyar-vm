@@ -89,7 +89,7 @@ impl NamespaceDeclareNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         let mut out = NamespaceDeclare::new(&self.kw);
         for name in &self.namespace.path {
-            out.push_name(name.get_identifier());
+            out.push_name(name.as_text());
         }
         Ok(out.to_node(parser.file, &self.namespace.position))
     }

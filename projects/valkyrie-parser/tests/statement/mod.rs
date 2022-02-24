@@ -8,8 +8,8 @@ fn test_for() -> ValkyrieResult {
 }
 
 #[test]
-fn test_number() -> ValkyrieResult {
-    debug_lexer(&[])
+fn test_while() -> ValkyrieResult {
+    debug_lexer(&["tests/statement/while.vk"])
 }
 
 #[test]

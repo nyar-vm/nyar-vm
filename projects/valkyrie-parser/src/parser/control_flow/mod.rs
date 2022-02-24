@@ -5,7 +5,7 @@ use super::*;
 impl ForStatement {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         let condition = self.value.visit(parser)?;
-        let pattern = ValkyriePattern {};
+        let pattern = ValkyriePattern::Expression(self.pattern.name.visit(parser));
         let mut this = ForLoop::new(pattern, condition);
         for statement in &self.body.statements {
             statement.visit(parser, this.mut_body())?

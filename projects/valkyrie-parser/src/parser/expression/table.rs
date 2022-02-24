@@ -26,7 +26,7 @@ impl KeyNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         match self {
             KeyNode::IdentifierNode(v) => {
-                v.visit(parser);
+                v.as_identifier(parser);
                 unimplemented!()
             }
             KeyNode::StringNode(v) => {

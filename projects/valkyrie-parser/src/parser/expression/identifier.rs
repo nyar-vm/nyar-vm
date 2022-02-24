@@ -5,24 +5,27 @@ use crate::parser::valkyrie::{Namepath, SpecialNode};
 use super::*;
 
 impl IdentifierNode {
-    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieIdentifier {
-        ValkyrieIdentifier::new(self.get_identifier(), parser.file, &self.position)
+    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieASTNode {
+        self.as_identifier(parser).to_node(parser.file, &self.position)
     }
-    pub fn get_identifier(&self) -> String {
+    pub fn as_identifier(&self, parser: &mut ValkyrieParser) -> ValkyrieIdentifier {
+        ValkyrieIdentifier::new(self.as_text(), parser.file, &self.position)
+    }
+    pub fn as_text(&self) -> String {
         self.string.to_string()
     }
 }
 
 impl Namepath {
-    pub fn extract(&self) -> Vec<ValkyrieIdentifier> {
+    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieASTNode {
+        ValkyrieASTNode::namepath(self.as_path(), parser.file, &self.position)
+    }
+    pub fn as_path(&self) -> Vec<ValkyrieIdentifier> {
         let mut out = vec![];
         for name in &self.path {
-            out.push(name.visit(&mut ValkyrieParser::default()))
+            out.push(name.as_identifier(&mut ValkyrieParser::default()))
         }
         out
-    }
-    pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieASTNode {
-        ValkyrieASTNode::namepath(self.extract(), parser.file, &self.position)
     }
 }
 

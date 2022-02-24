@@ -6,6 +6,7 @@ pub struct WhichCase {
     default: Vec<ValkyrieASTNode>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WhichBranch {
     pub pattern: ValkyriePattern,
     pub actions: Vec<ValkyrieASTNode>,

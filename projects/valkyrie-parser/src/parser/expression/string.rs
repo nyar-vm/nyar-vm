@@ -5,7 +5,7 @@ use super::*;
 impl StringNode {
     pub fn visit(&self, parser: &mut ValkyrieParser) -> ValkyrieResult<ValkyrieASTNode> {
         let hint = match &self.hint {
-            Some(s) => Some(s.visit(parser)),
+            Some(s) => Some(s.as_identifier(parser)),
             None => None,
         };
         let mut t_buffer = vec![];
