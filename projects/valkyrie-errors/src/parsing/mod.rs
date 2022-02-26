@@ -16,6 +16,8 @@ mod for_dashu;
 mod for_num;
 #[cfg(feature = "peginator")]
 mod for_peginator;
+#[cfg(feature = "toml")]
+mod for_toml;
 
 #[cfg(feature = "pratt")]
 mod for_pratt;
@@ -76,9 +78,6 @@ macro_rules! wrap_parse_error {
 }
 
 wrap_parse_error!(ParseIntError, ParseFloatError, ParseBoolError, ParseCharError, url::ParseError);
-
-#[cfg(feature = "peginator")]
-wrap_parse_error!(peginator::ParseError);
 
 #[cfg(feature = "num")]
 wrap_parse_error!(num::bigint::ParseBigIntError);

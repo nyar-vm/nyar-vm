@@ -1,7 +1,5 @@
 use std::fmt::Display;
 
-use serde::de::Expected;
-
 use crate::ValkyrieError;
 
 impl serde::ser::Error for ValkyrieError {
@@ -9,7 +7,7 @@ impl serde::ser::Error for ValkyrieError {
     where
         T: Display,
     {
-        todo!()
+        ValkyrieError::runtime_error(msg.to_string())
     }
 }
 
@@ -18,9 +16,6 @@ impl serde::de::Error for ValkyrieError {
     where
         T: Display,
     {
-        todo!()
-    }
-    fn invalid_length(len: usize, exp: &dyn Expected) -> Self {
-        todo!()
+        ValkyrieError::runtime_error(msg.to_string())
     }
 }
