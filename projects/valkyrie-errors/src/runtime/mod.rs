@@ -7,6 +7,8 @@ use ariadne::ReportKind;
 
 use crate::{errors::ValkyrieReport, FileSpan, SyntaxError, ValkyrieError, ValkyrieErrorKind};
 
+mod for_serde;
+
 #[derive(Clone, Debug)]
 pub struct RuntimeError {
     message: String,
