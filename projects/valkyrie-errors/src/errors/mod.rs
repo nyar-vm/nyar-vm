@@ -24,6 +24,16 @@ pub enum ValkyrieErrorKind {
 }
 
 impl ValkyrieError {
+    pub fn set_file(&mut self, file: FileID) {
+        match &mut self.kind {
+            ValkyrieErrorKind::Duplicate(_) => {}
+            ValkyrieErrorKind::Runtime(_) => {}
+            ValkyrieErrorKind::Parsing(s) => {
+                s.span.file = file;
+            }
+        }
+    }
+
     pub fn as_report(&self) -> ValkyrieReport {
         match &self.kind {
             ValkyrieErrorKind::Duplicate(e) => e.as_report(self.level),

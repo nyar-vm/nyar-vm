@@ -12,6 +12,8 @@ use crate::{FileID, FileSpan, ValkyrieError, ValkyrieErrorKind, ValkyrieReport};
 
 #[cfg(feature = "dashu")]
 mod for_dashu;
+#[cfg(feature = "json5")]
+mod for_json5;
 #[cfg(feature = "num")]
 mod for_num;
 #[cfg(feature = "peginator")]

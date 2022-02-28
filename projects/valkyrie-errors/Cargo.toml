@@ -1,6 +1,6 @@
 [package]
 name = "valkyrie-errors"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Aster <192607617@qq.com>"]
 description = "Error types for valkyrie language"
 repository = "https://github.com/nyar-vm/valkyrie.rs"
