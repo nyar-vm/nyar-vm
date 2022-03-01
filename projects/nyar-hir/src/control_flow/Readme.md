@@ -15,9 +15,13 @@ else {
 ## Loop statement
 
 ```markdown
+@head
 loop {
-    `[body]`
+    @begin
+    @body
+    @end
 }
+@tail
 ```
 
 ## While statement
