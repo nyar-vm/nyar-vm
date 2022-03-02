@@ -2,6 +2,12 @@ use std::ops::Range;
 use super::*;
 
 
+pub struct ControlFlowCounter {
+    c_loop: usize,
+    c_for: usize,
+    c_if: usize,
+}
+
 /// `loop { ... }`
 ///
 /// ```v
@@ -29,14 +35,15 @@ use super::*;
 ///
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LoopStatement {
-    pub label_head: u32,
-    pub label_begin: u32,
-    pub label_end: u32,
-    pub label_tail: u32,
+pub struct LoopSemantic {
+    pub label_head: String,
+    pub label_begin: String,
+    pub label_end: String,
+    pub label_tail: String,
     pub body_span: Range<u32>,
 }
 
-pub struct GotoStatement {
-    pub label: u32,
+pub struct JumpSemantic {
+    pub label: String,
+    pub condition: Option<()>,
 }

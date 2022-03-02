@@ -1,2 +1,2 @@
 pub mod pure_loop;
-pub mod which_case;
+pub mod switch_table;

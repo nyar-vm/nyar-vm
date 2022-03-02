@@ -1,40 +1,34 @@
-use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{Display, Formatter},
-    ops::Range,
-    str::FromStr,
-};
-use valkyrie_errors::{
-    third_party::{DBig, HalfAway},
-    ValkyrieError, ValkyrieResult,
-};
+use std::fmt::{Debug, Formatter};
 
-use valkyrie_errors::{FileID, FileSpan};
+/// `%var = binary(==, %a, %b);`
+pub struct BinaryCall {
+    operator: Operator,
+    lhs: Variable,
+    rhs: Variable,
+    output: Variable,
+}
 
-use crate::{HeterogeneousList, ValkyrieASTKind, ValkyrieASTNode, ValkyrieIdentifier};
+pub struct Operator {
+    kind: OperatorKind
+}
 
-use valkyrie_errors::third_party::{FBig, IBig};
+pub enum OperatorKind {
+    Prefix,
+    Infix,
+    Postfix
+}
 
-pub mod binary;
-pub mod decimal;
-pub mod dict;
-pub mod identifier;
-pub mod integer;
-pub mod list;
-pub mod string;
-pub mod unary;
 
-impl ValkyrieASTNode {
-    pub fn null(file: FileID, range: &Range<usize>) -> Self {
-        ValkyrieASTKind::Null.to_node(file, range)
-    }
-    pub fn boolean(b: bool, file: FileID, range: &Range<usize>) -> Self {
-        ValkyrieASTKind::Boolean(b).to_node(file, range)
-    }
-    pub fn tuple(nodes: Vec<ValkyrieASTNode>, file: FileID, range: &Range<usize>) -> Self {
-        HeterogeneousList { consistent: false, nodes }.to_node(file, range)
-    }
-    pub fn list(nodes: Vec<ValkyrieASTNode>, file: FileID, range: &Range<usize>) -> Self {
-        HeterogeneousList { consistent: true, nodes }.to_node(file, range)
+pub struct Variable {
+    global: bool,
+    name: String,
+}
+
+impl Debug for Variable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.global {
+            true => write!(f, "@{}", self.name),
+            false => write!(f, "%{}", self.name),
+        }
     }
 }
