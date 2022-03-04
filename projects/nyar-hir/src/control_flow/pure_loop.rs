@@ -34,7 +34,7 @@ pub struct ControlFlowCounter {
 ///
 ///
 /// ```
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct LoopSemantic {
     pub label_head: String,
     pub label_begin: String,
@@ -46,4 +46,8 @@ pub struct LoopSemantic {
 pub struct JumpSemantic {
     pub label: String,
     pub condition: Option<()>,
+}
+
+pub struct JumpInstruction {
+    pub label: usize,
 }

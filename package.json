@@ -8,6 +8,6 @@
         "fmt": "cargo fmt --all",
         "push": "yarn test && git push",
         "reset": "git reset Head~ --soft",
-        "u": "cargo upgrade --workspace"
+        "u": "cargo upgrade --offline --incompatible"
     }
 }

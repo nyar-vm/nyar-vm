@@ -10,10 +10,10 @@ license = "MPL-2.0"
 edition = "2021"
 
 [dependencies]
-num = "0.4.0"
-indexmap = "1.9.2"
-inwelling = "0.3.0"
-itertools = "0.10.5"
+num = "0.4.1"
+indexmap = "2.0.2"
+inwelling = "0.5.0"
+itertools = "0.11.0"
 
 
 [dev-dependencies]

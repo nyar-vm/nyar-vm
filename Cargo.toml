@@ -1,11 +1,12 @@
 [workspace]
+resolver = "2"
 members = ["projects/*"]
 default-members = [
     #    "projects/nyar-hir",
     #    "projects/nyar-mir",
     #    "projects/nyar-error",
     "projects/valkyrie-parser",
-    "projects/valkyrie-errors",
+    "projects/nyar-error",
 ]
 exclude = [
 

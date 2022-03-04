@@ -17,7 +17,7 @@ use super::*;
 /// ```
 ///
 ///
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct SwitchStatement {
     pub label_head: u32,
     pub label_tail: u32,
@@ -25,7 +25,7 @@ pub struct SwitchStatement {
     pub default: Vec<()>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct SwitchBranch {
     pub label_check: u32,
     pub label_begin: u32,

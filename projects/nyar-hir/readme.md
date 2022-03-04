@@ -16,7 +16,7 @@ def fibonacci_helper(n, previous, current)
 - HIR
 
 ```scala
-function repl::fibonacci
+function fibonacci
 (
     state: small_int,
     %n: auto,
@@ -24,14 +24,11 @@ function repl::fibonacci
 )
 {
 0: 
-   %tmp1 = call repl::fibonacci_helper (%n, 0, 1);
+   %tmp1 = call fibonacci_helper (%n, 0, 1);
 }
-
 
 function fibonacci_helper
 (
-    [named]
-    state: small_int,
     %n: auto,
     %previous: auto,
     %current: auto,

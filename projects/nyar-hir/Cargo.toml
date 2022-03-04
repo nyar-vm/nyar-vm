@@ -1,5 +1,5 @@
 [package]
-name = "nyar-hir"
+name = "valkyrie-ast"
 version = "0.0.0"
 authors = ["Aster <192607617@qq.com>"]
 description = "Abstract Syntax Tree of valkyrie language"
@@ -10,19 +10,11 @@ license = "MPL-2.0"
 edition = "2021"
 
 [dependencies]
-unicode-ident = "1.0.6"
-indexmap = "1.9.2"
-itertools = "0.10.5"
-serde = { version = "1.0.152", features = ["derive"] }
-
-[dependencies.valkyrie-errors]
-#version = "0.0.0"
-path = "../valkyrie-errors"
-features = ["dashu", "pratt"]
-
+rationalize = "0.2.0"
+rand = "0.8.5"
 
 [dev-dependencies]
-peginator_codegen = "0.6.0"
+
 
 [features]
 default = []
