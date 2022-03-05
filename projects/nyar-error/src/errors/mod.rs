@@ -1,13 +1,10 @@
-use std::ops::Range;
-use syntax_error::{Report, ReportKind};
+use diagnostic::{Diagnostic, ReportKind};
 
-use crate::{parsing::SyntaxError, DuplicateError, FileID, RuntimeError};
+use crate::{parsing::SyntaxError, DuplicateError, RuntimeError};
 
 pub mod display;
 
-pub type ValkyrieReport = Report<(FileID, Range<usize>)>;
-
-pub type ValkyrieResult<T = ()> = Result<T, NyarError>;
+pub type NyarResult<T = ()> = Result<T, NyarError>;
 
 #[derive(Clone)]
 pub struct NyarError {
@@ -24,7 +21,7 @@ pub enum NyarErrorKind {
 
 impl NyarError {
     pub fn set_file(&mut self, file: FileID) {
-        match &mut self.kind {
+        match self.kind.as_mut() {
             NyarErrorKind::Duplicate(_) => {}
             NyarErrorKind::Runtime(_) => {}
             NyarErrorKind::Parsing(s) => {
@@ -33,11 +30,17 @@ impl NyarError {
         }
     }
 
-    pub fn as_report(&self) -> ValkyrieReport {
-        match &self.kind {
+    pub fn as_report(&self) -> Diagnostic {
+        match self.kind.as_ref() {
             NyarErrorKind::Duplicate(e) => e.as_report(self.level),
             NyarErrorKind::Runtime(e) => e.as_report(self.level),
             NyarErrorKind::Parsing(e) => e.as_report(self.level),
         }
+    }
+}
+#[allow(clippy::wrong_self_convention)]
+impl NyarErrorKind {
+    pub fn as_error(self, level: ReportKind) -> NyarError {
+        NyarError { kind: Box::new(self), level }
     }
 }

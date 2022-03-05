@@ -1,10 +1,7 @@
 pub use crate::{
     duplicates::DuplicateError,
-    errors::{NyarError, NyarErrorKind, ValkyrieReport, ValkyrieResult},
-    managers::{
-        list::{FileID, FileSpan},
-        TextManager,
-    },
+    errors::{NyarError, NyarErrorKind, NyarResult},
+    managers::list::FileSpan,
     parsing::SyntaxError,
     runtime::RuntimeError,
 };
@@ -24,7 +21,7 @@ pub mod third_party {
     pub use pratt::{Affix, Associativity, PrattParser, Precedence};
     pub use url::Url;
 }
-
+pub use diagnostic::{Diagnostic, FileCache};
 mod errors;
 
 mod duplicates;

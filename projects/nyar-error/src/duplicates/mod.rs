@@ -1,8 +1,7 @@
+use diagnostic::{Color, DiagnosticBuilder, ReportKind};
 use std::fmt::{Debug, Display, Formatter};
 
-use ariadne::{Color, Report, ReportKind};
-
-use crate::{errors::ValkyrieReport, FileSpan, NyarError, NyarErrorKind};
+use crate::{Diagnostic, FileSpan, NyarError, NyarErrorKind};
 
 mod kind;
 
@@ -28,8 +27,8 @@ impl Display for DuplicateError {
 }
 
 impl DuplicateError {
-    pub fn as_report(&self, level: ReportKind) -> ValkyrieReport {
-        let mut report = Report::build(level, self.this_item.file, 0).with_code(self.kind as u32);
+    pub fn as_report(&self, level: ReportKind) -> Diagnostic {
+        let mut report = Diagnostic::new(level, self.this_item.file, 0).with_code(self.kind as usize);
         report.set_message(self.to_string());
         report.add_label(
             self.this_item.as_label(format!("{:?} `{}` is defined here.", self.kind, self.name)).with_color(Color::Blue),

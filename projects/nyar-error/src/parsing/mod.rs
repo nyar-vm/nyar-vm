@@ -1,3 +1,4 @@
+use diagnostic::{Color, Diagnostic, ReportKind};
 use std::{
     char::ParseCharError,
     fmt::{Display, Formatter},
@@ -6,9 +7,7 @@ use std::{
     str::ParseBoolError,
 };
 
-use ariadne::{Color, ReportKind};
-
-use crate::{FileID, FileSpan, NyarError, NyarErrorKind, ValkyrieReport};
+use crate::{FileID, FileSpan, NyarError, NyarErrorKind};
 
 #[cfg(feature = "dashu")]
 mod for_dashu;
@@ -53,8 +52,8 @@ impl SyntaxError {
         self.span = span;
         self
     }
-    pub fn as_report(&self, kind: ReportKind) -> ValkyrieReport {
-        let mut report = ValkyrieReport::build(kind, self.span.file, self.span.head);
+    pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
+        let mut report = Diagnostic::build(kind, self.span.file, self.span.head);
         report.set_message(self.to_string());
         report.add_label(self.span.as_label(self.to_string()).with_color(Color::Red));
         report.finish()
@@ -63,7 +62,7 @@ impl SyntaxError {
 
 impl From<SyntaxError> for NyarError {
     fn from(value: SyntaxError) -> Self {
-        NyarError { kind: NyarErrorKind::Parsing(Box::new(value)), level: ReportKind::Error }
+        NyarErrorKind::Parsing(value).as_error(ReportKind::Error)
     }
 }
 

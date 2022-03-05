@@ -25,7 +25,7 @@ json5 = { version = "0.4.1", optional = true}
 
 [dependencies.diagnostic]
 version = "0.5.2"
-path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\diagnostic'
+#path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\diagnostic'
 
 
 [dev-dependencies]

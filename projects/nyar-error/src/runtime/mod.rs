@@ -1,11 +1,10 @@
+use diagnostic::ReportKind;
 use std::{
     fmt::{Display, Formatter},
     panic::Location,
 };
 
-use ariadne::ReportKind;
-
-use crate::{errors::ValkyrieReport, FileSpan, NyarError, NyarErrorKind, SyntaxError};
+use crate::{Diagnostic, NyarError, NyarErrorKind, SyntaxError};
 
 mod for_serde;
 
@@ -16,7 +15,7 @@ pub struct RuntimeError {
 
 impl From<RuntimeError> for NyarError {
     fn from(value: RuntimeError) -> Self {
-        NyarError { kind: NyarErrorKind::Runtime(Box::new(value)), level: ReportKind::Error }
+        NyarErrorKind::Runtime(value).as_error(ReportKind::Error)
     }
 }
 
@@ -44,8 +43,8 @@ impl RuntimeError {
     pub fn new(message: impl Display) -> Self {
         Self { message: message.to_string() }
     }
-    pub fn as_report(&self, kind: ReportKind) -> ValkyrieReport {
-        let mut report = ValkyrieReport::build(kind, 0usize, 0);
+    pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
+        let mut report = Diagnostic::build(kind, 0usize, 0);
         report.set_message(self.to_string());
         report.finish()
     }
