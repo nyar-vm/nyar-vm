@@ -1,6 +1,6 @@
 pub use crate::{
     duplicates::DuplicateError,
-    errors::{ValkyrieError, ValkyrieErrorKind, ValkyrieReport, ValkyrieResult},
+    errors::{NyarError, NyarErrorKind, ValkyrieReport, ValkyrieResult},
     managers::{
         list::{FileID, FileSpan},
         TextManager,

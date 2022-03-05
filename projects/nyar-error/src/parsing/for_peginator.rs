@@ -8,7 +8,7 @@ impl From<ParseError> for SyntaxError {
     }
 }
 
-impl From<peginator::ParseError> for ValkyrieError {
+impl From<peginator::ParseError> for NyarError {
     fn from(value: peginator::ParseError) -> Self {
         SyntaxError::from(value).into()
     }

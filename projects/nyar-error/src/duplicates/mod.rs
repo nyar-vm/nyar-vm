@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display, Formatter};
 
 use ariadne::{Color, Report, ReportKind};
 
-use crate::{errors::ValkyrieReport, FileSpan, ValkyrieError, ValkyrieErrorKind};
+use crate::{errors::ValkyrieReport, FileSpan, NyarError, NyarErrorKind};
 
 mod kind;
 
@@ -44,17 +44,17 @@ impl DuplicateError {
     }
 }
 
-impl ValkyrieError {
+impl NyarError {
     pub fn duplicate_type(name: String, this: FileSpan, last: FileSpan) -> Self {
         let this = DuplicateError { kind: DuplicateKind::Type, name, this_item: this, last_item: last };
-        Self { kind: ValkyrieErrorKind::Duplicate(Box::new(this)), level: ReportKind::Error }
+        Self { kind: NyarErrorKind::Duplicate(Box::new(this)), level: ReportKind::Error }
     }
     pub fn duplicate_function(name: String, this: FileSpan, last: FileSpan) -> Self {
         let this = DuplicateError { kind: DuplicateKind::Function, name, this_item: this, last_item: last };
-        Self { kind: ValkyrieErrorKind::Duplicate(Box::new(this)), level: ReportKind::Error }
+        Self { kind: NyarErrorKind::Duplicate(Box::new(this)), level: ReportKind::Error }
     }
     pub fn duplicate_variable(name: String, this: FileSpan, last: FileSpan) -> Self {
         let this = DuplicateError { kind: DuplicateKind::Variable, name, this_item: this, last_item: last };
-        Self { kind: ValkyrieErrorKind::Duplicate(Box::new(this)), level: ReportKind::Error }
+        Self { kind: NyarErrorKind::Duplicate(Box::new(this)), level: ReportKind::Error }
     }
 }

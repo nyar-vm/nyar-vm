@@ -4,8 +4,8 @@ members = ["projects/*"]
 default-members = [
     #    "projects/nyar-hir",
     #    "projects/nyar-mir",
-    #    "projects/nyar-error",
-    "projects/valkyrie-parser",
+    "projects/nyar-error",
+    #    "projects/valkyrie-parser",
     "projects/nyar-error",
 ]
 exclude = [

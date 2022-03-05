@@ -5,7 +5,7 @@ use std::{
 
 use ariadne::ReportKind;
 
-use crate::{errors::ValkyrieReport, FileSpan, SyntaxError, ValkyrieError, ValkyrieErrorKind};
+use crate::{errors::ValkyrieReport, FileSpan, NyarError, NyarErrorKind, SyntaxError};
 
 mod for_serde;
 
@@ -14,13 +14,13 @@ pub struct RuntimeError {
     message: String,
 }
 
-impl From<RuntimeError> for ValkyrieError {
+impl From<RuntimeError> for NyarError {
     fn from(value: RuntimeError) -> Self {
-        ValkyrieError { kind: ValkyrieErrorKind::Runtime(Box::new(value)), level: ReportKind::Error }
+        NyarError { kind: NyarErrorKind::Runtime(Box::new(value)), level: ReportKind::Error }
     }
 }
 
-impl From<()> for ValkyrieError {
+impl From<()> for NyarError {
     #[track_caller]
     fn from(_: ()) -> Self {
         let caller = Location::caller();
@@ -28,7 +28,7 @@ impl From<()> for ValkyrieError {
     }
 }
 
-impl From<std::io::Error> for ValkyrieError {
+impl From<std::io::Error> for NyarError {
     fn from(value: std::io::Error) -> Self {
         RuntimeError { message: value.to_string() }.into()
     }
@@ -51,14 +51,14 @@ impl RuntimeError {
     }
 }
 
-impl ValkyrieError {
+impl NyarError {
     pub fn syntax_error(message: impl Into<String>, position: FileSpan) -> Self {
         let this = SyntaxError { info: message.into(), span: position };
-        Self { kind: ValkyrieErrorKind::Parsing(Box::new(this)), level: ReportKind::Error }
+        Self { kind: NyarErrorKind::Parsing(Box::new(this)), level: ReportKind::Error }
     }
 
     pub fn runtime_error(message: impl Into<String>) -> Self {
         let this = RuntimeError { message: message.into() };
-        Self { kind: ValkyrieErrorKind::Runtime(Box::new(this)), level: ReportKind::Error }
+        Self { kind: NyarErrorKind::Runtime(Box::new(this)), level: ReportKind::Error }
     }
 }

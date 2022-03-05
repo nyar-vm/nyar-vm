@@ -1,6 +1,6 @@
 use toml::de::Error;
 
-use crate::{FileSpan, SyntaxError, ValkyrieError};
+use crate::{FileSpan, NyarError, SyntaxError};
 
 impl From<Error> for SyntaxError {
     fn from(value: Error) -> Self {
@@ -11,7 +11,7 @@ impl From<Error> for SyntaxError {
     }
 }
 
-impl From<Error> for ValkyrieError {
+impl From<Error> for NyarError {
     fn from(value: Error) -> Self {
         SyntaxError::from(value).into()
     }

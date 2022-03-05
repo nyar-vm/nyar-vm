@@ -1,6 +1,0 @@
-namespace* tests.literal.escape;
-
-'';
-"";
-"'";
-'"';

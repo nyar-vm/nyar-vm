@@ -1,6 +1,5 @@
 use std::ops::Range;
-
-use ariadne::{Report, ReportKind};
+use syntax_error::{Report, ReportKind};
 
 use crate::{parsing::SyntaxError, DuplicateError, FileID, RuntimeError};
 
@@ -8,27 +7,27 @@ pub mod display;
 
 pub type ValkyrieReport = Report<(FileID, Range<usize>)>;
 
-pub type ValkyrieResult<T = ()> = Result<T, ValkyrieError>;
+pub type ValkyrieResult<T = ()> = Result<T, NyarError>;
 
 #[derive(Clone)]
-pub struct ValkyrieError {
-    pub kind: ValkyrieErrorKind,
-    pub level: ReportKind,
+pub struct NyarError {
+    kind: Box<NyarErrorKind>,
+    level: ReportKind,
 }
 
 #[derive(Clone)]
-pub enum ValkyrieErrorKind {
-    Duplicate(Box<DuplicateError>),
-    Runtime(Box<RuntimeError>),
-    Parsing(Box<SyntaxError>),
+pub enum NyarErrorKind {
+    Duplicate(DuplicateError),
+    Runtime(RuntimeError),
+    Parsing(SyntaxError),
 }
 
-impl ValkyrieError {
+impl NyarError {
     pub fn set_file(&mut self, file: FileID) {
         match &mut self.kind {
-            ValkyrieErrorKind::Duplicate(_) => {}
-            ValkyrieErrorKind::Runtime(_) => {}
-            ValkyrieErrorKind::Parsing(s) => {
+            NyarErrorKind::Duplicate(_) => {}
+            NyarErrorKind::Runtime(_) => {}
+            NyarErrorKind::Parsing(s) => {
                 s.span.file = file;
             }
         }
@@ -36,9 +35,9 @@ impl ValkyrieError {
 
     pub fn as_report(&self) -> ValkyrieReport {
         match &self.kind {
-            ValkyrieErrorKind::Duplicate(e) => e.as_report(self.level),
-            ValkyrieErrorKind::Runtime(e) => e.as_report(self.level),
-            ValkyrieErrorKind::Parsing(e) => e.as_report(self.level),
+            NyarErrorKind::Duplicate(e) => e.as_report(self.level),
+            NyarErrorKind::Runtime(e) => e.as_report(self.level),
+            NyarErrorKind::Parsing(e) => e.as_report(self.level),
         }
     }
 }

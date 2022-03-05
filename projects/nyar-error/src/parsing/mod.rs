@@ -8,7 +8,7 @@ use std::{
 
 use ariadne::{Color, ReportKind};
 
-use crate::{FileID, FileSpan, ValkyrieError, ValkyrieErrorKind, ValkyrieReport};
+use crate::{FileID, FileSpan, NyarError, NyarErrorKind, ValkyrieReport};
 
 #[cfg(feature = "dashu")]
 mod for_dashu;
@@ -61,16 +61,16 @@ impl SyntaxError {
     }
 }
 
-impl From<SyntaxError> for ValkyrieError {
+impl From<SyntaxError> for NyarError {
     fn from(value: SyntaxError) -> Self {
-        ValkyrieError { kind: ValkyrieErrorKind::Parsing(Box::new(value)), level: ReportKind::Error }
+        NyarError { kind: NyarErrorKind::Parsing(Box::new(value)), level: ReportKind::Error }
     }
 }
 
 macro_rules! wrap_parse_error {
     ($($type:ty),*) => {
         $(
-            impl From<$type> for ValkyrieError {
+            impl From<$type> for NyarError {
                 fn from(value: $type) -> Self {
                     SyntaxError::new(value.to_string()).into()
                 }

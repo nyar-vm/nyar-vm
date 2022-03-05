@@ -1,9 +1,9 @@
-use crate::ValkyrieError;
+use crate::NyarError;
 use json5::Error;
 
-impl From<Error> for ValkyrieError {
+impl From<Error> for NyarError {
     fn from(value: Error) -> Self {
         // can't get the span from the error
-        ValkyrieError::runtime_error(value.to_string())
+        NyarError::runtime_error(value.to_string())
     }
 }

@@ -3,26 +3,26 @@ use std::{
     fmt::{Debug, Display, Formatter},
 };
 
-use crate::{ValkyrieError, ValkyrieErrorKind};
+use crate::{NyarError, NyarErrorKind};
 
-impl Error for ValkyrieError {}
+impl Error for NyarError {}
 
-impl Debug for ValkyrieError {
+impl Debug for NyarError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            ValkyrieErrorKind::Duplicate(e) => Debug::fmt(e, f),
-            ValkyrieErrorKind::Runtime(e) => Debug::fmt(e, f),
-            ValkyrieErrorKind::Parsing(e) => Debug::fmt(e, f),
+            NyarErrorKind::Duplicate(e) => Debug::fmt(e, f),
+            NyarErrorKind::Runtime(e) => Debug::fmt(e, f),
+            NyarErrorKind::Parsing(e) => Debug::fmt(e, f),
         }
     }
 }
 
-impl Display for ValkyrieError {
+impl Display for NyarError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            ValkyrieErrorKind::Duplicate(e) => Display::fmt(e, f),
-            ValkyrieErrorKind::Runtime(e) => Display::fmt(e, f),
-            ValkyrieErrorKind::Parsing(e) => Display::fmt(e, f),
+            NyarErrorKind::Duplicate(e) => Display::fmt(e, f),
+            NyarErrorKind::Runtime(e) => Display::fmt(e, f),
+            NyarErrorKind::Parsing(e) => Display::fmt(e, f),
         }
     }
 }

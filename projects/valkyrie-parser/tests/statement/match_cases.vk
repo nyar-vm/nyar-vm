@@ -1,5 +1,0 @@
-match a {
-    with [a]
-    case a: a
-    else: 1
-}
