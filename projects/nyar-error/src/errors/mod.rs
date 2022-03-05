@@ -1,4 +1,4 @@
-use diagnostic::{Diagnostic, ReportKind};
+use diagnostic::{Diagnostic, FileID, ReportKind};
 
 use crate::{parsing::SyntaxError, DuplicateError, RuntimeError};
 
@@ -24,9 +24,7 @@ impl NyarError {
         match self.kind.as_mut() {
             NyarErrorKind::Duplicate(_) => {}
             NyarErrorKind::Runtime(_) => {}
-            NyarErrorKind::Parsing(s) => {
-                s.span.file = file;
-            }
+            NyarErrorKind::Parsing(s) => s.span.set_file(file),
         }
     }
 

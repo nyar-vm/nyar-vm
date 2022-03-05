@@ -1,4 +1,4 @@
-use diagnostic::{Color, Diagnostic, ReportKind};
+use diagnostic::{Color, Diagnostic, FileID, FileSpan, ReportKind};
 use std::{
     char::ParseCharError,
     fmt::{Display, Formatter},
@@ -7,7 +7,7 @@ use std::{
     str::ParseBoolError,
 };
 
-use crate::{FileID, FileSpan, NyarError, NyarErrorKind};
+use crate::{NyarError, NyarErrorKind};
 
 #[cfg(feature = "dashu")]
 mod for_dashu;
@@ -40,12 +40,11 @@ impl SyntaxError {
         Self { span: FileSpan::default(), info: info.into() }
     }
     pub fn with_file(mut self, file: FileID) -> Self {
-        self.span.file = file;
+        self.span.set_file(file);
         self
     }
     pub fn with_range(mut self, range: &Range<usize>) -> Self {
-        self.span.head = range.start;
-        self.span.tail = range.end;
+        self.span.set_range(range.clone());
         self
     }
     pub fn with_span(mut self, span: FileSpan) -> Self {
@@ -53,7 +52,7 @@ impl SyntaxError {
         self
     }
     pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
-        let mut report = Diagnostic::build(kind, self.span.file, self.span.head);
+        let mut report = Diagnostic::new(kind, self.span.get_file(), self.span.get_start());
         report.set_message(self.to_string());
         report.add_label(self.span.as_label(self.to_string()).with_color(Color::Red));
         report.finish()

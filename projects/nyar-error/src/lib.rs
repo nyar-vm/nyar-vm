@@ -1,7 +1,6 @@
 pub use crate::{
     duplicates::DuplicateError,
     errors::{NyarError, NyarErrorKind, NyarResult},
-    managers::list::FileSpan,
     parsing::SyntaxError,
     runtime::RuntimeError,
 };
@@ -25,7 +24,6 @@ pub use diagnostic::{Diagnostic, FileCache};
 mod errors;
 
 mod duplicates;
-mod managers;
 mod parsing;
 mod runtime;
 #[cfg(test)]

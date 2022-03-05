@@ -1,4 +1,4 @@
-use diagnostic::ReportKind;
+use diagnostic::{FileID, FileSpan, ReportKind};
 use std::{
     fmt::{Display, Formatter},
     panic::Location,
@@ -44,7 +44,7 @@ impl RuntimeError {
         Self { message: message.to_string() }
     }
     pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
-        let mut report = Diagnostic::build(kind, 0usize, 0);
+        let mut report = Diagnostic::new(kind, unsafe { FileID::new(0) }, 0);
         report.set_message(self.to_string());
         report.finish()
     }
@@ -53,11 +53,11 @@ impl RuntimeError {
 impl NyarError {
     pub fn syntax_error(message: impl Into<String>, position: FileSpan) -> Self {
         let this = SyntaxError { info: message.into(), span: position };
-        Self { kind: NyarErrorKind::Parsing(Box::new(this)), level: ReportKind::Error }
+        NyarErrorKind::Parsing(this).as_error(ReportKind::Error)
     }
 
     pub fn runtime_error(message: impl Into<String>) -> Self {
         let this = RuntimeError { message: message.into() };
-        Self { kind: NyarErrorKind::Runtime(Box::new(this)), level: ReportKind::Error }
+        NyarErrorKind::Runtime(this).as_error(ReportKind::Error)
     }
 }
