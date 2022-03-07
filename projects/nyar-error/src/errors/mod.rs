@@ -17,6 +17,7 @@ pub enum NyarErrorKind {
     Duplicate(DuplicateError),
     Runtime(RuntimeError),
     Parsing(SyntaxError),
+    Custom(String),
 }
 
 impl NyarError {
@@ -25,6 +26,7 @@ impl NyarError {
             NyarErrorKind::Duplicate(_) => {}
             NyarErrorKind::Runtime(_) => {}
             NyarErrorKind::Parsing(s) => s.span.set_file(file),
+            NyarErrorKind::Custom(_) => {}
         }
     }
 
@@ -33,6 +35,7 @@ impl NyarError {
             NyarErrorKind::Duplicate(e) => e.as_report(self.level),
             NyarErrorKind::Runtime(e) => e.as_report(self.level),
             NyarErrorKind::Parsing(e) => e.as_report(self.level),
+            NyarErrorKind::Custom(e) => Diagnostic::new(self.level, unsafe { FileID::new(0) }, 0).with_message(e).finish(),
         }
     }
 }

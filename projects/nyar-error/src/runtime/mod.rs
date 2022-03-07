@@ -60,4 +60,9 @@ impl NyarError {
         let this = RuntimeError { message: message.into() };
         NyarErrorKind::Runtime(this).as_error(ReportKind::Error)
     }
+
+    pub fn custom<S: ToString>(message: S) -> Self {
+        let this = message.to_string();
+        NyarErrorKind::Custom(this).as_error(ReportKind::Error)
+    }
 }

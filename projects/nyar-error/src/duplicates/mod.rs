@@ -10,6 +10,7 @@ pub enum DuplicateKind {
     Type = 1002,
     Function = 1003,
     Variable = 1004,
+    Key = 1005,
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +55,10 @@ impl NyarError {
     }
     pub fn duplicate_variable(name: String, this: FileSpan, last: FileSpan) -> Self {
         let this = DuplicateError { kind: DuplicateKind::Variable, name, this_item: this, last_item: last };
+        NyarErrorKind::Duplicate(this).as_error(ReportKind::Error)
+    }
+    pub fn duplicate_key(name: String, this: FileSpan, last: FileSpan) -> Self {
+        let this = DuplicateError { kind: DuplicateKind::Key, name, this_item: this, last_item: last };
         NyarErrorKind::Duplicate(this).as_error(ReportKind::Error)
     }
 }
