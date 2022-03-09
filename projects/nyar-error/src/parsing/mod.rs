@@ -2,7 +2,6 @@ use diagnostic::{Color, Diagnostic, FileID, FileSpan, ReportKind};
 use std::{
     char::ParseCharError,
     fmt::{Display, Formatter},
-    num::{ParseFloatError, ParseIntError},
     ops::Range,
     str::ParseBoolError,
 };
@@ -13,8 +12,8 @@ use crate::{NyarError, NyarErrorKind};
 mod for_dashu;
 #[cfg(feature = "json5")]
 mod for_json5;
-#[cfg(feature = "num")]
-mod for_num;
+
+mod for_number;
 #[cfg(feature = "peginator")]
 mod for_peginator;
 #[cfg(feature = "toml")]
@@ -26,6 +25,7 @@ mod for_pratt;
 #[derive(Clone, Debug)]
 pub struct SyntaxError {
     pub info: String,
+    pub except: String,
     pub span: FileSpan,
 }
 
@@ -37,19 +37,31 @@ impl Display for SyntaxError {
 
 impl SyntaxError {
     pub fn new(info: impl Into<String>) -> Self {
-        Self { span: FileSpan::default(), info: info.into() }
+        Self { span: FileSpan::default(), info: info.into(), except: "".to_string() }
+    }
+    pub fn invalid_integer<S: ToString>(message: S) -> Self {
+        Self { info: message.to_string(), except: "Integer".to_string(), span: Default::default() }
+    }
+    pub fn invalid_decimal<S: ToString>(message: S) -> Self {
+        Self { info: message.to_string(), except: "Decimal".to_string(), span: Default::default() }
     }
     pub fn with_file(mut self, file: FileID) -> Self {
         self.span.set_file(file);
         self
     }
-    pub fn with_range(mut self, range: &Range<usize>) -> Self {
-        self.span.set_range(range.clone());
+    pub fn with_range(mut self, range: &Range<u32>) -> Self {
+        self.span.set_range(Range { start: range.start as usize, end: range.end as usize });
         self
     }
     pub fn with_span(mut self, span: FileSpan) -> Self {
         self.span = span;
         self
+    }
+}
+
+impl SyntaxError {
+    pub fn as_error(self, kind: ReportKind) -> NyarError {
+        NyarErrorKind::Parsing(self).as_error(kind)
     }
     pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
         let mut report = Diagnostic::new(kind, self.span.get_file(), self.span.get_start());
@@ -77,10 +89,7 @@ macro_rules! wrap_parse_error {
     };
 }
 
-wrap_parse_error!(ParseIntError, ParseFloatError, ParseBoolError, ParseCharError, url::ParseError);
-
-#[cfg(feature = "num")]
-wrap_parse_error!(num::bigint::ParseBigIntError);
+wrap_parse_error!(ParseBoolError, ParseCharError, url::ParseError);
 
 #[cfg(feature = "dashu")]
 wrap_parse_error!(dashu::base::ParseError);

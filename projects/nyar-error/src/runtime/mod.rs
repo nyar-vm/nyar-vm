@@ -52,7 +52,7 @@ impl RuntimeError {
 
 impl NyarError {
     pub fn syntax_error(message: impl Into<String>, position: FileSpan) -> Self {
-        let this = SyntaxError { info: message.into(), span: position };
+        let this = SyntaxError { info: message.into(), except: "".to_string(), span: position };
         NyarErrorKind::Parsing(this).as_error(ReportKind::Error)
     }
 

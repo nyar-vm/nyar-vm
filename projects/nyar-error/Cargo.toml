@@ -10,7 +10,8 @@ license = "MPL-2.0"
 edition = "2021"
 
 [dependencies]
-serde = { version = "1.0.188", features = ["derive"] }
+validatus = "0.0.*"
+serde = { version = "1.0.*", features = ["derive"] }
 indexmap = "2.0.2"
 convert_case = "0.6.0"
 itertools = "0.11.0"
@@ -18,15 +19,18 @@ url = "2.4.1"
 # parser
 peginator = { version = "0.6.0", optional = true }
 pratt = { version = "0.4.0", optional = true }
+# number
 num = { version = "0.4.1", optional = true, features = ["serde"] }
+bigdecimal = { version = "0.4.1", optional = true, features = ["serde"] }
 dashu = { version = "0.4.0", optional = true, features = ["serde"] }
-toml = { version = "0.8.2", optional = true}
+# config
 serde_json = { version = "1.0.107", optional = true }
 json5 = { version = "0.4.1", optional = true}
+toml = { version = "0.8.2", optional = true}
 
 [dependencies.diagnostic]
-version = "0.5.2"
-path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\diagnostic'
+version = "0.5.3"
+#path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\diagnostic'
 
 
 [dev-dependencies]

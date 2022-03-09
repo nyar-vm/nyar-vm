@@ -4,7 +4,8 @@ use crate::{parsing::SyntaxError, DuplicateError, RuntimeError};
 
 pub mod display;
 
-pub type NyarResult<T = ()> = Result<T, NyarError>;
+pub type Validation<T> = validatus::Validation<T, NyarError>;
+pub type Result<T = ()> = core::result::Result<T, NyarError>;
 
 #[derive(Clone)]
 pub struct NyarError {

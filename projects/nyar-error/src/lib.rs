@@ -1,13 +1,18 @@
+#![allow(clippy::wrong_self_convention)]
 pub use crate::{
     duplicates::DuplicateError,
-    errors::{NyarError, NyarErrorKind, NyarResult},
+    errors::{NyarError, NyarErrorKind, Result, Validation},
     parsing::SyntaxError,
     runtime::RuntimeError,
 };
 
 pub mod third_party;
-
 pub use diagnostic::{Diagnostic, FileCache, FileSpan};
+pub use validatus::{
+    Validate,
+    Validation::{Failure, Success},
+};
+
 mod errors;
 
 mod duplicates;
