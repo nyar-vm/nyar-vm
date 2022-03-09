@@ -36,10 +36,11 @@ impl NyarError {
             NyarErrorKind::Duplicate(e) => e.as_report(self.level),
             NyarErrorKind::Runtime(e) => e.as_report(self.level),
             NyarErrorKind::Parsing(e) => e.as_report(self.level),
-            NyarErrorKind::Custom(e) => Diagnostic::new(self.level, unsafe { FileID::new(0) }, 0).with_message(e).finish(),
+            NyarErrorKind::Custom(e) => Diagnostic::new(self.level).with_message(e).finish(),
         }
     }
 }
+
 #[allow(clippy::wrong_self_convention)]
 impl NyarErrorKind {
     pub fn as_error(self, level: ReportKind) -> NyarError {

@@ -29,7 +29,7 @@ impl Display for DuplicateError {
 
 impl DuplicateError {
     pub fn as_report(&self, level: ReportKind) -> Diagnostic {
-        let mut report = Diagnostic::new(level, self.this_item.get_file(), 0).with_code(self.kind as usize);
+        let mut report = Diagnostic::new(level).with_code(self.kind as usize);
         report.set_message(self.to_string());
         report.add_label(
             self.this_item.as_label(format!("{:?} `{}` is defined here.", self.kind, self.name)).with_color(Color::Blue),

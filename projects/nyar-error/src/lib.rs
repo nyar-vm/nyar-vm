@@ -7,7 +7,7 @@ pub use crate::{
 };
 
 pub mod third_party;
-pub use diagnostic::{Diagnostic, FileCache, FileSpan};
+pub use diagnostic::{Diagnostic, FileCache, FileID, FileSpan};
 pub use validatus::{
     Validate,
     Validation::{Failure, Success},

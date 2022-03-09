@@ -1,4 +1,4 @@
-use diagnostic::{FileID, FileSpan, ReportKind};
+use diagnostic::{FileSpan, ReportKind};
 use std::{
     fmt::{Display, Formatter},
     panic::Location,
@@ -44,7 +44,7 @@ impl RuntimeError {
         Self { message: message.to_string() }
     }
     pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
-        let mut report = Diagnostic::new(kind, unsafe { FileID::new(0) }, 0);
+        let mut report = Diagnostic::new(kind);
         report.set_message(self.to_string());
         report.finish()
     }

@@ -64,7 +64,7 @@ impl SyntaxError {
         NyarErrorKind::Parsing(self).as_error(kind)
     }
     pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
-        let mut report = Diagnostic::new(kind, self.span.get_file(), self.span.get_start());
+        let mut report = Diagnostic::new(kind).with_location(self.span.get_file(), Some(self.span.get_start()));
         report.set_message(self.to_string());
         report.add_label(self.span.as_label(self.to_string()).with_color(Color::Red));
         report.finish()
