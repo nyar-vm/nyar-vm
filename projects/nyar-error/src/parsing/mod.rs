@@ -21,11 +21,13 @@ mod for_toml;
 
 #[cfg(feature = "pratt")]
 mod for_pratt;
+#[cfg(feature = "yggdrasil-rt")]
+mod for_ygg;
 
 #[derive(Clone, Debug)]
 pub struct SyntaxError {
     pub info: String,
-    pub except: String,
+    pub hint: String,
     pub span: FileSpan,
 }
 
@@ -37,13 +39,13 @@ impl Display for SyntaxError {
 
 impl SyntaxError {
     pub fn new(info: impl Into<String>) -> Self {
-        Self { span: FileSpan::default(), info: info.into(), except: "".to_string() }
+        Self { span: FileSpan::default(), info: info.into(), hint: "".to_string() }
     }
     pub fn invalid_integer<S: ToString>(message: S) -> Self {
-        Self { info: message.to_string(), except: "Integer".to_string(), span: Default::default() }
+        Self { info: message.to_string(), hint: "Integer".to_string(), span: Default::default() }
     }
     pub fn invalid_decimal<S: ToString>(message: S) -> Self {
-        Self { info: message.to_string(), except: "Decimal".to_string(), span: Default::default() }
+        Self { info: message.to_string(), hint: "Decimal".to_string(), span: Default::default() }
     }
     pub fn with_file(mut self, file: FileID) -> Self {
         self.span.set_file(file);
@@ -66,7 +68,7 @@ impl SyntaxError {
     pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
         let mut report = Diagnostic::new(kind).with_location(self.span.get_file(), Some(self.span.get_start()));
         report.set_message(self.to_string());
-        report.add_label(self.span.as_label(self.to_string()).with_color(Color::Red));
+        report.add_label(self.span.as_label(&self.hint).with_color(Color::Red));
         report.finish()
     }
 }

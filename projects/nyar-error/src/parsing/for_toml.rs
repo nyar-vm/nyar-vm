@@ -1,12 +1,13 @@
+use diagnostic::FileID;
 use toml::de::Error;
 
-use crate::{FileSpan, NyarError, SyntaxError};
+use crate::{NyarError, SyntaxError};
 
 impl From<Error> for SyntaxError {
     fn from(value: Error) -> Self {
         match value.span() {
-            Some(s) => Self { info: value.message().to_string(), span: FileSpan { file: 0, head: s.start, tail: s.end } },
-            None => Self { info: value.message().to_string(), span: Default::default() },
+            Some(s) => Self { info: value.message().to_string(), hint: "".to_string(), span: FileID::default().with_range(s) },
+            None => Self { info: value.message().to_string(), hint: "".to_string(), span: Default::default() },
         }
     }
 }

@@ -30,6 +30,10 @@ impl NyarError {
             NyarErrorKind::Custom(_) => {}
         }
     }
+    pub fn with_file(mut self, file: FileID) -> Self {
+        self.set_file(file);
+        self
+    }
 
     pub fn as_report(&self) -> Diagnostic {
         match self.kind.as_ref() {
