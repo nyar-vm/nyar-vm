@@ -13,6 +13,11 @@ edition = "2021"
 wasmtime = "15.0.0"
 anyhow = "1.0.75"
 
+[dependencies.nyar-error]
+version = "0.1.10"
+path = "../nyar-error"
+features = ["wasmtime"]
+
 [dev-dependencies]
 
 [features]
