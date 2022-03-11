@@ -16,6 +16,7 @@ impl Debug for NyarError {
 impl Debug for NyarErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Missing(e) => Debug::fmt(e, f),
             Self::Duplicate(e) => Debug::fmt(e, f),
             Self::Runtime(e) => Debug::fmt(e, f),
             Self::Parsing(e) => Debug::fmt(e, f),
@@ -33,6 +34,7 @@ impl Display for NyarError {
 impl Display for NyarErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Missing(e) => Display::fmt(e, f),
             Self::Duplicate(e) => Display::fmt(e, f),
             Self::Runtime(e) => Display::fmt(e, f),
             Self::Parsing(e) => Display::fmt(e, f),

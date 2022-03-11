@@ -1,6 +1,6 @@
 use diagnostic::{Diagnostic, FileID, ReportKind};
 
-use crate::{parsing::SyntaxError, DuplicateError, RuntimeError};
+use crate::{parsing::SyntaxError, DuplicateError, MissingError, RuntimeError};
 
 pub mod display;
 
@@ -15,6 +15,7 @@ pub struct NyarError {
 
 #[derive(Clone)]
 pub enum NyarErrorKind {
+    Missing(MissingError),
     Duplicate(DuplicateError),
     Runtime(RuntimeError),
     Parsing(SyntaxError),
@@ -28,6 +29,7 @@ impl NyarError {
             NyarErrorKind::Runtime(_) => {}
             NyarErrorKind::Parsing(s) => s.span.set_file(file),
             NyarErrorKind::Custom(_) => {}
+            NyarErrorKind::Missing(s) => s.span.set_file(file),
         }
     }
     pub fn with_file(mut self, file: FileID) -> Self {
@@ -37,6 +39,7 @@ impl NyarError {
 
     pub fn as_report(&self) -> Diagnostic {
         match self.kind.as_ref() {
+            NyarErrorKind::Missing(e) => e.as_report(self.level),
             NyarErrorKind::Duplicate(e) => e.as_report(self.level),
             NyarErrorKind::Runtime(e) => e.as_report(self.level),
             NyarErrorKind::Parsing(e) => e.as_report(self.level),

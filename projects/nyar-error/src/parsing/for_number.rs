@@ -16,13 +16,20 @@ impl From<ParseIntError> for NyarError {
         SyntaxError::from(error).into()
     }
 }
+#[cfg(feature = "num")]
+impl From<ParseBigIntError> for SyntaxError {
+    fn from(error: ParseBigIntError) -> Self {
+        Self { info: error.to_string(), hint: "".to_string(), span: Default::default() }
+    }
+}
 
 #[cfg(feature = "num")]
 impl From<ParseBigIntError> for NyarError {
     fn from(error: ParseBigIntError) -> Self {
-        SyntaxError::invalid_integer(error).into()
+        SyntaxError::from(error).into()
     }
 }
+
 #[cfg(feature = "num")]
 impl From<ParseRatioError> for NyarError {
     fn from(error: ParseRatioError) -> Self {

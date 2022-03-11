@@ -1,6 +1,6 @@
 [package]
 name = "nyar-error"
-version = "0.1.10"
+version = "0.1.11"
 authors = ["Aster <192607617@qq.com>"]
 description = "Error types for valkyrie language"
 repository = "https://github.com/nyar-vm/nyar-vm/tree/dev/projects/nyar-error"
@@ -10,7 +10,6 @@ license = "MPL-2.0"
 edition = "2021"
 
 [dependencies]
-validatus = "0.0.5"
 serde = { version = "1.0.192", features = ["derive"] }
 indexmap = "2.1.0"
 convert_case = "0.6.0"
@@ -36,10 +35,15 @@ version = "0.0.16"
 optional = true
 #path = 'C:\Users\Dell\CLionProjects\yggdrasil.rs\projects\ygg-rt'
 
+
 [dependencies.diagnostic]
-version = "0.5.10"
-features = ["serde"]
+version = "0.6.0"
 #path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\diagnostic'
+features = ["serde", "url"]
+
+[dependencies.validatus]
+version = "0.0.6"
+#path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\validation'
 
 
 [dev-dependencies]
