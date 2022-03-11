@@ -1,6 +1,6 @@
 [package]
 name = "nyar-error"
-version = "0.1.8"
+version = "0.1.10"
 authors = ["Aster <192607617@qq.com>"]
 description = "Error types for valkyrie language"
 repository = "https://github.com/nyar-vm/nyar-vm/tree/dev/projects/nyar-error"
@@ -14,12 +14,11 @@ validatus = "0.0.5"
 serde = { version = "1.0.192", features = ["derive"] }
 indexmap = "2.1.0"
 convert_case = "0.6.0"
-itertools = "0.11.0"
+itertools = "0.12.0"
 url = "2.4.1"
 # parser
 peginator = { version = "0.6.0", optional = true }
 pratt = { version = "0.4.0", optional = true }
-yggdrasil-rt = { version = "0.0.15", optional = true }
 # number
 num = { version = "0.4.1", optional = true, features = ["serde"] }
 bigdecimal = { version = "0.4.2", optional = true, features = ["serde"] }
@@ -29,8 +28,13 @@ serde_json = { version = "1.0.108", optional = true }
 json5 = { version = "0.4.1", optional = true}
 toml = { version = "0.8.8", optional = true}
 
+[dependencies.yggdrasil-rt]
+version = "0.0.16"
+optional = true
+#path = 'C:\Users\Dell\CLionProjects\yggdrasil.rs\projects\ygg-rt'
+
 [dependencies.diagnostic]
-version = "0.5.9"
+version = "0.5.10"
 features = ["serde"]
 #path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\diagnostic'
 

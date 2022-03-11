@@ -1,5 +1,5 @@
 [package]
-name = "valkyrie-ffi"
+name = "nyar-wasm"
 version = "0.0.0"
 authors = ["Aster <192607617@qq.com>"]
 description = "..."
@@ -10,8 +10,8 @@ license = "MPL-2.0"
 edition = "2021"
 
 [dependencies]
-inwelling = "0.5.0"
-
+wasmtime = "15.0.0"
+anyhow = "1.0.75"
 
 [dev-dependencies]
 

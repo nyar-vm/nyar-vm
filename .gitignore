@@ -7,3 +7,4 @@ time-travel.*
 # Rust
 target/
 Cargo.lock
+node_modules/
