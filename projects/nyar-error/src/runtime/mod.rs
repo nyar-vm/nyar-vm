@@ -7,6 +7,8 @@ use std::{
 use crate::{Diagnostic, NyarError, NyarErrorKind, SyntaxError};
 
 mod for_serde;
+#[cfg(feature = "wasmtime")]
+mod for_wasm;
 
 #[derive(Clone, Debug)]
 pub struct RuntimeError {

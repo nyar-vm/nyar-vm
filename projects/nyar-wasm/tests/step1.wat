@@ -1,8 +1,10 @@
 (module
-  ;; 导出一个全局变量
-  (global $data (mut i32) (i32.const 42))
+    (import "env" "print_i32" (func $print_i32 (param i32)))
+    (import "env" "print_i64" (func $print_i64 (param i64)))
 
-  ;; 导出一个函数，返回全局变量的值
-  (func (export "get_data") (result i32)
-    (global.get $data))
+    (func (export "_start") (result i32)
+        (call $print_i32 (i32.const 42))
+        ;; no problem, return 0
+        (i32.const 0)
+    )
 )

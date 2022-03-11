@@ -30,6 +30,7 @@ impl<R: YggdrasilRule> From<YggdrasilError<R>> for SyntaxError {
         }
     }
 }
+
 impl<R: YggdrasilRule> From<YggdrasilError<R>> for NyarError {
     fn from(error: YggdrasilError<R>) -> Self {
         SyntaxError::from(error).as_error(ReportKind::Error)

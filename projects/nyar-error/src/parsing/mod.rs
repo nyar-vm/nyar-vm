@@ -38,23 +38,26 @@ impl Display for SyntaxError {
 }
 
 impl SyntaxError {
+    /// Create a new syntax error with given message
     pub fn new(info: impl Into<String>) -> Self {
         Self { span: FileSpan::default(), info: info.into(), hint: "".to_string() }
     }
-    pub fn invalid_integer<S: ToString>(message: S) -> Self {
-        Self { info: message.to_string(), hint: "Integer".to_string(), span: Default::default() }
+    /// Set the excepted hint
+    pub fn with_hint<S: ToString>(mut self, hint: S) -> Self {
+        self.hint = hint.to_string();
+        self
     }
-    pub fn invalid_decimal<S: ToString>(message: S) -> Self {
-        Self { info: message.to_string(), hint: "Decimal".to_string(), span: Default::default() }
-    }
+    /// Set the file id
     pub fn with_file(mut self, file: FileID) -> Self {
         self.span.set_file(file);
         self
     }
+    /// Set the file range
     pub fn with_range(mut self, range: &Range<u32>) -> Self {
         self.span.set_range(Range { start: range.start as usize, end: range.end as usize });
         self
     }
+    /// Set the file span
     pub fn with_span(mut self, span: FileSpan) -> Self {
         self.span = span;
         self
