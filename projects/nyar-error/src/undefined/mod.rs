@@ -13,7 +13,7 @@ pub struct MissingError {
 }
 
 #[derive(Clone, Debug)]
-enum MissingErrorKind {
+pub(crate) enum MissingErrorKind {
     /// empty symbol
     EmptyPath,
     /// undefined symbol

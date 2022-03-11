@@ -2,9 +2,5 @@
     "private": true,
     "scripts": {
         "p": "cargo publish --allow-dirty"
-    },
-    "dependencies": {
-        "wabt": "^1.0.32",
-        "wat2wasm": "^3.0.0"
     }
 }

@@ -1,6 +1,6 @@
 [package]
-name = "valkyrie-ast"
-version = "0.0.0"
+name = "nyar-hir"
+version = "0.2.3"
 authors = ["Aster <192607617@qq.com>"]
 description = "Abstract Syntax Tree of valkyrie language"
 repository = "https://github.com/nyar-vm/valkyrie.rs"
@@ -10,7 +10,12 @@ license = "MPL-2.0"
 edition = "2021"
 
 [dependencies]
-melior = "0.13.0"
+
+
+[dependencies.nyar-error]
+version = "0.1.*"
+path = "../nyar-error"
+
 
 [dev-dependencies]
 
