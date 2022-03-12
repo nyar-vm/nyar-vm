@@ -1,5 +1,11 @@
-use crate::{modules::GlobalValue, TypeBuilder};
+use crate::{
+    functions::{FunctionBuilder, FunctionItem},
+    modules::GlobalBuilder,
+    TypeBuilder,
+};
 use indexmap::IndexMap;
+use nyar_error::NyarError;
+use nyar_hir::Identifier;
 use wasm_encoder::{
     ArrayType, CodeSection, CompositeType, ConstExpr, ExportKind, ExportSection, FieldType, Function, FunctionSection,
     GlobalSection, GlobalType, Instruction, Module, RefType, StorageType, StructType, SubType, TableSection, TableType,
@@ -7,16 +13,9 @@ use wasm_encoder::{
 };
 
 pub struct ModuleBuilder {
-    globals: IndexMap<String, GlobalValue>,
+    globals: IndexMap<String, GlobalBuilder>,
     types: IndexMap<String, TypeBuilder>,
-    functions: IndexMap<String, FunctionBuilder>,
-}
-
-pub struct FunctionBuilder {
-    name: String,
-    export: bool,
-    typing: String,
-    body: Function,
+    functions: FunctionBuilder,
 }
 
 impl ModuleBuilder {
@@ -47,35 +46,7 @@ impl ModuleBuilder {
         //     },
         // });
 
-        let mut functions = IndexMap::default();
-
-        let locals = vec![];
-        let mut body1 = Function::new(locals);
-        body1.instruction(&Instruction::LocalGet(0));
-        body1.instruction(&Instruction::LocalGet(1));
-        body1.instruction(&Instruction::I32Add);
-        body1.instruction(&Instruction::End);
-
-        functions.insert(
-            "add_ab".to_string(),
-            FunctionBuilder { name: "add_ab".to_string(), export: false, typing: "Func".to_string(), body: body1.clone() },
-        );
-
-        let locals = vec![];
-        let mut body2 = Function::new(locals);
-        body2.instruction(&Instruction::LocalGet(0));
-        body2.instruction(&Instruction::GlobalGet(0));
-        body2.instruction(&Instruction::I32Add);
-        body2.instruction(&Instruction::End);
-        functions.insert(
-            "add_ba".to_string(),
-            FunctionBuilder { name: "add_ba".to_string(), export: true, typing: "Func".to_string(), body: body2.clone() },
-        );
-        Self { globals: Default::default(), types, functions }
-    }
-
-    pub fn insert_global(&mut self, global: GlobalValue) {
-        self.globals.insert(global.name.clone(), global);
+        Self { globals: Default::default(), types, functions: Default::default() }
     }
 
     fn build_types(&self) -> TypeSection {
@@ -85,13 +56,8 @@ impl ModuleBuilder {
         }
         types
     }
-
-    fn build_functions(&self) -> FunctionSection {
-        let mut functions = FunctionSection::default();
-        for i in 0..self.functions.len() {
-            functions.function(i as u32);
-        }
-        functions
+    pub fn insert_function(&mut self, function: FunctionItem) {
+        self.functions.insert(function)
     }
 
     fn build_codes(&self) -> CodeSection {
@@ -107,11 +73,15 @@ impl ModuleBuilder {
         tables.table(TableType { element_type: RefType::FUNCREF, minimum: 0, maximum: None });
         tables
     }
+    pub fn insert_global(&mut self, global: GlobalBuilder) {
+        self.globals.insert(global.name.to_string(), global);
+    }
 
     fn build_global(&self) -> GlobalSection {
         let mut global = GlobalSection::default();
-
-        global.global(GlobalType { val_type: ValType::I32, mutable: true }, &ConstExpr::i32_const(42));
+        for value in self.globals.values() {
+            value.build(&mut global).unwrap();
+        }
         global
     }
 
