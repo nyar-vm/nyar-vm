@@ -1,6 +1,6 @@
 use crate::{
     functions::{FunctionBuilder, FunctionItem},
-    modules::GlobalBuilder,
+    modules::{GlobalBuilder, GlobalItem},
     TypeBuilder,
 };
 use indexmap::IndexMap;
@@ -13,7 +13,7 @@ use wasm_encoder::{
 };
 
 pub struct ModuleBuilder {
-    globals: IndexMap<String, GlobalBuilder>,
+    globals: GlobalBuilder,
     types: IndexMap<String, TypeBuilder>,
     functions: FunctionBuilder,
 }
@@ -62,7 +62,7 @@ impl ModuleBuilder {
 
     fn build_codes(&self) -> CodeSection {
         let mut codes = CodeSection::default();
-        for func in self.functions.values() {
+        for func in self.functions.into_iter() {
             codes.function(&func.body);
         }
         codes
@@ -73,21 +73,21 @@ impl ModuleBuilder {
         tables.table(TableType { element_type: RefType::FUNCREF, minimum: 0, maximum: None });
         tables
     }
-    pub fn insert_global(&mut self, global: GlobalBuilder) {
-        self.globals.insert(global.name.to_string(), global);
+    pub fn insert_global(&mut self, global: GlobalItem) -> Option<GlobalItem> {
+        self.globals.insert(global)
     }
 
     fn build_global(&self) -> GlobalSection {
         let mut global = GlobalSection::default();
         for value in self.globals.values() {
-            value.build(&mut global).unwrap();
+            value.build(&mut global, &self.functions).unwrap();
         }
         global
     }
 
     fn build_exports(&self) -> ExportSection {
         let mut exports = ExportSection::default();
-        for (index, func) in self.functions.values().enumerate() {
+        for (index, func) in self.functions.into_iter().enumerate() {
             if func.export {
                 exports.export(&func.name, ExportKind::Func, index as u32);
             }
@@ -100,7 +100,7 @@ impl ModuleBuilder {
         let mut module = Module::new();
         // The build order cannot be reversed!!!
         module.section(&self.build_types());
-        module.section(&self.build_functions());
+        module.section(&self.functions.build());
         module.section(&self.build_tables());
         module.section(&self.build_global());
         module.section(&self.build_exports());

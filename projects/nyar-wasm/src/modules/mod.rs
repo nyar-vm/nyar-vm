@@ -1,14 +1,37 @@
 use crate::functions::FunctionBuilder;
+use indexmap::{map::Values, IndexMap};
+use indexmap::map::Iter;
 use nyar_error::{FileSpan, NyarError};
 use nyar_hir::{Identifier, NyarType, NyarValue};
 use wasm_encoder::{ConstExpr, GlobalSection, GlobalType, RefType, ValType};
+use crate::helpers::IndexedIterator;
 
+#[derive(Default)]
 pub struct GlobalBuilder {
+    items: IndexMap<String, GlobalItem>,
+}
+
+pub struct GlobalItem {
     pub(crate) name: Identifier,
     pub(crate) value: NyarValue,
 }
 
 impl GlobalBuilder {
+    pub fn insert(&mut self, item: GlobalItem) -> Option<GlobalItem> {
+        self.items.insert(item.name.to_string(), item)
+    }
+}
+
+impl<'i> IntoIterator for &'i GlobalBuilder {
+    type Item = ();
+    type IntoIter = IndexedIterator<'i, GlobalItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let a: Iter<String, GlobalItem> = self.items.iter()
+    }
+}
+
+impl GlobalItem {
     pub fn i32(name: Identifier, value: i32) -> Self {
         Self { name, value: NyarValue::I32(value) }
     }
