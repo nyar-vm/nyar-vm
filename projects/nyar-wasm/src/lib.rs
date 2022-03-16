@@ -1,16 +1,21 @@
+#![feature(associated_type_defaults)]
 // #![deny(missing_debug_implementations, missing_copy_implementations)]
 // #![warn(missing_docs, rustdoc::missing_crate_level_docs)]
 #![doc = include_str!("../readme.md")]
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 
-pub use crate::types::TypeBuilder;
-use crate::{builder::ModuleBuilder, functions::FunctionItem, modules::GlobalItem};
+use crate::{builder::ModuleBuilder, functions::FunctionItem};
+pub use crate::{
+    globals::{GlobalBuilder, GlobalItem},
+    types::TypeItem,
+};
 use nyar_hir::{Identifier, Symbol};
 pub use runner::run;
 use wasm_encoder::{Function, Instruction};
 
 mod builder;
+mod globals;
 pub mod helpers;
 mod modules;
 mod runner;
@@ -50,7 +55,7 @@ fn test() {
         body: body2.clone(),
     });
 
-    let module = module.build();
+    let module = module.build().unwrap();
     let wat = wasmprinter::print_bytes(&module).expect("A");
     println!("{}", wat);
     run(&module).unwrap();

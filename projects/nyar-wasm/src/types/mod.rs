@@ -1,43 +1,43 @@
+use crate::helpers::WasmBuilder;
 use indexmap::IndexMap;
+use nyar_error::NyarError;
+use nyar_hir::{FieldBuilder, Identifier, NyarType, NyarValue, StructureBuilder};
 use wasm_encoder::{FieldType, StorageType, SubType, TypeSection, ValType};
 
-pub enum TypeBuilder {
-    Function {
-        input: Vec<ValType>,
-        output: Vec<ValType>,
-    },
-    Structure {
-        fields: IndexMap<String, FieldType>,
-    },
-    Array {
-        raw: StorageType,
-    },
-    SubTyping {
-        sub: SubType
-    },
-    Rec {
-        rec: Vec<SubType>
-    },
+impl WasmBuilder<Vec<FieldType>> for StructureBuilder {
+    fn build(&self, store: &Self::Store) -> Result<Vec<FieldType>, NyarError> {
+        let fields = self.fields();
+        let mut fields = Vec::with_capacity(fields.len());
+        for (index, name, field) in self.fields() {
+            fields.push(field.build(store)?)
+        }
+        Ok(fields)
+    }
 }
 
-impl TypeBuilder {
-    pub fn build(&self, types: &mut TypeSection) {
+impl WasmBuilder<FieldType> for FieldBuilder {
+    fn build(&self, _: &Self::Store) -> Result<FieldType, NyarError> {
+        Ok(FieldType { element_type: StorageType::I8, mutable: true })
+    }
+}
+
+pub enum TypeItem {
+    Function { input: Vec<ValType>, output: Vec<ValType> },
+    Structure(StructureBuilder),
+    Array { raw: StorageType },
+    SubTyping { sub: SubType },
+    Rec { rec: Vec<SubType> },
+}
+
+impl TypeItem {
+    pub fn build(&self, types: &mut TypeSection) -> Result<(), NyarError> {
         match self {
-            TypeBuilder::Function { input, output } => {
-                types.function(input.iter().cloned(), output.iter().cloned())
-            }
-            TypeBuilder::Structure { fields } => {
-                types.struct_(fields.values().cloned())
-            }
-            TypeBuilder::Array { raw } => {
-                types.array(raw, true)
-            }
-            TypeBuilder::SubTyping { sub } => {
-                types.subtype(sub)
-            }
-            TypeBuilder::Rec { rec } => {
-                types.rec(rec.iter().cloned())
-            }
-        };
+            TypeItem::Function { input, output } => types.function(input.iter().cloned(), output.iter().cloned()),
+            TypeItem::Structure(v) => types.struct_(v.build(&())?),
+            TypeItem::Array { raw } => types.array(raw, true),
+            TypeItem::SubTyping { sub } => types.subtype(sub),
+            TypeItem::Rec { rec } => types.rec(rec.iter().cloned()),
+        }
+        Ok(())
     }
 }

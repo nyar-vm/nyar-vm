@@ -1,20 +1,17 @@
 use crate::{
     functions::{FunctionBuilder, FunctionItem},
-    modules::{GlobalBuilder, GlobalItem},
-    TypeBuilder,
+    globals::{GlobalBuilder, GlobalItem},
+    TypeItem,
 };
 use indexmap::IndexMap;
 use nyar_error::NyarError;
-use nyar_hir::Identifier;
 use wasm_encoder::{
-    ArrayType, CodeSection, CompositeType, ConstExpr, ExportKind, ExportSection, FieldType, Function, FunctionSection,
-    GlobalSection, GlobalType, Instruction, Module, RefType, StorageType, StructType, SubType, TableSection, TableType,
-    TypeSection, ValType,
+    CodeSection, ExportKind, ExportSection, GlobalSection, Module, RefType, TableSection, TableType, TypeSection, ValType,
 };
 
 pub struct ModuleBuilder {
     globals: GlobalBuilder,
-    types: IndexMap<String, TypeBuilder>,
+    types: IndexMap<String, TypeItem>,
     functions: FunctionBuilder,
 }
 
@@ -23,9 +20,9 @@ impl ModuleBuilder {
         let mut types = IndexMap::default();
         types.insert(
             "Func1".to_string(),
-            TypeBuilder::Function { input: vec![ValType::I32, ValType::I32], output: vec![ValType::I32] },
+            TypeItem::Function { input: vec![ValType::I32, ValType::I32], output: vec![ValType::I32] },
         );
-        types.insert("Func2".to_string(), TypeBuilder::Function { input: vec![ValType::I32], output: vec![ValType::I32] });
+        types.insert("Func2".to_string(), TypeItem::Function { input: vec![ValType::I32], output: vec![ValType::I32] });
 
         // let mut fields = IndexMap::default();
         // fields.insert("x".to_string(), FieldType { element_type: StorageType::I8, mutable: true });
@@ -49,12 +46,12 @@ impl ModuleBuilder {
         Self { globals: Default::default(), types, functions: Default::default() }
     }
 
-    fn build_types(&self) -> TypeSection {
+    fn build_types(&self) -> Result<TypeSection, NyarError> {
         let mut types = TypeSection::default();
         for (_, typing) in &self.types {
-            typing.build(&mut types)
+            typing.build(&mut types)?
         }
-        types
+        Ok(types)
     }
     pub fn insert_function(&mut self, function: FunctionItem) {
         self.functions.insert(function)
@@ -79,7 +76,7 @@ impl ModuleBuilder {
 
     fn build_global(&self) -> GlobalSection {
         let mut global = GlobalSection::default();
-        for value in self.globals.values() {
+        for (_, _, value) in self.globals.into_iter() {
             value.build(&mut global, &self.functions).unwrap();
         }
         global
@@ -95,16 +92,16 @@ impl ModuleBuilder {
         exports
     }
 
-    pub fn build(&self) -> Vec<u8> {
+    pub fn build(&self) -> Result<Vec<u8>, NyarError> {
         // https://webassembly.github.io/spec/core/binary/modules.html
         let mut module = Module::new();
         // The build order cannot be reversed!!!
-        module.section(&self.build_types());
+        module.section(&self.build_types()?);
         module.section(&self.functions.build());
         module.section(&self.build_tables());
         module.section(&self.build_global());
         module.section(&self.build_exports());
         module.section(&self.build_codes());
-        module.finish()
+        Ok(module.finish())
     }
 }
