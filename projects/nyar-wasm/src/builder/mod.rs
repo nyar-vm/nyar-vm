@@ -34,7 +34,7 @@ impl ModuleBuilder {
         // types.insert("utf8".to_string(), TypeBuilder::Array {
         //     raw: StorageType::I8,
         // });
-
+        //
         // types.insert("ST".to_string(), TypeBuilder::SubTyping {
         //     sub: SubType {
         //         is_final: false,

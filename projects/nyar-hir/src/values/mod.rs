@@ -1,11 +1,6 @@
-use crate::Identifier;
+use crate::{directory::NyarType, Identifier};
 
 pub mod structures;
-
-pub enum NyarType {
-    I32,
-    F32,
-}
 
 pub enum NyarValue {
     I32(i32),
