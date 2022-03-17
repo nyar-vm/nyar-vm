@@ -1,9 +1,9 @@
 use super::*;
-use nyar_hir::IndexedIterator;
+use crate::IndexedIterator;
 
 impl<'i> IntoIterator for &'i GlobalBuilder {
-    type Item = (usize, &'i str, &'i GlobalItem);
-    type IntoIter = IndexedIterator<'i, GlobalItem>;
+    type Item = (usize, &'i str, &'i NamedValue);
+    type IntoIter = IndexedIterator<'i, NamedValue>;
 
     fn into_iter(self) -> Self::IntoIter {
         IndexedIterator::new(&self.items)

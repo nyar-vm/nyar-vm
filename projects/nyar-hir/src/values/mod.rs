@@ -1,7 +1,7 @@
 use crate::{directory::NyarType, Identifier};
 
+pub mod globals;
 pub mod structures;
-
 pub enum NyarValue {
     I32(i32),
     I64(i64),

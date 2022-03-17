@@ -2,7 +2,6 @@ use nyar_error::FileSpan;
 use std::{
     fmt::{Display, Formatter},
     rc::Rc,
-    str::FromStr,
 };
 
 #[derive(Clone)]

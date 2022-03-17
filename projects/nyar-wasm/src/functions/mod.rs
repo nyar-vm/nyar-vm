@@ -1,6 +1,6 @@
 use indexmap::{map::Values, IndexMap};
 use nyar_error::NyarError;
-use wasm_encoder::{CodeSection, Function, FunctionSection};
+use wasm_encoder::{Function, FunctionSection};
 
 #[derive(Default)]
 pub struct FunctionBuilder {

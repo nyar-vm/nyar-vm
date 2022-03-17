@@ -1,17 +1,47 @@
-use crate::helpers::WasmBuilder;
-use indexmap::IndexMap;
+use crate::helpers::{WasmBuilder, WasmEmitter};
+
 use nyar_error::NyarError;
-use nyar_hir::{ArrayType, FieldBuilder, Identifier, NyarType, NyarValue, StructureType};
+use nyar_hir::{ArrayType, FieldBuilder, NyarType, StructureType};
 use wasm_encoder::{FieldType, StorageType, SubType, TypeSection, ValType};
 
-impl WasmBuilder<Vec<FieldType>> for StructureType {
-    fn build(&self, store: &Self::Store) -> Result<Vec<FieldType>, NyarError> {
+pub enum TypeItem {
+    Function { input: Vec<ValType>, output: Vec<ValType> },
+    Structure(StructureType),
+    Array(ArrayType),
+    SubTyping { sub: SubType },
+    Recursion(RecursiveType),
+}
+
+impl WasmEmitter for TypeItem {
+    type Receiver = TypeSection;
+    fn emit(&self, reviver: &mut Self::Receiver, store: &Self::Store) -> Result<(), NyarError> {
+        match self {
+            Self::Function { input, output } => {
+                reviver.function(input.iter().cloned(), output.iter().cloned());
+            }
+            Self::Structure(v) => v.emit(reviver, store)?,
+            Self::Array(v) => v.emit(reviver, store)?,
+            Self::SubTyping { sub } => {
+                reviver.subtype(sub);
+            }
+            Self::Recursion(v) => {
+                reviver.rec(v.rec.iter().cloned());
+            }
+        };
+        Ok(())
+    }
+}
+
+impl WasmEmitter for StructureType {
+    type Receiver = TypeSection;
+    fn emit(&self, reviver: &mut Self::Receiver, store: &Self::Store) -> Result<(), NyarError> {
         let fields = self.fields();
         let mut fields = Vec::with_capacity(fields.len());
         for (_, _, field) in self.fields() {
             fields.push(field.build(store)?)
         }
-        Ok(fields)
+        reviver.struct_(fields);
+        Ok(())
     }
 }
 
@@ -40,28 +70,14 @@ impl WasmBuilder<StorageType> for ArrayType {
         self.item_type().build(store)
     }
 }
+impl WasmEmitter for ArrayType {
+    type Receiver = TypeSection;
+    fn emit(&self, reviver: &mut Self::Receiver, store: &Self::Store) -> Result<(), NyarError> {
+        reviver.array(&self.build(store)?, true);
+        Ok(())
+    }
+}
 
 pub struct RecursiveType {
     rec: Vec<SubType>,
-}
-
-pub enum TypeItem {
-    Function { input: Vec<ValType>, output: Vec<ValType> },
-    Structure(StructureType),
-    Array(ArrayType),
-    SubTyping { sub: SubType },
-    Recursion(RecursiveType),
-}
-
-impl TypeItem {
-    pub fn build(&self, types: &mut TypeSection) -> Result<(), NyarError> {
-        match self {
-            TypeItem::Function { input, output } => types.function(input.iter().cloned(), output.iter().cloned()),
-            TypeItem::Structure(v) => types.struct_(v.build(&())?),
-            TypeItem::Array(v) => types.array(&v.build(&())?, true),
-            TypeItem::SubTyping { sub } => types.subtype(sub),
-            TypeItem::Recursion(v) => types.rec(v.rec.iter().cloned()),
-        };
-        Ok(())
-    }
 }

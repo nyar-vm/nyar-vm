@@ -5,28 +5,25 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 
-use crate::{builder::ModuleBuilder, functions::FunctionItem};
-pub use crate::{
-    globals::{GlobalBuilder, GlobalItem},
-    types::TypeItem,
-};
-use nyar_hir::{Identifier, Symbol};
+pub use crate::types::TypeItem;
+use crate::{functions::FunctionItem, modules::ModuleBuilder};
+use nyar_hir::{Identifier, NamedValue, Symbol};
 pub use runner::run;
 use wasm_encoder::{Function, Instruction};
 
 mod builder;
-mod globals;
 pub mod helpers;
 mod modules;
 mod runner;
 mod types;
 
 mod functions;
+mod values;
 
 #[test]
 fn test() {
     let mut module = ModuleBuilder::new();
-    module.insert_global(GlobalItem::i32(Identifier::from_iter(vec![Symbol::new("math"), Symbol::new("pi")]), 3));
+    module.insert_global(NamedValue::i32(Identifier::from_iter(vec![Symbol::new("math"), Symbol::new("pi")]), 3));
 
     let locals = vec![];
     let mut body1 = Function::new(locals);

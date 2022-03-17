@@ -8,6 +8,7 @@ pub use crate::{
     helpers::IndexedIterator,
     symbols::{Identifier, Symbol},
     values::{
+        globals::{GlobalBuilder, NamedValue},
         structures::{FieldBuilder, StructureType},
         NyarValue,
     },
