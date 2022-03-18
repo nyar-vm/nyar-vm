@@ -1,5 +1,6 @@
 use indexmap::{map::Values, IndexMap};
 use nyar_error::NyarError;
+use nyar_hir::{FunctionType, IndexedIterator};
 use wasm_encoder::{Function, FunctionSection};
 
 #[derive(Default)]
@@ -9,16 +10,16 @@ pub struct FunctionBuilder {
 pub struct FunctionItem {
     pub name: String,
     pub export: bool,
-    pub typing: String,
+    pub typing: FunctionType,
     pub body: Function,
 }
 
 impl<'i> IntoIterator for &'i FunctionBuilder {
-    type Item = &'i FunctionItem;
-    type IntoIter = Values<'i, String, FunctionItem>;
+    type Item = (usize, &'i str, &'i FunctionItem);
+    type IntoIter = IndexedIterator<'i, FunctionItem>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.items.values()
+        IndexedIterator::new(&self.items)
     }
 }
 

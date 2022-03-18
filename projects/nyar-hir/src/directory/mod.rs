@@ -1,3 +1,5 @@
+use crate::Identifier;
+
 pub enum NyarType {
     I8,
     I16,
@@ -13,8 +15,15 @@ pub struct ArrayType {
 }
 
 pub struct FunctionType {
-    input: Vec<NyarType>,
-    output: Vec<NyarType>,
+    pub name: Identifier,
+    pub input: Vec<NyarType>,
+    pub output: Vec<NyarType>,
+}
+
+impl FunctionType {
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
 }
 
 impl ArrayType {

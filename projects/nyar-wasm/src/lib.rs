@@ -6,10 +6,13 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 
 pub use crate::types::TypeItem;
-use crate::{functions::FunctionItem, modules::ModuleBuilder};
-use nyar_hir::{Identifier, NamedValue, Symbol};
+use crate::{
+    functions::FunctionItem,
+    modules::{DataItem, ModuleBuilder},
+};
+use nyar_hir::{FunctionType, Identifier, NamedValue, NyarType, Symbol};
 pub use runner::run;
-use wasm_encoder::{Function, Instruction};
+use wasm_encoder::{Function, Instruction, ValType};
 
 mod builder;
 pub mod helpers;
@@ -22,20 +25,30 @@ mod values;
 
 #[test]
 fn test() {
-    let mut module = ModuleBuilder::new();
+    let mut module = ModuleBuilder::default();
     module.insert_global(NamedValue::i32(Identifier::from_iter(vec![Symbol::new("math"), Symbol::new("pi")]), 3));
+    module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math1")]), "hello world".to_string()));
+    module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math2")]), "fuck world".to_string()));
 
-    let locals = vec![];
+    let locals = vec![(1, ValType::I32)];
     let mut body1 = Function::new(locals);
+    body1.instruction(&Instruction::I32Const(10));
+    body1.instruction(&Instruction::LocalSet(2));
     body1.instruction(&Instruction::LocalGet(0));
     body1.instruction(&Instruction::LocalGet(1));
+    body1.instruction(&Instruction::I32Add);
+    body1.instruction(&Instruction::LocalGet(2));
     body1.instruction(&Instruction::I32Add);
     body1.instruction(&Instruction::End);
 
     module.insert_function(FunctionItem {
         name: "add_ab".to_string(),
-        export: false,
-        typing: "Func".to_string(),
+        export: true,
+        typing: FunctionType {
+            name: Identifier::from_iter(vec![]),
+            input: vec![NyarType::I32, NyarType::I32],
+            output: vec![NyarType::I32],
+        },
         body: body1.clone(),
     });
 
@@ -48,7 +61,7 @@ fn test() {
     module.insert_function(FunctionItem {
         name: "add_ba".to_string(),
         export: true,
-        typing: "Func".to_string(),
+        typing: FunctionType { name: Identifier::from_iter(vec![]), input: vec![NyarType::I32], output: vec![NyarType::I32] },
         body: body2.clone(),
     });
 

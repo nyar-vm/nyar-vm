@@ -2,21 +2,22 @@ use nyar_error::FileSpan;
 use std::{
     fmt::{Display, Formatter},
     rc::Rc,
+    sync::Arc,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Identifier {
     path: Vec<Symbol>,
     span: FileSpan,
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Symbol {
-    inner: Rc<str>,
+    inner: Arc<str>,
 }
 
 impl Symbol {
     pub fn new(name: &str) -> Self {
-        Self { inner: Rc::from(name) }
+        Self { inner: Arc::from(name) }
     }
 }
 

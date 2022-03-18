@@ -2,6 +2,11 @@ use crate::{directory::NyarType, Identifier};
 
 pub mod globals;
 pub mod structures;
+
+#[cfg(feature = "wasm")]
+mod runtime;
+
+#[derive(Debug)]
 pub enum NyarValue {
     I32(i32),
     I64(i64),

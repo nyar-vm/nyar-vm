@@ -8,6 +8,7 @@ pub struct GlobalBuilder {
 }
 
 pub struct NamedValue {
+    constant: bool,
     name: Identifier,
     value: NyarValue,
 }
@@ -21,20 +22,24 @@ impl GlobalBuilder {
 impl NamedValue {
     /// Create a new [`i32`] value
     pub fn i32(name: Identifier, value: i32) -> Self {
-        Self { name, value: NyarValue::I32(value) }
+        Self { constant: false, name, value: NyarValue::I32(value) }
     }
     pub fn i64(name: Identifier, value: i32) -> Self {
-        Self { name, value: NyarValue::I32(value) }
+        Self { constant: false, name, value: NyarValue::I32(value) }
     }
     pub fn f32(name: Identifier, value: f32) -> Self {
-        Self { name, value: NyarValue::F32(value) }
+        Self { constant: false, name, value: NyarValue::F32(value) }
     }
     pub fn f64(name: Identifier, value: f32) -> Self {
-        Self { name, value: NyarValue::F32(value) }
+        Self { constant: false, name, value: NyarValue::F32(value) }
     }
     pub fn function(name: Identifier) -> Self {
-        Self { name: name.clone(), value: NyarValue::Function(name) }
+        Self { constant: false, name: name.clone(), value: NyarValue::Function(name) }
     }
+    pub fn mutable(&self) -> bool {
+        !self.constant
+    }
+
     pub fn value(&self) -> &NyarValue {
         &self.value
     }
