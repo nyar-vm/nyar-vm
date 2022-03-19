@@ -4,6 +4,7 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
+mod display;
 
 #[derive(Clone, Debug)]
 pub struct Identifier {
@@ -18,24 +19,6 @@ pub struct Symbol {
 impl Symbol {
     pub fn new(name: &str) -> Self {
         Self { inner: Arc::from(name) }
-    }
-}
-
-impl Display for Symbol {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.inner)
-    }
-}
-
-impl Display for Identifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for (i, symbol) in self.path.iter().enumerate() {
-            if i != 0 {
-                f.write_str("::")?;
-            }
-            f.write_str(&symbol.inner)?;
-        }
-        Ok(())
     }
 }
 

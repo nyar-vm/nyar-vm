@@ -1,13 +1,10 @@
-use crate::{
-    functions::FunctionBuilder,
-    helpers::{WasmBuilder, WasmEmitter},
-};
+use crate::helpers::{WasmBuilder, WasmEmitter};
 use nyar_error::NyarError;
-use nyar_hir::{GlobalBuilder, NamedValue, NyarValue};
+use nyar_hir::{FunctionRegister, GlobalBuilder, NamedValue, NyarValue};
 use wasm_encoder::{CodeSection, ConstExpr, Function, GlobalSection, GlobalType, Instruction, Module, ValType};
 
 impl WasmBuilder<GlobalSection> for GlobalBuilder {
-    type Store = FunctionBuilder;
+    type Store = FunctionRegister;
     fn build(&self, store: &Self::Store) -> Result<GlobalSection, NyarError> {
         let mut global = GlobalSection::default();
         for (_, _, value) in self.into_iter() {
@@ -19,7 +16,7 @@ impl WasmBuilder<GlobalSection> for GlobalBuilder {
 
 impl WasmEmitter for GlobalBuilder {
     type Receiver = Module;
-    type Store = FunctionBuilder;
+    type Store = FunctionRegister;
     fn emit(&self, reviver: &mut Self::Receiver, store: &Self::Store) -> Result<(), NyarError> {
         reviver.section(&self.build(store)?);
         Ok(())
@@ -27,12 +24,12 @@ impl WasmEmitter for GlobalBuilder {
 }
 
 pub trait WasmVariable {
-    fn emit_global(&self, reviver: &mut GlobalSection, store: &FunctionBuilder) -> Result<(), NyarError>;
-    fn emit_local_def(&self, reviver: &mut Function, store: &FunctionBuilder) -> Result<(), NyarError>;
+    fn emit_global(&self, reviver: &mut GlobalSection, store: &FunctionRegister) -> Result<(), NyarError>;
+    fn emit_local_def(&self, reviver: &mut Function, store: &FunctionRegister) -> Result<(), NyarError>;
 }
 
 impl WasmVariable for NamedValue {
-    fn emit_global(&self, m: &mut GlobalSection, fs: &FunctionBuilder) -> Result<(), NyarError> {
+    fn emit_global(&self, m: &mut GlobalSection, fs: &FunctionRegister) -> Result<(), NyarError> {
         match self.value() {
             NyarValue::I32(v) => {
                 m.global(GlobalType { val_type: ValType::I32, mutable: self.mutable() }, &ConstExpr::i32_const(*v))
@@ -54,7 +51,7 @@ impl WasmVariable for NamedValue {
         Ok(())
     }
 
-    fn emit_local_def(&self, f: &mut Function, store: &FunctionBuilder) -> Result<(), NyarError> {
+    fn emit_local_def(&self, f: &mut Function, store: &FunctionRegister) -> Result<(), NyarError> {
         // f.instruction(&Instruction::GlobalGet(10));
         // f.instruction(&Instruction::LocalSet(2));
 

@@ -2,7 +2,10 @@ use crate::helpers::{WasmBuilder, WasmEmitter};
 use indexmap::IndexMap;
 
 use nyar_error::NyarError;
-use nyar_hir::{ArrayType, FieldBuilder, FunctionType, Identifier, IndexedIterator, NyarType, StructureType};
+use nyar_hir::{
+    ArrayType, FieldBuilder, FunctionExternalItem, FunctionItem, FunctionType, Identifier, IndexedIterator, NyarType,
+    StructureType,
+};
 use wasm_encoder::{FieldType, StorageType, SubType, TypeSection, ValType};
 
 #[derive(Default)]
@@ -53,6 +56,20 @@ impl TypeItem {
     }
 }
 
+pub trait WasmFunction {
+    fn emit_function(&self, types: &mut TypeSection);
+}
+
+impl WasmFunction for FunctionItem {
+    fn emit_function(&self, types: &mut TypeSection) {
+        types.function(self.input.iter().map(|v| v.build(&()).unwrap()), self.output.iter().map(|v| v.build(&()).unwrap()));
+    }
+}
+impl WasmFunction for FunctionExternalItem {
+    fn emit_function(&self, types: &mut TypeSection) {
+        types.function(self.input.iter().map(|v| v.build(&()).unwrap()), self.output.iter().map(|v| v.build(&()).unwrap()));
+    }
+}
 impl WasmEmitter for FunctionType {
     type Receiver = TypeSection;
     fn emit(&self, reviver: &mut Self::Receiver, store: &Self::Store) -> Result<(), NyarError> {

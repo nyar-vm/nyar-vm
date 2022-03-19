@@ -14,6 +14,7 @@ exclude = ["package.json", "tests/**"]
 indexmap = "2.1.0"
 wasmprinter = "0.2.75"
 wasm-encoder = "0.38.1"
+wasmtime-wasi = "15.0.1"
 
 [dependencies.nyar-error]
 version = "0.1.*"

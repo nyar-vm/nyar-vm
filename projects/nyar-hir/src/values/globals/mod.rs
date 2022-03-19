@@ -8,36 +8,41 @@ pub struct GlobalBuilder {
 }
 
 pub struct NamedValue {
-    constant: bool,
-    name: Identifier,
-    value: NyarValue,
+    pub namepath: Identifier,
+    pub constant: bool,
+    pub export: bool,
+    pub value: NyarValue,
 }
 
 impl GlobalBuilder {
     pub fn insert(&mut self, item: NamedValue) -> Option<NamedValue> {
-        self.items.insert(item.name.to_string(), item)
+        self.items.insert(item.namepath.to_string(), item)
     }
 }
 
 impl NamedValue {
     /// Create a new [`i32`] value
     pub fn i32(name: Identifier, value: i32) -> Self {
-        Self { constant: false, name, value: NyarValue::I32(value) }
+        Self { namepath: name, value: NyarValue::I32(value), constant: false, export: false }
     }
     pub fn i64(name: Identifier, value: i32) -> Self {
-        Self { constant: false, name, value: NyarValue::I32(value) }
+        Self { namepath: name, value: NyarValue::I32(value), constant: false, export: false }
     }
     pub fn f32(name: Identifier, value: f32) -> Self {
-        Self { constant: false, name, value: NyarValue::F32(value) }
+        Self { namepath: name, value: NyarValue::F32(value), constant: false, export: false }
     }
     pub fn f64(name: Identifier, value: f32) -> Self {
-        Self { constant: false, name, value: NyarValue::F32(value) }
+        Self { namepath: name, value: NyarValue::F32(value), constant: false, export: false }
     }
     pub fn function(name: Identifier) -> Self {
-        Self { constant: false, name: name.clone(), value: NyarValue::Function(name) }
+        Self { namepath: name.clone(), value: NyarValue::Function(name), constant: false, export: false }
     }
     pub fn mutable(&self) -> bool {
         !self.constant
+    }
+
+    pub fn with_public(self) -> Self {
+        Self { export: true, ..self }
     }
 
     pub fn value(&self) -> &NyarValue {
