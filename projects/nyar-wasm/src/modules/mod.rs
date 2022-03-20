@@ -10,13 +10,14 @@ use nyar_hir::{
 };
 
 use crate::{
+    functions::WasmFunctionBody,
     types::{RecursiveType, TypeBuilder, WasmFunction},
     values::WasmVariable,
 };
 use wasm_encoder::{
     CodeSection, ConstExpr, DataSection, DataSegment, ElementSection, Elements, EntityType, ExportKind, ExportSection,
-    GlobalSection, ImportSection, MemorySection, MemoryType, Module, RefType, StartSection, SubType, TableSection, TableType,
-    TypeSection, ValType,
+    FunctionSection, GlobalSection, ImportSection, MemorySection, MemoryType, Module, RefType, StartSection, SubType,
+    TableSection, TableType, TypeSection, ValType,
 };
 
 #[derive(Default)]
@@ -117,7 +118,9 @@ impl ModuleBuilder {
     }
     fn build_import(&self, m: &mut Module) {
         let mut imports = ImportSection::default();
-        imports.import("wasi_snapshot_preview1", "fd_write", EntityType::Function(0));
+        for (index, _, func) in self.functions.get_externals() {
+            imports.import(&func.module.to_string(), &func.field.to_string(), EntityType::Function(index as u32));
+        }
         m.section(&imports);
     }
     fn build_types(&self, m: &mut Module) {
@@ -133,14 +136,20 @@ impl ModuleBuilder {
         }
         m.section(&types);
     }
-    fn build_codes(&self) -> CodeSection {
+    fn build_functions(&self, m: &mut Module) {
+        let mut imports = FunctionSection::default();
+        for (i, _, _) in self.functions.get_natives() {
+            imports.function(i as u32);
+        }
+        m.section(&imports);
+    }
+    fn build_codes(&self, m: &mut Module) -> Result<(), NyarError> {
         let mut codes = CodeSection::default();
         for (_, _, func) in self.functions.get_natives() {
-            func.body.emit_function(&mut codes);
-
-            codes.function(&func.body);
+            codes.function(&func.body.emit_function_body()?);
         }
-        codes
+        m.section(&codes);
+        Ok(())
     }
 
     fn build_memory(&self, m: &mut Module) {
@@ -187,14 +196,14 @@ impl ModuleBuilder {
         let mut module = Module::new();
         self.build_types(&mut module);
         self.build_import(&mut module);
-        module.section(&self.functions.build());
+        self.build_functions(&mut module);
         self.build_tables(&mut module);
         self.build_memory(&mut module);
         self.build_globals(&mut module);
         self.build_exports(&mut module);
         self.build_start(&mut module);
         self.build_elements(&mut module);
-        module.section(&self.build_codes());
+        self.build_codes(&mut module)?;
         self.build_data(&mut module);
         Ok(module.finish())
     }

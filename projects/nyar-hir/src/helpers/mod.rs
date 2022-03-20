@@ -33,4 +33,7 @@ impl<'i, T> IndexedIterator<'i, T> {
     pub fn new(map: &'i IndexMap<String, T>) -> Self {
         Self { iter: map.iter(), index: 0 }
     }
+    pub fn with_index(self, index: usize) -> Self {
+        Self { index, ..self }
+    }
 }

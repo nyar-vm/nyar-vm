@@ -7,7 +7,7 @@
 
 use crate::modules::{DataItem, ModuleBuilder};
 pub use crate::types::TypeItem;
-use nyar_hir::{FunctionItem, FunctionType, Identifier, NamedValue, NyarType, Symbol};
+use nyar_hir::{FunctionExternalItem, FunctionItem, FunctionType, Identifier, NamedValue, NyarType, Operation, Symbol};
 pub use runner::run;
 use wasm_encoder::{Function, Instruction, ValType};
 
@@ -29,53 +29,40 @@ fn test() {
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math3")]), "fuck world 中文1".to_string()));
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math4")]), "fuck world 中文2".to_string()));
 
-    let locals = vec![(1, ValType::I32)];
-    let mut body1 = Function::new(locals);
-    body1.instruction(&Instruction::I32Const(10));
-    body1.instruction(&Instruction::LocalSet(2));
-    body1.instruction(&Instruction::LocalGet(0));
-    body1.instruction(&Instruction::LocalGet(1));
-    body1.instruction(&Instruction::I32Add);
-    body1.instruction(&Instruction::LocalGet(2));
-    body1.instruction(&Instruction::I32Add);
-    body1.instruction(&Instruction::End);
+    module.insert_function(
+        FunctionItem::new(Identifier::from_iter(vec![Symbol::new("add_ab")]))
+            .with_inputs(vec![NyarType::I32, NyarType::I32])
+            .with_outputs(vec![NyarType::I32])
+            .with_operations(vec![Operation::I32Add {
+                lhs: Box::new(Operation::LocalGet { index: 0 }),
+                rhs: Box::new(Operation::LocalGet { index: 1 }),
+            }])
+            .with_public(),
+    );
 
-    module.insert_function(FunctionItem {
-        namepath: "add_ab".to_string(),
-        export: true,
-        entry: false,
-        typing: FunctionType {
-            name: Identifier::from_iter(vec![]),
-            input: vec![NyarType::I32, NyarType::I32],
-            output: vec![NyarType::I32],
-        },
-        body: body1.clone(),
-    });
+    module.insert_function(
+        FunctionItem::new(Identifier::from_iter(vec![Symbol::new("add_ba")]))
+            .with_inputs(vec![NyarType::I32])
+            .with_outputs(vec![NyarType::I32])
+            .with_operations(vec![Operation::I32Add {
+                lhs: Box::new(Operation::GlobalGet { index: 0 }),
+                rhs: Box::new(Operation::LocalGet { index: 0 }),
+            }])
+            .with_public(),
+    );
 
-    let locals = vec![];
-    let mut body2 = Function::new(locals);
-    body2.instruction(&Instruction::LocalGet(0));
-    body2.instruction(&Instruction::GlobalGet(0));
-    body2.instruction(&Instruction::I32Add);
-    body2.instruction(&Instruction::End);
-    module.insert_function(FunctionItem {
-        namepath: "add_ba".to_string(),
-        export: true,
-        entry: false,
-        typing: FunctionType { name: Identifier::from_iter(vec![]), input: vec![NyarType::I32], output: vec![NyarType::I32] },
-        body: body2.clone(),
-    });
+    module.insert_external(
+        FunctionExternalItem::new("wasi_snapshot_preview1", "fd_write")
+            .with_input(vec![NyarType::I32, NyarType::I32, NyarType::I32, NyarType::I32])
+            .with_output(vec![NyarType::I32]),
+    );
 
-    let locals = vec![];
-    let mut body2 = Function::new(locals);
-    body2.instruction(&Instruction::End);
-    module.insert_function(FunctionItem {
-        namepath: "_start".to_string(),
-        export: false,
-        entry: false,
-        typing: FunctionType { name: Identifier::from_iter(vec![]), input: vec![], output: vec![] },
-        body: body2.clone(),
-    });
+    module.insert_function(
+        FunctionItem::new(Identifier::from_iter(vec![Symbol::new("_start")]))
+            .with_inputs(vec![])
+            .with_outputs(vec![])
+            .with_operations(vec![]),
+    );
 
     let module = module.build().unwrap();
     let wat = wasmprinter::print_bytes(&module).expect("A");

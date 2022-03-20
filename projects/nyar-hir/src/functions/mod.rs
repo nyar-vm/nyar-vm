@@ -55,23 +55,35 @@ impl FunctionItem {
         self.output = outputs.into_iter().collect();
         self
     }
+    pub fn with_operations<I>(mut self, operations: I) -> Self
+    where
+        I: IntoIterator<Item = Operation>,
+    {
+        self.body.codes = operations.into_iter().collect();
+        self
+    }
 }
 
 #[derive(Default)]
 pub struct FunctionBody {
-    codes: Vec<Instruction>,
+    codes: Vec<Operation>,
 }
 
 impl<'i> IntoIterator for &'i FunctionBody {
-    type Item = &'i Instruction;
-    type IntoIter = Iter<'i, Instruction>;
+    type Item = &'i Operation;
+    type IntoIter = Iter<'i, Operation>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.codes.iter()
     }
 }
 
-pub enum Instruction {}
+pub enum Operation {
+    GlobalGet { index: u32 },
+    LocalGet { index: u32 },
+    LocalSet { index: u32 },
+    I32Add { lhs: Box<Operation>, rhs: Box<Operation> },
+}
 
 impl FunctionRegister {
     pub fn get_id(&self, name: &str) -> Result<usize, NyarError> {
@@ -89,12 +101,12 @@ impl FunctionRegister {
         self.native.insert(item.namepath.to_string(), item);
     }
     pub fn get_natives(&self) -> IndexedIterator<FunctionItem> {
-        IndexedIterator::new(&self.native)
+        IndexedIterator::new(&self.native).with_index(self.external.len())
     }
     pub fn add_external(&mut self, item: FunctionExternalItem) {
         self.external.insert(item.name(), item);
     }
     pub fn get_externals(&self) -> IndexedIterator<FunctionExternalItem> {
-        IndexedIterator::new(&self.external)
+        IndexedIterator::new(&self.external).with_index(self.native.len())
     }
 }
