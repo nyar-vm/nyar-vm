@@ -1,4 +1,4 @@
-use crate::{FunctionType, Identifier, IndexedIterator, NyarType, Symbol};
+use crate::{FunctionType, Identifier, IndexedIterator, NyarType, NyarValue, Symbol};
 use indexmap::{map::Values, IndexMap};
 use nyar_error::NyarError;
 use std::slice::Iter;
@@ -78,11 +78,23 @@ impl<'i> IntoIterator for &'i FunctionBody {
     }
 }
 
+#[derive(Debug)]
 pub enum Operation {
     GlobalGet { index: u32 },
     LocalGet { index: u32 },
     LocalSet { index: u32 },
-    I32Add { lhs: Box<Operation>, rhs: Box<Operation> },
+    Constant { value: NyarValue },
+    NativeSum { native: NativeDataType, terms: Vec<Operation> },
+    NativeEqual { native: NativeDataType, terms: Vec<Operation> },
+    NativeEqualZero { native: NativeDataType, term: Box<Operation> },
+}
+
+#[derive(Debug)]
+pub enum NativeDataType {
+    I32,
+    I64,
+    F32,
+    F64,
 }
 
 impl FunctionRegister {
@@ -107,6 +119,6 @@ impl FunctionRegister {
         self.external.insert(item.name(), item);
     }
     pub fn get_externals(&self) -> IndexedIterator<FunctionExternalItem> {
-        IndexedIterator::new(&self.external).with_index(self.native.len())
+        IndexedIterator::new(&self.external)
     }
 }

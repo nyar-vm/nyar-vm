@@ -156,6 +156,7 @@ impl WasmBuilder<StorageType> for ArrayType {
         self.item_type().build(store)
     }
 }
+
 impl WasmEmitter for ArrayType {
     type Receiver = TypeSection;
     fn emit(&self, reviver: &mut Self::Receiver, store: &Self::Store) -> Result<(), NyarError> {

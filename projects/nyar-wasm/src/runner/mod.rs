@@ -34,7 +34,7 @@ pub fn run(wasm: &[u8]) -> wasmtime::Result<()> {
     // }
 
     let hello = instance.get_typed_func::<(i32, i32), u32>(&mut store, "add_ab").expect("nothing");
-    let output = hello.call(&mut store, (0, 0))?;
+    let output = hello.call(&mut store, (i32::MAX, i32::MAX))?;
     println!("{:#?}", output);
 
     let hello = instance.get_func(&mut store, "add_ba").expect("nothing");

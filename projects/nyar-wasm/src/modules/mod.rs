@@ -4,20 +4,17 @@ use crate::{
 };
 use indexmap::IndexMap;
 use nyar_error::NyarError;
-use nyar_hir::{
-    ArrayType, FunctionExternalItem, FunctionItem, FunctionRegister, GlobalBuilder, Identifier, NamedValue, NyarType,
-    StructureType, Symbol,
-};
+use nyar_hir::{FunctionExternalItem, FunctionItem, FunctionRegister, GlobalBuilder, Identifier, NamedValue};
 
 use crate::{
     functions::WasmFunctionBody,
-    types::{RecursiveType, TypeBuilder, WasmFunction},
+    types::{TypeBuilder, WasmFunction},
     values::WasmVariable,
 };
 use wasm_encoder::{
-    CodeSection, ConstExpr, DataSection, DataSegment, ElementSection, Elements, EntityType, ExportKind, ExportSection,
-    FunctionSection, GlobalSection, ImportSection, MemorySection, MemoryType, Module, RefType, StartSection, SubType,
-    TableSection, TableType, TypeSection, ValType,
+    CodeSection, ConstExpr, DataSection, ElementSection, Elements, EntityType, ExportKind, ExportSection, FunctionSection,
+    GlobalSection, ImportSection, MemorySection, MemoryType, Module, RefType, StartSection, TableSection, TableType,
+    TypeSection,
 };
 
 #[derive(Default)]
@@ -125,11 +122,11 @@ impl ModuleBuilder {
     }
     fn build_types(&self, m: &mut Module) {
         let mut types = TypeSection::default();
-        for (_, _, typing) in self.functions.get_natives() {
-            typing.emit_function(&mut types)
-        }
         for (_, _, func) in self.functions.get_externals() {
             func.emit_function(&mut types)
+        }
+        for (_, _, typing) in self.functions.get_natives() {
+            typing.emit_function(&mut types)
         }
         for (_, _, typing) in &self.types {
             typing.emit(&mut types, &()).unwrap()

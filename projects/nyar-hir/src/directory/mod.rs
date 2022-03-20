@@ -14,18 +14,6 @@ pub struct ArrayType {
     item: NyarType,
 }
 
-pub struct FunctionType {
-    pub name: Identifier,
-    pub input: Vec<NyarType>,
-    pub output: Vec<NyarType>,
-}
-
-impl FunctionType {
-    pub fn name(&self) -> &Identifier {
-        &self.name
-    }
-}
-
 impl ArrayType {
     pub fn item_type(&self) -> &NyarType {
         &self.item

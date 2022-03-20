@@ -31,6 +31,9 @@ pub trait WasmVariable {
 impl WasmVariable for NamedValue {
     fn emit_global(&self, m: &mut GlobalSection, fs: &FunctionRegister) -> Result<(), NyarError> {
         match self.value() {
+            NyarValue::U32(v) => {
+                m.global(GlobalType { val_type: ValType::I32, mutable: self.mutable() }, &ConstExpr::i32_const(*v as i32))
+            }
             NyarValue::I32(v) => {
                 m.global(GlobalType { val_type: ValType::I32, mutable: self.mutable() }, &ConstExpr::i32_const(*v))
             }

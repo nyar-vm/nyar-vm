@@ -7,7 +7,10 @@
 
 use crate::modules::{DataItem, ModuleBuilder};
 pub use crate::types::TypeItem;
-use nyar_hir::{FunctionExternalItem, FunctionItem, FunctionType, Identifier, NamedValue, NyarType, Operation, Symbol};
+use nyar_hir::{
+    FunctionExternalItem, FunctionItem, FunctionType, Identifier, NamedValue, NativeDataType, NyarType, NyarValue, Operation,
+    Symbol,
+};
 pub use runner::run;
 use wasm_encoder::{Function, Instruction, ValType};
 
@@ -33,9 +36,13 @@ fn test() {
         FunctionItem::new(Identifier::from_iter(vec![Symbol::new("add_ab")]))
             .with_inputs(vec![NyarType::I32, NyarType::I32])
             .with_outputs(vec![NyarType::I32])
-            .with_operations(vec![Operation::I32Add {
-                lhs: Box::new(Operation::LocalGet { index: 0 }),
-                rhs: Box::new(Operation::LocalGet { index: 1 }),
+            .with_operations(vec![Operation::NativeSum {
+                native: NativeDataType::I32,
+                terms: vec![
+                    Operation::LocalGet { index: 0 },
+                    Operation::LocalGet { index: 1 },
+                    Operation::Constant { value: NyarValue::I32(17) },
+                ],
             }])
             .with_public(),
     );
@@ -44,9 +51,9 @@ fn test() {
         FunctionItem::new(Identifier::from_iter(vec![Symbol::new("add_ba")]))
             .with_inputs(vec![NyarType::I32])
             .with_outputs(vec![NyarType::I32])
-            .with_operations(vec![Operation::I32Add {
-                lhs: Box::new(Operation::GlobalGet { index: 0 }),
-                rhs: Box::new(Operation::LocalGet { index: 0 }),
+            .with_operations(vec![Operation::NativeSum {
+                native: NativeDataType::I32,
+                terms: vec![Operation::GlobalGet { index: 0 }, Operation::LocalGet { index: 0 }],
             }])
             .with_public(),
     );
