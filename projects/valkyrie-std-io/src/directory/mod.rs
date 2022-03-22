@@ -5,7 +5,7 @@ pub struct ValkyrieDirectory {
 }
 
 impl ValkyrieDirectory {
-    // parent returns the parent directory of the current directory.
+    // parent returns the parent types of the current types.
     pub fn parent(&self) -> Option<ValkyrieDirectory> {
         self._wrap.parent().map(|p| ValkyrieDirectory { _wrap: p.to_path_buf() })
     }

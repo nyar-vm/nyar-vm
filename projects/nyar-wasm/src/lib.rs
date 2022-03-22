@@ -6,13 +6,11 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 
 use crate::modules::{DataItem, ModuleBuilder};
-pub use crate::types::TypeItem;
 use nyar_hir::{
-    FunctionExternalItem, FunctionItem, FunctionType, Identifier, NamedValue, NativeDataType, NyarType, NyarValue, Operation,
-    Symbol,
+    ArrayType, FieldType, FunctionExternalItem, FunctionItem, Identifier, NamedValue, NativeDataType, NyarType, NyarValue,
+    Operation, StructureType, Symbol,
 };
 pub use runner::run;
-use wasm_encoder::{Function, Instruction, ValType};
 
 mod builder;
 pub mod helpers;
@@ -31,6 +29,13 @@ fn test() {
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math2")]), "fuck world 中文".to_string()));
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math3")]), "fuck world 中文1".to_string()));
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math4")]), "fuck world 中文2".to_string()));
+
+    module.insert_type(StructureType::new(Identifier::from_iter(vec![Symbol::new("Point")])).with_fields(vec![
+        FieldType::new(Symbol::new("x"), NyarValue::F32(0.0)),
+        FieldType::new(Symbol::new("y"), NyarValue::F32(0.0)),
+    ]));
+
+    module.insert_type(ArrayType::new(Identifier::from_iter(vec![Symbol::new("Bytes")]), NyarType::I32));
 
     module.insert_function(
         FunctionItem::new(Identifier::from_iter(vec![Symbol::new("add_ab")]))

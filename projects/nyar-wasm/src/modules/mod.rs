@@ -1,16 +1,11 @@
-use crate::{
-    helpers::{WasmBuilder, WasmEmitter},
-    TypeItem,
-};
+use crate::helpers::WasmEmitter;
 use indexmap::IndexMap;
 use nyar_error::NyarError;
-use nyar_hir::{FunctionExternalItem, FunctionItem, FunctionRegister, GlobalBuilder, Identifier, NamedValue};
-
-use crate::{
-    functions::WasmFunctionBody,
-    types::{TypeBuilder, WasmFunction},
-    values::WasmVariable,
+use nyar_hir::{
+    FunctionExternalItem, FunctionItem, FunctionRegister, GlobalBuilder, Identifier, NamedValue, TypeBuilder, TypeItem,
 };
+
+use crate::{functions::WasmFunctionBody, types::WasmFunction, values::WasmVariable};
 use wasm_encoder::{
     CodeSection, ConstExpr, DataSection, ElementSection, Elements, EntityType, ExportKind, ExportSection, FunctionSection,
     GlobalSection, ImportSection, MemorySection, MemoryType, Module, RefType, StartSection, TableSection, TableType,
@@ -60,19 +55,12 @@ impl ModuleBuilder {
         //     raw: StorageType::I8,
         // });
         //
-        // types.insert("ST".to_string(), TypeBuilder::SubTyping {
-        //     sub: SubType {
-        //         is_final: false,
-        //         supertype_idx: None,
-        //         composite_type: CompositeType::Struct(StructType { fields: Box::new([FieldType { element_type: StorageType::I8, mutable: false }]) }),
-        //     },
-        // });
 
         Self { memory_pages: memory, ..Default::default() }
     }
 
-    pub fn insert_type(&mut self, ty: TypeItem) -> Option<TypeItem> {
-        self.types.insert(ty)
+    pub fn insert_type<T: Into<TypeItem>>(&mut self, t: T) -> Option<TypeItem> {
+        self.types.insert(t.into())
     }
     pub fn insert_function(&mut self, f: FunctionItem) {
         self.functions.add_native(f)

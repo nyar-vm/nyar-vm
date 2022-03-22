@@ -1,7 +1,6 @@
-use crate::{directory::NyarType, Identifier};
+use crate::{types::NyarType, Identifier};
 
 pub mod globals;
-pub mod structures;
 
 #[cfg(feature = "wasm")]
 mod runtime;

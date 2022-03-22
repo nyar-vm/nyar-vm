@@ -23,7 +23,7 @@ path = "../nyar-error"
 [dependencies.nyar-hir]
 version = "0.2.*"
 path = "../nyar-hir"
-features = ["wasm"]
+features = []
 
 [dependencies.wasmtime]
 version = "15.0.1"

@@ -1,5 +1,5 @@
-use crate::{FunctionType, Identifier, IndexedIterator, NyarType, NyarValue, Symbol};
-use indexmap::{map::Values, IndexMap};
+use crate::{Identifier, IndexedIterator, NyarType, NyarValue, Symbol};
+use indexmap::IndexMap;
 use nyar_error::NyarError;
 use std::slice::Iter;
 

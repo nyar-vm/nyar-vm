@@ -1,7 +1,6 @@
 use nyar_error::FileSpan;
 use std::{
     fmt::{Display, Formatter},
-    rc::Rc,
     sync::Arc,
 };
 mod display;
