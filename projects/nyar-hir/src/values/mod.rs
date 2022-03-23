@@ -13,6 +13,9 @@ pub enum NyarValue {
     F32(f32),
     F64(f64),
     Function(Identifier),
+    Structure,
+    Array,
+    Any,
 }
 
 impl NyarValue {
@@ -24,6 +27,9 @@ impl NyarValue {
             NyarValue::F32(_) => NyarType::F32,
             NyarValue::F64(_) => NyarType::F32,
             NyarValue::Function(_) => NyarType::I32,
+            NyarValue::Structure => NyarType::Structure,
+            NyarValue::Array => NyarType::Array,
+            NyarValue::Any => NyarType::Any,
         }
     }
 }

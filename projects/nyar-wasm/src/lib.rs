@@ -7,8 +7,8 @@
 
 use crate::modules::{DataItem, ModuleBuilder};
 use nyar_hir::{
-    ArrayType, FieldType, FunctionExternalItem, FunctionItem, Identifier, NamedValue, NativeDataType, NyarType, NyarValue,
-    Operation, StructureType, Symbol,
+    ArrayType, ExternalType, FieldType, FunctionItem, Identifier, NamedValue, NativeDataType, NyarType, NyarValue, Operation,
+    StructureType, Symbol,
 };
 pub use runner::run;
 
@@ -30,9 +30,12 @@ fn test() {
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math3")]), "fuck world 中文1".to_string()));
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math4")]), "fuck world 中文2".to_string()));
 
-    module.insert_type(StructureType::new(Identifier::from_iter(vec![Symbol::new("Point")])).with_fields(vec![
-        FieldType::new(Symbol::new("x"), NyarValue::F32(0.0)),
-        FieldType::new(Symbol::new("y"), NyarValue::F32(0.0)),
+    module.insert_type(StructureType::new(Identifier::from_iter(vec![Symbol::new("Stable")])).with_fields(vec![
+        FieldType::new(Symbol::new("a"), NyarValue::F32(2.0)),
+        FieldType::new(Symbol::new("b"), NyarValue::I32(1)),
+        FieldType::new(Symbol::new("c"), NyarValue::Any),
+        FieldType::new(Symbol::new("d"), NyarValue::Structure),
+        FieldType::new(Symbol::new("e"), NyarValue::Array),
     ]));
 
     module.insert_type(ArrayType::new(Identifier::from_iter(vec![Symbol::new("Bytes")]), NyarType::I32));
@@ -64,7 +67,7 @@ fn test() {
     );
 
     module.insert_external(
-        FunctionExternalItem::new("wasi_snapshot_preview1", "fd_write")
+        ExternalType::new("wasi_snapshot_preview1", "fd_write")
             .with_input(vec![NyarType::I32, NyarType::I32, NyarType::I32, NyarType::I32])
             .with_output(vec![NyarType::I32]),
     );
@@ -76,8 +79,10 @@ fn test() {
             .with_operations(vec![]),
     );
 
-    let module = module.build().unwrap();
-    let wat = wasmprinter::print_bytes(&module).expect("A");
+    let wast = module.build_module().unwrap().encode().unwrap();
+    let wat = wasmprinter::print_bytes(&wast).expect("A");
     println!("{}", wat);
+
+    let module = module.build().unwrap();
     run(&module).unwrap();
 }

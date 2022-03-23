@@ -80,6 +80,15 @@ impl WasmOperation for Operation {
                     NyarValue::Function(_) => {
                         panic!()
                     }
+                    NyarValue::Any => {
+                        panic!()
+                    }
+                    NyarValue::Structure => {
+                        panic!()
+                    }
+                    NyarValue::Array => {
+                        panic!()
+                    }
                 };
             }
         }

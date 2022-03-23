@@ -4,7 +4,7 @@ mod symbols;
 mod types;
 mod values;
 pub use crate::{
-    functions::{FunctionBody, FunctionExternalItem, FunctionItem, FunctionRegister, NativeDataType, Operation},
+    functions::{ExternalType, FunctionBody, FunctionItem, FunctionRegister, NativeDataType, Operation},
     helpers::IndexedIterator,
     symbols::{Identifier, Symbol},
     types::{

@@ -10,11 +10,11 @@ pub mod resolver;
 #[derive(Default)]
 pub struct FunctionRegister {
     native: IndexMap<String, FunctionItem>,
-    external: IndexMap<String, FunctionExternalItem>,
+    external: IndexMap<String, ExternalType>,
 }
 
 /// `@ffi("module", "field")`
-pub struct FunctionExternalItem {
+pub struct ExternalType {
     pub module: Symbol,
     pub field: Symbol,
     pub input: Vec<NyarType>,
@@ -115,10 +115,10 @@ impl FunctionRegister {
     pub fn get_natives(&self) -> IndexedIterator<FunctionItem> {
         IndexedIterator::new(&self.native).with_index(self.external.len())
     }
-    pub fn add_external(&mut self, item: FunctionExternalItem) {
+    pub fn add_external(&mut self, item: ExternalType) {
         self.external.insert(item.name(), item);
     }
-    pub fn get_externals(&self) -> IndexedIterator<FunctionExternalItem> {
+    pub fn get_externals(&self) -> IndexedIterator<ExternalType> {
         IndexedIterator::new(&self.external)
     }
 }

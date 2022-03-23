@@ -1,13 +1,13 @@
 use super::*;
 
-impl FunctionExternalItem {
+impl ExternalType {
     pub fn name(&self) -> String {
         format!("{}.{}", self.module, self.field)
     }
 }
 
-impl FunctionExternalItem {
-    pub fn new(module: &str, field: &str) -> FunctionExternalItem {
+impl ExternalType {
+    pub fn new(module: &str, field: &str) -> ExternalType {
         Self { module: Symbol::new(module), field: Symbol::new(field), input: vec![], output: vec![] }
     }
     pub fn with_input<I>(mut self, inputs: I) -> Self

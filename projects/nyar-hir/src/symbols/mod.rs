@@ -7,12 +7,18 @@ mod display;
 
 #[derive(Clone, Debug)]
 pub struct Identifier {
-    path: Vec<Symbol>,
-    span: FileSpan,
+    pub path: Vec<Symbol>,
+    pub span: FileSpan,
 }
 #[derive(Clone, Debug)]
 pub struct Symbol {
     inner: Arc<str>,
+}
+
+impl AsRef<str> for Symbol {
+    fn as_ref(&self) -> &str {
+        self.inner.as_ref()
+    }
 }
 
 impl Symbol {

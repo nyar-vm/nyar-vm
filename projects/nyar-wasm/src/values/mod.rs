@@ -50,6 +50,15 @@ impl WasmVariable for NamedValue {
                 let id = fs.get_id(&v.to_string())?;
                 m.global(GlobalType { val_type: ValType::FUNCREF, mutable: true }, &ConstExpr::ref_func(id as u32))
             }
+            NyarValue::Any => {
+                panic!()
+            }
+            NyarValue::Structure => {
+                panic!()
+            }
+            NyarValue::Array => {
+                panic!()
+            }
         };
         Ok(())
     }

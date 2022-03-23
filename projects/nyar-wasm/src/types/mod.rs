@@ -1,8 +1,8 @@
 use crate::helpers::{WasmBuilder, WasmDefineType, WasmEmitter};
 
 use nyar_error::NyarError;
-use nyar_hir::{ArrayType, FunctionExternalItem, FunctionItem, NyarType, StructureType, TypeItem};
-use wasm_encoder::{FieldType, StorageType, SubType, TypeSection, ValType};
+use nyar_hir::{ArrayType, ExternalType, FunctionItem, NyarType, StructureType, TypeItem};
+use wasm_encoder::{FieldType, HeapType, RefType, StorageType, SubType, TypeSection, ValType};
 
 pub trait WasmFunction {
     fn emit_function(&self, types: &mut TypeSection);
@@ -13,7 +13,8 @@ impl WasmFunction for FunctionItem {
         types.function(self.input.iter().map(|v| v.build(&()).unwrap()), self.output.iter().map(|v| v.build(&()).unwrap()));
     }
 }
-impl WasmFunction for FunctionExternalItem {
+
+impl WasmFunction for ExternalType {
     fn emit_function(&self, types: &mut TypeSection) {
         types.function(self.input.iter().map(|v| v.build(&()).unwrap()), self.output.iter().map(|v| v.build(&()).unwrap()));
     }
@@ -51,32 +52,33 @@ impl WasmEmitter for StructureType {
 
 impl WasmBuilder<FieldType> for nyar_hir::FieldType {
     fn build(&self, store: &Self::Store) -> Result<FieldType, NyarError> {
-        let element_type = self.r#type().build(store)?;
+        let element_type = self.default.as_type().build(store)?;
         Ok(FieldType { element_type, mutable: self.mutable })
+    }
+}
+
+impl WasmBuilder<StorageType> for NyarType {
+    fn build(&self, store: &Self::Store) -> Result<StorageType, NyarError> {
+        Ok(match self {
+            Self::I8 => StorageType::I8,
+            Self::I16 => StorageType::I16,
+            _ => StorageType::Val(self.build(store)?),
+        })
     }
 }
 impl WasmBuilder<ValType> for NyarType {
     fn build(&self, _: &Self::Store) -> Result<ValType, NyarError> {
         Ok(match self {
-            NyarType::I8 => ValType::I32,
-            NyarType::I16 => ValType::I32,
-            NyarType::I32 => ValType::I32,
-            NyarType::I64 => ValType::I64,
-            NyarType::F32 => ValType::F32,
-            NyarType::F64 => ValType::F64,
-        })
-    }
-}
-
-impl WasmBuilder<StorageType> for NyarType {
-    fn build(&self, _: &Self::Store) -> Result<StorageType, NyarError> {
-        Ok(match self {
-            NyarType::I8 => StorageType::I8,
-            NyarType::I16 => StorageType::I16,
-            NyarType::I32 => StorageType::Val(ValType::I32),
-            NyarType::I64 => StorageType::Val(ValType::I64),
-            NyarType::F32 => StorageType::Val(ValType::F32),
-            NyarType::F64 => StorageType::Val(ValType::F64),
+            Self::I8 => ValType::I32,
+            Self::I16 => ValType::I32,
+            Self::I32 => ValType::I32,
+            Self::I64 => ValType::I64,
+            Self::F32 => ValType::F32,
+            Self::F64 => ValType::F64,
+            Self::Structure => ValType::Ref(RefType { nullable: true, heap_type: HeapType::Struct }),
+            Self::Array => ValType::Ref(RefType { nullable: true, heap_type: HeapType::Array }),
+            Self::Any => ValType::Ref(RefType { nullable: true, heap_type: HeapType::Any }),
+            Self::Any => ValType::Ref(RefType { nullable: true, heap_type: HeapType::I31 }),
         })
     }
 }

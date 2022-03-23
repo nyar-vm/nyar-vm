@@ -47,4 +47,7 @@ pub enum NyarType {
     I64,
     F32,
     F64,
+    Any,
+    Structure,
+    Array,
 }
