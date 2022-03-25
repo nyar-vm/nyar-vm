@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use nyar_error::NyarError;
 use nyar_hir::{ExternalType, FunctionItem, FunctionRegister, GlobalBuilder, Identifier, NamedValue, TypeBuilder, TypeItem};
 
-use crate::{functions::WasmFunctionBody, types::WasmFunction, values::WasmVariable};
+use crate::{functions::WasmFunctionBody, values::WasmVariable};
 use wasm_encoder::{
     CodeSection, ConstExpr, DataSection, ElementSection, Elements, EntityType, ExportKind, ExportSection, FunctionSection,
     GlobalSection, ImportSection, MemorySection, MemoryType, RefType, StartSection, TableSection, TableType, TypeSection,
@@ -107,17 +107,7 @@ impl ModuleBuilder {
         m.section(&imports);
     }
     fn build_types(&self, m: &mut wasm_encoder::Module) {
-        let mut types = TypeSection::default();
-        for (_, _, func) in self.functions.get_externals() {
-            func.emit_function(&mut types)
-        }
-        for (_, _, typing) in self.functions.get_natives() {
-            typing.emit_function(&mut types)
-        }
-        for (_, _, typing) in &self.types {
-            typing.emit(&mut types, &()).unwrap()
-        }
-        m.section(&types);
+        todo!()
     }
     fn build_functions(&self, m: &mut wasm_encoder::Module) {
         let mut imports = FunctionSection::default();

@@ -1,75 +1,15 @@
-use crate::modules::ModuleBuilder;
+use crate::{helpers::WasmOutput, modules::ModuleBuilder};
 use nyar_error::NyarError;
-use nyar_hir::{ExternalType, FieldType, NyarType, StructureType};
-use std::mem::transmute;
+use nyar_hir::{ExternalType, NyarType, TypeItem};
 use wast::{
     component::{Component, ComponentKind},
     core::{
         Custom, FunctionType, HeapType, Import, ItemKind, ItemSig, Module, ModuleField, ModuleKind, Producers, RefType,
-        StorageType, StructField, StructType, Type, TypeDef, TypeUse, ValType,
+        TypeUse, ValType,
     },
-    token::{Index, NameAnnotation, Span},
+    token::{NameAnnotation, Span},
     Wat,
 };
-
-pub struct Id<'a> {
-    name: &'a str,
-    gen: u32,
-    span: Span,
-}
-
-impl<'a> Id<'a> {
-    pub fn new(name: &'a str, offset: usize) -> wast::token::Id<'a> {
-        unsafe {
-            let s = Id { name, gen: 0, span: Span::from_offset(offset) };
-            transmute::<Id, wast::token::Id>(s)
-        }
-    }
-    pub fn type_id(name: &'a str, offset: usize) -> Option<wast::token::Id<'a>> {
-        Some(Self::new(name, offset))
-    }
-
-    pub fn type_index(name: &'a str, offset: usize) -> Option<Index> {
-        Some(Index::Id(Self::new(name, offset)))
-    }
-}
-
-pub trait WasmOutput<'a, Item> {
-    fn as_wast(&'a self) -> Item;
-}
-
-impl<'a, 'i> WasmOutput<'a, ModuleField<'i>> for StructureType {
-    fn as_wast(&'a self) -> ModuleField<'i> {
-        let offset = self.namepath.span.get_start();
-
-        let item = Type {
-            span: Span::from_offset(offset),
-            id: Id::type_id("point", offset),
-            name: Some(NameAnnotation { name: "Point" }),
-            def: TypeDef::Struct(StructType {
-                fields: vec![
-                    StructField { id: None, mutable: false, ty: StorageType::I8 },
-                    StructField { id: None, mutable: false, ty: StorageType::Val(ValType::Ref(RefType::r#struct())) },
-                ],
-            }),
-            parent: None,
-            final_type: Some(true),
-        };
-        ModuleField::Type(item)
-    }
-}
-
-impl<'a, 'i> WasmOutput<'a, StructType<'i>> for StructureType {
-    fn as_wast(&'a self) -> StructType<'i> {
-        StructType { fields: self.fields().map(|(_, _, field)| field.as_wast()).collect() }
-    }
-}
-
-impl<'a, 'i> WasmOutput<'a, StructField<'i>> for FieldType {
-    fn as_wast(&'a self) -> StructField<'i> {
-        StructField { id: None, mutable: self.mutable, ty: StorageType::I8 }
-    }
-}
 
 impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarType {
     fn as_wast(&'a self) -> ValType<'i> {
@@ -115,42 +55,16 @@ impl<'a, 'i> WasmOutput<'a, FunctionType<'i>> for ExternalType {
     }
 }
 
+impl<'a, 'i> WasmOutput<'a, ModuleField<'i>> for TypeItem {
+    fn as_wast(&self) -> ModuleField<'i> {
+        match self {
+            Self::Structure(v) => ModuleField::Type(v.as_wast()),
+            Self::Array(v) => ModuleField::Type(v.as_wast()),
+        }
+    }
+}
+
 impl ModuleBuilder {
-    fn build_structure(&self) -> ModuleField {
-        let item = Type {
-            span: Span::from_offset(0),
-            id: Id::type_id("point", 0),
-            name: Some(NameAnnotation { name: "Point" }),
-            def: TypeDef::Struct(StructType {
-                fields: vec![
-                    StructField { id: None, mutable: false, ty: StorageType::I8 },
-                    StructField { id: None, mutable: false, ty: StorageType::Val(ValType::Ref(RefType::r#struct())) },
-                ],
-            }),
-            parent: None,
-            final_type: Some(true),
-        };
-        ModuleField::Type(item)
-    }
-    fn build_function_type(&self) -> ModuleField {
-        let item = Type {
-            span: Span::from_offset(0),
-            id: Id::type_id("tty", 0),
-            name: None,
-            def: TypeDef::Func(FunctionType {
-                params: Box::new([
-                    (None, Some(NameAnnotation { name: "a" }), ValType::I32),
-                    (None, Some(NameAnnotation { name: "b" }), ValType::I32),
-                    (None, Some(NameAnnotation { name: "c" }), ValType::I32),
-                    (None, Some(NameAnnotation { name: "d" }), ValType::I32),
-                ]),
-                results: Box::new([ValType::I32]),
-            }),
-            parent: None,
-            final_type: None,
-        };
-        ModuleField::Type(item)
-    }
     fn wast_producer(&self) -> ModuleField {
         let item = Custom::Producers(Producers {
             fields: vec![
@@ -161,13 +75,14 @@ impl ModuleBuilder {
         ModuleField::Custom(item)
     }
     pub fn build_module(&self) -> Result<Wat, NyarError> {
-        let mut terms = Vec::with_capacity(1024);
-
-        for (i, j, k) in self.functions.get_externals() {
+        let mut terms: Vec<ModuleField> = Vec::with_capacity(1024);
+        for (_, _, k) in self.functions.get_externals() {
             terms.push(k.as_wast())
         }
-        terms.extend(vec![self.build_function_type(), self.build_structure(), self.wast_producer()]);
-
+        for (_, _, k) in self.types.into_iter() {
+            terms.push(k.as_wast())
+        }
+        terms.push(self.wast_producer());
         Ok(Wat::Module(Module {
             span: Span::from_offset(0),
             id: None,

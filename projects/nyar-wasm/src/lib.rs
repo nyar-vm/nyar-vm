@@ -83,6 +83,5 @@ fn test() {
     let wat = wasmprinter::print_bytes(&wast).expect("A");
     println!("{}", wat);
 
-    let module = module.build().unwrap();
-    run(&module).unwrap();
+    run(&wast).unwrap();
 }
