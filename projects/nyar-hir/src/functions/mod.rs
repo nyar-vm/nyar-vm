@@ -26,9 +26,15 @@ pub struct FunctionType {
     pub symbol: Symbol,
     pub export: bool,
     pub entry: bool,
-    pub input: Vec<NyarType>,
+    pub input: IndexMap<String, ParameterType>,
     pub output: Vec<NyarType>,
     pub body: FunctionBody,
+    pub span: FileSpan,
+}
+
+pub struct ParameterType {
+    pub name: Symbol,
+    pub type_hint: NyarType,
     pub span: FileSpan,
 }
 
@@ -38,7 +44,7 @@ impl FunctionType {
             symbol: path,
             export: false,
             entry: false,
-            input: vec![],
+            input: IndexMap::default(),
             output: vec![],
             body: FunctionBody::default(),
             span: Default::default(),
@@ -52,9 +58,11 @@ impl FunctionType {
     }
     pub fn with_inputs<I>(mut self, inputs: I) -> Self
     where
-        I: IntoIterator<Item = NyarType>,
+        I: IntoIterator<Item = ParameterType>,
     {
-        self.input = inputs.into_iter().collect();
+        for i in inputs {
+            self.input.insert(i.name.to_string(), i);
+        }
         self
     }
     pub fn with_outputs<I>(mut self, outputs: I) -> Self
@@ -89,21 +97,73 @@ impl<'i> IntoIterator for &'i FunctionBody {
 
 #[derive(Debug)]
 pub enum Operation {
-    GlobalGet { index: u32 },
-    LocalGet { index: u32 },
-    LocalSet { index: u32 },
-    Constant { value: NyarValue },
-    NativeSum { native: NativeDataType, terms: Vec<Operation> },
-    NativeEqual { native: NativeDataType, terms: Vec<Operation> },
-    NativeEqualZero { native: NativeDataType, term: Box<Operation> },
-}
+    Sequence {
+        items: Vec<Operation>,
+    },
+    CallFunction {
+        name: Symbol,
+        input: Vec<Operation>,
+    },
+    GetVariable {
+        kind: VariableKind,
+        variable: Symbol,
+    },
+    SetVariable {
+        kind: VariableKind,
+        variable: Symbol,
+    },
+    TeeVariable {
+        variable: Symbol,
+    },
+    Loop {
+        name: Symbol,
+        body: Vec<Operation>,
+    },
+    Continue {
+        label: Symbol,
+    },
+    Drop,
+    Return,
+    Unreachable,
 
+    /// `if cond { } { }`
+    Conditional {
+        condition: Vec<Operation>,
+        then: Vec<Operation>,
+        r#else: Vec<Operation>,
+    },
+    Constant {
+        value: NyarValue,
+    },
+    NativeSum {
+        native: NyarType,
+        terms: Vec<Operation>,
+    },
+    Convert {
+        from: NyarType,
+        into: NyarType,
+        code: Vec<Operation>,
+    },
+    Transmute {
+        from: NyarType,
+        into: NyarType,
+        code: Vec<Operation>,
+    },
+
+    NativeEqual {
+        native: NyarType,
+        terms: Vec<Operation>,
+    },
+    NativeEqualZero {
+        native: NyarType,
+        term: Box<Operation>,
+    },
+}
 #[derive(Debug)]
-pub enum NativeDataType {
-    I32,
-    I64,
-    F32,
-    F64,
+pub enum VariableKind {
+    Global,
+    Local,
+    Table,
 }
 
 impl FunctionRegister {

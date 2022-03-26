@@ -1,13 +1,12 @@
-use crate::{functions::WasmFunctionBody, helpers::WasmEmitter};
+use crate::helpers::WasmEmitter;
 use indexmap::IndexMap;
 use nyar_error::{FileSpan, NyarError};
 use nyar_hir::{
-    ExternalType, FunctionRegister, FunctionType, GlobalBuilder, Identifier, IndexedIterator, NamedValue, Symbol, TypeBuilder,
-    TypeItem,
+    ExternalType, FunctionRegister, FunctionType, GlobalBuilder, IndexedIterator, NamedValue, Symbol, TypeBuilder, TypeItem,
 };
 use wasm_encoder::{
-    CodeSection, ConstExpr, DataSection, ElementSection, Elements, ExportKind, ExportSection, GlobalSection, MemorySection,
-    MemoryType, RefType, StartSection, TableSection, TableType,
+    CodeSection, ConstExpr, DataSection, ElementSection, Elements, ExportKind, ExportSection, MemorySection, MemoryType,
+    RefType, StartSection, TableSection, TableType,
 };
 mod interface;
 mod wast_component;

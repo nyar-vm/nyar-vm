@@ -2,8 +2,8 @@ use crate::helpers::{Id, WasmBuilder, WasmDefineType, WasmEmitter, WasmOutput};
 use nyar_hir::{ExternalType, FieldType, NyarType, NyarValue, StructureType, TypeItem};
 use wast::{
     core::{
-        ArrayType, FunctionType, HeapType, Import, ItemKind, ItemSig, ModuleField, RefType, StorageType, StructField,
-        StructType, Type, TypeDef, TypeUse, ValType,
+        ArrayType, FunctionType, HeapType, Import, InlineImport, ItemKind, ItemSig, ModuleField, RefType, StorageType,
+        StructField, StructType, Type, TypeDef, TypeUse, ValType,
     },
     token::{NameAnnotation, Span},
 };
@@ -22,6 +22,7 @@ impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarValue {
 impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarType {
     fn as_wast(&'a self) -> ValType<'i> {
         match self {
+            NyarType::U32 => ValType::I32,
             NyarType::I8 => ValType::I32,
             NyarType::I16 => ValType::I32,
             NyarType::I32 => ValType::I32,

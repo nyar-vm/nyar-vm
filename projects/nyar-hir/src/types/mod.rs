@@ -40,7 +40,9 @@ impl TypeItem {
     }
 }
 
+#[derive(Debug)]
 pub enum NyarType {
+    U32,
     I8,
     I16,
     I32,
