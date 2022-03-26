@@ -8,3 +8,6 @@ time-travel.*
 target/
 Cargo.lock
 node_modules/
+
+# Wasm
+*.wasm

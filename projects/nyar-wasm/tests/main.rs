@@ -1,10 +1,22 @@
 use nyar_hir::{ExternalType, FunctionType, NamedValue, NyarType, NyarValue, Operation, ParameterType, Symbol, VariableKind};
 use nyar_wasm::{run, ModuleBuilder};
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 #[test]
 fn ready() {
     println!("it works!")
+}
+use nyar_error::NyarError;
+use wasm_opt::OptimizationOptions;
+use wasmprinter::Printer;
+use wast::core::Module;
+
+fn test_file(path: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).canonicalize().unwrap().join("tests").join(path)
 }
 
 #[test]
@@ -67,18 +79,16 @@ fn test() {
                     ],
                 },
                 Operation::Drop,
-                Operation::Loop {
-                    name: Symbol::new("for1"),
-                    body: vec![
+                Operation::r#loop(
+                    "for-1",
+                    vec![
+                        Operation::Constant { value: NyarValue::I32(0) },
                         Operation::Constant { value: NyarValue::I32(0) },
                         Operation::Drop,
-                        // Operation::Continue { label: Symbol::new("for1") },
+                        Operation::Drop,
+                        Operation::r#break("for-1"),
                     ],
-                },
-                // Operation::Loop {
-                //     name: Symbol::new("for"),
-                //     body: vec![Operation::Constant { value: NyarValue::I32(0) }, Operation::Return {}],
-                // },
+                ),
                 Operation::Constant { value: NyarValue::I32(0) },
                 Operation::Return {},
             ])
@@ -110,9 +120,48 @@ fn test() {
         FunctionType::new(Symbol::new("_start")).with_inputs(vec![]).with_outputs(vec![]).with_operations(vec![]),
     );
 
-    let wast = module.build_module().unwrap().encode().unwrap();
-    let wat = wasmprinter::print_bytes(&wast).expect("A");
-    println!("{}", wat);
+    let wast = module.build_module().unwrap();
 
-    run(&wast).unwrap();
+    let o = optimize_wasm(wast).unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").canonicalize().unwrap();
+    println!("{}", root.display());
+    print_wat(&root).unwrap();
+
+    run(&o).unwrap();
+}
+
+fn optimize_wasm(mut w: Module) -> Result<PathBuf, NyarError> {
+    let bytes = w.encode().unwrap();
+    let debug = match w.name {
+        None => "debug".to_string(),
+        Some(s) => format!("{}-debug", s.name),
+    };
+    let release = match w.name {
+        None => "release".to_string(),
+        Some(s) => format!("{}-release", s.name),
+    };
+    let mut debug_wasm = File::create(test_file(&format!("{debug}.wasm"))).unwrap();
+    debug_wasm.write_all(&bytes).unwrap();
+    let o3 = test_file(&format!("{release}.wasm"));
+    OptimizationOptions::new_opt_level_4().run(test_file(&format!("{debug}.wasm")), &o3).unwrap();
+    Ok(o3)
+}
+
+fn print_wat(dir: &Path) -> std::io::Result<()> {
+    for file in dir.read_dir()? {
+        let file = file?;
+        let path = file.path();
+        let bytes = match path.extension() {
+            Some(s) if path.is_file() && s.eq("wasm") => {
+                println!("Find file: {}", path.display());
+                std::fs::read(&path)?
+            }
+            _ => continue,
+        };
+
+        let wast = wasmprinter::Printer::new().print(&bytes).unwrap();
+        let mut file = File::create(path.with_extension("wat"))?;
+        file.write_all(wast.as_bytes())?;
+    }
+    Ok(())
 }

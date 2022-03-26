@@ -16,7 +16,7 @@ impl ModuleBuilder {
         });
         ModuleField::Custom(item)
     }
-    pub fn build_module(&self) -> Result<Wat, NyarError> {
+    pub fn build_module(&self) -> Result<Module, NyarError> {
         let mut terms = Vec::with_capacity(1024);
         for (_, _, k) in self.functions.get_externals() {
             terms.push(ModuleField::Import(k.as_wast()))
@@ -34,11 +34,11 @@ impl ModuleBuilder {
             terms.push(ModuleField::Data(k.as_wast()))
         }
         terms.push(self.wast_producer());
-        Ok(Wat::Module(Module {
+        Ok(Module {
             span: Span::from_offset(0),
             id: None,
             name: Some(NameAnnotation { name: "runtime" }),
             kind: ModuleKind::Text(terms),
-        }))
+        })
     }
 }

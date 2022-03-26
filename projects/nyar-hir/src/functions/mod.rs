@@ -116,10 +116,11 @@ pub enum Operation {
         variable: Symbol,
     },
     Loop {
-        name: Symbol,
+        r#continue: Symbol,
+        r#break: Symbol,
         body: Vec<Operation>,
     },
-    Continue {
+    Goto {
         label: Symbol,
     },
     Drop,
@@ -159,6 +160,23 @@ pub enum Operation {
         term: Box<Operation>,
     },
 }
+
+impl Operation {
+    pub fn r#loop(label: &str, body: Vec<Operation>) -> Self {
+        Self::Loop {
+            r#continue: Symbol::new(&format!("{label}@continue")),
+            r#break: Symbol::new(&format!("{label}@break")),
+            body,
+        }
+    }
+    pub fn r#continue(label: &str) -> Self {
+        Self::Goto { label: Symbol::new(&format!("{label}@continue")) }
+    }
+    pub fn r#break(label: &str) -> Self {
+        Self::Goto { label: Symbol::new(&format!("{label}@break")) }
+    }
+}
+
 #[derive(Debug)]
 pub enum VariableKind {
     Global,

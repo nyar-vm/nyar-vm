@@ -12,6 +12,7 @@ exclude = ["package.json", "tests/**"]
 
 [dependencies]
 indexmap = "2.1.0"
+wasm-opt = "0.116.0"
 wasmprinter = "0.2.75"
 wasm-encoder = "0.38.1"
 wasmtime-wasi = "15.0.1"

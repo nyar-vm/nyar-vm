@@ -1,8 +1,9 @@
-use nyar_hir::{NyarType, NyarValue, Operation, Symbol, VariableKind};
-use wast::core::{BlockType, Instruction, TableArg, TypeUse};
-
 use crate::helpers::Id;
-use wast::token::{Float32, Float64, Index};
+use nyar_hir::{NyarType, NyarValue, Operation, Symbol, VariableKind};
+use wast::{
+    core::{BlockType, BrTableIndices, Instruction, TableArg, TypeUse},
+    token::{Float32, Float64, Index},
+};
 
 pub trait WasmInstruction {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -71,16 +72,22 @@ impl WasmInstruction for Operation {
                 // condition.emit(w);
                 todo!()
             }
-            Self::Loop { name, body } => {
+            Self::Loop { r#continue, r#break, body } => {
                 w.push(Instruction::Loop(Box::new(BlockType {
-                    label: Id::type_id(name.as_ref()),
+                    label: Id::type_id(r#continue.as_ref()),
+                    label_name: None,
+                    ty: TypeUse { index: None, inline: None },
+                })));
+                w.push(Instruction::Block(Box::new(BlockType {
+                    label: Id::type_id(r#break.as_ref()),
                     label_name: None,
                     ty: TypeUse { index: None, inline: None },
                 })));
                 body.iter().for_each(|i| i.emit(w));
                 w.push(Instruction::End(None));
+                w.push(Instruction::End(None));
             }
-            Self::Continue { label } => w.push(Instruction::Br(Index::Id(Id::new(label.as_ref(), 0)))),
+            Self::Goto { label } => w.push(Instruction::Br(Index::Id(Id::new(label.as_ref(), 0)))),
             Self::Drop => w.push(Instruction::Drop),
             Self::Return => w.push(Instruction::Return),
             Self::Unreachable => w.push(Instruction::Unreachable),

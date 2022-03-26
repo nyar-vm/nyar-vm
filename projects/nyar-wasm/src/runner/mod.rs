@@ -1,7 +1,8 @@
+use std::path::Path;
 use wasmtime::{Engine, Linker, Store, Val};
 use wasmtime_wasi::WasiCtxBuilder;
 
-pub fn run(wasm: &[u8]) -> wasmtime::Result<()> {
+pub fn run<P: AsRef<Path>>(path: P) -> wasmtime::Result<()> {
     let engine = Engine::default();
 
     let mut linker = Linker::new(&engine);
@@ -11,7 +12,7 @@ pub fn run(wasm: &[u8]) -> wasmtime::Result<()> {
     let wasi = WasiCtxBuilder::new().inherit_stdio().inherit_args()?.inherit_env()?.build();
     let mut store = Store::new(&engine, wasi);
 
-    let input = wasmtime::Module::from_binary(&engine, wasm)?;
+    let input = wasmtime::Module::from_file(&engine, path)?;
     let instance = linker.instantiate(&mut store, &input)?;
 
     let hello = instance.get_typed_func::<(i32, i32), u32>(&mut store, "add_ab").expect("nothing");
