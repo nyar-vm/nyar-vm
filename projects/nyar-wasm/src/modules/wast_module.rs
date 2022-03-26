@@ -1,12 +1,7 @@
-use crate::{
-    helpers::{Id, WasmOutput},
-    modules::ModuleBuilder,
-};
+use crate::{helpers::WasmOutput, modules::ModuleBuilder};
 use nyar_error::NyarError;
 use wast::{
-    core::{
-        Custom, Expression, Global, GlobalKind, GlobalType, Module, ModuleField, ModuleKind, Producers, Type, TypeDef, ValType,
-    },
+    core::{Custom, Module, ModuleField, ModuleKind, Producers},
     token::{NameAnnotation, Span},
     Wat,
 };
@@ -29,8 +24,14 @@ impl ModuleBuilder {
         for (_, _, k) in self.types.into_iter() {
             terms.push(k.as_wast())
         }
+        for (_, _, k) in self.functions.get_natives() {
+            terms.push(ModuleField::Func(k.as_wast()))
+        }
         for (_, _, k) in self.globals.into_iter() {
             terms.push(ModuleField::Global(k.as_wast()))
+        }
+        for (_, _, k) in self.data.into_iter() {
+            terms.push(ModuleField::Data(k.as_wast()))
         }
         terms.push(self.wast_producer());
         Ok(Wat::Module(Module {

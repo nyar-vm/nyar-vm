@@ -12,7 +12,7 @@ impl ModuleBuilder {
         let mut exports = ExportSection::default();
         for (index, _, func) in self.functions.get_natives() {
             if func.export {
-                exports.export(&func.namepath.to_string(), ExportKind::Func, index as u32);
+                exports.export(&func.symbol.to_string(), ExportKind::Func, index as u32);
             }
         }
 
@@ -44,13 +44,6 @@ impl ModuleBuilder {
             offset += item.data.len();
         }
         m.section(&data);
-    }
-    fn build_globals(&self, m: &mut wasm_encoder::Module) {
-        let mut global = GlobalSection::default();
-        for (_, _, value) in self.globals.into_iter() {
-            value.emit_global(&mut global, &self.functions).unwrap()
-        }
-        m.section(&global);
     }
     fn build_tables(&self, m: &mut wasm_encoder::Module) {
         let mut tables = TableSection::default();

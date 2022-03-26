@@ -1,4 +1,3 @@
-use crate::helpers::WasmEmitter;
 use nyar_error::NyarError;
 use nyar_hir::{FunctionBody, NativeDataType, NyarValue, Operation};
 use wasm_encoder::{Function, Instruction};

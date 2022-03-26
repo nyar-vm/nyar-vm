@@ -36,11 +36,11 @@ impl<'a> Id<'a> {
             transmute::<Id, wast::token::Id>(s)
         }
     }
-    pub fn type_id(name: &'a str, offset: usize) -> Option<wast::token::Id<'a>> {
-        Some(Self::new(name, offset))
+    pub fn type_id(name: &'a str) -> Option<wast::token::Id<'a>> {
+        Some(Self::new(name, 0))
     }
 
-    pub fn type_index(name: &'a str, offset: usize) -> Option<Index> {
-        Some(Index::Id(Self::new(name, offset)))
+    pub fn type_index(name: &'a str) -> Option<Index> {
+        Some(Index::Id(Self::new(name, 0)))
     }
 }

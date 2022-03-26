@@ -10,7 +10,7 @@ use wast::{
 
 mod array;
 mod external;
-mod parsable;
+mod functional;
 mod structure;
 
 impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarValue {

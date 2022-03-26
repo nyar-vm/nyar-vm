@@ -1,6 +1,6 @@
 use crate::{Identifier, IndexedIterator, NyarType, NyarValue, Symbol};
 use indexmap::IndexMap;
-use nyar_error::NyarError;
+use nyar_error::{FileSpan, NyarError};
 use std::slice::Iter;
 
 pub mod externals;
@@ -9,7 +9,7 @@ pub mod resolver;
 
 #[derive(Default)]
 pub struct FunctionRegister {
-    native: IndexMap<String, FunctionItem>,
+    native: IndexMap<String, FunctionType>,
     external: IndexMap<String, ExternalType>,
 }
 
@@ -22,21 +22,30 @@ pub struct ExternalType {
 }
 
 /// `function`
-pub struct FunctionItem {
-    pub namepath: Identifier,
+pub struct FunctionType {
+    pub symbol: Symbol,
     pub export: bool,
     pub entry: bool,
     pub input: Vec<NyarType>,
     pub output: Vec<NyarType>,
     pub body: FunctionBody,
+    pub span: FileSpan,
 }
 
-impl FunctionItem {
-    pub fn new(path: Identifier) -> Self {
-        Self { namepath: path, export: false, entry: false, input: vec![], output: vec![], body: FunctionBody::default() }
+impl FunctionType {
+    pub fn new(path: Symbol) -> Self {
+        Self {
+            symbol: path,
+            export: false,
+            entry: false,
+            input: vec![],
+            output: vec![],
+            body: FunctionBody::default(),
+            span: Default::default(),
+        }
     }
     pub fn name(&self) -> String {
-        self.namepath.to_string()
+        self.symbol.to_string()
     }
     pub fn with_public(self) -> Self {
         Self { export: true, ..self }
@@ -109,10 +118,10 @@ impl FunctionRegister {
         }
         Err(NyarError::custom(format!("missing function {name}")))
     }
-    pub fn add_native(&mut self, item: FunctionItem) {
-        self.native.insert(item.namepath.to_string(), item);
+    pub fn add_native(&mut self, item: FunctionType) {
+        self.native.insert(item.symbol.to_string(), item);
     }
-    pub fn get_natives(&self) -> IndexedIterator<FunctionItem> {
+    pub fn get_natives(&self) -> IndexedIterator<FunctionType> {
         IndexedIterator::new(&self.native).with_index(self.external.len())
     }
     pub fn add_external(&mut self, item: ExternalType) {

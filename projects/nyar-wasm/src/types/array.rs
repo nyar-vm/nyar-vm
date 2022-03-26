@@ -5,10 +5,9 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> Type<'i> {
-        let offset = self.span.get_start();
         Type {
-            span: Span::from_offset(offset),
-            id: Id::type_id(self.symbol.as_ref(), offset),
+            span: Span::from_offset(0),
+            id: Id::type_id(self.symbol.as_ref()),
             name: Some(NameAnnotation { name: self.symbol.as_ref() }),
             def: TypeDef::Array(self.as_wast()),
             parent: None,

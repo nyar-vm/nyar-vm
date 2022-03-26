@@ -7,7 +7,7 @@
 
 use crate::modules::{DataItem, ModuleBuilder};
 use nyar_hir::{
-    ArrayType, ExternalType, FieldType, FunctionItem, Identifier, NamedValue, NativeDataType, NyarType, NyarValue, Operation,
+    ArrayType, ExternalType, FieldType, FunctionType, Identifier, NamedValue, NativeDataType, NyarType, NyarValue, Operation,
     StructureType, Symbol,
 };
 pub use runner::run;
@@ -25,10 +25,10 @@ mod values;
 fn test() {
     let mut module = ModuleBuilder::new(16);
     module.insert_global(NamedValue::f32(Symbol::new("math.pi"), 3.14).with_public());
-    module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math1")]), "hello world".to_string()));
-    module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math2")]), "fuck world 中文".to_string()));
-    module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math3")]), "fuck world 中文1".to_string()));
-    module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math4")]), "fuck world 中文2".to_string()));
+    module.insert_data(DataItem::utf8(Symbol::new("math1"), "hello world".to_string()));
+    module.insert_data(DataItem::utf8(Symbol::new("math2"), "fuck world 中文".to_string()));
+    module.insert_data(DataItem::utf8(Symbol::new("math3"), "fuck world 中文1".to_string()));
+    module.insert_data(DataItem::utf8(Symbol::new("math4"), "fuck world 中文2".to_string()));
 
     module.insert_type(StructureType::new(Symbol::new("Stable")).with_fields(vec![
         FieldType::new(Symbol::new("a"), NyarValue::F32(2.0)),
@@ -46,7 +46,7 @@ fn test() {
     module.insert_type(ArrayType::new(Symbol::new("Bytes"), NyarType::I32));
 
     module.insert_function(
-        FunctionItem::new(Identifier::from_iter(vec![Symbol::new("add_ab")]))
+        FunctionType::new(Symbol::new("add_ab"))
             .with_inputs(vec![NyarType::I32, NyarType::I32])
             .with_outputs(vec![NyarType::I32])
             .with_operations(vec![Operation::NativeSum {
@@ -61,7 +61,7 @@ fn test() {
     );
 
     module.insert_function(
-        FunctionItem::new(Identifier::from_iter(vec![Symbol::new("add_ba")]))
+        FunctionType::new(Symbol::new("add_ba"))
             .with_inputs(vec![NyarType::I32])
             .with_outputs(vec![NyarType::I32])
             .with_operations(vec![Operation::NativeSum {
@@ -78,10 +78,7 @@ fn test() {
     );
 
     module.insert_function(
-        FunctionItem::new(Identifier::from_iter(vec![Symbol::new("_start")]))
-            .with_inputs(vec![])
-            .with_outputs(vec![])
-            .with_operations(vec![]),
+        FunctionType::new(Symbol::new("_start")).with_inputs(vec![]).with_outputs(vec![]).with_operations(vec![]),
     );
 
     let wast = module.build_module().unwrap().encode().unwrap();
