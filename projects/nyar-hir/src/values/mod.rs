@@ -1,4 +1,4 @@
-use crate::{types::NyarType, Identifier};
+use crate::{types::NyarType, Identifier, Symbol};
 
 pub mod globals;
 
@@ -12,7 +12,7 @@ pub enum NyarValue {
     I64(i64),
     F32(f32),
     F64(f64),
-    Function(Identifier),
+    Function(Symbol),
     Structure,
     Array,
     Any,

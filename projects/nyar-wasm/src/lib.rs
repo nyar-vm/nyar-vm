@@ -24,13 +24,13 @@ mod values;
 #[test]
 fn test() {
     let mut module = ModuleBuilder::new(16);
-    module.insert_global(NamedValue::i32(Identifier::from_iter(vec![Symbol::new("math"), Symbol::new("pi")]), 3).with_public());
+    module.insert_global(NamedValue::f32(Symbol::new("math.pi"), 3.14).with_public());
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math1")]), "hello world".to_string()));
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math2")]), "fuck world 中文".to_string()));
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math3")]), "fuck world 中文1".to_string()));
     module.insert_data(DataItem::utf8(Identifier::from_iter(vec![Symbol::new("math4")]), "fuck world 中文2".to_string()));
 
-    module.insert_type(StructureType::new(Identifier::from_iter(vec![Symbol::new("Stable")])).with_fields(vec![
+    module.insert_type(StructureType::new(Symbol::new("Stable")).with_fields(vec![
         FieldType::new(Symbol::new("a"), NyarValue::F32(2.0)),
         FieldType::new(Symbol::new("b"), NyarValue::I32(1)),
         FieldType::new(Symbol::new("c"), NyarValue::Any),
@@ -38,7 +38,12 @@ fn test() {
         FieldType::new(Symbol::new("e"), NyarValue::Array),
     ]));
 
-    module.insert_type(ArrayType::new(Identifier::from_iter(vec![Symbol::new("Bytes")]), NyarType::I32));
+    module.insert_type(StructureType::new(Symbol::new("a")).with_fields(vec![
+        FieldType::new(Symbol::new("a"), NyarValue::F32(2.0)),
+        FieldType::new(Symbol::new("b"), NyarValue::I32(1)),
+    ]));
+
+    module.insert_type(ArrayType::new(Symbol::new("Bytes"), NyarType::I32));
 
     module.insert_function(
         FunctionItem::new(Identifier::from_iter(vec![Symbol::new("add_ab")]))

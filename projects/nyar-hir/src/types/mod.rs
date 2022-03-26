@@ -35,7 +35,7 @@ impl TypeItem {
     pub fn name(&self) -> String {
         match self {
             TypeItem::Structure(v) => v.name(),
-            TypeItem::Array(v) => v.namepath.to_string(),
+            TypeItem::Array(v) => v.symbol.to_string(),
         }
     }
 }

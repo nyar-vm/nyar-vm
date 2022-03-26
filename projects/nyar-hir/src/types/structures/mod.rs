@@ -1,8 +1,10 @@
 use super::*;
+use nyar_error::FileSpan;
 
 pub struct StructureType {
-    pub namepath: Identifier,
+    pub symbol: Symbol,
     pub fields: IndexMap<String, FieldType>,
+    pub span: FileSpan,
 }
 
 pub struct FieldType {
@@ -18,11 +20,11 @@ impl From<StructureType> for TypeItem {
 }
 
 impl StructureType {
-    pub fn new(name: Identifier) -> Self {
-        Self { namepath: name, fields: Default::default() }
+    pub fn new(name: Symbol) -> Self {
+        Self { symbol: name, fields: Default::default(), span: Default::default() }
     }
     pub fn name(&self) -> String {
-        self.namepath.to_string()
+        self.symbol.to_string()
     }
     pub fn fields(&self) -> IndexedIterator<FieldType> {
         IndexedIterator::new(&self.fields)
