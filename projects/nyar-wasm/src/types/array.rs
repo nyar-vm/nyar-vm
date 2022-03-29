@@ -1,6 +1,25 @@
 use super::*;
 
-impl<'a, 'i> WasmOutput<'a, Type<'i>> for nyar_hir::ArrayType
+impl From<ArrayType> for TypeItem {
+    fn from(value: ArrayType) -> Self {
+        Self::Array(value)
+    }
+}
+pub struct ArrayType {
+    pub symbol: Symbol,
+    pub mutable: bool,
+    /// Item type of the array
+    pub item_type: NyarType,
+    pub span: FileSpan,
+}
+
+impl ArrayType {
+    pub fn new(name: Symbol, item: NyarType) -> Self {
+        Self { symbol: name, mutable: false, item_type: item, span: Default::default() }
+    }
+}
+
+impl<'a, 'i> WasmOutput<'a, Type<'i>> for ArrayType
 where
     'a: 'i,
 {
@@ -15,8 +34,8 @@ where
         }
     }
 }
-impl<'a, 'i> WasmOutput<'a, ArrayType<'i>> for nyar_hir::ArrayType {
-    fn as_wast(&'a self) -> ArrayType<'i> {
-        ArrayType { mutable: self.mutable, ty: self.item_type.as_wast() }
+impl<'a, 'i> WasmOutput<'a, wast::core::ArrayType<'i>> for ArrayType {
+    fn as_wast(&'a self) -> wast::core::ArrayType<'i> {
+        wast::core::ArrayType { mutable: self.mutable, ty: self.item_type.as_wast() }
     }
 }

@@ -1,4 +1,4 @@
-use crate::{Identifier, NyarValue, Symbol};
+use crate::{NyarValue, Symbol};
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
 

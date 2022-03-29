@@ -1,13 +1,8 @@
-use crate::helpers::WasmEmitter;
+use crate::{ExternalRegister, ExternalType, TypeItem, TypeRegister};
 use indexmap::IndexMap;
 use nyar_error::{FileSpan, NyarError};
-use nyar_hir::{
-    ExternalType, FunctionRegister, FunctionType, GlobalBuilder, IndexedIterator, NamedValue, Symbol, TypeBuilder, TypeItem,
-};
-use wasm_encoder::{
-    CodeSection, ConstExpr, DataSection, ElementSection, Elements, ExportKind, ExportSection, MemorySection, MemoryType,
-    RefType, StartSection, TableSection, TableType,
-};
+use nyar_hir::{FunctionRegister, FunctionType, GlobalBuilder, IndexedIterator, NamedValue, Symbol};
+
 mod interface;
 mod wast_component;
 mod wast_module;
@@ -16,9 +11,10 @@ mod wast_module;
 pub struct ModuleBuilder {
     memory_pages: u64,
     globals: GlobalBuilder,
-    types: TypeBuilder,
+    types: TypeRegister,
     data: DataBuilder,
     functions: FunctionRegister,
+    externals: ExternalRegister,
 }
 #[derive(Default)]
 pub struct DataBuilder {
@@ -62,8 +58,8 @@ impl ModuleBuilder {
     pub fn insert_function(&mut self, f: FunctionType) {
         self.functions.add_native(f)
     }
-    pub fn insert_external(&mut self, f: ExternalType) {
-        self.functions.add_external(f)
+    pub fn insert_external(&mut self, f: ExternalType) -> Option<ExternalType> {
+        self.externals.insert(f)
     }
 
     pub fn insert_data(&mut self, item: DataItem) -> Option<DataItem> {

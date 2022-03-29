@@ -1,4 +1,56 @@
 use super::*;
+use indexmap::IndexMap;
+use nyar_hir::{IndexedIterator, Symbol};
+
+#[derive(Default)]
+pub struct ExternalRegister {
+    items: IndexMap<String, ExternalType>,
+}
+
+/// `@ffi("module", "field")`
+pub struct ExternalType {
+    pub module: Symbol,
+    pub field: Symbol,
+    pub input: Vec<NyarType>,
+    pub output: Vec<NyarType>,
+}
+impl ExternalRegister {
+    pub fn insert(&mut self, item: ExternalType) -> Option<ExternalType> {
+        self.items.insert(item.name(), item)
+    }
+}
+
+impl ExternalType {
+    pub fn new(module: &str, field: &str) -> ExternalType {
+        Self { module: Symbol::new(module), field: Symbol::new(field), input: vec![], output: vec![] }
+    }
+    pub fn name(&self) -> String {
+        format!("{}.{}", self.module, self.field)
+    }
+    pub fn with_input<I>(mut self, inputs: I) -> Self
+    where
+        I: IntoIterator<Item = NyarType>,
+    {
+        self.input.extend(inputs);
+        self
+    }
+    pub fn with_output<I>(mut self, outputs: I) -> Self
+    where
+        I: IntoIterator<Item = NyarType>,
+    {
+        self.output.extend(outputs);
+        self
+    }
+}
+
+impl<'i> IntoIterator for &'i ExternalRegister {
+    type Item = (usize, &'i str, &'i ExternalType);
+    type IntoIter = IndexedIterator<'i, ExternalType>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IndexedIterator::new(&self.items)
+    }
+}
 
 impl<'a, 'i> WasmOutput<'a, Import<'i>> for ExternalType
 where

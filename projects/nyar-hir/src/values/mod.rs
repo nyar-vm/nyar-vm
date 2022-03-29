@@ -1,4 +1,4 @@
-use crate::{types::NyarType, Identifier, Symbol};
+use crate::{types::NyarType, Symbol};
 
 pub mod globals;
 

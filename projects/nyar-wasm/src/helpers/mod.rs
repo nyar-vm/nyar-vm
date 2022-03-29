@@ -1,26 +1,17 @@
-use nyar_error::NyarError;
 use std::intrinsics::transmute;
-use wasm_encoder::TypeSection;
-use wast::token::{Index, Span};
+use wast::{
+    core::Instruction,
+    token::{Index, Span},
+};
 
-pub trait WasmBuilder<Item> {
-    type Store = ();
-
-    fn build(&self, store: &Self::Store) -> Result<Item, NyarError>;
-}
-
-pub trait WasmDefineType {
-    fn emit_type(&self, m: &mut TypeSection) -> Result<(), NyarError>;
-}
-
-pub trait WasmEmitter {
-    type Receiver = ();
-    type Store = ();
-
-    fn emit(&self, reviver: &mut Self::Receiver, store: &Self::Store) -> Result<(), NyarError>;
-}
 pub trait WasmOutput<'a, Item> {
     fn as_wast(&'a self) -> Item;
+}
+
+pub trait WasmInstruction {
+    fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
+    where
+        'a: 'i;
 }
 
 pub struct Id<'a> {

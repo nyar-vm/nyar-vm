@@ -1,24 +1,15 @@
-use crate::{Identifier, IndexedIterator, NyarType, NyarValue, Symbol};
+use crate::{IndexedIterator, NyarType, NyarValue, Symbol};
 use indexmap::IndexMap;
 use nyar_error::{FileSpan, NyarError};
 use std::slice::Iter;
 
-pub mod externals;
 pub mod keywords;
+pub mod operations;
 pub mod resolver;
 
 #[derive(Default)]
 pub struct FunctionRegister {
-    native: IndexMap<String, FunctionType>,
-    external: IndexMap<String, ExternalType>,
-}
-
-/// `@ffi("module", "field")`
-pub struct ExternalType {
-    pub module: Symbol,
-    pub field: Symbol,
-    pub input: Vec<NyarType>,
-    pub output: Vec<NyarType>,
+    items: IndexMap<String, FunctionType>,
 }
 
 /// `function`
@@ -78,6 +69,31 @@ impl FunctionType {
     {
         self.body.codes = operations.into_iter().collect();
         self
+    }
+}
+
+impl<'i> IntoIterator for &'i FunctionRegister {
+    type Item = (usize, &'i str, &'i FunctionType);
+    type IntoIter = IndexedIterator<'i, FunctionType>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IndexedIterator::new(&self.items)
+    }
+}
+
+impl FunctionRegister {
+    pub fn get_id(&self, name: &str) -> Result<usize, NyarError> {
+        match self.items.get_full(name) {
+            Some((index, _, _)) => return Ok(index),
+            None => {}
+        }
+        Err(NyarError::custom(format!("missing function {name}")))
+    }
+    pub fn add_native(&mut self, item: FunctionType) {
+        self.items.insert(item.symbol.to_string(), item);
+    }
+    pub fn get_natives(&self) -> IndexedIterator<FunctionType> {
+        IndexedIterator::new(&self.items)
     }
 }
 
@@ -150,7 +166,6 @@ pub enum Operation {
         into: NyarType,
         code: Vec<Operation>,
     },
-
     NativeEqual {
         native: NyarType,
         terms: Vec<Operation>,
@@ -161,51 +176,9 @@ pub enum Operation {
     },
 }
 
-impl Operation {
-    pub fn r#loop(label: &str, body: Vec<Operation>) -> Self {
-        Self::Loop {
-            r#continue: Symbol::new(&format!("{label}@continue")),
-            r#break: Symbol::new(&format!("{label}@break")),
-            body,
-        }
-    }
-    pub fn r#continue(label: &str) -> Self {
-        Self::Goto { label: Symbol::new(&format!("{label}@continue")) }
-    }
-    pub fn r#break(label: &str) -> Self {
-        Self::Goto { label: Symbol::new(&format!("{label}@break")) }
-    }
-}
-
 #[derive(Debug)]
 pub enum VariableKind {
     Global,
     Local,
     Table,
-}
-
-impl FunctionRegister {
-    pub fn get_id(&self, name: &str) -> Result<usize, NyarError> {
-        match self.native.get_full(name) {
-            Some((index, _, _)) => return Ok(index),
-            None => {}
-        }
-        match self.external.get_full(name) {
-            Some((index, _, _)) => return Ok(self.native.len() + index),
-            None => {}
-        }
-        Err(NyarError::custom(format!("missing function {name}")))
-    }
-    pub fn add_native(&mut self, item: FunctionType) {
-        self.native.insert(item.symbol.to_string(), item);
-    }
-    pub fn get_natives(&self) -> IndexedIterator<FunctionType> {
-        IndexedIterator::new(&self.native).with_index(self.external.len())
-    }
-    pub fn add_external(&mut self, item: ExternalType) {
-        self.external.insert(item.name(), item);
-    }
-    pub fn get_externals(&self) -> IndexedIterator<ExternalType> {
-        IndexedIterator::new(&self.external)
-    }
 }

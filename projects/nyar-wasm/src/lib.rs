@@ -5,15 +5,19 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 
-pub use runner::run;
-
-mod builder;
 pub mod helpers;
 mod modules;
+mod operations;
 mod runner;
 mod types;
-
-mod operations;
 mod values;
 
-pub use crate::modules::ModuleBuilder;
+pub use crate::{
+    modules::ModuleBuilder,
+    types::{
+        array::ArrayType,
+        external::{ExternalRegister, ExternalType},
+        structure::{FieldType, StructureType},
+        TypeItem, TypeRegister,
+    },
+};

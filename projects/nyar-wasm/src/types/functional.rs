@@ -1,10 +1,6 @@
 use super::*;
-use crate::operations::WasmInstruction;
-use nyar_hir::{FunctionBody, NyarType, Operation, ParameterType};
-use wast::{
-    core::{Expression, Func, FuncKind, InlineExport, Instruction},
-    token::{Float32, Float64, Index},
-};
+
+use crate::helpers::WasmInstruction;
 
 impl<'a, 'i> WasmOutput<'a, Func<'i>> for nyar_hir::FunctionType
 where

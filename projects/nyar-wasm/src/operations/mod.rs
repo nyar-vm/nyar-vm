@@ -1,16 +1,9 @@
-use crate::helpers::Id;
-use nyar_hir::{NyarType, NyarValue, Operation, Symbol, VariableKind};
+use crate::helpers::{Id, WasmInstruction};
+use nyar_hir::{NyarType, NyarValue, Operation, VariableKind};
 use wast::{
-    core::{BlockType, BrTableIndices, Instruction, TableArg, TypeUse},
+    core::{BlockType, Instruction, TableArg, TypeUse},
     token::{Float32, Float64, Index},
 };
-
-pub trait WasmInstruction {
-    fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
-    where
-        'a: 'i;
-}
-
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
     where

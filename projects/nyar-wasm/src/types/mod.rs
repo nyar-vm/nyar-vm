@@ -1,17 +1,58 @@
-use crate::helpers::{Id, WasmBuilder, WasmDefineType, WasmEmitter, WasmOutput};
-use nyar_hir::{ExternalType, FieldType, NyarType, NyarValue, StructureType, TypeItem};
+use crate::{
+    helpers::{Id, WasmOutput},
+    ArrayType, StructureType,
+};
+use indexmap::IndexMap;
+use nyar_error::FileSpan;
+use nyar_hir::{FunctionBody, IndexedIterator, NyarType, NyarValue, ParameterType, Symbol};
 use wast::{
     core::{
-        ArrayType, FunctionType, HeapType, Import, InlineImport, ItemKind, ItemSig, ModuleField, RefType, StorageType,
-        StructField, StructType, Type, TypeDef, TypeUse, ValType,
+        Expression, Func, FuncKind, FunctionType, HeapType, Import, InlineExport, ItemKind, ItemSig, ModuleField, RefType,
+        StorageType, StructField, StructType, Type, TypeDef, TypeUse, ValType,
     },
     token::{NameAnnotation, Span},
 };
 
-mod array;
-mod external;
+pub mod array;
+pub mod external;
 mod functional;
-mod structure;
+pub mod structure;
+
+#[derive(Default)]
+pub struct TypeRegister {
+    items: IndexMap<String, TypeItem>,
+}
+
+pub enum TypeItem {
+    Structure(StructureType),
+    Array(ArrayType),
+    // SubTyping { sub: SubType },
+    // Recursion(RecursiveType),
+}
+
+impl<'i> IntoIterator for &'i TypeRegister {
+    type Item = (usize, &'i str, &'i TypeItem);
+    type IntoIter = IndexedIterator<'i, TypeItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IndexedIterator::new(&self.items)
+    }
+}
+
+impl TypeRegister {
+    pub fn insert(&mut self, item: TypeItem) -> Option<TypeItem> {
+        self.items.insert(item.name().to_string(), item)
+    }
+}
+
+impl TypeItem {
+    pub fn name(&self) -> String {
+        match self {
+            TypeItem::Structure(v) => v.name(),
+            TypeItem::Array(v) => v.symbol.to_string(),
+        }
+    }
+}
 
 impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarValue {
     fn as_wast(&'a self) -> ValType<'i> {

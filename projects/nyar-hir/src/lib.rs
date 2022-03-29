@@ -4,14 +4,10 @@ mod symbols;
 mod types;
 mod values;
 pub use crate::{
-    functions::{ExternalType, FunctionBody, FunctionRegister, FunctionType, Operation, ParameterType, VariableKind},
+    functions::{FunctionBody, FunctionRegister, FunctionType, Operation, ParameterType, VariableKind},
     helpers::IndexedIterator,
-    symbols::{Identifier, Symbol},
-    types::{
-        arrays::ArrayType,
-        structures::{FieldType, StructureType},
-        NyarType, TypeBuilder, TypeItem,
-    },
+    symbols::Symbol,
+    types::NyarType,
     values::{
         globals::{GlobalBuilder, NamedValue},
         NyarValue,
