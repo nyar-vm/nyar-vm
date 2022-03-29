@@ -1,10 +1,5 @@
 use crate::{types::NyarType, Symbol};
 
-pub mod globals;
-
-#[cfg(feature = "wasm")]
-mod runtime;
-
 #[derive(Debug)]
 pub enum NyarValue {
     U32(u32),

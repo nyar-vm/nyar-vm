@@ -1,9 +1,9 @@
 use crate::{
-    helpers::{Id, WasmOutput},
+    helpers::{Id, WasmInstruction, WasmOutput},
     ArrayType, StructureType,
 };
 use indexmap::IndexMap;
-use nyar_error::FileSpan;
+use nyar_error::{FileSpan, NyarError};
 use nyar_hir::{FunctionBody, IndexedIterator, NyarType, NyarValue, ParameterType, Symbol};
 use wast::{
     core::{
@@ -15,7 +15,7 @@ use wast::{
 
 pub mod array;
 pub mod external;
-mod functional;
+pub mod functional;
 pub mod structure;
 
 #[derive(Default)]

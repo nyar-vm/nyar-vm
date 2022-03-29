@@ -1,16 +1,9 @@
-use crate::{IndexedIterator, NyarType, NyarValue, Symbol};
+use crate::{NyarType, NyarValue, Symbol};
 use indexmap::IndexMap;
-use nyar_error::{FileSpan, NyarError};
+use nyar_error::FileSpan;
 use std::slice::Iter;
 
-pub mod keywords;
 pub mod operations;
-pub mod resolver;
-
-#[derive(Default)]
-pub struct FunctionRegister {
-    items: IndexMap<String, FunctionType>,
-}
 
 /// `function`
 pub struct FunctionType {
@@ -69,31 +62,6 @@ impl FunctionType {
     {
         self.body.codes = operations.into_iter().collect();
         self
-    }
-}
-
-impl<'i> IntoIterator for &'i FunctionRegister {
-    type Item = (usize, &'i str, &'i FunctionType);
-    type IntoIter = IndexedIterator<'i, FunctionType>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        IndexedIterator::new(&self.items)
-    }
-}
-
-impl FunctionRegister {
-    pub fn get_id(&self, name: &str) -> Result<usize, NyarError> {
-        match self.items.get_full(name) {
-            Some((index, _, _)) => return Ok(index),
-            None => {}
-        }
-        Err(NyarError::custom(format!("missing function {name}")))
-    }
-    pub fn add_native(&mut self, item: FunctionType) {
-        self.items.insert(item.symbol.to_string(), item);
-    }
-    pub fn get_natives(&self) -> IndexedIterator<FunctionType> {
-        IndexedIterator::new(&self.items)
     }
 }
 

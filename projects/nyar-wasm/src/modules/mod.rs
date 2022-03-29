@@ -1,7 +1,7 @@
-use crate::{ExternalRegister, ExternalType, TypeItem, TypeRegister};
+use crate::{ExternalRegister, ExternalType, FunctionRegister, GlobalRegister, TypeItem, TypeRegister, WasmVariable};
 use indexmap::IndexMap;
 use nyar_error::{FileSpan, NyarError};
-use nyar_hir::{FunctionRegister, FunctionType, GlobalBuilder, IndexedIterator, NamedValue, Symbol};
+use nyar_hir::{FunctionType, IndexedIterator, Symbol};
 
 mod interface;
 mod wast_component;
@@ -10,7 +10,7 @@ mod wast_module;
 #[derive(Default)]
 pub struct ModuleBuilder {
     memory_pages: u64,
-    globals: GlobalBuilder,
+    globals: GlobalRegister,
     types: TypeRegister,
     data: DataBuilder,
     functions: FunctionRegister,
@@ -61,12 +61,10 @@ impl ModuleBuilder {
     pub fn insert_external(&mut self, f: ExternalType) -> Option<ExternalType> {
         self.externals.insert(f)
     }
-
     pub fn insert_data(&mut self, item: DataItem) -> Option<DataItem> {
         self.data.insert(item)
     }
-
-    pub fn insert_global(&mut self, global: NamedValue) -> Option<NamedValue> {
+    pub fn insert_global(&mut self, global: WasmVariable) -> Option<WasmVariable> {
         self.globals.insert(global)
     }
 }

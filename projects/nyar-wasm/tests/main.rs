@@ -1,5 +1,5 @@
-use nyar_hir::{FunctionType, NamedValue, NyarType, NyarValue, Operation, ParameterType, Symbol, VariableKind};
-use nyar_wasm::{ExternalType, ModuleBuilder};
+use nyar_hir::{FunctionType, NyarType, NyarValue, Operation, ParameterType, Symbol, VariableKind};
+use nyar_wasm::{ExternalType, ModuleBuilder, WasmVariable};
 use std::{
     fs::File,
     io::Write,
@@ -11,14 +11,10 @@ fn ready() {
     println!("it works!")
 }
 
-fn test_file(path: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).canonicalize().unwrap().join("tests").join(path)
-}
-
 #[test]
 fn test() {
     let mut module = ModuleBuilder::new(16);
-    module.insert_global(NamedValue::f32(Symbol::new("math.pi"), 3.14).with_public());
+    module.insert_global(WasmVariable::f32(Symbol::new("math.pi"), 3.14).with_public());
 
     module.insert_external(
         ExternalType::new("wasi_snapshot_preview1", "fd_write")

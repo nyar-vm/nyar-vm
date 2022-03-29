@@ -1,6 +1,33 @@
 use super::*;
 
-use crate::helpers::WasmInstruction;
+#[derive(Default)]
+pub struct FunctionRegister {
+    items: IndexMap<String, nyar_hir::FunctionType>,
+}
+impl<'i> IntoIterator for &'i FunctionRegister {
+    type Item = (usize, &'i str, &'i nyar_hir::FunctionType);
+    type IntoIter = IndexedIterator<'i, nyar_hir::FunctionType>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IndexedIterator::new(&self.items)
+    }
+}
+
+impl FunctionRegister {
+    pub fn get_id(&self, name: &str) -> Result<usize, NyarError> {
+        match self.items.get_full(name) {
+            Some((index, _, _)) => return Ok(index),
+            None => {}
+        }
+        Err(NyarError::custom(format!("missing function {name}")))
+    }
+    pub fn add_native(&mut self, item: nyar_hir::FunctionType) {
+        self.items.insert(item.symbol.to_string(), item);
+    }
+    pub fn get_natives(&self) -> IndexedIterator<nyar_hir::FunctionType> {
+        IndexedIterator::new(&self.items)
+    }
+}
 
 impl<'a, 'i> WasmOutput<'a, Func<'i>> for nyar_hir::FunctionType
 where

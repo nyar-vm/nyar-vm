@@ -32,7 +32,7 @@ impl ModuleBuilder {
         for (_, _, k) in self.data.into_iter() {
             terms.push(ModuleField::Data(k.as_wast()))
         }
-        // terms.push(self.wast_producer());
+        terms.push(self.wast_producer());
         Ok(Module {
             span: Span::from_offset(0),
             id: None,

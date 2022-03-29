@@ -1,14 +1,6 @@
-use crate::{NyarValue, Symbol};
-use indexmap::IndexMap;
-use nyar_error::FileSpan;
+use super::*;
 
-mod iters;
-#[derive(Default)]
-pub struct GlobalBuilder {
-    items: IndexMap<String, NamedValue>,
-}
-
-pub struct NamedValue {
+pub struct WasmVariable {
     pub symbol: Symbol,
     pub constant: bool,
     pub export: bool,
@@ -16,13 +8,16 @@ pub struct NamedValue {
     pub span: FileSpan,
 }
 
-impl GlobalBuilder {
-    pub fn insert(&mut self, item: NamedValue) -> Option<NamedValue> {
-        self.items.insert(item.symbol.to_string(), item)
+impl<'a, 'i> WasmOutput<'a, Expression<'i>> for WasmVariable
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> Expression<'i> {
+        Expression { instrs: Box::from(vec![self.value.as_wast()]) }
     }
 }
 
-impl NamedValue {
+impl WasmVariable {
     /// Create a new [`i32`] value
     pub fn i32(name: Symbol, value: i32) -> Self {
         Self { symbol: name, value: NyarValue::I32(value), constant: false, export: false, span: Default::default() }

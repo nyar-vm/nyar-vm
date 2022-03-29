@@ -1,39 +1,18 @@
 use crate::{
     helpers::{Id, WasmOutput},
     modules::DataItem,
+    WasmVariable,
 };
-use nyar_hir::NyarValue;
+use indexmap::IndexMap;
+use nyar_error::FileSpan;
+use nyar_hir::{IndexedIterator, NyarValue, Symbol};
 use wast::{
     core::{Data, DataKind, DataVal, Expression, Global, GlobalKind, Instruction},
     token::{Float32, Float64, Index, NameAnnotation, Span},
 };
-
-mod data;
-
-impl<'a, 'i> WasmOutput<'a, Global<'i>> for nyar_hir::NamedValue
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> Global<'i> {
-        Global {
-            span: Span::from_offset(0),
-            id: Id::type_id(self.symbol.as_ref()),
-            name: Some(NameAnnotation { name: self.symbol.as_ref() }),
-            exports: Default::default(),
-            ty: wast::core::GlobalType { ty: self.value.as_wast(), mutable: self.mutable() },
-            kind: GlobalKind::Inline(self.as_wast()),
-        }
-    }
-}
-
-impl<'a, 'i> WasmOutput<'a, Expression<'i>> for nyar_hir::NamedValue
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> Expression<'i> {
-        Expression { instrs: Box::from(vec![self.value.as_wast()]) }
-    }
-}
+pub mod data;
+pub mod global;
+pub mod variable;
 
 impl<'a, 'i> WasmOutput<'a, Instruction<'i>> for NyarValue
 where

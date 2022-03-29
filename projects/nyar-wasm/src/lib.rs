@@ -17,7 +17,9 @@ pub use crate::{
     types::{
         array::ArrayType,
         external::{ExternalRegister, ExternalType},
+        functional::FunctionRegister,
         structure::{FieldType, StructureType},
         TypeItem, TypeRegister,
     },
+    values::{global::GlobalRegister, variable::WasmVariable},
 };
