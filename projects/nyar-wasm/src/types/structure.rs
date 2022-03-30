@@ -1,14 +1,16 @@
 use super::*;
 
+#[derive(Debug)]
 pub struct StructureType {
     pub symbol: Symbol,
     pub fields: IndexMap<String, FieldType>,
     pub span: FileSpan,
 }
-
+#[derive(Debug)]
 pub struct FieldType {
     pub name: Symbol,
     pub mutable: bool,
+    pub r#type: NyarType,
     pub default: NyarValue,
 }
 
@@ -28,8 +30,8 @@ impl StructureType {
     pub fn fields(&self) -> IndexedIterator<FieldType> {
         IndexedIterator::new(&self.fields)
     }
-    pub fn add_field(&mut self, field: FieldType) -> Option<FieldType> {
-        self.fields.insert(field.name.to_string(), field)
+    pub fn add_field(&mut self, field: FieldType) {
+        self.fields.insert(field.name.to_string(), field);
     }
     pub fn with_fields<I>(mut self, fields: I) -> Self
     where
@@ -43,9 +45,16 @@ impl StructureType {
 }
 
 impl FieldType {
-    pub fn new(name: Symbol, default: NyarValue) -> Self {
-        Self { name, mutable: false, default }
+    pub fn new(name: Symbol) -> Self {
+        Self { name, mutable: false, r#type: NyarType::Any, default: NyarValue::Any }
     }
+    pub fn with_type(self, r#type: NyarType) -> Self {
+        Self { r#type, ..self }
+    }
+    pub fn with_default(self, default: NyarValue) -> Self {
+        Self { default, ..self }
+    }
+
     pub fn with_mutable(self) -> Self {
         Self { mutable: true, ..self }
     }
@@ -86,6 +95,6 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> StructField<'i> {
-        StructField { id: None, mutable: self.mutable, ty: self.default.as_wast() }
+        StructField { id: None, mutable: self.mutable, ty: self.r#type.as_wast() }
     }
 }

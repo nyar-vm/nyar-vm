@@ -9,6 +9,7 @@ mod wast_module;
 
 #[derive(Default)]
 pub struct ModuleBuilder {
+    name: String,
     memory_pages: u64,
     globals: GlobalRegister,
     types: TypeRegister,
@@ -52,6 +53,14 @@ impl ModuleBuilder {
     pub fn new(memory: u64) -> Self {
         Self { memory_pages: memory, ..Default::default() }
     }
+
+    pub fn get_module_name(&self) -> &str {
+        &self.name
+    }
+    pub fn set_module_name<S: ToString>(&mut self, name: S) {
+        self.name = name.to_string();
+    }
+
     pub fn insert_type<T: Into<TypeItem>>(&mut self, t: T) -> Option<TypeItem> {
         self.types.insert(t.into())
     }

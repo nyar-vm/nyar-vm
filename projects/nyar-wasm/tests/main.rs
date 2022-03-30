@@ -1,10 +1,6 @@
 use nyar_hir::{FunctionType, NyarType, NyarValue, Operation, ParameterType, Symbol, VariableKind};
-use nyar_wasm::{ExternalType, ModuleBuilder, WasmVariable};
-use std::{
-    fs::File,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use nyar_wasm::{ArrayType, ExternalType, FieldType, ModuleBuilder, StructureType, WasmVariable};
+use std::{fs::File, io::Write, path::Path};
 
 #[test]
 fn ready() {
@@ -32,20 +28,20 @@ fn test() {
     // module.insert_data(DataItem::utf8(Symbol::new("hello2"), "我艹, 世界!".to_string()));
     // module.insert_data(DataItem::utf8(Symbol::new("hello3"), "くそったれ世界!".to_string()));
 
-    // module.insert_type(StructureType::new(Symbol::new("Stable")).with_fields(vec![
-    //     FieldType::new(Symbol::new("a"), NyarValue::F32(2.0)),
-    //     FieldType::new(Symbol::new("b"), NyarValue::I32(1)),
-    //     FieldType::new(Symbol::new("c"), NyarValue::Any),
-    //     FieldType::new(Symbol::new("d"), NyarValue::Structure),
-    //     FieldType::new(Symbol::new("e"), NyarValue::Array),
-    // ]));
-    //
-    // module.insert_type(StructureType::new(Symbol::new("a")).with_fields(vec![
-    //     FieldType::new(Symbol::new("a"), NyarValue::F32(2.0)),
-    //     FieldType::new(Symbol::new("b"), NyarValue::I32(1)),
-    // ]));
+    module.insert_type(StructureType::new(Symbol::new("Stable")).with_fields(vec![
+        FieldType::new(Symbol::new("a")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+        FieldType::new(Symbol::new("b")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+        FieldType::new(Symbol::new("c")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+        FieldType::new(Symbol::new("d")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+        FieldType::new(Symbol::new("e")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+    ]));
 
-    // module.insert_type(ArrayType::new(Symbol::new("Bytes"), NyarType::I32));
+    module.insert_type(StructureType::new(Symbol::new("a")).with_fields(vec![
+        FieldType::new(Symbol::new("a")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+        FieldType::new(Symbol::new("b")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+    ]));
+
+    module.insert_type(ArrayType::new(Symbol::new("Bytes"), NyarType::I32));
 
     module.insert_function(
         FunctionType::new(Symbol::new("add_ab"))

@@ -88,7 +88,11 @@ impl WasmInstruction for Operation {
                 code.iter().for_each(|i| i.emit(w));
                 match (from, into) {
                     // u32 -> ?
+                    (NyarType::U32, NyarType::U32) => {}
+                    (NyarType::U32, NyarType::I32) => w.push(Instruction::I32WrapI64),
                     (NyarType::U32, NyarType::I64) => w.push(Instruction::I64ExtendI32U),
+                    (NyarType::U32, NyarType::F32) => w.push(Instruction::F32ConvertI32U),
+                    (NyarType::U32, NyarType::F64) => w.push(Instruction::F64ConvertI32U),
                     // i32 -> ?
                     (NyarType::I32, NyarType::I32) => {}
                     (NyarType::I32, NyarType::I64) => w.push(Instruction::I64ExtendI32S),
@@ -99,7 +103,11 @@ impl WasmInstruction for Operation {
                     (NyarType::F32, NyarType::I64) => w.push(Instruction::I64TruncF32S),
                     (NyarType::F32, NyarType::F32) => {}
                     (NyarType::F32, NyarType::F64) => w.push(Instruction::F64PromoteF32),
-
+                    // f64 -> ?
+                    (NyarType::F64, NyarType::I32) => w.push(Instruction::I32TruncF64S),
+                    (NyarType::F64, NyarType::I64) => w.push(Instruction::I64TruncF64S),
+                    (NyarType::F64, NyarType::F32) => w.push(Instruction::F32DemoteF64),
+                    (NyarType::F64, NyarType::F64) => {}
                     _ => {
                         unimplemented!()
                     }
@@ -108,10 +116,11 @@ impl WasmInstruction for Operation {
             Self::Transmute { from, into, code } => {
                 code.iter().for_each(|i| i.emit(w));
                 match (from, into) {
-                    (NyarType::F32, NyarType::I32) => w.push(Instruction::F32ReinterpretI32),
-                    (NyarType::F64, NyarType::I64) => w.push(Instruction::F64ReinterpretI64),
-                    (NyarType::I32, NyarType::F32) => w.push(Instruction::I32ReinterpretF32),
-                    (NyarType::I64, NyarType::F64) => w.push(Instruction::I64ReinterpretF64),
+                    (NyarType::I32, NyarType::F32) => w.push(Instruction::F32ReinterpretI32),
+                    (NyarType::I64, NyarType::F64) => w.push(Instruction::F64ReinterpretI64),
+                    (NyarType::F32, NyarType::I32) => w.push(Instruction::I32ReinterpretF32),
+                    (NyarType::F64, NyarType::I64) => w.push(Instruction::I64ReinterpretF64),
+
                     _ => {
                         unimplemented!()
                     }

@@ -1,3 +1,5 @@
+use crate::Symbol;
+
 #[derive(Debug)]
 pub enum NyarType {
     U32,
@@ -8,6 +10,6 @@ pub enum NyarType {
     F32,
     F64,
     Any,
-    Structure,
-    Array,
+    Named { symbol: Symbol },
+    Array { inner: Box<NyarType> },
 }

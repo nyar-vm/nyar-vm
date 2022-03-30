@@ -72,7 +72,8 @@ impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarType {
             NyarType::F64 => ValType::F64,
             NyarType::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
             NyarType::Structure => ValType::Ref(RefType { nullable: true, heap: HeapType::Struct }),
-            NyarType::Array => ValType::Ref(RefType { nullable: true, heap: HeapType::Array }),
+            // type erased
+            NyarType::Array { .. } => ValType::Ref(RefType { nullable: false, heap: HeapType::Array }),
         }
     }
 }

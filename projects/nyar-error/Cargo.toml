@@ -37,7 +37,7 @@ optional = true
 
 
 [dependencies.diagnostic]
-version = "0.6.0"
+version = "0.6.1"
 #path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\diagnostic'
 features = ["serde", "url"]
 

@@ -1,10 +1,10 @@
 [package]
 name = "nyar-wasm"
-version = "0.0.0"
+version = "0.0.1"
 authors = ["Aster <192607617@qq.com>"]
 description = "High level wasm builder"
 repository = "https://github.com/oovm/dialect"
-documentation = "https://docs.rs/pliron-wasm"
+documentation = "https://docs.rs/nyar-wasm"
 readme = "readme.md"
 license = "MPL-2.0"
 edition = "2021"
@@ -12,7 +12,6 @@ exclude = ["package.json", "tests/**"]
 
 [dependencies]
 indexmap = "2.1.0"
-
 wast = "69.0.1"
 
 [dependencies.nyar-error]

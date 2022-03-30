@@ -23,7 +23,7 @@ impl NyarValue {
             NyarValue::F64(_) => NyarType::F32,
             NyarValue::Function(_) => NyarType::I32,
             NyarValue::Structure => NyarType::Structure,
-            NyarValue::Array => NyarType::Array,
+            NyarValue::Array => NyarType::Array { inner: Box::new(NyarType::I8) },
             NyarValue::Any => NyarType::Any,
         }
     }

@@ -1,6 +1,6 @@
 [package]
 name = "nyar-hir"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Aster <192607617@qq.com>"]
 description = "Abstract Syntax Tree of valkyrie language"
 repository = "https://github.com/nyar-vm/valkyrie.rs"

@@ -23,3 +23,4 @@ pub use crate::{
     },
     values::{global::GlobalRegister, variable::WasmVariable},
 };
+pub use nyar_hir::{NyarType, Symbol};
