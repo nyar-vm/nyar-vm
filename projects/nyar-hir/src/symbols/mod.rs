@@ -1,18 +1,14 @@
 use std::{
-    fmt::{Display, Formatter},
+    fmt::{Debug, Display, Formatter},
     sync::Arc,
 };
+
+mod convert;
 mod display;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Symbol {
     inner: Arc<str>,
-}
-
-impl AsRef<str> for Symbol {
-    fn as_ref(&self) -> &str {
-        self.inner.as_ref()
-    }
 }
 
 impl Symbol {

@@ -1,11 +1,26 @@
 use super::*;
+use nyar_hir::NyarType;
 
 pub struct WasmVariable {
     pub symbol: Symbol,
     pub constant: bool,
     pub export: bool,
+    pub r#type: NyarType,
     pub value: NyarValue,
     pub span: FileSpan,
+}
+
+impl Default for WasmVariable {
+    fn default() -> Self {
+        Self {
+            symbol: Symbol::new("<anonymous>"),
+            constant: false,
+            export: false,
+            r#type: NyarType::U8,
+            value: NyarValue::Array,
+            span: Default::default(),
+        }
+    }
 }
 
 impl<'a, 'i> WasmOutput<'a, Expression<'i>> for WasmVariable
@@ -20,25 +35,19 @@ where
 impl WasmVariable {
     /// Create a new [`i32`] value
     pub fn i32(name: Symbol, value: i32) -> Self {
-        Self { symbol: name, value: NyarValue::I32(value), constant: false, export: false, span: Default::default() }
+        Self { symbol: name, value: NyarValue::I32(value), r#type: NyarType::I32, ..Self::default() }
     }
-    pub fn i64(name: Symbol, value: i32) -> Self {
-        Self { symbol: name, value: NyarValue::I32(value), constant: false, export: false, span: Default::default() }
+    pub fn i64(name: Symbol, value: i64) -> Self {
+        Self { symbol: name, value: NyarValue::I64(value), r#type: NyarType::I64, ..Self::default() }
     }
     pub fn f32(name: Symbol, value: f32) -> Self {
-        Self { symbol: name, value: NyarValue::F32(value), constant: false, export: false, span: Default::default() }
+        Self { symbol: name, value: NyarValue::F32(value), r#type: NyarType::F32, ..Self::default() }
     }
-    pub fn f64(name: Symbol, value: f32) -> Self {
-        Self { symbol: name, value: NyarValue::F32(value), constant: false, export: false, span: Default::default() }
+    pub fn f64(name: Symbol, value: f64) -> Self {
+        Self { symbol: name, value: NyarValue::F64(value), r#type: NyarType::F64, ..Self::default() }
     }
     pub fn function(name: Symbol) -> Self {
-        Self {
-            symbol: name.clone(),
-            value: NyarValue::Function(name),
-            constant: false,
-            export: false,
-            span: Default::default(),
-        }
+        Self { symbol: name.clone(), value: NyarValue::Function(name), ..Self::default() }
     }
     pub fn mutable(&self) -> bool {
         !self.constant

@@ -34,7 +34,10 @@ where
         }
     }
 }
-impl<'a, 'i> WasmOutput<'a, wast::core::ArrayType<'i>> for ArrayType {
+impl<'a, 'i> WasmOutput<'a, wast::core::ArrayType<'i>> for ArrayType
+where
+    'a: 'i,
+{
     fn as_wast(&'a self) -> wast::core::ArrayType<'i> {
         wast::core::ArrayType { mutable: self.mutable, ty: self.item_type.as_wast() }
     }

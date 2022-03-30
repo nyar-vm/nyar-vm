@@ -28,9 +28,7 @@ where
             NyarValue::Function(_) => {
                 todo!()
             }
-            NyarValue::Structure => {
-                todo!()
-            }
+            NyarValue::Structure(name) => Instruction::StructNewDefault(Index::Id(Id::new(name.as_ref(), 0))),
             NyarValue::Array => {
                 todo!()
             }

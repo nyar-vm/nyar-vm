@@ -71,8 +71,11 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, FunctionType<'i>> for ExternalType {
-    fn as_wast(&self) -> FunctionType<'i> {
+impl<'a, 'i> WasmOutput<'a, FunctionType<'i>> for ExternalType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> FunctionType<'i> {
         let input = self.input.iter().map(|ty| (None, None, ty.as_wast())).collect::<Vec<_>>();
         let result = self.output.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
         FunctionType { params: Box::from(input), results: Box::from(result) }

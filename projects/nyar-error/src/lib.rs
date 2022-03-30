@@ -1,6 +1,6 @@
 #![allow(clippy::wrong_self_convention)]
 pub use crate::{
-    duplicates::DuplicateError,
+    duplicates::{DuplicateError, DuplicateKind},
     errors::{NyarError, NyarErrorKind, Result, Validation},
     parsing::SyntaxError,
     runtime::RuntimeError,

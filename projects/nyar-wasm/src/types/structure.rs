@@ -95,6 +95,6 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> StructField<'i> {
-        StructField { id: None, mutable: self.mutable, ty: self.r#type.as_wast() }
+        StructField { id: Id::type_id(self.name.as_ref()), mutable: self.mutable, ty: self.r#type.as_wast() }
     }
 }

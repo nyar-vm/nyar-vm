@@ -2,6 +2,7 @@ use crate::Symbol;
 
 #[derive(Debug)]
 pub enum NyarType {
+    U8,
     U32,
     I8,
     I16,

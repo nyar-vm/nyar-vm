@@ -30,7 +30,7 @@ where
             id: Id::type_id(self.symbol.as_ref()),
             name: Some(NameAnnotation { name: self.symbol.as_ref() }),
             exports: Default::default(),
-            ty: wast::core::GlobalType { ty: self.value.as_wast(), mutable: self.mutable() },
+            ty: wast::core::GlobalType { ty: self.r#type.as_wast(), mutable: self.mutable() },
             kind: GlobalKind::Inline(self.as_wast()),
         }
     }

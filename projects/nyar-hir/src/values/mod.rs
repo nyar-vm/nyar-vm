@@ -8,7 +8,7 @@ pub enum NyarValue {
     F32(f32),
     F64(f64),
     Function(Symbol),
-    Structure,
+    Structure(Symbol),
     Array,
     Any,
 }
@@ -22,7 +22,7 @@ impl NyarValue {
             NyarValue::F32(_) => NyarType::F32,
             NyarValue::F64(_) => NyarType::F32,
             NyarValue::Function(_) => NyarType::I32,
-            NyarValue::Structure => NyarType::Structure,
+            NyarValue::Structure(name) => NyarType::Named { symbol: name.clone() },
             NyarValue::Array => NyarType::Array { inner: Box::new(NyarType::I8) },
             NyarValue::Any => NyarType::Any,
         }

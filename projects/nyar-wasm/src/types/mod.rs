@@ -10,7 +10,7 @@ use wast::{
         Expression, Func, FuncKind, FunctionType, HeapType, Import, InlineExport, ItemKind, ItemSig, ModuleField, RefType,
         StorageType, StructField, StructType, Type, TypeDef, TypeUse, ValType,
     },
-    token::{NameAnnotation, Span},
+    token::{Index, NameAnnotation, Span},
 };
 
 pub mod array;
@@ -54,15 +54,13 @@ impl TypeItem {
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarValue {
-    fn as_wast(&'a self) -> ValType<'i> {
-        self.as_type().as_wast()
-    }
-}
-
-impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarType {
+impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarType
+where
+    'a: 'i,
+{
     fn as_wast(&'a self) -> ValType<'i> {
         match self {
+            NyarType::U8 => ValType::I32,
             NyarType::U32 => ValType::I32,
             NyarType::I8 => ValType::I32,
             NyarType::I16 => ValType::I32,
@@ -71,18 +69,19 @@ impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarType {
             NyarType::F32 => ValType::F32,
             NyarType::F64 => ValType::F64,
             NyarType::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
-            NyarType::Structure => ValType::Ref(RefType { nullable: true, heap: HeapType::Struct }),
+            NyarType::Named { symbol } => {
+                ValType::Ref(RefType { nullable: true, heap: HeapType::Concrete(Index::Id(Id::new(symbol.as_ref(), 0))) })
+            }
             // type erased
             NyarType::Array { .. } => ValType::Ref(RefType { nullable: false, heap: HeapType::Array }),
         }
     }
 }
-impl<'a, 'i> WasmOutput<'a, StorageType<'i>> for NyarValue {
-    fn as_wast(&'a self) -> StorageType<'i> {
-        self.as_type().as_wast()
-    }
-}
-impl<'a, 'i> WasmOutput<'a, StorageType<'i>> for NyarType {
+
+impl<'a, 'i> WasmOutput<'a, StorageType<'i>> for NyarType
+where
+    'a: 'i,
+{
     fn as_wast(&'a self) -> StorageType<'i> {
         match self {
             NyarType::I8 => StorageType::I8,

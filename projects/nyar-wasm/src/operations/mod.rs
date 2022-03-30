@@ -154,7 +154,7 @@ impl WasmInstruction for NyarValue {
             NyarValue::Function(_) => {
                 todo!()
             }
-            NyarValue::Structure => {
+            NyarValue::Structure(_) => {
                 todo!()
             }
             NyarValue::Array => {
