@@ -1,6 +1,5 @@
 use super::*;
-use indexmap::IndexMap;
-use nyar_hir::{IndexedIterator, Symbol};
+use crate::helpers::IndexedIterator;
 
 #[derive(Default)]
 pub struct ExternalRegister {
@@ -71,13 +70,13 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, FunctionType<'i>> for ExternalType
+impl<'a, 'i> WasmOutput<'a, wast::core::FunctionType<'i>> for ExternalType
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> FunctionType<'i> {
+    fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
         let input = self.input.iter().map(|ty| (None, None, ty.as_wast())).collect::<Vec<_>>();
         let result = self.output.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        FunctionType { params: Box::from(input), results: Box::from(result) }
+        wast::core::FunctionType { params: Box::from(input), results: Box::from(result) }
     }
 }

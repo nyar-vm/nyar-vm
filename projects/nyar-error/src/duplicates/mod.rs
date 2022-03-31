@@ -5,7 +5,7 @@ use crate::{Diagnostic, NyarError, NyarErrorKind};
 
 mod kind;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum DuplicateKind {
     Type = 1002,
     Function = 1003,
@@ -13,7 +13,7 @@ pub enum DuplicateKind {
     Key = 1005,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DuplicateError {
     kind: DuplicateKind,
     name: String,
@@ -41,6 +41,12 @@ impl DuplicateError {
         );
         report.set_help(format!("Items must have unique names, rename one of the items to have a unique name"));
         report.finish()
+    }
+}
+
+impl DuplicateError {
+    pub fn duplicate_type(name: String, this: FileSpan, last: FileSpan) -> Self {
+        DuplicateError { kind: DuplicateKind::Type, name, this_item: this, last_item: last }
     }
 }
 

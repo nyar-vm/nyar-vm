@@ -1,5 +1,7 @@
-use nyar_hir::{FunctionType, NyarType, NyarValue, Operation, ParameterType, Symbol, VariableKind};
-use nyar_wasm::{ArrayType, ExternalType, FieldType, ModuleBuilder, StructureType, WasmVariable};
+use nyar_wasm::{
+    ArrayType, ExternalType, FieldType, FunctionType, ModuleBuilder, NyarType, NyarValue, Operation, ParameterType,
+    StructureType, Symbol, VariableKind, WasmVariable,
+};
 use std::{fs::File, io::Write, path::Path};
 
 #[test]

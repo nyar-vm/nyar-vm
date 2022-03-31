@@ -1,4 +1,4 @@
-use crate::{NyarType, NyarValue, Symbol};
+use crate::{operations::Operation, types::NyarType, Symbol};
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
 use std::slice::Iter;
@@ -77,76 +77,4 @@ impl<'i> IntoIterator for &'i FunctionBody {
     fn into_iter(self) -> Self::IntoIter {
         self.codes.iter()
     }
-}
-
-#[derive(Debug)]
-pub enum Operation {
-    Sequence {
-        items: Vec<Operation>,
-    },
-    CallFunction {
-        name: Symbol,
-        input: Vec<Operation>,
-    },
-    GetVariable {
-        kind: VariableKind,
-        variable: Symbol,
-    },
-    SetVariable {
-        kind: VariableKind,
-        variable: Symbol,
-    },
-    TeeVariable {
-        variable: Symbol,
-    },
-    Loop {
-        r#continue: Symbol,
-        r#break: Symbol,
-        body: Vec<Operation>,
-    },
-    Goto {
-        label: Symbol,
-    },
-    Drop,
-    Return,
-    Unreachable,
-
-    /// `if cond { } { }`
-    Conditional {
-        condition: Vec<Operation>,
-        then: Vec<Operation>,
-        r#else: Vec<Operation>,
-    },
-    Constant {
-        value: NyarValue,
-    },
-    NativeSum {
-        native: NyarType,
-        terms: Vec<Operation>,
-    },
-    Convert {
-        from: NyarType,
-        into: NyarType,
-        code: Vec<Operation>,
-    },
-    Transmute {
-        from: NyarType,
-        into: NyarType,
-        code: Vec<Operation>,
-    },
-    NativeEqual {
-        native: NyarType,
-        terms: Vec<Operation>,
-    },
-    NativeEqualZero {
-        native: NyarType,
-        term: Box<Operation>,
-    },
-}
-
-#[derive(Debug)]
-pub enum VariableKind {
-    Global,
-    Local,
-    Table,
 }

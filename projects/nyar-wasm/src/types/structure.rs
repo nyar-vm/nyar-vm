@@ -1,4 +1,5 @@
 use super::*;
+use crate::{helpers::IndexedIterator, values::NyarValue};
 
 #[derive(Debug)]
 pub struct StructureType {
@@ -53,6 +54,10 @@ impl FieldType {
     }
     pub fn with_default(self, default: NyarValue) -> Self {
         Self { default, ..self }
+    }
+
+    pub fn set_nullable(&mut self, nullable: bool) {
+        self.r#type.set_nullable(nullable);
     }
 
     pub fn with_mutable(self) -> Self {

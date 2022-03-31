@@ -1,4 +1,5 @@
 use super::*;
+use crate::helpers::IndexedIterator;
 
 #[derive(Default)]
 pub struct GlobalRegister {

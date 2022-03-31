@@ -15,6 +15,12 @@ edition = "2021"
 indexmap = "2.1.0"
 
 
+[dependencies.salsa-2022]
+version = "0.1.0"
+features = []
+git = "https://github.com/salsa-rs/salsa"
+
+
 [dependencies.nyar-error]
 version = "0.1.*"
 path = "../nyar-error"

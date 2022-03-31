@@ -1,12 +1,16 @@
 use super::*;
+use crate::{
+    functions::{FunctionBody, FunctionType, ParameterType},
+    helpers::IndexedIterator,
+};
 
 #[derive(Default)]
 pub struct FunctionRegister {
-    items: IndexMap<String, nyar_hir::FunctionType>,
+    items: IndexMap<String, FunctionType>,
 }
 impl<'i> IntoIterator for &'i FunctionRegister {
-    type Item = (usize, &'i str, &'i nyar_hir::FunctionType);
-    type IntoIter = IndexedIterator<'i, nyar_hir::FunctionType>;
+    type Item = (usize, &'i str, &'i FunctionType);
+    type IntoIter = IndexedIterator<'i, FunctionType>;
 
     fn into_iter(self) -> Self::IntoIter {
         IndexedIterator::new(&self.items)
@@ -21,15 +25,15 @@ impl FunctionRegister {
         }
         Err(NyarError::custom(format!("missing function {name}")))
     }
-    pub fn add_native(&mut self, item: nyar_hir::FunctionType) {
+    pub fn add_native(&mut self, item: FunctionType) {
         self.items.insert(item.symbol.to_string(), item);
     }
-    pub fn get_natives(&self) -> IndexedIterator<nyar_hir::FunctionType> {
+    pub fn get_natives(&self) -> IndexedIterator<FunctionType> {
         IndexedIterator::new(&self.items)
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, Func<'i>> for nyar_hir::FunctionType
+impl<'a, 'i> WasmOutput<'a, Func<'i>> for FunctionType
 where
     'a: 'i,
 {
@@ -45,14 +49,14 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, FunctionType<'i>> for nyar_hir::FunctionType
+impl<'a, 'i> WasmOutput<'a, wast::core::FunctionType<'i>> for FunctionType
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> FunctionType<'i> {
+    fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
         let input = self.input.iter().map(|(_, ty)| ty.as_wast()).collect::<Vec<_>>();
         let result = self.output.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        FunctionType { params: Box::from(input), results: Box::from(result) }
+        wast::core::FunctionType { params: Box::from(input), results: Box::from(result) }
     }
 }
 
@@ -65,7 +69,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, FuncKind<'i>> for nyar_hir::FunctionType
+impl<'a, 'i> WasmOutput<'a, FuncKind<'i>> for FunctionType
 where
     'a: 'i,
 {

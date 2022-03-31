@@ -24,7 +24,7 @@ mod for_pratt;
 #[cfg(feature = "yggdrasil-rt")]
 mod for_ygg;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxError {
     pub info: String,
     pub hint: String,

@@ -1,8 +1,47 @@
+use indexmap::{map::Iter, IndexMap};
 use std::intrinsics::transmute;
 use wast::{
     core::Instruction,
     token::{Index, Span},
 };
+
+pub struct IndexedIterator<'i, T> {
+    iter: Iter<'i, String, T>,
+    index: usize,
+}
+
+impl<'i, T> Iterator for IndexedIterator<'i, T> {
+    type Item = (usize, &'i str, &'i T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (name, item) = self.iter.next()?;
+        let index = self.index;
+        self.index += 1;
+        Some((index, name, item))
+    }
+}
+impl<'i, T> DoubleEndedIterator for IndexedIterator<'i, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let (name, item) = self.iter.next_back()?;
+        let index = self.index;
+        self.index += 1;
+        Some((index, name, item))
+    }
+}
+
+impl<'i, T> ExactSizeIterator for IndexedIterator<'i, T> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+impl<'i, T> IndexedIterator<'i, T> {
+    pub fn new(map: &'i IndexMap<String, T>) -> Self {
+        Self { iter: map.iter(), index: 0 }
+    }
+    pub fn with_index(self, index: usize) -> Self {
+        Self { index, ..self }
+    }
+}
 
 pub trait WasmOutput<'a, Item> {
     fn as_wast(&'a self) -> Item;

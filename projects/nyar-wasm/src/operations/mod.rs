@@ -1,9 +1,86 @@
-use crate::helpers::{Id, WasmInstruction};
-use nyar_hir::{NyarType, NyarValue, Operation, VariableKind};
+use crate::{
+    helpers::{Id, WasmInstruction},
+    types::NyarType,
+    values::NyarValue,
+    Symbol,
+};
 use wast::{
     core::{BlockType, Instruction, TableArg, TypeUse},
     token::{Float32, Float64, Index},
 };
+
+#[derive(Debug)]
+pub enum Operation {
+    Sequence {
+        items: Vec<Operation>,
+    },
+    CallFunction {
+        name: Symbol,
+        input: Vec<Operation>,
+    },
+    GetVariable {
+        kind: VariableKind,
+        variable: Symbol,
+    },
+    SetVariable {
+        kind: VariableKind,
+        variable: Symbol,
+    },
+    TeeVariable {
+        variable: Symbol,
+    },
+    Loop {
+        r#continue: Symbol,
+        r#break: Symbol,
+        body: Vec<Operation>,
+    },
+    Goto {
+        label: Symbol,
+    },
+    Drop,
+    Return,
+    Unreachable,
+
+    /// `if cond { } { }`
+    Conditional {
+        condition: Vec<Operation>,
+        then: Vec<Operation>,
+        r#else: Vec<Operation>,
+    },
+    Constant {
+        value: NyarValue,
+    },
+    NativeSum {
+        native: NyarType,
+        terms: Vec<Operation>,
+    },
+    Convert {
+        from: NyarType,
+        into: NyarType,
+        code: Vec<Operation>,
+    },
+    Transmute {
+        from: NyarType,
+        into: NyarType,
+        code: Vec<Operation>,
+    },
+    NativeEqual {
+        native: NyarType,
+        terms: Vec<Operation>,
+    },
+    NativeEqualZero {
+        native: NyarType,
+        term: Box<Operation>,
+    },
+}
+
+#[derive(Debug)]
+pub enum VariableKind {
+    Global,
+    Local,
+    Table,
+}
+
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
     where

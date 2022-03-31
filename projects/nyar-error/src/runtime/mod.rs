@@ -10,7 +10,7 @@ mod for_serde;
 #[cfg(feature = "wasmtime")]
 mod for_wasm;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeError {
     message: String,
 }

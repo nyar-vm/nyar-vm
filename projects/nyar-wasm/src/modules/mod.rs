@@ -1,7 +1,9 @@
-use crate::{ExternalRegister, ExternalType, FunctionRegister, GlobalRegister, TypeItem, TypeRegister, WasmVariable};
+use crate::{
+    functions::FunctionType, helpers::IndexedIterator, ExternalRegister, ExternalType, FunctionRegister, GlobalRegister,
+    Symbol, TypeItem, TypeRegister, WasmVariable,
+};
 use indexmap::IndexMap;
 use nyar_error::{FileSpan, NyarError};
-use nyar_hir::{FunctionType, IndexedIterator, Symbol};
 
 mod interface;
 mod wast_component;

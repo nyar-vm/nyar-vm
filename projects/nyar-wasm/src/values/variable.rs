@@ -1,5 +1,4 @@
 use super::*;
-use nyar_hir::NyarType;
 
 pub struct WasmVariable {
     pub symbol: Symbol,

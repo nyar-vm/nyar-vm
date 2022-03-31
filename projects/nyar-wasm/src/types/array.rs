@@ -1,4 +1,5 @@
 use super::*;
+use crate::Symbol;
 
 impl From<ArrayType> for TypeItem {
     fn from(value: ArrayType) -> Self {

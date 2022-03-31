@@ -6,13 +6,13 @@ use std::{
     ops::Range,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MissingError {
     pub(crate) kind: MissingErrorKind,
     pub(crate) span: FileSpan,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MissingErrorKind {
     /// empty symbol
     EmptyPath,

@@ -5,22 +5,25 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 
+mod functions;
 pub mod helpers;
 mod modules;
 mod operations;
 mod runner;
 mod types;
 mod values;
-
 pub use crate::{
+    functions::{FunctionBody, FunctionType, ParameterType},
     modules::ModuleBuilder,
+    operations::{Operation, VariableKind},
+    symbols::Symbol,
     types::{
         array::ArrayType,
         external::{ExternalRegister, ExternalType},
         functional::FunctionRegister,
         structure::{FieldType, StructureType},
-        TypeItem, TypeRegister,
+        NyarType, TypeItem, TypeRegister,
     },
-    values::{global::GlobalRegister, variable::WasmVariable},
+    values::{global::GlobalRegister, variable::WasmVariable, NyarValue},
 };
-pub use nyar_hir::{NyarType, Symbol};
+mod symbols;

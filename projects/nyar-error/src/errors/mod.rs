@@ -7,13 +7,13 @@ pub mod display;
 pub type Validation<T> = validatus::Validation<T, NyarError>;
 pub type Result<T = ()> = core::result::Result<T, NyarError>;
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct NyarError {
     kind: Box<NyarErrorKind>,
     level: ReportKind,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum NyarErrorKind {
     Missing(MissingError),
     Duplicate(DuplicateError),
