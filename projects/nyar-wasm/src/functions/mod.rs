@@ -1,4 +1,4 @@
-use crate::{operations::Operation, types::NyarType, Symbol};
+use crate::{operations::Operation, types::WasmType, WasmSymbol};
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
 use std::slice::Iter;
@@ -7,23 +7,23 @@ pub mod operations;
 
 /// `function`
 pub struct FunctionType {
-    pub symbol: Symbol,
+    pub symbol: WasmSymbol,
     pub export: bool,
     pub entry: bool,
     pub input: IndexMap<String, ParameterType>,
-    pub output: Vec<NyarType>,
+    pub output: Vec<WasmType>,
     pub body: FunctionBody,
     pub span: FileSpan,
 }
 
 pub struct ParameterType {
-    pub name: Symbol,
-    pub type_hint: NyarType,
+    pub name: WasmSymbol,
+    pub type_hint: WasmType,
     pub span: FileSpan,
 }
 
 impl FunctionType {
-    pub fn new(path: Symbol) -> Self {
+    pub fn new(path: WasmSymbol) -> Self {
         Self {
             symbol: path,
             export: false,
@@ -51,7 +51,7 @@ impl FunctionType {
     }
     pub fn with_outputs<I>(mut self, outputs: I) -> Self
     where
-        I: IntoIterator<Item = NyarType>,
+        I: IntoIterator<Item = WasmType>,
     {
         self.output = outputs.into_iter().collect();
         self

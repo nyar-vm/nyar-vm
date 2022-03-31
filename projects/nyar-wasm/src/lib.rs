@@ -16,14 +16,14 @@ pub use crate::{
     functions::{FunctionBody, FunctionType, ParameterType},
     modules::ModuleBuilder,
     operations::{Operation, VariableKind},
-    symbols::Symbol,
+    symbols::WasmSymbol,
     types::{
         array::ArrayType,
         external::{ExternalRegister, ExternalType},
         functional::FunctionRegister,
         structure::{FieldType, StructureType},
-        NyarType, TypeItem, TypeRegister,
+        TypeItem, TypeRegister, WasmType,
     },
-    values::{global::GlobalRegister, variable::WasmVariable, NyarValue},
+    values::{global::GlobalRegister, variable::WasmVariable, WasmValue},
 };
 mod symbols;

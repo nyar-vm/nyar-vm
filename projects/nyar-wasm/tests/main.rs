@@ -1,8 +1,8 @@
 use nyar_wasm::{
-    ArrayType, ExternalType, FieldType, FunctionType, ModuleBuilder, NyarType, NyarValue, Operation, ParameterType,
-    StructureType, Symbol, VariableKind, WasmVariable,
+    ArrayType, ExternalType, FieldType, FunctionType, ModuleBuilder, Operation, ParameterType, StructureType, VariableKind,
+    WasmSymbol, WasmType, WasmValue, WasmVariable,
 };
-use std::{fs::File, io::Write, path::Path};
+use std::{fs::File, io::Write, path::Path, process::Command};
 
 #[test]
 fn ready() {
@@ -12,93 +12,92 @@ fn ready() {
 #[test]
 fn test() {
     let mut module = ModuleBuilder::new(16);
-    module.insert_global(WasmVariable::f32(Symbol::new("math.pi"), 3.14).with_public());
+    module.insert_global(WasmVariable::f32(WasmSymbol::new("math.pi"), 3.14).with_public());
 
     module.insert_external(
         ExternalType::new("wasi_snapshot_preview1", "fd_write")
-            .with_input(vec![NyarType::I32, NyarType::I32, NyarType::I32, NyarType::I32])
-            .with_output(vec![NyarType::I32]),
+            .with_input(vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32])
+            .with_output(vec![WasmType::I32]),
     );
 
     module.insert_external(
         ExternalType::new("wasi_snapshot_preview1", "random_get")
-            .with_input(vec![NyarType::I32, NyarType::I32])
-            .with_output(vec![NyarType::I32]),
+            .with_input(vec![WasmType::I32, WasmType::I32])
+            .with_output(vec![WasmType::I32]),
     );
 
     // module.insert_data(DataItem::utf8(Symbol::new("hello1"), "fuck world!".to_string()));
     // module.insert_data(DataItem::utf8(Symbol::new("hello2"), "我艹, 世界!".to_string()));
     // module.insert_data(DataItem::utf8(Symbol::new("hello3"), "くそったれ世界!".to_string()));
 
-    module.insert_type(StructureType::new(Symbol::new("Stable")).with_fields(vec![
-        FieldType::new(Symbol::new("a")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
-        FieldType::new(Symbol::new("b")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
-        FieldType::new(Symbol::new("c")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
-        FieldType::new(Symbol::new("d")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
-        FieldType::new(Symbol::new("e")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+    module.insert_type(StructureType::new(WasmSymbol::new("Stable")).with_fields(vec![
+        FieldType::new(WasmSymbol::new("a")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("c")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("d")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("e")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
     ]));
 
-    module.insert_type(StructureType::new(Symbol::new("a")).with_fields(vec![
-        FieldType::new(Symbol::new("a")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
-        FieldType::new(Symbol::new("b")).with_type(NyarType::F32).with_default(NyarValue::F32(2.0)),
+    module.insert_type(StructureType::new(WasmSymbol::new("a")).with_fields(vec![
+        FieldType::new(WasmSymbol::new("a")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
     ]));
 
-    module.insert_type(ArrayType::new(Symbol::new("Bytes"), NyarType::I32));
+    module.insert_type(ArrayType::new(WasmSymbol::new("Bytes"), WasmType::I32));
 
     module.insert_function(
-        FunctionType::new(Symbol::new("add_ab"))
+        FunctionType::new(WasmSymbol::new("add_ab"))
             .with_inputs(vec![
-                ParameterType { name: Symbol::new("a"), type_hint: NyarType::I32, span: Default::default() },
-                ParameterType { name: Symbol::new("b"), type_hint: NyarType::I32, span: Default::default() },
+                ParameterType { name: WasmSymbol::new("a"), type_hint: WasmType::I32, span: Default::default() },
+                ParameterType { name: WasmSymbol::new("b"), type_hint: WasmType::I32, span: Default::default() },
             ])
-            .with_outputs(vec![NyarType::I32])
+            .with_outputs(vec![WasmType::I32])
             .with_operations(vec![
                 Operation::NativeSum {
-                    native: NyarType::I32,
+                    native: WasmType::I32,
                     terms: vec![
-                        Operation::GetVariable { kind: VariableKind::Local, variable: Symbol::new("a") },
-                        Operation::GetVariable { kind: VariableKind::Local, variable: Symbol::new("b") },
+                        Operation::GetVariable { kind: VariableKind::Local, variable: WasmSymbol::new("a") },
+                        Operation::GetVariable { kind: VariableKind::Local, variable: WasmSymbol::new("b") },
                         Operation::Convert {
-                            from: NyarType::I32,
-                            into: NyarType::I32,
+                            from: WasmType::I32,
+                            into: WasmType::I32,
                             code: vec![Operation::CallFunction {
-                                name: Symbol::new("add_ba"),
-                                input: vec![Operation::Constant { value: NyarValue::F32(0.0) }],
+                                name: WasmSymbol::new("add_ba"),
+                                input: vec![Operation::Constant { value: WasmValue::F32(0.0) }],
                             }],
                         },
                     ],
                 },
-                Operation::Drop,
+                Operation::drop(1),
                 Operation::r#loop(
                     "for-1",
                     vec![
-                        Operation::Constant { value: NyarValue::I32(0) },
-                        Operation::Constant { value: NyarValue::I32(0) },
-                        Operation::Drop,
-                        Operation::Drop,
+                        Operation::Constant { value: WasmValue::I32(0) },
+                        Operation::Constant { value: WasmValue::I32(0) },
+                        Operation::drop(2),
                         Operation::r#break("for-1"),
                     ],
                 ),
-                Operation::Constant { value: NyarValue::I32(0) },
+                Operation::Constant { value: WasmValue::I32(0) },
                 Operation::Return {},
             ])
             .with_public(),
     );
 
     module.insert_function(
-        FunctionType::new(Symbol::new("add_ba"))
-            .with_inputs(vec![ParameterType { name: Symbol::new("b"), type_hint: NyarType::F32, span: Default::default() }])
-            .with_outputs(vec![NyarType::I32])
+        FunctionType::new(WasmSymbol::new("add_ba"))
+            .with_inputs(vec![ParameterType { name: WasmSymbol::new("b"), type_hint: WasmType::F32, span: Default::default() }])
+            .with_outputs(vec![WasmType::I32])
             .with_operations(vec![Operation::NativeSum {
-                native: NyarType::F32,
+                native: WasmType::F32,
                 terms: vec![Operation::Convert {
-                    from: NyarType::F32,
-                    into: NyarType::I32,
+                    from: WasmType::F32,
+                    into: WasmType::I32,
                     code: vec![Operation::NativeSum {
-                        native: NyarType::F32,
+                        native: WasmType::F32,
                         terms: vec![
-                            Operation::GetVariable { kind: VariableKind::Global, variable: Symbol::new("math.pi") },
-                            Operation::GetVariable { kind: VariableKind::Local, variable: Symbol::new("b") },
+                            Operation::GetVariable { kind: VariableKind::Global, variable: WasmSymbol::new("math.pi") },
+                            Operation::GetVariable { kind: VariableKind::Local, variable: WasmSymbol::new("b") },
                         ],
                     }],
                 }],
@@ -107,11 +106,12 @@ fn test() {
     );
 
     module.insert_function(
-        FunctionType::new(Symbol::new("_start")).with_inputs(vec![]).with_outputs(vec![]).with_operations(vec![]),
+        FunctionType::new(WasmSymbol::new("_start")).with_inputs(vec![]).with_outputs(vec![]).with_operations(vec![]),
     );
 
     let wast = module.build_module().unwrap().encode().unwrap();
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie/runtime.wasm");
     let mut file = File::create(out).unwrap();
     file.write_all(&wast).unwrap();
+    let _ = Command::new("vcc").arg("build").output().expect("Failed to execute command");
 }

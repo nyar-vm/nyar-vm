@@ -1,5 +1,5 @@
 use super::*;
-use crate::Symbol;
+use crate::WasmSymbol;
 
 impl From<ArrayType> for TypeItem {
     fn from(value: ArrayType) -> Self {
@@ -7,15 +7,15 @@ impl From<ArrayType> for TypeItem {
     }
 }
 pub struct ArrayType {
-    pub symbol: Symbol,
+    pub symbol: WasmSymbol,
     pub mutable: bool,
     /// Item type of the array
-    pub item_type: NyarType,
+    pub item_type: WasmType,
     pub span: FileSpan,
 }
 
 impl ArrayType {
-    pub fn new(name: Symbol, item: NyarType) -> Self {
+    pub fn new(name: WasmSymbol, item: WasmType) -> Self {
         Self { symbol: name, mutable: false, item_type: item, span: Default::default() }
     }
 }

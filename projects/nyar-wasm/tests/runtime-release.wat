@@ -12,12 +12,14 @@
     i32.trunc_f32_s
   )
   (func (;2;) (type 2))
+  (memory (;0;) 0 0)
   (export "add_ab" (func 0))
   (export "add_ba" (func 1))
   (export "_start" (func 2))
+  (export "static" (memory 0))
   (@producers
     (language "valkyrie" "2024")
     (language "player" "berserker")
-    (processed-by "nyar-wasm" "0.0.0")
+    (processed-by "nyar-wasm" "0.0.1")
   )
 )

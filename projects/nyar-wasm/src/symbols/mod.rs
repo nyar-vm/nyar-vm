@@ -7,11 +7,11 @@ mod convert;
 mod display;
 
 #[derive(Clone)]
-pub struct Symbol {
+pub struct WasmSymbol {
     inner: Arc<str>,
 }
 
-impl Symbol {
+impl WasmSymbol {
     pub fn new(name: &str) -> Self {
         Self { inner: Arc::from(name) }
     }

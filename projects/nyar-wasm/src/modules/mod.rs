@@ -1,6 +1,6 @@
 use crate::{
     functions::FunctionType, helpers::IndexedIterator, ExternalRegister, ExternalType, FunctionRegister, GlobalRegister,
-    Symbol, TypeItem, TypeRegister, WasmVariable,
+    TypeItem, TypeRegister, WasmSymbol, WasmVariable,
 };
 use indexmap::IndexMap;
 use nyar_error::{FileSpan, NyarError};
@@ -34,7 +34,7 @@ impl<'i> IntoIterator for &'i DataBuilder {
 }
 
 pub struct DataItem {
-    pub symbol: Symbol,
+    pub symbol: WasmSymbol,
     pub data: Vec<u8>,
     pub span: FileSpan,
 }
@@ -46,7 +46,7 @@ impl DataBuilder {
 }
 
 impl DataItem {
-    pub fn utf8(name: Symbol, data: String) -> Self {
+    pub fn utf8(name: WasmSymbol, data: String) -> Self {
         Self { symbol: name, data: data.into_bytes(), span: FileSpan::default() }
     }
 }

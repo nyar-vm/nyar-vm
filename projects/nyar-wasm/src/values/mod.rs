@@ -1,8 +1,8 @@
 use crate::{
     helpers::{Id, WasmOutput},
     modules::DataItem,
-    types::NyarType,
-    Symbol, WasmVariable,
+    types::WasmType,
+    WasmSymbol, WasmVariable,
 };
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
@@ -14,25 +14,25 @@ pub mod data;
 pub mod global;
 pub mod variable;
 
-impl<'a, 'i> WasmOutput<'a, Instruction<'i>> for NyarValue
+impl<'a, 'i> WasmOutput<'a, Instruction<'i>> for WasmValue
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> Instruction<'i> {
         match self {
-            NyarValue::U32(v) => Instruction::I32Const(*v as i32),
-            NyarValue::I32(v) => Instruction::I32Const(*v),
-            NyarValue::I64(v) => Instruction::I64Const(*v),
-            NyarValue::F32(v) => Instruction::F32Const(Float32 { bits: u32::from_le_bytes(v.to_le_bytes()) }),
-            NyarValue::F64(v) => Instruction::F64Const(Float64 { bits: u64::from_le_bytes(v.to_le_bytes()) }),
-            NyarValue::Function(_) => {
+            WasmValue::U32(v) => Instruction::I32Const(*v as i32),
+            WasmValue::I32(v) => Instruction::I32Const(*v),
+            WasmValue::I64(v) => Instruction::I64Const(*v),
+            WasmValue::F32(v) => Instruction::F32Const(Float32 { bits: u32::from_le_bytes(v.to_le_bytes()) }),
+            WasmValue::F64(v) => Instruction::F64Const(Float64 { bits: u64::from_le_bytes(v.to_le_bytes()) }),
+            WasmValue::Function(_) => {
                 todo!()
             }
-            NyarValue::Structure(name) => Instruction::StructNewDefault(Index::Id(Id::new(name.as_ref(), 0))),
-            NyarValue::Array => {
+            WasmValue::Structure(name) => Instruction::StructNewDefault(Index::Id(Id::new(name.as_ref(), 0))),
+            WasmValue::Array => {
                 todo!()
             }
-            NyarValue::Any => {
+            WasmValue::Any => {
                 todo!()
             }
         }
@@ -40,30 +40,30 @@ where
 }
 
 #[derive(Debug)]
-pub enum NyarValue {
+pub enum WasmValue {
     U32(u32),
     I32(i32),
     I64(i64),
     F32(f32),
     F64(f64),
-    Function(Symbol),
-    Structure(Symbol),
+    Function(WasmSymbol),
+    Structure(WasmSymbol),
     Array,
     Any,
 }
 
-impl NyarValue {
-    pub fn as_type(&self) -> NyarType {
+impl WasmValue {
+    pub fn as_type(&self) -> WasmType {
         match self {
-            NyarValue::U32(_) => NyarType::I32,
-            NyarValue::I32(_) => NyarType::I32,
-            NyarValue::I64(_) => NyarType::I32,
-            NyarValue::F32(_) => NyarType::F32,
-            NyarValue::F64(_) => NyarType::F32,
-            NyarValue::Function(_) => NyarType::I32,
-            NyarValue::Structure(name) => NyarType::Named { symbol: name.clone(), nullable: false },
-            NyarValue::Array => NyarType::Array { inner: Box::new(NyarType::I8), nullable: false },
-            NyarValue::Any => NyarType::Any,
+            WasmValue::U32(_) => WasmType::I32,
+            WasmValue::I32(_) => WasmType::I32,
+            WasmValue::I64(_) => WasmType::I32,
+            WasmValue::F32(_) => WasmType::F32,
+            WasmValue::F64(_) => WasmType::F32,
+            WasmValue::Function(_) => WasmType::I32,
+            WasmValue::Structure(name) => WasmType::Named { symbol: name.clone(), nullable: false },
+            WasmValue::Array => WasmType::Array { inner: Box::new(WasmType::I8), nullable: false },
+            WasmValue::Any => WasmType::Any,
         }
     }
 }

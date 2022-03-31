@@ -1,6 +1,6 @@
 use crate::{
     helpers::{Id, IndexedIterator, WasmInstruction, WasmOutput},
-    ArrayType, StructureType, Symbol,
+    ArrayType, StructureType, WasmSymbol,
 };
 use indexmap::IndexMap;
 use nyar_error::{FileSpan, NyarError};
@@ -23,7 +23,7 @@ pub struct TypeRegister {
 }
 
 #[derive(Debug)]
-pub enum NyarType {
+pub enum WasmType {
     U8,
     U32,
     I8,
@@ -33,11 +33,11 @@ pub enum NyarType {
     F32,
     F64,
     Any,
-    Named { symbol: Symbol, nullable: bool },
-    Array { inner: Box<NyarType>, nullable: bool },
+    Named { symbol: WasmSymbol, nullable: bool },
+    Array { inner: Box<WasmType>, nullable: bool },
 }
 
-impl NyarType {
+impl WasmType {
     pub fn set_nullable(&mut self, nullable: bool) {
         match self {
             Self::Named { nullable: n, .. } => *n = nullable,
@@ -78,38 +78,38 @@ impl TypeItem {
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, ValType<'i>> for NyarType
+impl<'a, 'i> WasmOutput<'a, ValType<'i>> for WasmType
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> ValType<'i> {
         match self {
-            NyarType::U8 => ValType::I32,
-            NyarType::U32 => ValType::I32,
-            NyarType::I8 => ValType::I32,
-            NyarType::I16 => ValType::I32,
-            NyarType::I32 => ValType::I32,
-            NyarType::I64 => ValType::I64,
-            NyarType::F32 => ValType::F32,
-            NyarType::F64 => ValType::F64,
-            NyarType::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
-            NyarType::Named { symbol, nullable } => {
+            WasmType::U8 => ValType::I32,
+            WasmType::U32 => ValType::I32,
+            WasmType::I8 => ValType::I32,
+            WasmType::I16 => ValType::I32,
+            WasmType::I32 => ValType::I32,
+            WasmType::I64 => ValType::I64,
+            WasmType::F32 => ValType::F32,
+            WasmType::F64 => ValType::F64,
+            WasmType::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
+            WasmType::Named { symbol, nullable } => {
                 ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Concrete(Index::Id(Id::new(symbol.as_ref(), 0))) })
             }
             // type erased
-            NyarType::Array { nullable, .. } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Array }),
+            WasmType::Array { nullable, .. } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Array }),
         }
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, StorageType<'i>> for NyarType
+impl<'a, 'i> WasmOutput<'a, StorageType<'i>> for WasmType
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> StorageType<'i> {
         match self {
-            NyarType::I8 => StorageType::I8,
-            NyarType::I16 => StorageType::I16,
+            WasmType::I8 => StorageType::I8,
+            WasmType::I16 => StorageType::I16,
             _ => StorageType::Val(self.as_wast()),
         }
     }

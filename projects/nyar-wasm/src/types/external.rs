@@ -8,10 +8,10 @@ pub struct ExternalRegister {
 
 /// `@ffi("module", "field")`
 pub struct ExternalType {
-    pub module: Symbol,
-    pub field: Symbol,
-    pub input: Vec<NyarType>,
-    pub output: Vec<NyarType>,
+    pub module: WasmSymbol,
+    pub field: WasmSymbol,
+    pub input: Vec<WasmType>,
+    pub output: Vec<WasmType>,
 }
 impl ExternalRegister {
     pub fn insert(&mut self, item: ExternalType) -> Option<ExternalType> {
@@ -21,21 +21,21 @@ impl ExternalRegister {
 
 impl ExternalType {
     pub fn new(module: &str, field: &str) -> ExternalType {
-        Self { module: Symbol::new(module), field: Symbol::new(field), input: vec![], output: vec![] }
+        Self { module: WasmSymbol::new(module), field: WasmSymbol::new(field), input: vec![], output: vec![] }
     }
     pub fn name(&self) -> String {
         format!("{}.{}", self.module, self.field)
     }
     pub fn with_input<I>(mut self, inputs: I) -> Self
     where
-        I: IntoIterator<Item = NyarType>,
+        I: IntoIterator<Item = WasmType>,
     {
         self.input.extend(inputs);
         self
     }
     pub fn with_output<I>(mut self, outputs: I) -> Self
     where
-        I: IntoIterator<Item = NyarType>,
+        I: IntoIterator<Item = WasmType>,
     {
         self.output.extend(outputs);
         self

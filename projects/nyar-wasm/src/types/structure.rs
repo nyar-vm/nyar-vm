@@ -1,18 +1,18 @@
 use super::*;
-use crate::{helpers::IndexedIterator, values::NyarValue};
+use crate::{helpers::IndexedIterator, values::WasmValue};
 
 #[derive(Debug)]
 pub struct StructureType {
-    pub symbol: Symbol,
+    pub symbol: WasmSymbol,
     pub fields: IndexMap<String, FieldType>,
     pub span: FileSpan,
 }
 #[derive(Debug)]
 pub struct FieldType {
-    pub name: Symbol,
+    pub name: WasmSymbol,
     pub mutable: bool,
-    pub r#type: NyarType,
-    pub default: NyarValue,
+    pub r#type: WasmType,
+    pub default: WasmValue,
 }
 
 impl From<StructureType> for TypeItem {
@@ -22,7 +22,7 @@ impl From<StructureType> for TypeItem {
 }
 
 impl StructureType {
-    pub fn new(name: Symbol) -> Self {
+    pub fn new(name: WasmSymbol) -> Self {
         Self { symbol: name, fields: Default::default(), span: Default::default() }
     }
     pub fn name(&self) -> String {
@@ -46,13 +46,13 @@ impl StructureType {
 }
 
 impl FieldType {
-    pub fn new(name: Symbol) -> Self {
-        Self { name, mutable: false, r#type: NyarType::Any, default: NyarValue::Any }
+    pub fn new(name: WasmSymbol) -> Self {
+        Self { name, mutable: false, r#type: WasmType::Any, default: WasmValue::Any }
     }
-    pub fn with_type(self, r#type: NyarType) -> Self {
+    pub fn with_type(self, r#type: WasmType) -> Self {
         Self { r#type, ..self }
     }
-    pub fn with_default(self, default: NyarValue) -> Self {
+    pub fn with_default(self, default: WasmValue) -> Self {
         Self { default, ..self }
     }
 
@@ -66,7 +66,7 @@ impl FieldType {
     pub fn with_readonly(self) -> Self {
         Self { mutable: false, ..self }
     }
-    pub fn r#type(&self) -> NyarType {
+    pub fn r#type(&self) -> WasmType {
         self.default.as_type()
     }
 }
