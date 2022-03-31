@@ -111,7 +111,11 @@ fn test() {
 
     let wast = module.build_module().unwrap().encode().unwrap();
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie/runtime.wasm");
+    let dir = out.parent().unwrap();
+    if !dir.exists() {
+        std::fs::create_dir_all(dir).unwrap();
+    }
     let mut file = File::create(out).unwrap();
     file.write_all(&wast).unwrap();
-    let _ = Command::new("vcc").arg("build").output().expect("Failed to execute command");
+    let _ = Command::new("vcc").arg("build").output();
 }
