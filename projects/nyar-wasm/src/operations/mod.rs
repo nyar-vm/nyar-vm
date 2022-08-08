@@ -101,6 +101,15 @@ impl Operation {
     pub fn r#break(label: &str) -> Self {
         Self::Goto { label: WasmSymbol::new(&format!("{label}@break")) }
     }
+    pub fn local_get<S: Into<WasmSymbol>>(name: S) -> Self {
+        Self::GetVariable { kind: VariableKind::Local, variable: name.into() }
+    }
+    pub fn local_set<S: Into<WasmSymbol>>(name: S) -> Self {
+        Self::SetVariable { kind: VariableKind::Local, variable: name.into() }
+    }
+    pub fn local_tee<S: Into<WasmSymbol>>(name: S) -> Self {
+        Self::TeeVariable { variable: name.into() }
+    }
     pub fn drop(count: usize) -> Self {
         Self::Repeats { code: vec![Self::Drop], repeats: count }
     }

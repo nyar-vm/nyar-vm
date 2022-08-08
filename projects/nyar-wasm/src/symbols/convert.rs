@@ -5,6 +5,11 @@ impl AsRef<str> for WasmSymbol {
         self.inner.as_ref()
     }
 }
+impl<'a> From<&'a str> for WasmSymbol {
+    fn from(value: &'a str) -> Self {
+        Self { inner: Arc::from(value) }
+    }
+}
 
 impl From<String> for WasmSymbol {
     fn from(value: String) -> Self {

@@ -48,16 +48,17 @@ fn test() {
     module.insert_function(
         FunctionType::new(WasmSymbol::new("add_ab"))
             .with_inputs(vec![
-                ParameterType { name: WasmSymbol::new("a"), type_hint: WasmType::I32, span: Default::default() },
-                ParameterType { name: WasmSymbol::new("b"), type_hint: WasmType::I32, span: Default::default() },
+                ParameterType::new("a").with_type(WasmType::I32),
+                ParameterType::new("b").with_type(WasmType::I32),
+                ParameterType::new("c").with_type(WasmType::I32),
             ])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![
                 Operation::NativeSum {
                     native: WasmType::I32,
                     terms: vec![
-                        Operation::GetVariable { kind: VariableKind::Local, variable: WasmSymbol::new("a") },
-                        Operation::GetVariable { kind: VariableKind::Local, variable: WasmSymbol::new("b") },
+                        Operation::local_get("a"),
+                        Operation::local_get("b"),
                         Operation::Convert {
                             from: WasmType::I32,
                             into: WasmType::I32,
@@ -86,7 +87,7 @@ fn test() {
 
     module.insert_function(
         FunctionType::new(WasmSymbol::new("add_ba"))
-            .with_inputs(vec![ParameterType { name: WasmSymbol::new("b"), type_hint: WasmType::F32, span: Default::default() }])
+            .with_inputs(vec![ParameterType::new("b").with_type(WasmType::F32)])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![Operation::NativeSum {
                 native: WasmType::F32,

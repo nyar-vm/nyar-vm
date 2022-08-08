@@ -22,6 +22,18 @@ pub struct ParameterType {
     pub span: FileSpan,
 }
 
+impl ParameterType {
+    pub fn new<S>(name: S) -> Self
+    where
+        S: Into<WasmSymbol>,
+    {
+        Self { name: name.into(), type_hint: WasmType::Any, span: Default::default() }
+    }
+    pub fn with_type(self, type_hint: WasmType) -> Self {
+        Self { type_hint, ..self }
+    }
+}
+
 impl FunctionType {
     pub fn new(path: WasmSymbol) -> Self {
         Self {
