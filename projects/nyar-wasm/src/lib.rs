@@ -19,11 +19,11 @@ pub use crate::{
     symbols::WasmSymbol,
     types::{
         array::ArrayType,
-        external::{ExternalRegister, ExternalType},
-        functional::FunctionRegister,
+        external::{ExternalSection, ExternalType},
+        functional::FunctionSection,
         structure::{FieldType, StructureType},
-        TypeItem, TypeRegister, WasmType,
+        TypeItem, TypeSection, WasmType,
     },
-    values::{global::GlobalRegister, variable::WasmVariable, WasmValue},
+    values::{global::GlobalSection, variable::WasmVariable, WasmValue},
 };
 mod symbols;

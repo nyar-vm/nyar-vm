@@ -15,23 +15,19 @@ impl WasmInstruction for Operation {
                 }
             }
             Self::GetVariable { kind, variable } => match kind {
-                VariableKind::Global => w.push(Instruction::GlobalGet(Index::Id(Id::new(variable.as_ref(), 0)))),
-                VariableKind::Local => w.push(Instruction::LocalGet(Index::Id(Id::new(variable.as_ref(), 0)))),
-                VariableKind::Table => {
-                    w.push(Instruction::TableGet(TableArg { dst: Index::Id(Id::new(variable.as_ref(), 0)) }))
-                }
+                VariableKind::Global => w.push(Instruction::GlobalGet(Index::Id(Id::new(variable.as_ref())))),
+                VariableKind::Local => w.push(Instruction::LocalGet(Index::Id(Id::new(variable.as_ref())))),
+                VariableKind::Table => w.push(Instruction::TableGet(TableArg { dst: Index::Id(Id::new(variable.as_ref())) })),
             },
             Self::SetVariable { kind, variable } => match kind {
-                VariableKind::Global => w.push(Instruction::GlobalSet(Index::Id(Id::new(variable.as_ref(), 0)))),
-                VariableKind::Local => w.push(Instruction::LocalSet(Index::Id(Id::new(variable.as_ref(), 0)))),
-                VariableKind::Table => {
-                    w.push(Instruction::TableSet(TableArg { dst: Index::Id(Id::new(variable.as_ref(), 0)) }))
-                }
+                VariableKind::Global => w.push(Instruction::GlobalSet(Index::Id(Id::new(variable.as_ref())))),
+                VariableKind::Local => w.push(Instruction::LocalSet(Index::Id(Id::new(variable.as_ref())))),
+                VariableKind::Table => w.push(Instruction::TableSet(TableArg { dst: Index::Id(Id::new(variable.as_ref())) })),
             },
-            Self::TeeVariable { variable } => w.push(Instruction::LocalTee(Index::Id(Id::new(variable.as_ref(), 0)))),
+            Self::TeeVariable { variable } => w.push(Instruction::LocalTee(Index::Id(Id::new(variable.as_ref())))),
             Self::CallFunction { name, input } => {
                 input.iter().for_each(|i| i.emit(w));
-                w.push(Instruction::Call(Index::Id(Id::new(name.as_ref(), 0))));
+                w.push(Instruction::Call(Index::Id(Id::new(name.as_ref()))));
             }
             Self::Constant { value } => value.emit(w),
             Self::NativeSum { native, terms } => match terms.as_slice() {
@@ -81,7 +77,7 @@ impl WasmInstruction for Operation {
                 w.push(Instruction::End(None));
                 w.push(Instruction::End(None));
             }
-            Self::Goto { label } => w.push(Instruction::Br(Index::Id(Id::new(label.as_ref(), 0)))),
+            Self::Goto { label } => w.push(Instruction::Br(Index::Id(Id::new(label.as_ref())))),
             Self::Drop => {
                 w.push(Instruction::Drop);
             }

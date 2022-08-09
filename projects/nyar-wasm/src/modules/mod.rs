@@ -1,6 +1,6 @@
 use crate::{
-    functions::FunctionType, helpers::IndexedIterator, ExternalRegister, ExternalType, FunctionRegister, GlobalRegister,
-    TypeItem, TypeRegister, WasmSymbol, WasmVariable,
+    functions::FunctionType, helpers::IndexedIterator, ExternalSection, ExternalType, FunctionSection, GlobalSection, TypeItem,
+    TypeSection, WasmSymbol, WasmVariable,
 };
 use indexmap::IndexMap;
 use nyar_error::{FileSpan, NyarError};
@@ -12,19 +12,21 @@ mod wast_module;
 #[derive(Default)]
 pub struct ModuleBuilder {
     name: String,
+    entry: String,
     memory_pages: u64,
-    globals: GlobalRegister,
-    types: TypeRegister,
-    data: DataBuilder,
-    functions: FunctionRegister,
-    externals: ExternalRegister,
+    globals: GlobalSection,
+    types: TypeSection,
+    data: DataSection,
+    functions: FunctionSection,
+    externals: ExternalSection,
 }
+
 #[derive(Default)]
-pub struct DataBuilder {
+pub struct DataSection {
     data: IndexMap<String, DataItem>,
 }
 
-impl<'i> IntoIterator for &'i DataBuilder {
+impl<'i> IntoIterator for &'i DataSection {
     type Item = (usize, &'i str, &'i DataItem);
     type IntoIter = IndexedIterator<'i, DataItem>;
 
@@ -39,7 +41,7 @@ pub struct DataItem {
     pub span: FileSpan,
 }
 
-impl DataBuilder {
+impl DataSection {
     pub fn insert(&mut self, item: DataItem) -> Option<DataItem> {
         self.data.insert(item.symbol.to_string(), item)
     }
@@ -67,7 +69,10 @@ impl ModuleBuilder {
         self.types.insert(t.into())
     }
     pub fn insert_function(&mut self, f: FunctionType) {
-        self.functions.add_native(f)
+        if f.entry {
+            self.entry = f.name()
+        }
+        self.functions.insert(f)
     }
     pub fn insert_external(&mut self, f: ExternalType) -> Option<ExternalType> {
         self.externals.insert(f)

@@ -1,7 +1,16 @@
-use crate::{operations::Operation, types::WasmType, WasmSymbol};
+use crate::{
+    helpers::{Id, WasmInstruction, WasmOutput},
+    operations::Operation,
+    types::WasmType,
+    WasmSymbol,
+};
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
 use std::slice::Iter;
+use wast::{
+    core::{Expression, Func, FuncKind, InlineExport, TypeUse, ValType},
+    token::{NameAnnotation, Span},
+};
 
 pub mod operations;
 
@@ -51,6 +60,12 @@ impl FunctionType {
     }
     pub fn with_public(self) -> Self {
         Self { export: true, ..self }
+    }
+    pub fn with_private(self) -> Self {
+        Self { export: false, ..self }
+    }
+    pub fn with_entry(self) -> Self {
+        Self { entry: true, ..self }
     }
     pub fn with_inputs<I>(mut self, inputs: I) -> Self
     where

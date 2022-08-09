@@ -1,13 +1,14 @@
 use crate::{
+    functions::FunctionType,
     helpers::{Id, IndexedIterator, WasmInstruction, WasmOutput},
     ArrayType, StructureType, WasmSymbol,
 };
 use indexmap::IndexMap;
-use nyar_error::{FileSpan, NyarError};
+use nyar_error::FileSpan;
 use wast::{
     core::{
-        Expression, Func, FuncKind, HeapType, Import, InlineExport, ItemKind, ItemSig, ModuleField, RefType, StorageType,
-        StructField, StructType, Type, TypeDef, TypeUse, ValType,
+        HeapType, Import, ItemKind, ItemSig, ModuleField, RefType, StorageType, StructField, StructType, Type, TypeDef,
+        TypeUse, ValType,
     },
     token::{Index, NameAnnotation, Span},
 };
@@ -18,7 +19,7 @@ pub mod functional;
 pub mod structure;
 
 #[derive(Default)]
-pub struct TypeRegister {
+pub struct TypeSection {
     items: IndexMap<String, TypeItem>,
 }
 
@@ -54,7 +55,7 @@ pub enum TypeItem {
     // Recursion(RecursiveType),
 }
 
-impl<'i> IntoIterator for &'i TypeRegister {
+impl<'i> IntoIterator for &'i TypeSection {
     type Item = (usize, &'i str, &'i TypeItem);
     type IntoIter = IndexedIterator<'i, TypeItem>;
 
@@ -63,7 +64,7 @@ impl<'i> IntoIterator for &'i TypeRegister {
     }
 }
 
-impl TypeRegister {
+impl TypeSection {
     pub fn insert(&mut self, item: TypeItem) -> Option<TypeItem> {
         self.items.insert(item.name().to_string(), item)
     }
@@ -94,7 +95,7 @@ where
             WasmType::F64 => ValType::F64,
             WasmType::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
             WasmType::Named { symbol, nullable } => {
-                ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Concrete(Index::Id(Id::new(symbol.as_ref(), 0))) })
+                ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Concrete(Index::Id(Id::new(symbol.as_ref()))) })
             }
             // type erased
             WasmType::Array { nullable, .. } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Array }),

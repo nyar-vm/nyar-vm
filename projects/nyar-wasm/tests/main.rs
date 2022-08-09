@@ -107,7 +107,12 @@ fn test() {
     );
 
     module.insert_function(
-        FunctionType::new(WasmSymbol::new("_start")).with_inputs(vec![]).with_outputs(vec![]).with_operations(vec![]),
+        FunctionType::new(WasmSymbol::new("__main"))
+            .with_inputs(vec![])
+            .with_outputs(vec![])
+            .with_operations(vec![])
+            .with_entry()
+            .with_private(),
     );
 
     let wast = module.build_module().unwrap().encode().unwrap();

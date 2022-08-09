@@ -2,7 +2,7 @@ use super::*;
 use crate::helpers::IndexedIterator;
 
 #[derive(Default)]
-pub struct ExternalRegister {
+pub struct ExternalSection {
     items: IndexMap<String, ExternalType>,
 }
 
@@ -13,7 +13,7 @@ pub struct ExternalType {
     pub input: Vec<WasmType>,
     pub output: Vec<WasmType>,
 }
-impl ExternalRegister {
+impl ExternalSection {
     pub fn insert(&mut self, item: ExternalType) -> Option<ExternalType> {
         self.items.insert(item.name(), item)
     }
@@ -42,7 +42,7 @@ impl ExternalType {
     }
 }
 
-impl<'i> IntoIterator for &'i ExternalRegister {
+impl<'i> IntoIterator for &'i ExternalSection {
     type Item = (usize, &'i str, &'i ExternalType);
     type IntoIter = IndexedIterator<'i, ExternalType>;
 

@@ -5,7 +5,7 @@ use crate::{
 use nyar_error::NyarError;
 use wast::{
     core::{Custom, InlineExport, Memory, MemoryKind, Module, ModuleField, ModuleKind, Producers},
-    token::{NameAnnotation, Span},
+    token::{Index, NameAnnotation, Span},
 };
 
 impl ModuleBuilder {
@@ -24,7 +24,7 @@ impl ModuleBuilder {
         for (_, _, k) in self.types.into_iter() {
             terms.push(k.as_wast())
         }
-        for (_, _, k) in self.functions.get_natives() {
+        for (_, _, k) in self.functions.into_iter() {
             terms.push(ModuleField::Func(k.as_wast()))
         }
         for (_, _, k) in self.globals.into_iter() {
@@ -33,8 +33,10 @@ impl ModuleBuilder {
         for (_, _, k) in self.data.into_iter() {
             terms.push(ModuleField::Data(k.as_wast()))
         }
-        terms.push(ModuleField::Memory(self.wast_memory()));
-        terms.push(self.wast_producer());
+
+        terms.push(ModuleField::Memory(self.build_memory()));
+        self.build_start(&mut terms);
+        self.build_producer(&mut terms);
         Ok(Module {
             span: Span::from_offset(0),
             id: None,
@@ -42,7 +44,7 @@ impl ModuleBuilder {
             kind: ModuleKind::Text(terms),
         })
     }
-    fn wast_memory(&self) -> Memory {
+    fn build_memory(&self) -> Memory {
         Memory {
             span: Span::from_offset(0),
             id: Id::type_id("static"),
@@ -51,13 +53,21 @@ impl ModuleBuilder {
             kind: MemoryKind::Inline { is_32: true, data: vec![] },
         }
     }
-    fn wast_producer(&self) -> ModuleField {
+    fn build_start<'a, 'b>(&'a self, m: &mut Vec<ModuleField<'b>>)
+    where
+        'a: 'b,
+    {
+        if !self.entry.is_empty() {
+            m.push(ModuleField::Start(Index::Id(Id::new(&self.entry))))
+        }
+    }
+    fn build_producer(&self, m: &mut Vec<ModuleField>) {
         let item = Custom::Producers(Producers {
             fields: vec![
                 ("language", vec![("valkyrie", "2024"), ("player", "berserker")]),
                 ("processed-by", vec![("nyar-wasm", env!("CARGO_PKG_VERSION"))]),
             ],
         });
-        ModuleField::Custom(item)
+        m.push(ModuleField::Custom(item))
     }
 }

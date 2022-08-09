@@ -60,17 +60,17 @@ pub struct Id<'a> {
 }
 
 impl<'a> Id<'a> {
-    pub fn new(name: &'a str, offset: usize) -> wast::token::Id<'a> {
+    pub fn new(name: &'a str) -> wast::token::Id<'a> {
         unsafe {
-            let s = Id { name, gen: 0, span: Span::from_offset(offset) };
+            let s = Id { name, gen: 0, span: Span::from_offset(0) };
             transmute::<Id, wast::token::Id>(s)
         }
     }
     pub fn type_id(name: &'a str) -> Option<wast::token::Id<'a>> {
-        Some(Self::new(name, 0))
+        Some(Self::new(name))
     }
 
     pub fn type_index(name: &'a str) -> Option<Index> {
-        Some(Index::Id(Self::new(name, 0)))
+        Some(Index::Id(Self::new(name)))
     }
 }

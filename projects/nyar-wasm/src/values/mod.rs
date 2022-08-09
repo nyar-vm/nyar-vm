@@ -28,7 +28,7 @@ where
             WasmValue::Function(_) => {
                 todo!()
             }
-            WasmValue::Structure(name) => Instruction::StructNewDefault(Index::Id(Id::new(name.as_ref(), 0))),
+            WasmValue::Structure(name) => Instruction::StructNewDefault(Index::Id(Id::new(name.as_ref()))),
             WasmValue::Array => {
                 todo!()
             }
