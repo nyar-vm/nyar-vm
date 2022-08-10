@@ -12,7 +12,7 @@ use wast::{
     token::{NameAnnotation, Span},
 };
 
-pub mod operations;
+pub mod codegen;
 
 /// `function`
 pub struct FunctionType {

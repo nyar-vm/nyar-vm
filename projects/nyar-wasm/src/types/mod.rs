@@ -1,15 +1,12 @@
 use crate::{
     functions::FunctionType,
     helpers::{Id, IndexedIterator, WasmOutput},
-    ArrayType, StructureType, WasmSymbol,
+    ArrayType, ExternalType, StructureType, WasmSymbol,
 };
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
 use wast::{
-    core::{
-        HeapType, Import, ItemKind, ItemSig, ModuleField, RefType, StorageType, StructField, StructType, Type, TypeDef,
-        TypeUse, ValType,
-    },
+    core::{HeapType, ModuleField, RefType, StorageType, StructField, StructType, Type, TypeDef, ValType},
     token::{Index, NameAnnotation, Span},
 };
 

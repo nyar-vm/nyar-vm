@@ -16,12 +16,14 @@ fn test() {
 
     module.insert_external(
         ExternalType::new("wasi_snapshot_preview1", "fd_write")
+            .with_alias("file_descriptor_write")
             .with_input(vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32])
             .with_output(vec![WasmType::I32]),
     );
 
     module.insert_external(
         ExternalType::new("wasi_snapshot_preview1", "random_get")
+            .with_alias("random_get")
             .with_input(vec![WasmType::I32, WasmType::I32])
             .with_output(vec![WasmType::I32]),
     );
@@ -43,7 +45,9 @@ fn test() {
         FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
     ]));
 
-    module.insert_type(ArrayType::new(WasmSymbol::new("Bytes"), WasmType::I32));
+    module.insert_type(ArrayType::new("core∷text∷UTF8Text", WasmType::I8));
+    module.insert_type(ArrayType::new("core∷text∷UTF16Text", WasmType::I16));
+    module.insert_type(ArrayType::new("core∷text∷UTF32Text", WasmType::I32));
 
     module.insert_function(
         FunctionType::new(WasmSymbol::new("add_ab"))
@@ -110,7 +114,10 @@ fn test() {
         FunctionType::new(WasmSymbol::new("__main"))
             .with_inputs(vec![])
             .with_outputs(vec![])
-            .with_operations(vec![])
+            .with_operations(vec![Operation::CallFunction {
+                name: WasmSymbol::new("random_get"),
+                input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
+            }])
             .with_entry()
             .with_private(),
     );

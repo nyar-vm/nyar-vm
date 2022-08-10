@@ -5,21 +5,23 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 
+mod array;
+mod external;
 mod functions;
 pub mod helpers;
 mod modules;
 mod operations;
-mod runner;
 mod types;
 mod values;
 pub use crate::{
+    array::ArrayType,
+    external::ExternalType,
     functions::{FunctionBody, FunctionType, ParameterType},
     modules::ModuleBuilder,
     operations::{Operation, VariableKind},
     symbols::WasmSymbol,
     types::{
-        array::ArrayType,
-        external::{ExternalSection, ExternalType},
+        external::ExternalSection,
         functional::FunctionSection,
         structure::{FieldType, StructureType},
         TypeItem, TypeSection, WasmType,
