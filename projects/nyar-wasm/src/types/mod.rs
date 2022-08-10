@@ -1,6 +1,6 @@
 use crate::{
     functions::FunctionType,
-    helpers::{Id, IndexedIterator, WasmInstruction, WasmOutput},
+    helpers::{Id, IndexedIterator, WasmOutput},
     ArrayType, StructureType, WasmSymbol,
 };
 use indexmap::IndexMap;

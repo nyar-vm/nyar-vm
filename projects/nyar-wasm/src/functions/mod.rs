@@ -17,7 +17,7 @@ pub mod operations;
 /// `function`
 pub struct FunctionType {
     pub symbol: WasmSymbol,
-    pub export: bool,
+    pub export: Option<WasmSymbol>,
     pub entry: bool,
     pub input: IndexMap<String, ParameterType>,
     pub output: Vec<WasmType>,
@@ -47,7 +47,7 @@ impl FunctionType {
     pub fn new(path: WasmSymbol) -> Self {
         Self {
             symbol: path,
-            export: false,
+            export: None,
             entry: false,
             input: IndexMap::default(),
             output: vec![],
@@ -59,10 +59,10 @@ impl FunctionType {
         self.symbol.to_string()
     }
     pub fn with_public(self) -> Self {
-        Self { export: true, ..self }
+        Self { export: Some(self.symbol.clone()), ..self }
     }
     pub fn with_private(self) -> Self {
-        Self { export: false, ..self }
+        Self { export: None, ..self }
     }
     pub fn with_entry(self) -> Self {
         Self { entry: true, ..self }

@@ -4,11 +4,15 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> Func<'i> {
+        let exports = match &self.export {
+            Some(s) => InlineExport { names: vec![s.as_ref()] },
+            None => InlineExport { names: vec![] },
+        };
         Func {
             span: Span::from_offset(0),
             id: Id::type_id(self.symbol.as_ref()),
             name: Some(NameAnnotation { name: self.symbol.as_ref() }),
-            exports: InlineExport { names: vec![self.symbol.as_ref()] },
+            exports,
             kind: self.as_wast(),
             ty: TypeUse { index: None, inline: Some(self.as_wast()) },
         }
