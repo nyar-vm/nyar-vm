@@ -22,6 +22,7 @@ pub struct TypeSection {
 
 #[derive(Debug)]
 pub enum WasmType {
+    Bool,
     U8,
     U32,
     I8,
@@ -31,14 +32,14 @@ pub enum WasmType {
     F32,
     F64,
     Any,
-    Named { symbol: WasmSymbol, nullable: bool },
+    Structure { symbol: WasmSymbol, nullable: bool },
     Array { inner: Box<WasmType>, nullable: bool },
 }
 
 impl WasmType {
     pub fn set_nullable(&mut self, nullable: bool) {
         match self {
-            Self::Named { nullable: n, .. } => *n = nullable,
+            Self::Structure { nullable: n, .. } => *n = nullable,
             Self::Array { nullable: n, .. } => *n = nullable,
             _ => {}
         }
@@ -91,7 +92,7 @@ where
             WasmType::F32 => ValType::F32,
             WasmType::F64 => ValType::F64,
             WasmType::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
-            WasmType::Named { symbol, nullable } => {
+            WasmType::Structure { symbol, nullable } => {
                 ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Concrete(Index::Id(Id::new(symbol.as_ref()))) })
             }
             // type erased

@@ -46,12 +46,14 @@ pub enum Operation {
     Drop,
     Return,
     Unreachable,
-
     /// `if cond { } { }`
     Conditional {
         condition: Vec<Operation>,
         then: Vec<Operation>,
         r#else: Vec<Operation>,
+    },
+    Default {
+        typed: WasmType,
     },
     Constant {
         value: WasmValue,

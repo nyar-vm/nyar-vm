@@ -29,6 +29,7 @@ impl WasmInstruction for Operation {
                 input.iter().for_each(|i| i.emit(w));
                 w.push(Instruction::Call(Index::Id(Id::new(name.as_ref()))));
             }
+            Self::Default { typed } => typed.emit(w),
             Self::Constant { value } => value.emit(w),
             Self::NativeSum { native, terms } => match terms.as_slice() {
                 [] => match native {
@@ -124,6 +125,36 @@ impl WasmInstruction for Operation {
                         unimplemented!()
                     }
                 }
+            }
+        }
+    }
+}
+impl WasmInstruction for WasmType {
+    fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
+    where
+        'a: 'i,
+    {
+        match self {
+            // false
+            Self::Bool => w.push(Instruction::I32Const(0)),
+            Self::U8 => w.push(Instruction::I32Const(0)),
+            Self::U32 => w.push(Instruction::I32Const(0)),
+            Self::I8 => w.push(Instruction::I32Const(0)),
+            Self::I16 => w.push(Instruction::I32Const(0)),
+            Self::I32 => w.push(Instruction::I32Const(0)),
+            Self::I64 => w.push(Instruction::I64Const(0)),
+            Self::F32 => {
+                w.push(Instruction::F32Const(Float32 { bits: 0 }));
+            }
+            Self::F64 => {
+                w.push(Instruction::F64Const(Float64 { bits: 0 }));
+            }
+            Self::Any => {
+                todo!()
+            }
+            Self::Structure { symbol, nullable } => w.push(Instruction::StructNewDefault(Index::Id(Id::new(symbol.as_ref())))),
+            Self::Array { .. } => {
+                todo!()
             }
         }
     }

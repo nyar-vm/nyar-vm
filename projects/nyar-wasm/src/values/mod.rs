@@ -41,6 +41,7 @@ where
 
 #[derive(Debug)]
 pub enum WasmValue {
+    Boolean(bool),
     U32(u32),
     I32(i32),
     I64(i64),
@@ -61,7 +62,7 @@ impl WasmValue {
             WasmValue::F32(_) => WasmType::F32,
             WasmValue::F64(_) => WasmType::F32,
             WasmValue::Function(_) => WasmType::I32,
-            WasmValue::Structure(name) => WasmType::Named { symbol: name.clone(), nullable: false },
+            WasmValue::Structure(name) => WasmType::Structure { symbol: name.clone(), nullable: false },
             WasmValue::Array => WasmType::Array { inner: Box::new(WasmType::I8), nullable: false },
             WasmValue::Any => WasmType::Any,
         }

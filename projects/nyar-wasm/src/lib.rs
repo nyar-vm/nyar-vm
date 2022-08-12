@@ -11,7 +11,9 @@ mod functions;
 pub mod helpers;
 mod modules;
 mod operations;
+mod symbols;
 mod types;
+
 mod values;
 pub use crate::{
     array::ArrayType,
@@ -28,4 +30,3 @@ pub use crate::{
     },
     values::{global::GlobalSection, variable::WasmVariable, WasmValue},
 };
-mod symbols;
