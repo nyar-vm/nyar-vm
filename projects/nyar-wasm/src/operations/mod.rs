@@ -51,6 +51,7 @@ pub enum Operation {
         condition: Vec<Operation>,
         then: Vec<Operation>,
         r#else: Vec<Operation>,
+        r#return: Vec<WasmType>,
     },
     Default {
         typed: WasmType,

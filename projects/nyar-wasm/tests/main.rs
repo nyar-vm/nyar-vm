@@ -74,6 +74,16 @@ fn test() {
                     ],
                 },
                 Operation::drop(1),
+                Operation::Conditional {
+                    condition: vec![Operation::Constant { value: WasmValue::I32(0) }],
+                    then: vec![Operation::Constant { value: WasmValue::F32(1.0) }, Operation::drop(0)],
+                    r#else: vec![
+                        Operation::Constant { value: WasmValue::F32(2.0) },
+                        Operation::Constant { value: WasmValue::F32(2.0) },
+                        Operation::drop(1),
+                    ],
+                    r#return: vec![WasmType::F32],
+                },
                 Operation::r#loop(
                     "for-1",
                     vec![

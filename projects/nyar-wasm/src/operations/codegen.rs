@@ -1,4 +1,5 @@
 use super::*;
+use wast::token::NameAnnotation;
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -59,9 +60,22 @@ impl WasmInstruction for Operation {
             Self::NativeEqualZero { .. } => {
                 todo!()
             }
-            Self::Conditional { condition, then, r#else } => {
-                // condition.emit(w);
-                todo!()
+            Self::Conditional { condition, then, r#else, r#return } => {
+                condition.iter().for_each(|i| i.emit(w));
+                w.push(Instruction::If(Box::new(BlockType {
+                    label: None,
+                    label_name: Some(NameAnnotation { name: "if.0" }),
+                    ty: TypeUse {
+                        index: None,
+                        inline: Some(wast::core::FunctionType { params: Box::new([]), results: Box::new([]) }),
+                    },
+                })));
+                then.iter().for_each(|i| i.emit(w));
+                if !r#else.is_empty() {
+                    w.push(Instruction::Else(None));
+                    r#else.iter().for_each(|i| i.emit(w));
+                }
+                w.push(Instruction::End(None))
             }
             Self::Loop { r#continue, r#break, body } => {
                 w.push(Instruction::Loop(Box::new(BlockType {
