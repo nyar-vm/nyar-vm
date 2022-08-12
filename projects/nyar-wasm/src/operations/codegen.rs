@@ -166,31 +166,35 @@ impl WasmInstruction for WasmValue {
         'a: 'i,
     {
         match self {
-            WasmValue::U32(v) => {
+            Self::Bool(v) => match v {
+                true => w.push(Instruction::I32Const(1)),
+                false => w.push(Instruction::I32Const(0)),
+            },
+            Self::U32(v) => {
                 w.push(Instruction::I32Const(*v as i32));
             }
-            WasmValue::I32(v) => {
+            Self::I32(v) => {
                 w.push(Instruction::I32Const(*v));
             }
-            WasmValue::I64(v) => {
+            Self::I64(v) => {
                 w.push(Instruction::I64Const(*v));
             }
-            WasmValue::F32(v) => {
+            Self::F32(v) => {
                 w.push(Instruction::F32Const(Float32 { bits: u32::from_le_bytes(v.to_le_bytes()) }));
             }
-            WasmValue::F64(v) => {
+            Self::F64(v) => {
                 w.push(Instruction::F64Const(Float64 { bits: u64::from_le_bytes(v.to_le_bytes()) }));
             }
-            WasmValue::Function(_) => {
+            Self::Function(_) => {
                 todo!()
             }
-            WasmValue::Structure(_) => {
+            Self::Structure(_) => {
                 todo!()
             }
-            WasmValue::Array => {
+            Self::Array => {
                 todo!()
             }
-            WasmValue::Any => {
+            Self::Any => {
                 todo!()
             }
         }

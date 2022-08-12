@@ -1,8 +1,7 @@
 use crate::{
-    helpers::{Id, IndexedIterator, WasmOutput},
+    helpers::{Id, WasmOutput},
     WasmSymbol, WasmType,
 };
-use indexmap::IndexMap;
 use wast::{
     core::{Import, ItemKind, ItemSig, TypeUse},
     token::Span,

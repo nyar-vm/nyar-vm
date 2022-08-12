@@ -20,19 +20,23 @@ where
 {
     fn as_wast(&'a self) -> Instruction<'i> {
         match self {
-            WasmValue::U32(v) => Instruction::I32Const(*v as i32),
-            WasmValue::I32(v) => Instruction::I32Const(*v),
-            WasmValue::I64(v) => Instruction::I64Const(*v),
-            WasmValue::F32(v) => Instruction::F32Const(Float32 { bits: u32::from_le_bytes(v.to_le_bytes()) }),
-            WasmValue::F64(v) => Instruction::F64Const(Float64 { bits: u64::from_le_bytes(v.to_le_bytes()) }),
-            WasmValue::Function(_) => {
+            Self::Bool(v) => match v {
+                true => Instruction::I32Const(1),
+                false => Instruction::I32Const(0),
+            },
+            Self::U32(v) => Instruction::I32Const(*v as i32),
+            Self::I32(v) => Instruction::I32Const(*v),
+            Self::I64(v) => Instruction::I64Const(*v),
+            Self::F32(v) => Instruction::F32Const(Float32 { bits: u32::from_le_bytes(v.to_le_bytes()) }),
+            Self::F64(v) => Instruction::F64Const(Float64 { bits: u64::from_le_bytes(v.to_le_bytes()) }),
+            Self::Function(_) => {
                 todo!()
             }
-            WasmValue::Structure(name) => Instruction::StructNewDefault(Index::Id(Id::new(name.as_ref()))),
-            WasmValue::Array => {
+            Self::Structure(name) => Instruction::StructNewDefault(Index::Id(Id::new(name.as_ref()))),
+            Self::Array => {
                 todo!()
             }
-            WasmValue::Any => {
+            Self::Any => {
                 todo!()
             }
         }
@@ -41,7 +45,7 @@ where
 
 #[derive(Debug)]
 pub enum WasmValue {
-    Boolean(bool),
+    Bool(bool),
     U32(u32),
     I32(i32),
     I64(i64),
@@ -56,15 +60,16 @@ pub enum WasmValue {
 impl WasmValue {
     pub fn as_type(&self) -> WasmType {
         match self {
-            WasmValue::U32(_) => WasmType::I32,
-            WasmValue::I32(_) => WasmType::I32,
-            WasmValue::I64(_) => WasmType::I32,
-            WasmValue::F32(_) => WasmType::F32,
-            WasmValue::F64(_) => WasmType::F32,
-            WasmValue::Function(_) => WasmType::I32,
-            WasmValue::Structure(name) => WasmType::Structure { symbol: name.clone(), nullable: false },
-            WasmValue::Array => WasmType::Array { inner: Box::new(WasmType::I8), nullable: false },
-            WasmValue::Any => WasmType::Any,
+            Self::Bool(_) => WasmType::Bool,
+            Self::U32(_) => WasmType::I32,
+            Self::I32(_) => WasmType::I32,
+            Self::I64(_) => WasmType::I32,
+            Self::F32(_) => WasmType::F32,
+            Self::F64(_) => WasmType::F32,
+            Self::Function(_) => WasmType::I32,
+            Self::Structure(name) => WasmType::Structure { symbol: name.clone(), nullable: false },
+            Self::Array => WasmType::Array { inner: Box::new(WasmType::I8), nullable: false },
+            Self::Any => WasmType::Any,
         }
     }
 }

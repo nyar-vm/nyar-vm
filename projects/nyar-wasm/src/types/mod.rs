@@ -83,20 +83,21 @@ where
 {
     fn as_wast(&'a self) -> ValType<'i> {
         match self {
-            WasmType::U8 => ValType::I32,
-            WasmType::U32 => ValType::I32,
-            WasmType::I8 => ValType::I32,
-            WasmType::I16 => ValType::I32,
-            WasmType::I32 => ValType::I32,
-            WasmType::I64 => ValType::I64,
-            WasmType::F32 => ValType::F32,
-            WasmType::F64 => ValType::F64,
-            WasmType::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
-            WasmType::Structure { symbol, nullable } => {
+            Self::Bool => ValType::I32,
+            Self::U8 => ValType::I32,
+            Self::U32 => ValType::I32,
+            Self::I8 => ValType::I32,
+            Self::I16 => ValType::I32,
+            Self::I32 => ValType::I32,
+            Self::I64 => ValType::I64,
+            Self::F32 => ValType::F32,
+            Self::F64 => ValType::F64,
+            Self::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
+            Self::Structure { symbol, nullable } => {
                 ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Concrete(Index::Id(Id::new(symbol.as_ref()))) })
             }
             // type erased
-            WasmType::Array { nullable, .. } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Array }),
+            Self::Array { nullable, .. } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Array }),
         }
     }
 }
