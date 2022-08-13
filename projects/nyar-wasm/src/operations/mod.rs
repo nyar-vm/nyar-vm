@@ -2,7 +2,7 @@ use crate::{
     helpers::{Id, WasmInstruction},
     types::WasmType,
     values::WasmValue,
-    WasmSymbol,
+    JumpBranch, WasmSymbol,
 };
 use wast::{
     core::{BlockType, Instruction, TableArg, TypeUse},
@@ -10,6 +10,8 @@ use wast::{
 };
 
 mod codegen;
+
+pub mod branch;
 
 #[derive(Debug)]
 pub enum Operation {
@@ -46,13 +48,10 @@ pub enum Operation {
     Drop,
     Return,
     Unreachable,
-    /// `if cond { } { }`
-    Conditional {
-        condition: Vec<Operation>,
-        then: Vec<Operation>,
-        r#else: Vec<Operation>,
-        r#return: Vec<WasmType>,
-    },
+    /// `if cond { } else { }`
+    JumpBranch(JumpBranch),
+    /// `if c1 { } else if c2 { } else { }`
+    JumpTable {},
     Default {
         typed: WasmType,
     },

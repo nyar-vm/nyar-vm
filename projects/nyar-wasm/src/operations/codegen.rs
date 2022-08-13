@@ -1,5 +1,6 @@
 use super::*;
-use wast::token::NameAnnotation;
+use crate::{helpers::WasmOutput, JumpBranch};
+use wast::{core::ValType, token::NameAnnotation};
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -60,23 +61,8 @@ impl WasmInstruction for Operation {
             Self::NativeEqualZero { .. } => {
                 todo!()
             }
-            Self::Conditional { condition, then, r#else, r#return } => {
-                condition.iter().for_each(|i| i.emit(w));
-                w.push(Instruction::If(Box::new(BlockType {
-                    label: None,
-                    label_name: Some(NameAnnotation { name: "if.0" }),
-                    ty: TypeUse {
-                        index: None,
-                        inline: Some(wast::core::FunctionType { params: Box::new([]), results: Box::new([]) }),
-                    },
-                })));
-                then.iter().for_each(|i| i.emit(w));
-                if !r#else.is_empty() {
-                    w.push(Instruction::Else(None));
-                    r#else.iter().for_each(|i| i.emit(w));
-                }
-                w.push(Instruction::End(None))
-            }
+            Self::JumpBranch(branch) => branch.emit(w),
+            Self::JumpTable { .. } => {}
             Self::Loop { r#continue, r#break, body } => {
                 w.push(Instruction::Loop(Box::new(BlockType {
                     label: Id::type_id(r#continue.as_ref()),
@@ -141,6 +127,29 @@ impl WasmInstruction for Operation {
                 }
             }
         }
+    }
+}
+
+impl WasmInstruction for JumpBranch {
+    fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
+    where
+        'a: 'i,
+    {
+        let inline = if self.r#return.is_empty() {
+            None
+        }
+        else {
+            let result: Vec<_> = self.r#return.iter().map(|i| i.as_wast()).collect();
+            Some(wast::core::FunctionType { params: Box::default(), results: Box::from(result) })
+        };
+        self.condition.iter().for_each(|i| i.emit(w));
+        w.push(Instruction::If(Box::new(BlockType { label: None, label_name: None, ty: TypeUse { index: None, inline } })));
+        self.then.iter().for_each(|i| i.emit(w));
+        if !self.r#else.is_empty() {
+            w.push(Instruction::Else(None));
+            self.r#else.iter().for_each(|i| i.emit(w));
+        }
+        w.push(Instruction::End(None))
     }
 }
 impl WasmInstruction for WasmType {

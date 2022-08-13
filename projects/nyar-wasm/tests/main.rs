@@ -74,7 +74,8 @@ fn test() {
                     ],
                 },
                 Operation::drop(1),
-                Operation::Conditional {
+                Operation::JumpBranch(Branch {}),
+                Operation::JumpBranch {
                     condition: vec![Operation::Constant { value: WasmValue::I32(0) }],
                     then: vec![Operation::Constant { value: WasmValue::F32(1.0) }, Operation::drop(0)],
                     r#else: vec![

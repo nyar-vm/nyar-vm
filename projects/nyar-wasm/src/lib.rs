@@ -20,7 +20,7 @@ pub use crate::{
     external::ExternalType,
     functions::{FunctionBody, FunctionType, ParameterType},
     modules::ModuleBuilder,
-    operations::{Operation, VariableKind},
+    operations::{branch::JumpBranch, Operation, VariableKind},
     symbols::WasmSymbol,
     types::{
         external::ExternalSection,
