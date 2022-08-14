@@ -43,7 +43,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum WasmValue {
     Bool(bool),
     U32(u32),

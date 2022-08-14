@@ -1,6 +1,5 @@
 use super::*;
 use crate::{helpers::WasmOutput, JumpBranch};
-use wast::{core::ValType, token::NameAnnotation};
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -62,7 +61,7 @@ impl WasmInstruction for Operation {
                 todo!()
             }
             Self::JumpBranch(branch) => branch.emit(w),
-            Self::JumpTable { .. } => {}
+            Self::JumpTable(table) => table.emit(w),
             Self::Loop { r#continue, r#break, body } => {
                 w.push(Instruction::Loop(Box::new(BlockType {
                     label: Id::type_id(r#continue.as_ref()),
@@ -131,6 +130,8 @@ impl WasmInstruction for Operation {
 }
 
 impl WasmInstruction for JumpBranch {
+    /// `if { then } else { else } end`
+    /// `{ then } { else } condition select`
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
     where
         'a: 'i,
@@ -150,6 +151,54 @@ impl WasmInstruction for JumpBranch {
             self.default.iter().for_each(|i| i.emit(w));
         }
         w.push(Instruction::End(None))
+    }
+}
+impl WasmInstruction for JumpTable {
+    /// ```v
+    /// if a {
+    /// }
+    /// else if b {
+    /// }
+    /// else {
+    /// }
+    ///
+    /// if a {
+    /// }
+    /// else {
+    ///     if b {
+    ///     }
+    ///     else {
+    ///     }
+    /// }
+    ///
+    /// a
+    /// if
+    ///   a_body
+    /// else  
+    ///   b
+    ///   if
+    ///   b_body
+    ///   else
+    ///   c_body
+    ///   end
+    /// end
+    /// ```
+    fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
+    where
+        'a: 'i,
+    {
+        for branch in &self.branches {
+            branch.condition.iter().for_each(|i| i.emit(w));
+            w.push(Instruction::If(Box::new(BlockType {
+                label: None,
+                label_name: None,
+                ty: TypeUse { index: None, inline: None },
+            })));
+            branch.action.iter().for_each(|i| i.emit(w));
+        }
+        for _ in &self.branches {
+            w.push(Instruction::End(None));
+        }
     }
 }
 impl WasmInstruction for WasmType {

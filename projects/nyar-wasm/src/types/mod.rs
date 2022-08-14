@@ -20,7 +20,7 @@ pub struct TypeSection {
     items: IndexMap<String, TypeItem>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum WasmType {
     Bool,
     U8,

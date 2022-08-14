@@ -13,7 +13,7 @@ mod codegen;
 
 pub mod branch;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Operation {
     Sequence {
         code: Vec<Operation>,
@@ -82,7 +82,7 @@ pub enum Operation {
     },
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum VariableKind {
     Global,
     Local,

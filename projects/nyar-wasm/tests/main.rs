@@ -1,6 +1,6 @@
 use nyar_wasm::{
-    ArrayType, ExternalType, FieldType, FunctionType, JumpBranch, ModuleBuilder, Operation, ParameterType, StructureType,
-    VariableKind, WasmSymbol, WasmType, WasmValue, WasmVariable,
+    ArrayType, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, ModuleBuilder, Operation,
+    ParameterType, StructureType, VariableKind, WasmSymbol, WasmType, WasmValue, WasmVariable,
 };
 use std::{fs::File, io::Write, path::Path, process::Command};
 
@@ -50,7 +50,7 @@ fn test() {
     module.insert_type(ArrayType::new("core∷text∷UTF32Text", WasmType::I32));
 
     module.insert_function(
-        FunctionType::new(WasmSymbol::new("add_ab"))
+        FunctionType::new(WasmSymbol::new("sum_all"))
             .with_inputs(vec![
                 ParameterType::new("a").with_type(WasmType::I32),
                 ParameterType::new("b").with_type(WasmType::I32),
@@ -71,35 +71,10 @@ fn test() {
                                 input: vec![Operation::Constant { value: WasmValue::F32(0.0) }],
                             }],
                         },
+                        test_if_1(),
+                        test_if_2(),
                     ],
                 },
-                Operation::drop(1),
-                Operation::if_then(
-                    vec![Operation::Constant { value: WasmValue::I32(0) }],
-                    vec![Operation::Constant { value: WasmValue::F32(1.0) }, Operation::drop(1)],
-                ),
-                Operation::JumpBranch(
-                    JumpBranch::if_then_else(
-                        vec![Operation::Constant { value: WasmValue::I32(0) }],
-                        vec![Operation::Constant { value: WasmValue::F32(1.0) }, Operation::drop(0)],
-                        vec![
-                            Operation::Constant { value: WasmValue::F32(2.0) },
-                            Operation::Constant { value: WasmValue::F32(2.0) },
-                            Operation::drop(1),
-                        ],
-                    )
-                    .with_return_type(vec![WasmType::F32]),
-                ),
-                Operation::r#loop(
-                    "for-1",
-                    vec![
-                        Operation::Constant { value: WasmValue::I32(0) },
-                        Operation::Constant { value: WasmValue::I32(0) },
-                        Operation::drop(2),
-                        Operation::r#break("for-1"),
-                    ],
-                ),
-                Operation::Constant { value: WasmValue::I32(0) },
                 Operation::Return {},
             ])
             .with_public(),
@@ -146,5 +121,59 @@ fn test() {
     }
     let mut file = File::create(out).unwrap();
     file.write_all(&wast).unwrap();
-    let _ = Command::new("vcc").arg("build").output();
+    let o = Command::new("vcc").arg("build").output();
+    println!("{o:?}")
+}
+
+fn test_if_1() -> Operation {
+    Operation::if_then(
+        vec![Operation::local_get("a")],
+        vec![Operation::Constant { value: WasmValue::F32(1.0) }, Operation::drop(1)],
+    )
+}
+fn test_if_2() -> Operation {
+    Operation::JumpBranch(
+        JumpBranch::if_then_else(
+            vec![Operation::local_get("a")],
+            vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::drop(0)],
+            vec![
+                Operation::Constant { value: WasmValue::I32(2) },
+                Operation::Constant { value: WasmValue::I32(3) },
+                Operation::drop(1),
+            ],
+        )
+        .with_return_type(vec![WasmType::I32]),
+    )
+}
+fn test_switch() -> Operation {
+    Operation::JumpTable(JumpTable {
+        branches: vec![
+            JumpCondition {
+                condition: vec![Operation::local_get("a")],
+                action: vec![Operation::Constant { value: WasmValue::I32(1) }],
+            },
+            JumpCondition {
+                condition: vec![Operation::local_get("b")],
+                action: vec![Operation::Constant { value: WasmValue::I32(2) }],
+            },
+            JumpCondition {
+                condition: vec![Operation::local_get("c")],
+                action: vec![Operation::Constant { value: WasmValue::I32(3) }],
+            },
+        ],
+        default: vec![Operation::Constant { value: WasmValue::I32(4) }],
+        r#return: vec![WasmType::I32],
+    })
+}
+
+fn test_loop1() -> Operation {
+    Operation::r#loop(
+        "for-1",
+        vec![
+            Operation::Constant { value: WasmValue::I32(0) },
+            Operation::Constant { value: WasmValue::I32(0) },
+            Operation::drop(2),
+            Operation::r#break("for-1"),
+        ],
+    )
 }
