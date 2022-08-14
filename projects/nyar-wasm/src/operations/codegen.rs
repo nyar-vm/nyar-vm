@@ -1,5 +1,4 @@
 use super::*;
-use crate::{helpers::WasmOutput, JumpBranch};
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -129,6 +128,16 @@ impl WasmInstruction for Operation {
     }
 }
 
+fn block_return(returns: &[WasmType]) -> Option<wast::core::FunctionType> {
+    if returns.is_empty() {
+        None
+    }
+    else {
+        let result: Vec<_> = returns.iter().map(|i| i.as_wast()).collect();
+        Some(wast::core::FunctionType { params: Box::default(), results: Box::from(result) })
+    }
+}
+
 impl WasmInstruction for JumpBranch {
     /// `if { then } else { else } end`
     /// `{ then } { else } condition select`
@@ -136,23 +145,16 @@ impl WasmInstruction for JumpBranch {
     where
         'a: 'i,
     {
-        let inline = if self.r#return.is_empty() {
-            None
-        }
-        else {
-            let result: Vec<_> = self.r#return.iter().map(|i| i.as_wast()).collect();
-            Some(wast::core::FunctionType { params: Box::default(), results: Box::from(result) })
-        };
+        let inline = block_return(&self.r#return);
         self.main.condition.iter().for_each(|i| i.emit(w));
         w.push(Instruction::If(Box::new(BlockType { label: None, label_name: None, ty: TypeUse { index: None, inline } })));
         self.main.action.iter().for_each(|i| i.emit(w));
-        if !self.default.is_empty() {
-            w.push(Instruction::Else(None));
-            self.default.iter().for_each(|i| i.emit(w));
-        }
+        w.push(Instruction::Else(None));
+        self.default.iter().for_each(|i| i.emit(w));
         w.push(Instruction::End(None))
     }
 }
+
 impl WasmInstruction for JumpTable {
     /// ```v
     /// if a {
@@ -195,7 +197,9 @@ impl WasmInstruction for JumpTable {
                 ty: TypeUse { index: None, inline: None },
             })));
             branch.action.iter().for_each(|i| i.emit(w));
+            w.push(Instruction::Else(None));
         }
+        self.default.iter().for_each(|i| i.emit(w));
         for _ in &self.branches {
             w.push(Instruction::End(None));
         }

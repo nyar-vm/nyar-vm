@@ -73,6 +73,7 @@ fn test() {
                         },
                         test_if_1(),
                         test_if_2(),
+                        test_switch(),
                     ],
                 },
                 Operation::Return {},
@@ -121,14 +122,14 @@ fn test() {
     }
     let mut file = File::create(out).unwrap();
     file.write_all(&wast).unwrap();
-    let o = Command::new("vcc").arg("build").output();
+    let o = Command::new("valor").arg("build").output();
     println!("{o:?}")
 }
 
 fn test_if_1() -> Operation {
     Operation::if_then(
         vec![Operation::local_get("a")],
-        vec![Operation::Constant { value: WasmValue::F32(1.0) }, Operation::drop(1)],
+        vec![Operation::Constant { value: WasmValue::F32(1.618) }, Operation::drop(1)],
     )
 }
 fn test_if_2() -> Operation {
