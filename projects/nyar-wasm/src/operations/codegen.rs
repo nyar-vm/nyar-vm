@@ -142,12 +142,12 @@ impl WasmInstruction for JumpBranch {
             let result: Vec<_> = self.r#return.iter().map(|i| i.as_wast()).collect();
             Some(wast::core::FunctionType { params: Box::default(), results: Box::from(result) })
         };
-        self.condition.iter().for_each(|i| i.emit(w));
+        self.main.condition.iter().for_each(|i| i.emit(w));
         w.push(Instruction::If(Box::new(BlockType { label: None, label_name: None, ty: TypeUse { index: None, inline } })));
-        self.then.iter().for_each(|i| i.emit(w));
-        if !self.r#else.is_empty() {
+        self.main.action.iter().for_each(|i| i.emit(w));
+        if !self.default.is_empty() {
             w.push(Instruction::Else(None));
-            self.r#else.iter().for_each(|i| i.emit(w));
+            self.default.iter().for_each(|i| i.emit(w));
         }
         w.push(Instruction::End(None))
     }

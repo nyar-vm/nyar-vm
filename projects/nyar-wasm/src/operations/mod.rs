@@ -2,7 +2,7 @@ use crate::{
     helpers::{Id, WasmInstruction},
     types::WasmType,
     values::WasmValue,
-    JumpBranch, WasmSymbol,
+    JumpBranch, JumpTable, WasmSymbol,
 };
 use wast::{
     core::{BlockType, Instruction, TableArg, TypeUse},
@@ -51,7 +51,7 @@ pub enum Operation {
     /// `if cond { } else { }`
     JumpBranch(JumpBranch),
     /// `if c1 { } else if c2 { } else { }`
-    JumpTable {},
+    JumpTable(JumpTable),
     Default {
         typed: WasmType,
     },
