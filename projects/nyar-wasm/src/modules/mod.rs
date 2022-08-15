@@ -1,11 +1,9 @@
 use crate::{
-    functions::FunctionType, helpers::IndexedIterator, ExternalSection, ExternalType, FunctionSection, GlobalSection, TypeItem,
-    TypeSection, WasmSymbol, WasmVariable,
+    functions::FunctionType, DataItem, DataSection, ExternalSection, ExternalType, FunctionSection, GlobalSection, TypeItem,
+    TypeSection, WasmVariable,
 };
-use indexmap::IndexMap;
-use nyar_error::{FileSpan, NyarError};
+use nyar_error::NyarError;
 
-mod interface;
 mod wast_component;
 mod wast_module;
 
@@ -21,41 +19,9 @@ pub struct ModuleBuilder {
     externals: ExternalSection,
 }
 
-#[derive(Default)]
-pub struct DataSection {
-    data: IndexMap<String, DataItem>,
-}
-
-impl<'i> IntoIterator for &'i DataSection {
-    type Item = (usize, &'i str, &'i DataItem);
-    type IntoIter = IndexedIterator<'i, DataItem>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        IndexedIterator::new(&self.data)
-    }
-}
-
-pub struct DataItem {
-    pub symbol: WasmSymbol,
-    pub data: Vec<u8>,
-    pub span: FileSpan,
-}
-
-impl DataSection {
-    pub fn insert(&mut self, item: DataItem) -> Option<DataItem> {
-        self.data.insert(item.symbol.to_string(), item)
-    }
-}
-
-impl DataItem {
-    pub fn utf8(name: WasmSymbol, data: String) -> Self {
-        Self { symbol: name, data: data.into_bytes(), span: FileSpan::default() }
-    }
-}
-
 impl ModuleBuilder {
-    pub fn new(memory: u64) -> Self {
-        Self { memory_pages: memory, ..Default::default() }
+    pub fn new<S: ToString>(name: S) -> Self {
+        Self { name: name.to_string(), ..Default::default() }
     }
 
     pub fn get_module_name(&self) -> &str {

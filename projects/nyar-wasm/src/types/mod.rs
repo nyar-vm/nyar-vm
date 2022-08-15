@@ -1,6 +1,6 @@
 use crate::{
     functions::FunctionType,
-    helpers::{Id, IndexedIterator, WasmOutput},
+    helpers::{Id, IndexedIterator, IntoWasm},
     ArrayType, ExternalType, StructureType, WasmSymbol,
 };
 use indexmap::IndexMap;
@@ -24,6 +24,7 @@ pub struct TypeSection {
 pub enum WasmType {
     Bool,
     U8,
+    U16,
     U32,
     I8,
     I16,
@@ -31,7 +32,7 @@ pub enum WasmType {
     I64,
     F32,
     F64,
-    Any,
+    Any { nullable: bool },
     Structure { symbol: WasmSymbol, nullable: bool },
     Array { inner: Box<WasmType>, nullable: bool },
 }
@@ -77,7 +78,7 @@ impl TypeItem {
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, ValType<'i>> for WasmType
+impl<'a, 'i> IntoWasm<'a, ValType<'i>> for WasmType
 where
     'a: 'i,
 {
@@ -85,6 +86,7 @@ where
         match self {
             Self::Bool => ValType::I32,
             Self::U8 => ValType::I32,
+            Self::U16 => ValType::I32,
             Self::U32 => ValType::I32,
             Self::I8 => ValType::I32,
             Self::I16 => ValType::I32,
@@ -92,7 +94,7 @@ where
             Self::I64 => ValType::I64,
             Self::F32 => ValType::F32,
             Self::F64 => ValType::F64,
-            Self::Any => ValType::Ref(RefType { nullable: true, heap: HeapType::Func }),
+            Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
             Self::Structure { symbol, nullable } => {
                 ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Concrete(Index::Id(Id::new(symbol.as_ref()))) })
             }
@@ -102,7 +104,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, StorageType<'i>> for WasmType
+impl<'a, 'i> IntoWasm<'a, StorageType<'i>> for WasmType
 where
     'a: 'i,
 {
@@ -115,7 +117,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, ModuleField<'i>> for TypeItem
+impl<'a, 'i> IntoWasm<'a, ModuleField<'i>> for TypeItem
 where
     'a: 'i,
 {

@@ -1,6 +1,5 @@
 use crate::{
-    helpers::{Id, WasmOutput},
-    modules::DataItem,
+    helpers::{Id, IntoWasm},
     types::WasmType,
     WasmSymbol, WasmVariable,
 };
@@ -13,10 +12,10 @@ use wast::{
 pub mod data;
 pub mod global;
 pub mod variable;
-
+use crate::{data::DataItem, helpers::IndexedIterator};
 mod convert;
 
-impl<'a, 'i> WasmOutput<'a, Instruction<'i>> for WasmValue
+impl<'a, 'i> IntoWasm<'a, Instruction<'i>> for WasmValue
 where
     'a: 'i,
 {

@@ -1,5 +1,5 @@
 use crate::{
-    helpers::{Id, WasmInstruction, WasmOutput},
+    helpers::{Id, IntoWasm, WasmInstruction},
     types::WasmType,
     values::WasmValue,
     EnumerationTable, JumpBranch, JumpTable, WasmSymbol,

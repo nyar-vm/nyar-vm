@@ -1,5 +1,5 @@
 use nyar_wasm::{
-    ArrayType, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, ModuleBuilder, Operation,
+    ArrayType, DataItem, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, ModuleBuilder, Operation,
     ParameterType, StructureType, VariableKind, WasmSymbol, WasmType, WasmValue, WasmVariable,
 };
 use std::{fs::File, io::Write, path::Path, process::Command};
@@ -116,6 +116,39 @@ fn test() {
 
     let wast = module.build_module().unwrap().encode().unwrap();
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie/runtime.wasm");
+    let dir = out.parent().unwrap();
+    if !dir.exists() {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let mut file = File::create(out).unwrap();
+    file.write_all(&wast).unwrap();
+    let o = Command::new("valor").arg("build").output();
+    println!("{o:?}")
+}
+
+#[test]
+fn hello() {
+    const text: &str = "hello world!";
+    let mut module = ModuleBuilder::new("hello");
+    module.insert_global(WasmVariable::i32("a", 42));
+    module.insert_global(WasmVariable::f32("pi", 3.14));
+    module.insert_data(DataItem::utf8(WasmSymbol::new("hello"), text.to_string()));
+    module.insert_function(
+        FunctionType::new(WasmSymbol::new("__main"))
+            .with_inputs(vec![])
+            .with_outputs(vec![])
+            .with_operations(vec![
+                // Operation::CallFunction {
+                //     name: WasmSymbol::new("file_descriptor_write"),
+                //     input: vec![Operation::from(1), Operation::from(0), Operation::from(text.len() as i32), Operation::from(0)],
+                // },
+                // Operation::Drop,
+            ])
+            .with_entry(),
+    );
+
+    let wast = module.build_module().unwrap().encode().unwrap();
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie/hello.wasm");
     let dir = out.parent().unwrap();
     if !dir.exists() {
         std::fs::create_dir_all(dir).unwrap();

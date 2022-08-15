@@ -1,16 +1,20 @@
 use super::*;
 
-impl<'a, 'i> WasmOutput<'a, Data<'i>> for DataItem
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> Data<'i> {
-        Data {
-            span: Span::from_offset(0),
-            id: Id::type_id(self.symbol.as_ref()),
-            name: Some(NameAnnotation { name: self.symbol.as_ref() }),
-            kind: DataKind::Active { memory: Index::Num(0, Span::from_offset(0)), offset: Expression { instrs: Box::new([]) } },
-            data: vec![DataVal::String(self.data.as_slice())],
-        }
+#[derive(Default)]
+pub struct DataSection {
+    data: IndexMap<String, DataItem>,
+}
+
+impl<'i> IntoIterator for &'i DataSection {
+    type Item = (usize, &'i str, &'i DataItem);
+    type IntoIter = IndexedIterator<'i, DataItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IndexedIterator::new(&self.data)
+    }
+}
+impl DataSection {
+    pub fn insert(&mut self, item: DataItem) -> Option<DataItem> {
+        self.data.insert(item.symbol.to_string(), item)
     }
 }

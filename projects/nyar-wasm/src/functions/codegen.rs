@@ -1,5 +1,5 @@
 use super::*;
-impl<'a, 'i> WasmOutput<'a, Func<'i>> for FunctionType
+impl<'a, 'i> IntoWasm<'a, Func<'i>> for FunctionType
 where
     'a: 'i,
 {
@@ -19,7 +19,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, wast::core::FunctionType<'i>> for FunctionType
+impl<'a, 'i> IntoWasm<'a, wast::core::FunctionType<'i>> for FunctionType
 where
     'a: 'i,
 {
@@ -30,7 +30,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, (Option<wast::token::Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>)> for ParameterType
+impl<'a, 'i> IntoWasm<'a, (Option<wast::token::Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>)> for ParameterType
 where
     'a: 'i,
 {
@@ -39,7 +39,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, FuncKind<'i>> for FunctionType
+impl<'a, 'i> IntoWasm<'a, FuncKind<'i>> for FunctionType
 where
     'a: 'i,
 {
@@ -48,7 +48,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, Expression<'i>> for FunctionBody
+impl<'a, 'i> IntoWasm<'a, Expression<'i>> for FunctionBody
 where
     'a: 'i,
 {

@@ -6,6 +6,7 @@
 #![doc(html_favicon_url = "https://raw.githubusercontent.com/oovm/shape-rs/dev/projects/images/Trapezohedron.svg")]
 
 mod array;
+mod data;
 mod external;
 mod functions;
 pub mod helpers;
@@ -17,6 +18,7 @@ mod types;
 mod values;
 pub use crate::{
     array::ArrayType,
+    data::DataItem,
     external::ExternalType,
     functions::{FunctionBody, FunctionType, ParameterType},
     modules::ModuleBuilder,
@@ -31,5 +33,5 @@ pub use crate::{
         structure::{FieldType, StructureType},
         TypeItem, TypeSection, WasmType,
     },
-    values::{global::GlobalSection, variable::WasmVariable, WasmValue},
+    values::{data::DataSection, global::GlobalSection, variable::WasmVariable, WasmValue},
 };

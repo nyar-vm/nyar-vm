@@ -1,5 +1,5 @@
 use crate::{
-    helpers::{Id, WasmOutput},
+    helpers::{Id, IntoWasm},
     WasmSymbol, WasmType,
 };
 use wast::{

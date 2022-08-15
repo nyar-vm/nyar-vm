@@ -43,7 +43,7 @@ impl<'i, T> IndexedIterator<'i, T> {
     }
 }
 
-pub trait WasmOutput<'a, Item> {
+pub trait IntoWasm<'a, Item> {
     fn as_wast(&'a self) -> Item;
 }
 

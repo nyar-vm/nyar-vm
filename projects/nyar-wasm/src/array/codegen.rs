@@ -1,6 +1,6 @@
 use super::*;
 
-impl<'a, 'i> WasmOutput<'a, Type<'i>> for ArrayType
+impl<'a, 'i> IntoWasm<'a, Type<'i>> for ArrayType
 where
     'a: 'i,
 {
@@ -15,7 +15,7 @@ where
         }
     }
 }
-impl<'a, 'i> WasmOutput<'a, wast::core::ArrayType<'i>> for ArrayType
+impl<'a, 'i> IntoWasm<'a, wast::core::ArrayType<'i>> for ArrayType
 where
     'a: 'i,
 {

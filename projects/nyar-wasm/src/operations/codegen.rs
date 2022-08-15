@@ -124,6 +124,7 @@ impl WasmInstruction for Operation {
                     }
                 }
             }
+            Self::JumpEnumeration(_) => {}
         }
     }
 }
@@ -226,7 +227,7 @@ impl WasmInstruction for WasmType {
             Self::F64 => {
                 w.push(Instruction::F64Const(Float64 { bits: 0 }));
             }
-            Self::Any => {
+            Self::Any { nullable } => {
                 todo!()
             }
             Self::Structure { symbol, nullable } => w.push(Instruction::StructNewDefault(Index::Id(Id::new(symbol.as_ref())))),

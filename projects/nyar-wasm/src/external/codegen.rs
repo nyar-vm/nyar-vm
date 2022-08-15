@@ -1,6 +1,6 @@
 use super::*;
 
-impl<'a, 'i> WasmOutput<'a, Import<'i>> for ExternalType
+impl<'a, 'i> IntoWasm<'a, Import<'i>> for ExternalType
 where
     'a: 'i,
 {
@@ -19,7 +19,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, wast::core::FunctionType<'i>> for ExternalType
+impl<'a, 'i> IntoWasm<'a, wast::core::FunctionType<'i>> for ExternalType
 where
     'a: 'i,
 {

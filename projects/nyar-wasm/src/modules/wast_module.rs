@@ -1,10 +1,10 @@
 use crate::{
-    helpers::{Id, WasmOutput},
+    helpers::{Id, IntoWasm},
     modules::ModuleBuilder,
 };
 use nyar_error::NyarError;
 use wast::{
-    core::{Custom, InlineExport, Memory, MemoryKind, Module, ModuleField, ModuleKind, Producers},
+    core::{Custom, DataVal, InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, Producers},
     token::{Index, NameAnnotation, Span},
 };
 
@@ -47,10 +47,10 @@ impl ModuleBuilder {
     fn build_memory(&self) -> Memory {
         Memory {
             span: Span::from_offset(0),
-            id: Id::type_id("static"),
+            id: Id::type_id("memory"),
             name: None,
-            exports: InlineExport { names: vec!["static"] },
-            kind: MemoryKind::Inline { is_32: true, data: vec![] },
+            exports: InlineExport { names: vec!["memory"] },
+            kind: MemoryKind::Normal(MemoryType::B32 { limits: Limits { min: 1, max: None }, shared: false }),
         }
     }
     fn build_start<'a, 'b>(&'a self, m: &mut Vec<ModuleField<'b>>)

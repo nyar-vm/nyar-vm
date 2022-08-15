@@ -1,5 +1,5 @@
 use crate::{
-    helpers::{Id, WasmInstruction, WasmOutput},
+    helpers::{Id, IntoWasm, WasmInstruction},
     operations::Operation,
     types::WasmType,
     WasmSymbol,
@@ -36,7 +36,7 @@ impl ParameterType {
     where
         S: Into<WasmSymbol>,
     {
-        Self { name: name.into(), type_hint: WasmType::Any, span: Default::default() }
+        Self { name: name.into(), type_hint: WasmType::Any { nullable: true }, span: Default::default() }
     }
     pub fn with_type(self, type_hint: WasmType) -> Self {
         Self { type_hint, ..self }

@@ -47,7 +47,7 @@ impl StructureType {
 
 impl FieldType {
     pub fn new(name: WasmSymbol) -> Self {
-        Self { name, mutable: false, r#type: WasmType::Any, default: WasmValue::Any }
+        Self { name, mutable: false, r#type: WasmType::Any { nullable: false }, default: WasmValue::Any }
     }
     pub fn with_type(self, r#type: WasmType) -> Self {
         Self { r#type, ..self }
@@ -71,7 +71,7 @@ impl FieldType {
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, Type<'i>> for StructureType
+impl<'a, 'i> IntoWasm<'a, Type<'i>> for StructureType
 where
     'a: 'i,
 {
@@ -86,7 +86,7 @@ where
         }
     }
 }
-impl<'a, 'i> WasmOutput<'a, StructType<'i>> for StructureType
+impl<'a, 'i> IntoWasm<'a, StructType<'i>> for StructureType
 where
     'a: 'i,
 {
@@ -95,7 +95,7 @@ where
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, StructField<'i>> for FieldType
+impl<'a, 'i> IntoWasm<'a, StructField<'i>> for FieldType
 where
     'a: 'i,
 {

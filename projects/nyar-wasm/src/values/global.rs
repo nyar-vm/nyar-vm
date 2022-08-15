@@ -21,7 +21,7 @@ impl<'i> IntoIterator for &'i GlobalSection {
     }
 }
 
-impl<'a, 'i> WasmOutput<'a, Global<'i>> for WasmVariable
+impl<'a, 'i> IntoWasm<'a, Global<'i>> for WasmVariable
 where
     'a: 'i,
 {
