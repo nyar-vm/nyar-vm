@@ -189,12 +189,13 @@ impl WasmInstruction for JumpTable {
     where
         'a: 'i,
     {
+        let inline = block_return(&self.r#return);
         for branch in &self.branches {
             branch.condition.iter().for_each(|i| i.emit(w));
             w.push(Instruction::If(Box::new(BlockType {
                 label: None,
                 label_name: None,
-                ty: TypeUse { index: None, inline: None },
+                ty: TypeUse { index: None, inline: inline.clone() },
             })));
             branch.action.iter().for_each(|i| i.emit(w));
             w.push(Instruction::Else(None));

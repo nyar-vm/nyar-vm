@@ -14,6 +14,8 @@ pub mod data;
 pub mod global;
 pub mod variable;
 
+mod convert;
+
 impl<'a, 'i> WasmOutput<'a, Instruction<'i>> for WasmValue
 where
     'a: 'i,

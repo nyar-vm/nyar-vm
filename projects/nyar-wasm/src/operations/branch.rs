@@ -1,6 +1,13 @@
 use super::*;
 
 #[derive(Clone, Debug)]
+pub struct EnumerationTable {
+    pub branches: BTreeMap<u32, Vec<Operation>>,
+    pub default: Vec<Operation>,
+    pub r#return: Vec<WasmType>,
+}
+
+#[derive(Clone, Debug)]
 pub struct JumpTable {
     pub branches: Vec<JumpCondition>,
     pub default: Vec<Operation>,
@@ -20,12 +27,6 @@ pub struct JumpCondition {
     pub action: Vec<Operation>,
 }
 
-impl From<JumpBranch> for Operation {
-    fn from(value: JumpBranch) -> Self {
-        Self::JumpBranch(value)
-    }
-}
-
 impl JumpBranch {
     pub fn if_then(r#if: Vec<Operation>, then: Vec<Operation>) -> Self {
         Self { main: JumpCondition { condition: r#if, action: then }, default: vec![], r#return: vec![] }
@@ -35,6 +36,12 @@ impl JumpBranch {
     }
     pub fn with_return_type(self, r#type: Vec<WasmType>) -> Self {
         Self { r#return: r#type, ..self }
+    }
+}
+
+impl JumpCondition {
+    pub fn new(condition: Vec<Operation>, action: Vec<Operation>) -> Self {
+        Self { condition, action }
     }
 }
 

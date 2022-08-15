@@ -2,14 +2,16 @@ use crate::{
     helpers::{Id, WasmInstruction, WasmOutput},
     types::WasmType,
     values::WasmValue,
-    JumpBranch, JumpTable, WasmSymbol,
+    EnumerationTable, JumpBranch, JumpTable, WasmSymbol,
 };
+use std::collections::BTreeMap;
 use wast::{
     core::{BlockType, Instruction, TableArg, TypeUse},
     token::{Float32, Float64, Index},
 };
 
 mod codegen;
+mod convert;
 
 pub mod branch;
 
@@ -48,10 +50,13 @@ pub enum Operation {
     Drop,
     Return,
     Unreachable,
+
     /// `if cond { } else { }`
     JumpBranch(JumpBranch),
     /// `if c1 { } else if c2 { } else { }`
     JumpTable(JumpTable),
+    /// `case 0: ... else: ...`
+    JumpEnumeration(EnumerationTable),
     Default {
         typed: WasmType,
     },

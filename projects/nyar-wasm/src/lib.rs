@@ -21,7 +21,7 @@ pub use crate::{
     functions::{FunctionBody, FunctionType, ParameterType},
     modules::ModuleBuilder,
     operations::{
-        branch::{JumpBranch, JumpCondition, JumpTable},
+        branch::{EnumerationTable, JumpBranch, JumpCondition, JumpTable},
         Operation, VariableKind,
     },
     symbols::WasmSymbol,
