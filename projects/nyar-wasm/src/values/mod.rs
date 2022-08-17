@@ -1,13 +1,13 @@
 use crate::{
-    helpers::{Id, IntoWasm},
+    helpers::{IntoWasm, WasmName},
     types::WasmType,
     WasmSymbol, WasmVariable,
 };
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
 use wast::{
-    core::{Data, DataKind, DataVal, Expression, Global, GlobalKind, Instruction},
-    token::{Float32, Float64, Index, NameAnnotation, Span},
+    core::{Expression, Global, GlobalKind, Instruction},
+    token::{Float32, Float64, Index, Span},
 };
 pub mod data;
 pub mod global;
@@ -33,7 +33,7 @@ where
             Self::Function(_) => {
                 todo!()
             }
-            Self::Structure(name) => Instruction::StructNewDefault(Index::Id(Id::new(name.as_ref()))),
+            Self::Structure(name) => Instruction::StructNewDefault(Index::Id(WasmName::new(name.as_ref()))),
             Self::Array => {
                 todo!()
             }
@@ -70,7 +70,7 @@ impl WasmValue {
             Self::Function(_) => WasmType::I32,
             Self::Structure(name) => WasmType::Structure { symbol: name.clone(), nullable: false },
             Self::Array => WasmType::Array { inner: Box::new(WasmType::I8), nullable: false },
-            Self::Any => WasmType::Any,
+            Self::Any => WasmType::Any { nullable: false },
         }
     }
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::helpers::IndexedIterator;
+use wast::core::{GlobalType, InlineExport};
 
 #[derive(Default)]
 pub struct GlobalSection {
@@ -28,10 +29,10 @@ where
     fn as_wast(&'a self) -> Global<'i> {
         Global {
             span: Span::from_offset(0),
-            id: Id::type_id(self.symbol.as_ref()),
-            name: Some(NameAnnotation { name: self.symbol.as_ref() }),
-            exports: Default::default(),
-            ty: wast::core::GlobalType { ty: self.r#type.as_wast(), mutable: self.mutable() },
+            id: WasmName::type_id(self.symbol.as_ref()),
+            name: None,
+            exports: InlineExport { names: vec![self.symbol.as_ref()] },
+            ty: GlobalType { ty: self.r#type.as_wast(), mutable: self.mutable },
             kind: GlobalKind::Inline(self.as_wast()),
         }
     }

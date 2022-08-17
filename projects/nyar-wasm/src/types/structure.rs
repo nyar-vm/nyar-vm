@@ -78,7 +78,7 @@ where
     fn as_wast(&'a self) -> Type<'i> {
         Type {
             span: Span::from_offset(0),
-            id: Id::type_id(self.symbol.as_ref()),
+            id: WasmName::type_id(self.symbol.as_ref()),
             name: Some(NameAnnotation { name: self.symbol.as_ref() }),
             def: TypeDef::Struct(self.as_wast()),
             parent: None,
@@ -100,6 +100,6 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> StructField<'i> {
-        StructField { id: Id::type_id(self.name.as_ref()), mutable: self.mutable, ty: self.r#type.as_wast() }
+        StructField { id: WasmName::type_id(self.name.as_ref()), mutable: self.mutable, ty: self.r#type.as_wast() }
     }
 }

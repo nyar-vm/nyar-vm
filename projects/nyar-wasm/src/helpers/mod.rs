@@ -1,5 +1,5 @@
 use indexmap::{map::Iter, IndexMap};
-use std::intrinsics::transmute;
+use std::{fmt::Debug, intrinsics::transmute};
 use wast::{
     core::Instruction,
     token::{Index, Span},
@@ -53,17 +53,18 @@ pub trait WasmInstruction {
         'a: 'i;
 }
 
-pub struct Id<'a> {
+#[allow(dead_code)]
+pub(crate) struct WasmName<'a> {
     name: &'a str,
     gen: u32,
     span: Span,
 }
 
-impl<'a> Id<'a> {
+impl<'a> WasmName<'a> {
     pub fn new(name: &'a str) -> wast::token::Id<'a> {
         unsafe {
-            let s = Id { name, gen: 0, span: Span::from_offset(0) };
-            transmute::<Id, wast::token::Id>(s)
+            let s = WasmName { name, gen: 0, span: Span::from_offset(0) };
+            transmute::<WasmName, wast::token::Id>(s)
         }
     }
     pub fn type_id(name: &'a str) -> Option<wast::token::Id<'a>> {

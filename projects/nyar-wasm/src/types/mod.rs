@@ -1,6 +1,6 @@
 use crate::{
     functions::FunctionType,
-    helpers::{Id, IndexedIterator, IntoWasm},
+    helpers::{IndexedIterator, IntoWasm, WasmName},
     ArrayType, ExternalType, StructureType, WasmSymbol,
 };
 use indexmap::IndexMap;
@@ -17,7 +17,7 @@ pub mod structure;
 
 #[derive(Default)]
 pub struct TypeSection {
-    items: IndexMap<String, TypeItem>,
+    items: IndexMap<String, WasmType>,
 }
 
 #[derive(Clone, Debug)]
@@ -26,21 +26,26 @@ pub enum WasmType {
     U8,
     U16,
     U32,
+    U64,
     I8,
     I16,
     I32,
     I64,
     F32,
     F64,
+    Unicode,
+    UTF8Text,
     Any { nullable: bool },
-    Structure { symbol: WasmSymbol, nullable: bool },
+    Structure(StructureType),
     Array { inner: Box<WasmType>, nullable: bool },
 }
 
 impl WasmType {
     pub fn set_nullable(&mut self, nullable: bool) {
         match self {
-            Self::Structure { nullable: n, .. } => *n = nullable,
+            Self::Structure(_) => {
+                todo!()
+            }
             Self::Array { nullable: n, .. } => *n = nullable,
             _ => {}
         }
@@ -88,6 +93,7 @@ where
             Self::U8 => ValType::I32,
             Self::U16 => ValType::I32,
             Self::U32 => ValType::I32,
+            Self::U64 => ValType::I64,
             Self::I8 => ValType::I32,
             Self::I16 => ValType::I32,
             Self::I32 => ValType::I32,
@@ -95,9 +101,10 @@ where
             Self::F32 => ValType::F32,
             Self::F64 => ValType::F64,
             Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
-            Self::Structure { symbol, nullable } => {
-                ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Concrete(Index::Id(Id::new(symbol.as_ref()))) })
-            }
+            Self::Structure { symbol, nullable } => ValType::Ref(RefType {
+                nullable: *nullable,
+                heap: HeapType::Concrete(Index::Id(WasmName::new(symbol.as_ref()))),
+            }),
             // type erased
             Self::Array { nullable, .. } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Array }),
         }

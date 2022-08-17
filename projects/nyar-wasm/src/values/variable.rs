@@ -2,7 +2,7 @@ use super::*;
 
 pub struct WasmVariable {
     pub symbol: WasmSymbol,
-    pub constant: bool,
+    pub mutable: bool,
     pub export: bool,
     pub r#type: WasmType,
     pub value: WasmValue,
@@ -13,7 +13,7 @@ impl Default for WasmVariable {
     fn default() -> Self {
         Self {
             symbol: WasmSymbol::new("<anonymous>"),
-            constant: false,
+            mutable: false,
             export: false,
             r#type: WasmType::U8,
             value: WasmValue::Array,
@@ -48,15 +48,13 @@ impl WasmVariable {
     pub fn function(name: WasmSymbol) -> Self {
         Self { symbol: name.clone(), value: WasmValue::Function(name), ..Self::default() }
     }
-    pub fn mutable(&self) -> bool {
-        !self.constant
-    }
-
     pub fn with_public(self) -> Self {
         Self { export: true, ..self }
     }
-
-    pub fn value(&self) -> &WasmValue {
-        &self.value
+    pub fn with_mutable(self) -> Self {
+        Self { mutable: true, ..self }
+    }
+    pub fn with_immutable(self) -> Self {
+        Self { mutable: false, ..self }
     }
 }

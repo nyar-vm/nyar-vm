@@ -1,10 +1,10 @@
 use crate::{
-    helpers::{Id, IntoWasm},
+    helpers::{IntoWasm, WasmName},
     modules::ModuleBuilder,
 };
 use nyar_error::NyarError;
 use wast::{
-    core::{Custom, DataVal, InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, Producers},
+    core::{Custom, InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, Producers},
     token::{Index, NameAnnotation, Span},
 };
 
@@ -30,11 +30,13 @@ impl ModuleBuilder {
         for (_, _, k) in self.globals.into_iter() {
             terms.push(ModuleField::Global(k.as_wast()))
         }
+
+        let mut offset = 0;
         for (_, _, k) in self.data.into_iter() {
-            terms.push(ModuleField::Data(k.as_wast()))
+            terms.push(ModuleField::Data(k.as_wast(&mut offset)))
         }
 
-        terms.push(ModuleField::Memory(self.build_memory()));
+        self.build_memory(&mut terms);
         self.build_start(&mut terms);
         self.build_producer(&mut terms);
         Ok(Module {
@@ -44,21 +46,25 @@ impl ModuleBuilder {
             kind: ModuleKind::Text(terms),
         })
     }
-    fn build_memory(&self) -> Memory {
-        Memory {
+    fn build_memory<'a, 'b>(&'a self, m: &mut Vec<ModuleField<'b>>)
+    where
+        'a: 'b,
+    {
+        let memory = Memory {
             span: Span::from_offset(0),
-            id: Id::type_id("memory"),
+            id: WasmName::type_id("memory"),
             name: None,
             exports: InlineExport { names: vec!["memory"] },
             kind: MemoryKind::Normal(MemoryType::B32 { limits: Limits { min: 1, max: None }, shared: false }),
-        }
+        };
+        m.push(ModuleField::Memory(memory));
     }
     fn build_start<'a, 'b>(&'a self, m: &mut Vec<ModuleField<'b>>)
     where
         'a: 'b,
     {
         if !self.entry.is_empty() {
-            m.push(ModuleField::Start(Index::Id(Id::new(&self.entry))))
+            m.push(ModuleField::Start(Index::Id(WasmName::new(&self.entry))))
         }
     }
     fn build_producer(&self, m: &mut Vec<ModuleField>) {

@@ -36,8 +36,8 @@ fn test() {
         FieldType::new(WasmSymbol::new("a")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("c")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
-        FieldType::new(WasmSymbol::new("d")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
-        FieldType::new(WasmSymbol::new("e")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("d")).with_type(WasmType::Any { nullable: false }).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("e")).with_type(WasmType::Any { nullable: true }).with_default(WasmValue::F32(2.0)),
     ]));
 
     module.insert_type(StructureType::new(WasmSymbol::new("a")).with_fields(vec![
@@ -73,6 +73,7 @@ fn test() {
                         },
                         // test_if_1(),
                         test_if_2(),
+                        test_if_3(),
                         test_switch(),
                     ],
                 },
@@ -130,8 +131,8 @@ fn test() {
 fn hello() {
     const text: &str = "hello world!";
     let mut module = ModuleBuilder::new("hello");
-    module.insert_global(WasmVariable::i32("a", 42));
-    module.insert_global(WasmVariable::f32("pi", 3.14));
+    module.insert_global(WasmVariable::i32("a", 42).with_immutable());
+    module.insert_global(WasmVariable::f32("pi", 3.14).with_immutable());
     module.insert_data(DataItem::utf8(WasmSymbol::new("hello"), text.to_string()));
     module.insert_function(
         FunctionType::new(WasmSymbol::new("__main"))
@@ -175,6 +176,43 @@ fn test_if_2() -> Operation {
         .with_return_type(vec![WasmType::I32]),
     )
 }
+fn test_if_3() -> Operation {
+    Operation::JumpTable(JumpTable {
+        branches: vec![
+            JumpCondition {
+                condition: vec![Operation::NativeEqual {
+                    native: WasmType::Bool,
+                    codes: vec![Operation::local_get("a"), Operation::from(1)],
+                }],
+                action: vec![Operation::from(2)],
+            },
+            JumpCondition {
+                condition: vec![Operation::NativeEqual {
+                    native: WasmType::Bool,
+                    codes: vec![Operation::local_get("a"), Operation::from(3)],
+                }],
+                action: vec![Operation::from(3)],
+            },
+            JumpCondition {
+                condition: vec![Operation::NativeEqual {
+                    native: WasmType::Bool,
+                    codes: vec![Operation::local_get("a"), Operation::from(5)],
+                }],
+                action: vec![Operation::from(5)],
+            },
+            JumpCondition {
+                condition: vec![Operation::NativeEqual {
+                    native: WasmType::Bool,
+                    codes: vec![Operation::local_get("a"), Operation::from(7)],
+                }],
+                action: vec![Operation::from(7)],
+            },
+        ],
+        default: vec![Operation::Unreachable],
+        r#return: vec![WasmType::I32],
+    })
+}
+
 fn test_switch() -> Operation {
     Operation::JumpTable(JumpTable {
         branches: vec![

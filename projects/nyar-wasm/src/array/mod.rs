@@ -1,5 +1,5 @@
 use crate::{
-    helpers::{Id, IntoWasm},
+    helpers::{IntoWasm, WasmName},
     TypeItem, WasmSymbol, WasmType,
 };
 use nyar_error::FileSpan;
