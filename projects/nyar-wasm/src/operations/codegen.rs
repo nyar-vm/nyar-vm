@@ -243,8 +243,14 @@ impl WasmInstruction for WasmType {
             Self::Any { .. } => {
                 todo!()
             }
-            Self::Structure { symbol, .. } => w.push(Instruction::StructNewDefault(Index::Id(WasmName::new(symbol.as_ref())))),
+            Self::Structure(_) => todo!(),
             Self::Array { .. } => {
+                todo!()
+            }
+            Self::Unicode => {
+                todo!()
+            }
+            Self::UTF8Text => {
                 todo!()
             }
         }

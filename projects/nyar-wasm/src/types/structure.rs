@@ -1,13 +1,13 @@
 use super::*;
 use crate::{helpers::IndexedIterator, values::WasmValue};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StructureType {
     pub symbol: WasmSymbol,
     pub fields: IndexMap<String, FieldType>,
     pub span: FileSpan,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FieldType {
     pub name: WasmSymbol,
     pub mutable: bool,
@@ -15,9 +15,9 @@ pub struct FieldType {
     pub default: WasmValue,
 }
 
-impl From<StructureType> for TypeItem {
+impl From<StructureType> for WasmType {
     fn from(value: StructureType) -> Self {
-        TypeItem::Structure(value)
+        WasmType::Structure(value)
     }
 }
 

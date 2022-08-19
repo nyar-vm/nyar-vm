@@ -5,6 +5,7 @@ use crate::{
 };
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
+use std::collections::{btree_map::Values, BTreeMap};
 use wast::{
     core::{HeapType, ModuleField, RefType, StorageType, StructField, StructType, Type, TypeDef, ValType},
     token::{Index, NameAnnotation, Span},
@@ -17,7 +18,7 @@ pub mod structure;
 
 #[derive(Default)]
 pub struct TypeSection {
-    items: IndexMap<String, WasmType>,
+    items: BTreeMap<String, WasmType>,
 }
 
 #[derive(Clone, Debug)]
@@ -60,17 +61,20 @@ pub enum TypeItem {
 }
 
 impl<'i> IntoIterator for &'i TypeSection {
-    type Item = (usize, &'i str, &'i TypeItem);
-    type IntoIter = IndexedIterator<'i, TypeItem>;
+    type Item = &'i WasmType;
+    type IntoIter = Values<'i, String, WasmType>;
 
     fn into_iter(self) -> Self::IntoIter {
-        IndexedIterator::new(&self.items)
+        self.items.values()
     }
 }
 
 impl TypeSection {
-    pub fn insert(&mut self, item: TypeItem) -> Option<TypeItem> {
-        self.items.insert(item.name().to_string(), item)
+    pub fn insert(&mut self, item: WasmType) -> Option<WasmType> {
+        match &item {
+            WasmType::Structure(v) => self.items.insert(v.name(), item),
+            _ => None,
+        }
     }
 }
 
@@ -101,12 +105,12 @@ where
             Self::F32 => ValType::F32,
             Self::F64 => ValType::F64,
             Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
-            Self::Structure { symbol, nullable } => ValType::Ref(RefType {
-                nullable: *nullable,
-                heap: HeapType::Concrete(Index::Id(WasmName::new(symbol.as_ref()))),
-            }),
+            Self::Structure(_) => {
+                todo!()
+            }
             // type erased
             Self::Array { nullable, .. } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Array }),
+            _ => todo!(),
         }
     }
 }

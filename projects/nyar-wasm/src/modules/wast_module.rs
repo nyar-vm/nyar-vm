@@ -21,9 +21,9 @@ impl ModuleBuilder {
         for (_, _, k) in self.externals.into_iter() {
             terms.push(ModuleField::Import(k.as_wast()))
         }
-        for (_, _, k) in self.types.into_iter() {
-            terms.push(k.as_wast())
-        }
+        // for k in self.types.into_iter() {
+        //     terms.push(k.as_wast())
+        // }
         for (_, _, k) in self.functions.into_iter() {
             terms.push(ModuleField::Func(k.as_wast()))
         }
@@ -38,7 +38,6 @@ impl ModuleBuilder {
 
         self.build_memory(&mut terms);
         self.build_start(&mut terms);
-        self.build_producer(&mut terms);
         Ok(Module {
             span: Span::from_offset(0),
             id: None,
@@ -66,14 +65,5 @@ impl ModuleBuilder {
         if !self.entry.is_empty() {
             m.push(ModuleField::Start(Index::Id(WasmName::new(&self.entry))))
         }
-    }
-    fn build_producer(&self, m: &mut Vec<ModuleField>) {
-        let item = Custom::Producers(Producers {
-            fields: vec![
-                ("language", vec![("valkyrie", "2024"), ("player", "berserker")]),
-                ("processed-by", vec![("nyar-wasm", env!("CARGO_PKG_VERSION"))]),
-            ],
-        });
-        m.push(ModuleField::Custom(item))
     }
 }

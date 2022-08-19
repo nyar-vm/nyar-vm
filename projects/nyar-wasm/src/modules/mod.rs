@@ -1,6 +1,6 @@
 use crate::{
     functions::FunctionType, DataItem, DataSection, ExternalSection, ExternalType, FunctionSection, GlobalSection, TypeItem,
-    TypeSection, WasmVariable,
+    TypeSection, WasmType, WasmVariable,
 };
 use nyar_error::NyarError;
 
@@ -31,7 +31,7 @@ impl ModuleBuilder {
         self.name = name.to_string();
     }
 
-    pub fn insert_type<T: Into<TypeItem>>(&mut self, t: T) -> Option<TypeItem> {
+    pub fn insert_type<T: Into<WasmType>>(&mut self, t: T) -> Option<WasmType> {
         self.types.insert(t.into())
     }
     pub fn insert_function(&mut self, f: FunctionType) {

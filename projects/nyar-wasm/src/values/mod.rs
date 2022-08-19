@@ -68,7 +68,7 @@ impl WasmValue {
             Self::F32(_) => WasmType::F32,
             Self::F64(_) => WasmType::F32,
             Self::Function(_) => WasmType::I32,
-            Self::Structure(name) => WasmType::Structure { symbol: name.clone(), nullable: false },
+            Self::Structure(name) => todo!(),
             Self::Array => WasmType::Array { inner: Box::new(WasmType::I8), nullable: false },
             Self::Any => WasmType::Any { nullable: false },
         }

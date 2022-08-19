@@ -8,7 +8,7 @@ use wast::{
         Component, ComponentDefinedType, ComponentField, ComponentKind, ComponentValType, PrimitiveValType, Record,
         RecordField, Type, TypeDef,
     },
-    core::{HeapType, RefType, ValType},
+    core::{Custom, HeapType, ModuleField, Producers, RefType, ValType},
     token::{Index, NameAnnotation, Span},
     Wat,
 };
@@ -92,34 +92,35 @@ where
         }
     }
 }
-impl<'a, 'i> IntoWasm<'a, Type<'i>> for TypeItem
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> Type<'i> {
-        Type {
-            span: Span::from_offset(0),
-            id: None,
-            name: None,
-            exports: Default::default(),
-            def: TypeDef::Defined(self.as_wast()),
-        }
-    }
-}
-impl ModuleBuilder {
-    fn build_core(&self, m: &mut Vec<ComponentField>) {
-        for (_, _, ty) in self.types.into_iter() {
-            ComponentField::Type(ty.as_wast())
-        }
-    }
 
+impl ModuleBuilder {
     pub fn build_component(&self) -> Result<Wat, NyarError> {
         let mut coms = vec![];
+        self.build_types(&mut coms);
         Ok(Wat::Component(Component {
             span: Span::from_offset(0),
             id: None,
             name: Some(NameAnnotation { name: "runtime" }),
             kind: ComponentKind::Text(coms),
         }))
+    }
+
+    fn build_types<'a, 'i>(&'a self, m: &mut Vec<ComponentField<'i>>)
+    where
+        'a: 'i,
+    {
+        for ty in self.types.into_iter() {
+            m.push(ComponentField::Type(ty.as_wast()))
+        }
+    }
+
+    fn build_producer(&self, m: &mut Vec<ComponentField>) {
+        let item = Producers {
+            fields: vec![
+                ("language", vec![("valkyrie", "2024"), ("player", "berserker")]),
+                ("processed-by", vec![("nyar-wasm", env!("CARGO_PKG_VERSION"))]),
+            ],
+        };
+        m.push(ComponentField::Producers(item))
     }
 }
