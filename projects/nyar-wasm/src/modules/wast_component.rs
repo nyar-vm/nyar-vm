@@ -13,23 +13,6 @@ use wast::{
     Wat,
 };
 
-impl<'a, 'i> IntoWasm<'a, Record<'i>> for StructureType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> Record<'i> {
-        Record { fields: vec![] }
-    }
-}
-impl<'a, 'i> IntoWasm<'a, RecordField<'i>> for FieldType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> RecordField<'i> {
-        RecordField { name: self.name.as_ref(), ty: self.r#type.as_wast() }
-    }
-}
-
 impl<'a, 'i> IntoWasm<'a, ComponentValType<'i>> for WasmType
 where
     'a: 'i,

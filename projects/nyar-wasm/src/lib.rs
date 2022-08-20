@@ -15,6 +15,7 @@ mod operations;
 mod symbols;
 mod types;
 
+mod structures;
 mod values;
 pub use crate::{
     array::ArrayType,
@@ -26,12 +27,8 @@ pub use crate::{
         branch::{EnumerationTable, JumpBranch, JumpCondition, JumpTable},
         Operation, VariableKind,
     },
+    structures::{FieldType, StructureType},
     symbols::WasmSymbol,
-    types::{
-        external::ExternalSection,
-        functional::FunctionSection,
-        structure::{FieldType, StructureType},
-        TypeItem, TypeSection, WasmType,
-    },
+    types::{external::ExternalSection, functional::FunctionSection, TypeSection, WasmType},
     values::{data::DataSection, global::GlobalSection, variable::WasmVariable, WasmValue},
 };

@@ -1,6 +1,6 @@
 use crate::{
-    functions::FunctionType, DataItem, DataSection, ExternalSection, ExternalType, FunctionSection, GlobalSection, TypeItem,
-    TypeSection, WasmType, WasmVariable,
+    functions::FunctionType, DataItem, DataSection, ExternalSection, ExternalType, FunctionSection, GlobalSection, TypeSection,
+    WasmType, WasmVariable,
 };
 use nyar_error::NyarError;
 

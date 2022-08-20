@@ -69,7 +69,7 @@ impl WasmValue {
             Self::F64(_) => WasmType::F32,
             Self::Function(_) => WasmType::I32,
             Self::Structure(name) => todo!(),
-            Self::Array => WasmType::Array { inner: Box::new(WasmType::I8), nullable: false },
+            Self::Array => todo!(),
             Self::Any => WasmType::Any { nullable: false },
         }
     }

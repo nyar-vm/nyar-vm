@@ -38,26 +38,11 @@ pub enum WasmType {
     UTF8Text,
     Any { nullable: bool },
     Structure(StructureType),
-    Array { inner: Box<WasmType>, nullable: bool },
+    Array(Box<ArrayType>),
 }
 
 impl WasmType {
-    pub fn set_nullable(&mut self, nullable: bool) {
-        match self {
-            Self::Structure(_) => {
-                todo!()
-            }
-            Self::Array { nullable: n, .. } => *n = nullable,
-            _ => {}
-        }
-    }
-}
-
-pub enum TypeItem {
-    Structure(StructureType),
-    Array(ArrayType),
-    // SubTyping { sub: SubType },
-    // Recursion(RecursiveType),
+    pub fn set_nullable(&mut self, _: bool) {}
 }
 
 impl<'i> IntoIterator for &'i TypeSection {
@@ -74,15 +59,6 @@ impl TypeSection {
         match &item {
             WasmType::Structure(v) => self.items.insert(v.name(), item),
             _ => None,
-        }
-    }
-}
-
-impl TypeItem {
-    pub fn name(&self) -> String {
-        match self {
-            TypeItem::Structure(v) => v.name(),
-            TypeItem::Array(v) => v.symbol.to_string(),
         }
     }
 }
@@ -105,11 +81,6 @@ where
             Self::F32 => ValType::F32,
             Self::F64 => ValType::F64,
             Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
-            Self::Structure(_) => {
-                todo!()
-            }
-            // type erased
-            Self::Array { nullable, .. } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Array }),
             _ => todo!(),
         }
     }
@@ -124,18 +95,6 @@ where
             WasmType::I8 => StorageType::I8,
             WasmType::I16 => StorageType::I16,
             _ => StorageType::Val(self.as_wast()),
-        }
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, ModuleField<'i>> for TypeItem
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> ModuleField<'i> {
-        match self {
-            Self::Structure(v) => ModuleField::Type(v.as_wast()),
-            Self::Array(v) => ModuleField::Type(v.as_wast()),
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
-    TypeItem, WasmSymbol, WasmType,
+    WasmSymbol, WasmType,
 };
 use nyar_error::FileSpan;
 use wast::{
@@ -10,11 +10,12 @@ use wast::{
 
 mod codegen;
 
-impl From<ArrayType> for TypeItem {
+impl From<ArrayType> for WasmType {
     fn from(value: ArrayType) -> Self {
-        Self::Array(value)
+        Self::Array(Box::new(value))
     }
 }
+#[derive(Clone, Debug)]
 pub struct ArrayType {
     pub symbol: WasmSymbol,
     pub mutable: bool,

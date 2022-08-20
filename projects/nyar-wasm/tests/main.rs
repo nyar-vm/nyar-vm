@@ -115,7 +115,7 @@ fn test() {
             .with_private(),
     );
 
-    let wast = module.build_module().unwrap().encode().unwrap();
+    let wast = module.build_component().unwrap().encode().unwrap();
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie/runtime.wasm");
     let dir = out.parent().unwrap();
     if !dir.exists() {
