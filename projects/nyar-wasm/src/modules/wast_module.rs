@@ -4,7 +4,7 @@ use crate::{
 };
 use nyar_error::NyarError;
 use wast::{
-    core::{Custom, InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, Producers},
+    core::{InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind},
     token::{Index, NameAnnotation, Span},
 };
 
@@ -20,12 +20,6 @@ impl ModuleBuilder {
         let mut terms = Vec::with_capacity(1024);
         for (_, _, k) in self.externals.into_iter() {
             terms.push(ModuleField::Import(k.as_wast()))
-        }
-        // for k in self.types.into_iter() {
-        //     terms.push(k.as_wast())
-        // }
-        for (_, _, k) in self.functions.into_iter() {
-            terms.push(ModuleField::Func(k.as_wast()))
         }
         for (_, _, k) in self.globals.into_iter() {
             terms.push(ModuleField::Global(k.as_wast()))
@@ -51,7 +45,7 @@ impl ModuleBuilder {
     {
         let memory = Memory {
             span: Span::from_offset(0),
-            id: WasmName::type_id("memory"),
+            id: WasmName::id("memory"),
             name: None,
             exports: InlineExport { names: vec!["memory"] },
             kind: MemoryKind::Normal(MemoryType::B32 { limits: Limits { min: 1, max: None }, shared: false }),

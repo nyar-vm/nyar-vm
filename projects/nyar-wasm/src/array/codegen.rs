@@ -7,7 +7,7 @@ where
     fn as_wast(&'a self) -> Type<'i> {
         Type {
             span: Span::from_offset(0),
-            id: WasmName::type_id(self.symbol.as_ref()),
+            id: WasmName::id(self.symbol.as_ref()),
             name: Some(NameAnnotation { name: self.symbol.as_ref() }),
             def: TypeDef::Array(self.as_wast()),
             parent: None,

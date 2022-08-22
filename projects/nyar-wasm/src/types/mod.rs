@@ -1,20 +1,14 @@
 use crate::{
-    functions::FunctionType,
-    helpers::{IndexedIterator, IntoWasm, WasmName},
-    ArrayType, ExternalType, StructureType, WasmSymbol,
+    helpers::{IndexedIterator, IntoWasm},
+    ArrayType, ExternalType, StructureType,
 };
 use indexmap::IndexMap;
-use nyar_error::FileSpan;
+
 use std::collections::{btree_map::Values, BTreeMap};
-use wast::{
-    core::{HeapType, ModuleField, RefType, StorageType, StructField, StructType, Type, TypeDef, ValType},
-    token::{Index, NameAnnotation, Span},
-};
+use wast::core::{HeapType, RefType, StorageType, ValType};
 
 pub mod array;
 pub mod external;
-pub mod functional;
-pub mod structure;
 
 #[derive(Default)]
 pub struct TypeSection {

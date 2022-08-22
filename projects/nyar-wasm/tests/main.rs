@@ -1,5 +1,5 @@
 use nyar_wasm::{
-    ArrayType, DataItem, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, ModuleBuilder, Operation,
+    DataItem, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, ModuleBuilder, Operation,
     ParameterType, StructureType, VariableKind, WasmSymbol, WasmType, WasmValue, WasmVariable,
 };
 use std::{fs::File, io::Write, path::Path, process::Command};
@@ -11,7 +11,7 @@ fn ready() {
 
 #[test]
 fn test() {
-    let mut module = ModuleBuilder::new(16);
+    let mut module = ModuleBuilder::new("我艹这他妈的什么鬼?");
     module.insert_global(WasmVariable::f32(WasmSymbol::new("math.pi"), 3.14).with_public());
 
     module.insert_external(
@@ -33,11 +33,11 @@ fn test() {
     // module.insert_data(DataItem::utf8(Symbol::new("hello3"), "くそったれ世界!".to_string()));
 
     module.insert_type(StructureType::new(WasmSymbol::new("Stable")).with_fields(vec![
-        FieldType::new(WasmSymbol::new("a")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("a")).with_type(WasmType::U32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
-        FieldType::new(WasmSymbol::new("c")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
-        FieldType::new(WasmSymbol::new("d")).with_type(WasmType::Any { nullable: false }).with_default(WasmValue::F32(2.0)),
-        FieldType::new(WasmSymbol::new("e")).with_type(WasmType::Any { nullable: true }).with_default(WasmValue::F32(2.0)),
+        FieldType::new(WasmSymbol::new("c")).with_type(WasmType::Unicode).with_default(WasmValue::F32(2.0)),
+        // FieldType::new(WasmSymbol::new("d")).with_type(WasmType::Any { nullable: false }).with_default(WasmValue::F32(2.0)),
+        // FieldType::new(WasmSymbol::new("e")).with_type(WasmType::Any { nullable: true }).with_default(WasmValue::F32(2.0)),
     ]));
 
     module.insert_type(StructureType::new(WasmSymbol::new("a")).with_fields(vec![

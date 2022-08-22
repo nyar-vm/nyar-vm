@@ -1,12 +1,12 @@
 use crate::{
-    helpers::{IndexedIterator, IntoWasm, WasmName},
+    helpers::{IntoWasm, WasmName},
     values::WasmValue,
     WasmSymbol, WasmType,
 };
-use indexmap::IndexMap;
 use nyar_error::FileSpan;
+use std::collections::BTreeMap;
 use wast::{
-    component::{Record, RecordField, Type},
+    component::{ComponentDefinedType, Record, RecordField, Type, TypeDef},
     core::{StructField, StructType},
     token::{NameAnnotation, Span},
 };
@@ -16,7 +16,7 @@ mod codegen;
 #[derive(Clone, Debug)]
 pub struct StructureType {
     pub symbol: WasmSymbol,
-    pub fields: IndexMap<String, FieldType>,
+    pub fields: BTreeMap<String, FieldType>,
     pub span: FileSpan,
 }
 
@@ -35,16 +35,13 @@ impl From<StructureType> for WasmType {
 }
 
 impl StructureType {
-    pub fn new(name: WasmSymbol) -> Self {
-        Self { symbol: name, fields: Default::default(), span: Default::default() }
+    pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
+        Self { symbol: name.into(), fields: Default::default(), span: Default::default() }
     }
     pub fn name(&self) -> String {
         self.symbol.to_string()
     }
-    pub fn fields(&self) -> IndexedIterator<FieldType> {
-        IndexedIterator::new(&self.fields)
-    }
-    pub fn add_field(&mut self, field: FieldType) {
+    pub fn set_field(&mut self, field: FieldType) {
         self.fields.insert(field.name.to_string(), field);
     }
     pub fn with_fields<I>(mut self, fields: I) -> Self
@@ -52,7 +49,7 @@ impl StructureType {
         I: IntoIterator<Item = FieldType>,
     {
         for field in fields {
-            self.add_field(field);
+            self.set_field(field);
         }
         self
     }

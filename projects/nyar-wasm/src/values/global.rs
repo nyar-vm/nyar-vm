@@ -29,7 +29,7 @@ where
     fn as_wast(&'a self) -> Global<'i> {
         Global {
             span: Span::from_offset(0),
-            id: WasmName::type_id(self.symbol.as_ref()),
+            id: WasmName::id(self.symbol.as_ref()),
             name: None,
             exports: InlineExport { names: vec![self.symbol.as_ref()] },
             ty: GlobalType { ty: self.r#type.as_wast(), mutable: self.mutable },

@@ -10,7 +10,7 @@ where
         };
         Func {
             span: Span::from_offset(0),
-            id: WasmName::type_id(self.symbol.as_ref()),
+            id: WasmName::id(self.symbol.as_ref()),
             name: Some(NameAnnotation { name: self.symbol.as_ref() }),
             exports,
             kind: self.as_wast(),
@@ -35,7 +35,7 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> (Option<wast::token::Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>) {
-        (WasmName::type_id(self.name.as_ref()), None, self.type_hint.as_wast())
+        (WasmName::id(self.name.as_ref()), None, self.type_hint.as_wast())
     }
 }
 

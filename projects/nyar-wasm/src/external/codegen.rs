@@ -11,7 +11,7 @@ where
             field: self.field.as_ref(),
             item: ItemSig {
                 span: Span::from_offset(0),
-                id: WasmName::type_id(self.name()),
+                id: WasmName::id(self.name()),
                 name: None,
                 kind: ItemKind::Func(TypeUse { index: None, inline: Some(self.as_wast()) }),
             },

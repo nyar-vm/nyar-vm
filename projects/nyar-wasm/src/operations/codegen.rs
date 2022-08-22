@@ -78,12 +78,12 @@ impl WasmInstruction for Operation {
             Self::JumpTable(table) => table.emit(w),
             Self::Loop { r#continue, r#break, body } => {
                 w.push(Instruction::Loop(Box::new(BlockType {
-                    label: WasmName::type_id(r#continue.as_ref()),
+                    label: WasmName::id(r#continue.as_ref()),
                     label_name: None,
                     ty: TypeUse { index: None, inline: None },
                 })));
                 w.push(Instruction::Block(Box::new(BlockType {
-                    label: WasmName::type_id(r#break.as_ref()),
+                    label: WasmName::id(r#break.as_ref()),
                     label_name: None,
                     ty: TypeUse { index: None, inline: None },
                 })));

@@ -1,5 +1,5 @@
 use indexmap::{map::Iter, IndexMap};
-use std::{fmt::Debug, intrinsics::transmute};
+use std::intrinsics::transmute;
 use wast::{
     core::Instruction,
     token::{Index, Span},
@@ -67,11 +67,11 @@ impl<'a> WasmName<'a> {
             transmute::<WasmName, wast::token::Id>(s)
         }
     }
-    pub fn type_id(name: &'a str) -> Option<wast::token::Id<'a>> {
+    pub fn id(name: &'a str) -> Option<wast::token::Id<'a>> {
         Some(Self::new(name))
     }
 
-    pub fn type_index(name: &'a str) -> Option<Index> {
+    pub fn index(name: &'a str) -> Option<Index> {
         Some(Index::Id(Self::new(name)))
     }
 }

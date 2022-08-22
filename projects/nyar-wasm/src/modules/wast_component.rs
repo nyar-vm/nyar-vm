@@ -1,15 +1,15 @@
 use super::*;
 use crate::{
     helpers::{IntoWasm, WasmName},
-    FieldType, StructureType, WasmType,
+    WasmType,
 };
 use wast::{
     component::{
-        Component, ComponentDefinedType, ComponentField, ComponentKind, ComponentValType, PrimitiveValType, Record,
-        RecordField, Type, TypeDef,
+        Component, ComponentDefinedType, ComponentExternName, ComponentField, ComponentKind, ComponentValType, Func, FuncKind,
+        InlineExport, PrimitiveValType, Type, TypeDef,
     },
-    core::{Custom, HeapType, ModuleField, Producers, RefType, ValType},
-    token::{Index, NameAnnotation, Span},
+    core::Producers,
+    token::{NameAnnotation, Span},
     Wat,
 };
 
@@ -29,12 +29,6 @@ where
     fn as_wast(&'a self) -> ComponentDefinedType<'i> {
         match self {
             Self::Structure(v) => ComponentDefinedType::Record(v.as_wast()),
-            Self::Any { .. } => {
-                todo!()
-            }
-            Self::Array { .. } => {
-                todo!()
-            }
             _ => ComponentDefinedType::Primitive(self.as_wast()),
         }
     }
@@ -56,7 +50,7 @@ impl<'a> IntoWasm<'a, PrimitiveValType> for WasmType {
             Self::F64 => PrimitiveValType::Float64,
             Self::Unicode => PrimitiveValType::Char,
             Self::UTF8Text => PrimitiveValType::String,
-            _ => unreachable!(),
+            _ => unreachable!("`{:?}` is not primitive type", self),
         }
     }
 }
@@ -76,34 +70,71 @@ where
     }
 }
 
-impl ModuleBuilder {
-    pub fn build_component(&self) -> Result<Wat, NyarError> {
-        let mut coms = vec![];
-        self.build_types(&mut coms);
-        Ok(Wat::Component(Component {
-            span: Span::from_offset(0),
-            id: None,
-            name: Some(NameAnnotation { name: "runtime" }),
-            kind: ComponentKind::Text(coms),
-        }))
+impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for ModuleBuilder
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> Option<NameAnnotation<'i>> {
+        if self.name.is_empty() { None } else { Some(NameAnnotation { name: self.name.as_str() }) }
     }
+}
 
-    fn build_types<'a, 'i>(&'a self, m: &mut Vec<ComponentField<'i>>)
-    where
-        'a: 'i,
-    {
-        for ty in self.types.into_iter() {
-            m.push(ComponentField::Type(ty.as_wast()))
-        }
-    }
-
-    fn build_producer(&self, m: &mut Vec<ComponentField>) {
-        let item = Producers {
+impl<'a, 'i> IntoWasm<'a, Producers<'i>> for ModuleBuilder
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> Producers<'i> {
+        Producers {
             fields: vec![
                 ("language", vec![("valkyrie", "2024"), ("player", "berserker")]),
                 ("processed-by", vec![("nyar-wasm", env!("CARGO_PKG_VERSION"))]),
             ],
-        };
-        m.push(ComponentField::Producers(item))
+        }
+    }
+}
+
+impl<'a, 'i> IntoWasm<'a, Func<'i>> for FunctionType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> Func<'i> {
+        Func {
+            span: Span::from_offset(0),
+            id: WasmName::id(self.symbol.as_ref()),
+            name: None,
+            exports: self.as_wast(),
+            kind: FuncKind::Lift { ty: Default::default(), info: Default::default() },
+        }
+    }
+}
+
+impl<'a, 'i> IntoWasm<'a, InlineExport<'i>> for FunctionType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> InlineExport<'i> {
+        match &self.export {
+            Some(s) => InlineExport { names: vec![ComponentExternName(s.as_ref())] },
+            None => InlineExport { names: vec![] },
+        }
+    }
+}
+
+impl ModuleBuilder {
+    pub fn build_component(&self) -> Result<Wat, NyarError> {
+        let mut coms = vec![];
+        for ts in self.types.into_iter() {
+            coms.push(ComponentField::Type(ts.as_wast()))
+        }
+        for fs in self.functions.values() {
+            coms.push(ComponentField::Func(fs.as_wast()))
+        }
+        coms.push(ComponentField::Producers(self.as_wast()));
+        Ok(Wat::Component(Component {
+            span: Span::from_offset(0),
+            id: None,
+            name: self.as_wast(),
+            kind: ComponentKind::Text(coms),
+        }))
     }
 }

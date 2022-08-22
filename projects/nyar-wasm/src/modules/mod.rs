@@ -1,22 +1,23 @@
 use crate::{
-    functions::FunctionType, DataItem, DataSection, ExternalSection, ExternalType, FunctionSection, GlobalSection, TypeSection,
-    WasmType, WasmVariable,
+    functions::FunctionType, DataItem, DataSection, ExternalSection, ExternalType, GlobalSection, TypeSection, WasmType,
+    WasmVariable,
 };
 use nyar_error::NyarError;
+use std::collections::BTreeMap;
 
 mod wast_component;
 mod wast_module;
 
 #[derive(Default)]
 pub struct ModuleBuilder {
-    name: String,
-    entry: String,
-    memory_pages: u64,
-    globals: GlobalSection,
-    types: TypeSection,
-    data: DataSection,
-    functions: FunctionSection,
-    externals: ExternalSection,
+    pub name: String,
+    pub entry: String,
+    pub memory_pages: u64,
+    pub globals: GlobalSection,
+    pub types: TypeSection,
+    pub data: DataSection,
+    pub functions: BTreeMap<String, FunctionType>,
+    pub externals: ExternalSection,
 }
 
 impl ModuleBuilder {
@@ -38,7 +39,7 @@ impl ModuleBuilder {
         if f.entry {
             self.entry = f.name()
         }
-        self.functions.insert(f)
+        self.functions.insert(f.name(), f);
     }
     pub fn insert_external(&mut self, f: ExternalType) -> Option<ExternalType> {
         self.externals.insert(f)
