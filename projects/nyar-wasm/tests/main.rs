@@ -12,7 +12,7 @@ fn ready() {
 #[test]
 fn test() {
     let mut module = ModuleBuilder::new("我艹这他妈的什么鬼?");
-    module.insert_global(WasmVariable::f32(WasmSymbol::new("math.pi"), 3.14).with_public());
+    module.insert_global(WasmVariable::f32(WasmSymbol::new("f32::pi"), 3.14).with_public());
 
     module.insert_external(
         ExternalType::new("wasi_snapshot_preview1", "fd_write")
@@ -63,13 +63,9 @@ fn test() {
                     terms: vec![
                         Operation::local_get("a"),
                         Operation::local_get("b"),
-                        Operation::Convert {
-                            from: WasmType::I32,
-                            into: WasmType::I32,
-                            code: vec![Operation::CallFunction {
-                                name: WasmSymbol::new("add_ba"),
-                                input: vec![Operation::Constant { value: WasmValue::F32(0.0) }],
-                            }],
+                        Operation::CallFunction {
+                            name: WasmSymbol::new("add_random"),
+                            input: vec![Operation::Constant { value: WasmValue::F32(0.0) }],
                         },
                         // test_if_1(),
                         test_if_2(),
@@ -83,8 +79,8 @@ fn test() {
     );
 
     module.insert_function(
-        FunctionType::new(WasmSymbol::new("add_ba"))
-            .with_inputs(vec![ParameterType::new("b").with_type(WasmType::F32)])
+        FunctionType::new(WasmSymbol::new("add_random"))
+            .with_inputs(vec![ParameterType::new("x").with_type(WasmType::F32)])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![Operation::NativeSum {
                 native: WasmType::F32,
@@ -93,26 +89,21 @@ fn test() {
                     into: WasmType::I32,
                     code: vec![Operation::NativeSum {
                         native: WasmType::F32,
-                        terms: vec![
-                            Operation::GetVariable { kind: VariableKind::Global, variable: WasmSymbol::new("math.pi") },
-                            Operation::GetVariable { kind: VariableKind::Local, variable: WasmSymbol::new("b") },
-                        ],
+                        terms: vec![Operation::global_get("f32::pi"), Operation::local_get("x")],
                     }],
                 }],
-            }])
-            .with_public(),
+            }]),
     );
 
     module.insert_function(
-        FunctionType::new(WasmSymbol::new("__main"))
+        FunctionType::new(WasmSymbol::new("_start"))
             .with_inputs(vec![])
-            .with_outputs(vec![])
+            .with_outputs(vec![WasmType::I32])
             .with_operations(vec![Operation::CallFunction {
                 name: WasmSymbol::new("random_get"),
                 input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
             }])
-            .with_entry()
-            .with_private(),
+            .with_public(),
     );
 
     let wast = module.build_component().unwrap().encode().unwrap();

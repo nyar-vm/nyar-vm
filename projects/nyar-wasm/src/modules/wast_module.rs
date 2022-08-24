@@ -1,10 +1,12 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
     modules::ModuleBuilder,
+    FunctionType,
 };
 use nyar_error::NyarError;
 use wast::{
-    core::{InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind},
+    component::CoreModuleKind,
+    core::{Expression, Func, InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, TypeUse},
     token::{Index, NameAnnotation, Span},
 };
 
@@ -31,7 +33,9 @@ impl ModuleBuilder {
         }
 
         self.build_memory(&mut terms);
-        self.build_start(&mut terms);
+        if !self.entry.is_empty() {
+            terms.push(ModuleField::Start(Index::Id(WasmName::new(&self.entry))))
+        }
         Ok(Module {
             span: Span::from_offset(0),
             id: None,
@@ -51,13 +55,5 @@ impl ModuleBuilder {
             kind: MemoryKind::Normal(MemoryType::B32 { limits: Limits { min: 1, max: None }, shared: false }),
         };
         m.push(ModuleField::Memory(memory));
-    }
-    fn build_start<'a, 'b>(&'a self, m: &mut Vec<ModuleField<'b>>)
-    where
-        'a: 'b,
-    {
-        if !self.entry.is_empty() {
-            m.push(ModuleField::Start(Index::Id(WasmName::new(&self.entry))))
-        }
     }
 }

@@ -1,17 +1,6 @@
 use super::*;
-use crate::{
-    helpers::{IntoWasm, WasmName},
-    WasmType,
-};
-use wast::{
-    component::{
-        Component, ComponentDefinedType, ComponentExternName, ComponentField, ComponentKind, ComponentValType, Func, FuncKind,
-        InlineExport, PrimitiveValType, Type, TypeDef,
-    },
-    core::Producers,
-    token::{NameAnnotation, Span},
-    Wat,
-};
+use crate::helpers::WasmName;
+use wast::component::{CoreModule, CoreModuleKind};
 
 impl<'a, 'i> IntoWasm<'a, ComponentValType<'i>> for WasmType
 where
@@ -93,30 +82,27 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, Func<'i>> for FunctionType
+impl<'a, 'i> IntoWasm<'a, CoreModule<'i>> for ModuleBuilder
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> Func<'i> {
-        Func {
+    fn as_wast(&'a self) -> CoreModule<'i> {
+        CoreModule {
             span: Span::from_offset(0),
-            id: WasmName::id(self.symbol.as_ref()),
+            id: WasmName::id(self.name.as_str()),
             name: None,
-            exports: self.as_wast(),
-            kind: FuncKind::Lift { ty: Default::default(), info: Default::default() },
+            exports: Default::default(),
+            kind: self.as_wast(),
         }
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, InlineExport<'i>> for FunctionType
+impl<'a, 'i> IntoWasm<'a, CoreModuleKind<'i>> for ModuleBuilder
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> InlineExport<'i> {
-        match &self.export {
-            Some(s) => InlineExport { names: vec![ComponentExternName(s.as_ref())] },
-            None => InlineExport { names: vec![] },
-        }
+    fn as_wast(&'a self) -> CoreModuleKind<'i> {
+        CoreModuleKind::Inline { fields: vec![] }
     }
 }
 
@@ -127,8 +113,14 @@ impl ModuleBuilder {
             coms.push(ComponentField::Type(ts.as_wast()))
         }
         for fs in self.functions.values() {
-            coms.push(ComponentField::Func(fs.as_wast()))
+            if !self.entry.is_empty() {
+                coms.push(ComponentField::Start(fs.as_wast()));
+            }
+            coms.push(ComponentField::Func(fs.as_wast()));
+            coms.push(ComponentField::CoreFunc(fs.as_wast()));
         }
+        coms.push(ComponentField::CoreModule(self.as_wast()));
+
         coms.push(ComponentField::Producers(self.as_wast()));
         Ok(Wat::Component(Component {
             span: Span::from_offset(0),

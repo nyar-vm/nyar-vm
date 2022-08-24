@@ -1,9 +1,17 @@
 use crate::{
-    functions::FunctionType, DataItem, DataSection, ExternalSection, ExternalType, GlobalSection, TypeSection, WasmType,
-    WasmVariable,
+    functions::FunctionType, helpers::IntoWasm, DataItem, DataSection, ExternalSection, ExternalType, GlobalSection,
+    TypeSection, WasmType, WasmVariable,
 };
 use nyar_error::NyarError;
 use std::collections::BTreeMap;
+use wast::{
+    component::{
+        Component, ComponentDefinedType, ComponentField, ComponentKind, ComponentValType, PrimitiveValType, Type, TypeDef,
+    },
+    core::Producers,
+    token::{NameAnnotation, Span},
+    Wat,
+};
 
 mod wast_component;
 mod wast_module;

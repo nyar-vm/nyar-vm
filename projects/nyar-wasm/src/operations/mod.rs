@@ -108,6 +108,12 @@ impl Operation {
     pub fn r#break(label: &str) -> Self {
         Self::Goto { label: WasmSymbol::new(&format!("{label}@break")) }
     }
+    pub fn global_get<S: Into<WasmSymbol>>(name: S) -> Self {
+        Self::GetVariable { kind: VariableKind::Global, variable: name.into() }
+    }
+    pub fn global_set<S: Into<WasmSymbol>>(name: S) -> Self {
+        Self::SetVariable { kind: VariableKind::Global, variable: name.into() }
+    }
     pub fn local_get<S: Into<WasmSymbol>>(name: S) -> Self {
         Self::GetVariable { kind: VariableKind::Local, variable: name.into() }
     }
