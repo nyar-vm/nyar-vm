@@ -1,11 +1,4 @@
 use super::*;
-use wast::{
-    component::{
-        CanonLift, CanonLower, ComponentExternName, ComponentFunctionParam, ComponentFunctionResult, ComponentFunctionType,
-        ComponentTypeUse, CoreFunc, CoreFuncKind, CoreItemRef, Func, FuncKind, InlineExport, Start,
-    },
-    core::{Expression, ModuleField, TypeUse},
-};
 
 impl<'a, 'i> IntoWasm<'a, Start<'i>> for FunctionType
 where
@@ -20,20 +13,45 @@ impl<'a, 'i> IntoWasm<'a, Func<'i>> for FunctionType
 where
     'a: 'i,
 {
-    /// 定义函数接口
+    /// 怎么把核心函数提升到组件函数
     fn as_wast(&'a self) -> Func<'i> {
-        Func { span: Span::from_offset(0), id: self.symbol.as_id(), name: None, exports: self.as_wast(), kind: self.as_wast() }
+        Func {
+            span: Span::from_offset(0),
+            id: self.symbol.as_id(),
+            name: None,
+            exports: self.export.as_wast(),
+            kind: self.as_wast(),
+        }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, CoreFunc<'i>> for FunctionType
 where
     'a: 'i,
 {
-    /// 定义函数实现
+    /// 怎么把组件函数降低为核心函数
     fn as_wast(&'a self) -> CoreFunc<'i> {
         CoreFunc { span: Span::from_offset(0), id: self.symbol.as_id(), name: None, kind: self.as_wast() }
     }
 }
+
+impl<'a, 'i> IntoWasm<'a, wast::core::Func<'i>> for FunctionType
+where
+    'a: 'i,
+{
+    /// 核心函数的实现
+    fn as_wast(&'a self) -> wast::core::Func<'i> {
+        wast::core::Func {
+            span: Span::from_offset(0),
+            id: self.symbol.as_id(),
+            name: None,
+            exports: self.export.as_wast(),
+            kind: self.as_wast(),
+            ty: TypeUse { index: None, inline: Some(self.as_wast()) },
+        }
+    }
+}
+
 impl<'a, 'i> IntoWasm<'a, FuncKind<'i>> for FunctionType
 where
     'a: 'i,
@@ -68,6 +86,17 @@ where
         ComponentFunctionType { params: Box::from(params), results: Box::from(result) }
     }
 }
+impl<'a, 'i> IntoWasm<'a, wast::core::FunctionType<'i>> for FunctionType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
+        let params: Vec<_> = self.input.values().map(|v| v.as_wast()).collect();
+        let result: Vec<_> = self.output.iter().map(|v| v.as_wast()).collect();
+        wast::core::FunctionType { params: Box::from(params), results: Box::from(result) }
+    }
+}
+
 impl<'a, 'i> IntoWasm<'a, ComponentFunctionParam<'i>> for ParameterType
 where
     'a: 'i,
@@ -77,49 +106,21 @@ where
     }
 }
 
+impl<'a, 'i> IntoWasm<'a, (Option<Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>)> for ParameterType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> (Option<Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>) {
+        (self.name.as_id(), None, self.type_hint.as_wast())
+    }
+}
+
 impl<'a, 'i> IntoWasm<'a, ComponentFunctionResult<'i>> for WasmType
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> ComponentFunctionResult<'i> {
         ComponentFunctionResult { name: None, ty: self.as_wast() }
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, InlineExport<'i>> for FunctionType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> InlineExport<'i> {
-        match &self.export {
-            Some(s) => InlineExport { names: vec![ComponentExternName(s.as_ref())] },
-            None => InlineExport { names: vec![] },
-        }
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, ModuleField<'i>> for FunctionType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> ModuleField<'i> {
-        ModuleField::Func(wast::core::Func {
-            span: Span::from_offset(0),
-            id: self.symbol.as_id(),
-            name: None,
-            exports: Default::default(),
-            kind: self.as_wast(),
-            ty: TypeUse { index: None, inline: Some(self.as_wast()) },
-        })
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, wast::core::FunctionType<'i>> for FunctionType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
-        wast::core::FunctionType { params: Box::new([]), results: Box::new([]) }
     }
 }
 

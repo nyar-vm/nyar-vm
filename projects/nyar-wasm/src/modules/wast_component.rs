@@ -1,6 +1,4 @@
 use super::*;
-use crate::helpers::WasmName;
-use wast::component::{CoreModule, CoreModuleKind};
 
 impl<'a, 'i> IntoWasm<'a, ComponentValType<'i>> for WasmType
 where
@@ -59,7 +57,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for ModuleBuilder
+impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
 where
     'a: 'i,
 {
@@ -68,7 +66,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, Producers<'i>> for ModuleBuilder
+impl<'a, 'i> IntoWasm<'a, Producers<'i>> for WasmBuilder
 where
     'a: 'i,
 {
@@ -82,7 +80,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, CoreModule<'i>> for ModuleBuilder
+impl<'a, 'i> IntoWasm<'a, CoreModule<'i>> for WasmBuilder
 where
     'a: 'i,
 {
@@ -97,7 +95,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, CoreModuleKind<'i>> for ModuleBuilder
+impl<'a, 'i> IntoWasm<'a, CoreModuleKind<'i>> for WasmBuilder
 where
     'a: 'i,
 {
@@ -106,8 +104,13 @@ where
     }
 }
 
-impl ModuleBuilder {
-    pub fn build_component(&self) -> Result<Wat, NyarError> {
+impl WasmBuilder {
+    pub fn build_component<P: AsRef<Path>>(&self, path: P) -> Result<PathBuf, NyarError> {
+        let mut module = self.as_component()?;
+        write_wasm_bytes(path.as_ref(), module.encode())
+    }
+
+    pub fn as_component(&self) -> Result<Component, NyarError> {
         let mut coms = vec![];
         for ts in self.types.into_iter() {
             coms.push(ComponentField::Type(ts.as_wast()))
@@ -122,11 +125,6 @@ impl ModuleBuilder {
         coms.push(ComponentField::CoreModule(self.as_wast()));
 
         coms.push(ComponentField::Producers(self.as_wast()));
-        Ok(Wat::Component(Component {
-            span: Span::from_offset(0),
-            id: None,
-            name: self.as_wast(),
-            kind: ComponentKind::Text(coms),
-        }))
+        Ok(Component { span: Span::from_offset(0), id: None, name: None, kind: ComponentKind::Text(coms) })
     }
 }

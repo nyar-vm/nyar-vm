@@ -1,5 +1,11 @@
 use indexmap::{map::Iter, IndexMap};
-use std::intrinsics::transmute;
+use nyar_error::NyarError;
+use std::{
+    fs::File,
+    intrinsics::transmute,
+    io::Write,
+    path::{Path, PathBuf},
+};
 use wast::{
     core::Instruction,
     token::{Index, Span},
@@ -74,4 +80,15 @@ impl<'a> WasmName<'a> {
     pub fn index(name: &'a str) -> Option<Index> {
         Some(Index::Id(Self::new(name)))
     }
+}
+
+pub(crate) fn write_wasm_bytes(path: &Path, buffer: Result<Vec<u8>, wast::Error>) -> Result<PathBuf, NyarError> {
+    match buffer {
+        Ok(o) => {
+            let mut file = File::create(path)?;
+            file.write_all(&o)?;
+        }
+        Err(e) => Err(NyarError::custom(e))?,
+    }
+    Ok(path.canonicalize()?)
 }

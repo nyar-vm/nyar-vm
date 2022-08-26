@@ -1,24 +1,11 @@
-use crate::{
-    helpers::{IntoWasm, WasmName},
-    modules::ModuleBuilder,
-    FunctionType,
-};
-use nyar_error::NyarError;
-use wast::{
-    component::CoreModuleKind,
-    core::{Expression, Func, InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, TypeUse},
-    token::{Index, NameAnnotation, Span},
-};
+use super::*;
 
-impl ModuleBuilder {
-    pub fn build_module_wasm(&self) -> Result<Vec<u8>, NyarError> {
-        let mut module = self.build_module()?;
-        match module.encode() {
-            Ok(o) => Ok(o),
-            Err(e) => Err(NyarError::custom(e)),
-        }
+impl WasmBuilder {
+    pub fn build_module<P: AsRef<Path>>(&self, path: P) -> Result<PathBuf, NyarError> {
+        let mut module = self.as_module()?;
+        write_wasm_bytes(path.as_ref(), module.encode())
     }
-    pub fn build_module(&self) -> Result<Module, NyarError> {
+    pub fn as_module(&self) -> Result<Module, NyarError> {
         let mut terms = Vec::with_capacity(1024);
         for (_, _, k) in self.externals.into_iter() {
             terms.push(ModuleField::Import(k.as_wast()))
@@ -27,12 +14,14 @@ impl ModuleBuilder {
             terms.push(ModuleField::Global(k.as_wast()))
         }
 
+        // memory section
+        self.build_memory(&mut terms);
+        // data section
         let mut offset = 0;
         for (_, _, k) in self.data.into_iter() {
             terms.push(ModuleField::Data(k.as_wast(&mut offset)))
         }
-
-        self.build_memory(&mut terms);
+        // start section
         if !self.entry.is_empty() {
             terms.push(ModuleField::Start(Index::Id(WasmName::new(&self.entry))))
         }

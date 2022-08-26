@@ -22,7 +22,7 @@ pub use crate::{
     data::DataItem,
     external::ExternalType,
     functions::{FunctionBody, FunctionType, ParameterType},
-    modules::ModuleBuilder,
+    modules::WasmBuilder,
     operations::{
         branch::{EnumerationTable, JumpBranch, JumpCondition, JumpTable},
         Operation, VariableKind,

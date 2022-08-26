@@ -1,15 +1,22 @@
-use crate::{helpers::IntoWasm, operations::Operation, types::WasmType, WasmSymbol};
+use crate::{helpers::IntoWasm, operations::Operation, symbols::WasmExportName, types::WasmType, WasmSymbol};
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
 use std::slice::Iter;
-use wast::token::Span;
+use wast::{
+    component::{
+        CanonLift, CanonLower, ComponentFunctionParam, ComponentFunctionResult, ComponentFunctionType, ComponentTypeUse,
+        CoreFunc, CoreFuncKind, Func, FuncKind, Start,
+    },
+    core::{Expression, TypeUse, ValType},
+    token::{Id, NameAnnotation, Span},
+};
 
 pub mod codegen;
 
 /// `function`
 pub struct FunctionType {
     pub symbol: WasmSymbol,
-    pub export: Option<WasmSymbol>,
+    pub export: WasmExportName,
     pub entry: bool,
     pub input: IndexMap<String, ParameterType>,
     pub output: Vec<WasmType>,
@@ -39,7 +46,7 @@ impl FunctionType {
     pub fn new(path: WasmSymbol) -> Self {
         Self {
             symbol: path,
-            export: None,
+            export: WasmExportName::default(),
             entry: false,
             input: IndexMap::default(),
             output: vec![],
@@ -50,11 +57,12 @@ impl FunctionType {
     pub fn name(&self) -> String {
         self.symbol.to_string()
     }
-    pub fn with_public(self) -> Self {
-        Self { export: Some(self.symbol.clone()), ..self }
-    }
-    pub fn with_private(self) -> Self {
-        Self { export: None, ..self }
+    pub fn with_export(self, export: bool) -> Self {
+        let export = match export {
+            true => WasmExportName::new(self.symbol.clone()),
+            false => WasmExportName::default(),
+        };
+        Self { export, ..self }
     }
     pub fn with_entry(self) -> Self {
         Self { entry: true, ..self }

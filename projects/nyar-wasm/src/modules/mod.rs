@@ -1,23 +1,27 @@
 use crate::{
-    functions::FunctionType, helpers::IntoWasm, DataItem, DataSection, ExternalSection, ExternalType, GlobalSection,
-    TypeSection, WasmType, WasmVariable,
+    functions::FunctionType,
+    helpers::{write_wasm_bytes, IntoWasm, WasmName},
+    DataItem, DataSection, ExternalSection, ExternalType, GlobalSection, TypeSection, WasmType, WasmVariable,
 };
 use nyar_error::NyarError;
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    io::Write,
+    path::{Path, PathBuf},
+};
 use wast::{
     component::{
-        Component, ComponentDefinedType, ComponentField, ComponentKind, ComponentValType, PrimitiveValType, Type, TypeDef,
+        Component, ComponentDefinedType, ComponentField, ComponentKind, ComponentValType, CoreModule, CoreModuleKind,
+        PrimitiveValType, Type, TypeDef,
     },
-    core::Producers,
-    token::{NameAnnotation, Span},
-    Wat,
+    core::{InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, Producers},
+    token::{Index, NameAnnotation, Span},
 };
-
 mod wast_component;
 mod wast_module;
 
 #[derive(Default)]
-pub struct ModuleBuilder {
+pub struct WasmBuilder {
     pub name: String,
     pub entry: String,
     pub memory_pages: u64,
@@ -28,7 +32,7 @@ pub struct ModuleBuilder {
     pub externals: ExternalSection,
 }
 
-impl ModuleBuilder {
+impl WasmBuilder {
     pub fn new<S: ToString>(name: S) -> Self {
         Self { name: name.to_string(), ..Default::default() }
     }

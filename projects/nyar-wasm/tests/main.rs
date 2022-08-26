@@ -1,6 +1,7 @@
+use nyar_error::NyarError;
 use nyar_wasm::{
-    DataItem, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, ModuleBuilder, Operation,
-    ParameterType, StructureType, VariableKind, WasmSymbol, WasmType, WasmValue, WasmVariable,
+    DataItem, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, Operation, ParameterType,
+    StructureType, WasmBuilder, WasmSymbol, WasmType, WasmValue, WasmVariable,
 };
 use std::{fs::File, io::Write, path::Path, process::Command};
 
@@ -9,9 +10,8 @@ fn ready() {
     println!("it works!")
 }
 
-#[test]
-fn test() {
-    let mut module = ModuleBuilder::new("我艹这他妈的什么鬼?");
+fn test_wasm() -> WasmBuilder {
+    let mut module = WasmBuilder::new("我艹这他妈的什么鬼?");
     module.insert_global(WasmVariable::f32(WasmSymbol::new("f32::pi"), 3.14).with_public());
 
     module.insert_external(
@@ -75,7 +75,7 @@ fn test() {
                 },
                 Operation::Return {},
             ])
-            .with_public(),
+            .with_export(true),
     );
 
     module.insert_function(
@@ -103,25 +103,28 @@ fn test() {
                 name: WasmSymbol::new("random_get"),
                 input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
             }])
-            .with_public(),
+            .with_export(true),
     );
+    module
+}
 
-    let wast = module.build_component().unwrap().encode().unwrap();
-    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie/runtime.wasm");
-    let dir = out.parent().unwrap();
-    if !dir.exists() {
-        std::fs::create_dir_all(dir).unwrap();
+#[test]
+fn test() -> Result<(), NyarError> {
+    let debug = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie");
+    if !debug.exists() {
+        std::fs::create_dir_all(&debug).unwrap();
     }
-    let mut file = File::create(out).unwrap();
-    file.write_all(&wast).unwrap();
+    let _ = test_wasm().build_component(debug.join("com.wasm")).unwrap();
+    let _ = test_wasm().build_module(debug.join("mod.wasm")).unwrap();
     let o = Command::new("valor").arg("build").output();
-    println!("{o:?}")
+    println!("{o:?}");
+    Ok(())
 }
 
 #[test]
 fn hello() {
     const text: &str = "hello world!";
-    let mut module = ModuleBuilder::new("hello");
+    let mut module = WasmBuilder::new("hello");
     module.insert_global(WasmVariable::i32("a", 42).with_immutable());
     module.insert_global(WasmVariable::f32("pi", 3.14).with_immutable());
     module.insert_data(DataItem::utf8(WasmSymbol::new("hello"), text.to_string()));
@@ -139,7 +142,7 @@ fn hello() {
             .with_entry(),
     );
 
-    let wast = module.build_module().unwrap().encode().unwrap();
+    let wast = module.as_module().unwrap().encode().unwrap();
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie/hello.wasm");
     let dir = out.parent().unwrap();
     if !dir.exists() {
