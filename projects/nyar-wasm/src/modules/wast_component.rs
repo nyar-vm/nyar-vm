@@ -85,7 +85,11 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> CoreModuleKind<'i> {
-        CoreModuleKind::Inline { fields: vec![] }
+        let module = self.as_module();
+        match module.kind {
+            ModuleKind::Text(v) => CoreModuleKind::Inline { fields: v },
+            ModuleKind::Binary(_) => unreachable!(),
+        }
     }
 }
 

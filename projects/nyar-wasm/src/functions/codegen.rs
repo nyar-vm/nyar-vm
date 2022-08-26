@@ -1,4 +1,9 @@
 use super::*;
+use wast::{
+    component::{CoreItemRef, ItemRef},
+    kw,
+    token::Index,
+};
 
 impl<'a, 'i> IntoWasm<'a, Start<'i>> for FunctionType
 where
@@ -65,7 +70,10 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> CoreFuncKind<'i> {
-        CoreFuncKind::Lower(CanonLower::default())
+        CoreFuncKind::Lower(CanonLower {
+            func: ItemRef { kind: kw::func(Span::from_offset(0)), idx: self.symbol.as_index(), export_names: Vec::new() },
+            opts: Vec::new(),
+        })
     }
 }
 impl<'a, 'i> IntoWasm<'a, CanonLift<'i>> for FunctionType
@@ -73,7 +81,14 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> CanonLift<'i> {
-        CanonLift::default()
+        CanonLift {
+            func: CoreItemRef {
+                kind: kw::func(Span::from_offset(0)),
+                idx: Index::Num(0, Span::from_offset(1)),
+                export_name: None,
+            },
+            opts: Vec::new(),
+        }
     }
 }
 impl<'a, 'i> IntoWasm<'a, ComponentFunctionType<'i>> for FunctionType

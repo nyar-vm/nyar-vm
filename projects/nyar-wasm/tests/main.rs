@@ -14,72 +14,72 @@ fn test_wasm() -> WasmBuilder {
     let mut module = WasmBuilder::new("我艹这他妈的什么鬼?");
     module.insert_global(WasmVariable::f32(WasmSymbol::new("f32::pi"), 3.14).with_public());
 
-    module.insert_external(
-        ExternalType::new("wasi_snapshot_preview1", "fd_write")
-            .with_alias("file_descriptor_write")
-            .with_input(vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32])
-            .with_output(vec![WasmType::I32]),
-    );
-
-    module.insert_external(
-        ExternalType::new("wasi_snapshot_preview1", "random_get")
-            .with_alias("random_get")
-            .with_input(vec![WasmType::I32, WasmType::I32])
-            .with_output(vec![WasmType::I32]),
-    );
+    // module.insert_external(
+    //     ExternalType::new("wasi_snapshot_preview1", "fd_write")
+    //         .with_alias("file_descriptor_write")
+    //         .with_input(vec![WasmType::I32, WasmType::I32, WasmType::I32, WasmType::I32])
+    //         .with_output(vec![WasmType::I32]),
+    // );
+    //
+    // module.insert_external(
+    //     ExternalType::new("wasi_snapshot_preview1", "random_get")
+    //         .with_alias("random_get")
+    //         .with_input(vec![WasmType::I32, WasmType::I32])
+    //         .with_output(vec![WasmType::I32]),
+    // );
 
     // module.insert_data(DataItem::utf8(Symbol::new("hello1"), "fuck world!".to_string()));
     // module.insert_data(DataItem::utf8(Symbol::new("hello2"), "我艹, 世界!".to_string()));
     // module.insert_data(DataItem::utf8(Symbol::new("hello3"), "くそったれ世界!".to_string()));
 
-    module.insert_type(StructureType::new(WasmSymbol::new("Stable")).with_fields(vec![
-        FieldType::new(WasmSymbol::new("a")).with_type(WasmType::U32).with_default(WasmValue::F32(2.0)),
-        FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
-        FieldType::new(WasmSymbol::new("c")).with_type(WasmType::Unicode).with_default(WasmValue::F32(2.0)),
-        // FieldType::new(WasmSymbol::new("d")).with_type(WasmType::Any { nullable: false }).with_default(WasmValue::F32(2.0)),
-        // FieldType::new(WasmSymbol::new("e")).with_type(WasmType::Any { nullable: true }).with_default(WasmValue::F32(2.0)),
-    ]));
-
-    module.insert_type(StructureType::new(WasmSymbol::new("a")).with_fields(vec![
-        FieldType::new(WasmSymbol::new("a")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
-        FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
-    ]));
+    // module.insert_type(StructureType::new(WasmSymbol::new("Stable")).with_fields(vec![
+    //     FieldType::new(WasmSymbol::new("a")).with_type(WasmType::U32).with_default(WasmValue::F32(2.0)),
+    //     FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+    //     FieldType::new(WasmSymbol::new("c")).with_type(WasmType::Unicode).with_default(WasmValue::F32(2.0)),
+    //     // FieldType::new(WasmSymbol::new("d")).with_type(WasmType::Any { nullable: false }).with_default(WasmValue::F32(2.0)),
+    //     // FieldType::new(WasmSymbol::new("e")).with_type(WasmType::Any { nullable: true }).with_default(WasmValue::F32(2.0)),
+    // ]));
+    //
+    // module.insert_type(StructureType::new(WasmSymbol::new("a")).with_fields(vec![
+    //     FieldType::new(WasmSymbol::new("a")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+    //     FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
+    // ]));
 
     // module.insert_type(ArrayType::new("core∷text∷UTF8Text", WasmType::I8));
     // module.insert_type(ArrayType::new("core∷text∷UTF16Text", WasmType::I16));
     // module.insert_type(ArrayType::new("core∷text∷UTF32Text", WasmType::I32));
 
+    // module.insert_function(
+    //     FunctionType::new(WasmSymbol::new("sum_all"))
+    //         .with_inputs(vec![
+    //             ParameterType::new("a").with_type(WasmType::I32),
+    //             ParameterType::new("b").with_type(WasmType::I32),
+    //             ParameterType::new("c").with_type(WasmType::I32),
+    //         ])
+    //         .with_outputs(vec![WasmType::I32])
+    //         .with_operations(vec![
+    //             Operation::NativeSum {
+    //                 native: WasmType::I32,
+    //                 terms: vec![
+    //                     Operation::local_get("a"),
+    //                     Operation::local_get("b"),
+    //                     Operation::CallFunction {
+    //                         name: WasmSymbol::new("add_random"),
+    //                         input: vec![Operation::Constant { value: WasmValue::F32(0.0) }],
+    //                     },
+    //                     // test_if_1(),
+    //                     test_if_2(),
+    //                     test_if_3(),
+    //                     test_switch(),
+    //                 ],
+    //             },
+    //             Operation::Return {},
+    //         ])
+    //         .with_export(true),
+    // );
+    //
     module.insert_function(
-        FunctionType::new(WasmSymbol::new("sum_all"))
-            .with_inputs(vec![
-                ParameterType::new("a").with_type(WasmType::I32),
-                ParameterType::new("b").with_type(WasmType::I32),
-                ParameterType::new("c").with_type(WasmType::I32),
-            ])
-            .with_outputs(vec![WasmType::I32])
-            .with_operations(vec![
-                Operation::NativeSum {
-                    native: WasmType::I32,
-                    terms: vec![
-                        Operation::local_get("a"),
-                        Operation::local_get("b"),
-                        Operation::CallFunction {
-                            name: WasmSymbol::new("add_random"),
-                            input: vec![Operation::Constant { value: WasmValue::F32(0.0) }],
-                        },
-                        // test_if_1(),
-                        test_if_2(),
-                        test_if_3(),
-                        test_switch(),
-                    ],
-                },
-                Operation::Return {},
-            ])
-            .with_export(true),
-    );
-
-    module.insert_function(
-        FunctionType::new(WasmSymbol::new("add_random"))
+        FunctionType::new(WasmSymbol::new("add_pi"))
             .with_inputs(vec![ParameterType::new("x").with_type(WasmType::F32)])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![Operation::NativeSum {
@@ -92,17 +92,20 @@ fn test_wasm() -> WasmBuilder {
                         terms: vec![Operation::global_get("f32::pi"), Operation::local_get("x")],
                     }],
                 }],
-            }]),
+            }])
+            .with_export(true),
     );
 
     module.insert_function(
         FunctionType::new(WasmSymbol::new("_start"))
             .with_inputs(vec![])
             .with_outputs(vec![WasmType::I32])
-            .with_operations(vec![Operation::CallFunction {
-                name: WasmSymbol::new("random_get"),
-                input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
-            }])
+            .with_operations(vec![
+            //     Operation::CallFunction {
+            //     name: WasmSymbol::new("random_get"),
+            //     input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
+            // }
+            ])
             .with_export(true),
     );
     module
@@ -142,7 +145,7 @@ fn hello() {
             .with_entry(),
     );
 
-    let wast = module.as_module().unwrap().encode().unwrap();
+    let wast = module.as_module().encode().unwrap();
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/valkyrie/hello.wasm");
     let dir = out.parent().unwrap();
     if !dir.exists() {

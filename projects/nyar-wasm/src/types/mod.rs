@@ -58,8 +58,10 @@ where
             Self::I64 => ValType::I64,
             Self::F32 => ValType::F32,
             Self::F64 => ValType::F64,
+            Self::Unicode => ValType::I32,
             Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
-            _ => todo!(),
+            Self::Structure(v) => ValType::Ref(RefType { nullable: false, heap: HeapType::Struct }),
+            _ => unimplemented!("Cast `{:?}` to core value type fail", self),
         }
     }
 }

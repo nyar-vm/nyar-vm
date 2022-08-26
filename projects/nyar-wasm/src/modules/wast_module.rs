@@ -2,10 +2,10 @@ use super::*;
 
 impl WasmBuilder {
     pub fn build_module<P: AsRef<Path>>(&self, path: P) -> Result<PathBuf, NyarError> {
-        let mut module = self.as_module()?;
+        let mut module = self.as_module();
         write_wasm_bytes(path.as_ref(), module.encode())
     }
-    pub fn as_module(&self) -> Result<Module, NyarError> {
+    pub fn as_module(&self) -> Module {
         let mut terms = Vec::with_capacity(1024);
         for ty in self.types.values() {
             terms.push(ModuleField::Type(ty.as_wast()))
@@ -30,12 +30,12 @@ impl WasmBuilder {
         if !self.entry.is_empty() {
             terms.push(ModuleField::Start(Index::Id(WasmName::new(&self.entry))))
         }
-        Ok(Module {
+        Module {
             span: Span::from_offset(0),
             id: None,
             name: Some(NameAnnotation { name: self.get_module_name() }),
             kind: ModuleKind::Text(terms),
-        })
+        }
     }
     fn build_memory<'a, 'b>(&'a self, m: &mut Vec<ModuleField<'b>>)
     where
