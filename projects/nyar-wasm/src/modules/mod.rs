@@ -1,7 +1,8 @@
 use crate::{
     functions::FunctionType,
     helpers::{write_wasm_bytes, IntoWasm, WasmName},
-    DataItem, DataSection, ExternalSection, ExternalType, GlobalSection, TypeSection, WasmType, WasmVariable,
+    types::TypeItem,
+    DataItem, DataSection, ExternalSection, ExternalType, GlobalSection, WasmType, WasmVariable,
 };
 use nyar_error::NyarError;
 use std::{
@@ -17,6 +18,7 @@ use wast::{
     core::{InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, Producers},
     token::{Index, NameAnnotation, Span},
 };
+
 mod wast_component;
 mod wast_module;
 
@@ -26,7 +28,7 @@ pub struct WasmBuilder {
     pub entry: String,
     pub memory_pages: u64,
     pub globals: GlobalSection,
-    pub types: TypeSection,
+    pub types: BTreeMap<String, WasmType>,
     pub data: DataSection,
     pub functions: BTreeMap<String, FunctionType>,
     pub externals: ExternalSection,
@@ -44,8 +46,16 @@ impl WasmBuilder {
         self.name = name.to_string();
     }
 
-    pub fn insert_type<T: Into<WasmType>>(&mut self, t: T) -> Option<WasmType> {
-        self.types.insert(t.into())
+    pub fn insert_type<T: Into<WasmType>>(&mut self, t: T) {
+        let item = t.into();
+        match &item {
+            WasmType::Structure(s) => {
+                self.types.insert(s.name(), item);
+            }
+            _ => {
+                todo!()
+            }
+        }
     }
     pub fn insert_function(&mut self, f: FunctionType) {
         if f.entry {

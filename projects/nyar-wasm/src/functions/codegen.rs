@@ -129,6 +129,19 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> wast::core::FuncKind<'i> {
-        wast::core::FuncKind::Inline { locals: Box::new([]), expression: Expression { instrs: Box::new([]) } }
+        wast::core::FuncKind::Inline { locals: Box::new([]), expression: self.body.as_wast() }
+    }
+}
+
+impl<'a, 'i> IntoWasm<'a, Expression<'i>> for FunctionBody
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> Expression<'i> {
+        let mut bytecode = Vec::with_capacity(self.codes.len());
+        for code in &self.codes {
+            code.emit(&mut bytecode)
+        }
+        Expression { instrs: Box::from(bytecode) }
     }
 }

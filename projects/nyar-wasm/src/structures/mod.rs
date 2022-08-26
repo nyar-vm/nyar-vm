@@ -6,7 +6,7 @@ use crate::{
 use nyar_error::FileSpan;
 use std::collections::BTreeMap;
 use wast::{
-    component::{ComponentDefinedType, Record, RecordField, Type, TypeDef},
+    component::{ComponentDefinedType, Record, RecordField},
     core::{StructField, StructType},
     token::{NameAnnotation, Span},
 };

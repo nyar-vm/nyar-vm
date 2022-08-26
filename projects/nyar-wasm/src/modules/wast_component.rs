@@ -42,21 +42,6 @@ impl<'a> IntoWasm<'a, PrimitiveValType> for WasmType {
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, Type<'i>> for WasmType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> Type<'i> {
-        Type {
-            span: Span::from_offset(0),
-            id: None,
-            name: None,
-            exports: Default::default(),
-            def: TypeDef::Defined(self.as_wast()),
-        }
-    }
-}
-
 impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
 where
     'a: 'i,
@@ -112,7 +97,7 @@ impl WasmBuilder {
 
     pub fn as_component(&self) -> Result<Component, NyarError> {
         let mut coms = vec![];
-        for ts in self.types.into_iter() {
+        for ts in self.types.values() {
             coms.push(ComponentField::Type(ts.as_wast()))
         }
         for fs in self.functions.values() {

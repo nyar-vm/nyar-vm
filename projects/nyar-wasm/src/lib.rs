@@ -29,6 +29,6 @@ pub use crate::{
     },
     structures::{FieldType, StructureType},
     symbols::WasmSymbol,
-    types::{external::ExternalSection, TypeSection, WasmType},
+    types::{external::ExternalSection, WasmType},
     values::{data::DataSection, global::GlobalSection, variable::WasmVariable, WasmValue},
 };

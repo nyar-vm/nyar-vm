@@ -1,11 +1,11 @@
 use super::*;
 
-impl<'a, 'i> IntoWasm<'a, Type<'i>> for StructureType
+impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for StructureType
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> Type<'i> {
-        Type {
+    fn as_wast(&'a self) -> wast::component::Type<'i> {
+        wast::component::Type {
             span: Span::from_offset(0),
             id: WasmName::id(self.symbol.as_ref()),
             name: Some(NameAnnotation { name: self.symbol.as_ref() }),
@@ -14,12 +14,35 @@ where
         }
     }
 }
-impl<'a, 'i> IntoWasm<'a, TypeDef<'i>> for StructureType
+impl<'a, 'i> IntoWasm<'a, wast::core::Type<'i>> for StructureType
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> TypeDef<'i> {
-        TypeDef::Defined(self.as_wast())
+    fn as_wast(&'a self) -> wast::core::Type<'i> {
+        wast::core::Type {
+            span: Span::from_offset(0),
+            id: WasmName::id(self.symbol.as_ref()),
+            name: Some(NameAnnotation { name: self.symbol.as_ref() }),
+            def: self.as_wast(),
+            parent: None,
+            final_type: None,
+        }
+    }
+}
+impl<'a, 'i> IntoWasm<'a, wast::component::TypeDef<'i>> for StructureType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> wast::component::TypeDef<'i> {
+        wast::component::TypeDef::Defined(self.as_wast())
+    }
+}
+impl<'a, 'i> IntoWasm<'a, wast::core::TypeDef<'i>> for StructureType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> wast::core::TypeDef<'i> {
+        wast::core::TypeDef::Struct(self.as_wast())
     }
 }
 impl<'a, 'i> IntoWasm<'a, ComponentDefinedType<'i>> for StructureType

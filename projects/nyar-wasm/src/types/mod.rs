@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IndexedIterator, IntoWasm},
-    ArrayType, ExternalType, StructureType,
+    ArrayType, ExternalType, StructureType, WasmSymbol,
 };
 use indexmap::IndexMap;
 
@@ -10,9 +10,11 @@ use wast::core::{HeapType, RefType, StorageType, ValType};
 pub mod array;
 pub mod external;
 
-#[derive(Default)]
-pub struct TypeSection {
-    items: BTreeMap<String, WasmType>,
+mod codegen;
+
+pub struct TypeItem {
+    pub name: WasmSymbol,
+    pub r#type: WasmType,
 }
 
 #[derive(Clone, Debug)]
@@ -37,24 +39,6 @@ pub enum WasmType {
 
 impl WasmType {
     pub fn set_nullable(&mut self, _: bool) {}
-}
-
-impl<'i> IntoIterator for &'i TypeSection {
-    type Item = &'i WasmType;
-    type IntoIter = Values<'i, String, WasmType>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.items.values()
-    }
-}
-
-impl TypeSection {
-    pub fn insert(&mut self, item: WasmType) -> Option<WasmType> {
-        match &item {
-            WasmType::Structure(v) => self.items.insert(v.name(), item),
-            _ => None,
-        }
-    }
 }
 
 impl<'a, 'i> IntoWasm<'a, ValType<'i>> for WasmType

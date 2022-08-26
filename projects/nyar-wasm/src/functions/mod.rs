@@ -1,4 +1,10 @@
-use crate::{helpers::IntoWasm, operations::Operation, symbols::WasmExportName, types::WasmType, WasmSymbol};
+use crate::{
+    helpers::{IntoWasm, WasmInstruction},
+    operations::Operation,
+    symbols::WasmExportName,
+    types::WasmType,
+    WasmSymbol,
+};
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
 use std::slice::Iter;
@@ -10,7 +16,6 @@ use wast::{
     core::{Expression, TypeUse, ValType},
     token::{Id, NameAnnotation, Span},
 };
-
 pub mod codegen;
 
 /// `function`
