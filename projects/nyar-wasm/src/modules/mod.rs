@@ -1,7 +1,6 @@
 use crate::{
     functions::FunctionType,
     helpers::{write_wasm_bytes, IntoWasm, WasmName},
-    types::TypeItem,
     DataItem, DataSection, ExternalSection, ExternalType, GlobalSection, WasmType, WasmVariable,
 };
 use nyar_error::NyarError;
@@ -11,10 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use wast::{
-    component::{
-        Component, ComponentDefinedType, ComponentField, ComponentKind, ComponentValType, CoreModule, CoreModuleKind,
-        PrimitiveValType, Type, TypeDef,
-    },
+    component::{Component, ComponentField, ComponentKind, CoreModule, CoreModuleKind},
     core::{InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, Producers},
     token::{Index, NameAnnotation, Span},
 };

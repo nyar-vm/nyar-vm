@@ -97,14 +97,15 @@ fn test_wasm() -> WasmBuilder {
     );
 
     module.insert_function(
-        FunctionType::new(WasmSymbol::new("_start"))
+        FunctionType::new(WasmSymbol::new("_main"))
             .with_inputs(vec![])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![
-            //     Operation::CallFunction {
-            //     name: WasmSymbol::new("random_get"),
-            //     input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
-            // }
+                //     Operation::CallFunction {
+                //     name: WasmSymbol::new("random_get"),
+                //     input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
+                // }
+                Operation::Constant { value: WasmValue::I32(1) },
             ])
             .with_export(true),
     );
@@ -142,7 +143,7 @@ fn hello() {
                 // },
                 // Operation::Drop,
             ])
-            .with_entry(),
+            .with_entry(true),
     );
 
     let wast = module.as_module().encode().unwrap();

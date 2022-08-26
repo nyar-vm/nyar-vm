@@ -7,7 +7,7 @@ use crate::{
 };
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
-use std::slice::Iter;
+use std::{collections::BTreeMap, slice::Iter};
 use wast::{
     component::{
         CanonLift, CanonLower, ComponentFunctionParam, ComponentFunctionResult, ComponentFunctionType, ComponentTypeUse,
@@ -24,6 +24,7 @@ pub struct FunctionType {
     pub export: WasmExportName,
     pub entry: bool,
     pub input: IndexMap<String, ParameterType>,
+    pub local: BTreeMap<String, ParameterType>,
     pub output: Vec<WasmType>,
     pub body: FunctionBody,
     pub span: FileSpan,
@@ -48,12 +49,13 @@ impl ParameterType {
 }
 
 impl FunctionType {
-    pub fn new(path: WasmSymbol) -> Self {
+    pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
         Self {
-            symbol: path,
+            symbol: name.into(),
             export: WasmExportName::default(),
             entry: false,
             input: IndexMap::default(),
+            local: BTreeMap::default(),
             output: vec![],
             body: FunctionBody::default(),
             span: Default::default(),
@@ -69,8 +71,8 @@ impl FunctionType {
         };
         Self { export, ..self }
     }
-    pub fn with_entry(self) -> Self {
-        Self { entry: true, ..self }
+    pub fn with_entry(self, entry: bool) -> Self {
+        Self { entry, ..self }
     }
     pub fn with_inputs<I>(mut self, inputs: I) -> Self
     where

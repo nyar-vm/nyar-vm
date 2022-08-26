@@ -2,7 +2,6 @@ use super::*;
 use wast::{
     component::{CoreItemRef, ItemRef},
     kw,
-    token::Index,
 };
 
 impl<'a, 'i> IntoWasm<'a, Start<'i>> for FunctionType
