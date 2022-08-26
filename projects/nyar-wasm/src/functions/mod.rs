@@ -64,7 +64,7 @@ impl FunctionType {
     }
     pub fn with_export(self, export: bool) -> Self {
         let export = match export {
-            true => WasmExportName::new(self.symbol.clone()),
+            true => WasmExportName::create(self.symbol.clone()),
             false => WasmExportName::default(),
         };
         Self { export, ..self }

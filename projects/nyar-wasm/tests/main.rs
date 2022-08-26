@@ -12,7 +12,7 @@ fn ready() {
 
 fn test_wasm() -> WasmBuilder {
     let mut module = WasmBuilder::new("我艹这他妈的什么鬼?");
-    module.insert_global(WasmVariable::f32(WasmSymbol::new("f32::pi"), 3.14).with_public());
+    module.insert_global(WasmVariable::f32("f32::pi", 3.14));
 
     // module.insert_external(
     //     ExternalType::new("wasi_snapshot_preview1", "fd_write")

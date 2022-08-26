@@ -1,9 +1,10 @@
 use super::*;
+use crate::symbols::WasmExportName;
 
 pub struct WasmVariable {
     pub symbol: WasmSymbol,
     pub mutable: bool,
-    pub export: bool,
+    pub export: WasmExportName,
     pub r#type: WasmType,
     pub value: WasmValue,
     pub span: FileSpan,
@@ -14,7 +15,7 @@ impl Default for WasmVariable {
         Self {
             symbol: WasmSymbol::new("<anonymous>"),
             mutable: false,
-            export: false,
+            export: WasmExportName::default(),
             r#type: WasmType::U8,
             value: WasmValue::Array,
             span: Default::default(),
@@ -48,8 +49,8 @@ impl WasmVariable {
     pub fn function(name: WasmSymbol) -> Self {
         Self { symbol: name.clone(), value: WasmValue::Function(name), ..Self::default() }
     }
-    pub fn with_public(self) -> Self {
-        Self { export: true, ..self }
+    pub fn with_export(self, export: bool) -> Self {
+        Self { export: WasmExportName::create_by_str(&self.symbol, export), ..self }
     }
     pub fn with_mutable(self) -> Self {
         Self { mutable: true, ..self }

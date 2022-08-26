@@ -82,11 +82,7 @@ where
 {
     fn as_wast(&'a self) -> CanonLift<'i> {
         CanonLift {
-            func: CoreItemRef {
-                kind: kw::func(Span::from_offset(0)),
-                idx: Index::Num(0, Span::from_offset(1)),
-                export_name: None,
-            },
+            func: CoreItemRef { kind: kw::func(Span::from_offset(0)), idx: self.symbol.as_index(), export_name: None },
             opts: Vec::new(),
         }
     }

@@ -107,9 +107,10 @@ impl WasmBuilder {
         for fs in self.functions.values() {
             if !self.entry.is_empty() {
                 coms.push(ComponentField::Start(fs.as_wast()));
+                coms.push(ComponentField::Func(fs.as_wast()));
             }
-            coms.push(ComponentField::Func(fs.as_wast()));
-            coms.push(ComponentField::CoreFunc(fs.as_wast()));
+
+            // coms.push(ComponentField::CoreFunc(fs.as_wast()));
         }
         coms.push(ComponentField::CoreModule(self.as_wast()));
 
