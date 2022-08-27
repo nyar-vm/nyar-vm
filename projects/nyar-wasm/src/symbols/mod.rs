@@ -31,7 +31,7 @@ impl WasmExportName {
     pub fn create<S: Into<WasmSymbol>>(name: S) -> Self {
         Self { inner: Some(name.into().inner) }
     }
-    pub fn create_by_str(symbol: &WasmSymbol, export: bool) -> Self {
+    pub fn create_by(symbol: &WasmSymbol, export: bool) -> Self {
         match export {
             true => WasmExportName { inner: Some(symbol.inner.clone()) },
             false => WasmExportName::default(),

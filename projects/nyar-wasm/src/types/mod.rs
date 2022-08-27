@@ -3,9 +3,11 @@ use crate::{
     ArrayType, ExternalType, StructureType, WasmSymbol,
 };
 use indexmap::IndexMap;
-use wast::token::Span;
+use wast::{
+    component::{CoreType, CoreTypeDef},
+    token::Span,
+};
 
-use std::collections::{btree_map::Values, BTreeMap};
 use wast::{
     component::{ComponentDefinedType, ComponentValType, PrimitiveValType},
     core::{HeapType, RefType, StorageType, ValType},

@@ -46,7 +46,7 @@ impl WasmBuilder {
             id: WasmName::id("memory"),
             name: None,
             exports: InlineExport { names: vec!["memory"] },
-            kind: MemoryKind::Normal(MemoryType::B32 { limits: Limits { min: 1, max: None }, shared: false }),
+            kind: MemoryKind::Normal(MemoryType::B32 { limits: Limits { min: 2, max: None }, shared: false }),
         };
         m.push(ModuleField::Memory(memory));
     }

@@ -50,7 +50,7 @@ impl WasmVariable {
         Self { symbol: name.clone(), value: WasmValue::Function(name), ..Self::default() }
     }
     pub fn with_export(self, export: bool) -> Self {
-        Self { export: WasmExportName::create_by_str(&self.symbol, export), ..self }
+        Self { export: WasmExportName::create_by(&self.symbol, export), ..self }
     }
     pub fn with_mutable(self) -> Self {
         Self { mutable: true, ..self }

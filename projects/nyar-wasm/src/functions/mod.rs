@@ -65,11 +65,7 @@ impl FunctionType {
         self.symbol.to_string()
     }
     pub fn with_export(self, export: bool) -> Self {
-        let export = match export {
-            true => WasmExportName::create(self.symbol.clone()),
-            false => WasmExportName::default(),
-        };
-        Self { export, ..self }
+        Self { export: WasmExportName::create_by(&self.symbol, export), ..self }
     }
     pub fn with_entry(self, entry: bool) -> Self {
         Self { entry, ..self }

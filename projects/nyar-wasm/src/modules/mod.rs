@@ -6,7 +6,6 @@ use crate::{
 use nyar_error::NyarError;
 use std::{
     collections::BTreeMap,
-    io::Write,
     path::{Path, PathBuf},
 };
 use wast::{

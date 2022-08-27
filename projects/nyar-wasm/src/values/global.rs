@@ -1,6 +1,4 @@
 use super::*;
-use crate::helpers::IndexedIterator;
-use wast::core::{GlobalType, InlineExport};
 
 #[derive(Default)]
 pub struct GlobalSection {

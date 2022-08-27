@@ -14,6 +14,7 @@ pub mod global;
 pub mod variable;
 use crate::{data::DataItem, helpers::IndexedIterator};
 mod convert;
+use wast::core::GlobalType;
 
 impl<'a, 'i> IntoWasm<'a, Instruction<'i>> for WasmValue
 where

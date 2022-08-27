@@ -1,6 +1,4 @@
 use super::*;
-use crate::FunctionType;
-use wast::component::{CoreFunc, CoreType, CoreTypeDef};
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for WasmType
 where
