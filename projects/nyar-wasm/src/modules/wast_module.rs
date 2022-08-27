@@ -21,8 +21,8 @@ impl WasmBuilder {
         }
         // memory section
         self.build_memory(&mut terms);
-        // data section
-        let mut offset = 0;
+        // data section, 一页 = 64KB, 从第二页开始存用户数据
+        let mut offset = 65536;
         for (_, _, k) in self.data.into_iter() {
             terms.push(ModuleField::Data(k.as_wast(&mut offset)))
         }

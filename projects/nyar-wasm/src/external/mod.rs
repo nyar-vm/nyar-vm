@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
-    WasmSymbol, WasmType,
+    ParameterType, WasmSymbol, WasmType,
 };
 use wast::{
     core::{Import, ItemKind, ItemSig, TypeUse},
@@ -14,7 +14,7 @@ pub struct ExternalType {
     pub module: WasmSymbol,
     pub field: WasmSymbol,
     pub alias: Option<WasmSymbol>,
-    pub input: Vec<WasmType>,
+    pub input: Vec<ParameterType>,
     pub output: Vec<WasmType>,
 }
 
@@ -34,7 +34,7 @@ impl ExternalType {
 
     pub fn with_input<I>(mut self, inputs: I) -> Self
     where
-        I: IntoIterator<Item = WasmType>,
+        I: IntoIterator<Item = ParameterType>,
     {
         self.input.extend(inputs);
         self

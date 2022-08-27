@@ -1,4 +1,5 @@
 use super::*;
+use wast::core::MemArg;
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -140,6 +141,9 @@ impl WasmInstruction for Operation {
                 }
             }
             Self::JumpEnumeration(_) => {}
+            Self::StoreVariable { offset } => {
+                w.push(Instruction::I32Store(MemArg { align: 4, offset: *offset, memory: Index::Id(WasmName::new("memory")) }))
+            }
         }
     }
 }

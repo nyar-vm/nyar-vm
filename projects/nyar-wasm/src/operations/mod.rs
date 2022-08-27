@@ -39,6 +39,9 @@ pub enum Operation {
     TeeVariable {
         variable: WasmSymbol,
     },
+    StoreVariable {
+        offset: u64,
+    },
     Loop {
         r#continue: WasmSymbol,
         r#break: WasmSymbol,

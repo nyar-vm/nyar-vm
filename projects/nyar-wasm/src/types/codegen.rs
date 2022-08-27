@@ -31,11 +31,11 @@ impl<'a, 'i> IntoWasm<'a, CoreType<'i>> for WasmType
 where
     'a: 'i,
 {
-    /// 怎么把组件函数降低为核心函数
+    /// 怎么把组件类型降低为核心类型
     fn as_wast(&'a self) -> CoreType<'i> {
         match self {
             WasmType::Structure(v) => {
-                CoreType { span: Span::from_offset(0), id: v.symbol.as_id(), name: None, def: CoreTypeDef::Def(self.as_wast()) }
+                CoreType { span: Span::from_offset(0), id: v.symbol.as_id(), name: None, def: CoreTypeDef::Def(v.as_wast()) }
             }
             _ => unimplemented!("Cast `{:?}` to core type fail", self),
         }
