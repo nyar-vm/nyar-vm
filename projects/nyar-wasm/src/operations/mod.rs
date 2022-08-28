@@ -40,6 +40,7 @@ pub enum Operation {
         variable: WasmSymbol,
     },
     StoreVariable {
+        r#type: WasmType,
         offset: u64,
     },
     Loop {

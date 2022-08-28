@@ -7,15 +7,15 @@
 
 mod array;
 mod data;
+mod enumerates;
 mod external;
 mod functions;
 pub mod helpers;
 mod modules;
 mod operations;
+mod structures;
 mod symbols;
 mod types;
-
-mod structures;
 mod values;
 pub use crate::{
     array::ArrayType,

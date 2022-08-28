@@ -141,8 +141,23 @@ impl WasmInstruction for Operation {
                 }
             }
             Self::JumpEnumeration(_) => {}
-            Self::StoreVariable { offset } => {
-                w.push(Instruction::I32Store(MemArg { align: 4, offset: *offset, memory: Index::Id(WasmName::new("memory")) }))
+            Self::StoreVariable { r#type, offset } => {
+                let memory = Index::Id(WasmName::new("memory"));
+
+                match r#type {
+                    WasmType::Bool => {}
+                    WasmType::U8 => {}
+                    WasmType::U16 => {}
+                    WasmType::U32 => {}
+                    WasmType::U64 => {}
+                    WasmType::I8 => {}
+                    WasmType::I16 => w.push(Instruction::I64Store16(MemArg { align: 2, offset: *offset, memory })),
+                    WasmType::I32 => w.push(Instruction::I32Store(MemArg { align: 4, offset: *offset, memory })),
+                    WasmType::I64 => w.push(Instruction::I64Store(MemArg { align: 8, offset: *offset, memory })),
+                    WasmType::F32 => w.push(Instruction::F32Store(MemArg { align: 4, offset: *offset, memory })),
+                    WasmType::F64 => w.push(Instruction::F64Store(MemArg { align: 8, offset: *offset, memory })),
+                    _ => unimplemented!(),
+                }
             }
         }
     }

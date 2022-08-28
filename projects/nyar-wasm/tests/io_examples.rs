@@ -28,10 +28,10 @@ pub fn hello_world() -> WasmBuilder {
             .with_operations(vec![
                 Operation::from(0),
                 Operation::local_get("offset"),
-                Operation::StoreVariable { offset: 0 },
+                Operation::StoreVariable { r#type: WasmType::I32, offset: 0 },
                 Operation::from(0),
                 Operation::local_get("length"),
-                Operation::StoreVariable { offset: 4 },
+                Operation::StoreVariable { r#type: WasmType::I32, offset: 4 },
                 Operation::CallFunction {
                     name: WasmSymbol::new("file_descriptor_write"),
                     input: vec![Operation::from(1), Operation::from(0), Operation::from(1), Operation::from(8)],
@@ -40,7 +40,7 @@ pub fn hello_world() -> WasmBuilder {
     );
 
     module.insert_function(
-        FunctionType::new("main")
+        FunctionType::new("_initialize")
             .with_inputs(vec![])
             .with_outputs(vec![])
             .with_operations(vec![

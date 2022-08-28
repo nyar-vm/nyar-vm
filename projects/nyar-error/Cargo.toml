@@ -1,6 +1,6 @@
 [package]
 name = "nyar-error"
-version = "0.1.11"
+version = "0.1.12"
 authors = ["Aster <192607617@qq.com>"]
 description = "Error types for valkyrie language"
 repository = "https://github.com/nyar-vm/nyar-vm/tree/dev/projects/nyar-error"
