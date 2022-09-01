@@ -13,7 +13,7 @@ pub fn control_flow() -> WasmBuilder {
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![
                 Operation::NativeSum {
-                    native: WasmType::I32,
+                    r#type: WasmType::I32,
                     terms: vec![
                         // test_if_1(),
                         test_if_2(),
@@ -60,28 +60,28 @@ fn test_if_3() -> Operation {
         branches: vec![
             JumpCondition {
                 condition: vec![Operation::NativeEqual {
-                    native: WasmType::Bool,
+                    r#type: WasmType::Bool,
                     codes: vec![Operation::local_get("a"), Operation::from(1)],
                 }],
                 action: vec![Operation::from(2)],
             },
             JumpCondition {
                 condition: vec![Operation::NativeEqual {
-                    native: WasmType::Bool,
+                    r#type: WasmType::Bool,
                     codes: vec![Operation::local_get("a"), Operation::from(3)],
                 }],
                 action: vec![Operation::from(3)],
             },
             JumpCondition {
                 condition: vec![Operation::NativeEqual {
-                    native: WasmType::Bool,
+                    r#type: WasmType::Bool,
                     codes: vec![Operation::local_get("a"), Operation::from(5)],
                 }],
                 action: vec![Operation::from(5)],
             },
             JumpCondition {
                 condition: vec![Operation::NativeEqual {
-                    native: WasmType::Bool,
+                    r#type: WasmType::Bool,
                     codes: vec![Operation::local_get("a"), Operation::from(7)],
                 }],
                 action: vec![Operation::from(7)],

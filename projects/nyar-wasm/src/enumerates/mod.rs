@@ -1,20 +1,19 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
-    values::WasmValue,
     WasmSymbol, WasmType,
 };
 use nyar_error::FileSpan;
 use std::collections::BTreeMap;
 use wast::{
-    component::{ComponentDefinedType, Record, RecordField},
-    core::{StructField, StructType},
-    token::{NameAnnotation, Span},
+    component::{ComponentDefinedType, Enum},
+    token::Span,
 };
+mod codegen;
 
 #[derive(Clone, Debug)]
 pub struct EnumerateType {
     pub symbol: WasmSymbol,
-    pub fields: BTreeMap<u64, WasmSymbol>,
+    pub fields: BTreeMap<u64, EncodingType>,
     pub span: FileSpan,
 }
 
@@ -26,7 +25,7 @@ pub struct EncodingType {
 
 impl From<EnumerateType> for WasmType {
     fn from(value: EnumerateType) -> Self {
-        WasmType::Structure(value)
+        WasmType::Enumerate(value)
     }
 }
 
@@ -38,7 +37,7 @@ impl EnumerateType {
         self.symbol.to_string()
     }
     pub fn set_field(&mut self, field: EncodingType) {
-        self.fields.insert(field.name.to_string(), field);
+        self.fields.insert(field.value, field);
     }
     pub fn with_fields<I>(mut self, fields: I) -> Self
     where
@@ -48,31 +47,5 @@ impl EnumerateType {
             self.set_field(field);
         }
         self
-    }
-}
-
-impl EncodingType {
-    pub fn new(name: WasmSymbol) -> Self {
-        Self { name, mutable: false, r#type: WasmType::Any { nullable: false }, value: WasmValue::Any }
-    }
-    pub fn with_type(self, r#type: WasmType) -> Self {
-        Self { r#type, ..self }
-    }
-    pub fn with_default(self, default: WasmValue) -> Self {
-        Self { value: default, ..self }
-    }
-
-    pub fn set_nullable(&mut self, nullable: bool) {
-        self.r#type.set_nullable(nullable);
-    }
-
-    pub fn with_mutable(self) -> Self {
-        Self { mutable: true, ..self }
-    }
-    pub fn with_readonly(self) -> Self {
-        Self { mutable: false, ..self }
-    }
-    pub fn r#type(&self) -> WasmType {
-        self.value.as_type()
     }
 }

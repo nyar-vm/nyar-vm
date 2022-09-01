@@ -16,6 +16,7 @@ mod operations;
 mod structures;
 mod symbols;
 mod types;
+pub use self::enumerates::{EncodingType, EnumerateType};
 mod values;
 pub use crate::{
     array::ArrayType,

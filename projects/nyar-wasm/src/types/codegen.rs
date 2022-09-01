@@ -81,6 +81,20 @@ impl<'a> IntoWasm<'a, PrimitiveValType> for WasmType {
         }
     }
 }
+
+impl<'a, 'i> IntoWasm<'a, StorageType<'i>> for WasmType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> StorageType<'i> {
+        match self {
+            WasmType::I8 => StorageType::I8,
+            WasmType::I16 => StorageType::I16,
+            _ => StorageType::Val(self.as_wast()),
+        }
+    }
+}
+
 impl<'a, 'i> IntoWasm<'a, ValType<'i>> for WasmType
 where
     'a: 'i,
@@ -102,19 +116,6 @@ where
             Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
             Self::Structure(v) => ValType::Ref(RefType { nullable: false, heap: HeapType::Struct }),
             _ => unimplemented!("Cast `{:?}` to core value type fail", self),
-        }
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, StorageType<'i>> for WasmType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> StorageType<'i> {
-        match self {
-            WasmType::I8 => StorageType::I8,
-            WasmType::I16 => StorageType::I16,
-            _ => StorageType::Val(self.as_wast()),
         }
     }
 }

@@ -68,7 +68,7 @@ pub enum Operation {
         value: WasmValue,
     },
     NativeSum {
-        native: WasmType,
+        r#type: WasmType,
         terms: Vec<Operation>,
     },
     Convert {
@@ -82,7 +82,7 @@ pub enum Operation {
         code: Vec<Operation>,
     },
     NativeEqual {
-        native: WasmType,
+        r#type: WasmType,
         codes: Vec<Operation>,
     },
     NativeEqualZero {

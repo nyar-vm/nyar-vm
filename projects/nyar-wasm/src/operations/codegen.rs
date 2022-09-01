@@ -36,7 +36,7 @@ impl WasmInstruction for Operation {
             }
             Self::Default { typed } => typed.emit(w),
             Self::Constant { value } => value.emit(w),
-            Self::NativeSum { native, terms } => match terms.as_slice() {
+            Self::NativeSum { r#type: native, terms } => match terms.as_slice() {
                 [] => {}
                 [head, rest @ ..] => {
                     head.emit(w);
@@ -52,7 +52,7 @@ impl WasmInstruction for Operation {
                     }
                 }
             },
-            Self::NativeEqual { native, codes } => match codes.as_slice() {
+            Self::NativeEqual { r#type: native, codes } => match codes.as_slice() {
                 [] => {}
                 [head, rest @ ..] => {
                     head.emit(w);
@@ -192,31 +192,21 @@ impl WasmInstruction for JumpBranch {
 
 impl WasmInstruction for JumpTable {
     /// ```v
-    /// if a {
-    /// }
-    /// else if b {
-    /// }
-    /// else {
-    /// }
+    /// if a { a_body }
+    /// else if b { b_body }
+    /// else { c_body }
+    /// ```
     ///
-    /// if a {
-    /// }
-    /// else {
-    ///     if b {
-    ///     }
-    ///     else {
-    ///     }
-    /// }
-    ///
+    /// ```v
     /// a
     /// if
     ///   a_body
     /// else  
     ///   b
     ///   if
-    ///   b_body
+    ///     b_body
     ///   else
-    ///   c_body
+    ///     c_body
     ///   end
     /// end
     /// ```
@@ -272,6 +262,7 @@ impl WasmInstruction for WasmType {
             Self::UTF8Text => {
                 todo!()
             }
+            Self::Enumerate(_) => todo!(),
         }
     }
 }

@@ -93,12 +93,12 @@ pub fn add_random_pi() -> WasmBuilder {
             .with_inputs(vec![ParameterType::new("x").with_type(WasmType::F32)])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![Operation::NativeSum {
-                native: WasmType::F32,
+                r#type: WasmType::F32,
                 terms: vec![Operation::Convert {
                     from: WasmType::F32,
                     into: WasmType::I32,
                     code: vec![Operation::NativeSum {
-                        native: WasmType::F32,
+                        r#type: WasmType::F32,
                         terms: vec![Operation::global_get("f32::pi"), Operation::local_get("x")],
                     }],
                 }],

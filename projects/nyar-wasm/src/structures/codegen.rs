@@ -14,6 +14,7 @@ where
         }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, wast::core::Type<'i>> for StructureType
 where
     'a: 'i,
@@ -29,6 +30,7 @@ where
         }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, wast::component::TypeDef<'i>> for StructureType
 where
     'a: 'i,
