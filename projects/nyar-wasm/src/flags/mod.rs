@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
-    EncodingType, WasmSymbol, WasmType,
+    WasmSymbol, WasmType,
 };
 use nyar_error::FileSpan;
 use std::collections::BTreeMap;
@@ -11,19 +11,25 @@ use wast::{
 mod codegen;
 
 #[derive(Clone, Debug)]
-pub struct EnumerateType {
+pub struct FlagType {
     pub symbol: WasmSymbol,
     pub fields: BTreeMap<u64, EncodingType>,
     pub span: FileSpan,
 }
 
-impl From<EnumerateType> for WasmType {
-    fn from(value: EnumerateType) -> Self {
-        WasmType::Enumerate(value)
+#[derive(Clone, Debug)]
+pub struct EncodingType {
+    pub name: WasmSymbol,
+    pub value: u64,
+}
+
+impl From<FlagType> for WasmType {
+    fn from(value: FlagType) -> Self {
+        WasmType::Flag(value)
     }
 }
 
-impl EnumerateType {
+impl FlagType {
     pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
         Self { symbol: name.into(), fields: Default::default(), span: Default::default() }
     }

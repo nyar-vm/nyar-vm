@@ -263,6 +263,7 @@ impl WasmInstruction for WasmType {
                 todo!()
             }
             Self::Enumerate(_) => todo!(),
+            Self::Flag(_) => todo!(),
         }
     }
 }

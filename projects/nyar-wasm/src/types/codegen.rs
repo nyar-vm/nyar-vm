@@ -21,6 +21,7 @@ where
     fn as_wast(&'a self) -> wast::core::Type<'i> {
         match self {
             WasmType::Structure(s) => s.as_wast(),
+            WasmType::Enumerate(s) => s.as_wast(),
             _ => unimplemented!("Cast `{:?}` to core type fail", self),
         }
     }

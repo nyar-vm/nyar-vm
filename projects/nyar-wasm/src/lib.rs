@@ -16,12 +16,14 @@ mod operations;
 mod structures;
 mod symbols;
 mod types;
-pub use self::enumerates::{EncodingType, EnumerateType};
+pub use self::enumerates::EnumerateType;
+mod flags;
 mod values;
 pub use crate::{
     array::ArrayType,
     data::DataItem,
     external::ExternalType,
+    flags::{EncodingType, FlagType},
     functions::{FunctionBody, FunctionType, ParameterType},
     modules::WasmBuilder,
     operations::{
