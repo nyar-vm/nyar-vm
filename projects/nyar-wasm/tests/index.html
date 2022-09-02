@@ -1,0 +1,29 @@
+<!DOCTYPE  html>
+<html lang="en-US">
+<head>
+    <meta charset="utf-8">
+    <title>Wasm Preview</title>
+</head>
+<body>
+<script>
+    const memory = new WebAssembly.Memory({initial: 1});
+    function consoleLogString(offset, length) {
+        const bytes = new Uint8Array(memory.buffer, offset, length);
+        const string = new TextDecoder('utf8').decode(bytes);
+        console.log(string);
+    }
+    const importObject = {
+        console: {
+            log: consoleLogString
+        },
+        js: {
+            mem: memory
+        }
+    };
+    WebAssembly.instantiateStreaming(fetch('mod.wasm'), importObject)
+        .then(obj => {
+            obj.instance.exports._start();
+        });
+</script>
+</body>
+</html>

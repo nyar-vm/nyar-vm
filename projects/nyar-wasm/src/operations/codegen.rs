@@ -254,6 +254,8 @@ impl WasmInstruction for WasmType {
             }
             Self::Structure(_) => todo!(),
             Self::Array { .. } => {
+                w.push(Instruction::ArrayLen);
+
                 todo!()
             }
             Self::Unicode => {
@@ -264,6 +266,7 @@ impl WasmInstruction for WasmType {
             }
             Self::Enumerate(_) => todo!(),
             Self::Flag(_) => todo!(),
+            Self::Variant(_) => todo!(),
         }
     }
 }

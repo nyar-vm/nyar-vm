@@ -21,7 +21,7 @@ fn test() -> Result<(), NyarError> {
     if !debug.exists() {
         std::fs::create_dir_all(&debug).unwrap();
     }
-    // let _ = hello_module().build_component(debug.join("com.wasm")).unwrap();
+    let _ = module_test().build_module(debug.join("mod.wasm")).unwrap();
     let _ = hello_world().build_module(debug.join("hello.wasm")).unwrap();
     let _ = control_flow().build_module(debug.join("control.wasm")).unwrap();
 

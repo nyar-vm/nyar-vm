@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IndexedIterator, IntoWasm},
-    ArrayType, EnumerateType, ExternalType, FlagType, StructureType, WasmSymbol,
+    ArrayType, EnumerateType, ExternalType, FlagType, StructureType, VariantType, WasmSymbol,
 };
 use indexmap::IndexMap;
 use wast::{
@@ -39,9 +39,10 @@ pub enum WasmType {
     Unicode,
     UTF8Text,
     Any { nullable: bool },
-    Structure(StructureType),
     Flag(FlagType),
     Enumerate(EnumerateType),
+    Structure(StructureType),
+    Variant(Box<VariantType>),
     Array(Box<ArrayType>),
 }
 

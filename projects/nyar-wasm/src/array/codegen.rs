@@ -1,5 +1,4 @@
 use super::*;
-use crate::FlagType;
 use wast::component::{ComponentDefinedType, List};
 
 impl<'a, 'i> IntoWasm<'a, Type<'i>> for ArrayType

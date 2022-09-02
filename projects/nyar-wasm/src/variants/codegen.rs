@@ -1,4 +1,6 @@
 use super::*;
+use crate::StructureType;
+use wast::component::{Variant, VariantCase};
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for VariantType
 where
@@ -44,7 +46,8 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> wast::core::TypeDef<'i> {
-        wast::core::TypeDef::Struct(self.as_wast())
+        // wast::core::TypeDef::Struct(self.as_wast())
+        unimplemented!()
     }
 }
 impl<'a, 'i> IntoWasm<'a, ComponentDefinedType<'i>> for VariantType
@@ -52,41 +55,24 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> ComponentDefinedType<'i> {
-        ComponentDefinedType::Record(self.as_wast())
+        ComponentDefinedType::Variant(self.as_wast())
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, StructType<'i>> for VariantType
+impl<'a, 'i> IntoWasm<'a, Variant<'i>> for VariantType
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> StructType<'i> {
-        StructType { fields: self.fields.values().map(|field| field.as_wast()).collect() }
-    }
-}
-impl<'a, 'i> IntoWasm<'a, Record<'i>> for VariantType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> Record<'i> {
-        Record { fields: self.fields.values().map(|v| v.as_wast()).collect() }
+    fn as_wast(&'a self) -> Variant<'i> {
+        Variant { cases: self.fields.values().map(|s| s.as_wast()).collect() }
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, StructField<'i>> for VariantFieldType
+impl<'a, 'i> IntoWasm<'a, VariantCase<'i>> for StructureType
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> StructField<'i> {
-        StructField { id: self.name.as_id(), mutable: self.mutable, ty: self.r#type.as_wast() }
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, RecordField<'i>> for VariantFieldType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> RecordField<'i> {
-        RecordField { name: self.name.as_ref(), ty: self.r#type.as_wast() }
+    fn as_wast(&'a self) -> VariantCase<'i> {
+        VariantCase { span: Span::from_offset(0), id: self.symbol.as_id(), name: "", ty: None, refines: None }
     }
 }

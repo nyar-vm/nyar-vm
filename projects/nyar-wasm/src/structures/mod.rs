@@ -56,8 +56,8 @@ impl StructureType {
 }
 
 impl FieldType {
-    pub fn new(name: WasmSymbol) -> Self {
-        Self { name, mutable: false, r#type: WasmType::Any { nullable: false }, default: WasmValue::Any }
+    pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
+        Self { name: name.into(), mutable: false, r#type: WasmType::Any { nullable: false }, default: WasmValue::Any }
     }
     pub fn with_type(self, r#type: WasmType) -> Self {
         Self { r#type, ..self }

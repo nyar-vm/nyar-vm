@@ -15,6 +15,7 @@ mod modules;
 mod operations;
 mod structures;
 mod symbols;
+mod tags;
 mod types;
 mod variants;
 pub use self::enumerates::EnumerateType;
@@ -35,4 +36,5 @@ pub use crate::{
     symbols::WasmSymbol,
     types::{external::ExternalSection, WasmType},
     values::{data::DataSection, global::GlobalSection, variable::WasmVariable, WasmValue},
+    variants::VariantType,
 };

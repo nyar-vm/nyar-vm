@@ -28,6 +28,18 @@ pub fn fibonacci() -> WasmBuilder {
     module
 }
 
+pub fn module_test() -> WasmBuilder {
+    let mut module = WasmBuilder::new("control_flow");
+    module.insert_type(
+        StructureType::new("Point")
+            .with_fields(vec![FieldType::new("x").with_type(WasmType::F32), FieldType::new("y").with_type(WasmType::F32)]),
+    );
+
+    module.insert_function(FunctionType::new("_start").with_export(true));
+
+    module
+}
+
 pub fn control_flow() -> WasmBuilder {
     let mut module = WasmBuilder::new("control_flow");
 
