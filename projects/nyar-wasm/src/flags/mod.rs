@@ -4,10 +4,7 @@ use crate::{
 };
 use nyar_error::FileSpan;
 use std::collections::BTreeMap;
-use wast::{
-    component::{ComponentDefinedType, Enum},
-    token::Span,
-};
+use wast::{component::ComponentDefinedType, token::Span};
 mod codegen;
 
 #[derive(Clone, Debug)]

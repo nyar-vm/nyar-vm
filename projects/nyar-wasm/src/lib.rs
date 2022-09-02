@@ -16,6 +16,7 @@ mod operations;
 mod structures;
 mod symbols;
 mod types;
+mod variants;
 pub use self::enumerates::EnumerateType;
 mod flags;
 mod values;

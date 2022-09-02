@@ -1,4 +1,5 @@
 use super::*;
+use wast::component::Flags;
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for FlagType
 where
@@ -52,15 +53,15 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> ComponentDefinedType<'i> {
-        ComponentDefinedType::Enum(self.as_wast())
+        ComponentDefinedType::Flags(self.as_wast())
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, Enum<'i>> for FlagType
+impl<'a, 'i> IntoWasm<'a, Flags<'i>> for FlagType
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> Enum<'i> {
-        Enum { names: self.fields.iter().map(|(_, v)| v.name.as_ref()).collect() }
+    fn as_wast(&'a self) -> Flags<'i> {
+        Flags { names: self.fields.iter().map(|(_, v)| v.name.as_ref()).collect() }
     }
 }

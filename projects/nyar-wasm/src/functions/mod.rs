@@ -83,14 +83,23 @@ impl FunctionType {
     where
         I: IntoIterator<Item = WasmType>,
     {
-        self.output = outputs.into_iter().collect();
+        self.output.extend(outputs);
+        self
+    }
+    pub fn with_locals<I>(mut self, locals: I) -> Self
+    where
+        I: IntoIterator<Item = ParameterType>,
+    {
+        for i in locals {
+            self.local.insert(i.name.to_string(), i);
+        }
         self
     }
     pub fn with_operations<I>(mut self, operations: I) -> Self
     where
         I: IntoIterator<Item = Operation>,
     {
-        self.body.codes = operations.into_iter().collect();
+        self.body.codes.extend(operations);
         self
     }
 }

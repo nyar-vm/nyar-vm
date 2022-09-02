@@ -1,5 +1,33 @@
 use super::*;
 
+pub fn fibonacci() -> WasmBuilder {
+    let mut module = WasmBuilder::new("fibonacci");
+
+    module.insert_function(
+        FunctionType::new("fibonacci")
+            .with_inputs(vec![ParameterType::new("n").with_type(WasmType::I64)])
+            .with_outputs(vec![WasmType::I64])
+            .with_locals(vec![
+                ParameterType::new("a").with_type(WasmType::I64),
+                ParameterType::new("b").with_type(WasmType::I64),
+            ])
+            .with_operations(vec![])
+            .with_export(true),
+    );
+
+    module.insert_function(
+        FunctionType::new(WasmSymbol::new("_main"))
+            .with_inputs(vec![])
+            .with_outputs(vec![WasmType::I64])
+            .with_operations(vec![Operation::CallFunction {
+                name: WasmSymbol::new("fibonacci"),
+                input: vec![Operation::from(5)],
+            }])
+            .with_export(false),
+    );
+    module
+}
+
 pub fn control_flow() -> WasmBuilder {
     let mut module = WasmBuilder::new("control_flow");
 
