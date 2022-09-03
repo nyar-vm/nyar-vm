@@ -1,5 +1,5 @@
 use super::*;
-use wast::core::MemArg;
+use wast::core::{MemArg, StructAccess};
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -21,6 +21,7 @@ impl WasmInstruction for Operation {
                 VariableKind::Table => {
                     w.push(Instruction::TableGet(TableArg { dst: Index::Id(WasmName::new(variable.as_ref())) }))
                 }
+                VariableKind::Field => w.push(Instruction::StructGet(StructAccess { r#struct: (), field: () })),
             },
             Self::SetVariable { kind, variable } => match kind {
                 VariableKind::Global => w.push(Instruction::GlobalSet(Index::Id(WasmName::new(variable.as_ref())))),
@@ -252,7 +253,7 @@ impl WasmInstruction for WasmType {
             Self::Any { .. } => {
                 todo!()
             }
-            Self::Structure(_) => todo!(),
+            Self::Structure(s) => w.push(Instruction::StructNewDefault(s.symbol.as_index())),
             Self::Array { .. } => {
                 w.push(Instruction::ArrayLen);
 

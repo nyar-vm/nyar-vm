@@ -96,6 +96,7 @@ pub enum VariableKind {
     Global,
     Local,
     Table,
+    Field,
 }
 
 impl Operation {

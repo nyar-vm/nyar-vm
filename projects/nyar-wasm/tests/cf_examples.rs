@@ -1,4 +1,5 @@
 use super::*;
+use nyar_wasm::VariableKind;
 
 pub fn fibonacci() -> WasmBuilder {
     let mut module = WasmBuilder::new("fibonacci");
@@ -29,13 +30,22 @@ pub fn fibonacci() -> WasmBuilder {
 }
 
 pub fn module_test() -> WasmBuilder {
-    let mut module = WasmBuilder::new("control_flow");
-    module.insert_type(
+    let mut module = WasmBuilder::new("example");
+    let point = WasmType::Structure(
         StructureType::new("Point")
             .with_fields(vec![FieldType::new("x").with_type(WasmType::F32), FieldType::new("y").with_type(WasmType::F32)]),
     );
+    module.insert_type(point.clone());
 
-    module.insert_function(FunctionType::new("_start").with_export(true));
+    module.insert_function(
+        FunctionType::new("_start")
+            .with_outputs(vec![point.clone()])
+            .with_operations(vec![
+                Operation::Default { typed: point.clone() },
+                Operation::GetVariable { kind: VariableKind::Field, variable: WasmSymbol::new("x") },
+            ])
+            .with_export(true),
+    );
 
     module
 }
