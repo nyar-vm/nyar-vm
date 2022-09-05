@@ -1,7 +1,7 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
     types::WasmType,
-    WasmSymbol, WasmVariable,
+    StructureType, WasmSymbol, WasmVariable,
 };
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
@@ -34,7 +34,7 @@ where
             Self::Function(_) => {
                 todo!()
             }
-            Self::Structure(name) => Instruction::StructNewDefault(Index::Id(WasmName::new(name.as_ref()))),
+            Self::Structure(name) => Instruction::StructNewDefault(name.symbol.as_index()),
             Self::Array => {
                 todo!()
             }
@@ -54,7 +54,7 @@ pub enum WasmValue {
     F32(f32),
     F64(f64),
     Function(WasmSymbol),
-    Structure(WasmSymbol),
+    Structure(StructureType),
     Array,
     Any,
 }

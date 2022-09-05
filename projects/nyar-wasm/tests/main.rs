@@ -5,6 +5,7 @@ use nyar_wasm::{
 };
 use std::{path::Path, process::Command};
 
+mod adt_examples;
 mod cf_examples;
 mod io_examples;
 
@@ -21,7 +22,7 @@ fn test() -> Result<(), NyarError> {
     if !debug.exists() {
         std::fs::create_dir_all(&debug).unwrap();
     }
-    let _ = module_test().build_module(debug.join("mod.wasm")).unwrap();
+    let _ = new_structure().build_module(debug.join("mod.wasm")).unwrap();
     let _ = hello_world().build_module(debug.join("hello.wasm")).unwrap();
     let _ = control_flow().build_module(debug.join("control.wasm")).unwrap();
 
