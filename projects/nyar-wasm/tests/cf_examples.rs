@@ -1,5 +1,4 @@
 use super::*;
-use nyar_wasm::VariableKind;
 
 pub fn fibonacci() -> WasmBuilder {
     let mut module = WasmBuilder::new("fibonacci");

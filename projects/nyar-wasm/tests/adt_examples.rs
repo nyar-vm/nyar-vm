@@ -1,22 +1,63 @@
 use super::*;
 
 pub fn new_structure() -> WasmBuilder {
-    let mut module = WasmBuilder::new("example");
+    let mut module = WasmBuilder::new("structure-example");
     let point = StructureType::new("Point").with_fields(vec![
-        FieldType::new("x").with_type(WasmType::F32).with_default(WasmValue::F32(3.14)),
-        FieldType::new("y").with_type(WasmType::F32).with_default(WasmValue::F32(0.618)),
+        FieldType::new("x").with_type(WasmType::F64).with_default(WasmValue::F64(0.618)),
+        FieldType::new("y").with_type(WasmType::F64).with_default(WasmValue::F64(1.618)),
     ]);
     module.insert_type(point.clone());
 
     module.insert_function(
+        FunctionType::new("Point::construct")
+            .with_inputs(vec![ParameterType::new("a").with_type(WasmType::F64)])
+            .with_outputs(vec![WasmType::Structure(point.clone())])
+            .with_locals(vec![
+                ParameterType::new("self.x").with_type(WasmType::F64),
+                ParameterType::new("self.y").with_type(WasmType::F64),
+            ])
+            .with_operations(vec![
+                Operation::local_get("a"),
+                Operation::local_set("self.x"),
+                Operation::local_get("a"),
+                Operation::local_set("self.y"),
+                Operation::local_get("self.x"),
+                Operation::local_get("self.y"),
+                Operation::Construct { structure: point.symbol.clone() },
+            ]),
+    );
+    module.insert_function(
+        FunctionType::new("_start")
+            .with_outputs(vec![WasmType::Structure(point.clone())])
+            .with_locals(vec![ParameterType::new("point").with_type(WasmType::Structure(point.clone()))])
+            .with_operations(vec![
+                Operation::CallFunction {
+                    name: WasmSymbol::new("Point::construct"),
+                    input: vec![Operation::Constant { value: WasmValue::F64(std::f64::consts::PI) }],
+                },
+                Operation::local_tee("point"),
+                Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
+                // Operation::Drop,
+            ])
+            .with_export(true),
+    );
+    module
+}
+
+pub fn new_array() -> WasmBuilder {
+    let mut module = WasmBuilder::new("array-example");
+    let utf32 = ArrayType::new("UTF32Text", WasmType::I32);
+    module.insert_type(utf32.clone());
+
+    module.insert_function(
         FunctionType::new("new_default").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(vec![
-            Operation::Default { typed: WasmType::Structure(point.clone()) },
+            Operation::Default { typed: utf32.clone().into() },
             Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("x") },
         ]),
     );
     module.insert_function(
         FunctionType::new("new_valued").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(vec![
-            Operation::Constant { value: WasmValue::Structure(point.clone()) },
+            Operation::Constant { value: utf32.clone().into() },
             Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
         ]),
     );

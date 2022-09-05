@@ -2,7 +2,7 @@ use crate::{
     helpers::{IntoWasm, WasmInstruction, WasmName},
     types::WasmType,
     values::WasmValue,
-    EnumerationTable, JumpBranch, JumpTable, StructureType, WasmSymbol,
+    EnumerationTable, JumpBranch, JumpTable, WasmSymbol,
 };
 use std::collections::BTreeMap;
 use wast::{
@@ -36,16 +36,20 @@ pub enum Operation {
         kind: VariableKind,
         variable: WasmSymbol,
     },
-    GetField {
-        structure: WasmSymbol,
-        field: WasmSymbol,
-    },
     TeeVariable {
         variable: WasmSymbol,
     },
     StoreVariable {
         r#type: WasmType,
         offset: u64,
+    },
+    GetField {
+        structure: WasmSymbol,
+        field: WasmSymbol,
+    },
+    SetField {
+        structure: WasmSymbol,
+        field: WasmSymbol,
     },
     Loop {
         r#continue: WasmSymbol,
@@ -67,6 +71,9 @@ pub enum Operation {
     JumpEnumeration(EnumerationTable),
     Default {
         typed: WasmType,
+    },
+    Construct {
+        structure: WasmSymbol,
     },
     Constant {
         value: WasmValue,

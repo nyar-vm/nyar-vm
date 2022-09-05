@@ -23,7 +23,7 @@ pub struct StructureType {
 #[derive(Clone, Debug)]
 pub struct FieldType {
     pub name: WasmSymbol,
-    pub mutable: bool,
+    pub readonly: bool,
     pub r#type: WasmType,
     pub default: WasmValue,
 }
@@ -57,7 +57,7 @@ impl StructureType {
 
 impl FieldType {
     pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
-        Self { name: name.into(), mutable: false, r#type: WasmType::Any { nullable: false }, default: WasmValue::Any }
+        Self { name: name.into(), readonly: false, r#type: WasmType::Any { nullable: false }, default: WasmValue::Any }
     }
     pub fn with_type(self, r#type: WasmType) -> Self {
         Self { r#type, ..self }
@@ -71,10 +71,10 @@ impl FieldType {
     }
 
     pub fn with_mutable(self) -> Self {
-        Self { mutable: true, ..self }
+        Self { readonly: false, ..self }
     }
     pub fn with_readonly(self) -> Self {
-        Self { mutable: false, ..self }
+        Self { readonly: true, ..self }
     }
     pub fn r#type(&self) -> WasmType {
         self.default.as_type()

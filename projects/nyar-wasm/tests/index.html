@@ -6,12 +6,14 @@
 </head>
 <body>
 <script>
-    const memory = new WebAssembly.Memory({initial: 1});
+    const memory = new WebAssembly.Memory({initial: 2});
+
     function consoleLogString(offset, length) {
         const bytes = new Uint8Array(memory.buffer, offset, length);
         const string = new TextDecoder('utf8').decode(bytes);
         console.log(string);
     }
+
     const importObject = {
         console: {
             log: consoleLogString
@@ -21,8 +23,9 @@
         }
     };
     WebAssembly.instantiateStreaming(fetch('mod.wasm'), importObject)
-        .then(obj => {
-            obj.instance.exports._start();
+        .then(out => {
+            let data = out.instance.exports._start();
+            console.dir(data, { depth: null })
         });
 </script>
 </body>

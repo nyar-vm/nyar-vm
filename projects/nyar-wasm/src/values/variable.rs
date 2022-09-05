@@ -17,7 +17,7 @@ impl Default for WasmVariable {
             mutable: false,
             export: WasmExportName::default(),
             r#type: WasmType::U8,
-            value: WasmValue::Array,
+            value: WasmValue::Any,
             span: Default::default(),
         }
     }

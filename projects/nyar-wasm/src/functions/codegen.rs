@@ -1,6 +1,7 @@
 use super::*;
 use wast::{
     component::{CoreItemRef, ItemRef},
+    core::Local,
     kw,
 };
 
@@ -139,7 +140,16 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> wast::core::FuncKind<'i> {
-        wast::core::FuncKind::Inline { locals: Box::new([]), expression: self.body.as_wast() }
+        let locals: Vec<_> = self.local.values().map(|p| p.as_wast()).collect();
+        wast::core::FuncKind::Inline { locals: Box::from(locals), expression: self.body.as_wast() }
+    }
+}
+impl<'a, 'i> IntoWasm<'a, Local<'i>> for ParameterType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> Local<'i> {
+        Local { id: self.name.as_id(), name: None, ty: self.type_hint.as_wast() }
     }
 }
 

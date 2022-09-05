@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
-    WasmSymbol, WasmType,
+    WasmSymbol, WasmType, WasmValue,
 };
 use nyar_error::FileSpan;
 use wast::{
@@ -21,11 +21,18 @@ pub struct ArrayType {
     pub mutable: bool,
     /// Item type of the array
     pub item_type: WasmType,
+    pub default: WasmValue,
     pub span: FileSpan,
+}
+
+impl From<ArrayType> for WasmValue {
+    fn from(value: ArrayType) -> Self {
+        WasmValue::Array(Box::new(value))
+    }
 }
 
 impl ArrayType {
     pub fn new<S: Into<WasmSymbol>>(name: S, item: WasmType) -> Self {
-        Self { symbol: name.into(), mutable: false, item_type: item, span: Default::default() }
+        Self { symbol: name.into(), mutable: false, item_type: item, default: WasmValue::Any, span: Default::default() }
     }
 }

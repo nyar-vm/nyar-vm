@@ -9,7 +9,7 @@ mod adt_examples;
 mod cf_examples;
 mod io_examples;
 
-pub use crate::{cf_examples::*, io_examples::*};
+pub use crate::{adt_examples::*, cf_examples::*, io_examples::*};
 
 #[test]
 fn ready() {

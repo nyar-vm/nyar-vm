@@ -1,5 +1,5 @@
 use super::*;
-use wast::core::{Instruction::StructGet, MemArg, StructAccess};
+use wast::core::{HeapType, MemArg, StructAccess};
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -23,9 +23,11 @@ impl WasmInstruction for Operation {
                 }
             },
             Self::GetField { structure, field } => {
-                w.push(StructGet(StructAccess { r#struct: structure.as_index(), field: field.as_index() }))
+                w.push(Instruction::StructGet(StructAccess { r#struct: structure.as_index(), field: field.as_index() }))
             }
-
+            Self::SetField { structure, field } => {
+                w.push(Instruction::StructSet(StructAccess { r#struct: structure.as_index(), field: field.as_index() }))
+            }
             Self::SetVariable { kind, variable } => match kind {
                 VariableKind::Global => w.push(Instruction::GlobalSet(Index::Id(WasmName::new(variable.as_ref())))),
                 VariableKind::Local => w.push(Instruction::LocalSet(Index::Id(WasmName::new(variable.as_ref())))),
@@ -163,6 +165,7 @@ impl WasmInstruction for Operation {
                     _ => unimplemented!(),
                 }
             }
+            Self::Construct { structure } => w.push(Instruction::StructNew(structure.as_index())),
         }
     }
 }
@@ -309,9 +312,7 @@ impl WasmInstruction for WasmValue {
                 }
                 w.push(Instruction::StructNew(v.symbol.as_index()))
             }
-            Self::Array => {
-                todo!()
-            }
+            Self::Array(v) => w.push(Instruction::ArrayNew(v.symbol.as_index())),
             Self::Any => {
                 todo!()
             }
