@@ -1,6 +1,7 @@
 use super::*;
+use wast::component::{CoreType, CoreTypeDef};
 
-impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for StructureType
+impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for StructureItem
 where
     'a: 'i,
 {
@@ -30,8 +31,15 @@ where
         }
     }
 }
-
-impl<'a, 'i> IntoWasm<'a, wast::component::TypeDef<'i>> for StructureType
+impl<'a, 'i> IntoWasm<'a, CoreType<'i>> for StructureType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> CoreType<'i> {
+        CoreType { span: Span::from_offset(0), id: self.symbol.as_id(), name: None, def: CoreTypeDef::Def(self.as_wast()) }
+    }
+}
+impl<'a, 'i> IntoWasm<'a, wast::component::TypeDef<'i>> for StructureItem
 where
     'a: 'i,
 {
@@ -47,7 +55,8 @@ where
         wast::core::TypeDef::Struct(self.as_wast())
     }
 }
-impl<'a, 'i> IntoWasm<'a, ComponentDefinedType<'i>> for StructureType
+
+impl<'a, 'i> IntoWasm<'a, ComponentDefinedType<'i>> for StructureItem
 where
     'a: 'i,
 {
@@ -64,7 +73,7 @@ where
         StructType { fields: self.fields.values().map(|field| field.as_wast()).collect() }
     }
 }
-impl<'a, 'i> IntoWasm<'a, Record<'i>> for StructureType
+impl<'a, 'i> IntoWasm<'a, Record<'i>> for StructureItem
 where
     'a: 'i,
 {

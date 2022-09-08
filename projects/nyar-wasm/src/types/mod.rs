@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IndexedIterator, IntoWasm},
-    ArrayType, EnumerateType, ExternalType, FlagType, StructureType, VariantType, WasmSymbol,
+    ArrayType, EnumerateType, ExternalType, FlagType, VariantType, WasmSymbol,
 };
 use indexmap::IndexMap;
 use wast::{
@@ -8,6 +8,7 @@ use wast::{
     token::Span,
 };
 
+use crate::structures::StructureType;
 use wast::{
     component::{ComponentDefinedType, ComponentValType, PrimitiveValType},
     core::{HeapType, RefType, StorageType, ValType},
@@ -47,5 +48,31 @@ pub enum WasmType {
 }
 
 impl WasmType {
-    pub fn set_nullable(&mut self, _: bool) {}
+    pub fn set_nullable(&mut self, null: bool) {
+        match self {
+            Self::Bool => {}
+            Self::U8 => {}
+            Self::U16 => {}
+            Self::U32 => {}
+            Self::U64 => {}
+            Self::I8 => {}
+            Self::I16 => {}
+            Self::I32 => {}
+            Self::I64 => {}
+            Self::F32 => {}
+            Self::F64 => {}
+            Self::Unicode => {}
+            Self::UTF8Text => {}
+            Self::Any { .. } => {}
+            Self::Flag(_) => {}
+            Self::Enumerate(_) => {}
+            Self::Structure(v) => v.nullable = null,
+            Self::Variant(_) => {}
+            Self::Array(_) => {}
+        }
+    }
+    pub fn with_nullable(mut self, null: bool) -> Self {
+        self.set_nullable(null);
+        self
+    }
 }

@@ -1,7 +1,7 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
     types::WasmType,
-    ArrayType, StructureType, WasmSymbol, WasmVariable,
+    ArrayType, StructureItem, WasmSymbol, WasmVariable,
 };
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
@@ -52,24 +52,7 @@ pub enum WasmValue {
     F32(f32),
     F64(f64),
     Function(WasmSymbol),
-    Structure(StructureType),
+    Structure(StructureItem),
     Array(Box<ArrayType>),
     Any,
-}
-
-impl WasmValue {
-    pub fn as_type(&self) -> WasmType {
-        match self {
-            Self::Bool(_) => WasmType::Bool,
-            Self::U32(_) => WasmType::I32,
-            Self::I32(_) => WasmType::I32,
-            Self::I64(_) => WasmType::I32,
-            Self::F32(_) => WasmType::F32,
-            Self::F64(_) => WasmType::F32,
-            Self::Function(_) => WasmType::I32,
-            Self::Structure(name) => todo!(),
-            Self::Array(v) => todo!(),
-            Self::Any => WasmType::Any { nullable: false },
-        }
-    }
 }

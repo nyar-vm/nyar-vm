@@ -76,10 +76,6 @@ impl<'a> WasmName<'a> {
     pub fn id(name: &'a str) -> Option<wast::token::Id<'a>> {
         Some(Self::new(name))
     }
-
-    pub fn index(name: &'a str) -> Option<Index> {
-        Some(Index::Id(Self::new(name)))
-    }
 }
 
 pub(crate) fn write_wasm_bytes(path: &Path, buffer: Result<Vec<u8>, wast::Error>) -> Result<PathBuf, NyarError> {

@@ -1,5 +1,5 @@
 use super::*;
-use wast::core::{HeapType, MemArg, StructAccess};
+use wast::core::{MemArg, StructAccess};
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)

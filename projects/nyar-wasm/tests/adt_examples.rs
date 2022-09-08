@@ -2,16 +2,30 @@ use super::*;
 
 pub fn new_structure() -> WasmBuilder {
     let mut module = WasmBuilder::new("structure-example");
-    let point = StructureType::new("Point").with_fields(vec![
+    let point = StructureItem::new("Point").with_fields(vec![
         FieldType::new("x").with_type(WasmType::F64).with_default(WasmValue::F64(0.618)),
         FieldType::new("y").with_type(WasmType::F64).with_default(WasmValue::F64(1.618)),
     ]);
+    let mut point_ty: WasmType = point.clone().into();
+    point_ty.set_nullable(true);
+
     module.insert_type(point.clone());
+    module.insert_global(
+        WasmVariable {
+            symbol: WasmSymbol::new("point"),
+            mutable: true,
+            export: Default::default(),
+            r#type: point_ty.clone(),
+            value: point.clone().into(),
+            span: Default::default(),
+        }
+        .with_export(true),
+    );
 
     module.insert_function(
         FunctionType::new("Point::construct")
             .with_inputs(vec![ParameterType::new("a").with_type(WasmType::F64)])
-            .with_outputs(vec![WasmType::Structure(point.clone())])
+            .with_outputs(vec![point_ty.with_nullable(true).into()])
             .with_locals(vec![
                 ParameterType::new("self.x").with_type(WasmType::F64),
                 ParameterType::new("self.y").with_type(WasmType::F64),
@@ -28,15 +42,17 @@ pub fn new_structure() -> WasmBuilder {
     );
     module.insert_function(
         FunctionType::new("_start")
-            .with_outputs(vec![WasmType::Structure(point.clone())])
-            .with_locals(vec![ParameterType::new("point").with_type(WasmType::Structure(point.clone()))])
+            .with_outputs(vec![WasmType::F64])
+            .with_locals(vec![ParameterType::new("point").with_type(point.clone().into())])
             .with_operations(vec![
                 Operation::CallFunction {
                     name: WasmSymbol::new("Point::construct"),
                     input: vec![Operation::Constant { value: WasmValue::F64(std::f64::consts::PI) }],
                 },
-                Operation::local_tee("point"),
                 Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
+                // Operation::global_set("point"),
+                // Operation::global_get("point"),
+                // Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
                 // Operation::Drop,
             ])
             .with_export(true),

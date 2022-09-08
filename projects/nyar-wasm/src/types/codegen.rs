@@ -33,9 +33,7 @@ where
     /// 怎么把组件类型降低为核心类型
     fn as_wast(&'a self) -> CoreType<'i> {
         match self {
-            WasmType::Structure(v) => {
-                CoreType { span: Span::from_offset(0), id: v.symbol.as_id(), name: None, def: CoreTypeDef::Def(v.as_wast()) }
-            }
+            WasmType::Structure(v) => v.as_wast(),
             _ => unimplemented!("Cast `{:?}` to core type fail", self),
         }
     }
@@ -56,7 +54,7 @@ where
 {
     fn as_wast(&'a self) -> ComponentDefinedType<'i> {
         match self {
-            Self::Structure(v) => ComponentDefinedType::Record(v.as_wast()),
+            Self::Structure(_) => todo!(),
             _ => ComponentDefinedType::Primitive(self.as_wast()),
         }
     }
@@ -115,7 +113,7 @@ where
             Self::F64 => ValType::F64,
             Self::Unicode => ValType::I32,
             Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
-            Self::Structure(v) => ValType::Ref(RefType { nullable: false, heap: HeapType::Struct }),
+            Self::Structure(v) => ValType::Ref(RefType { nullable: v.nullable, heap: HeapType::Concrete(v.symbol.as_index()) }),
             _ => unimplemented!("Cast `{:?}` to core value type fail", self),
         }
     }

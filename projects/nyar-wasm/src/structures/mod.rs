@@ -14,10 +14,17 @@ use wast::{
 mod codegen;
 
 #[derive(Clone, Debug)]
-pub struct StructureType {
+pub struct StructureItem {
     pub symbol: WasmSymbol,
     pub fields: BTreeMap<String, FieldType>,
     pub span: FileSpan,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructureType {
+    pub symbol: WasmSymbol,
+    pub nullable: bool,
+    pub fields: BTreeMap<String, FieldType>,
 }
 
 #[derive(Clone, Debug)]
@@ -28,13 +35,23 @@ pub struct FieldType {
     pub default: WasmValue,
 }
 
+impl From<StructureItem> for WasmType {
+    fn from(value: StructureItem) -> Self {
+        WasmType::Structure(StructureType { symbol: value.symbol.clone(), nullable: false, fields: value.fields.clone() })
+    }
+}
+impl From<StructureItem> for WasmValue {
+    fn from(value: StructureItem) -> Self {
+        WasmValue::Structure(value)
+    }
+}
 impl From<StructureType> for WasmType {
     fn from(value: StructureType) -> Self {
         WasmType::Structure(value)
     }
 }
 
-impl StructureType {
+impl StructureItem {
     pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
         Self { symbol: name.into(), fields: Default::default(), span: Default::default() }
     }
@@ -75,8 +92,5 @@ impl FieldType {
     }
     pub fn with_readonly(self) -> Self {
         Self { readonly: true, ..self }
-    }
-    pub fn r#type(&self) -> WasmType {
-        self.default.as_type()
     }
 }

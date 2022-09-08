@@ -1,5 +1,5 @@
 use super::*;
-use crate::StructureType;
+use crate::StructureItem;
 use wast::component::{Variant, VariantCase};
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for VariantType
@@ -68,7 +68,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, VariantCase<'i>> for StructureType
+impl<'a, 'i> IntoWasm<'a, VariantCase<'i>> for StructureItem
 where
     'a: 'i,
 {

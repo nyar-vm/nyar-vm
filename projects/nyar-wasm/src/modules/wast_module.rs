@@ -13,7 +13,7 @@ impl WasmBuilder {
         for (_, _, k) in self.externals.into_iter() {
             terms.push(ModuleField::Import(k.as_wast()))
         }
-        for (_, _, k) in self.globals.into_iter() {
+        for k in self.globals.values() {
             terms.push(ModuleField::Global(k.as_wast()))
         }
         for ft in self.functions.values() {

@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
-    StructureType, WasmSymbol, WasmType,
+    StructureItem, WasmSymbol, WasmType,
 };
 use nyar_error::FileSpan;
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ mod codegen;
 #[derive(Clone, Debug)]
 pub struct VariantType {
     pub symbol: WasmSymbol,
-    pub fields: BTreeMap<String, StructureType>,
+    pub fields: BTreeMap<String, StructureItem>,
     pub span: FileSpan,
 }
 
@@ -31,12 +31,12 @@ impl VariantType {
     pub fn name(&self) -> String {
         self.symbol.to_string()
     }
-    pub fn set_field(&mut self, field: StructureType) {
+    pub fn set_field(&mut self, field: StructureItem) {
         self.fields.insert(field.name(), field);
     }
     pub fn with_fields<I>(mut self, fields: I) -> Self
     where
-        I: IntoIterator<Item = StructureType>,
+        I: IntoIterator<Item = StructureItem>,
     {
         for field in fields {
             self.set_field(field);
