@@ -6,10 +6,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
 };
-use wast::{
-    core::Instruction,
-    token::{Index, Span},
-};
+use wast::{core::Instruction, token::Span};
 
 pub struct IndexedIterator<'i, T> {
     iter: Iter<'i, String, T>,

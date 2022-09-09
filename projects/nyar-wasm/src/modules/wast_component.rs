@@ -59,10 +59,10 @@ impl WasmBuilder {
 
     pub fn as_component(&self) -> Result<Component, NyarError> {
         let mut coms = vec![];
-        for ts in self.types.values() {
-            coms.push(ComponentField::Type(ts.as_wast()));
-            coms.push(ComponentField::CoreType(ts.as_wast()))
-        }
+        // for ts in self.structures.values() {
+        // coms.push(ComponentField::Type(ts.as_wast()));
+        // coms.push(ComponentField::CoreType(ts.as_wast()))
+        // }
         for fs in self.functions.values() {
             if !self.entry.is_empty() {
                 coms.push(ComponentField::Start(fs.as_wast()));

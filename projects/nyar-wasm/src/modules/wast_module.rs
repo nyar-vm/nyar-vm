@@ -7,7 +7,7 @@ impl WasmBuilder {
     }
     pub fn as_module(&self) -> Module {
         let mut terms = Vec::with_capacity(1024);
-        for ty in self.types.values() {
+        for ty in self.structures.values() {
             terms.push(ModuleField::Type(ty.as_wast()))
         }
         for (_, _, k) in self.externals.into_iter() {

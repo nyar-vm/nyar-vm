@@ -35,9 +35,15 @@ pub struct FieldType {
     pub default: WasmValue,
 }
 
+impl<'a> From<&'a StructureItem> for StructureType {
+    fn from(value: &'a StructureItem) -> Self {
+        StructureType { symbol: value.symbol.clone(), nullable: false, fields: value.fields.clone() }
+    }
+}
+
 impl From<StructureItem> for WasmType {
     fn from(value: StructureItem) -> Self {
-        WasmType::Structure(StructureType { symbol: value.symbol.clone(), nullable: false, fields: value.fields.clone() })
+        WasmType::Structure((&value).into())
     }
 }
 impl From<StructureItem> for WasmValue {

@@ -3,10 +3,7 @@ use crate::{
     ArrayType, EnumerateType, ExternalType, FlagType, VariantType, WasmSymbol,
 };
 use indexmap::IndexMap;
-use wast::{
-    component::{CoreType, CoreTypeDef},
-    token::Span,
-};
+use wast::{component::CoreType, token::Span};
 
 use crate::structures::StructureType;
 use wast::{

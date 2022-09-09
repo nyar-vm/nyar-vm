@@ -122,7 +122,7 @@ pub fn add_random_pi() -> WasmBuilder {
 pub fn gc_types() -> WasmBuilder {
     let mut module = WasmBuilder::new("add_random_pi");
 
-    module.insert_type(StructureItem::new(WasmSymbol::new("Stable")).with_fields(vec![
+    module.insert_structure(&StructureItem::new("Stable").with_fields(vec![
         FieldType::new(WasmSymbol::new("a")).with_type(WasmType::U32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("c")).with_type(WasmType::Unicode).with_default(WasmValue::F32(2.0)),
@@ -130,13 +130,13 @@ pub fn gc_types() -> WasmBuilder {
         FieldType::new(WasmSymbol::new("e")).with_type(WasmType::Any { nullable: true }).with_default(WasmValue::F32(2.0)),
     ]));
 
-    module.insert_type(StructureItem::new(WasmSymbol::new("a")).with_fields(vec![
+    module.insert_structure(&StructureItem::new(WasmSymbol::new("a")).with_fields(vec![
         FieldType::new(WasmSymbol::new("a")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
     ]));
 
-    module.insert_type(ArrayType::new("core∷text∷UTF8Text", WasmType::I8));
-    module.insert_type(ArrayType::new("core∷text∷UTF16Text", WasmType::I16));
-    module.insert_type(ArrayType::new("core∷text∷UTF32Text", WasmType::I32));
+    // module.insert_structure(&ArrayType::new("core∷text∷UTF8Text", WasmType::I8));
+    // module.insert_structure(ArrayType::new("core∷text∷UTF16Text", WasmType::I16));
+    // module.insert_structure(ArrayType::new("core∷text∷UTF32Text", WasmType::I32));
     module
 }
