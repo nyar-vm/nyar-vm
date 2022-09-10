@@ -1,4 +1,5 @@
 use super::*;
+use nyar_wasm::ArrayType;
 
 pub fn new_structure() -> WasmBuilder {
     let mut module = WasmBuilder::new("structure-example");
@@ -8,7 +9,7 @@ pub fn new_structure() -> WasmBuilder {
     ]);
     let mut point_ty: WasmType = point.clone().into();
     point_ty.set_nullable(true);
-    module.insert_structure(&point);
+    module.register_structure(&point);
     // module.insert_global(
     //     WasmVariable {
     //         symbol: WasmSymbol::new("point"),
@@ -21,7 +22,7 @@ pub fn new_structure() -> WasmBuilder {
     //     .with_export(true),
     // );
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new("Point::construct")
             .with_inputs(vec![ParameterType::new("linear").with_type(WasmType::F64)])
             .with_outputs(vec![point_ty.with_nullable(false).into()])
@@ -39,7 +40,7 @@ pub fn new_structure() -> WasmBuilder {
                 Operation::Construct { structure: point.symbol.clone() },
             ]),
     );
-    module.insert_function(
+    module.register_function(
         FunctionType::new("_start")
             .with_outputs(vec![WasmType::F64])
             .with_locals(vec![])
@@ -61,15 +62,16 @@ pub fn new_structure() -> WasmBuilder {
 
 pub fn new_array() -> WasmBuilder {
     let mut module = WasmBuilder::new("array-example");
-    // let utf32 = ArrayType::new("UTF32Text", WasmType::I32);
-    // module.insert_structure(utf32.clone());
-    //
-    // module.insert_function(
-    //     FunctionType::new("new_default").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(vec![
-    //         Operation::Default { typed: utf32.clone().into() },
-    //         Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("x") },
-    //     ]),
-    // );
+    let utf32 = ArrayType::new("UTF32Text", WasmType::I32);
+    module.register_array(utf32.clone());
+
+    module.register_function(
+        FunctionType::new("Vector::new")
+            .with_inputs(vec![])
+            .with_outputs(vec![WasmType::Array(Box::new(utf32.clone()))])
+            .with_locals(vec![])
+            .with_operations(vec![Operation::Default { typed: utf32.clone().into() }]),
+    );
     // module.insert_function(
     //     FunctionType::new("new_valued").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(vec![
     //         Operation::Constant { value: utf32.clone().into() },
@@ -77,17 +79,11 @@ pub fn new_array() -> WasmBuilder {
     //     ]),
     // );
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new("_start")
-            .with_outputs(vec![WasmType::F32])
+            .with_outputs(vec![WasmType::Array(Box::new(utf32))])
             .with_locals(vec![])
-            .with_operations(vec![Operation::NativeSum {
-                r#type: WasmType::F32,
-                terms: vec![
-                    Operation::CallFunction { name: WasmSymbol::new("new_default"), input: vec![] },
-                    Operation::CallFunction { name: WasmSymbol::new("new_valued"), input: vec![] },
-                ],
-            }])
+            .with_operations(vec![Operation::CallFunction { name: WasmSymbol::new("Vector::new"), input: vec![] }])
             .with_export(true),
     );
     module

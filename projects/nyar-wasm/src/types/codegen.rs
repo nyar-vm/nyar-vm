@@ -112,8 +112,9 @@ where
             Self::F32 => ValType::F32,
             Self::F64 => ValType::F64,
             Self::Unicode => ValType::I32,
-            Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
+            Self::Array(v) => ValType::Ref(RefType { nullable: v.nullable, heap: HeapType::Concrete(v.symbol.as_index()) }),
             Self::Structure(v) => ValType::Ref(RefType { nullable: v.nullable, heap: HeapType::Concrete(v.symbol.as_index()) }),
+            Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
             _ => unimplemented!("Cast `{:?}` to core value type fail", self),
         }
     }

@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IndexedIterator, IntoWasm},
-    ArrayType, EnumerateType, ExternalType, FlagType, VariantType, WasmSymbol,
+    ArrayType, EnumerateType, ExternalType, FlagType, VariantType,
 };
 use indexmap::IndexMap;
 use wast::{component::CoreType, token::Span};
@@ -15,11 +15,6 @@ pub mod array;
 pub mod external;
 
 mod codegen;
-
-pub struct TypeItem {
-    pub name: WasmSymbol,
-    pub r#type: WasmType,
-}
 
 #[derive(Clone, Debug)]
 pub enum WasmType {

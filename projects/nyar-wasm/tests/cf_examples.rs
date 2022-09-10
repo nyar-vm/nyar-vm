@@ -3,7 +3,7 @@ use super::*;
 pub fn fibonacci() -> WasmBuilder {
     let mut module = WasmBuilder::new("fibonacci");
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new("fibonacci")
             .with_inputs(vec![ParameterType::new("n").with_type(WasmType::I64)])
             .with_outputs(vec![WasmType::I64])
@@ -15,7 +15,7 @@ pub fn fibonacci() -> WasmBuilder {
             .with_export(true),
     );
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new(WasmSymbol::new("_main"))
             .with_inputs(vec![])
             .with_outputs(vec![WasmType::I64])
@@ -31,7 +31,7 @@ pub fn fibonacci() -> WasmBuilder {
 pub fn control_flow() -> WasmBuilder {
     let mut module = WasmBuilder::new("control_flow");
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new(WasmSymbol::new("sum_all"))
             .with_inputs(vec![
                 ParameterType::new("a").with_type(WasmType::I32),
@@ -54,7 +54,7 @@ pub fn control_flow() -> WasmBuilder {
             ]),
     );
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new(WasmSymbol::new("_main"))
             .with_inputs(vec![])
             .with_outputs(vec![WasmType::I32])

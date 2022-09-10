@@ -260,10 +260,9 @@ impl WasmInstruction for WasmType {
                 todo!()
             }
             Self::Structure(s) => w.push(Instruction::StructNewDefault(s.symbol.as_index())),
-            Self::Array { .. } => {
-                w.push(Instruction::ArrayLen);
-
-                todo!()
+            Self::Array(t) => {
+                w.push(Instruction::I32Const(0));
+                w.push(Instruction::ArrayNewDefault(t.symbol.as_index()))
             }
             Self::Unicode => {
                 todo!()

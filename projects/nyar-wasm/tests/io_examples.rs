@@ -7,7 +7,7 @@ pub fn hello_world() -> WasmBuilder {
     let hello_len = hello.len() as i32;
 
     module.insert_data(DataItem::utf8(WasmSymbol::new("hello"), hello));
-    module.insert_external(
+    module.register_external(
         ExternalType::new("wasi_snapshot_preview1", "fd_write")
             .with_alias("file_descriptor_write")
             .with_input(vec![
@@ -18,7 +18,7 @@ pub fn hello_world() -> WasmBuilder {
             ])
             .with_output(vec![WasmType::I32]),
     );
-    module.insert_function(
+    module.register_function(
         FunctionType::new("print_str")
             .with_inputs(vec![
                 ParameterType::new("offset").with_type(WasmType::I32),
@@ -39,7 +39,7 @@ pub fn hello_world() -> WasmBuilder {
             ]),
     );
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new("_initialize")
             .with_inputs(vec![])
             .with_outputs(vec![])
@@ -60,7 +60,7 @@ pub fn add_random_pi() -> WasmBuilder {
 
     module.insert_global(WasmVariable::f32("f32::pi", 3.14));
 
-    module.insert_external(
+    module.register_external(
         ExternalType::new("wasi_snapshot_preview1", "random_get")
             .with_alias("random_get")
             .with_input(vec![
@@ -70,7 +70,7 @@ pub fn add_random_pi() -> WasmBuilder {
             .with_output(vec![WasmType::I32]),
     );
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new(WasmSymbol::new("sum_all"))
             .with_inputs(vec![
                 ParameterType::new("a").with_type(WasmType::I32),
@@ -88,7 +88,7 @@ pub fn add_random_pi() -> WasmBuilder {
             .with_export(true),
     );
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new(WasmSymbol::new("add_pi"))
             .with_inputs(vec![ParameterType::new("x").with_type(WasmType::F32)])
             .with_outputs(vec![WasmType::I32])
@@ -106,7 +106,7 @@ pub fn add_random_pi() -> WasmBuilder {
             .with_export(true),
     );
 
-    module.insert_function(
+    module.register_function(
         FunctionType::new(WasmSymbol::new("_main"))
             .with_inputs(vec![])
             .with_outputs(vec![WasmType::I32])
@@ -122,7 +122,7 @@ pub fn add_random_pi() -> WasmBuilder {
 pub fn gc_types() -> WasmBuilder {
     let mut module = WasmBuilder::new("add_random_pi");
 
-    module.insert_structure(&StructureItem::new("Stable").with_fields(vec![
+    module.register_structure(&StructureItem::new("Stable").with_fields(vec![
         FieldType::new(WasmSymbol::new("a")).with_type(WasmType::U32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("c")).with_type(WasmType::Unicode).with_default(WasmValue::F32(2.0)),
@@ -130,7 +130,7 @@ pub fn gc_types() -> WasmBuilder {
         FieldType::new(WasmSymbol::new("e")).with_type(WasmType::Any { nullable: true }).with_default(WasmValue::F32(2.0)),
     ]));
 
-    module.insert_structure(&StructureItem::new(WasmSymbol::new("a")).with_fields(vec![
+    module.register_structure(&StructureItem::new(WasmSymbol::new("a")).with_fields(vec![
         FieldType::new(WasmSymbol::new("a")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
         FieldType::new(WasmSymbol::new("b")).with_type(WasmType::F32).with_default(WasmValue::F32(2.0)),
     ]));

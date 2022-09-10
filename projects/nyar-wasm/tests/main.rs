@@ -23,6 +23,7 @@ fn test() -> Result<(), NyarError> {
         std::fs::create_dir_all(&debug).unwrap();
     }
     let _ = new_structure().build_module(debug.join("mod.wasm")).unwrap();
+    let _ = new_array().build_module(debug.join("array.wasm")).unwrap();
     let _ = hello_world().build_module(debug.join("hello.wasm")).unwrap();
     let _ = control_flow().build_module(debug.join("control.wasm")).unwrap();
 

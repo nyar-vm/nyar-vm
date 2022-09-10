@@ -18,6 +18,7 @@ impl From<ArrayType> for WasmType {
 #[derive(Clone, Debug)]
 pub struct ArrayType {
     pub symbol: WasmSymbol,
+    pub nullable: bool,
     pub mutable: bool,
     /// Item type of the array
     pub item_type: WasmType,
@@ -33,6 +34,13 @@ impl From<ArrayType> for WasmValue {
 
 impl ArrayType {
     pub fn new<S: Into<WasmSymbol>>(name: S, item: WasmType) -> Self {
-        Self { symbol: name.into(), mutable: false, item_type: item, default: WasmValue::Any, span: Default::default() }
+        Self {
+            symbol: name.into(),
+            nullable: false,
+            mutable: false,
+            item_type: item,
+            default: WasmValue::Any,
+            span: Default::default(),
+        }
     }
 }

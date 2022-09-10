@@ -2,7 +2,7 @@ use crate::{
     functions::FunctionType,
     helpers::{write_wasm_bytes, IntoWasm, WasmName},
     structures::StructureType,
-    DataItem, DataSection, ExternalSection, ExternalType, WasmVariable,
+    ArrayType, DataItem, DataSection, ExternalSection, ExternalType, WasmVariable,
 };
 use nyar_error::NyarError;
 use std::{
@@ -25,6 +25,7 @@ pub struct WasmBuilder {
     pub memory_pages: u64,
     pub globals: BTreeMap<String, WasmVariable>,
     pub structures: BTreeMap<String, StructureType>,
+    pub arrays: BTreeMap<String, ArrayType>,
     pub data: DataSection,
     pub functions: BTreeMap<String, FunctionType>,
     pub externals: ExternalSection,
@@ -41,19 +42,22 @@ impl WasmBuilder {
     pub fn set_module_name<S: ToString>(&mut self, name: S) {
         self.name = name.to_string();
     }
-
-    pub fn insert_structure<T: Into<StructureType>>(&mut self, item: T) {
+    pub fn register_external(&mut self, f: ExternalType) -> Option<ExternalType> {
+        self.externals.insert(f)
+    }
+    pub fn register_structure<T: Into<StructureType>>(&mut self, item: T) {
         let item = item.into();
         self.structures.insert(item.symbol.to_string(), item);
     }
-    pub fn insert_function(&mut self, f: FunctionType) {
+    pub fn register_array<T: Into<ArrayType>>(&mut self, item: T) {
+        let item = item.into();
+        self.arrays.insert(item.symbol.to_string(), item);
+    }
+    pub fn register_function(&mut self, f: FunctionType) {
         if f.entry {
             self.entry = f.name()
         }
         self.functions.insert(f.name(), f);
-    }
-    pub fn insert_external(&mut self, f: ExternalType) -> Option<ExternalType> {
-        self.externals.insert(f)
     }
     pub fn insert_data(&mut self, item: DataItem) -> Option<DataItem> {
         self.data.insert(item)

@@ -7,17 +7,24 @@ impl WasmBuilder {
     }
     pub fn as_module(&self) -> Module {
         let mut terms = Vec::with_capacity(1024);
-        for ty in self.structures.values() {
-            terms.push(ModuleField::Type(ty.as_wast()))
-        }
+        // imports
         for (_, _, k) in self.externals.into_iter() {
             terms.push(ModuleField::Import(k.as_wast()))
         }
-        for k in self.globals.values() {
-            terms.push(ModuleField::Global(k.as_wast()))
+        // types
+        for ty in self.structures.values() {
+            terms.push(ModuleField::Type(ty.as_wast()))
         }
+        for ty in self.arrays.values() {
+            terms.push(ModuleField::Type(ty.as_wast()))
+        }
+        // functions
         for ft in self.functions.values() {
             terms.push(ModuleField::Func(ft.as_wast()))
+        }
+        // variables
+        for k in self.globals.values() {
+            terms.push(ModuleField::Global(k.as_wast()))
         }
         // memory section
         self.build_memory(&mut terms);
