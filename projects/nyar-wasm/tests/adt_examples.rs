@@ -72,6 +72,7 @@ pub fn new_array() -> WasmBuilder {
             .with_locals(vec![])
             .with_operations(vec![Operation::Default { typed: utf32.clone().into() }]),
     );
+
     // module.insert_function(
     //     FunctionType::new("new_valued").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(vec![
     //         Operation::Constant { value: utf32.clone().into() },
@@ -81,9 +82,11 @@ pub fn new_array() -> WasmBuilder {
 
     module.register_function(
         FunctionType::new("_start")
-            .with_outputs(vec![WasmType::Array(Box::new(utf32))])
+            .with_outputs(vec![WasmType::I32])
             .with_locals(vec![])
-            .with_operations(vec![Operation::CallFunction { name: WasmSymbol::new("Vector::new"), input: vec![] }])
+            .with_operations(vec![Operation::ArrayLength {
+                object: vec![Operation::CallFunction { name: WasmSymbol::new("Vector::new"), input: vec![] }],
+            }])
             .with_export(true),
     );
     module

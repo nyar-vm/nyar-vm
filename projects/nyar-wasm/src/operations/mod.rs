@@ -2,7 +2,7 @@ use crate::{
     helpers::{IntoWasm, WasmInstruction, WasmName},
     types::WasmType,
     values::WasmValue,
-    EnumerationTable, JumpBranch, JumpTable, WasmSymbol,
+    ArrayType, EnumerationTable, JumpBranch, JumpTable, WasmSymbol,
 };
 use std::collections::BTreeMap;
 use wast::{
@@ -46,6 +46,17 @@ pub enum Operation {
     GetField {
         structure: WasmSymbol,
         field: WasmSymbol,
+    },
+    GetIndex {
+        r#type: ArrayType,
+        index: i32,
+        object: Vec<Operation>,
+    },
+    ArrayLength {
+        object: Vec<Operation>,
+    },
+    ArrayFill {
+        object: Vec<Operation>,
     },
     SetField {
         structure: WasmSymbol,

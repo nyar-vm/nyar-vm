@@ -166,6 +166,16 @@ impl WasmInstruction for Operation {
                 }
             }
             Self::Construct { structure } => w.push(Instruction::StructNew(structure.as_index())),
+            Self::GetIndex { r#type, index, object } => {
+                object.iter().for_each(|i| i.emit(w));
+                w.push(Instruction::I32Const(*index));
+                w.push(Instruction::ArrayGet(r#type.symbol.as_index()))
+            }
+            Self::ArrayLength { object } => {
+                object.iter().for_each(|i| i.emit(w));
+                w.push(Instruction::ArrayLen)
+            }
+            Self::ArrayFill { .. } => {}
         }
     }
 }
