@@ -18,6 +18,10 @@ use wast::{
 mod wast_component;
 mod wast_module;
 
+pub trait WasmItem {
+    fn register(self, builder: &mut WasmBuilder);
+}
+
 #[derive(Default)]
 pub struct WasmBuilder {
     pub name: String,
@@ -31,6 +35,26 @@ pub struct WasmBuilder {
     pub externals: ExternalSection,
 }
 
+impl WasmItem for ExternalType {
+    fn register(self, builder: &mut WasmBuilder) {
+        builder.externals.insert(self);
+    }
+}
+
+impl WasmItem for FunctionType {
+    fn register(self, builder: &mut WasmBuilder) {
+        if self.entry {
+            builder.entry = self.name()
+        }
+        builder.functions.insert(self.name(), self);
+    }
+}
+impl WasmItem for ArrayType {
+    fn register(self, builder: &mut WasmBuilder) {
+        builder.arrays.insert(self.symbol.to_string(), self);
+    }
+}
+
 impl WasmBuilder {
     pub fn new<S: ToString>(name: S) -> Self {
         Self { name: name.to_string(), ..Default::default() }
@@ -42,27 +66,14 @@ impl WasmBuilder {
     pub fn set_module_name<S: ToString>(&mut self, name: S) {
         self.name = name.to_string();
     }
-    pub fn register_external(&mut self, f: ExternalType) -> Option<ExternalType> {
-        self.externals.insert(f)
+    pub fn register<T: WasmItem>(&mut self, item: T) {
+        item.register(self);
     }
-    pub fn register_structure<T: Into<StructureType>>(&mut self, item: T) {
-        let item = item.into();
-        self.structures.insert(item.symbol.to_string(), item);
-    }
-    pub fn register_array<T: Into<ArrayType>>(&mut self, item: T) {
-        let item = item.into();
-        self.arrays.insert(item.symbol.to_string(), item);
-    }
-    pub fn register_function(&mut self, f: FunctionType) {
-        if f.entry {
-            self.entry = f.name()
-        }
-        self.functions.insert(f.name(), f);
-    }
-    pub fn insert_data(&mut self, item: DataItem) -> Option<DataItem> {
+
+    pub fn register_data(&mut self, item: DataItem) -> Option<DataItem> {
         self.data.insert(item)
     }
-    pub fn insert_global(&mut self, global: WasmVariable) {
+    pub fn register_global(&mut self, global: WasmVariable) {
         self.globals.insert(global.symbol.to_string(), global);
     }
 }

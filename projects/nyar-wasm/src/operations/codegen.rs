@@ -149,7 +149,6 @@ impl WasmInstruction for Operation {
             Self::JumpEnumeration(_) => {}
             Self::StoreVariable { r#type, offset } => {
                 let memory = Index::Id(WasmName::new("memory"));
-
                 match r#type {
                     WasmType::Bool => {}
                     WasmType::U8 => {}
@@ -171,21 +170,26 @@ impl WasmInstruction for Operation {
                 w.push(Instruction::I32Const(*index));
                 w.push(Instruction::ArrayGet(r#type.symbol.as_index()))
             }
-            Self::ArrayLength { object } => {
-                object.iter().for_each(|i| i.emit(w));
-                w.push(Instruction::ArrayLen)
-            }
-
-            Self::ArrayFill { r#type, .. } => w.push(Instruction::ArrayFill(ArrayFill { array: r#type.symbol.as_index() })),
-            Self::ArrayGrow { .. } => {
-                todo!()
-            }
             Self::ArrayCreate { r#type, element } => {
                 element.iter().for_each(|i| i.emit(w));
                 w.push(Instruction::ArrayNewFixed(ArrayNewFixed {
                     array: r#type.symbol.as_index(),
                     length: element.len() as u32,
                 }))
+            }
+            Self::ArrayFill { array, r#type, element, start, length } => {
+                array.iter().for_each(|i| i.emit(w));
+                w.push(Instruction::I32Const(*start as i32));
+                element.iter().for_each(|i| i.emit(w));
+                w.push(Instruction::I32Const(*length as i32));
+                w.push(Instruction::ArrayFill(ArrayFill { array: r#type.symbol.as_index() }));
+            }
+            Self::ArrayLength { object } => {
+                object.iter().for_each(|i| i.emit(w));
+                w.push(Instruction::ArrayLen)
+            }
+            Self::ArrayGrow { .. } => {
+                todo!()
             }
         }
     }
@@ -308,21 +312,11 @@ impl WasmInstruction for WasmValue {
                 true => w.push(Instruction::I32Const(1)),
                 false => w.push(Instruction::I32Const(0)),
             },
-            Self::U32(v) => {
-                w.push(Instruction::I32Const(*v as i32));
-            }
-            Self::I32(v) => {
-                w.push(Instruction::I32Const(*v));
-            }
-            Self::I64(v) => {
-                w.push(Instruction::I64Const(*v));
-            }
-            Self::F32(v) => {
-                w.push(Instruction::F32Const(Float32 { bits: u32::from_le_bytes(v.to_le_bytes()) }));
-            }
-            Self::F64(v) => {
-                w.push(Instruction::F64Const(Float64 { bits: u64::from_le_bytes(v.to_le_bytes()) }));
-            }
+            Self::U32(v) => w.push(Instruction::I32Const(*v as i32)),
+            Self::I32(v) => w.push(Instruction::I32Const(*v)),
+            Self::I64(v) => w.push(Instruction::I64Const(*v)),
+            Self::F32(v) => w.push(Instruction::F32Const(Float32 { bits: u32::from_le_bytes(v.to_le_bytes()) })),
+            Self::F64(v) => w.push(Instruction::F64Const(Float64 { bits: u64::from_le_bytes(v.to_le_bytes()) })),
             Self::Function(_) => {
                 todo!()
             }

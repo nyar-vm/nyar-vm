@@ -9,7 +9,7 @@ pub fn new_structure() -> WasmBuilder {
     ]);
     let mut point_ty: WasmType = point.clone().into();
     point_ty.set_nullable(true);
-    module.register_structure(&point);
+    module.register(point.clone());
     // module.insert_global(
     //     WasmVariable {
     //         symbol: WasmSymbol::new("point"),
@@ -22,7 +22,7 @@ pub fn new_structure() -> WasmBuilder {
     //     .with_export(true),
     // );
 
-    module.register_function(
+    module.register(
         FunctionType::new("Point::construct")
             .with_inputs(vec![ParameterType::new("linear").with_type(WasmType::F64)])
             .with_outputs(vec![point_ty.with_nullable(false).into()])
@@ -40,9 +40,9 @@ pub fn new_structure() -> WasmBuilder {
                 Operation::Construct { structure: point.symbol.clone() },
             ]),
     );
-    module.register_function(
+    module.register(
         FunctionType::new("_start")
-            .with_outputs(vec![WasmType::Structure((&point).into())])
+            .with_outputs(vec![WasmType::Structure(point.clone().into())])
             .with_locals(vec![])
             .with_operations(vec![
                 // Operation::CallFunction {
@@ -50,7 +50,7 @@ pub fn new_structure() -> WasmBuilder {
                 //     input: vec![Operation::Constant { value: WasmValue::F64(std::f64::consts::PI) }],
                 // },
                 // Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("x") },
-                Operation::Default { typed: WasmType::Structure((&point).into()) },
+                Operation::Default { typed: WasmType::Structure(point.into()) },
                 // Operation::global_get("point"),
                 // Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
                 // Operation::Drop,
@@ -65,8 +65,8 @@ pub fn new_array() -> WasmBuilder {
     let mut utf32 = ArrayType::new("UTF32Text", WasmType::I32);
     utf32.mutable = true;
 
-    module.register_array(utf32.clone());
-    module.register_function(
+    module.register(utf32.clone());
+    module.register(
         FunctionType::new("Vector::new")
             .with_inputs(vec![])
             .with_outputs(vec![WasmType::Array(Box::new(utf32.clone()))])
@@ -81,7 +81,7 @@ pub fn new_array() -> WasmBuilder {
     //     ]),
     // );
 
-    module.register_function(
+    module.register(
         FunctionType::new("_start")
             .with_outputs(vec![WasmType::Array(Box::new(utf32.clone()))])
             .with_locals(vec![ParameterType::new("array").with_type(WasmType::Array(Box::new(utf32.clone())))])
@@ -96,11 +96,13 @@ pub fn new_array() -> WasmBuilder {
                         Operation::Constant { value: WasmValue::I32(0x6F) },
                     ],
                 },
-                Operation::local_tee("array"),
-                Operation::Constant { value: WasmValue::I32(0) },
-                Operation::Constant { value: WasmValue::I32(999) },
-                Operation::Constant { value: WasmValue::I32(5) },
-                Operation::ArrayFill { r#type: utf32.clone(), array: vec![] },
+                Operation::ArrayFill {
+                    array: vec![Operation::local_tee("array")],
+                    r#type: utf32.clone(),
+                    element: vec![Operation::Constant { value: WasmValue::I32(999) }],
+                    start: 2,
+                    length: 2,
+                },
                 Operation::local_get("array"),
             ])
             .with_export(true),

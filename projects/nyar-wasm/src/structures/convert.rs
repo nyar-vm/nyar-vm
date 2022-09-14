@@ -1,14 +1,27 @@
 use super::*;
+use crate::{modules::WasmItem, WasmBuilder};
 
-impl<'a> From<&'a StructureItem> for StructureType {
-    fn from(value: &'a StructureItem) -> Self {
-        StructureType { symbol: value.symbol.clone(), nullable: false, fields: value.fields.clone() }
+impl From<StructureItem> for StructureType {
+    fn from(value: StructureItem) -> Self {
+        StructureType { symbol: value.symbol, nullable: false, fields: value.fields }
+    }
+}
+
+impl WasmItem for StructureItem {
+    fn register(self, builder: &mut WasmBuilder) {
+        StructureType::from(self).register(builder);
+    }
+}
+
+impl WasmItem for StructureType {
+    fn register(self, builder: &mut WasmBuilder) {
+        builder.structures.insert(self.symbol.to_string(), self);
     }
 }
 
 impl From<StructureItem> for WasmType {
     fn from(value: StructureItem) -> Self {
-        WasmType::Structure((&value).into())
+        WasmType::Structure(value.into())
     }
 }
 impl From<StructureItem> for WasmValue {
