@@ -298,6 +298,9 @@ impl WasmInstruction for WasmType {
             Self::Enumerate(_) => todo!(),
             Self::Flag(_) => todo!(),
             Self::Variant(_) => todo!(),
+            Self::Reference { .. } => {
+                todo!()
+            }
         }
     }
 }

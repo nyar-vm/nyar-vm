@@ -32,7 +32,7 @@ pub use crate::{
         branch::{EnumerationTable, JumpBranch, JumpCondition, JumpTable},
         Operation, VariableKind,
     },
-    structures::{FieldType, StructureItem},
+    structures::{FieldType, StructureItem, StructureType},
     symbols::WasmSymbol,
     types::{external::ExternalSection, WasmType},
     values::{data::DataSection, variable::WasmVariable, WasmValue},

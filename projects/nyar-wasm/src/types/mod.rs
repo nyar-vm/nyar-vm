@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IndexedIterator, IntoWasm},
-    ArrayType, EnumerateType, ExternalType, FlagType, VariantType,
+    ArrayType, EnumerateType, ExternalType, FlagType, VariantType, WasmSymbol,
 };
 use indexmap::IndexMap;
 use wast::{component::CoreType, token::Span};
@@ -36,6 +36,7 @@ pub enum WasmType {
     Enumerate(EnumerateType),
     Structure(StructureType),
     Variant(Box<VariantType>),
+    Reference { name: WasmSymbol, nullable: bool },
     Array(Box<ArrayType>),
 }
 
@@ -61,6 +62,7 @@ impl WasmType {
             Self::Structure(v) => v.nullable = null,
             Self::Variant(_) => {}
             Self::Array(_) => {}
+            Self::Reference { nullable, .. } => *nullable = null,
         }
     }
     pub fn with_nullable(mut self, null: bool) -> Self {
