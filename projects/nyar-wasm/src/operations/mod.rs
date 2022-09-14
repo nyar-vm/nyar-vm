@@ -52,11 +52,23 @@ pub enum Operation {
         index: i32,
         object: Vec<Operation>,
     },
+    ArrayCreate {
+        r#type: ArrayType,
+        element: Vec<Operation>,
+    },
     ArrayLength {
         object: Vec<Operation>,
     },
+    ArrayGrow {
+        r#type: ArrayType,
+        capacity: u32,
+    },
     ArrayFill {
-        object: Vec<Operation>,
+        array: Vec<Operation>,
+        r#type: ArrayType,
+        element: Vec<Operation>,
+        start: u64,
+        length: u64,
     },
     SetField {
         structure: WasmSymbol,

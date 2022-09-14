@@ -22,11 +22,17 @@
             mem: memory
         }
     };
-    WebAssembly.instantiateStreaming(fetch('mod.wasm'), importObject)
-        .then(out => {
-            let data = out.instance.exports._start();
-            console.dir(data, { depth: null })
-        });
+    let array;
+
+    function eval_local(file) {
+        WebAssembly.instantiateStreaming(fetch(file), importObject)
+            .then(out => {
+                let data = out.instance.exports._start();
+                console.dir(data, { depth: null })
+            });
+    }
+    eval_local('mod.wasm');
+    eval_local('array.wasm');
 </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 use super::*;
-use wast::core::{MemArg, StructAccess};
+use wast::core::{ArrayFill, ArrayNewFixed, MemArg, StructAccess};
 
 impl WasmInstruction for Operation {
     fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
@@ -175,7 +175,18 @@ impl WasmInstruction for Operation {
                 object.iter().for_each(|i| i.emit(w));
                 w.push(Instruction::ArrayLen)
             }
-            Self::ArrayFill { .. } => {}
+
+            Self::ArrayFill { r#type, .. } => w.push(Instruction::ArrayFill(ArrayFill { array: r#type.symbol.as_index() })),
+            Self::ArrayGrow { .. } => {
+                todo!()
+            }
+            Self::ArrayCreate { r#type, element } => {
+                element.iter().for_each(|i| i.emit(w));
+                w.push(Instruction::ArrayNewFixed(ArrayNewFixed {
+                    array: r#type.symbol.as_index(),
+                    length: element.len() as u32,
+                }))
+            }
         }
     }
 }
