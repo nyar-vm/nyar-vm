@@ -5,6 +5,7 @@ use wast::{
     token::{Index, NameAnnotation, Span},
 };
 
+#[derive(Debug)]
 pub struct DataItem {
     pub symbol: WasmSymbol,
     pub data: Vec<u8>,

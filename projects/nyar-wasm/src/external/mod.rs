@@ -10,6 +10,7 @@ use wast::{
 mod codegen;
 
 /// `@ffi("module", "field")`
+#[derive(Debug)]
 pub struct ExternalType {
     pub module: WasmSymbol,
     pub field: WasmSymbol,

@@ -1,6 +1,7 @@
 use super::*;
 use crate::symbols::WasmExportName;
 
+#[derive(Debug)]
 pub struct WasmVariable {
     pub symbol: WasmSymbol,
     pub mutable: bool,

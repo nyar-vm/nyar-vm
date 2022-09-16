@@ -8,7 +8,7 @@ impl WasmBuilder {
     pub fn as_module(&self) -> Module {
         let mut terms = Vec::with_capacity(1024);
         // imports
-        for (_, _, k) in self.externals.into_iter() {
+        for k in self.externals.values() {
             terms.push(ModuleField::Import(k.as_wast()))
         }
         // types
@@ -30,7 +30,7 @@ impl WasmBuilder {
         self.build_memory(&mut terms);
         // data section, 一页 = 64KB, 从第二页开始存用户数据
         let mut offset = 65536;
-        for (_, _, k) in self.data.into_iter() {
+        for k in self.data.values() {
             terms.push(ModuleField::Data(k.as_wast(&mut offset)))
         }
         // start section

@@ -2,8 +2,9 @@ use crate::{
     functions::FunctionType,
     helpers::{write_wasm_bytes, IntoWasm, WasmName},
     structures::StructureType,
-    ArrayType, DataItem, DataSection, ExternalSection, ExternalType, WasmVariable,
+    ArrayType, DataItem, ExternalType, WasmVariable,
 };
+
 use nyar_error::NyarError;
 use std::{
     collections::BTreeMap,
@@ -22,7 +23,7 @@ pub trait WasmItem {
     fn register(self, builder: &mut WasmBuilder);
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct WasmBuilder {
     pub name: String,
     pub entry: String,
@@ -30,14 +31,14 @@ pub struct WasmBuilder {
     pub globals: BTreeMap<String, WasmVariable>,
     pub structures: BTreeMap<String, StructureType>,
     pub arrays: BTreeMap<String, ArrayType>,
-    pub data: DataSection,
+    pub data: BTreeMap<String, DataItem>,
     pub functions: BTreeMap<String, FunctionType>,
-    pub externals: ExternalSection,
+    pub externals: BTreeMap<String, ExternalType>,
 }
 
 impl WasmItem for ExternalType {
     fn register(self, builder: &mut WasmBuilder) {
-        builder.externals.insert(self);
+        builder.externals.insert(self.name().to_string(), self);
     }
 }
 
@@ -71,7 +72,7 @@ impl WasmBuilder {
     }
 
     pub fn register_data(&mut self, item: DataItem) -> Option<DataItem> {
-        self.data.insert(item)
+        self.data.insert(item.symbol.to_string(), item)
     }
     pub fn register_global(&mut self, global: WasmVariable) {
         self.globals.insert(global.symbol.to_string(), global);

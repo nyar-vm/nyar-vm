@@ -19,6 +19,7 @@ use wast::{
 pub mod codegen;
 
 /// `function`
+#[derive(Debug)]
 pub struct FunctionType {
     pub symbol: WasmSymbol,
     pub export: WasmExportName,
@@ -30,6 +31,7 @@ pub struct FunctionType {
     pub span: FileSpan,
 }
 
+#[derive(Debug)]
 pub struct ParameterType {
     pub name: WasmSymbol,
     pub type_hint: WasmType,
@@ -104,7 +106,7 @@ impl FunctionType {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct FunctionBody {
     codes: Vec<Operation>,
 }
