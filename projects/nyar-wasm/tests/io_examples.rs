@@ -11,18 +11,18 @@ pub fn hello_world() -> WasmBuilder {
         ExternalType::new("wasi_snapshot_preview1", "fd_write")
             .with_alias("file_descriptor_write")
             .with_input(vec![
-                ParameterType::new("mode").with_type(WasmType::I32),
-                ParameterType::new("offset_ptr").with_type(WasmType::I32),
-                ParameterType::new("length_ptr").with_type(WasmType::I32),
-                ParameterType::new("written").with_type(WasmType::I32),
+                WasmParameter::new("mode").with_type(WasmType::I32),
+                WasmParameter::new("offset_ptr").with_type(WasmType::I32),
+                WasmParameter::new("length_ptr").with_type(WasmType::I32),
+                WasmParameter::new("written").with_type(WasmType::I32),
             ])
             .with_output(vec![WasmType::I32]),
     );
     module.register(
         FunctionType::new("print_str")
             .with_inputs(vec![
-                ParameterType::new("offset").with_type(WasmType::I32),
-                ParameterType::new("length").with_type(WasmType::I32),
+                WasmParameter::new("offset").with_type(WasmType::I32),
+                WasmParameter::new("length").with_type(WasmType::I32),
             ])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![
@@ -64,8 +64,8 @@ pub fn add_random_pi() -> WasmBuilder {
         ExternalType::new("wasi_snapshot_preview1", "random_get")
             .with_alias("random_get")
             .with_input(vec![
-                ParameterType::new("a").with_type(WasmType::I32),
-                ParameterType::new("b").with_type(WasmType::I32),
+                WasmParameter::new("a").with_type(WasmType::I32),
+                WasmParameter::new("b").with_type(WasmType::I32),
             ])
             .with_output(vec![WasmType::I32]),
     );
@@ -73,9 +73,9 @@ pub fn add_random_pi() -> WasmBuilder {
     module.register(
         FunctionType::new(WasmSymbol::new("sum_all"))
             .with_inputs(vec![
-                ParameterType::new("a").with_type(WasmType::I32),
-                ParameterType::new("b").with_type(WasmType::I32),
-                ParameterType::new("c").with_type(WasmType::I32),
+                WasmParameter::new("a").with_type(WasmType::I32),
+                WasmParameter::new("b").with_type(WasmType::I32),
+                WasmParameter::new("c").with_type(WasmType::I32),
             ])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![
@@ -90,7 +90,7 @@ pub fn add_random_pi() -> WasmBuilder {
 
     module.register(
         FunctionType::new(WasmSymbol::new("add_pi"))
-            .with_inputs(vec![ParameterType::new("x").with_type(WasmType::F32)])
+            .with_inputs(vec![WasmParameter::new("x").with_type(WasmType::F32)])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![Operation::NativeSum {
                 r#type: WasmType::F32,

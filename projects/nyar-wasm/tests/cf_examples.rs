@@ -5,11 +5,11 @@ pub fn fibonacci() -> WasmBuilder {
 
     module.register(
         FunctionType::new("fibonacci")
-            .with_inputs(vec![ParameterType::new("n").with_type(WasmType::I64)])
+            .with_inputs(vec![WasmParameter::new("n").with_type(WasmType::I64)])
             .with_outputs(vec![WasmType::I64])
             .with_locals(vec![
-                ParameterType::new("a").with_type(WasmType::I64),
-                ParameterType::new("b").with_type(WasmType::I64),
+                WasmParameter::new("a").with_type(WasmType::I64),
+                WasmParameter::new("b").with_type(WasmType::I64),
             ])
             .with_operations(vec![])
             .with_export(true),
@@ -34,9 +34,9 @@ pub fn control_flow() -> WasmBuilder {
     module.register(
         FunctionType::new(WasmSymbol::new("sum_all"))
             .with_inputs(vec![
-                ParameterType::new("a").with_type(WasmType::I32),
-                ParameterType::new("b").with_type(WasmType::I32),
-                ParameterType::new("c").with_type(WasmType::I32),
+                WasmParameter::new("a").with_type(WasmType::I32),
+                WasmParameter::new("b").with_type(WasmType::I32),
+                WasmParameter::new("c").with_type(WasmType::I32),
             ])
             .with_outputs(vec![WasmType::I32])
             .with_operations(vec![

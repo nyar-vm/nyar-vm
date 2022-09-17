@@ -1,7 +1,7 @@
 use nyar_error::NyarError;
 use nyar_wasm::{
-    DataItem, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, Operation, ParameterType,
-    StructureItem, WasmBuilder, WasmSymbol, WasmType, WasmValue, WasmVariable,
+    DataItem, ExternalType, FieldType, FunctionType, JumpBranch, JumpCondition, JumpTable, Operation, StructureItem,
+    WasmBuilder, WasmParameter, WasmSymbol, WasmType, WasmValue, WasmVariable,
 };
 use std::{path::Path, process::Command};
 

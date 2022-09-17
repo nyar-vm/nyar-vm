@@ -24,8 +24,8 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
-        let input = self.input.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        let result = self.output.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
+        let input = self.inputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
+        let result = self.outputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
         wast::core::FunctionType { params: Box::from(input), results: Box::from(result) }
     }
 }

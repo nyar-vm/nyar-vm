@@ -24,21 +24,21 @@ pub struct FunctionType {
     pub symbol: WasmSymbol,
     pub export: WasmExportName,
     pub entry: bool,
-    pub input: IndexMap<String, ParameterType>,
-    pub local: BTreeMap<String, ParameterType>,
+    pub input: IndexMap<String, WasmParameter>,
+    pub local: BTreeMap<String, WasmParameter>,
     pub output: Vec<WasmType>,
     pub body: FunctionBody,
     pub span: FileSpan,
 }
 
 #[derive(Debug)]
-pub struct ParameterType {
+pub struct WasmParameter {
     pub name: WasmSymbol,
     pub type_hint: WasmType,
     pub span: FileSpan,
 }
 
-impl ParameterType {
+impl WasmParameter {
     pub fn new<S>(name: S) -> Self
     where
         S: Into<WasmSymbol>,
@@ -74,7 +74,7 @@ impl FunctionType {
     }
     pub fn with_inputs<I>(mut self, inputs: I) -> Self
     where
-        I: IntoIterator<Item = ParameterType>,
+        I: IntoIterator<Item = WasmParameter>,
     {
         for i in inputs {
             self.input.insert(i.name.to_string(), i);
@@ -90,7 +90,7 @@ impl FunctionType {
     }
     pub fn with_locals<I>(mut self, locals: I) -> Self
     where
-        I: IntoIterator<Item = ParameterType>,
+        I: IntoIterator<Item = WasmParameter>,
     {
         for i in locals {
             self.local.insert(i.name.to_string(), i);

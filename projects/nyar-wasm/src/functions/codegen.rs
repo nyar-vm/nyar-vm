@@ -108,7 +108,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, ComponentFunctionParam<'i>> for ParameterType
+impl<'a, 'i> IntoWasm<'a, ComponentFunctionParam<'i>> for WasmParameter
 where
     'a: 'i,
 {
@@ -117,7 +117,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, (Option<Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>)> for ParameterType
+impl<'a, 'i> IntoWasm<'a, (Option<Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>)> for WasmParameter
 where
     'a: 'i,
 {
@@ -144,7 +144,7 @@ where
         wast::core::FuncKind::Inline { locals: Box::from(locals), expression: self.body.as_wast() }
     }
 }
-impl<'a, 'i> IntoWasm<'a, Local<'i>> for ParameterType
+impl<'a, 'i> IntoWasm<'a, Local<'i>> for WasmParameter
 where
     'a: 'i,
 {

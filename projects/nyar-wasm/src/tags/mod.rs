@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
-    ParameterType, WasmSymbol,
+    WasmParameter, WasmSymbol,
 };
 use indexmap::IndexMap;
 use nyar_error::FileSpan;
@@ -11,7 +11,7 @@ use wast::{
 
 pub struct ExceptionItem {
     pub symbol: WasmSymbol,
-    pub data: IndexMap<String, ParameterType>,
+    pub data: IndexMap<String, WasmParameter>,
     pub span: FileSpan,
 }
 

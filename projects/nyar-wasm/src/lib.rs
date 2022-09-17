@@ -26,7 +26,7 @@ pub use crate::{
     data::DataItem,
     external::ExternalType,
     flags::{EncodingType, FlagType},
-    functions::{FunctionBody, FunctionType, ParameterType},
+    functions::{FunctionBody, FunctionType, WasmParameter},
     modules::{WasmBuilder, WasmItem},
     operations::{
         branch::{EnumerationTable, JumpBranch, JumpCondition, JumpTable},

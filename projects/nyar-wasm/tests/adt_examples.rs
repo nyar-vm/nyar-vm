@@ -24,11 +24,11 @@ pub fn new_structure() -> WasmBuilder {
 
     module.register(
         FunctionType::new("Point::construct")
-            .with_inputs(vec![ParameterType::new("linear").with_type(WasmType::F64)])
+            .with_inputs(vec![WasmParameter::new("linear").with_type(WasmType::F64)])
             .with_outputs(vec![point_ty.with_nullable(false).into()])
             .with_locals(vec![
-                ParameterType::new("self.x").with_type(WasmType::F64),
-                ParameterType::new("self.y").with_type(WasmType::F64),
+                WasmParameter::new("self.x").with_type(WasmType::F64),
+                WasmParameter::new("self.y").with_type(WasmType::F64),
             ])
             .with_operations(vec![
                 Operation::local_get("linear"),
@@ -84,7 +84,7 @@ pub fn new_array() -> WasmBuilder {
     module.register(
         FunctionType::new("_start")
             .with_outputs(vec![WasmType::Array(Box::new(utf32.clone()))])
-            .with_locals(vec![ParameterType::new("array").with_type(WasmType::Array(Box::new(utf32.clone())))])
+            .with_locals(vec![WasmParameter::new("array").with_type(WasmType::Array(Box::new(utf32.clone())))])
             .with_operations(vec![
                 Operation::ArrayCreate {
                     r#type: utf32.clone(),
