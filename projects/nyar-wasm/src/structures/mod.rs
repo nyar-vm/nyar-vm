@@ -68,9 +68,13 @@ impl FieldType {
     pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
         Self { name: name.into(), readonly: false, r#type: WasmType::Any { nullable: false }, default: WasmValue::Any }
     }
+    pub fn set_type(&mut self, r#type: WasmType) {
+        self.r#type = r#type
+    }
     pub fn with_type(self, r#type: WasmType) -> Self {
         Self { r#type, ..self }
     }
+
     pub fn with_default(self, default: WasmValue) -> Self {
         Self { default, ..self }
     }

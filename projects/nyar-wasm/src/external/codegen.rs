@@ -8,7 +8,7 @@ where
         Import {
             span: Span::from_offset(0),
             module: self.module.as_ref(),
-            field: self.field.as_ref(),
+            field: self.function.as_ref(),
             item: ItemSig {
                 span: Span::from_offset(0),
                 id: WasmName::id(self.name()),
