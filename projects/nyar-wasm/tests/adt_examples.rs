@@ -1,5 +1,6 @@
-use super::*;
-use nyar_wasm::ArrayType;
+use nyar_wasm::{
+    ArrayType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmParameter, WasmType, WasmValue,
+};
 
 pub fn new_structure() -> WasmBuilder {
     let mut module = WasmBuilder::new("structure-example");
@@ -10,7 +11,7 @@ pub fn new_structure() -> WasmBuilder {
     let mut point_ty: WasmType = point.clone().into();
     point_ty.set_nullable(true);
     module.register(point.clone());
-    // module.insert_global(
+    // module.register(
     //     WasmVariable {
     //         symbol: WasmSymbol::new("point"),
     //         mutable: true,
@@ -74,12 +75,12 @@ pub fn new_array() -> WasmBuilder {
             .with_operations(vec![Operation::Default { typed: utf32.clone().into() }]),
     );
 
-    // module.insert_function(
-    //     FunctionType::new("new_valued").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(vec![
+    // module.register(FunctionType::new("new_valued").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(
+    //     vec![
     //         Operation::Constant { value: utf32.clone().into() },
     //         Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
-    //     ]),
-    // );
+    //     ],
+    // ));
 
     module.register(
         FunctionType::new("_start")

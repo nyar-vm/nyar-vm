@@ -1,6 +1,6 @@
 [package]
 name = "nyar-wasm"
-version = "0.0.3"
+version = "0.0.4"
 authors = ["Aster <192607617@qq.com>"]
 description = "High level wasm builder"
 repository = "https://github.com/oovm/dialect"
@@ -11,8 +11,8 @@ edition = "2021"
 exclude = ["package.json", "tests/**"]
 
 [dependencies]
-indexmap = "2.1.0"
-wast = "69.0.1"
+indexmap = "2.2.3"
+wast = "200.0.0"
 
 [dependencies.nyar-error]
 version = "0.1.*"

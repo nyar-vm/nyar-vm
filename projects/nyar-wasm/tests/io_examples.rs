@@ -1,5 +1,7 @@
-use super::*;
-
+use nyar_wasm::{
+    DataItem, ExternalType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmParameter, WasmSymbol,
+    WasmType, WasmValue, WasmVariable,
+};
 pub fn hello_world() -> WasmBuilder {
     let mut module = WasmBuilder::new("hello_world");
 

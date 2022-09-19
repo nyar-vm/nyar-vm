@@ -29,7 +29,7 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> Expression<'i> {
-        Expression { instrs: Box::from(vec![self.value.as_wast()]) }
+        Expression { instrs: Box::from(vec![self.value.as_wast()]), branch_hints: vec![] }
     }
 }
 

@@ -1,5 +1,6 @@
-use super::*;
-
+use nyar_wasm::{
+    FunctionType, JumpBranch, JumpCondition, JumpTable, Operation, WasmBuilder, WasmParameter, WasmSymbol, WasmType, WasmValue,
+};
 pub fn fibonacci() -> WasmBuilder {
     let mut module = WasmBuilder::new("fibonacci");
 

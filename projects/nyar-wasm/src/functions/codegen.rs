@@ -162,6 +162,6 @@ where
         for code in &self.codes {
             code.emit(&mut bytecode)
         }
-        Expression { instrs: Box::from(bytecode) }
+        Expression { instrs: Box::from(bytecode), branch_hints: vec![] }
     }
 }

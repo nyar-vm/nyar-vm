@@ -21,7 +21,7 @@ impl DataItem {
     where
         'a: 'i,
     {
-        let offset = Expression { instrs: Box::new([Instruction::I32Const(*start as i32)]) };
+        let offset = Expression { instrs: Box::new([Instruction::I32Const(*start as i32)]), branch_hints: vec![] };
         *start += self.data.len();
         Data {
             span: Span::from_offset(0),

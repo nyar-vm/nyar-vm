@@ -12,10 +12,10 @@ name = "vls"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.4.7", features = ["derive"] }
-serde = { version = "1.0.192", features = ["derive"] }
-serde_json = "1.0.108"
-async-tungstenite = { version = "0.23.0", features = ["tokio-rustls-native-certs"] }
+clap = { version = "4.5.1", features = ["derive"] }
+serde = { version = "1.0.196", features = ["derive"] }
+serde_json = "1.0.113"
+async-tungstenite = { version = "0.25.0", features = ["tokio-rustls-native-certs"] }
 #tokio = { version = "1.25.0", features = ["full"] }
 #axum = { version = "0.6.4", features = [] }
 #axum-macros = "0.3.2"
