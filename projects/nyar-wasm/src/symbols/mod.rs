@@ -1,4 +1,5 @@
 use crate::helpers::{IntoWasm, WasmName};
+use semver::Version;
 use std::{
     fmt::{Debug, Display, Formatter},
     sync::Arc,
@@ -17,9 +18,10 @@ pub struct WasmSymbol {
     inner: Arc<str>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct WasmExportName {
-    inner: Option<Arc<str>>,
+    inner: Arc<str>,
+    version: Option<Version>,
 }
 
 impl WasmSymbol {
@@ -29,15 +31,12 @@ impl WasmSymbol {
 }
 impl WasmExportName {
     pub fn create<S: Into<WasmSymbol>>(name: S) -> Self {
-        Self { inner: Some(name.into().inner) }
+        Self { inner: name.into().inner, version: None }
     }
-    pub fn create_by(symbol: &WasmSymbol, export: bool) -> Self {
+    pub fn create_by(symbol: &WasmSymbol, export: bool) -> Option<Self> {
         match export {
-            true => WasmExportName { inner: Some(symbol.inner.clone()) },
-            false => WasmExportName::default(),
+            true => Some(WasmExportName { inner: symbol.inner.clone(), version: None }),
+            false => None,
         }
-    }
-    pub fn clear(&mut self) {
-        self.inner = None;
     }
 }

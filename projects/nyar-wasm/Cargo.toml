@@ -11,6 +11,7 @@ edition = "2021"
 exclude = ["package.json", "tests/**"]
 
 [dependencies]
+semver = "1.0.22"
 indexmap = "2.2.3"
 wast = "200.0.0"
 

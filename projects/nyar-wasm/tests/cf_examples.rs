@@ -43,13 +43,7 @@ pub fn control_flow() -> WasmBuilder {
             .with_operations(vec![
                 Operation::NativeSum {
                     r#type: WasmType::I32,
-                    terms: vec![
-                        // test_if_1(),
-                        test_if_2(),
-                        test_if_3(),
-                        test_switch(),
-                        // test_loop1(),
-                    ],
+                    terms: vec![test_if_1(), test_if_2(), test_if_3(), test_switch(), test_loop1()],
                 },
                 Operation::Return {},
             ]),

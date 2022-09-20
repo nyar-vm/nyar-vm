@@ -22,7 +22,7 @@ pub mod codegen;
 #[derive(Debug)]
 pub struct FunctionType {
     pub symbol: WasmSymbol,
-    pub export: WasmExportName,
+    pub export: Option<WasmExportName>,
     pub entry: bool,
     pub input: IndexMap<String, WasmParameter>,
     pub local: BTreeMap<String, WasmParameter>,
@@ -54,7 +54,7 @@ impl FunctionType {
     pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
         Self {
             symbol: name.into(),
-            export: WasmExportName::default(),
+            export: None,
             entry: false,
             input: IndexMap::default(),
             local: BTreeMap::default(),
@@ -67,7 +67,8 @@ impl FunctionType {
         self.symbol.to_string()
     }
     pub fn with_export(self, export: bool) -> Self {
-        Self { export: WasmExportName::create_by(&self.symbol, export), ..self }
+        self
+        // Self { export: WasmExportName::create_by(&self.symbol, export), ..self }
     }
     pub fn with_entry(self, entry: bool) -> Self {
         Self { entry, ..self }

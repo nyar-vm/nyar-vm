@@ -1,5 +1,6 @@
 use nyar_wasm::{
-    ArrayType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmParameter, WasmType, WasmValue,
+    ArrayType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmParameter, WasmSymbol, WasmType, WasmValue,
+    WasmVariable,
 };
 
 pub fn new_structure() -> WasmBuilder {
@@ -75,12 +76,12 @@ pub fn new_array() -> WasmBuilder {
             .with_operations(vec![Operation::Default { typed: utf32.clone().into() }]),
     );
 
-    // module.register(FunctionType::new("new_valued").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(
-    //     vec![
-    //         Operation::Constant { value: utf32.clone().into() },
-    //         Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
-    //     ],
-    // ));
+    module.register(FunctionType::new("new_valued").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(
+        vec![
+            Operation::Constant { value: utf32.clone().into() },
+            // Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
+        ],
+    ));
 
     module.register(
         FunctionType::new("_start")

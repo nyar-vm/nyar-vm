@@ -5,7 +5,7 @@ use crate::symbols::WasmExportName;
 pub struct WasmVariable {
     pub symbol: WasmSymbol,
     pub mutable: bool,
-    pub export: WasmExportName,
+    pub export: Option<WasmExportName>,
     pub r#type: WasmType,
     pub value: WasmValue,
     pub span: FileSpan,
@@ -16,7 +16,7 @@ impl Default for WasmVariable {
         Self {
             symbol: WasmSymbol::new("<anonymous>"),
             mutable: false,
-            export: WasmExportName::default(),
+            export: None,
             r#type: WasmType::U8,
             value: WasmValue::Any,
             span: Default::default(),

@@ -20,6 +20,7 @@ pub fn hello_world() -> WasmBuilder {
             ])
             .with_output(vec![WasmType::I32]),
     );
+
     module.register(
         FunctionType::new("print_str")
             .with_inputs(vec![
