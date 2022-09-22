@@ -18,25 +18,46 @@ pub struct WasmSymbol {
     inner: Arc<str>,
 }
 
+/// e.g.: `wasi:random` in `wasi:random/random@0.2.0`
+#[derive(Debug, Clone)]
+pub struct WasmPublisher {
+    organization: Arc<str>,
+    project: Arc<str>,
+}
+
+/// e.g: `wasi:random/random@0.2.0`
 #[derive(Clone)]
-pub struct WasmExportName {
-    inner: Arc<str>,
+pub struct WasmExternalName {
+    package: Option<WasmPublisher>,
+    module: Arc<str>,
     version: Option<Version>,
 }
 
 impl WasmSymbol {
+    /// Create a new symbol
     pub fn new(name: &str) -> Self {
         Self { inner: Arc::from(name) }
     }
 }
-impl WasmExportName {
+
+impl WasmExternalName {
+    /// Create a new module without a publisher
     pub fn create<S: Into<WasmSymbol>>(name: S) -> Self {
-        Self { inner: name.into().inner, version: None }
+        Self { package: None, module: name.into().inner, version: None }
     }
+    /// Create a new module with automatic export
     pub fn create_by(symbol: &WasmSymbol, export: bool) -> Option<Self> {
         match export {
-            true => Some(WasmExportName { inner: symbol.inner.clone(), version: None }),
+            true => Some(WasmExternalName { package: None, module: symbol.inner.clone(), version: None }),
             false => None,
         }
+    }
+    /// Set the publisher for the module
+    pub fn with_publisher(self, publisher: WasmPublisher) -> Self {
+        Self { package: Some(publisher), ..self }
+    }
+    /// Set the organization and project for the module
+    pub fn with_project<O: Into<WasmSymbol>, P: Into<WasmSymbol>>(self, org: O, project: P) -> Self {
+        Self { package: Some(WasmPublisher { organization: org.into().inner, project: project.into().inner }), ..self }
     }
 }

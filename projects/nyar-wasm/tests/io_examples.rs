@@ -88,7 +88,7 @@ pub fn add_random_pi() -> WasmBuilder {
                 },
                 Operation::Return {},
             ])
-            .with_export(true),
+            .auto_export(true),
     );
 
     module.register(
@@ -106,7 +106,7 @@ pub fn add_random_pi() -> WasmBuilder {
                     }],
                 }],
             }])
-            .with_export(true),
+            .auto_export(true),
     );
 
     module.register(
@@ -117,7 +117,7 @@ pub fn add_random_pi() -> WasmBuilder {
                 name: WasmSymbol::new("random_get"),
                 input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
             }])
-            .with_export(true),
+            .auto_export(true),
     );
     module
 }

@@ -13,7 +13,7 @@ pub fn fibonacci() -> WasmBuilder {
                 WasmParameter::new("b").with_type(WasmType::I64),
             ])
             .with_operations(vec![])
-            .with_export(true),
+            .auto_export(true),
     );
 
     module.register(
@@ -24,7 +24,7 @@ pub fn fibonacci() -> WasmBuilder {
                 name: WasmSymbol::new("fibonacci"),
                 input: vec![Operation::from(5)],
             }])
-            .with_export(false),
+            .auto_export(false),
     );
     module
 }
@@ -57,7 +57,7 @@ pub fn control_flow() -> WasmBuilder {
                 name: WasmSymbol::new("sum_all"),
                 input: vec![Operation::from(1), Operation::from(2), Operation::from(3)],
             }])
-            .with_export(false),
+            .auto_export(false),
     );
     module
 }

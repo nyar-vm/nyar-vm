@@ -1,6 +1,5 @@
 use nyar_wasm::{
-    ArrayType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmParameter, WasmSymbol, WasmType, WasmValue,
-    WasmVariable,
+    ArrayType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmParameter, WasmType, WasmValue,
 };
 
 pub fn new_structure() -> WasmBuilder {
@@ -57,7 +56,7 @@ pub fn new_structure() -> WasmBuilder {
                 // Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
                 // Operation::Drop,
             ])
-            .with_export(true),
+            .auto_export(true),
     );
     module
 }
@@ -107,7 +106,7 @@ pub fn new_array() -> WasmBuilder {
                 },
                 Operation::local_get("array"),
             ])
-            .with_export(true),
+            .auto_export(true),
     );
     module
 }

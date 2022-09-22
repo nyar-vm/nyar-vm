@@ -1,5 +1,6 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
+    symbols::WasmExternalName,
     WasmParameter, WasmSymbol, WasmType,
 };
 use std::ops::AddAssign;
@@ -10,11 +11,13 @@ use wast::{
 
 mod codegen;
 
-/// `@ffi("module", "field")`
+/// `@ffi("org:project/module@version", "field")`
 #[derive(Debug)]
 pub struct ExternalType {
-    pub module: WasmSymbol,
-    pub function: WasmSymbol,
+    /// External name of the type
+    pub external: WasmExternalName,
+    /// Local name of the type
+    pub local: WasmSymbol,
     pub alias: Option<WasmSymbol>,
     pub inputs: Vec<WasmParameter>,
     pub outputs: Vec<WasmType>,
@@ -25,18 +28,20 @@ impl AddAssign<WasmSymbol> for ExternalType {
         self.alias = Some(rhs)
     }
 }
+
 impl AddAssign<WasmParameter> for ExternalType {
     fn add_assign(&mut self, rhs: WasmParameter) {
         self.inputs.push(rhs)
     }
 }
+
 impl ExternalType {
-    pub fn new<M: Into<WasmSymbol>, F: Into<WasmSymbol>>(module: M, function: F) -> ExternalType {
-        Self { module: module.into(), function: function.into(), alias: None, inputs: vec![], outputs: vec![] }
+    pub fn new<M: Into<WasmExternalName>, F: Into<WasmSymbol>>(module: M, function: F) -> ExternalType {
+        Self { external: module.into(), local: function.into(), alias: None, inputs: vec![], outputs: vec![] }
     }
     pub fn name(&self) -> &str {
         match &self.alias {
-            None => self.function.as_ref(),
+            None => self.local.as_ref(),
             Some(s) => s.as_ref(),
         }
     }

@@ -1,7 +1,7 @@
 use crate::{
     helpers::{IntoWasm, WasmInstruction},
     operations::Operation,
-    symbols::WasmExportName,
+    symbols::WasmExternalName,
     types::WasmType,
     WasmSymbol,
 };
@@ -16,13 +16,14 @@ use wast::{
     core::{Expression, TypeUse, ValType},
     token::{Id, NameAnnotation, Span},
 };
+
 pub mod codegen;
 
 /// `function`
 #[derive(Debug)]
 pub struct FunctionType {
     pub symbol: WasmSymbol,
-    pub export: Option<WasmExportName>,
+    pub export: Option<WasmExternalName>,
     pub entry: bool,
     pub input: IndexMap<String, WasmParameter>,
     pub local: BTreeMap<String, WasmParameter>,
@@ -66,9 +67,11 @@ impl FunctionType {
     pub fn name(&self) -> String {
         self.symbol.to_string()
     }
-    pub fn with_export(self, export: bool) -> Self {
-        self
-        // Self { export: WasmExportName::create_by(&self.symbol, export), ..self }
+    pub fn auto_export(self, export: bool) -> Self {
+        Self { export: WasmExternalName::create_by(&self.symbol, export), ..self }
+    }
+    pub fn with_export<N: Into<WasmExternalName>>(self, export: N) -> Self {
+        Self { export: Some(export.into()), ..self }
     }
     pub fn with_entry(self, entry: bool) -> Self {
         Self { entry, ..self }

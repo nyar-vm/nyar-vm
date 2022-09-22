@@ -21,3 +21,9 @@ impl From<Arc<str>> for WasmSymbol {
         Self { inner: value }
     }
 }
+
+impl From<&'static str> for WasmExternalName {
+    fn from(value: &'static str) -> Self {
+        Self { package: None, module: Arc::from(value), version: None }
+    }
+}

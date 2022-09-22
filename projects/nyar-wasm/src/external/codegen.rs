@@ -7,8 +7,8 @@ where
     fn as_wast(&'a self) -> Import<'i> {
         Import {
             span: Span::from_offset(0),
-            module: self.module.as_ref(),
-            field: self.function.as_ref(),
+            module: self.external.as_ref(),
+            field: self.local.as_ref(),
             item: ItemSig {
                 span: Span::from_offset(0),
                 id: WasmName::id(self.name()),
