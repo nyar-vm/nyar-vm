@@ -43,7 +43,7 @@ pub fn new_structure() -> WasmBuilder {
     );
     module.register(
         FunctionType::new("_start")
-            .with_outputs(vec![WasmType::Structure(point.clone().into())])
+            .with_outputs(vec![WasmType::Structure(point.clone().into()).into()])
             .with_locals(vec![])
             .with_operations(vec![
                 // Operation::CallFunction {
@@ -70,21 +70,19 @@ pub fn new_array() -> WasmBuilder {
     module.register(
         FunctionType::new("Vector::new")
             .with_inputs(vec![])
-            .with_outputs(vec![WasmType::Array(Box::new(utf32.clone()))])
+            .with_output(WasmType::Array(Box::new(utf32.clone())))
             .with_locals(vec![])
             .with_operations(vec![Operation::Default { typed: utf32.clone().into() }]),
     );
 
-    module.register(FunctionType::new("new_valued").with_outputs(vec![WasmType::F32]).with_locals(vec![]).with_operations(
-        vec![
-            Operation::Constant { value: utf32.clone().into() },
-            // Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
-        ],
-    ));
+    module.register(FunctionType::new("new_valued").with_output(WasmType::F32).with_locals(vec![]).with_operations(vec![
+        Operation::Constant { value: utf32.clone().into() },
+        // Operation::GetField { structure: WasmSymbol::new("Point"), field: WasmSymbol::new("y") },
+    ]));
 
     module.register(
         FunctionType::new("_start")
-            .with_outputs(vec![WasmType::Array(Box::new(utf32.clone()))])
+            .with_output(WasmType::Array(Box::new(utf32.clone())))
             .with_locals(vec![WasmParameter::new("array").with_type(WasmType::Array(Box::new(utf32.clone())))])
             .with_operations(vec![
                 Operation::ArrayCreate {

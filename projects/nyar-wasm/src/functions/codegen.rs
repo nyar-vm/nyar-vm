@@ -1,7 +1,7 @@
 use super::*;
 use crate::helpers::WasmName;
 use wast::{
-    component::{CanonOpt, ComponentField, CoreItemRef, ItemRef},
+    component::{CanonOpt, ComponentField, ComponentValType, CoreItemRef, ItemRef},
     core::Local,
     token::Index,
 };
@@ -17,7 +17,10 @@ where
 
 impl FunctionType {
     /// Make a component function if it needs to export
-    pub fn make_component(&self) -> Option<ComponentField<'_>> {
+    pub fn make_component<'a, 'i>(&'i self, instance_name: &'a str) -> Option<ComponentField<'i>>
+    where
+        'a: 'i,
+    {
         let export = self.export.as_ref()?;
         Some(ComponentField::Func(Func {
             span: Span::from_offset(0),
@@ -29,10 +32,17 @@ impl FunctionType {
                 info: CanonLift {
                     func: CoreItemRef {
                         kind: Default::default(),
-                        idx: Index::Num(0, Span::from_offset(0)),
-                        export_name: Some(self.symbol.as_ref()),
+                        idx: Index::Id(WasmName::new(instance_name)),
+                        export_name: Some(export.short_name()),
                     },
-                    opts: vec![CanonOpt::StringUtf8],
+                    opts: vec![
+                        CanonOpt::Memory(CoreItemRef {
+                            kind: Default::default(),
+                            idx: Index::Id(WasmName::new(instance_name)),
+                            export_name: Some("memory"),
+                        }),
+                        CanonOpt::StringUtf8,
+                    ],
                 },
             },
         }))
@@ -66,15 +76,6 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, FuncKind<'i>> for FunctionType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> FuncKind<'i> {
-        FuncKind::Lift { ty: ComponentTypeUse::Inline(self.as_wast()), info: self.as_wast() }
-    }
-}
-
 impl<'a, 'i> IntoWasm<'a, CoreFuncKind<'i>> for FunctionType
 where
     'a: 'i,
@@ -84,18 +85,6 @@ where
             func: ItemRef { kind: wast::kw::func(Span::from_offset(0)), idx: self.symbol.as_index(), export_names: Vec::new() },
             opts: Vec::new(),
         })
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, CanonLift<'i>> for FunctionType
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> CanonLift<'i> {
-        CanonLift {
-            func: CoreItemRef { kind: wast::kw::func(Span::from_offset(0)), idx: self.symbol.as_index(), export_name: None },
-            opts: Vec::new(),
-        }
     }
 }
 
@@ -139,12 +128,21 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, ComponentFunctionResult<'i>> for WasmType
+impl<'a, 'i> IntoWasm<'a, ValType<'a>> for WasmParameter
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> ValType<'a> {
+        self.type_hint.as_wast()
+    }
+}
+
+impl<'a, 'i> IntoWasm<'a, ComponentFunctionResult<'i>> for WasmParameter
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> ComponentFunctionResult<'i> {
-        ComponentFunctionResult { name: None, ty: self.as_wast() }
+        ComponentFunctionResult { name: Some(self.name.as_ref()), ty: ComponentValType::Inline(self.type_hint.as_wast()) }
     }
 }
 

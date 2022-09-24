@@ -14,7 +14,7 @@ impl Display for WasmSymbol {
 
 impl Debug for WasmExternalName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.module, f)
+        Debug::fmt(&self.name, f)
     }
 }
 
@@ -29,20 +29,10 @@ impl Display for WasmExternalName {
         if let Some(s) = &self.package {
             write!(f, "{}/", s)?
         }
-        write!(f, "{}", self.module)?;
+        write!(f, "{}", self.name)?;
         if let Some(s) = &self.version {
             write!(f, "@{}", s)?
         }
         Ok(())
-    }
-}
-
-impl AsRef<str> for WasmExternalName {
-    fn as_ref(&self) -> &str {
-        // SAFETY: StringPool will deallocate this string when there are no more references to it
-        unsafe {
-            let cache = string_pool::String::from(self.to_string());
-            &*(cache.as_str() as *const str)
-        }
     }
 }

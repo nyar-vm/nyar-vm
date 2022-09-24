@@ -1,5 +1,5 @@
 use super::*;
-use wast::component::{CoreInstance, CoreInstanceExport, CoreInstanceKind, CoreItemRef, ItemRef};
+use wast::component::{CoreInstance, CoreInstanceKind, ItemRef};
 
 impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
 where
@@ -39,6 +39,27 @@ where
     }
 }
 
+impl<'a, 'i> IntoWasm<'a, CoreInstance<'i>> for WasmBuilder
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> CoreInstance<'i> {
+        CoreInstance {
+            span: Span::from_offset(0),
+            id: WasmName::id(self.get_instance_name()),
+            name: None,
+            kind: CoreInstanceKind::Instantiate {
+                module: ItemRef {
+                    kind: Default::default(),
+                    idx: Index::Id(WasmName::new(self.get_module_name())),
+                    export_names: vec![],
+                },
+                args: vec![],
+            },
+        }
+    }
+}
+
 impl<'a, 'i> IntoWasm<'a, CoreModuleKind<'i>> for WasmBuilder
 where
     'a: 'i,
@@ -64,33 +85,15 @@ impl WasmBuilder {
         // coms.push(ComponentField::Type(ts.as_wast()));
         // coms.push(ComponentField::CoreType(ts.as_wast()))
         // }
-        coms.push(ComponentField::CoreModule(self.as_wast()));
-        // (core instance $library (instantiate $Library))
-        coms.push(ComponentField::CoreInstance(CoreInstance {
-            span: Span::from_offset(0),
-            id: None,
-            name: Some(NameAnnotation { name: "instance_name" }),
-            kind: CoreInstanceKind::Instantiate {
-                module: ItemRef {
-                    kind: Default::default(),
-                    idx: Index::Id(WasmName::id("add_random_pi").unwrap()),
-                    export_names: vec![],
-                },
-                args: vec![],
-            },
-        }));
 
+        // Export Valkyrie module externally
+        coms.push(ComponentField::CoreModule(self.as_wast()));
+        coms.push(ComponentField::CoreInstance(self.as_wast()));
         for fs in self.functions.values() {
             if !self.entry.is_empty() {
                 // coms.push(ComponentField::Start(fs.as_wast()));
             }
-            // coms.push(ComponentField::CoreFunc(fs.as_wast()));
-        }
-        for fs in self.functions.values() {
-            if !self.entry.is_empty() {
-                // coms.push(ComponentField::Start(fs.as_wast()));
-            }
-            coms.extend(fs.make_component());
+            coms.extend(fs.make_component(self.get_instance_name()));
         }
         coms.push(ComponentField::Producers(self.as_wast()));
         Ok(Component { span: Span::from_offset(0), id: None, name: None, kind: ComponentKind::Text(coms) })

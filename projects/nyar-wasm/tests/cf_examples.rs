@@ -7,7 +7,7 @@ pub fn fibonacci() -> WasmBuilder {
     module.register(
         FunctionType::new("fibonacci")
             .with_inputs(vec![WasmParameter::new("n").with_type(WasmType::I64)])
-            .with_outputs(vec![WasmType::I64])
+            .with_output(WasmType::I64)
             .with_locals(vec![
                 WasmParameter::new("a").with_type(WasmType::I64),
                 WasmParameter::new("b").with_type(WasmType::I64),
@@ -19,7 +19,7 @@ pub fn fibonacci() -> WasmBuilder {
     module.register(
         FunctionType::new(WasmSymbol::new("_main"))
             .with_inputs(vec![])
-            .with_outputs(vec![WasmType::I64])
+            .with_output(WasmType::I64)
             .with_operations(vec![Operation::CallFunction {
                 name: WasmSymbol::new("fibonacci"),
                 input: vec![Operation::from(5)],
@@ -39,7 +39,7 @@ pub fn control_flow() -> WasmBuilder {
                 WasmParameter::new("b").with_type(WasmType::I32),
                 WasmParameter::new("c").with_type(WasmType::I32),
             ])
-            .with_outputs(vec![WasmType::I32])
+            .with_output(WasmType::I32)
             .with_operations(vec![
                 Operation::NativeSum {
                     r#type: WasmType::I32,
@@ -52,7 +52,7 @@ pub fn control_flow() -> WasmBuilder {
     module.register(
         FunctionType::new(WasmSymbol::new("_main"))
             .with_inputs(vec![])
-            .with_outputs(vec![WasmType::I32])
+            .with_output(WasmType::I32)
             .with_operations(vec![Operation::CallFunction {
                 name: WasmSymbol::new("sum_all"),
                 input: vec![Operation::from(1), Operation::from(2), Operation::from(3)],

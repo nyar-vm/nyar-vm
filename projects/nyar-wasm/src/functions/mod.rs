@@ -27,7 +27,7 @@ pub struct FunctionType {
     pub entry: bool,
     pub input: IndexMap<String, WasmParameter>,
     pub local: BTreeMap<String, WasmParameter>,
-    pub output: Vec<WasmType>,
+    pub output: Vec<WasmParameter>,
     pub body: FunctionBody,
     pub span: FileSpan,
 }
@@ -45,6 +45,12 @@ impl WasmParameter {
         S: Into<WasmSymbol>,
     {
         Self { name: name.into(), type_hint: WasmType::Any { nullable: true }, span: Default::default() }
+    }
+    pub fn with_name<S>(self, name: S) -> Self
+    where
+        S: Into<WasmSymbol>,
+    {
+        Self { name: name.into(), ..self }
     }
     pub fn with_type(self, type_hint: WasmType) -> Self {
         Self { type_hint, ..self }
@@ -85,9 +91,16 @@ impl FunctionType {
         }
         self
     }
+    pub fn with_output<I>(mut self, output: I) -> Self
+    where
+        I: Into<WasmType>,
+    {
+        self.output = vec![WasmParameter { name: WasmSymbol::new("r0"), type_hint: output.into(), span: Default::default() }];
+        self
+    }
     pub fn with_outputs<I>(mut self, outputs: I) -> Self
     where
-        I: IntoIterator<Item = WasmType>,
+        I: IntoIterator<Item = WasmParameter>,
     {
         self.output.extend(outputs);
         self
@@ -121,5 +134,11 @@ impl<'i> IntoIterator for &'i FunctionBody {
 
     fn into_iter(self) -> Self::IntoIter {
         self.codes.iter()
+    }
+}
+
+impl From<WasmType> for WasmParameter {
+    fn from(value: WasmType) -> Self {
+        Self { name: WasmSymbol::new(""), type_hint: value, span: Default::default() }
     }
 }

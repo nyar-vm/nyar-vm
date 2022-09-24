@@ -61,6 +61,10 @@ impl WasmBuilder {
         Self { name: name.to_string(), ..Default::default() }
     }
 
+    pub fn get_instance_name(&self) -> &str {
+        &self.name
+    }
+
     pub fn get_module_name(&self) -> &str {
         &self.name
     }

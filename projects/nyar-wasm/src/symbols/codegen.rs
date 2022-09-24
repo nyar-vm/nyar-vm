@@ -5,7 +5,7 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> wast::component::InlineExport<'i> {
-        let names = vec![ComponentExternName(self.as_ref())];
+        let names = vec![ComponentExternName(self.long_name())];
         wast::component::InlineExport { names }
     }
 }
@@ -16,7 +16,7 @@ where
 {
     fn as_wast(&'a self) -> wast::core::InlineExport<'i> {
         let names = match &self {
-            Some(s) => vec![s.module.as_ref()],
+            Some(s) => vec![s.name.as_ref()],
             None => vec![],
         };
         wast::core::InlineExport { names }

@@ -33,7 +33,7 @@ pub use crate::{
         Operation, VariableKind,
     },
     structures::{FieldType, StructureItem, StructureType},
-    symbols::WasmSymbol,
+    symbols::{WasmExternalName, WasmPublisher, WasmSymbol},
     types::{external::ExternalSection, WasmType},
     values::{data::DataSection, variable::WasmVariable, WasmValue},
     variants::VariantType,

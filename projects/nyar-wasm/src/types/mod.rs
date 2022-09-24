@@ -65,6 +65,7 @@ impl WasmType {
             Self::Reference { nullable, .. } => *nullable = null,
         }
     }
+
     pub fn with_nullable(mut self, null: bool) -> Self {
         self.set_nullable(null);
         self

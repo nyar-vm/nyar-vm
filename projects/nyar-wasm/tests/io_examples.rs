@@ -1,7 +1,8 @@
 use nyar_wasm::{
-    DataItem, ExternalType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmParameter, WasmSymbol,
-    WasmType, WasmValue, WasmVariable,
+    DataItem, ExternalType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmExternalName, WasmParameter,
+    WasmSymbol, WasmType, WasmValue,
 };
+use semver::Version;
 
 pub fn hello_world() -> WasmBuilder {
     let mut module = WasmBuilder::new("hello_world");
@@ -28,7 +29,7 @@ pub fn hello_world() -> WasmBuilder {
                 WasmParameter::new("offset").with_type(WasmType::I32),
                 WasmParameter::new("length").with_type(WasmType::I32),
             ])
-            .with_outputs(vec![WasmType::I32])
+            .with_output(WasmType::I32)
             .with_operations(vec![
                 Operation::from(0),
                 Operation::local_get("offset"),
@@ -76,17 +77,28 @@ pub fn add_random_pi() -> WasmBuilder {
     //
 
     module.register(
-        FunctionType::new(WasmSymbol::new("const42"))
+        FunctionType::new(WasmSymbol::new("const-42"))
             .with_inputs(vec![])
-            .with_outputs(vec![WasmType::I64])
-            .with_operations(vec![Operation::Constant { value: WasmValue::I64(42) }, Operation::Return {}])
-            .auto_export(true),
+            .with_outputs(vec![
+                WasmParameter::new("r0").with_type(WasmType::I64),
+                WasmParameter::new("r1").with_type(WasmType::I64),
+                WasmParameter::new("r2").with_type(WasmType::I64),
+                WasmParameter::new("r3").with_type(WasmType::I64),
+            ])
+            .with_operations(vec![
+                Operation::from(42i64),
+                Operation::from(42i64),
+                Operation::from(42i64),
+                Operation::from(42i64),
+                Operation::Return {},
+            ])
+            .with_export(WasmExternalName::create("a-two").with_project("org", "package").with_version(Version::new(0, 1, 0))),
     );
 
     module.register(
         FunctionType::new(WasmSymbol::new("const88"))
             .with_inputs(vec![])
-            .with_outputs(vec![WasmType::I64])
+            .with_output(WasmType::I64)
             .with_operations(vec![Operation::Constant { value: WasmValue::I64(88) }, Operation::Return {}])
             .auto_export(true),
     );
