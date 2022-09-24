@@ -1,8 +1,9 @@
 use super::*;
+use crate::helpers::WasmName;
 use wast::{
-    component::{ComponentField, CoreItemRef, ItemRef},
+    component::{CanonOpt, ComponentField, CoreItemRef, ItemRef},
     core::Local,
-    kw,
+    token::Index,
 };
 
 impl<'a, 'i> IntoWasm<'a, Start<'i>> for FunctionType
@@ -23,7 +24,17 @@ impl FunctionType {
             id: self.symbol.as_id(),
             name: None,
             exports: export.as_wast(),
-            kind: self.as_wast(),
+            kind: FuncKind::Lift {
+                ty: ComponentTypeUse::Inline(self.as_wast()),
+                info: CanonLift {
+                    func: CoreItemRef {
+                        kind: Default::default(),
+                        idx: Index::Num(0, Span::from_offset(0)),
+                        export_name: Some(self.symbol.as_ref()),
+                    },
+                    opts: vec![CanonOpt::StringUtf8],
+                },
+            },
         }))
     }
 }
@@ -70,7 +81,7 @@ where
 {
     fn as_wast(&'a self) -> CoreFuncKind<'i> {
         CoreFuncKind::Lower(CanonLower {
-            func: ItemRef { kind: kw::func(Span::from_offset(0)), idx: self.symbol.as_index(), export_names: Vec::new() },
+            func: ItemRef { kind: wast::kw::func(Span::from_offset(0)), idx: self.symbol.as_index(), export_names: Vec::new() },
             opts: Vec::new(),
         })
     }
@@ -82,7 +93,7 @@ where
 {
     fn as_wast(&'a self) -> CanonLift<'i> {
         CanonLift {
-            func: CoreItemRef { kind: kw::func(Span::from_offset(0)), idx: self.symbol.as_index(), export_name: None },
+            func: CoreItemRef { kind: wast::kw::func(Span::from_offset(0)), idx: self.symbol.as_index(), export_name: None },
             opts: Vec::new(),
         }
     }

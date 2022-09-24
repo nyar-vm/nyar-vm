@@ -76,10 +76,18 @@ pub fn add_random_pi() -> WasmBuilder {
     //
 
     module.register(
-        FunctionType::new(WasmSymbol::new("const_42"))
+        FunctionType::new(WasmSymbol::new("const42"))
             .with_inputs(vec![])
             .with_outputs(vec![WasmType::I64])
             .with_operations(vec![Operation::Constant { value: WasmValue::I64(42) }, Operation::Return {}])
+            .auto_export(true),
+    );
+
+    module.register(
+        FunctionType::new(WasmSymbol::new("const88"))
+            .with_inputs(vec![])
+            .with_outputs(vec![WasmType::I64])
+            .with_operations(vec![Operation::Constant { value: WasmValue::I64(88) }, Operation::Return {}])
             .auto_export(true),
     );
 
