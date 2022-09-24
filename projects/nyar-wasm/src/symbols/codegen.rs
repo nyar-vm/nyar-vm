@@ -1,17 +1,15 @@
 use super::*;
 
-impl<'a, 'i> IntoWasm<'a, wast::component::InlineExport<'i>> for Option<WasmExternalName>
+impl<'a, 'i> IntoWasm<'a, wast::component::InlineExport<'i>> for WasmExternalName
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> wast::component::InlineExport<'i> {
-        let names = match &self {
-            Some(s) => vec![ComponentExternName(s.module.as_ref())],
-            None => vec![],
-        };
+        let names = vec![ComponentExternName(self.as_ref())];
         wast::component::InlineExport { names }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, wast::core::InlineExport<'i>> for Option<WasmExternalName>
 where
     'a: 'i,

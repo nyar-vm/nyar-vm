@@ -37,13 +37,12 @@ impl Display for WasmExternalName {
     }
 }
 
-impl WasmExternalName {
-    /// Get export name and erase lifetime
-    pub fn as_ref(&self) -> &str {
+impl AsRef<str> for WasmExternalName {
+    fn as_ref(&self) -> &str {
+        // SAFETY: StringPool will deallocate this string when there are no more references to it
         unsafe {
-            let fake = self.to_string();
-            let ptr = fake.as_str() as *const str;
-            &*ptr
+            let cache = string_pool::String::from(self.to_string());
+            &*(cache.as_str() as *const str)
         }
     }
 }

@@ -2,6 +2,7 @@ use nyar_wasm::{
     DataItem, ExternalType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmParameter, WasmSymbol,
     WasmType, WasmValue, WasmVariable,
 };
+
 pub fn hello_world() -> WasmBuilder {
     let mut module = WasmBuilder::new("hello_world");
 
@@ -61,64 +62,73 @@ pub fn hello_world() -> WasmBuilder {
 pub fn add_random_pi() -> WasmBuilder {
     let mut module = WasmBuilder::new("add_random_pi");
 
-    module.register_global(WasmVariable::f32("f32::pi", 3.14));
+    // module.register_global(WasmVariable::f32("f32::pi", 3.14));
+
+    // module.register(
+    //     ExternalType::new("wasi_snapshot_preview1", "random_get")
+    //         .with_alias("random_get")
+    //         .with_input(vec![
+    //             WasmParameter::new("a").with_type(WasmType::I32),
+    //             WasmParameter::new("b").with_type(WasmType::I32),
+    //         ])
+    //         .with_output(vec![WasmType::I32]),
+    // );
+    //
 
     module.register(
-        ExternalType::new("wasi_snapshot_preview1", "random_get")
-            .with_alias("random_get")
-            .with_input(vec![
-                WasmParameter::new("a").with_type(WasmType::I32),
-                WasmParameter::new("b").with_type(WasmType::I32),
-            ])
-            .with_output(vec![WasmType::I32]),
-    );
-
-    module.register(
-        FunctionType::new(WasmSymbol::new("sum_all"))
-            .with_inputs(vec![
-                WasmParameter::new("a").with_type(WasmType::I32),
-                WasmParameter::new("b").with_type(WasmType::I32),
-                WasmParameter::new("c").with_type(WasmType::I32),
-            ])
-            .with_outputs(vec![WasmType::I32])
-            .with_operations(vec![
-                Operation::CallFunction {
-                    name: WasmSymbol::new("add_random"),
-                    input: vec![Operation::Constant { value: WasmValue::F32(0.0) }],
-                },
-                Operation::Return {},
-            ])
-            .auto_export(true),
-    );
-
-    module.register(
-        FunctionType::new(WasmSymbol::new("add_pi"))
-            .with_inputs(vec![WasmParameter::new("x").with_type(WasmType::F32)])
-            .with_outputs(vec![WasmType::I32])
-            .with_operations(vec![Operation::NativeSum {
-                r#type: WasmType::F32,
-                terms: vec![Operation::Convert {
-                    from: WasmType::F32,
-                    into: WasmType::I32,
-                    code: vec![Operation::NativeSum {
-                        r#type: WasmType::F32,
-                        terms: vec![Operation::global_get("f32::pi"), Operation::local_get("x")],
-                    }],
-                }],
-            }])
-            .auto_export(true),
-    );
-
-    module.register(
-        FunctionType::new(WasmSymbol::new("_main"))
+        FunctionType::new(WasmSymbol::new("const_42"))
             .with_inputs(vec![])
-            .with_outputs(vec![WasmType::I32])
-            .with_operations(vec![Operation::CallFunction {
-                name: WasmSymbol::new("random_get"),
-                input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
-            }])
+            .with_outputs(vec![WasmType::I64])
+            .with_operations(vec![Operation::Constant { value: WasmValue::I64(42) }, Operation::Return {}])
             .auto_export(true),
     );
+
+    // module.register(
+    //     FunctionType::new(WasmSymbol::new("sum_all"))
+    //         .with_inputs(vec![
+    //             WasmParameter::new("a").with_type(WasmType::I32),
+    //             WasmParameter::new("b").with_type(WasmType::I32),
+    //             WasmParameter::new("c").with_type(WasmType::I32),
+    //         ])
+    //         .with_outputs(vec![WasmType::I32])
+    //         .with_operations(vec![
+    //             Operation::CallFunction {
+    //                 name: WasmSymbol::new("add_random"),
+    //                 input: vec![Operation::Constant { value: WasmValue::F32(0.0) }],
+    //             },
+    //             Operation::Return {},
+    //         ])
+    //         .auto_export(true),
+    // );
+
+    // module.register(
+    //     FunctionType::new(WasmSymbol::new("add_pi"))
+    //         .with_inputs(vec![WasmParameter::new("x").with_type(WasmType::F32)])
+    //         .with_outputs(vec![WasmType::I32])
+    //         .with_operations(vec![Operation::NativeSum {
+    //             r#type: WasmType::F32,
+    //             terms: vec![Operation::Convert {
+    //                 from: WasmType::F32,
+    //                 into: WasmType::I32,
+    //                 code: vec![Operation::NativeSum {
+    //                     r#type: WasmType::F32,
+    //                     terms: vec![Operation::global_get("f32::pi"), Operation::local_get("x")],
+    //                 }],
+    //             }],
+    //         }])
+    //         .auto_export(true),
+    // );
+
+    // module.register(
+    //     FunctionType::new(WasmSymbol::new("_main"))
+    //         .with_inputs(vec![])
+    //         .with_outputs(vec![WasmType::I32])
+    //         .with_operations(vec![Operation::CallFunction {
+    //             name: WasmSymbol::new("random_get"),
+    //             input: vec![Operation::Constant { value: WasmValue::I32(1) }, Operation::Constant { value: WasmValue::I32(1) }],
+    //         }])
+    //         .auto_export(true),
+    // );
     module
 }
 

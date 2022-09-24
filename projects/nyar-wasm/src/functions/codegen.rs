@@ -1,6 +1,6 @@
 use super::*;
 use wast::{
-    component::{CoreItemRef, ItemRef},
+    component::{ComponentField, CoreItemRef, ItemRef},
     core::Local,
     kw,
 };
@@ -14,19 +14,17 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, Func<'i>> for FunctionType
-where
-    'a: 'i,
-{
-    /// 怎么把核心函数提升到组件函数
-    fn as_wast(&'a self) -> Func<'i> {
-        Func {
+impl FunctionType {
+    /// Make a component function if it needs to export
+    pub fn make_component(&self) -> Option<ComponentField<'_>> {
+        let export = self.export.as_ref()?;
+        Some(ComponentField::Func(Func {
             span: Span::from_offset(0),
             id: self.symbol.as_id(),
             name: None,
-            exports: self.export.as_wast(),
+            exports: export.as_wast(),
             kind: self.as_wast(),
-        }
+        }))
     }
 }
 
@@ -65,6 +63,7 @@ where
         FuncKind::Lift { ty: ComponentTypeUse::Inline(self.as_wast()), info: self.as_wast() }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, CoreFuncKind<'i>> for FunctionType
 where
     'a: 'i,
@@ -76,6 +75,7 @@ where
         })
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, CanonLift<'i>> for FunctionType
 where
     'a: 'i,
@@ -87,6 +87,7 @@ where
         }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, ComponentFunctionType<'i>> for FunctionType
 where
     'a: 'i,
@@ -97,6 +98,7 @@ where
         ComponentFunctionType { params: Box::from(params), results: Box::from(result) }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, wast::core::FunctionType<'i>> for FunctionType
 where
     'a: 'i,
@@ -144,6 +146,7 @@ where
         wast::core::FuncKind::Inline { locals: Box::from(locals), expression: self.body.as_wast() }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, Local<'i>> for WasmParameter
 where
     'a: 'i,

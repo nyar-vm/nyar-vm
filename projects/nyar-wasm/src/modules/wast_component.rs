@@ -1,4 +1,5 @@
 use super::*;
+use wast::component::{CoreInstance, CoreInstanceExport, CoreInstanceKind, CoreItemRef};
 
 impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
 where
@@ -63,15 +64,35 @@ impl WasmBuilder {
         // coms.push(ComponentField::Type(ts.as_wast()));
         // coms.push(ComponentField::CoreType(ts.as_wast()))
         // }
-        for fs in self.functions.values() {
-            if !self.entry.is_empty() {
-                coms.push(ComponentField::Start(fs.as_wast()));
-                coms.push(ComponentField::Func(fs.as_wast()));
-            }
-            coms.push(ComponentField::CoreFunc(fs.as_wast()));
-        }
         coms.push(ComponentField::CoreModule(self.as_wast()));
+        // (core instance $library (instantiate $Library))
+        coms.push(ComponentField::CoreInstance(CoreInstance {
+            span: Span::from_offset(0),
+            id: WasmName::id("add_random_pi"),
+            name: Some(NameAnnotation { name: "instance_name" }),
+            kind: CoreInstanceKind::BundleOfExports(vec![CoreInstanceExport {
+                span: Span::from_offset(0),
+                name: "",
+                item: CoreItemRef {
+                    kind: wast::core::ExportKind::Func,
+                    idx: Index::Num(0, Span::from_offset(0)),
+                    export_name: Some("export_name"),
+                },
+            }]),
+        }));
 
+        // for fs in self.functions.values() {
+        //     if !self.entry.is_empty() {
+        //         // coms.push(ComponentField::Start(fs.as_wast()));
+        //     }
+        //     coms.push(ComponentField::CoreFunc(fs.as_wast()));
+        // }
+        // for fs in self.functions.values() {
+        //     if !self.entry.is_empty() {
+        //         // coms.push(ComponentField::Start(fs.as_wast()));
+        //     }
+        //     coms.extend(fs.make_component());
+        // }
         coms.push(ComponentField::Producers(self.as_wast()));
         Ok(Component { span: Span::from_offset(0), id: None, name: None, kind: ComponentKind::Text(coms) })
     }

@@ -21,7 +21,7 @@ fn test() -> Result<(), NyarError> {
     }
     let _ = new_structure().build_module(debug.join("mod.wasm")).unwrap();
     let _ = new_array().build_module(debug.join("array.wasm")).unwrap();
-    let _ = hello_world().build_module(debug.join("hello.wasm")).unwrap();
+    let _ = add_random_pi().build_component(debug.join("random_pi.wasm")).unwrap();
     let _ = control_flow().build_module(debug.join("control.wasm")).unwrap();
 
     let o = Command::new("valor").arg("build").output();
