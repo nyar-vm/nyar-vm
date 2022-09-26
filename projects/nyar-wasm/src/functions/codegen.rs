@@ -1,7 +1,7 @@
 use super::*;
 use crate::helpers::WasmName;
 use wast::{
-    component::{CanonOpt, ComponentField, ComponentValType, CoreItemRef, ItemRef},
+    component::{CanonOpt, ComponentDefinedType, ComponentField, ComponentValType, CoreItemRef, ItemRef, Tuple},
     core::Local,
     token::Index,
 };
@@ -94,8 +94,16 @@ where
 {
     fn as_wast(&'a self) -> ComponentFunctionType<'i> {
         let params: Vec<_> = self.input.values().map(|v| v.as_wast()).collect();
-        let result: Vec<_> = self.output.iter().map(|v| v.as_wast()).collect();
-        ComponentFunctionType { params: Box::from(params), results: Box::from(result) }
+        // let result: Vec<_> = self.output.iter().map(|v| v.as_wast()).collect();
+        let ty = if self.output.len() == 1 {
+            ComponentValType::Inline(self.output[0].type_hint.as_wast())
+        }
+        else {
+            ComponentValType::Inline(ComponentDefinedType::Tuple(Tuple {
+                fields: self.output.iter().map(|v| v.type_hint.as_wast()).collect(),
+            }))
+        };
+        ComponentFunctionType { params: Box::from(params), results: Box::from([ComponentFunctionResult { name: None, ty }]) }
     }
 }
 
@@ -118,7 +126,14 @@ where
         ComponentFunctionParam { name: self.name.as_ref(), ty: self.type_hint.as_wast() }
     }
 }
-
+impl<'a, 'i> IntoWasm<'a, ComponentFunctionResult<'i>> for WasmParameter
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> ComponentFunctionResult<'i> {
+        ComponentFunctionResult { name: Some(self.name.as_ref()), ty: self.type_hint.as_wast() }
+    }
+}
 impl<'a, 'i> IntoWasm<'a, (Option<Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>)> for WasmParameter
 where
     'a: 'i,
@@ -134,15 +149,6 @@ where
 {
     fn as_wast(&'a self) -> ValType<'a> {
         self.type_hint.as_wast()
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, ComponentFunctionResult<'i>> for WasmParameter
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> ComponentFunctionResult<'i> {
-        ComponentFunctionResult { name: Some(self.name.as_ref()), ty: ComponentValType::Inline(self.type_hint.as_wast()) }
     }
 }
 

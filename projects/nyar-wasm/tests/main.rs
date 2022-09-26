@@ -19,10 +19,10 @@ fn test() -> Result<(), NyarError> {
     if !debug.exists() {
         std::fs::create_dir_all(&debug).unwrap();
     }
-    let _ = new_structure().build_module(debug.join("mod.wasm")).unwrap();
-    let _ = new_array().build_module(debug.join("array.wasm")).unwrap();
-    let _ = add_random_pi().build_component(debug.join("random_pi.wasm")).unwrap();
-    let _ = control_flow().build_module(debug.join("control.wasm")).unwrap();
+    // let _ = new_structure().build_module(debug.join("mod.wasm")).unwrap();
+    // let _ = new_array().build_module(debug.join("array.wasm")).unwrap();
+    let _ = import_random().build_component(debug.join("random_pi.wasm")).unwrap();
+    // let _ = control_flow().build_module(debug.join("control.wasm")).unwrap();
 
     let o = Command::new("valor").arg("build").output();
     println!("{o:?}");

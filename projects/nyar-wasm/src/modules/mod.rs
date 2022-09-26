@@ -2,9 +2,8 @@ use crate::{
     functions::FunctionType,
     helpers::{write_wasm_bytes, IntoWasm, WasmName},
     structures::StructureType,
-    ArrayType, DataItem, ExternalType, WasmVariable,
+    ArrayType, DataItem, ImportFunction, WasmExternalName, WasmVariable,
 };
-
 use nyar_error::NyarError;
 use std::{
     collections::BTreeMap,
@@ -33,10 +32,10 @@ pub struct WasmBuilder {
     pub arrays: BTreeMap<String, ArrayType>,
     pub data: BTreeMap<String, DataItem>,
     pub functions: BTreeMap<String, FunctionType>,
-    pub externals: BTreeMap<String, ExternalType>,
+    pub externals: BTreeMap<String, ImportFunction>,
 }
 
-impl WasmItem for ExternalType {
+impl WasmItem for ImportFunction {
     fn register(self, builder: &mut WasmBuilder) {
         builder.externals.insert(self.name().to_string(), self);
     }
@@ -50,6 +49,7 @@ impl WasmItem for FunctionType {
         builder.functions.insert(self.name(), self);
     }
 }
+
 impl WasmItem for ArrayType {
     fn register(self, builder: &mut WasmBuilder) {
         builder.arrays.insert(self.symbol.to_string(), self);
@@ -73,6 +73,14 @@ impl WasmBuilder {
     }
     pub fn register<T: WasmItem>(&mut self, item: T) {
         item.register(self);
+    }
+
+    pub fn import_groups(&self) -> BTreeMap<&WasmExternalName, Vec<&ImportFunction>> {
+        let mut groups = BTreeMap::new();
+        for f in self.externals.values() {
+            groups.entry(&f.external).or_insert_with(Vec::new).push(f);
+        }
+        groups
     }
 
     pub fn register_data(&mut self, item: DataItem) -> Option<DataItem> {

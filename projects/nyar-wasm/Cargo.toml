@@ -15,6 +15,7 @@ semver = "1.0.22"
 indexmap = "2.2.3"
 wast = "200.0.0"
 string-pool = "0.1.0"
+itertools = "0.12.1"
 
 [dependencies.nyar-error]
 version = "0.1.*"

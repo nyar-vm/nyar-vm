@@ -1,6 +1,7 @@
 use crate::helpers::{IntoWasm, WasmName};
 use semver::Version;
 use std::{
+    cmp::Ordering,
     fmt::{Debug, Display, Formatter},
     sync::Arc,
 };
@@ -19,14 +20,14 @@ pub struct WasmSymbol {
 }
 
 /// e.g.: `wasi:random` in `wasi:random/random@0.2.0`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct WasmPublisher {
     organization: Arc<str>,
     project: Arc<str>,
 }
 
 /// e.g: `wasi:random/random@0.2.0`
-#[derive(Clone)]
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct WasmExternalName {
     name: Arc<str>,
     package: Option<WasmPublisher>,

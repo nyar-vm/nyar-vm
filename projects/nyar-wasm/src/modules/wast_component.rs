@@ -1,5 +1,9 @@
 use super::*;
-use wast::component::{CoreInstance, CoreInstanceKind, ItemRef};
+
+use wast::component::{
+    ComponentExternName, ComponentImport, ComponentTypeUse, CoreInstance, CoreInstanceKind, InstanceType, ItemRef, ItemSig,
+    ItemSigKind,
+};
 
 impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
 where
@@ -81,10 +85,24 @@ impl WasmBuilder {
 
     pub fn as_component(&self) -> Result<Component, NyarError> {
         let mut coms = vec![];
-        // for ts in self.structures.values() {
-        // coms.push(ComponentField::Type(ts.as_wast()));
-        // coms.push(ComponentField::CoreType(ts.as_wast()))
-        // }
+
+        for (name, functions) in self.import_groups() {
+            let decls = functions.iter().map(|f| f.as_wast()).collect();
+            coms.push(ComponentField::Import(ComponentImport {
+                span: Span::from_offset(0),
+                name: ComponentExternName(name.long_name()),
+                item: ItemSig {
+                    span: Span::from_offset(0),
+                    id: WasmName::id(name.long_name()),
+                    name: None,
+                    kind: ItemSigKind::Instance(ComponentTypeUse::Inline(InstanceType { decls })),
+                },
+            }))
+        }
+
+        for function in self.externals.values() {
+            coms.push(ComponentField::CoreFunc(function.as_wast()));
+        }
 
         // Export Valkyrie module externally
         coms.push(ComponentField::CoreModule(self.as_wast()));

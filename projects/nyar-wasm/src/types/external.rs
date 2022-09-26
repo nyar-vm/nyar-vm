@@ -1,18 +1,21 @@
 use super::*;
+use crate::WasmExternalName;
+use itertools::Itertools;
 
 #[derive(Default)]
-pub struct ExternalSection {
-    items: IndexMap<String, ExternalType>,
+pub struct ImportSection {
+    items: IndexMap<String, ImportFunction>,
 }
 
-impl ExternalSection {
-    pub fn insert(&mut self, item: ExternalType) -> Option<ExternalType> {
+impl ImportSection {
+    pub fn insert(&mut self, item: ImportFunction) -> Option<ImportFunction> {
         self.items.insert(item.name().to_string(), item)
     }
 }
-impl<'i> IntoIterator for &'i ExternalSection {
-    type Item = (usize, &'i str, &'i ExternalType);
-    type IntoIter = IndexedIterator<'i, ExternalType>;
+
+impl<'i> IntoIterator for &'i ImportSection {
+    type Item = (usize, &'i str, &'i ImportFunction);
+    type IntoIter = IndexedIterator<'i, ImportFunction>;
 
     fn into_iter(self) -> Self::IntoIter {
         IndexedIterator::new(&self.items)

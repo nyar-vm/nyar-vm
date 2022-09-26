@@ -24,7 +24,7 @@ mod values;
 pub use crate::{
     array::ArrayType,
     data::DataItem,
-    external::ExternalType,
+    external::ImportFunction,
     flags::{EncodingType, FlagType},
     functions::{FunctionBody, FunctionType, WasmParameter},
     modules::{WasmBuilder, WasmItem},
@@ -34,7 +34,7 @@ pub use crate::{
     },
     structures::{FieldType, StructureItem, StructureType},
     symbols::{WasmExternalName, WasmPublisher, WasmSymbol},
-    types::{external::ExternalSection, WasmType},
+    types::{external::ImportSection, WasmType},
     values::{data::DataSection, variable::WasmVariable, WasmValue},
     variants::VariantType,
 };
