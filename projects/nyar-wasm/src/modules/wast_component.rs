@@ -85,7 +85,7 @@ impl WasmBuilder {
 
     pub fn as_component(&self) -> Result<Component, NyarError> {
         let mut coms = vec![];
-
+        // Import external functions to valkyrie module
         for (name, functions) in self.import_groups() {
             let decls = functions.iter().map(|f| f.as_wast()).collect();
             coms.push(ComponentField::Import(ComponentImport {
@@ -103,8 +103,7 @@ impl WasmBuilder {
         for function in self.externals.values() {
             coms.push(ComponentField::CoreFunc(function.as_wast()));
         }
-
-        // Export Valkyrie module externally
+        // Export valkyrie module externally
         coms.push(ComponentField::CoreModule(self.as_wast()));
         coms.push(ComponentField::CoreInstance(self.as_wast()));
         for fs in self.functions.values() {

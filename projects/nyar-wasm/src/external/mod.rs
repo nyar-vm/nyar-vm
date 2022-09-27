@@ -1,7 +1,7 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
     symbols::WasmExternalName,
-    WasmParameter, WasmSymbol,
+    WasmParameter, WasmSymbol, WasmType,
 };
 use std::ops::AddAssign;
 use wast::{
@@ -20,7 +20,7 @@ pub struct ImportFunction {
     pub local: WasmSymbol,
     pub alias: Option<WasmSymbol>,
     pub inputs: Vec<WasmParameter>,
-    pub outputs: Vec<WasmParameter>,
+    pub output: WasmType,
 }
 
 impl AddAssign<WasmSymbol> for ImportFunction {
@@ -37,7 +37,7 @@ impl AddAssign<WasmParameter> for ImportFunction {
 
 impl ImportFunction {
     pub fn new<M: Into<WasmExternalName>, F: Into<WasmSymbol>>(module: M, function: F) -> ImportFunction {
-        Self { external: module.into(), local: function.into(), alias: None, inputs: vec![], outputs: vec![] }
+        Self { external: module.into(), local: function.into(), alias: None, inputs: vec![], output: WasmType::Tuple(vec![]) }
     }
     pub fn name(&self) -> &str {
         match &self.alias {
@@ -48,7 +48,7 @@ impl ImportFunction {
     pub fn function_id(&self) -> &str {
         // SAFETY: StringPool will deallocate this string when there are no more references to it
         unsafe {
-            let cache = string_pool::String::from(format!("{}/{}", self.external, self.local));
+            let cache = string_pool::String::from(format!("{}:{}", self.external, self.local));
             &*(cache.as_str() as *const str)
         }
     }
@@ -63,11 +63,11 @@ impl ImportFunction {
         self.inputs.extend(inputs);
         self
     }
-    pub fn with_output<I>(mut self, outputs: I) -> Self
+    pub fn with_output<I>(mut self, output: I) -> Self
     where
-        I: IntoIterator<Item = WasmParameter>,
+        I: Into<WasmType>,
     {
-        self.outputs.extend(outputs);
+        self.output = output.into();
         self
     }
 }

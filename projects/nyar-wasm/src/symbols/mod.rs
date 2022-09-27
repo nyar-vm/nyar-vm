@@ -1,7 +1,6 @@
 use crate::helpers::{IntoWasm, WasmName};
 use semver::Version;
 use std::{
-    cmp::Ordering,
     fmt::{Debug, Display, Formatter},
     sync::Arc,
 };

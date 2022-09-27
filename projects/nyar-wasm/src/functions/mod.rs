@@ -32,7 +32,7 @@ pub struct FunctionType {
     pub span: FileSpan,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct WasmParameter {
     pub name: WasmSymbol,
     pub type_hint: WasmType,

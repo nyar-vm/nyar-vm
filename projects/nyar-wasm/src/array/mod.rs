@@ -15,6 +15,7 @@ impl From<ArrayType> for WasmType {
         Self::Array(Box::new(value))
     }
 }
+
 #[derive(Clone, Debug)]
 pub struct ArrayType {
     pub symbol: WasmSymbol,

@@ -9,7 +9,7 @@ where
         Type {
             span: Span::from_offset(0),
             id: WasmName::id(self.symbol.as_ref()),
-            name: Some(NameAnnotation { name: self.symbol.as_ref() }),
+            name: None,
             def: TypeDef::Array(self.as_wast()),
             parent: None,
             final_type: Some(true),

@@ -1,6 +1,6 @@
 use nyar_wasm::{
-    DataItem, FieldType, FunctionType, ImportFunction, Operation, StructureItem, WasmBuilder, WasmExternalName, WasmParameter,
-    WasmSymbol, WasmType, WasmValue,
+    ArrayType, DataItem, FieldType, FunctionType, ImportFunction, Operation, StructureItem, WasmBuilder, WasmExternalName,
+    WasmParameter, WasmSymbol, WasmType, WasmValue,
 };
 use semver::Version;
 
@@ -103,7 +103,16 @@ pub fn import_random() -> WasmBuilder {
             "get-random-u64",
         )
         .with_alias("get_random_u64")
-        .with_output(vec![WasmParameter::new("r0").with_type(WasmType::I64)]),
+        .with_output(WasmType::I64),
+    );
+    module.register(
+        ImportFunction::new(
+            WasmExternalName::create("random").with_project("wasi", "random").with_version(Version::new(0, 2, 0)),
+            "get-random-bytes",
+        )
+        .with_alias("get_random_bytes")
+        .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
+        .with_output(WasmType::Array(Box::new(ArrayType::new("array", WasmType::U8)))),
     );
 
     // module.register(

@@ -284,6 +284,7 @@ impl WasmInstruction for WasmType {
             Self::Any { .. } => {
                 todo!()
             }
+            Self::Tuple(v) => {}
             Self::Structure(s) => w.push(Instruction::StructNewDefault(s.symbol.as_index())),
             Self::Array(t) => {
                 w.push(Instruction::I32Const(0));

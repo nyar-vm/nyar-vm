@@ -1,4 +1,5 @@
 use super::*;
+use wast::component::List;
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for WasmType
 where
@@ -55,6 +56,7 @@ where
     fn as_wast(&'a self) -> ComponentDefinedType<'i> {
         match self {
             Self::Structure(_) => todo!(),
+            Self::Array(v) => ComponentDefinedType::List(List { element: Box::new(v.item_type.as_wast()) }),
             _ => ComponentDefinedType::Primitive(self.as_wast()),
         }
     }

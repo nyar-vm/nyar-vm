@@ -1,8 +1,8 @@
 use super::*;
 use wast::{
     component::{
-        CanonLower, ComponentExportType, ComponentExternName, ComponentFunctionType, ComponentTypeUse, CoreFunc, CoreFuncKind,
-        InstanceTypeDecl, ItemRef, ItemSig, ItemSigKind,
+        CanonLower, ComponentExportType, ComponentExternName, ComponentFunctionResult, ComponentFunctionType, ComponentTypeUse,
+        CoreFunc, CoreFuncKind, InstanceTypeDecl, ItemRef, ItemSig, ItemSigKind,
     },
     token::Index,
 };
@@ -18,7 +18,7 @@ where
             field: self.local.as_ref(),
             item: wast::core::ItemSig {
                 span: Span::from_offset(0),
-                id: WasmName::id(self.name()),
+                id: WasmName::id(self.function_id()),
                 name: None,
                 kind: ItemKind::Func(TypeUse { index: None, inline: Some(self.as_wast()) }),
             },
@@ -71,7 +71,7 @@ where
 {
     fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
         let input = self.inputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        let result = self.outputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
+        let result = [self.output.as_wast()];
         wast::core::FunctionType { params: Box::from(input), results: Box::from(result) }
     }
 }
@@ -82,7 +82,7 @@ where
 {
     fn as_wast(&'a self) -> ComponentFunctionType<'i> {
         let input = self.inputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        let result = self.outputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
+        let result = [ComponentFunctionResult { name: None, ty: self.output.as_wast() }];
         ComponentFunctionType { params: Box::from(input), results: Box::from(result) }
     }
 }

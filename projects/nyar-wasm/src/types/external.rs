@@ -1,6 +1,4 @@
 use super::*;
-use crate::WasmExternalName;
-use itertools::Itertools;
 
 #[derive(Default)]
 pub struct ImportSection {
