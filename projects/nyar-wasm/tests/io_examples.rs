@@ -112,7 +112,7 @@ pub fn import_random() -> WasmBuilder {
         )
         .with_alias("get_random_bytes")
         .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
-        .with_output(WasmType::Array(Box::new(ArrayType::new("array", WasmType::U8)))),
+        .with_output(WasmType::I32),
     );
 
     // module.register(

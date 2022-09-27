@@ -70,4 +70,11 @@ impl ImportFunction {
         self.output = output.into();
         self
     }
+    pub fn with_outputs<I>(mut self, outputs: I) -> Self
+    where
+        I: IntoIterator<Item = WasmParameter>,
+    {
+        self.output = WasmType::Tuple(outputs.into_iter().collect());
+        self
+    }
 }

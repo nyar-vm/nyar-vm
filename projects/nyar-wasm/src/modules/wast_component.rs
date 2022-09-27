@@ -1,8 +1,8 @@
 use super::*;
 
 use wast::component::{
-    ComponentExternName, ComponentImport, ComponentTypeUse, CoreInstance, CoreInstanceKind, InstanceType, ItemRef, ItemSig,
-    ItemSigKind,
+    ComponentExternName, ComponentImport, ComponentTypeUse, CoreInstance, CoreInstanceKind, CoreInstantiationArg,
+    CoreInstantiationArgKind, CoreItemRef, InstanceType, ItemRef, ItemSig, ItemSigKind,
 };
 
 impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
@@ -48,6 +48,18 @@ where
     'a: 'i,
 {
     fn as_wast(&'a self) -> CoreInstance<'i> {
+        let mut args = vec![];
+        for (name, function) in self.import_groups() {
+            // args.push(CoreInstantiationArg {
+            //     name: name.long_name(),
+            //     kind: CoreInstantiationArgKind::Instance(CoreItemRef {
+            //         kind: wast::kw::instance::de,
+            //         idx: WasmName::index(name.long_name()),
+            //         export_name: None,
+            //     }),
+            // })
+        }
+
         CoreInstance {
             span: Span::from_offset(0),
             id: WasmName::id(self.get_instance_name()),
@@ -55,10 +67,10 @@ where
             kind: CoreInstanceKind::Instantiate {
                 module: ItemRef {
                     kind: Default::default(),
-                    idx: Index::Id(WasmName::new(self.get_module_name())),
+                    idx: WasmName::index(self.get_module_name()),
                     export_names: vec![],
                 },
-                args: vec![],
+                args,
             },
         }
     }

@@ -35,7 +35,7 @@ impl WasmBuilder {
         }
         // start section
         if !self.entry.is_empty() {
-            terms.push(ModuleField::Start(Index::Id(WasmName::new(&self.entry))))
+            terms.push(ModuleField::Start(WasmName::index(&self.entry)))
         }
         Module {
             span: Span::from_offset(0),

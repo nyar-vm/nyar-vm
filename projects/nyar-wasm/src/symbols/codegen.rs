@@ -28,7 +28,7 @@ impl WasmSymbol {
     where
         'a: 'i,
     {
-        Index::Id(WasmName::new(self.inner.as_ref()))
+        WasmName::index(self.inner.as_ref())
     }
     pub(crate) fn as_id<'a, 'i>(&'a self) -> Option<Id<'i>>
     where

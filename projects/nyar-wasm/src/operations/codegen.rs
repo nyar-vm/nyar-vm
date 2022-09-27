@@ -16,11 +16,9 @@ impl WasmInstruction for Operation {
                 }
             }
             Self::GetVariable { kind, variable } => match kind {
-                VariableKind::Global => w.push(Instruction::GlobalGet(Index::Id(WasmName::new(variable.as_ref())))),
-                VariableKind::Local => w.push(Instruction::LocalGet(Index::Id(WasmName::new(variable.as_ref())))),
-                VariableKind::Table => {
-                    w.push(Instruction::TableGet(TableArg { dst: Index::Id(WasmName::new(variable.as_ref())) }))
-                }
+                VariableKind::Global => w.push(Instruction::GlobalGet(WasmName::index(variable.as_ref()))),
+                VariableKind::Local => w.push(Instruction::LocalGet(WasmName::index(variable.as_ref()))),
+                VariableKind::Table => w.push(Instruction::TableGet(TableArg { dst: WasmName::index(variable.as_ref()) })),
             },
             Self::GetField { structure, field } => {
                 w.push(Instruction::StructGet(StructAccess { r#struct: structure.as_index(), field: field.as_index() }))
@@ -29,16 +27,14 @@ impl WasmInstruction for Operation {
                 w.push(Instruction::StructSet(StructAccess { r#struct: structure.as_index(), field: field.as_index() }))
             }
             Self::SetVariable { kind, variable } => match kind {
-                VariableKind::Global => w.push(Instruction::GlobalSet(Index::Id(WasmName::new(variable.as_ref())))),
-                VariableKind::Local => w.push(Instruction::LocalSet(Index::Id(WasmName::new(variable.as_ref())))),
-                VariableKind::Table => {
-                    w.push(Instruction::TableSet(TableArg { dst: Index::Id(WasmName::new(variable.as_ref())) }))
-                }
+                VariableKind::Global => w.push(Instruction::GlobalSet(WasmName::index(variable.as_ref()))),
+                VariableKind::Local => w.push(Instruction::LocalSet(WasmName::index(variable.as_ref()))),
+                VariableKind::Table => w.push(Instruction::TableSet(TableArg { dst: WasmName::index(variable.as_ref()) })),
             },
-            Self::TeeVariable { variable } => w.push(Instruction::LocalTee(Index::Id(WasmName::new(variable.as_ref())))),
+            Self::TeeVariable { variable } => w.push(Instruction::LocalTee(WasmName::index(variable.as_ref()))),
             Self::CallFunction { name, input } => {
                 input.iter().for_each(|i| i.emit(w));
-                w.push(Instruction::Call(Index::Id(WasmName::new(name.as_ref()))));
+                w.push(Instruction::Call(WasmName::index(name.as_ref())));
             }
             Self::Default { typed } => typed.emit(w),
             Self::Constant { value } => value.emit(w),
@@ -98,7 +94,7 @@ impl WasmInstruction for Operation {
                 w.push(Instruction::End(None));
                 w.push(Instruction::End(None));
             }
-            Self::Goto { label } => w.push(Instruction::Br(Index::Id(WasmName::new(label.as_ref())))),
+            Self::Goto { label } => w.push(Instruction::Br(WasmName::index(label.as_ref()))),
             Self::Drop => {
                 w.push(Instruction::Drop);
             }
@@ -148,7 +144,7 @@ impl WasmInstruction for Operation {
             }
             Self::JumpEnumeration(_) => {}
             Self::StoreVariable { r#type, offset } => {
-                let memory = Index::Id(WasmName::new("memory"));
+                let memory = WasmName::index("memory");
                 match r#type {
                     WasmType::Bool => {}
                     WasmType::U8 => {}

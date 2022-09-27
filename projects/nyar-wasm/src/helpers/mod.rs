@@ -23,6 +23,7 @@ impl<'i, T> Iterator for IndexedIterator<'i, T> {
         Some((index, name, item))
     }
 }
+
 impl<'i, T> DoubleEndedIterator for IndexedIterator<'i, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let (name, item) = self.iter.next_back()?;
@@ -37,6 +38,7 @@ impl<'i, T> ExactSizeIterator for IndexedIterator<'i, T> {
         self.iter.len()
     }
 }
+
 impl<'i, T> IndexedIterator<'i, T> {
     pub fn new(map: &'i IndexMap<String, T>) -> Self {
         Self { iter: map.iter(), index: 0 }
@@ -70,6 +72,10 @@ impl<'a> WasmName<'a> {
             transmute::<WasmName, wast::token::Id>(s)
         }
     }
+    pub fn index(name: &'a str) -> wast::token::Index<'a> {
+        wast::token::Index::Id(Self::new(name))
+    }
+
     pub fn id(name: &'a str) -> Option<wast::token::Id<'a>> {
         Some(Self::new(name))
     }

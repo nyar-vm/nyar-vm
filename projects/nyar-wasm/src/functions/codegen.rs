@@ -32,13 +32,13 @@ impl FunctionType {
                 info: CanonLift {
                     func: CoreItemRef {
                         kind: Default::default(),
-                        idx: Index::Id(WasmName::new(instance_name)),
+                        idx: WasmName::index(instance_name),
                         export_name: Some(export.short_name()),
                     },
                     opts: vec![
                         CanonOpt::Memory(CoreItemRef {
                             kind: Default::default(),
-                            idx: Index::Id(WasmName::new(instance_name)),
+                            idx: WasmName::index(instance_name),
                             export_name: Some("memory"),
                         }),
                         CanonOpt::StringUtf8,

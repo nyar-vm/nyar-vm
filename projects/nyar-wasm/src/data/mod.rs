@@ -27,7 +27,7 @@ impl DataItem {
             span: Span::from_offset(0),
             id: WasmName::id(self.symbol.as_ref()),
             name: Some(NameAnnotation { name: self.symbol.as_ref() }),
-            kind: DataKind::Active { memory: Index::Id(WasmName::new("memory")), offset },
+            kind: DataKind::Active { memory: WasmName::index("memory"), offset },
             data: vec![DataVal::String(self.data.as_slice())],
         }
     }

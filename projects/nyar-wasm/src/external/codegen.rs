@@ -38,7 +38,7 @@ where
             kind: CoreFuncKind::Lower(CanonLower {
                 func: ItemRef {
                     kind: Default::default(),
-                    idx: Index::Id(WasmName::new(self.external.long_name())),
+                    idx: WasmName::index(self.external.long_name()),
                     export_names: vec![self.local.as_ref()],
                 },
                 opts: vec![],
