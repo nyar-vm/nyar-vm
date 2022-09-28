@@ -1,8 +1,12 @@
 use super::*;
 
-use wast::component::{
-    ComponentExternName, ComponentImport, ComponentTypeUse, CoreInstance, CoreInstanceKind, CoreInstantiationArg,
-    CoreInstantiationArgKind, CoreItemRef, InstanceType, ItemRef, ItemSig, ItemSigKind,
+use wast::{
+    component::{
+        ComponentExternName, ComponentImport, ComponentTypeUse, CoreInstance, CoreInstanceExport, CoreInstanceKind,
+        CoreInstantiationArg, CoreInstantiationArgKind, CoreItemRef, InstanceType, ItemRef, ItemSig, ItemSigKind,
+    },
+    core::ExportKind,
+    kw::func,
 };
 
 impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
@@ -49,15 +53,16 @@ where
 {
     fn as_wast(&'a self) -> CoreInstance<'i> {
         let mut args = vec![];
-        for (name, function) in self.import_groups() {
-            // args.push(CoreInstantiationArg {
-            //     name: name.long_name(),
-            //     kind: CoreInstantiationArgKind::Instance(CoreItemRef {
-            //         kind: wast::kw::instance::de,
-            //         idx: WasmName::index(name.long_name()),
-            //         export_name: None,
-            //     }),
-            // })
+        for (name, functions) in self.import_groups() {
+            let mut exports = vec![];
+            for function in functions {
+                exports.push(function.as_wast())
+            }
+
+            args.push(CoreInstantiationArg {
+                name: name.long_name(),
+                kind: CoreInstantiationArgKind::BundleOfExports(Span::from_offset(0), exports),
+            })
         }
 
         CoreInstance {

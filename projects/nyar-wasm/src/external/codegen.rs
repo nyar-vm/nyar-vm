@@ -1,9 +1,11 @@
 use super::*;
 use wast::{
     component::{
-        CanonLower, ComponentExportType, ComponentExternName, ComponentFunctionResult, ComponentFunctionType, ComponentTypeUse,
-        CoreFunc, CoreFuncKind, InstanceTypeDecl, ItemRef, ItemSig, ItemSigKind,
+        CanonLower, CanonOpt, ComponentExportType, ComponentExternName, ComponentFunctionResult, ComponentFunctionType,
+        ComponentTypeUse, CoreFunc, CoreFuncKind, CoreInstanceExport, CoreItemRef, InstanceTypeDecl, ItemRef, ItemSig,
+        ItemSigKind,
     },
+    core::ExportKind,
     token::Index,
 };
 
@@ -41,27 +43,16 @@ where
                     idx: WasmName::index(self.external.long_name()),
                     export_names: vec![self.local.as_ref()],
                 },
-                opts: vec![],
+                opts: vec![
+                    // CanonOpt::Memory(CoreItemRef {
+                    //     kind: Default::default(),
+                    //     idx: WasmName::index("wasi_random"),
+                    //     export_name: Some("memory"),
+                    // }),
+                    CanonOpt::StringUtf8,
+                ],
             }),
         }
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, InstanceTypeDecl<'i>> for ImportFunction
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> InstanceTypeDecl<'i> {
-        InstanceTypeDecl::Export(ComponentExportType {
-            span: Span::from_offset(0),
-            name: ComponentExternName(self.local.as_ref()),
-            item: ItemSig {
-                span: Span::from_offset(0),
-                id: None,
-                name: None,
-                kind: ItemSigKind::Func(ComponentTypeUse::Inline(self.as_wast())),
-            },
-        })
     }
 }
 
@@ -76,13 +67,40 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, ComponentFunctionType<'i>> for ImportFunction
+impl<'a, 'i> IntoWasm<'a, CoreInstanceExport<'i>> for ImportFunction
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> ComponentFunctionType<'i> {
+    fn as_wast(&'a self) -> CoreInstanceExport<'i> {
+        CoreInstanceExport {
+            span: Span::from_offset(0),
+            name: self.local.as_ref(),
+            item: CoreItemRef { kind: ExportKind::Func, idx: WasmName::index(self.function_id()), export_name: None },
+        }
+    }
+}
+
+impl<'a, 'i> IntoWasm<'a, InstanceTypeDecl<'i>> for ImportFunction
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> InstanceTypeDecl<'i> {
+        InstanceTypeDecl::Export(ComponentExportType {
+            span: Span::from_offset(0),
+            name: ComponentExternName(self.local.as_ref()),
+            item: self.as_wast(),
+        })
+    }
+}
+
+impl<'a, 'i> IntoWasm<'a, ItemSig<'i>> for ImportFunction
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> ItemSig<'i> {
         let input = self.inputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
         let result = [ComponentFunctionResult { name: None, ty: self.output.as_wast() }];
-        ComponentFunctionType { params: Box::from(input), results: Box::from(result) }
+        let ty = ComponentFunctionType { params: Box::from(input), results: Box::from(result) };
+        ItemSig { span: Span::from_offset(0), id: None, name: None, kind: ItemSigKind::Func(ComponentTypeUse::Inline(ty)) }
     }
 }

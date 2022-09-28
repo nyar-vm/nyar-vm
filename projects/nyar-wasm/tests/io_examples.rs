@@ -102,32 +102,33 @@ pub fn import_random() -> WasmBuilder {
             WasmExternalName::create("random").with_project("wasi", "random").with_version(Version::new(0, 2, 0)),
             "get-random-u64",
         )
-        .with_alias("get_random_u64")
-        .with_output(WasmType::I64),
+        .with_alias("random_seed_safe")
+        .with_output(WasmType::U64),
     );
     module.register(
         ImportFunction::new(
-            WasmExternalName::create("random").with_project("wasi", "random").with_version(Version::new(0, 2, 0)),
-            "get-random-bytes",
+            WasmExternalName::create("insecure").with_project("wasi", "random").with_version(Version::new(0, 2, 0)),
+            "get-insecure-random-u64",
         )
-        .with_alias("get_random_bytes")
-        .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
-        .with_output(WasmType::I32),
+        .with_alias("random_seed_fast")
+        .with_output(WasmType::U64),
     );
-
+    module.register(
+        ImportFunction::new(
+            WasmExternalName::create("insecure").with_project("wasi", "random").with_version(Version::new(0, 2, 0)),
+            "get-insecure-random-u64",
+        )
+        .with_alias("random_seed_fast")
+        .with_output(WasmType::U64),
+    );
     // module.register(
     //     ImportFunction::new(
     //         WasmExternalName::create("random").with_project("wasi", "random").with_version(Version::new(0, 2, 0)),
-    //         "get-random-u64",
+    //         "get-random-bytes",
     //     )
-    //         .with_alias("get_random_u64")
-    //         .with_input(vec![
-    //             WasmParameter::new("mode").with_type(WasmType::I32),
-    //             WasmParameter::new("offset_ptr").with_type(WasmType::I32),
-    //             WasmParameter::new("length_ptr").with_type(WasmType::I32),
-    //             WasmParameter::new("written").with_type(WasmType::I32),
-    //         ])
-    //         .with_output(vec![WasmParameter::new("r0").with_type(WasmType::I64)]),
+    //     .with_alias("get_random_bytes")
+    //     .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
+    //     .with_output(WasmType::I32),
     // );
 
     module
