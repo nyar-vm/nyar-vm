@@ -7,7 +7,7 @@ use crate::{
 use std::collections::BTreeMap;
 use wast::{
     core::{BlockType, Instruction, TableArg, TypeUse},
-    token::{Float32, Float64, Index},
+    token::{Float32, Float64},
 };
 
 mod codegen;

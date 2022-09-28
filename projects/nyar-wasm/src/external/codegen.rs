@@ -6,7 +6,6 @@ use wast::{
         ItemSigKind,
     },
     core::ExportKind,
-    token::Index,
 };
 
 impl<'a, 'i> IntoWasm<'a, Import<'i>> for ImportFunction
@@ -16,8 +15,8 @@ where
     fn as_wast(&'a self) -> Import<'i> {
         Import {
             span: Span::from_offset(0),
-            module: self.external.long_name(),
-            field: self.local.as_ref(),
+            module: self.external_package.long_name(),
+            field: self.external_name.as_ref(),
             item: wast::core::ItemSig {
                 span: Span::from_offset(0),
                 id: WasmName::id(self.function_id()),
@@ -40,8 +39,8 @@ where
             kind: CoreFuncKind::Lower(CanonLower {
                 func: ItemRef {
                     kind: Default::default(),
-                    idx: WasmName::index(self.external.long_name()),
-                    export_names: vec![self.local.as_ref()],
+                    idx: WasmName::index(self.external_package.long_name()),
+                    export_names: vec![self.external_name.as_ref()],
                 },
                 opts: vec![
                     // CanonOpt::Memory(CoreItemRef {
@@ -74,7 +73,7 @@ where
     fn as_wast(&'a self) -> CoreInstanceExport<'i> {
         CoreInstanceExport {
             span: Span::from_offset(0),
-            name: self.local.as_ref(),
+            name: self.external_name.as_ref(),
             item: CoreItemRef { kind: ExportKind::Func, idx: WasmName::index(self.function_id()), export_name: None },
         }
     }
@@ -87,7 +86,7 @@ where
     fn as_wast(&'a self) -> InstanceTypeDecl<'i> {
         InstanceTypeDecl::Export(ComponentExportType {
             span: Span::from_offset(0),
-            name: ComponentExternName(self.local.as_ref()),
+            name: ComponentExternName(self.external_name.as_ref()),
             item: self.as_wast(),
         })
     }

@@ -1,20 +1,30 @@
 use super::*;
-use wast::component::List;
+use crate::helpers::WasmName;
+use wast::component::{List, Record};
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for WasmType
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> wast::component::Type<'i> {
+        let id = match self {
+            WasmType::U64 => None,
+            WasmType::Structure(v) => WasmName::id(v.symbol.as_ref()),
+            _ => {
+                todo!("Cast `{:?}` to component type fail", self);
+            }
+        };
+
         wast::component::Type {
             span: Span::from_offset(0),
-            id: None,
+            id,
             name: None,
             exports: Default::default(),
             def: wast::component::TypeDef::Defined(self.as_wast()),
         }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, wast::core::Type<'i>> for WasmType
 where
     'a: 'i,
@@ -27,6 +37,7 @@ where
         }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, CoreType<'i>> for WasmType
 where
     'a: 'i,
@@ -55,7 +66,7 @@ where
 {
     fn as_wast(&'a self) -> ComponentDefinedType<'i> {
         match self {
-            Self::Structure(_) => todo!(),
+            Self::Structure(v) => ComponentDefinedType::Record(Record { fields: vec![] }),
             Self::Array(v) => ComponentDefinedType::List(List { element: Box::new(v.item_type.as_wast()) }),
             _ => ComponentDefinedType::Primitive(self.as_wast()),
         }

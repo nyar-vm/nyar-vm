@@ -2,7 +2,7 @@ use crate::{helpers::WasmName, WasmSymbol};
 use nyar_error::FileSpan;
 use wast::{
     core::{Data, DataKind, DataVal, Expression, Instruction},
-    token::{Index, NameAnnotation, Span},
+    token::{NameAnnotation, Span},
 };
 
 #[derive(Debug)]

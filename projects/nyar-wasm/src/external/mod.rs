@@ -15,18 +15,12 @@ mod codegen;
 #[derive(Debug)]
 pub struct ImportFunction {
     /// External path of the type
-    pub external: WasmExternalName,
-    /// Local name of the type
-    pub local: WasmSymbol,
-    pub alias: Option<WasmSymbol>,
+    pub external_package: WasmExternalName,
+    /// External name of the type
+    pub external_name: WasmSymbol,
+    pub local_name: WasmSymbol,
     pub inputs: Vec<WasmParameter>,
     pub output: WasmType,
-}
-
-impl AddAssign<WasmSymbol> for ImportFunction {
-    fn add_assign(&mut self, rhs: WasmSymbol) {
-        self.alias = Some(rhs)
-    }
 }
 
 impl AddAssign<WasmParameter> for ImportFunction {
@@ -37,24 +31,28 @@ impl AddAssign<WasmParameter> for ImportFunction {
 
 impl ImportFunction {
     pub fn new<M: Into<WasmExternalName>, F: Into<WasmSymbol>>(module: M, function: F) -> ImportFunction {
-        Self { external: module.into(), local: function.into(), alias: None, inputs: vec![], output: WasmType::Tuple(vec![]) }
+        let external_name = function.into();
+        Self {
+            external_package: module.into(),
+            external_name: external_name.clone(),
+            local_name: external_name,
+            inputs: vec![],
+            output: WasmType::Tuple(vec![]),
+        }
     }
     pub fn name(&self) -> &str {
-        match &self.alias {
-            None => self.local.as_ref(),
-            Some(s) => s.as_ref(),
-        }
+        self.local_name.as_ref()
     }
     pub fn function_id(&self) -> &str {
         // SAFETY: StringPool will deallocate this string when there are no more references to it
         unsafe {
-            let cache = string_pool::String::from(format!("{}:{}", self.external, self.local));
+            let cache = string_pool::String::from(format!("{}:{}", self.external_package, self.external_name));
             &*(cache.as_str() as *const str)
         }
     }
 
-    pub fn with_alias<S: Into<WasmSymbol>>(self, alias: S) -> Self {
-        Self { alias: Some(alias.into()), ..self }
+    pub fn with_local<S: Into<WasmSymbol>>(self, alias: S) -> Self {
+        Self { local_name: alias.into(), ..self }
     }
     pub fn with_input<I>(mut self, inputs: I) -> Self
     where

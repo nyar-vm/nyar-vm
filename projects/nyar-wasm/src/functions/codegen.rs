@@ -3,7 +3,6 @@ use crate::helpers::WasmName;
 use wast::{
     component::{CanonOpt, ComponentDefinedType, ComponentField, ComponentValType, CoreItemRef, ItemRef, Tuple},
     core::Local,
-    token::Index,
 };
 
 impl<'a, 'i> IntoWasm<'a, Start<'i>> for FunctionType

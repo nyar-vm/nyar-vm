@@ -12,7 +12,7 @@ use std::{
 use wast::{
     component::{Component, ComponentField, ComponentKind, CoreModule, CoreModuleKind},
     core::{InlineExport, Limits, Memory, MemoryKind, MemoryType, Module, ModuleField, ModuleKind, Producers},
-    token::{Index, NameAnnotation, Span},
+    token::{NameAnnotation, Span},
 };
 
 mod wast_component;
@@ -78,7 +78,7 @@ impl WasmBuilder {
     pub fn import_groups(&self) -> BTreeMap<&WasmExternalName, Vec<&ImportFunction>> {
         let mut groups = BTreeMap::new();
         for f in self.externals.values() {
-            groups.entry(&f.external).or_insert_with(Vec::new).push(f);
+            groups.entry(&f.external_package).or_insert_with(Vec::new).push(f);
         }
         groups
     }

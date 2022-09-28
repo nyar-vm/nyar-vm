@@ -56,14 +56,17 @@ impl StructureItem {
         self
     }
 }
+
 impl StructureType {
     pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
         Self { symbol: name.into(), nullable: false, fields: Default::default() }
     }
-    pub fn register_field(&mut self, field: FieldType) {
+    pub fn with_field(mut self, field: FieldType) -> Self {
         self.fields.insert(field.name.to_string(), field);
+        self
     }
 }
+
 impl FieldType {
     pub fn new<S: Into<WasmSymbol>>(name: S) -> Self {
         Self { name: name.into(), readonly: false, r#type: WasmType::Any { nullable: false }, default: WasmValue::Any }

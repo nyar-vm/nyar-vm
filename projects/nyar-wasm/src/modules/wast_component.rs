@@ -1,12 +1,9 @@
 use super::*;
 
-use wast::{
-    component::{
-        ComponentExternName, ComponentImport, ComponentTypeUse, CoreInstance, CoreInstanceExport, CoreInstanceKind,
-        CoreInstantiationArg, CoreInstantiationArgKind, CoreItemRef, InstanceType, ItemRef, ItemSig, ItemSigKind,
-    },
-    core::ExportKind,
-    kw::func,
+use crate::{FieldType, WasmType};
+use wast::component::{
+    ComponentExportType, ComponentExternName, ComponentImport, ComponentTypeUse, CoreInstance, CoreInstanceKind,
+    CoreInstantiationArg, CoreInstantiationArgKind, InstanceType, InstanceTypeDecl, ItemRef, ItemSig, ItemSigKind, Type,
 };
 
 impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
@@ -28,21 +25,6 @@ where
                 ("language", vec![("valkyrie", "2024"), ("player", "berserker")]),
                 ("processed-by", vec![("nyar-wasm", env!("CARGO_PKG_VERSION"))]),
             ],
-        }
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, CoreModule<'i>> for WasmBuilder
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> CoreModule<'i> {
-        CoreModule {
-            span: Span::from_offset(0),
-            id: WasmName::id(self.name.as_str()),
-            name: None,
-            exports: Default::default(),
-            kind: self.as_wast(),
         }
     }
 }
@@ -81,15 +63,22 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, CoreModuleKind<'i>> for WasmBuilder
+impl<'a, 'i> IntoWasm<'a, CoreModule<'i>> for WasmBuilder
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> CoreModuleKind<'i> {
+    fn as_wast(&'a self) -> CoreModule<'i> {
         let module = self.as_module();
-        match module.kind {
+        let kind = match module.kind {
             ModuleKind::Text(v) => CoreModuleKind::Inline { fields: v },
             ModuleKind::Binary(_) => unreachable!(),
+        };
+        CoreModule {
+            span: Span::from_offset(0),
+            id: WasmName::id(self.get_module_name()),
+            name: None,
+            exports: Default::default(),
+            kind,
         }
     }
 }
@@ -104,7 +93,18 @@ impl WasmBuilder {
         let mut coms = vec![];
         // Import external functions to valkyrie module
         for (name, functions) in self.import_groups() {
-            let decls = functions.iter().map(|f| f.as_wast()).collect();
+            let mut decls = vec![];
+            for f in functions {
+                // decls.push(InstanceTypeDecl::Type(f.output.as_wast()));
+
+                // let export = InstanceTypeDecl::Export(ComponentExportType {
+                //     span: Span::from_offset(0),
+                //     name: ComponentExternName(f.external_name.as_ref()),
+                //     item: f.as_wast(),
+                // });
+                // decls.push(export);
+            }
+
             coms.push(ComponentField::Import(ComponentImport {
                 span: Span::from_offset(0),
                 name: ComponentExternName(name.long_name()),

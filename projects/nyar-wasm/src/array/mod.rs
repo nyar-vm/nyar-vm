@@ -5,7 +5,7 @@ use crate::{
 use nyar_error::FileSpan;
 use wast::{
     core::{Type, TypeDef},
-    token::{NameAnnotation, Span},
+    token::Span,
 };
 
 mod codegen;
