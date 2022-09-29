@@ -1,5 +1,4 @@
 use super::*;
-use crate::WasmType;
 
 impl WasmBuilder {
     pub fn build_module<P: AsRef<Path>>(&self, path: P) -> Result<PathBuf, NyarError> {
@@ -10,12 +9,12 @@ impl WasmBuilder {
         let mut terms = Vec::with_capacity(1024);
         // imports
         for k in self.externals.values() {
-            match &k.output {
-                WasmType::Structure(v) => {
-                    terms.push(ModuleField::Type(v.as_wast()));
-                }
-                _ => continue,
-            }
+            // match &k.output {
+            //     WasmType::Structure(v) => {
+            //         terms.push(ModuleField::Type(v.as_wast()));
+            //     }
+            //     _ => continue,
+            // }
 
             terms.push(ModuleField::Import(k.as_wast()))
         }

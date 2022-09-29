@@ -27,7 +27,7 @@ pub struct FunctionType {
     pub entry: bool,
     pub input: IndexMap<String, WasmParameter>,
     pub local: BTreeMap<String, WasmParameter>,
-    pub output: Vec<WasmParameter>,
+    pub output: WasmType,
     pub body: FunctionBody,
     pub span: FileSpan,
 }
@@ -65,7 +65,7 @@ impl FunctionType {
             entry: false,
             input: IndexMap::default(),
             local: BTreeMap::default(),
-            output: vec![],
+            output: WasmType::Tuple(vec![]),
             body: FunctionBody::default(),
             span: Default::default(),
         }
@@ -95,14 +95,14 @@ impl FunctionType {
     where
         I: Into<WasmType>,
     {
-        self.output = vec![WasmParameter { name: WasmSymbol::new("r0"), type_hint: output.into(), span: Default::default() }];
+        self.output = output.into();
         self
     }
     pub fn with_outputs<I>(mut self, outputs: I) -> Self
     where
         I: IntoIterator<Item = WasmParameter>,
     {
-        self.output.extend(outputs);
+        self.output = WasmType::Tuple(outputs.into_iter().collect());
         self
     }
     pub fn with_locals<I>(mut self, locals: I) -> Self

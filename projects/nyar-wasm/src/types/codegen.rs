@@ -1,6 +1,6 @@
 use super::*;
 use crate::helpers::WasmName;
-use wast::component::{List, Record};
+use wast::component::{List, Record, RecordField};
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for WasmType
 where
@@ -66,7 +66,10 @@ where
 {
     fn as_wast(&'a self) -> ComponentDefinedType<'i> {
         match self {
-            Self::Structure(v) => ComponentDefinedType::Record(Record { fields: vec![] }),
+            Self::Structure(v) => {
+                let fields = v.fields.iter().map(|(k, v)| RecordField { name: k.as_ref(), ty: v.r#type.as_wast() }).collect();
+                ComponentDefinedType::Record(Record { fields })
+            }
             Self::Array(v) => ComponentDefinedType::List(List { element: Box::new(v.item_type.as_wast()) }),
             _ => ComponentDefinedType::Primitive(self.as_wast()),
         }
@@ -131,7 +134,6 @@ where
             Self::Array(v) => ValType::Ref(RefType { nullable: v.nullable, heap: HeapType::Concrete(v.symbol.as_index()) }),
             Self::Structure(v) => ValType::Ref(RefType { nullable: v.nullable, heap: HeapType::Concrete(v.symbol.as_index()) }),
             Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
-
             _ => unimplemented!("Cast `{:?}` to core value type fail", self),
         }
     }

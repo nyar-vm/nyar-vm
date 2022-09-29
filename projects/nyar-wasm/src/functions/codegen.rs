@@ -1,7 +1,7 @@
 use super::*;
 use crate::helpers::WasmName;
 use wast::{
-    component::{CanonOpt, ComponentDefinedType, ComponentField, ComponentValType, CoreItemRef, ItemRef, Tuple},
+    component::{CanonOpt, ComponentField, ComponentValType, CoreItemRef, ItemRef},
     core::Local,
 };
 
@@ -94,15 +94,9 @@ where
     fn as_wast(&'a self) -> ComponentFunctionType<'i> {
         let params: Vec<_> = self.input.values().map(|v| v.as_wast()).collect();
         // let result: Vec<_> = self.output.iter().map(|v| v.as_wast()).collect();
-        let ty = if self.output.len() == 1 {
-            ComponentValType::Inline(self.output[0].type_hint.as_wast())
-        }
-        else {
-            ComponentValType::Inline(ComponentDefinedType::Tuple(Tuple {
-                fields: self.output.iter().map(|v| v.type_hint.as_wast()).collect(),
-            }))
-        };
-        ComponentFunctionType { params: Box::from(params), results: Box::from([ComponentFunctionResult { name: None, ty }]) }
+        let ty = [ComponentFunctionResult { name: None, ty: ComponentValType::Inline(self.output.as_wast()) }];
+
+        ComponentFunctionType { params: Box::from(params), results: Box::from(ty) }
     }
 }
 
@@ -112,7 +106,7 @@ where
 {
     fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
         let params: Vec<_> = self.input.values().map(|v| v.as_wast()).collect();
-        let result: Vec<_> = self.output.iter().map(|v| v.as_wast()).collect();
+        let result = [self.output.as_wast()];
         wast::core::FunctionType { params: Box::from(params), results: Box::from(result) }
     }
 }

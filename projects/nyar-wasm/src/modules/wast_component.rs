@@ -1,9 +1,8 @@
 use super::*;
 
-use crate::{FieldType, WasmType};
 use wast::component::{
     ComponentExportType, ComponentExternName, ComponentImport, ComponentTypeUse, CoreInstance, CoreInstanceKind,
-    CoreInstantiationArg, CoreInstantiationArgKind, InstanceType, InstanceTypeDecl, ItemRef, ItemSig, ItemSigKind, Type,
+    CoreInstantiationArg, CoreInstantiationArgKind, InstanceType, InstanceTypeDecl, ItemRef, ItemSig, ItemSigKind,
 };
 
 impl<'a, 'i> IntoWasm<'a, Option<NameAnnotation<'i>>> for WasmBuilder
@@ -96,13 +95,12 @@ impl WasmBuilder {
             let mut decls = vec![];
             for f in functions {
                 // decls.push(InstanceTypeDecl::Type(f.output.as_wast()));
-
-                // let export = InstanceTypeDecl::Export(ComponentExportType {
-                //     span: Span::from_offset(0),
-                //     name: ComponentExternName(f.external_name.as_ref()),
-                //     item: f.as_wast(),
-                // });
-                // decls.push(export);
+                let export = InstanceTypeDecl::Export(ComponentExportType {
+                    span: Span::from_offset(0),
+                    name: ComponentExternName(f.external_name.as_ref()),
+                    item: f.as_wast(),
+                });
+                decls.push(export);
             }
 
             coms.push(ComponentField::Import(ComponentImport {

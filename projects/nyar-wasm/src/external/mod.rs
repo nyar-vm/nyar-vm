@@ -5,7 +5,7 @@ use crate::{
 };
 use std::ops::AddAssign;
 use wast::{
-    core::{Import, ItemKind, TypeUse},
+    core::{ItemKind, TypeUse},
     token::Span,
 };
 

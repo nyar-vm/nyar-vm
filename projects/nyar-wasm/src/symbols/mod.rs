@@ -1,7 +1,9 @@
 use crate::helpers::{IntoWasm, WasmName};
+use nyar_error::SyntaxError;
 use semver::Version;
 use std::{
     fmt::{Debug, Display, Formatter},
+    str::FromStr,
     sync::Arc,
 };
 use wast::{

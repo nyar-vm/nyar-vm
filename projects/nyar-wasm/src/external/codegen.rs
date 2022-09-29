@@ -2,18 +2,18 @@ use super::*;
 use wast::{
     component::{
         CanonLower, CanonOpt, ComponentExportType, ComponentExternName, ComponentFunctionResult, ComponentFunctionType,
-        ComponentTypeUse, CoreFunc, CoreFuncKind, CoreInstanceExport, CoreItemRef, InstanceTypeDecl, ItemRef, ItemSig,
-        ItemSigKind,
+        ComponentTypeUse, ComponentValType, CoreFunc, CoreFuncKind, CoreInstanceExport, CoreItemRef, InstanceTypeDecl, ItemRef,
+        ItemSig, ItemSigKind,
     },
     core::ExportKind,
 };
 
-impl<'a, 'i> IntoWasm<'a, Import<'i>> for ImportFunction
+impl<'a, 'i> IntoWasm<'a, wast::core::Import<'i>> for ImportFunction
 where
     'a: 'i,
 {
-    fn as_wast(&'a self) -> Import<'i> {
-        Import {
+    fn as_wast(&'a self) -> wast::core::Import<'i> {
+        wast::core::Import {
             span: Span::from_offset(0),
             module: self.external_package.long_name(),
             field: self.external_name.as_ref(),
@@ -61,7 +61,10 @@ where
 {
     fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
         let input = self.inputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        let result = [self.output.as_wast()];
+        let result = match &self.output {
+            WasmType::Structure(v) => v.fields.values().map(|ty| ty.r#type.as_wast()).collect(),
+            other => vec![other.as_wast()],
+        };
         wast::core::FunctionType { params: Box::from(input), results: Box::from(result) }
     }
 }
@@ -98,7 +101,7 @@ where
 {
     fn as_wast(&'a self) -> ItemSig<'i> {
         let input = self.inputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        let result = [ComponentFunctionResult { name: None, ty: self.output.as_wast() }];
+        let result = [ComponentFunctionResult { name: None, ty: ComponentValType::Inline(self.output.as_wast()) }];
         let ty = ComponentFunctionType { params: Box::from(input), results: Box::from(result) };
         ItemSig { span: Span::from_offset(0), id: None, name: None, kind: ItemSigKind::Func(ComponentTypeUse::Inline(ty)) }
     }
