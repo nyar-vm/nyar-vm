@@ -5,7 +5,6 @@ use crate::{
     types::WasmType,
     WasmSymbol,
 };
-use indexmap::IndexMap;
 use nyar_error::FileSpan;
 use std::{collections::BTreeMap, slice::Iter};
 use wast::{
@@ -25,11 +24,22 @@ pub struct FunctionType {
     pub symbol: WasmSymbol,
     pub export: Option<WasmExternalName>,
     pub entry: bool,
-    pub input: IndexMap<String, WasmParameter>,
     pub local: BTreeMap<String, WasmParameter>,
-    pub output: WasmType,
+    pub signature: FunctionSignature,
     pub body: FunctionBody,
     pub span: FileSpan,
+}
+
+#[derive(Debug)]
+pub struct FunctionSignature {
+    pub inputs: Vec<WasmParameter>,
+    pub output: WasmType,
+}
+
+impl Default for FunctionSignature {
+    fn default() -> Self {
+        Self { inputs: vec![], output: WasmType::Tuple(vec![]) }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -63,9 +73,8 @@ impl FunctionType {
             symbol: name.into(),
             export: None,
             entry: false,
-            input: IndexMap::default(),
+            signature: Default::default(),
             local: BTreeMap::default(),
-            output: WasmType::Tuple(vec![]),
             body: FunctionBody::default(),
             span: Default::default(),
         }
@@ -82,28 +91,23 @@ impl FunctionType {
     pub fn with_entry(self, entry: bool) -> Self {
         Self { entry, ..self }
     }
-    pub fn with_inputs<I>(mut self, inputs: I) -> Self
+    pub fn with_inputs<I>(self, inputs: I) -> Self
     where
         I: IntoIterator<Item = WasmParameter>,
     {
-        for i in inputs {
-            self.input.insert(i.name.to_string(), i);
-        }
-        self
+        Self { signature: self.signature.with_inputs(inputs), ..self }
     }
-    pub fn with_output<I>(mut self, output: I) -> Self
+    pub fn with_output<I>(self, output: I) -> Self
     where
         I: Into<WasmType>,
     {
-        self.output = output.into();
-        self
+        Self { signature: self.signature.with_output(output), ..self }
     }
-    pub fn with_outputs<I>(mut self, outputs: I) -> Self
+    pub fn with_outputs<I>(self, outputs: I) -> Self
     where
         I: IntoIterator<Item = WasmParameter>,
     {
-        self.output = WasmType::Tuple(outputs.into_iter().collect());
-        self
+        Self { signature: self.signature.with_outputs(outputs), ..self }
     }
     pub fn with_locals<I>(mut self, locals: I) -> Self
     where

@@ -24,9 +24,9 @@ mod values;
 pub use crate::{
     array::ArrayType,
     data::DataItem,
-    external::ImportFunction,
+    external::ExternalFunctionType,
     flags::{EncodingType, FlagType},
-    functions::{FunctionBody, FunctionType, WasmParameter},
+    functions::{FunctionBody, FunctionSignature, FunctionType, WasmParameter},
     modules::{WasmBuilder, WasmItem},
     operations::{
         branch::{EnumerationTable, JumpBranch, JumpCondition, JumpTable},

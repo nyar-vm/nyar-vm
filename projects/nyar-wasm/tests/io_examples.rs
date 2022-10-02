@@ -1,6 +1,6 @@
 use nyar_wasm::{
-    DataItem, FieldType, FunctionType, ImportFunction, Operation, StructureItem, StructureType, WasmBuilder, WasmExternalName,
-    WasmParameter, WasmSymbol, WasmType, WasmValue,
+    DataItem, ExternalFunctionType, FieldType, FunctionType, Operation, StructureItem, StructureType, WasmBuilder,
+    WasmExternalName, WasmParameter, WasmSymbol, WasmType, WasmValue,
 };
 use semver::Version;
 
@@ -12,7 +12,7 @@ pub fn hello_world() -> WasmBuilder {
 
     module.register_data(DataItem::utf8(WasmSymbol::new("hello"), hello));
     module.register(
-        ImportFunction::new("wasi_snapshot_preview1", "fd_write").with_local("file_descriptor_write").with_input(vec![
+        ExternalFunctionType::new("wasi_snapshot_preview1", "fd_write").with_local("file_descriptor_write").with_input(vec![
             WasmParameter::new("mode").with_type(WasmType::I32),
             WasmParameter::new("offset_ptr").with_type(WasmType::I32),
             WasmParameter::new("length_ptr").with_type(WasmType::I32),
@@ -125,7 +125,7 @@ pub fn import_random() -> WasmBuilder {
     // wall-clock
     let wall_clock = WasmExternalName::create("wall-clock").with_project("wasi", "clocks").with_version(version.clone());
     module.register(
-        ImportFunction::new(wall_clock.clone(), "now").with_local("wall_clock_mow").with_output(WasmType::Structure(
+        ExternalFunctionType::new(wall_clock.clone(), "now").with_local("wall_clock_mow").with_output(WasmType::Structure(
             StructureType::new("datetime")
                 .with_field(FieldType::new("seconds").with_type(WasmType::U64))
                 .with_field(FieldType::new("nanoseconds").with_type(WasmType::U32)),

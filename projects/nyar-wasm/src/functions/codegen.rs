@@ -27,7 +27,7 @@ impl FunctionType {
             name: None,
             exports: export.as_wast(),
             kind: FuncKind::Lift {
-                ty: ComponentTypeUse::Inline(self.as_wast()),
+                ty: ComponentTypeUse::Inline(self.signature.as_wast()),
                 info: CanonLift {
                     func: CoreItemRef {
                         kind: Default::default(),
@@ -70,7 +70,7 @@ where
             name: None,
             exports: self.export.as_wast(),
             kind: self.as_wast(),
-            ty: TypeUse { index: None, inline: Some(self.as_wast()) },
+            ty: TypeUse { index: None, inline: Some(self.signature.as_wast()) },
         }
     }
 }
@@ -87,25 +87,23 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, ComponentFunctionType<'i>> for FunctionType
+impl<'a, 'i> IntoWasm<'a, ComponentFunctionType<'i>> for FunctionSignature
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> ComponentFunctionType<'i> {
-        let params: Vec<_> = self.input.values().map(|v| v.as_wast()).collect();
-        // let result: Vec<_> = self.output.iter().map(|v| v.as_wast()).collect();
-        let ty = [ComponentFunctionResult { name: None, ty: ComponentValType::Inline(self.output.as_wast()) }];
-
-        ComponentFunctionType { params: Box::from(params), results: Box::from(ty) }
+        let params: Vec<_> = self.inputs.iter().map(|v| v.as_wast()).collect();
+        let results = [ComponentFunctionResult { name: None, ty: ComponentValType::Inline(self.output.as_wast()) }];
+        ComponentFunctionType { params: Box::from(params), results: Box::from(results) }
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, wast::core::FunctionType<'i>> for FunctionType
+impl<'a, 'i> IntoWasm<'a, wast::core::FunctionType<'i>> for FunctionSignature
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
-        let params: Vec<_> = self.input.values().map(|v| v.as_wast()).collect();
+        let params: Vec<_> = self.inputs.iter().map(|v| v.as_wast()).collect();
         let result = [self.output.as_wast()];
         wast::core::FunctionType { params: Box::from(params), results: Box::from(result) }
     }

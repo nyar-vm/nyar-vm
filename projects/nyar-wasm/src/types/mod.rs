@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IndexedIterator, IntoWasm},
-    ArrayType, EnumerateType, FlagType, ImportFunction, VariantType, WasmParameter, WasmSymbol,
+    ArrayType, EnumerateType, ExternalFunctionType, FlagType, VariantType, WasmParameter, WasmSymbol,
 };
 use indexmap::IndexMap;
 use wast::{component::CoreType, token::Span};

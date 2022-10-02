@@ -2,7 +2,7 @@ use crate::{
     functions::FunctionType,
     helpers::{write_wasm_bytes, IntoWasm, WasmName},
     structures::StructureType,
-    ArrayType, DataItem, ImportFunction, WasmExternalName, WasmVariable,
+    ArrayType, DataItem, ExternalFunctionType, WasmExternalName, WasmVariable,
 };
 use nyar_error::NyarError;
 use std::{
@@ -32,10 +32,10 @@ pub struct WasmBuilder {
     pub arrays: BTreeMap<String, ArrayType>,
     pub data: BTreeMap<String, DataItem>,
     pub functions: BTreeMap<String, FunctionType>,
-    pub externals: BTreeMap<String, ImportFunction>,
+    pub externals: BTreeMap<String, ExternalFunctionType>,
 }
 
-impl WasmItem for ImportFunction {
+impl WasmItem for ExternalFunctionType {
     fn register(self, builder: &mut WasmBuilder) {
         builder.externals.insert(self.name().to_string(), self);
     }
@@ -75,7 +75,7 @@ impl WasmBuilder {
         item.register(self);
     }
 
-    pub fn import_groups(&self) -> BTreeMap<&WasmExternalName, Vec<&ImportFunction>> {
+    pub fn import_groups(&self) -> BTreeMap<&WasmExternalName, Vec<&ExternalFunctionType>> {
         let mut groups = BTreeMap::new();
         for f in self.externals.values() {
             groups.entry(&f.external_package).or_insert_with(Vec::new).push(f);

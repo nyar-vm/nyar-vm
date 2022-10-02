@@ -1,14 +1,13 @@
 use super::*;
 use wast::{
     component::{
-        CanonLower, CanonOpt, ComponentExportType, ComponentExternName, ComponentFunctionResult, ComponentFunctionType,
-        ComponentTypeUse, ComponentValType, CoreFunc, CoreFuncKind, CoreInstanceExport, CoreItemRef, InstanceTypeDecl, ItemRef,
-        ItemSig, ItemSigKind,
+        CanonLower, CanonOpt, ComponentExportType, ComponentExternName, ComponentTypeUse, CoreFunc, CoreFuncKind,
+        CoreInstanceExport, CoreItemRef, InstanceTypeDecl, ItemRef, ItemSig, ItemSigKind,
     },
     core::ExportKind,
 };
 
-impl<'a, 'i> IntoWasm<'a, wast::core::Import<'i>> for ImportFunction
+impl<'a, 'i> IntoWasm<'a, wast::core::Import<'i>> for ExternalFunctionType
 where
     'a: 'i,
 {
@@ -21,13 +20,13 @@ where
                 span: Span::from_offset(0),
                 id: WasmName::id(self.function_id()),
                 name: None,
-                kind: ItemKind::Func(TypeUse { index: None, inline: Some(self.as_wast()) }),
+                kind: ItemKind::Func(TypeUse { index: None, inline: Some(self.signature.as_wast()) }),
             },
         }
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, CoreFunc<'i>> for ImportFunction
+impl<'a, 'i> IntoWasm<'a, CoreFunc<'i>> for ExternalFunctionType
 where
     'a: 'i,
 {
@@ -55,21 +54,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, wast::core::FunctionType<'i>> for ImportFunction
-where
-    'a: 'i,
-{
-    fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
-        let input = self.inputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        let result = match &self.output {
-            WasmType::Structure(v) => v.fields.values().map(|ty| ty.r#type.as_wast()).collect(),
-            other => vec![other.as_wast()],
-        };
-        wast::core::FunctionType { params: Box::from(input), results: Box::from(result) }
-    }
-}
-
-impl<'a, 'i> IntoWasm<'a, CoreInstanceExport<'i>> for ImportFunction
+impl<'a, 'i> IntoWasm<'a, CoreInstanceExport<'i>> for ExternalFunctionType
 where
     'a: 'i,
 {
@@ -82,7 +67,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, InstanceTypeDecl<'i>> for ImportFunction
+impl<'a, 'i> IntoWasm<'a, InstanceTypeDecl<'i>> for ExternalFunctionType
 where
     'a: 'i,
 {
@@ -95,14 +80,12 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, ItemSig<'i>> for ImportFunction
+impl<'a, 'i> IntoWasm<'a, ItemSig<'i>> for ExternalFunctionType
 where
     'a: 'i,
 {
     fn as_wast(&'a self) -> ItemSig<'i> {
-        let input = self.inputs.iter().map(|ty| ty.as_wast()).collect::<Vec<_>>();
-        let result = [ComponentFunctionResult { name: None, ty: ComponentValType::Inline(self.output.as_wast()) }];
-        let ty = ComponentFunctionType { params: Box::from(input), results: Box::from(result) };
-        ItemSig { span: Span::from_offset(0), id: None, name: None, kind: ItemSigKind::Func(ComponentTypeUse::Inline(ty)) }
+        let kind = ItemSigKind::Func(ComponentTypeUse::Inline(self.signature.as_wast()));
+        ItemSig { span: Span::from_offset(0), id: None, name: None, kind }
     }
 }
