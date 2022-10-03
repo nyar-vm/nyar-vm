@@ -1,5 +1,5 @@
 use nyar_wasm::{
-    DataItem, ExternalFunctionType, FieldType, FunctionType, Operation, StructureItem, StructureType, WasmBuilder,
+    ArrayType, DataItem, ExternalFunctionType, FieldType, FunctionType, Operation, StructureItem, StructureType, WasmBuilder,
     WasmExternalName, WasmParameter, WasmSymbol, WasmType, WasmValue,
 };
 use semver::Version;
@@ -98,14 +98,7 @@ pub fn import_random() -> WasmBuilder {
     let mut module = WasmBuilder::new("test_import");
     let version = Version::new(0, 2, 0);
     //
-    // module.register(
-    //     ImportFunction::new(
-    //         WasmExternalName::create("random").with_project("wasi", "random").with_version(version.clone()),
-    //         "get-random-u64",
-    //     )
-    //     .with_local("random_seed_safe")
-    //     .with_output(WasmType::U64),
-    // );
+
     // module.register(
     //     ImportFunction::new(
     //         WasmExternalName::create("insecure").with_project("wasi", "random").with_version(version.clone()),
@@ -123,25 +116,40 @@ pub fn import_random() -> WasmBuilder {
     // );
 
     // wall-clock
-    let wall_clock = WasmExternalName::create("wall-clock").with_project("wasi", "clocks").with_version(version.clone());
-    module.register(
-        ExternalFunctionType::new(wall_clock.clone(), "now").with_local("wall_clock_mow").with_output(WasmType::Structure(
-            StructureType::new("datetime")
-                .with_field(FieldType::new("seconds").with_type(WasmType::U64))
-                .with_field(FieldType::new("nanoseconds").with_type(WasmType::U32)),
-        )),
-    );
-
+    // let wall_clock = WasmExternalName::create("wall-clock").with_project("wasi", "clocks").with_version(version.clone());
+    // module.register(
+    //     ExternalFunctionType::new(wall_clock.clone(), "now").with_local("wall_clock_mow").with_output(WasmType::Structure(
+    //         StructureType::new("datetime")
+    //             .with_field(FieldType::new("seconds").with_type(WasmType::U64))
+    //             .with_field(FieldType::new("nanoseconds").with_type(WasmType::U32)),
+    //     )),
+    // );
+    let random = WasmExternalName::create("random").with_project("wasi", "random").with_version(version.clone());
     // module.register(
     //     ImportFunction::new(
-    //         WasmExternalName::create("random").with_project("wasi", "random").with_version(Version::new(0, 2, 0)),
-    //         "get-random-bytes",
+    //         WasmExternalName::create("random").with_project("wasi", "random").with_version(version.clone()),
+    //         "get-random-u64",
     //     )
-    //     .with_alias("get_random_bytes")
-    //     .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
-    //     .with_output(WasmType::I32),
+    //     .with_local("random_seed_safe")
+    //     .with_output(WasmType::U64),
     // );
-
+    module.register(
+        ExternalFunctionType::new(random.clone(), "get-random-bytes")
+            .with_local("get_random_bytes")
+            .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
+            .with_output(ArrayType::new("<anonymous>", WasmType::U8)),
+    );
+    // module.register(
+    //     ExternalFunctionType::new(
+    //         WasmExternalName::create("insecure-seed").with_project("wasi", "random").with_version(version.clone()),
+    //         "insecure-seed",
+    //     )
+    //     .with_local("hash_seed")
+    //     .with_outputs(vec![
+    //         WasmParameter::new("high").with_type(WasmType::U64),
+    //         WasmParameter::new("low").with_type(WasmType::U64),
+    //     ]),
+    // );
     module
 }
 

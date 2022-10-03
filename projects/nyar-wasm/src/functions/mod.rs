@@ -30,9 +30,12 @@ pub struct FunctionType {
     pub span: FileSpan,
 }
 
+/// `func (param i32 i32) (result i32)`
 #[derive(Debug)]
 pub struct FunctionSignature {
+    /// Input parameters of the function
     pub inputs: Vec<WasmParameter>,
+    /// Output type of the function, multiple return values are represented as a tuple
     pub output: WasmType,
 }
 

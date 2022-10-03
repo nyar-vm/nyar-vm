@@ -1,6 +1,6 @@
 use super::*;
 use crate::helpers::WasmName;
-use wast::component::{List, Record, RecordField};
+use wast::component::{List, Record, RecordField, Tuple};
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for WasmType
 where
@@ -71,6 +71,7 @@ where
                 ComponentDefinedType::Record(Record { fields })
             }
             Self::Array(v) => ComponentDefinedType::List(List { element: Box::new(v.item_type.as_wast()) }),
+            Self::Tuple(v) => ComponentDefinedType::Tuple(Tuple { fields: v.iter().map(|v| v.type_hint.as_wast()).collect() }),
             _ => ComponentDefinedType::Primitive(self.as_wast()),
         }
     }
@@ -131,10 +132,58 @@ where
             Self::Reference { name, nullable } => {
                 ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Concrete(name.as_index()) })
             }
+            Self::UTF8Text => {
+                todo!()
+            }
+            Self::Flag(_) => {
+                todo!()
+            }
+            Self::Enumerate(_) => {
+                todo!()
+            }
+            Self::Variant(_) => {
+                todo!()
+            }
+            Self::Tuple(_) => {
+                todo!()
+            }
             Self::Array(v) => ValType::Ref(RefType { nullable: v.nullable, heap: HeapType::Concrete(v.symbol.as_index()) }),
             Self::Structure(v) => ValType::Ref(RefType { nullable: v.nullable, heap: HeapType::Concrete(v.symbol.as_index()) }),
             Self::Any { nullable } => ValType::Ref(RefType { nullable: *nullable, heap: HeapType::Any }),
-            _ => unimplemented!("Cast `{:?}` to core value type fail", self),
+        }
+    }
+}
+
+impl<'a, 'i> IntoWasm<'a, Vec<ValType<'i>>> for WasmType
+where
+    'a: 'i,
+{
+    fn as_wast(&'a self) -> Vec<ValType<'i>> {
+        match self {
+            Self::UTF8Text => {
+                todo!()
+            }
+            Self::Any { .. } => {
+                todo!()
+            }
+            Self::Flag(_) => {
+                todo!()
+            }
+            Self::Enumerate(_) => {
+                todo!()
+            }
+            Self::Variant(_) => {
+                todo!()
+            }
+            Self::Reference { .. } => {
+                todo!()
+            }
+            Self::Array(v) => {
+                vec![ValType::I32]
+            }
+            Self::Tuple(v) => v.iter().map(|v| v.as_wast()).collect(),
+            Self::Structure(t) => t.fields.iter().map(|v| v.1.r#type.as_wast()).collect(),
+            primitive => vec![primitive.as_wast()],
         }
     }
 }

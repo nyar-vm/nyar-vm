@@ -104,7 +104,7 @@ where
 {
     fn as_wast(&'a self) -> wast::core::FunctionType<'i> {
         let params: Vec<_> = self.inputs.iter().map(|v| v.as_wast()).collect();
-        let result = [self.output.as_wast()];
+        let result: Vec<_> = self.output.as_wast();
         wast::core::FunctionType { params: Box::from(params), results: Box::from(result) }
     }
 }
@@ -117,6 +117,7 @@ where
         ComponentFunctionParam { name: self.name.as_ref(), ty: self.type_hint.as_wast() }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, ComponentFunctionResult<'i>> for WasmParameter
 where
     'a: 'i,
@@ -125,6 +126,7 @@ where
         ComponentFunctionResult { name: Some(self.name.as_ref()), ty: self.type_hint.as_wast() }
     }
 }
+
 impl<'a, 'i> IntoWasm<'a, (Option<Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>)> for WasmParameter
 where
     'a: 'i,
