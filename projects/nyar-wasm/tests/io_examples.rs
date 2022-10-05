@@ -1,6 +1,6 @@
 use nyar_wasm::{
-    ArrayType, DataItem, ExternalFunctionType, FieldType, FunctionType, Operation, StructureItem, StructureType, WasmBuilder,
-    WasmExternalName, WasmParameter, WasmSymbol, WasmType, WasmValue,
+    DataItem, ExternalFunctionType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmExternalName,
+    WasmParameter, WasmSymbol, WasmType, WasmValue,
 };
 use semver::Version;
 
@@ -12,12 +12,14 @@ pub fn hello_world() -> WasmBuilder {
 
     module.register_data(DataItem::utf8(WasmSymbol::new("hello"), hello));
     module.register(
-        ExternalFunctionType::new("wasi_snapshot_preview1", "fd_write").with_local("file_descriptor_write").with_input(vec![
-            WasmParameter::new("mode").with_type(WasmType::I32),
-            WasmParameter::new("offset_ptr").with_type(WasmType::I32),
-            WasmParameter::new("length_ptr").with_type(WasmType::I32),
-            WasmParameter::new("written").with_type(WasmType::I32),
-        ]), // .with_output(vec![WasmType::I32]),
+        ExternalFunctionType::new("wasi_snapshot_preview1", "fd_write").with_local_name("file_descriptor_write").with_input(
+            vec![
+                WasmParameter::new("mode").with_type(WasmType::I32),
+                WasmParameter::new("offset_ptr").with_type(WasmType::I32),
+                WasmParameter::new("length_ptr").with_type(WasmType::I32),
+                WasmParameter::new("written").with_type(WasmType::I32),
+            ],
+        ), // .with_output(vec![WasmType::I32]),
     );
 
     module.register(
@@ -99,14 +101,24 @@ pub fn import_random() -> WasmBuilder {
     let version = Version::new(0, 2, 0);
     //
 
+    let random = WasmExternalName::create("random").with_project("wasi", "random").with_version(version.clone());
+    module.register(
+        ExternalFunctionType::new(random.clone(), "get-random-u64")
+            .with_local_name("std∷random∷random_seed_safe")
+            .with_output(WasmType::U64),
+    );
     // module.register(
-    //     ImportFunction::new(
-    //         WasmExternalName::create("insecure").with_project("wasi", "random").with_version(version.clone()),
-    //         "get-insecure-random-u64",
-    //     )
-    //     .with_local("random_seed_fast")
-    //     .with_output(WasmType::U64),
+    //     ExternalFunctionType::new(random.clone(), "get-random-bytes")
+    //         .with_local("get_random_bytes")
+    //         .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
+    //         .with_output(ArrayType::new("<anonymous>", WasmType::U8)),
     // );
+    let random_insecure = WasmExternalName::create("insecure").with_project("wasi", "random").with_version(version.clone());
+    module.register(
+        ExternalFunctionType::new(random_insecure, "get-insecure-random-u64")
+            .with_local_name("std∷random∷random_seed_fast")
+            .with_output(WasmType::U64),
+    );
     // let monotonic_clock =
     //     WasmExternalName::create("monotonic-clock").with_project("wasi", "clocks").with_version(version.clone());
     //
@@ -124,21 +136,7 @@ pub fn import_random() -> WasmBuilder {
     //             .with_field(FieldType::new("nanoseconds").with_type(WasmType::U32)),
     //     )),
     // );
-    let random = WasmExternalName::create("random").with_project("wasi", "random").with_version(version.clone());
-    // module.register(
-    //     ImportFunction::new(
-    //         WasmExternalName::create("random").with_project("wasi", "random").with_version(version.clone()),
-    //         "get-random-u64",
-    //     )
-    //     .with_local("random_seed_safe")
-    //     .with_output(WasmType::U64),
-    // );
-    module.register(
-        ExternalFunctionType::new(random.clone(), "get-random-bytes")
-            .with_local("get_random_bytes")
-            .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
-            .with_output(ArrayType::new("<anonymous>", WasmType::U8)),
-    );
+
     // module.register(
     //     ExternalFunctionType::new(
     //         WasmExternalName::create("insecure-seed").with_project("wasi", "random").with_version(version.clone()),
@@ -150,6 +148,13 @@ pub fn import_random() -> WasmBuilder {
     //         WasmParameter::new("low").with_type(WasmType::U64),
     //     ]),
     // );
+
+    // let stdout = WasmExternalName::create("stdout").with_project("wasi", "cli").with_version(version.clone());
+    //
+    // module.register(
+    //     ExternalFunctionType::new(stdout.clone(), "get-stdout").with_local("standard_output").with_output(WasmType::I32),
+    // );
+
     module
 }
 

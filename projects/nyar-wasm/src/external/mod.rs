@@ -68,13 +68,14 @@ impl ExternalFunctionType {
     }
     pub fn function_id(&self) -> &str {
         // SAFETY: StringPool will deallocate this string when there are no more references to it
-        unsafe {
-            let cache = string_pool::String::from(format!("{}:{}", self.external_package, self.external_name));
-            &*(cache.as_str() as *const str)
-        }
+        // unsafe {
+        //     let cache = string_pool::String::from(format!("{}:{}", self.external_package, self.external_name));
+        //     &*(cache.as_str() as *const str)
+        // }
+        self.local_name.as_ref()
     }
 
-    pub fn with_local<S: Into<WasmSymbol>>(self, alias: S) -> Self {
+    pub fn with_local_name<S: Into<WasmSymbol>>(self, alias: S) -> Self {
         Self { local_name: alias.into(), ..self }
     }
     pub fn with_input<I>(self, inputs: I) -> Self
