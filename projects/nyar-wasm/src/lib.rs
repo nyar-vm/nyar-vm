@@ -18,9 +18,13 @@ mod symbols;
 mod tags;
 mod types;
 mod variants;
+
 pub use self::enumerates::EnumerateType;
+
+mod encoder;
 mod flags;
 mod values;
+
 pub use crate::{
     array::ArrayType,
     data::DataItem,
