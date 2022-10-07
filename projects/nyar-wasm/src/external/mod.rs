@@ -1,6 +1,6 @@
 use crate::{
     helpers::{IntoWasm, WasmName},
-    symbols::WasmExternalName,
+    symbols::WasiName,
     FunctionSignature, WasmParameter, WasmSymbol, WasmType,
 };
 use wast::{
@@ -14,7 +14,7 @@ mod codegen;
 #[derive(Debug)]
 pub struct ExternalFunctionType {
     /// External path of the type
-    pub external_package: WasmExternalName,
+    pub external_package: WasiName,
     /// External name of the type
     pub external_name: WasmSymbol,
     pub local_name: WasmSymbol,
@@ -54,7 +54,7 @@ impl FunctionSignature {
 }
 
 impl ExternalFunctionType {
-    pub fn new<M: Into<WasmExternalName>, F: Into<WasmSymbol>>(module: M, function: F) -> ExternalFunctionType {
+    pub fn new<M: Into<WasiName>, F: Into<WasmSymbol>>(module: M, function: F) -> ExternalFunctionType {
         let external_name = function.into();
         Self {
             external_package: module.into(),

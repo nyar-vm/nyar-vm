@@ -21,7 +21,6 @@ mod variants;
 
 pub use self::enumerates::EnumerateType;
 
-mod encoder;
 mod flags;
 mod values;
 
@@ -37,7 +36,7 @@ pub use crate::{
         Operation, VariableKind,
     },
     structures::{FieldType, StructureItem, StructureType},
-    symbols::{WasmExternalName, WasmPublisher, WasmSymbol},
+    symbols::{WasiName, WasmPublisher, WasmSymbol},
     types::{external::ImportSection, WasmType},
     values::{data::DataSection, variable::WasmVariable, WasmValue},
     variants::VariantType,

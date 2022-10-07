@@ -5,6 +5,7 @@ impl AsRef<str> for WasmSymbol {
         self.inner.as_ref()
     }
 }
+
 impl<'a> From<&'a str> for WasmSymbol {
     fn from(value: &'a str) -> Self {
         Self { inner: Arc::from(value) }
@@ -16,19 +17,20 @@ impl From<String> for WasmSymbol {
         Self { inner: Arc::from(value) }
     }
 }
+
 impl From<Arc<str>> for WasmSymbol {
     fn from(value: Arc<str>) -> Self {
         Self { inner: value }
     }
 }
 
-impl From<&'static str> for WasmExternalName {
+impl From<&'static str> for WasiName {
     fn from(value: &'static str) -> Self {
         Self { package: None, name: Arc::from(value), version: None }
     }
 }
 
-impl FromStr for WasmExternalName {
+impl FromStr for WasiName {
     type Err = SyntaxError;
 
     /// `wasi:random/random@0.2.0`
@@ -45,7 +47,7 @@ impl FromStr for WasmExternalName {
                     None => (module, None),
                 };
                 match package.split_once(':') {
-                    Some((organization, project)) => Ok(WasmExternalName {
+                    Some((organization, project)) => Ok(WasiName {
                         name: Arc::from(module),
                         package: Some(WasmPublisher { organization: Arc::from(organization), project: Arc::from(project) }),
                         version,
@@ -53,7 +55,7 @@ impl FromStr for WasmExternalName {
                     None => Err(SyntaxError::new("Missing organization name")),
                 }
             }
-            None => Ok(WasmExternalName { name: Arc::from(s), package: None, version: None }),
+            None => Ok(WasiName { name: Arc::from(s), package: None, version: None }),
         }
     }
 }

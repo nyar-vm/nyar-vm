@@ -1,11 +1,11 @@
 use super::*;
-use crate::symbols::WasmExternalName;
+use crate::symbols::WasiName;
 
 #[derive(Debug)]
 pub struct WasmVariable {
     pub symbol: WasmSymbol,
     pub mutable: bool,
-    pub export: Option<WasmExternalName>,
+    pub export: Option<WasiName>,
     pub r#type: WasmType,
     pub value: WasmValue,
     pub span: FileSpan,
@@ -51,7 +51,7 @@ impl WasmVariable {
         Self { symbol: name.clone(), value: WasmValue::Function(name), ..Self::default() }
     }
     pub fn with_export(self, export: bool) -> Self {
-        Self { export: WasmExternalName::create_by(&self.symbol, export), ..self }
+        Self { export: WasiName::create_by(&self.symbol, export), ..self }
     }
     pub fn with_mutable(self) -> Self {
         Self { mutable: true, ..self }

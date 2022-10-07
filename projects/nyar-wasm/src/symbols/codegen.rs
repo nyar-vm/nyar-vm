@@ -1,6 +1,6 @@
 use super::*;
 
-impl<'a, 'i> IntoWasm<'a, wast::component::InlineExport<'i>> for WasmExternalName
+impl<'a, 'i> IntoWasm<'a, wast::component::InlineExport<'i>> for WasiName
 where
     'a: 'i,
 {
@@ -10,7 +10,7 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, wast::core::InlineExport<'i>> for Option<WasmExternalName>
+impl<'a, 'i> IntoWasm<'a, wast::core::InlineExport<'i>> for Option<WasiName>
 where
     'a: 'i,
 {

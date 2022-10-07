@@ -3,14 +3,11 @@ use std::{
     sync::Arc,
 };
 
+mod encoder;
+mod identifiers;
+
 pub struct WasiCanonical {
     component: Arc<str>,
-}
-
-pub struct WastEncoder<'a, W: Write> {
-    source: &'a WasiCanonical,
-    writer: W,
-    indent: usize,
 }
 
 impl Default for WasiCanonical {
@@ -19,8 +16,5 @@ impl Default for WasiCanonical {
     }
 }
 
-impl<'a, W: Write> Write for WastEncoder<'a, W> {
-    fn write_str(&mut self, s: &str) -> std::fmt::Result {
-        self.writer.write_str(s)
-    }
-}
+#[test]
+fn test() {}

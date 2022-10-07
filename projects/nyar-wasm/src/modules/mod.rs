@@ -2,7 +2,7 @@ use crate::{
     functions::FunctionType,
     helpers::{write_wasm_bytes, IntoWasm, WasmName},
     structures::StructureType,
-    ArrayType, DataItem, ExternalFunctionType, WasmExternalName, WasmVariable,
+    ArrayType, DataItem, ExternalFunctionType, WasiName, WasmVariable,
 };
 use nyar_error::NyarError;
 use std::{
@@ -75,7 +75,7 @@ impl WasmBuilder {
         item.register(self);
     }
 
-    pub fn import_groups(&self) -> BTreeMap<&WasmExternalName, Vec<&ExternalFunctionType>> {
+    pub fn import_groups(&self) -> BTreeMap<&WasiName, Vec<&ExternalFunctionType>> {
         let mut groups = BTreeMap::new();
         for f in self.externals.values() {
             groups.entry(&f.external_package).or_insert_with(Vec::new).push(f);
