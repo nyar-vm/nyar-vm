@@ -11,9 +11,10 @@ edition = "2021"
 exclude = ["package.json", "tests/**"]
 
 [dependencies]
+
 string-pool = "0.1.0"
 semver = "1.0.22"
-
+indexmap = "2.2.3"
 
 [dev-dependencies]
 wasm-parser = "0.1.22"

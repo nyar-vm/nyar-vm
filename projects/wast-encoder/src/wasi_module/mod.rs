@@ -1,11 +1,14 @@
-use crate::encoder::WastEncoder;
-use semver::Version;
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fmt::{Display, Formatter, Write},
     hash::{Hash, Hasher},
+    sync::Arc,
 };
+
+use semver::Version;
+
+use crate::encoder::WastEncoder;
 
 mod display;
 
@@ -53,47 +56,17 @@ impl Ord for WasiModule {
 }
 
 /// e.g.: `wasi:random`
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct WasiPublisher {
-    organization: string_pool::String,
-    project: string_pool::String,
-}
-
-impl PartialEq for WasiPublisher {
-    fn eq(&self, other: &Self) -> bool {
-        self.organization.as_str() == other.organization.as_str() && self.project.as_str() == other.project.as_str()
-    }
-}
-
-impl Ord for WasiPublisher {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.organization
-            .as_str()
-            .cmp(other.organization.as_str())
-            .then_with(|| self.project.as_str().cmp(other.project.as_str()))
-    }
-}
-
-impl PartialOrd for WasiPublisher {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Eq for WasiPublisher {}
-
-impl Hash for WasiPublisher {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.organization.hash(state);
-        self.project.hash(state);
-    }
+    organization: Arc<str>,
+    project: Arc<str>,
 }
 
 impl WasiModule {
     /// Create a new module without a publisher
     pub fn create<S>(name: S) -> Self
-    where
-        S: Into<string_pool::String>,
+        where
+            S: Into<string_pool::String>,
     {
         Self { package: None, name: name.into(), version: None }
     }
@@ -107,9 +80,9 @@ impl WasiModule {
     }
     /// Set the organization and project for the module
     pub fn with_project<O, P>(self, organization: O, project: P) -> Self
-    where
-        O: Into<string_pool::String>,
-        P: Into<string_pool::String>,
+        where
+            O: Into<Arc<str>>,
+            P: Into<Arc<str>>,
     {
         Self { package: Some(WasiPublisher { organization: organization.into(), project: project.into() }), ..self }
     }
@@ -117,9 +90,28 @@ impl WasiModule {
 
 pub struct WasiInstance {
     module: WasiModule,
+    /// language_name: wasi_name
+    resources: BTreeMap<Arc<str>, Arc<str>>,
 }
 
-pub enum WasiImport {
-    Instance(WasiInstance),
-    Module(WasiModule),
+impl From<&str> for WasiModule {
+    fn from(value: &str) -> Self {
+        Self { name: value.into(), package: None, version: None }
+    }
+}
+
+impl WasiInstance {
+    pub fn new<M>(module: M) -> Self
+        where
+            M: Into<WasiModule>,
+    {
+        Self { module: module.into(), resources: Default::default() }
+    }
+    pub fn add_resource<S, T>(&mut self, language_name: S, wasi_name: T)
+        where
+            S: Into<Arc<str>>,
+            T: Into<Arc<str>>,
+    {
+        self.resources.insert(language_name.into(), wasi_name.into());
+    }
 }
