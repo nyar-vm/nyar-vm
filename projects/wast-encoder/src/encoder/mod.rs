@@ -1,16 +1,18 @@
 use std::fmt::Write;
 
-use crate::{CanonicalImport, WasiCanonical};
+use crate::{CanonicalImport, CanonicalWasi};
+
+mod for_instance;
 
 pub struct WastEncoder<'a, W> {
-    pub(crate) source: &'a WasiCanonical,
+    pub(crate) source: &'a CanonicalWasi,
     pub(crate) writer: W,
     indent: usize,
     indent_text: &'static str,
 }
 
 impl<'a, W: Write> WastEncoder<'a, W> {
-    pub fn new(source: &'a WasiCanonical, writer: W) -> Self {
+    pub fn new(source: &'a CanonicalWasi, writer: W) -> Self {
         Self { source, writer, indent: 0, indent_text: "    " }
     }
     pub fn with_indent_text(self, text: &'static str) -> Self {
