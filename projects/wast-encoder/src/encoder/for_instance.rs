@@ -72,7 +72,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
                 write!(self, "(alias outer {root} {name} (type {name}))")?
             }
             WasiType::Variant(variant) => {
-                let name = encode_id(&variant.name);
+                let name = variant.symbol.to_string();
                 let wasi_name = encode_kebab(&name);
                 write!(self, "(alias outer {root} {name} (type {name}?))")?;
                 write!(self, "(export {name} {wasi_name} (type (eq {name}?)))")?

@@ -3,8 +3,11 @@ use std::{ops::AddAssign, sync::Arc};
 pub use crate::{
     dag::{DependencyLogger, DependentRegistry, ResolveDependencies},
     encoder::{encode_id, encode_kebab, WastEncoder},
+    enumerations::{WasiEnumeration, WasiEnumerationItem},
     functions::{WasiFunction, WasiParameter},
     resources::WasiResource,
+    symbols::identifiers::Identifier,
+    variants::{VariantItem, VariantType},
     wasi_module::{WasiInstance, WasiModule},
     wasi_types::WasiType,
 };
@@ -14,6 +17,7 @@ mod encoder;
 mod enumerations;
 mod functions;
 mod resources;
+mod symbols;
 mod variants;
 mod wasi_module;
 mod wasi_types;
