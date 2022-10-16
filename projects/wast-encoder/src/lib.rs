@@ -4,13 +4,17 @@ pub use crate::{
     dag::{DependencyLogger, DependentRegistry, ResolveDependencies},
     encoder::{encode_id, encode_kebab, WastEncoder},
     functions::{WasiFunction, WasiParameter},
-    wasi_module::WasiInstance,
-    wasi_types::{WasiResource, WasiType},
+    resources::WasiResource,
+    wasi_module::{WasiInstance, WasiModule},
+    wasi_types::WasiType,
 };
 
 mod dag;
 mod encoder;
+mod enumerations;
 mod functions;
+mod resources;
+mod variants;
 mod wasi_module;
 mod wasi_types;
 

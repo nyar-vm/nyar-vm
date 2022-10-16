@@ -18,11 +18,17 @@ pub struct WasiLinker {
 }
 
 /// e.g: `wasi:random/random@0.2.0`
-#[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct WasiModule {
     pub package: Option<WasiPublisher>,
     pub name: Arc<str>,
     pub version: Option<Version>,
+}
+
+impl Default for WasiModule {
+    fn default() -> Self {
+        Self { package: None, name: Arc::from(""), version: None }
+    }
 }
 
 /// e.g.: `wasi:random`
