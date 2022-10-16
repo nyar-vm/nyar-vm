@@ -1,17 +1,28 @@
-use std::sync::Arc;
+use std::{
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
 use indexmap::IndexMap;
 
+use crate::{encode_id, wasi_module::WasiModule};
+
+mod display;
+
 #[derive(Clone, Debug)]
 pub enum WasiType {
-    I8,
-    I16,
-    I32,
-    I64,
-    U8,
-    U16,
-    U32,
-    U64,
+    Integer8 {
+        signed: bool,
+    },
+    Integer16 {
+        signed: bool,
+    },
+    Integer32 {
+        signed: bool,
+    },
+    Integer64 {
+        signed: bool,
+    },
     Option {
         inner: Box<WasiType>,
     },
@@ -33,27 +44,24 @@ pub enum WasiType {
     },
 }
 
-
 #[derive(Clone, Debug)]
 pub struct WasiResource {
     /// Resource language name
     pub name: Arc<str>,
+    pub wasi_module: WasiModule,
     pub wasi_name: String,
     pub owned: bool,
 }
 
 impl WasiResource {
     pub fn new<S>(name: S, wasi_name: &str) -> Self
-        where
-            S: Into<Arc<str>>,
+    where
+        S: Into<Arc<str>>,
     {
-        Self { name: name.into(), wasi_name: wasi_name.to_string(), owned: true }
+        Self { name: name.into(), wasi_module: WasiModule::default(), wasi_name: wasi_name.to_string(), owned: true }
     }
-    pub fn with_owned(self) -> Self {
-        Self { owned: true, ..self }
-    }
-    pub fn with_borrow(self) -> Self {
-        Self { owned: false, ..self }
+    pub fn with_module<M: Into<WasiModule>>(self, wasi: WasiModule) -> Self {
+        Self { wasi_module: wasi, ..self }
     }
 }
 

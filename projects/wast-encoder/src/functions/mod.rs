@@ -1,4 +1,8 @@
-use std::{ops::AddAssign, sync::Arc};
+use std::{
+    fmt::{Display, Formatter, Write},
+    ops::AddAssign,
+    sync::Arc,
+};
 
 use crate::WasiType;
 
@@ -12,12 +16,13 @@ pub struct WasiFunction {
     pub name: Arc<str>,
     pub wasi_name: String,
     pub inputs: Vec<WasiParameter>,
-    pub result: Option<WasiType>,
+    pub output: Option<WasiType>,
 }
 
 #[derive(Clone, Debug)]
 pub struct WasiParameter {
     pub name: Arc<str>,
+    pub wasi_name: Arc<str>,
     pub r#type: WasiType,
 }
 
@@ -26,35 +31,35 @@ impl WasiFunction {
     where
         S: Into<Arc<str>>,
     {
-        Self { name: name.into(), wasi_name: wasi_name.to_string(), inputs: vec![], result: None }
+        Self { name: name.into(), wasi_name: wasi_name.to_string(), inputs: vec![], output: None }
     }
     pub fn constructor<S>(name: S, wasi_class: &str) -> Self
     where
         S: Into<Arc<str>>,
     {
         let wasi_name = format!("[constructor]{}", wasi_class);
-        Self { name: name.into(), wasi_name, inputs: vec![], result: None }
+        Self { name: name.into(), wasi_name, inputs: vec![], output: None }
     }
     pub fn static_method<S>(name: S, wasi_class: &str, wasi_name: &str) -> Self
     where
         S: Into<Arc<str>>,
     {
         let wasi_name = format!("[static]{}.{}", wasi_class, wasi_name);
-        Self { name: name.into(), wasi_name, inputs: vec![], result: None }
+        Self { name: name.into(), wasi_name, inputs: vec![], output: None }
     }
     pub fn method<S>(name: S, wasi_class: &str, wasi_name: &str) -> Self
     where
         S: Into<Arc<str>>,
     {
         let wasi_name = format!("[method]{}.{}", wasi_class, wasi_name);
-        Self { name: name.into(), wasi_name, inputs: vec![], result: None }
+        Self { name: name.into(), wasi_name, inputs: vec![], output: None }
     }
     pub fn destructor<S>(name: S, wasi_class: &str) -> Self
     where
         S: Into<Arc<str>>,
     {
         let wasi_name = format!("[resource-drop]{}", wasi_class);
-        Self { name: name.into(), wasi_name, inputs: vec![], result: None }
+        Self { name: name.into(), wasi_name, inputs: vec![], output: None }
     }
 }
 
@@ -63,6 +68,23 @@ impl WasiParameter {
     where
         S: Into<Arc<str>>,
     {
-        Self { name: name.into(), r#type }
+        let wasi_name = name.into();
+        Self { name: wasi_name.clone(), wasi_name, r#type }
+    }
+}
+
+impl Display for WasiFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}(", self.name)?;
+        for (i, input) in self.inputs.iter().enumerate() {
+            if i != 0 {
+                f.write_str(", ")?
+            }
+            match input.name.as_ref().eq("self") {
+                true => f.write_str("self")?,
+                false => write!(f, "{}: {:#}", input.name, input.r#type)?,
+            }
+        }
+        f.write_char(')')
     }
 }

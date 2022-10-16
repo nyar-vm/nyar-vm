@@ -8,6 +8,6 @@ impl AddAssign<WasiParameter> for WasiFunction {
 
 impl AddAssign<WasiType> for WasiFunction {
     fn add_assign(&mut self, rhs: WasiType) {
-        self.result = Some(rhs);
+        self.output = Some(rhs);
     }
 }

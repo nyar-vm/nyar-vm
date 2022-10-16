@@ -1,7 +1,8 @@
 use std::{ops::AddAssign, sync::Arc};
 
 pub use crate::{
-    encoder::WastEncoder,
+    dag::{DependencyLogger, DependentRegistry, ResolveDependencies},
+    encoder::{encode_id, encode_kebab, WastEncoder},
     functions::{WasiFunction, WasiParameter},
     wasi_module::WasiInstance,
     wasi_types::{WasiResource, WasiType},
@@ -16,6 +17,7 @@ mod wasi_types;
 pub struct CanonicalWasi {
     pub name: Arc<str>,
     pub imports: Vec<CanonicalImport>,
+    pub type_signatures: bool,
 }
 
 pub enum CanonicalImport {
@@ -24,7 +26,7 @@ pub enum CanonicalImport {
 
 impl Default for CanonicalWasi {
     fn default() -> Self {
-        Self { name: Arc::from("root"), imports: vec![] }
+        Self { name: Arc::from("root"), imports: vec![], type_signatures: true }
     }
 }
 

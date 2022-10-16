@@ -9,17 +9,16 @@ use std::{
 use semver::Version;
 
 use crate::{WasiFunction, WasiResource};
-use crate::wasi_types::DependencyLogger;
 
-mod display;
 mod convert;
+mod display;
 
 pub struct WasiLinker {
     packages: BTreeMap<WasiPublisher, Version>,
 }
 
 /// e.g: `wasi:random/random@0.2.0`
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Clone, Default, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct WasiModule {
     pub package: Option<WasiPublisher>,
     pub name: Arc<str>,
@@ -36,8 +35,8 @@ pub struct WasiPublisher {
 impl WasiModule {
     /// Create a new module without a publisher
     pub fn create<S>(name: S) -> Self
-        where
-            S: Into<Arc<str>>,
+    where
+        S: Into<Arc<str>>,
     {
         Self { package: None, name: name.into(), version: None }
     }
@@ -51,9 +50,9 @@ impl WasiModule {
     }
     /// Set the organization and project for the module
     pub fn with_project<O, P>(self, organization: O, project: P) -> Self
-        where
-            O: Into<Arc<str>>,
-            P: Into<Arc<str>>,
+    where
+        O: Into<Arc<str>>,
+        P: Into<Arc<str>>,
     {
         Self { package: Some(WasiPublisher { organization: organization.into(), project: project.into() }), ..self }
     }
@@ -66,21 +65,11 @@ pub struct WasiInstance {
     pub functions: BTreeMap<Arc<str>, WasiFunction>,
 }
 
-
 impl WasiInstance {
     pub fn new<M>(module: M) -> Self
-        where
-            M: Into<WasiModule>,
+    where
+        M: Into<WasiModule>,
     {
         Self { module: module.into(), resources: Default::default(), functions: Default::default() }
-    }
-    pub fn dependencies(&self) -> DependencyLogger {
-        let mut types = DependencyLogger::default();
-        for function in self.functions.values() {
-            for input in &function.inputs {
-                input.r#type.resolve_dependencies(&mut types)
-            }
-        }
-        types
     }
 }
