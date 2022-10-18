@@ -1,21 +1,11 @@
 use super::*;
 
-impl Display for WasiModule {
+impl Debug for WasiInstance {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(s) = &self.package {
-            write!(f, "{}/", s)?
-        }
-        write!(f, "{}", self.name)?;
-        if let Some(s) = &self.version {
-            write!(f, "@{}", s)?
-        }
-        Ok(())
+        f.debug_struct("WasiInstance")
+            .field("module", &self.module)
+            .field("resources", &self.resources.values())
+            .field("functions", &self.functions.values())
+            .finish()
     }
 }
-
-impl Display for WasiPublisher {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.organization, self.project)
-    }
-}
-
