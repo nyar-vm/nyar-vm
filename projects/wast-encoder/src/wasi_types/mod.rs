@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use crate::{dag::DependentGraph, DependencyLogger, Identifier, ResolveDependencies, VariantType, WasiResource};
+use crate::{dag::DependentGraph, ExternalFunction, Identifier, ResolveDependencies, VariantType, WasiResource};
 
 mod display;
 
@@ -37,54 +37,42 @@ pub enum WasiType {
         /// Type language name
         name: Identifier,
     },
+    External(Box<ExternalFunction>),
 }
 
 impl ResolveDependencies for WasiType {
+    fn define_language_types(&self, dict: &mut DependentGraph) {
+        panic!("Not implemented");
+    }
+
     fn collect_wasi_types(&self, dict: &mut DependentGraph) {
         match self {
-            WasiType::Option { inner } => inner.collect_wasi_types(dict),
+            WasiType::Option { inner } => {
+                inner.collect_wasi_types(dict);
+            }
             WasiType::Result { success, failure } => {
                 success.iter().for_each(|s| s.collect_wasi_types(dict));
                 failure.iter().for_each(|f| f.collect_wasi_types(dict));
             }
-            WasiType::Resource(v) => v.collect_wasi_types(dict),
-            WasiType::Variant(v) => v.collect_wasi_types(dict),
-            _ => {}
-        };
-    }
-
-    fn trace_language_types(&self, dict: &mut DependencyLogger) {
-        match self {
-            Self::Option { inner } => inner.trace_language_types(dict),
-            Self::Result { success, failure } => {
-                success.iter().for_each(|s| s.trace_language_types(dict));
-                failure.iter().for_each(|f| f.trace_language_types(dict));
+            WasiType::Resource(v) => {
+                dict.types_buffer.push(WasiType::Resource(v.clone()));
             }
-            Self::Resource(_) => {}
-            Self::Variant(v) => v.trace_language_types(dict),
-            Self::TypeHandler { name, .. } => {
-                dict.types.insert(name.clone());
+            WasiType::Variant(v) => {
+                dict.types_buffer.push(WasiType::Variant(v.clone()));
             }
-            Self::TypeAlias { name } => {
-                dict.types.insert(name.clone());
+            WasiType::TypeAlias { name } => {
+                dict.types_buffer.extend(dict.types.get(name).cloned());
+            }
+            WasiType::TypeHandler { name, .. } => {
+                dict.types_buffer.extend(dict.types.get(name).cloned());
+                // println!("Buffer2: {:?}", name);
+                // println!("Buffer3: {:?}", dict.types);
+                // println!("Buffer4: {:?}", dict.types_buffer);
+            }
+            WasiType::External(v) => {
+                dict.types_buffer.push(WasiType::External(v.clone()));
             }
             _ => {}
         };
-    }
-
-    fn trace_modules(&self, dict: &mut DependencyLogger) {
-        match self {
-            WasiType::Integer8 { .. } => {}
-            WasiType::Integer16 { .. } => {}
-            WasiType::Integer32 { .. } => {}
-            WasiType::Integer64 { .. } => {}
-            WasiType::Option { .. } => {}
-            WasiType::Result { .. } => {}
-            WasiType::Resource(v) => v.trace_modules(dict),
-            WasiType::Variant(v) => v.trace_modules(dict),
-            WasiType::TypeHandler { .. } => {}
-            WasiType::TypeAlias { .. } => {}
-            WasiType::External(_) => {}
-        }
     }
 }

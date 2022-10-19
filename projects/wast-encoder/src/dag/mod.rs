@@ -1,162 +1,45 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, VecDeque},
     fmt::{Debug, Formatter},
+    mem::take,
     ops::{AddAssign, Index},
     str::FromStr,
-    sync::Arc,
 };
 
 use petgraph::{algo::toposort, data::FromElements, graph::DiGraph};
-use semver::Version;
 
-use crate::{ExternalFunction, Identifier, VariantType, WasiInstance, WasiModule, WasiResource, WasiType};
+use crate::{Identifier, WasiModule, WasiType};
 
 mod arithmetic;
 
 pub trait ResolveDependencies {
+    fn define_language_types(&self, dict: &mut DependentGraph);
     fn collect_wasi_types(&self, dict: &mut DependentGraph);
-    fn trace_language_types(&self, dict: &mut DependencyLogger);
-    fn trace_modules(&self, dict: &mut DependencyLogger);
-    fn dependent_modules(&self, registry: &DependentRegistry) -> BTreeSet<WasiModule> {
-        let mut logger = DependencyLogger::default();
-        self.trace_language_types(&mut logger);
-        // TODO: remove clone
-        let types = logger.types.clone();
-
-        for names in types {
-            match registry.types.get(&names) {
-                None => {
-                    println!("Type {} not found", names);
-                }
-                Some(s) => s.trace_modules(&mut logger),
-            }
-        }
-        self.trace_modules(&mut logger);
-        logger.wasi
-    }
 }
-
-#[derive(Default)]
-pub struct DependentRegistry {
-    modules: BTreeMap<WasiModule, Version>,
-    types: BTreeMap<Identifier, WasiType>,
-    functions: BTreeMap<Arc<str>, ExternalFunction>,
-}
-
-impl DependentRegistry {
-    pub fn group_instances(&self) -> BTreeMap<WasiModule, WasiInstance> {
-        let mut instances = BTreeMap::new();
-        for (id, item) in self.types.iter() {
-            match item {
-                WasiType::Integer8 { .. } => {}
-                WasiType::Integer16 { .. } => {}
-                WasiType::Integer32 { .. } => {}
-                WasiType::Integer64 { .. } => {}
-                WasiType::Option { .. } => {}
-                WasiType::Result { .. } => {}
-                WasiType::Resource(v) => {
-                    let module = v.wasi_module.clone();
-                    let instance = instances.entry(module).or_insert(WasiInstance::new(v.wasi_module.clone()));
-                    instance.resources.insert(id.clone(), v.clone());
-                }
-                WasiType::Variant(_) => {}
-                WasiType::TypeHandler { .. } => {}
-                WasiType::TypeAlias { .. } => {}
-                WasiType::External(_) => {}
-            }
-        }
-        instances
-    }
-}
-
-impl Debug for DependentRegistry {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DependentRegistry")
-            .field("modules", &self.modules)
-            .field("types", &self.types.keys())
-            .field("functions", &self.functions.keys())
-            .finish()
-    }
-}
-
-impl AddAssign<VariantType> for DependentRegistry {
-    fn add_assign(&mut self, rhs: VariantType) {
-        self.types.insert(rhs.symbol.clone(), WasiType::Variant(rhs));
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct DependencyLogger {
-    pub(crate) types: BTreeSet<Identifier>,
-    pub(crate) wasi: BTreeSet<WasiModule>,
-}
-
-impl DependentRegistry {
-    pub fn change_version(&mut self, module: WasiModule, version: Version) {
-        self.modules.insert(module, version);
-    }
-    pub fn erase_version(&mut self, module: &WasiModule) {
-        self.modules.remove(module);
-    }
-    pub fn update_versions(&mut self) {
-        for typing in self.types.values_mut() {
-            match typing {
-                WasiType::Option { .. } => {}
-                WasiType::Result { .. } => {}
-                WasiType::Resource(_) => {}
-                WasiType::Variant(_) => {}
-                WasiType::TypeHandler { .. } => {}
-                WasiType::TypeAlias { .. } => {}
-                _ => {}
-            }
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct WasmType {
-    name: &'static str,
-    module: Option<&'static str>,
-    dependencies: Vec<&'static str>,
-}
-
-impl WasmType {
-    pub fn new(name: &'static str) -> Self {
-        Self { name, module: None, dependencies: vec![] }
-    }
-    pub fn with_module(mut self, module: &'static str) -> Self {
-        self.module = Some(module);
-        self
-    }
-    pub fn with_dependency(mut self, dependency: &'static str) -> Self {
-        self.dependencies.push(dependency);
-        self
-    }
-}
-// #[test]
-// fn test_dag() {
-//     let mut root = Dag::<WasmType, String, u32>::new();
-//     let function_write = root.add_node(WasmType::new("write".to_string()));
-//     let (_, stream_error) =
-//         root.add_child(function_write, "stream-error".to_string(), WasmType::new("stream-error".to_string()));
-//     let (_, io_error) = root.add_child(stream_error, "io-error".to_string(), WasmType::new("io-error".to_string()));
-//
-//     for (edge, node) in root.recursive_walk(&root) {
-//         let item = root.index(node);
-//         println!("{:?}", item);
-//     }
-// }
 
 #[derive(Default, Debug)]
 pub struct DependentGraph {
     dag: DiGraph<DependencyItem, ()>,
-    types: BTreeSet<WasiType>,
+    pub(crate) types: BTreeMap<Identifier, WasiType>,
+    pub(crate) types_buffer: Vec<WasiType>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum DependencyItem {
-    Item(WasiType),
     Module(WasiModule),
+    Item(WasiType),
+}
+
+impl Debug for DependencyItem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Module(s) => write!(f, "Module({})", s),
+            Self::Item(WasiType::External(v)) => write!(f, "External({}, {})", v.wasi_module, v.name),
+            Self::Item(WasiType::Resource(v)) => write!(f, "Resource({}, {})", v.wasi_module, v.wasi_name),
+            Self::Item(WasiType::Variant(v)) => write!(f, "Variant({})", v.wasi_name),
+            _ => panic!("Not implemented: {:?}", self),
+        }
+    }
 }
 
 impl DependentGraph {
@@ -169,11 +52,62 @@ impl DependentGraph {
         }
         self.dag.add_node(item)
     }
-    pub fn insert_with_dependency(&mut self, item: WasiType, dependent: DependencyItem) {
-        let node = self.insert(DependencyItem::Item(item));
+
+    pub fn insert_with_dependency(&mut self, item: DependencyItem, dependent: DependencyItem) {
+        let node = self.insert(item);
         let dependency = self.insert(dependent);
         self.dag.add_edge(node, dependency, ());
     }
+
+    pub(crate) fn finalize_buffer(&mut self, r#type: WasiType) {
+        // println!("Buffer: {:?}", self.types_buffer);
+        for i in take(&mut self.types_buffer) {
+            self.insert_with_dependency(DependencyItem::Item(r#type.clone()), DependencyItem::Item(i));
+        }
+    }
+
+    pub fn finalize(mut self) -> Self {
+        // TODO: remove clone here
+        let types = self.types.clone();
+        // println!("{:#?}", types);
+        for typing in types.values() {
+            match typing {
+                WasiType::Integer8 { .. } => {
+                    panic!()
+                }
+                WasiType::Integer16 { .. } => {
+                    panic!()
+                }
+                WasiType::Integer32 { .. } => {
+                    panic!()
+                }
+                WasiType::Integer64 { .. } => {
+                    panic!()
+                }
+                WasiType::Option { .. } => {
+                    panic!()
+                }
+                WasiType::Result { .. } => {
+                    panic!()
+                }
+                WasiType::Resource(v) => v.collect_wasi_types(&mut self),
+                WasiType::Variant(v) => {
+                    // println!("Variant {:?}", v);
+                    v.collect_wasi_types(&mut self)
+                }
+                WasiType::TypeHandler { .. } => {
+                    panic!()
+                }
+                WasiType::TypeAlias { .. } => {
+                    panic!()
+                }
+                WasiType::External(v) => v.collect_wasi_types(&mut self),
+            }
+            // println!("{} {:?}", typing, self.dag);
+        }
+        self
+    }
+
     pub fn topological_sort(&self) -> Vec<DependencyItem> {
         let mut output = Vec::with_capacity(self.dag.node_count());
         let sort = match toposort(&self.dag, None) {
@@ -189,5 +123,70 @@ impl DependentGraph {
             }
         }
         output
+    }
+}
+
+fn top_sort(adj: Vec<Vec<usize>>, mut indeg: Vec<u32>) -> Vec<usize> {
+    let mut q = indeg.iter().enumerate().filter(|(_, &d)| d == 0).map(|(node, _)| node).collect::<VecDeque<_>>();
+    let mut ret = Vec::new();
+    while let Some(node) = q.pop_front() {
+        ret.push(node);
+        for &nnode in adj[node].iter() {
+            indeg[nnode] -= 1;
+            if indeg[nnode] == 0 {
+                q.push_back(nnode)
+            }
+        }
+    }
+    ret
+}
+struct Solution {}
+
+impl Solution {
+    pub fn sort_items(group_count: i32, mut group: Vec<i32>, before_items: Vec<Vec<i32>>) -> Vec<i32> {
+        let items = before_items.len();
+        let mut indeg = vec![0; items];
+        let mut adj = vec![vec![]; items];
+        for (item, deps) in before_items.iter().enumerate() {
+            for &dep in deps {
+                adj[dep as usize].push(item);
+                indeg[item] += 1;
+            }
+        }
+        let items_ids = top_sort(adj, indeg);
+        if items_ids.len() != items {
+            return vec![];
+        }
+
+        let mut groups = items_ids.into_iter().fold(vec![vec![]; group_count as usize], |mut acc, i| {
+            if group[i] == -1 {
+                group[i] = acc.len() as i32;
+                acc.push(vec![]);
+            }
+            acc[group[i] as usize].push(i as i32);
+            acc
+        });
+
+        let mut indeg = vec![0; groups.len()];
+        let mut adj = vec![vec![]; groups.len()];
+        for (item, deps) in before_items.into_iter().enumerate() {
+            for dep in deps {
+                let (src, dst) = (group[dep as usize] as usize, group[item] as usize);
+                if src == dst {
+                    continue;
+                }
+                adj[src].push(dst);
+                indeg[dst] += 1;
+            }
+        }
+        let group_ids = top_sort(adj, indeg);
+        if group_ids.len() != groups.len() {
+            return vec![];
+        }
+
+        group_ids.into_iter().fold(Vec::new(), |mut acc, i| {
+            acc.append(&mut groups[i]);
+            acc
+        })
     }
 }

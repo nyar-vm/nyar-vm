@@ -4,7 +4,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::{dag::DependentGraph, DependencyLogger, ResolveDependencies, WasiModule, WasiType};
+use crate::{
+    dag::{DependencyItem, DependentGraph},
+    Identifier, ResolveDependencies, WasiModule, WasiType,
+};
 
 mod arithmetic;
 
@@ -13,7 +16,7 @@ mod arithmetic;
 ///         )
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalFunction {
-    pub name: Arc<str>,
+    pub name: Identifier,
     pub wasi_module: WasiModule,
     pub wasi_name: String,
     pub inputs: Vec<WasiParameter>,
@@ -31,7 +34,7 @@ pub struct WasiParameter {
 impl ExternalFunction {
     pub fn new<S, M>(wasi_module: M, wasi_name: &str, name: S) -> Self
     where
-        S: Into<Arc<str>>,
+        S: Into<Identifier>,
         M: Into<WasiModule>,
     {
         Self {
@@ -103,29 +106,17 @@ impl Display for ExternalFunction {
 }
 
 impl ResolveDependencies for ExternalFunction {
+    fn define_language_types(&self, dict: &mut DependentGraph) {
+        dict.types.insert(self.name.clone(), WasiType::External(Box::new(self.clone())));
+    }
+
     fn collect_wasi_types(&self, dict: &mut DependentGraph) {
         self.inputs.iter().for_each(|input| input.r#type.collect_wasi_types(dict));
         self.output.iter().for_each(|output| output.collect_wasi_types(dict));
+        dict.insert_with_dependency(
+            DependencyItem::Item(WasiType::External(Box::new(self.clone()))),
+            DependencyItem::Module(self.wasi_module.clone()),
+        );
+        dict.finalize_buffer(WasiType::External(Box::new(self.clone())))
     }
-
-    fn trace_language_types(&self, dict: &mut DependencyLogger) {
-        self.inputs.iter().for_each(|input| input.trace_language_types(dict));
-        self.output.iter().for_each(|output| output.trace_language_types(dict));
-    }
-
-    fn trace_modules(&self, dict: &mut DependencyLogger) {
-        dict.wasi.insert(self.wasi_module.clone());
-    }
-}
-
-impl ResolveDependencies for WasiParameter {
-    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
-        self.r#type.collect_wasi_types(dict)
-    }
-
-    fn trace_language_types(&self, dict: &mut DependencyLogger) {
-        self.r#type.trace_language_types(dict)
-    }
-
-    fn trace_modules(&self, _: &mut DependencyLogger) {}
 }

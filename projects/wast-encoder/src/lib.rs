@@ -1,7 +1,7 @@
 use std::{ops::AddAssign, sync::Arc};
 
 pub use crate::{
-    dag::{DependencyLogger, DependentRegistry, ResolveDependencies},
+    dag::{DependentGraph, ResolveDependencies},
     encoder::{encode_id, encode_kebab, WastEncoder},
     enumerations::{WasiEnumeration, WasiEnumerationItem},
     functions::{ExternalFunction, WasiParameter},
@@ -19,6 +19,7 @@ mod dag;
 mod encoder;
 mod enumerations;
 mod functions;
+mod records;
 mod resources;
 mod symbols;
 mod variants;
