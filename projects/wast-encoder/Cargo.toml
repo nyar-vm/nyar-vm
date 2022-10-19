@@ -17,6 +17,7 @@ nyar-error = "0.1.12"
 string-pool = "0.1.0"
 semver = "1.0.22"
 indexmap = "2.2.3"
+petgraph = "0.6.4"
 
 [dev-dependencies]
 wasm-parser = "0.1.22"

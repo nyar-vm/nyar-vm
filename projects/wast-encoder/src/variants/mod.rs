@@ -3,11 +3,11 @@ use std::{ops::AddAssign, sync::Arc};
 use convert_case::{Case, Casing};
 use indexmap::IndexMap;
 
-use crate::{DependencyLogger, Identifier, ResolveDependencies, WasiType};
+use crate::{dag::DependentGraph, DependencyLogger, Identifier, ResolveDependencies, WasiType};
 
 mod arithmetic;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VariantType {
     /// Variant name in language
     pub symbol: Identifier,
@@ -15,7 +15,7 @@ pub struct VariantType {
     pub variants: IndexMap<Arc<str>, VariantItem>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VariantItem {
     /// Variant name in language
     pub symbol: Arc<str>,
@@ -71,6 +71,10 @@ impl VariantItem {
 //     ))
 
 impl ResolveDependencies for VariantType {
+    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
+        self.variants.values().for_each(|v| v.collect_wasi_types(dict));
+    }
+
     fn trace_language_types(&self, dict: &mut DependencyLogger) {
         self.variants.values().for_each(|v| v.trace_language_types(dict));
     }
@@ -79,6 +83,10 @@ impl ResolveDependencies for VariantType {
 }
 
 impl ResolveDependencies for VariantItem {
+    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
+        self.fields.iter().for_each(|f| f.collect_wasi_types(dict));
+    }
+
     fn trace_language_types(&self, dict: &mut DependencyLogger) {
         self.fields.iter().for_each(|f| f.trace_language_types(dict));
     }

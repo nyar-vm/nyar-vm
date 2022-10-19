@@ -26,10 +26,14 @@ pub struct WasiModule {
 
 impl WasiModule {
     /// Create a new module without a publisher
-    pub fn create<S>(name: S) -> Self
+    pub fn new<S>(name: S) -> Self
     where
         S: Into<Arc<str>>,
     {
+        let name = name.into();
+        if name.contains(&['/', ':']) {
+            panic!("Invalid module name: {}", name);
+        }
         Self { package: None, name: name.into(), version: None }
     }
     /// Set the publisher for the module
