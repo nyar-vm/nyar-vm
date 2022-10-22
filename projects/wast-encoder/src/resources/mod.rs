@@ -1,6 +1,6 @@
-use crate::{dag::DependentGraph, Identifier, ResolveDependencies, WasiModule, WasiType};
+use crate::{dag::DependentGraph, DependenciesTrace, Identifier, WasiModule, WasiType};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct WasiResource {
     /// Resource language name
     pub symbol: Identifier,
@@ -18,7 +18,7 @@ impl WasiResource {
     }
 }
 
-impl ResolveDependencies for WasiResource {
+impl DependenciesTrace for WasiResource {
     fn define_language_types(&self, dict: &mut DependentGraph) {
         dict.types.insert(self.symbol.clone(), WasiType::Resource(self.clone()));
     }

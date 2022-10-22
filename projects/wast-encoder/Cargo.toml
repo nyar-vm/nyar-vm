@@ -19,8 +19,8 @@ semver = "1.0.22"
 indexmap = "2.2.3"
 
 [dependencies.dependent_sort]
-version = "0.1.0"
-path = 'C:\Users\Dell\CLionProjects\dependent_sort.rs\projects\dependent_sort'
+version = "0.2.0"
+#path = 'C:\Users\Dell\CLionProjects\dependent_sort.rs\projects\dependent_sort'
 
 [dev-dependencies]
 wasm-parser = "0.1.22"

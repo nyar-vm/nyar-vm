@@ -4,8 +4,9 @@ use std::{
     sync::Arc,
 };
 
+use crate::dag::DependenciesTrace;
 pub use crate::{
-    dag::{DependentGraph, ResolveDependencies},
+    dag::DependentGraph,
     encoder::{encode_id, encode_kebab, WastEncoder},
     enumerations::{WasiEnumeration, WasiEnumerationItem},
     functions::{ExternalFunction, WasiParameter},
