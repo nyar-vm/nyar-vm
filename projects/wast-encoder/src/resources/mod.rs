@@ -1,7 +1,4 @@
-use crate::{
-    dag::{DependencyItem, DependentGraph},
-    Identifier, ResolveDependencies, WasiModule, WasiType,
-};
+use crate::{dag::DependentGraph, Identifier, ResolveDependencies, WasiModule, WasiType};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WasiResource {
@@ -26,10 +23,9 @@ impl ResolveDependencies for WasiResource {
         dict.types.insert(self.symbol.clone(), WasiType::Resource(self.clone()));
     }
 
-    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
-        dict.insert_with_dependency(
-            DependencyItem::Item(WasiType::Resource(self.clone())),
-            DependencyItem::Module(self.wasi_module.clone()),
-        )
+    fn collect_wasi_types<'a, 'i>(&'a self, _: &'i DependentGraph, _: &mut Vec<&'i WasiType>)
+    where
+        'a: 'i,
+    {
     }
 }

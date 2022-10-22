@@ -65,27 +65,26 @@ impl VariantItem {
     }
 }
 
-//     (type $stream-error (variant
-//         (case "last-operation-failed" (own $io-error))
-//         (case "closed")
-//     ))
-
 impl ResolveDependencies for VariantType {
     fn define_language_types(&self, dict: &mut DependentGraph) {
         dict.types.insert(self.symbol.clone(), WasiType::Variant(self.clone()));
     }
 
-    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
-        self.variants.values().for_each(|v| v.collect_wasi_types(dict));
-
-        dict.finalize_buffer(WasiType::Variant(self.clone()))
+    fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
+    where
+        'a: 'i,
+    {
+        self.variants.iter().for_each(|(_, v)| v.collect_wasi_types(dict, collected));
     }
 }
 
 impl ResolveDependencies for VariantItem {
     fn define_language_types(&self, _: &mut DependentGraph) {}
 
-    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
-        self.fields.iter().for_each(|f| f.collect_wasi_types(dict));
+    fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
+    where
+        'a: 'i,
+    {
+        self.fields.iter().for_each(|f| f.collect_wasi_types(dict, collected));
     }
 }

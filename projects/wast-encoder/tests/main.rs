@@ -12,9 +12,6 @@ fn define_io_types() -> DependentGraph {
     let wasi_io_streams = WasiModule::from_str("wasi:io/streams@0.2.0").unwrap();
     let wasi_io_get = WasiModule::from_str("wasi:io/get@0.2.0").unwrap();
 
-    let mut stream_error = VariantType::new("std::io::Free");
-    stream_error.define_language_types(&mut global);
-
     WasiResource::new(wasi_io_error.clone(), "error", "std::io::IoError").define_language_types(&mut global);
     WasiResource::new(wasi_io_streams.clone(), "output-stream", "std::io::OutputStream").define_language_types(&mut global);
     let mut stream_error = VariantType::new("std::io::StreamError");
@@ -59,11 +56,15 @@ fn define_io_types() -> DependentGraph {
 #[test]
 fn test_hello_world() {
     let mut global = define_io_types();
-
-    let graph = global.finalize();
-    for items in graph.topological_sort() {
-        println!("{items:#?}");
+    let mut dag = global.resolve_imports().unwrap();
+    for import in dag {
+        println!("{import:#?}");
     }
+
+    // let graph = global.finalize();
+    // for items in graph.topological_sort() {
+    //     println!("{items:#?}");
+    // }
 
     // let mut source = CanonicalWasi::default();
     // let wast = source.encode();

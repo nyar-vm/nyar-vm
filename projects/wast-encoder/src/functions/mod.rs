@@ -4,10 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    dag::{DependencyItem, DependentGraph},
-    Identifier, ResolveDependencies, WasiModule, WasiType,
-};
+use crate::{dag::DependentGraph, Identifier, ResolveDependencies, WasiModule, WasiType};
 
 mod arithmetic;
 
@@ -16,7 +13,7 @@ mod arithmetic;
 ///         )
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalFunction {
-    pub name: Identifier,
+    pub symbol: Identifier,
     pub wasi_module: WasiModule,
     pub wasi_name: String,
     pub inputs: Vec<WasiParameter>,
@@ -38,7 +35,7 @@ impl ExternalFunction {
         M: Into<WasiModule>,
     {
         Self {
-            name: name.into(),
+            symbol: name.into(),
             wasi_module: wasi_module.into(),
             wasi_name: wasi_name.to_string(),
             inputs: vec![],
@@ -91,7 +88,7 @@ impl WasiParameter {
 
 impl Display for ExternalFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}(", self.name)?;
+        write!(f, "{}(", self.symbol)?;
         for (i, input) in self.inputs.iter().enumerate() {
             if i != 0 {
                 f.write_str(", ")?
@@ -107,16 +104,14 @@ impl Display for ExternalFunction {
 
 impl ResolveDependencies for ExternalFunction {
     fn define_language_types(&self, dict: &mut DependentGraph) {
-        dict.types.insert(self.name.clone(), WasiType::External(Box::new(self.clone())));
+        dict.types.insert(self.symbol.clone(), WasiType::External(Box::new(self.clone())));
     }
 
-    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
-        self.inputs.iter().for_each(|input| input.r#type.collect_wasi_types(dict));
-        self.output.iter().for_each(|output| output.collect_wasi_types(dict));
-        dict.insert_with_dependency(
-            DependencyItem::Item(WasiType::External(Box::new(self.clone()))),
-            DependencyItem::Module(self.wasi_module.clone()),
-        );
-        dict.finalize_buffer(WasiType::External(Box::new(self.clone())))
+    fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
+    where
+        'a: 'i,
+    {
+        self.inputs.iter().for_each(|input| input.r#type.collect_wasi_types(dict, collected));
+        self.output.iter().for_each(|output| output.collect_wasi_types(dict, collected));
     }
 }

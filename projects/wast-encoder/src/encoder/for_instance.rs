@@ -58,8 +58,13 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         Ok(())
     }
     //     (alias export $wasi:io/streams@0.2.0 "[method]output-stream.blocking-write-and-flush" (func $output-stream.blocking-write-and-flush))
-    fn alias_export_function(&mut self, module: &WasiModule, function: &ExternalFunction, name: &str) -> std::fmt::Result {
-        let id = encode_id(name);
+    fn alias_export_function(
+        &mut self,
+        module: &WasiModule,
+        function: &ExternalFunction,
+        name: &Identifier,
+    ) -> std::fmt::Result {
+        let id = name.wasi_id();
         let name = function.wasi_name.as_str();
         write!(self, "(alias export ${module} \"{name}\" (func {id}))")
     }
