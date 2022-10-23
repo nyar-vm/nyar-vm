@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 use crate::{dag::DependentGraph, DependenciesTrace, Identifier, WasiType};
 
 mod arithmetic;
+mod display;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VariantType {
@@ -17,16 +18,6 @@ pub struct VariantType {
     pub symbol: Identifier,
     pub wasi_name: String,
     pub variants: IndexMap<Arc<str>, VariantItem>,
-}
-
-impl Hash for VariantType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.symbol.hash(state);
-        self.wasi_name.hash(state);
-        self.variants.iter().for_each(|v| {
-            v.hash(state);
-        });
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

@@ -32,9 +32,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         self.indent();
         for import in &self.source.imports {
             match import {
-                CanonicalImport::Type(ty) => {
-                    write!(self.writer, "(type ${}", ty.as_wasi_type())?;
-                }
+                CanonicalImport::Type(ty) => ty.write_wasi_define(self)?,
                 CanonicalImport::Instance(instance) => self.encode_instance(instance)?,
             }
         }

@@ -9,7 +9,7 @@ impl Display for ExternalFunction {
             }
             match input.name.as_ref().eq("self") {
                 true => f.write_str("self")?,
-                false => write!(f, "{}: {:#}", input.name, input.r#type.as_wasi_type())?,
+                false => write!(f, "{}: {:#}", input.name, input.r#type)?,
             }
         }
         f.write_char(')')

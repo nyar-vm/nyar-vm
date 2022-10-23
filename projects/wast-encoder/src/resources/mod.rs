@@ -1,4 +1,6 @@
-use crate::{dag::DependentGraph, DependenciesTrace, Identifier, WasiModule, WasiType};
+use std::fmt::Write;
+
+use crate::{dag::DependentGraph, DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct WasiResource {
@@ -6,6 +8,12 @@ pub struct WasiResource {
     pub symbol: Identifier,
     pub wasi_module: WasiModule,
     pub wasi_name: String,
+}
+
+impl WasiResource {
+    pub(crate) fn write_wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(export \"{}\" (type (sub resource)))", self.wasi_name)
+    }
 }
 
 impl WasiResource {
