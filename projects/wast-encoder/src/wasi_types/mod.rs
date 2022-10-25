@@ -1,6 +1,6 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 
-use crate::{dag::DependentGraph, DependenciesTrace, ExternalFunction, Identifier, VariantType, WasiResource};
+use crate::{dag::DependentGraph, DependenciesTrace, ExternalFunction, Identifier, VariantType, WasiResource, WastEncoder};
 
 mod display;
 
@@ -40,7 +40,14 @@ pub enum WasiType {
     External(Box<ExternalFunction>),
 }
 
-
+/// Mark for type who can import to the component instance
+pub(crate) trait AliasOuter {
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+/// Mark for type who can define in component section
+pub(crate) trait ComponentDefine {
+    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
 
 impl DependenciesTrace for WasiType {
     #[track_caller]

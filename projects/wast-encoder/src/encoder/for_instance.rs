@@ -2,60 +2,64 @@ use crate::{Identifier, WasiModule};
 
 use super::*;
 
-impl<'a, W: Write> WastEncoder<'a, W> {
-    pub fn encode_instance(&mut self, instance: &WasiInstance) -> std::fmt::Result {
-        write!(self, "(import \"{name}\" (instance ${name}", name = instance.module)?;
-        self.indent();
-        for wasi in instance.resources.values() {
-            wasi.write_wasi_define(self)?;
-            self.newline()?;
+impl ComponentDefine for CanonicalImport {
+    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Type(v) => v.component_define(w),
+            Self::Instance(v) => v.component_define(w),
         }
-        for (id, wasi) in instance.functions.values().enumerate() {
-            if id != 0 {
-                self.newline()?
-            }
-            self.export_function(wasi)?;
+    }
+}
+
+impl ComponentDefine for WasiInstance {
+    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(import \"{name}\" (instance ${name}", name = self.module)?;
+        w.indent();
+        for wasi in self.resources.values() {
+            wasi.write_wasi_define(w)?;
+            w.newline()?;
         }
-        self.dedent(2);
-        self.newline()?;
-        for (name, wasi) in &instance.resources {
-            self.alias_export_resource(&instance.module, wasi, name)?;
-            self.newline()?
+        for wasi in self.functions.values() {
+            w.export_function(wasi)?;
+            w.newline()?
         }
-        for (name, wasi) in &instance.functions {
-            self.alias_export_function(&instance.module, wasi, name)?;
-            self.newline()?
+        w.dedent(2);
+        w.newline()?;
+        for (name, wasi) in &self.resources {
+            w.alias_export_resource(&self.module, wasi, name)?;
+            w.newline()?
+        }
+        for (name, wasi) in &self.functions {
+            w.alias_export_function(&self.module, wasi, name)?;
+            w.newline()?
         }
         Ok(())
     }
+}
+
+impl<'a, W: Write> WastEncoder<'a, W> {
     fn alias_export_resource(&mut self, module: &WasiModule, resource: &WasiResource, name: &Identifier) -> std::fmt::Result {
         let id = name.wasi_id();
         let name = resource.wasi_name.as_str();
         write!(self, "(alias export ${module} \"{name}\" (type {id}))")
     }
     fn export_parameter(&mut self, input: &WasiParameter) -> std::fmt::Result {
-        write!(self, "(param {} ", input.wasi_name)?;
+        write!(self, "(param \"{}\" ", input.wasi_name)?;
         input.r#type.write_wasi_reference(self)?;
-        self.write_str(") ")
-    }
-    fn export_return_type(&mut self, output: &WasiType) -> std::fmt::Result {
-        write!(self, "(result ")?;
-        output.write_wasi_reference(self)?;
         self.write_str(") ")
     }
     fn export_function(&mut self, function: &ExternalFunction) -> std::fmt::Result {
         let name = function.wasi_name.as_str();
-        write!(self, "(export \"{name}\"")?;
+        write!(self, "(export \"{name}\" (func")?;
         self.indent();
-        write!(self, "(func ")?;
         for input in &function.inputs {
-            self.export_parameter(input)?
+            self.export_parameter(input)?;
+            self.newline()?
         }
         for output in function.output.iter() {
-            self.export_return_type(output)?
+            output.write_wasi_result(self)?;
         }
-        self.write_str(")")?;
-        self.dedent(1);
+        self.dedent(2);
         Ok(())
     }
     //     (alias export $wasi:io/streams@0.2.0 "[method]output-stream.blocking-write-and-flush" (func $output-stream.blocking-write-and-flush))
@@ -68,26 +72,5 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         let id = name.wasi_id();
         let name = function.wasi_name.as_str();
         write!(self, "(alias export ${module} \"{name}\" (func {id}))")
-    }
-}
-
-impl<'a, W: Write> WastEncoder<'a, W> {
-    pub(crate) fn alias_outer(&mut self, ty: &WasiType) -> std::fmt::Result {
-        let root = encode_id(&self.source.name);
-        match ty {
-            WasiType::Resource(resource) => {
-                let id = resource.symbol.wasi_id();
-                let name = resource.wasi_name.as_str();
-                write!(self, "(alias outer {root} \"{name}\" (type {id}))")?
-            }
-            WasiType::Variant(variant) => {
-                let id = variant.symbol.wasi_id();
-                let name = variant.wasi_name.as_str();
-                write!(self, "(alias outer {root} {id} (type {id}?))")?;
-                write!(self, "(export {id} \"{name}\" (type (eq {id}?)))")?
-            }
-            _ => {}
-        }
-        Ok(())
     }
 }
