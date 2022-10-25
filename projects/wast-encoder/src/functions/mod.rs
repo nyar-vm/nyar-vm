@@ -9,7 +9,7 @@ use crate::{dag::DependentGraph, DependenciesTrace, Identifier, wasi_types::Alia
 mod arithmetic;
 mod display;
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExternalFunction {
     pub symbol: Identifier,
     pub wasi_module: WasiModule,
@@ -18,7 +18,7 @@ pub struct ExternalFunction {
     pub output: Option<WasiType>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WasiParameter {
     pub name: Arc<str>,
     pub wasi_name: Arc<str>,
