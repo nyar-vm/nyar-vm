@@ -21,6 +21,9 @@ impl Debug for WasiType {
             Self::TypeHandler { name, own } => write!(f, "TypeHandler({}{})", name, if *own { " own" } else { "" }),
             Self::TypeAlias { name } => write!(f, "TypeAlias({})", name),
             Self::External(v) => write!(f, "External({})", v.symbol),
+            Self::Array { .. } => {
+                write!(f, "Array(..))")
+            }
         }
     }
 }
@@ -39,6 +42,9 @@ impl Display for WasiType {
             Self::TypeHandler { name, own } => write!(f, "TypeHandler({}{})", name, if *own { " own" } else { "" }),
             Self::TypeAlias { name } => write!(f, "TypeAlias({})", name),
             Self::External(v) => write!(f, "External({})", v.symbol),
+            Self::Array { .. } => {
+                write!(f, "Array(..))")
+            }
         }
     }
 }
@@ -98,6 +104,11 @@ impl WasiType {
             Self::External(_) => {
                 todo!()
             }
+            Self::Array { inner } => {
+                w.write_str("(list ")?;
+                inner.write_wasi_reference(w)?;
+                w.write_str(")")?
+            }
         }
         Ok(())
     }
@@ -151,6 +162,9 @@ impl WasiType {
             },
             Self::TypeAlias { name } => format!("{}", name),
             Self::External(_) => "(func external)".to_string(),
+            WasiType::Array { .. } => {
+                todo!()
+            }
         }
     }
 }
@@ -174,6 +188,9 @@ impl WasiType {
             Self::TypeHandler { .. } => "".to_string(),
             Self::TypeAlias { .. } => "".to_string(),
             Self::External(_) => "".to_string(),
+            WasiType::Array { .. } => {
+                todo!()
+            }
         }
     }
 }

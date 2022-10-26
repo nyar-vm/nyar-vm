@@ -53,6 +53,7 @@ impl WasiInstance {
             WasiType::External(v) => {
                 self.functions.insert(v.symbol.clone(), *v.clone());
             }
+            WasiType::Array { .. } => {}
         }
     }
     pub fn dependencies(&self, dict: &DependentGraph) -> BTreeSet<WasiType> {

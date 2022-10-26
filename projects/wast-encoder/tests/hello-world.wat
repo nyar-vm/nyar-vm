@@ -3,11 +3,8 @@
         (export $std::io::IoError "error" (type (sub resource)))
     ))
     (alias export $wasi:io/error@0.2.0 "error" (type $std::io::IoError))
-    ;; variant std∷io∷StreamError
     (type $std::io::StreamError (variant
-        ;; LastOperationFailed
         (case "last-operation-failed" (own $std::io::IoError))
-        ;; Closed
         (case "closed")
     ))
     (import "wasi:io/streams@0.2.0" (instance $wasi:io/streams@0.2.0
@@ -15,8 +12,8 @@
         (export $std::io::OutputStream "output-stream" (type (sub resource)))
         (alias outer $root $std::io::StreamError (type $std::io::StreamError?))(export $std::io::StreamError "stream-error" (type (eq $std::io::StreamError?)))
         (export "[method]output-stream.blocking-write-and-flush" (func
-            (param "self" (borrow $std::io::OutputStream)) 
-            (param "contents" (list u8)) 
+            (param "self" (borrow $std::io::OutputStream))
+            (param "contents" (list u8))
             (result (result (error $std::io::StreamError)))
         ))
     ))

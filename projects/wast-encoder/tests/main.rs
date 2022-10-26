@@ -10,7 +10,6 @@ fn define_io_types() -> DependentGraph {
 
     let wasi_io_error = WasiModule::from_str("wasi:io/error@0.2.0").unwrap();
     let wasi_io_streams = WasiModule::from_str("wasi:io/streams@0.2.0").unwrap();
-    let wasi_cli_get = WasiModule::from_str("wasi:cli/stdio@0.2.0").unwrap();
 
     global += WasiResource::new(wasi_io_error.clone(), "error", "std::io::IoError");
     global += WasiResource::new(wasi_io_streams.clone(), "output-stream", "std::io::OutputStream");
@@ -43,28 +42,31 @@ fn define_io_types() -> DependentGraph {
         "self",
         WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
     );
-    f1 += WasiParameter::new(
-        "contents",
-        WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
-    );
+    f1 += WasiParameter::new("contents", WasiType::Array { inner: Box::new(WasiType::Integer8 { signed: false }) });
     f1 += WasiType::Result {
         success: None,
         failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
     };
     global += f1;
     {
+        let wasi_cli_get = WasiModule::from_str("wasi:cli/stdin@0.2.0").unwrap();
         let mut function = ExternalFunction::new(wasi_cli_get.clone(), "get-stdin", "std::io::standard_input");
-        function.output = Some(WasiType::TypeAlias { name: Identifier::from_str("std::io::InputStream").unwrap() });
+        function.output =
+            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::InputStream").unwrap(), own: true });
         global += function;
     }
     {
+        let wasi_cli_get = WasiModule::from_str("wasi:cli/stdout@0.2.0").unwrap();
         let mut function = ExternalFunction::new(wasi_cli_get.clone(), "get-stdout", "std::io::standard_output");
-        function.output = Some(WasiType::TypeAlias { name: Identifier::from_str("std::io::OutputStream").unwrap() });
+        function.output =
+            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
         global += function;
     }
     {
+        let wasi_cli_get = WasiModule::from_str("wasi:cli/stderr@0.2.0").unwrap();
         let mut function = ExternalFunction::new(wasi_cli_get.clone(), "get-stderr", "std::io::standard_error");
-        function.output = Some(WasiType::TypeAlias { name: Identifier::from_str("std::io::OutputStream").unwrap() });
+        function.output =
+            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
         global += function;
     }
     global
@@ -76,13 +78,12 @@ fn test_hello_world() {
     let mut wat = std::fs::File::create(component).unwrap();
     let global = define_io_types();
     let dag = global.resolve_imports().unwrap();
-    for import in &dag {
-        println!("{import:#?}");
-    }
 
     let mut source = CanonicalWasi::default();
     source.graph = global;
     source.imports = dag;
+
+    println!("{}", source.draw_mermaid());
 
     let wast = source.encode();
     wat.write_all(wast.as_bytes()).unwrap();

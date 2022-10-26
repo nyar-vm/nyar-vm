@@ -23,7 +23,6 @@ impl ComponentDefine for WasiInstance {
             wasi.write_wasi_define(w)?;
         }
         for imports in self.dependencies(&w.source.graph) {
-            w.newline()?;
             imports.alias_outer(w)?;
         }
         for wasi in self.functions.values() {
