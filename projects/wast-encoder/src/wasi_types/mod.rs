@@ -77,6 +77,10 @@ pub(crate) trait ComponentDefine {
     fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
+pub(crate) trait LowerFunction {
+    fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+
 impl DependenciesTrace for WasiType {
     #[track_caller]
     fn define_language_types(&self, _: &mut DependentGraph) {
