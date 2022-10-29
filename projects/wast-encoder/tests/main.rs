@@ -68,12 +68,18 @@ fn define_io_types() -> DependentGraph {
             Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
         global += function;
     }
+    {
+        let wasi_cli_get = WasiModule::from_str("wasi:debugger/print").unwrap();
+        let mut function = ExternalFunction::new(wasi_cli_get.clone(), "print-i8", "print_i8");
+        function.inputs.push(WasiParameter::new("i", WasiType::Integer8 { signed: true }));
+        global += function;
+    }
     global
 }
 
 #[test]
 fn test_hello_world() {
-    let component = Path::new(env!("CARGO_MANIFEST_DIR")).join("../wasm-interpreter/src/component.wat");
+    let component = Path::new(env!("CARGO_MANIFEST_DIR")).join("../wasm-interpreter/tests/component.wat");
     let mut wat = std::fs::File::create(component).unwrap();
 
     let source = CanonicalWasi::new(define_io_types()).unwrap();

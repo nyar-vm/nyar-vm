@@ -6,8 +6,8 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    DependenciesTrace,
-    Identifier, wasi_types::{AliasExport, LowerFunction}, WasiModule, WasiType, WastEncoder,
+    wasi_types::{AliasExport, LowerFunction},
+    DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
 
 mod arithmetic;
@@ -76,6 +76,23 @@ impl LowerFunction for ExternalFunction {
         write!(w, "string-encoding=utf8")?;
         w.dedent(2);
         Ok(())
+    }
+
+    //         (type (func (param i64 i32)))
+    //         (import "wasi:random/random@0.2.0" "get-random-bytes" (func $wasi:random/random@0.2.0:get-random-bytes (;0;) (type 0)))
+    fn lower_function_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(import \"{}\" \"{}\" (func {} (param", self.wasi_module, self.wasi_name, self.symbol.wasi_id())?;
+        for input in &self.inputs {
+            write!(w, " {}", input.r#type)?;
+        }
+        write!(w, ")")?;
+        match &self.output {
+            None => {}
+            Some(o) => {
+                write!(w, " (result {})", o)?;
+            }
+        }
+        w.write_str(")")
     }
 }
 
