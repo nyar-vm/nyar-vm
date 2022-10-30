@@ -1,8 +1,8 @@
 use std::{io::Write, path::Path, str::FromStr};
 
 use wast_encoder::{
-    CanonicalWasi, DependentGraph, ExternalFunction, Identifier, VariantItem, VariantType, WasiModule, WasiParameter,
-    WasiResource, WasiType,
+    CanonicalWasi, DependentGraph, ExternalFunction, Identifier, VariantItem, VariantType, WasiArrayType, WasiModule,
+    WasiParameter, WasiResource, WasiType,
 };
 
 fn define_io_types() -> DependentGraph {
@@ -40,7 +40,7 @@ fn define_io_types() -> DependentGraph {
             "self",
             WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
         );
-        f1 += WasiParameter::new("contents", WasiType::Array { inner: Box::new(WasiType::Integer8 { signed: false }) });
+        f1 += WasiParameter::new("contents", WasiArrayType::new(WasiType::Integer8 { signed: false }));
         f1 += WasiType::Result {
             success: None,
             failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),

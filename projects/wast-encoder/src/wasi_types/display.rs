@@ -132,11 +132,7 @@ impl TypeReference for WasiType {
             Self::External(_) => {
                 todo!()
             }
-            Self::Array { inner } => {
-                w.write_str("(list ")?;
-                inner.upper_type(w)?;
-                w.write_str(")")?
-            }
+            Self::Array(array) => array.upper_type(w)?,
         }
         Ok(())
     }
@@ -159,11 +155,7 @@ impl TypeReference for WasiType {
                 Some(s) => s.lower_type(w)?,
                 None => {}
             },
-            Self::Array { inner } => {
-                w.write_str("(array ")?;
-                inner.lower_type(w)?;
-                w.write_str(")")?
-            }
+            Self::Array(array) => array.lower_type(w)?,
             Self::TypeAlias { .. } => {
                 todo!()
             }
@@ -192,11 +184,7 @@ impl TypeReference for WasiType {
                 Some(s) => s.lower_type(w)?,
                 None => {}
             },
-            Self::Array { inner } => {
-                w.write_str("(array ")?;
-                inner.lower_type(w)?;
-                w.write_str(")")?
-            }
+            Self::Array(array) => array.lower_type(w)?,
             Self::TypeAlias { .. } => {
                 todo!()
             }

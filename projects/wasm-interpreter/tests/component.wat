@@ -86,7 +86,7 @@
         
         
         
-        (import "wasi:io/streams@0.2.0" "[method]output-stream.write" (func $std::io::OutputStream::write (param $self i32) (param $contents (array i32)) (result result)))
+        (import "wasi:io/streams@0.2.0" "[method]output-stream.write" (func $std::io::OutputStream::write (param $self i32) (param $contents (list i32)) (result result)))
         
         (import "wasi:cli/stderr@0.2.0" "get-stderr" (func $std::io::standard_error (result i32)))
         

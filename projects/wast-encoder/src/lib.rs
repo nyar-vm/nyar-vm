@@ -16,7 +16,8 @@ pub use crate::{
         wasi_publisher::{WasiModule, WasiPublisher},
     },
     variants::{VariantItem, VariantType},
-    wasi_types::WasiType,
+    wasi_types::{array::WasiArrayType, WasiType},
+    wasi_values::WasiValue,
 };
 
 mod dag;
@@ -30,3 +31,4 @@ mod resources;
 mod symbols;
 mod variants;
 mod wasi_types;
+mod wasi_values;
