@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    wasi_types::{AliasExport, LowerFunction},
+    helpers::{AliasExport, LowerFunction, TypeReferenceInput, TypeReferenceOutput},
     DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
 
@@ -80,19 +80,20 @@ impl LowerFunction for ExternalFunction {
 
     //         (type (func (param i64 i32)))
     //         (import "wasi:random/random@0.2.0" "get-random-bytes" (func $wasi:random/random@0.2.0:get-random-bytes (;0;) (type 0)))
-    fn lower_function_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, "(import \"{}\" \"{}\" (func {} (param", self.wasi_module, self.wasi_name, self.symbol.wasi_id())?;
+    fn lower_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(import \"{}\" \"{}\" (func {}", self.wasi_module, self.wasi_name, self.symbol.wasi_id())?;
         for input in &self.inputs {
-            write!(w, " {}", input.r#type)?;
+            w.write_str(" ")?;
+            input.lower_input(w)?;
         }
-        write!(w, ")")?;
         match &self.output {
-            None => {}
-            Some(o) => {
-                write!(w, " (result {})", o)?;
+            Some(s) => {
+                w.write_str(" ")?;
+                s.lower_output(w)?;
             }
+            None => {}
         }
-        w.write_str(")")
+        w.write_str("))")
     }
 }
 

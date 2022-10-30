@@ -1,4 +1,4 @@
-use crate::wasi_types::TypeReference;
+use crate::helpers::{TypeReferenceInput, TypeReferenceOutput};
 
 use super::*;
 
@@ -21,22 +21,17 @@ impl ComponentDefine for CanonicalImport {
 }
 
 impl<'a, W: Write> WastEncoder<'a, W> {
-    pub(crate) fn export_parameter(&mut self, input: &WasiParameter) -> std::fmt::Result {
-        write!(self, "(param \"{}\" ", input.wasi_name)?;
-        input.r#type.upper_type(self)?;
-        self.write_str(") ")
-    }
     pub(crate) fn export_function(&mut self, function: &ExternalFunction) -> std::fmt::Result {
         let name = function.wasi_name.as_str();
         write!(self, "(export \"{name}\" (func")?;
         self.indent();
-        for input in &function.inputs {
+        for input in function.inputs.iter() {
             self.newline()?;
-            self.export_parameter(input)?;
+            input.upper_input(self)?;
         }
         for output in function.output.iter() {
             self.newline()?;
-            output.write_wasi_result(self)?;
+            output.upper_output(self)?;
         }
         self.dedent(2);
         Ok(())

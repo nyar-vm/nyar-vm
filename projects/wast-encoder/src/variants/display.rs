@@ -1,4 +1,4 @@
-use crate::wasi_types::TypeReference;
+use crate::helpers::TypeReference;
 
 use super::*;
 

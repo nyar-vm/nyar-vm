@@ -1,9 +1,9 @@
-use std::{
-    fmt::Write,
-    hash::{DefaultHasher, Hash, Hasher},
-};
+use std::hash::{DefaultHasher, Hash};
 
-use crate::{WasiParameter, WastEncoder};
+use crate::{
+    helpers::{AliasOuter, ComponentDefine, TypeReference, TypeReferenceInput, TypeReferenceOutput},
+    WasiParameter,
+};
 
 use super::*;
 
@@ -58,53 +58,51 @@ impl ComponentDefine for WasiType {
     }
 }
 
-impl WasiType {
-    pub(crate) fn write_wasi_result<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, "(result ")?;
-        self.upper_type(w)?;
-        w.write_str(")")
-    }
-}
-
 impl TypeReferenceInput for WasiParameter {
     fn upper_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, "(param ${} ", self.name)?;
-        self.r#type.lower_type(w)?;
-        w.write_str(")")
+        write!(w, "(param \"{}\" ", self.wasi_name)?;
+        self.r#type.upper_type(w)?;
+        write!(w, ")")
     }
 
     fn lower_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
+        write!(w, "(param ${} ", self.name)?;
+        self.r#type.lower_type(w)?;
+        write!(w, ")")
     }
 }
+
 impl TypeReferenceOutput for WasiType {
     fn upper_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
+        write!(w, "(result ")?;
+        self.upper_type(w)?;
+        write!(w, ")")
     }
 
     fn lower_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         w.write_str("(result ")?;
         self.lower_type(w)?;
-        w.write_str(")")
+        write!(w, ")")
     }
 }
+
 impl TypeReference for WasiType {
     fn upper_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Integer8 { signed } => match *signed {
-                true => w.write_str("i8"),
+                true => w.write_str("s8"),
                 false => w.write_str("u8"),
             }?,
             Self::Integer16 { signed } => match *signed {
-                true => w.write_str("i16"),
+                true => w.write_str("s16"),
                 false => w.write_str("u16"),
             }?,
             Self::Integer32 { signed } => match *signed {
-                true => w.write_str("i32"),
+                true => w.write_str("s32"),
                 false => w.write_str("u32"),
             }?,
             Self::Integer64 { signed } => match *signed {
-                true => w.write_str("i64"),
+                true => w.write_str("s64"),
                 false => w.write_str("u64"),
             }?,
             Self::Option { inner } => {
@@ -148,24 +146,56 @@ impl TypeReference for WasiType {
             Self::Integer8 { .. } => w.write_str("i32")?,
             Self::Integer16 { .. } => w.write_str("i32")?,
             Self::Integer32 { .. } => w.write_str("i32")?,
-            Self::Integer64 { .. } => w.write_str("i32")?,
+            Self::Integer64 { .. } => w.write_str("i64")?,
             Self::Option { .. } => {
                 todo!()
             }
-            Self::Result { .. } => {
-                todo!()
-            }
-            Self::Resource(_) => {
-                todo!()
-            }
+            Self::Result { .. } => w.write_str("result")?,
+            Self::Resource(_) => w.write_str("i32")?,
             Self::Variant(_) => {
                 todo!()
             }
-            Self::TypeHandler { .. } => {
+            Self::TypeHandler { name, .. } => match w.source.graph.types.get(name) {
+                Some(s) => s.lower_type(w)?,
+                None => {}
+            },
+            Self::Array { inner } => {
+                w.write_str("(array ")?;
+                inner.lower_type(w)?;
+                w.write_str(")")?
+            }
+            Self::TypeAlias { .. } => {
                 todo!()
             }
-            Self::Array { .. } => {
+            Self::External(_) => {
                 todo!()
+            }
+        }
+        Ok(())
+    }
+
+    fn lower_type_inner<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Integer8 { .. } => w.write_str("i8")?,
+            Self::Integer16 { .. } => w.write_str("i16")?,
+            Self::Integer32 { .. } => w.write_str("i32")?,
+            Self::Integer64 { .. } => w.write_str("i64")?,
+            Self::Option { .. } => {
+                todo!()
+            }
+            Self::Result { .. } => w.write_str("result")?,
+            Self::Resource(_) => w.write_str("resource")?,
+            Self::Variant(_) => {
+                todo!()
+            }
+            Self::TypeHandler { name, .. } => match w.source.graph.types.get(name) {
+                Some(s) => s.lower_type(w)?,
+                None => {}
+            },
+            Self::Array { inner } => {
+                w.write_str("(array ")?;
+                inner.lower_type(w)?;
+                w.write_str(")")?
             }
             Self::TypeAlias { .. } => {
                 todo!()

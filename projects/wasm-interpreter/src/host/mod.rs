@@ -1,8 +1,6 @@
-use crate::wasi;
-
 pub struct NyarExtension {}
 
-impl wasi::debugger::print::Host for NyarExtension {
+impl crate::unstable::debugger::print::Host for NyarExtension {
     fn print_i8(&mut self, i: i8) -> anyhow::Result<()> {
         println!("{}", i);
         Ok(())
@@ -50,6 +48,16 @@ impl wasi::debugger::print::Host for NyarExtension {
 
     fn print_f64(&mut self, f: f64) -> anyhow::Result<()> {
         println!("{}", f);
+        Ok(())
+    }
+
+    fn print_char(&mut self, c: char) -> anyhow::Result<()> {
+        println!("{}", c);
+        Ok(())
+    }
+
+    fn print_str(&mut self, s: String) -> anyhow::Result<()> {
+        println!("{}", s);
         Ok(())
     }
 }
