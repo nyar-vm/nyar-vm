@@ -13,9 +13,20 @@ exclude = ["package.json", "tests/**"]
 
 [dependencies]
 anyhow = "1.0"
-wat = "1.200.0"
-wasmtime = { version = "18.0.1", features = ["component-model", "async"] }
-wasmtime-wasi = { version = "18.0.1", features = ["tokio"] }
-
-[dev-dependencies]
+wat = "1.201.0"
 tokio = { version = "1.36.0", features = ["full"] }
+
+[dependencies.wasmtime-wasi]
+git = "https://github.com/bytecodealliance/wasmtime"
+version = "19.0.0"
+features = []
+
+[dependencies.wasmtime]
+git = "https://github.com/bytecodealliance/wasmtime"
+version = "19.0.0"
+features = ["component-model", "async"]
+
+
+
+#[dev-dependencies]
+#tokio = { version = "1.36.0", features = ["full"] }

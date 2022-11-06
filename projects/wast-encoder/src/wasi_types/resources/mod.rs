@@ -2,8 +2,8 @@ use std::fmt::Write;
 
 use crate::{
     dag::DependentGraph,
-    helpers::{AliasExport, AliasOuter},
-    DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
+    DependenciesTrace,
+    helpers::{AliasExport, AliasOuter}, Identifier, WasiModule, WasiType, WastEncoder,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

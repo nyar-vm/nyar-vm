@@ -4,7 +4,7 @@ use wasmtime::{
     component::{Component, Instance, Linker, ResourceTable},
     Config, Engine, Store,
 };
-use wasmtime_wasi::preview2::{WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::{host::NyarExtension, Debugger};
 
@@ -43,6 +43,8 @@ fn get_engine() -> anyhow::Result<Engine> {
         config.wasm_backtrace(true);
     }
     {
+        config.wasm_gc(true);
+        config.wasm_function_references(true);
         config.wasm_reference_types(true);
         config.wasm_memory64(true);
     }
@@ -58,7 +60,7 @@ async fn get_component(engine: Engine, input: Component) -> anyhow::Result<NyarV
     let instance = {
         let mut linker = Linker::<ContextView>::new(&engine);
         linker.allow_shadowing(true);
-        wasmtime_wasi::preview2::command::add_to_linker(&mut linker)?;
+        wasmtime_wasi::command::add_to_linker(&mut linker)?;
         Debugger::add_to_linker(&mut linker, |state| &mut state.extension)?;
         linker.instantiate_async(&mut store, &input).await?
     };
