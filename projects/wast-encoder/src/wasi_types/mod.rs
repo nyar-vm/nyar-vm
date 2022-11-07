@@ -8,10 +8,10 @@ use indexmap::IndexMap;
 
 use crate::{
     dag::DependentGraph,
-    DependenciesTrace,
     encoder::WastEncoder,
-    ExternalFunction,
-    helpers::{TypeDefinition, TypeReference}, Identifier, wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType}, WasiModule, WasiParameter,
+    helpers::{TypeDefinition, TypeReference},
+    wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType},
+    DependenciesTrace, ExternalFunction, Identifier, WasiModule, WasiParameter,
 };
 
 pub mod array;
@@ -23,18 +23,30 @@ pub mod variants;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WasiType {
+    /// `s8` or `u8` type in WASI
     Integer8 {
+        /// Whether the integer is signed or not
         signed: bool,
     },
+    /// `s16` or `u16` type in WASI
     Integer16 {
+        /// Whether the integer is signed or not
         signed: bool,
     },
+    /// `s32` or `u32` type in WASI
     Integer32 {
+        /// Whether the integer is signed or not
         signed: bool,
     },
+    /// `s64` or `u64` type in WASI
     Integer64 {
+        /// Whether the integer is signed or not
         signed: bool,
     },
+    /// `f32` type in WASI
+    Float32,
+    /// `f64` type in WASI
+    Float64,
     Option {
         inner: Box<WasiType>,
     },

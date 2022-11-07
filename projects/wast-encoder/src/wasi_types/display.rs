@@ -24,6 +24,12 @@ impl Debug for WasiType {
             Self::Array { .. } => {
                 write!(f, "Array(..))")
             }
+            WasiType::Float32 => {
+                write!(f, "f32")
+            }
+            WasiType::Float64 => {
+                write!(f, "f64")
+            }
         }
     }
 }
@@ -44,6 +50,12 @@ impl Display for WasiType {
             Self::External(v) => write!(f, "External({})", v.symbol),
             Self::Array { .. } => {
                 write!(f, "Array(..))")
+            }
+            WasiType::Float32 => {
+                write!(f, "f32")
+            }
+            WasiType::Float64 => {
+                write!(f, "f64")
             }
         }
     }
@@ -133,6 +145,12 @@ impl TypeReference for WasiType {
                 todo!()
             }
             Self::Array(array) => array.upper_type(w)?,
+            Self::Float32 => {
+                todo!()
+            }
+            Self::Float64 => {
+                todo!()
+            }
         }
         Ok(())
     }
@@ -162,6 +180,12 @@ impl TypeReference for WasiType {
             Self::External(_) => {
                 todo!()
             }
+            Self::Float32 => {
+                todo!()
+            }
+            Self::Float64 => {
+                todo!()
+            }
         }
         Ok(())
     }
@@ -189,6 +213,12 @@ impl TypeReference for WasiType {
                 todo!()
             }
             Self::External(_) => {
+                todo!()
+            }
+            Self::Float32 => {
+                todo!()
+            }
+            Self::Float64 => {
                 todo!()
             }
         }
@@ -242,6 +272,12 @@ impl WasiType {
             WasiType::Array { .. } => {
                 todo!()
             }
+            Self::Float32 => {
+                todo!()
+            }
+            Self::Float64 => {
+                todo!()
+            }
         }
     }
 }
@@ -266,6 +302,12 @@ impl WasiType {
             Self::TypeAlias { .. } => "".to_string(),
             Self::External(_) => "".to_string(),
             WasiType::Array { .. } => {
+                todo!()
+            }
+            Self::Float32 => {
+                todo!()
+            }
+            Self::Float64 => {
                 todo!()
             }
         }

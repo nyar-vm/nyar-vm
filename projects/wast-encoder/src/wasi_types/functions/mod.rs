@@ -6,8 +6,8 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    DependenciesTrace,
-    helpers::{AliasExport, LowerFunction, TypeReferenceInput, TypeReferenceOutput}, Identifier, WasiModule, WasiType, WastEncoder,
+    helpers::{AliasExport, LowerFunction, TypeReferenceInput, TypeReferenceOutput},
+    DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
 
 mod arithmetic;

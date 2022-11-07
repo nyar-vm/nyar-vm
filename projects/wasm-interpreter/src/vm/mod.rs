@@ -55,6 +55,8 @@ async fn get_component(engine: Engine, input: Component) -> anyhow::Result<NyarV
     let mut store = {
         let mut builder = WasiCtxBuilder::new();
         builder.inherit_stderr();
+        builder.inherit_stdout();
+        builder.inherit_stdin();
         Store::new(&engine, ContextView::new(ResourceTable::default(), builder.build()))
     };
     let instance = {
