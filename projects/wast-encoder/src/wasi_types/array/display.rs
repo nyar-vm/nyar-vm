@@ -51,9 +51,7 @@ impl TypeReference for WasiArrayType {
     }
 
     fn lower_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        w.write_str("(list ")?;
-        self.r#type.lower_type(w)?;
-        w.write_str(")")
+        w.write_str("arrayref")
     }
 
     fn lower_type_inner<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
