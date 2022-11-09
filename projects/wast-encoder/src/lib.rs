@@ -27,6 +27,7 @@ mod encoder;
 mod enumerations;
 pub mod helpers;
 mod instances;
+mod operations;
 mod symbols;
 mod wasi_types;
 mod wasi_values;
