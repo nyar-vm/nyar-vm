@@ -9,10 +9,11 @@ use indexmap::IndexMap;
 use crate::{
     dag::DependentGraph,
     encoder::WastEncoder,
-    helpers::{TypeDefinition, TypeReference},
+    helpers::{AliasOuter, ComponentDefine, TypeDefinition, TypeReference},
     wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType},
-    DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiParameter, WasiRecordType,
+    DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiRecordType,
 };
+use std::{cmp::Ordering, ops::AddAssign};
 
 pub mod array;
 mod display;
@@ -66,7 +67,7 @@ pub enum WasiType {
         own: bool,
     },
     /// A referenced type, the real type needs to be found later
-    TypeAlias {
+    TypeQuery {
         /// Type language name
         name: Identifier,
     },
@@ -114,7 +115,7 @@ impl DependenciesTrace for WasiType {
             }
             WasiType::Resource(_) => collected.push(self),
             WasiType::Variant(_) => collected.push(self),
-            WasiType::TypeAlias { name } => collected.extend(dict.types.get(name)),
+            WasiType::TypeQuery { name } => collected.extend(dict.types.get(name)),
             WasiType::TypeHandler { name, .. } => collected.extend(dict.types.get(name)),
             WasiType::External(_) => collected.push(self),
             _ => {}

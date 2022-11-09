@@ -6,16 +6,6 @@
         (memory $memory (export "memory") 15)
     )
     (core instance $memory (instantiate $MockMemory))
-    (import "unstable:debugger/print" (instance $unstable:debugger/print
-        (export "print-i32" (func
-            (param "i" s8)
-        ))
-        (export "print-u32" (func
-            (param "i" s8)
-        ))
-    ))
-    (alias export $unstable:debugger/print "print-i32" (func $print_i32))
-    (alias export $unstable:debugger/print "print-u32" (func $print_u32))
     (import "wasi:io/streams@0.2.0" (instance $wasi:io/streams@0.2.0
         (export $std::io::InputStream "input-stream" (type (sub resource)))
         (export $std::io::OutputStream "output-stream" (type (sub resource)))
@@ -26,6 +16,11 @@
         (export $std::io::IoError "error" (type (sub resource)))
     ))
     (alias export $wasi:io/error@0.2.0 "error" (type $std::io::IoError))
+    ;; record test∷Point
+    (type $test::Point (record
+        (field "x" float32)
+        (field "y" float32)
+    ))
     (import "wasi:cli/stderr@0.2.0" (instance $wasi:cli/stderr@0.2.0
         (export "get-stderr" (func
             (result (own $std::io::OutputStream))
@@ -44,13 +39,6 @@
         ))
     ))
     (alias export $wasi:cli/stdout@0.2.0 "get-stdout" (func $std::io::standard_output))
-    ;; variant Point
-    (type $Point (variant
-        ;; LastOperationFailed
-        (case "last-operation-failed" (own $std::io::IoError))
-        ;; Closed
-        (case "closed")
-    ))
     ;; variant std∷io∷StreamError
     (type $std::io::StreamError (variant
         ;; LastOperationFailed
@@ -58,16 +46,21 @@
         ;; Closed
         (case "closed")
     ))
-    (core func $print_i32 (canon lower
-        (func $unstable:debugger/print "print-i32")
-        (memory $memory "memory")(realloc (func $memory "realloc"))
-        string-encoding=utf8
+    (import "unstable:debugger/print" (instance $unstable:debugger/print
+        (alias outer $root $test::Point (type $test::Point?)) (export $test::Point "point" (type (eq $test::Point?)))
+        (export "print-i32" (func
+            (param "value" s32)
+        ))
+        (export "print-u32" (func
+            (param "value" u32)
+        ))
+        (export "print-point" (func
+            (param "value" $test::Point)
+        ))
     ))
-    (core func $print_u32 (canon lower
-        (func $unstable:debugger/print "print-u32")
-        (memory $memory "memory")(realloc (func $memory "realloc"))
-        string-encoding=utf8
-    ))
+    (alias export $unstable:debugger/print "print-i32" (func $print_i32))
+    (alias export $unstable:debugger/print "print-u32" (func $print_u32))
+;;    (alias export $unstable:debugger/print "print-point" (func $test::print_point))
     (core func $std::io::standard_error (canon lower
         (func $wasi:cli/stderr@0.2.0 "get-stderr")
         (memory $memory "memory")(realloc (func $memory "realloc"))
@@ -83,39 +76,31 @@
         (memory $memory "memory")(realloc (func $memory "realloc"))
         string-encoding=utf8
     ))
+    (core func $print_i32 (canon lower
+        (func $unstable:debugger/print "print-i32")
+        (memory $memory "memory")(realloc (func $memory "realloc"))
+        string-encoding=utf8
+    ))
+    (core func $print_u32 (canon lower
+        (func $unstable:debugger/print "print-u32")
+        (memory $memory "memory")(realloc (func $memory "realloc"))
+        string-encoding=utf8
+    ))
+;;    (core func $test::print_point (canon lower
+;;        (func $unstable:debugger/print "print-point")
+;;        (memory $memory "memory")(realloc (func $memory "realloc"))
+;;        string-encoding=utf8
+;;    ))
     (core module $Main
-        
-        
         (import "unstable:debugger/print" "print-i32" (func $print_i32 (param $i i32)))
         (import "unstable:debugger/print" "print-u32" (func $print_u32 (param $i i32)))
-        
-        
-        
-        (import "wasi:cli/stderr@0.2.0" "get-stderr" (func $std::io::standard_error (result i32)))
-        
-        (import "wasi:cli/stdin@0.2.0" "get-stdin" (func $std::io::standard_input (result i32)))
-        
-        (import "wasi:cli/stdout@0.2.0" "get-stdout" (func $std::io::standard_output (result i32)))
-        
-        
+;;        (import "unstable:debugger/print" "print-point" (func $test::print_point (param f32 f32)))
     )
     (core instance $main (instantiate $Main
         (with "unstable:debugger/print" (instance
             (export "print-i32" (func $print_i32))
             (export "print-u32" (func $print_u32))
-        ))
-        (with "wasi:io/streams@0.2.0" (instance
-        ))
-        (with "wasi:io/error@0.2.0" (instance
-        ))
-        (with "wasi:cli/stderr@0.2.0" (instance
-            (export "get-stderr" (func $std::io::standard_error))
-        ))
-        (with "wasi:cli/stdin@0.2.0" (instance
-            (export "get-stdin" (func $std::io::standard_input))
-        ))
-        (with "wasi:cli/stdout@0.2.0" (instance
-            (export "get-stdout" (func $std::io::standard_output))
+;;            (export "print-point" (func $test::print_point))
         ))
     ))
 )
