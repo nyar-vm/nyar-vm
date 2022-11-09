@@ -5,16 +5,48 @@ world debugger {
 }
 
 interface print {
-  print-i8: func(i: s8);
-  print-i16: func(i: s16);
-  print-i32: func(i: s32);
-  print-i64: func(i: s64);
-  print-u8: func(u: u8);
-  print-u16: func(u: u16);
-  print-u32: func(u: u32);
-  print-u64: func(u: u64);
-  print-f32: func(f: float32);
-  print-f64: func(f: float64);
-  print-char: func(c: char);
-  print-str: func(c: string);
+  record point {
+    a: u32,
+    b: string,
+  }
+
+  // values of this type will be one of the specified cases
+  variant human {
+    baby,
+    child(u32), // optional type payload
+    adult,
+  }
+
+  // similar to `variant`, but no type payloads
+  enum errno {
+    too-big,
+    too-small,
+    too-fast,
+    too-slow,
+  }
+
+  // a bitflags type
+  flags permissions {
+    read,
+    write,
+    exec,
+  }
+
+  print-i8: func(value: s8);
+  print-i16: func(value: s16);
+  print-i32: func(value: s32);
+  print-i64: func(value: s64);
+  print-u8: func(value: u8);
+  print-u16: func(value: u16);
+  print-u32: func(value: u32);
+  print-u64: func(value: u64);
+  print-f32: func(value: float32);
+  print-f64: func(value: float64);
+  print-char: func(value: char);
+  print-str: func(value: string);
+  print-tuple: func(value: tuple<u8,s8>);
+  print-record: func(value: point);
+  print-human: func(value: human);
+  print-errno: func(value: errno);
+  print-permissions: func(value: permissions);
 }

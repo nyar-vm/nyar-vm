@@ -1,3 +1,5 @@
+use crate::unstable::debugger::print::{Errno, Human, Permissions, Point};
+
 pub struct NyarExtension {}
 
 impl crate::unstable::debugger::print::Host for NyarExtension {
@@ -58,6 +60,31 @@ impl crate::unstable::debugger::print::Host for NyarExtension {
 
     fn print_str(&mut self, s: String) -> anyhow::Result<()> {
         println!("{}", s);
+        Ok(())
+    }
+
+    fn print_tuple(&mut self, value: (u8, i8)) -> anyhow::Result<()> {
+        println!("{:?}", value);
+        Ok(())
+    }
+
+    fn print_record(&mut self, value: Point) -> anyhow::Result<()> {
+        println!("{:?}", value);
+        Ok(())
+    }
+
+    fn print_human(&mut self, value: Human) -> anyhow::Result<()> {
+        println!("{:?}", value);
+        Ok(())
+    }
+
+    fn print_errno(&mut self, value: Errno) -> anyhow::Result<()> {
+        println!("{:?}", value);
+        Ok(())
+    }
+
+    fn print_permissions(&mut self, value: Permissions) -> anyhow::Result<()> {
+        println!("{:?}", value);
         Ok(())
     }
 }

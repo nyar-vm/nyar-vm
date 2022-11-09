@@ -13,7 +13,7 @@ pub use crate::{
     },
     wasi_types::{
         array::WasiArrayType,
-        functions::{ExternalFunction, WasiParameter},
+        functions::{WasiExternalFunction, WasiParameter},
         resources::WasiResource,
         variants::{VariantItem, WasiVariantType},
         WasiType,

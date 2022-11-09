@@ -11,7 +11,7 @@ use crate::{
     encoder::WastEncoder,
     helpers::{TypeDefinition, TypeReference},
     wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType},
-    DependenciesTrace, ExternalFunction, Identifier, WasiModule, WasiParameter,
+    DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiParameter,
 };
 
 pub mod array;
@@ -54,23 +54,28 @@ pub enum WasiType {
         success: Option<Box<WasiType>>,
         failure: Option<Box<WasiType>>,
     },
+    /// `resource` type in WASI
     Resource(WasiResource),
+    /// `variant` type in WASI
     Variant(WasiVariantType),
     TypeHandler {
         /// Resource language name
         name: Identifier,
         own: bool,
     },
-    Array(Box<WasiArrayType>),
     /// A referenced type, the real type needs to be found later
     TypeAlias {
         /// Type language name
         name: Identifier,
     },
-    External(Box<ExternalFunction>),
+    /// `list` type in WASI
+    Array(Box<WasiArrayType>),
+    /// The host function type in WASI
+    External(Box<WasiExternalFunction>),
 }
 
 impl WasiType {
+    /// Get the type definition of the type, composite type returns `None`
     pub fn wasm_module(&self) -> Option<&WasiModule> {
         match self {
             Self::Resource(v) => Some(&v.wasi_module),
@@ -78,6 +83,7 @@ impl WasiType {
             _ => None,
         }
     }
+    /// Returns the language identifier of the type, anonymous type returns `None`
     pub fn language_id(&self) -> Option<&Identifier> {
         match self {
             Self::Variant(v) => Some(&v.symbol),
