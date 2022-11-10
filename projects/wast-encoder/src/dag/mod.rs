@@ -50,6 +50,7 @@ impl DependentGraph {
                 WasiType::Array { .. } => {}
                 WasiType::Float32 => {}
                 WasiType::Float64 => {}
+                WasiType::Boolean => {}
             }
         }
         sorter
