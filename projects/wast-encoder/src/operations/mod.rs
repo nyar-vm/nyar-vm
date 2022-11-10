@@ -100,9 +100,7 @@ impl WasiType {
             WasiType::TypeHandler { .. } => {
                 todo!()
             }
-            WasiType::TypeQuery { .. } => {
-                todo!()
-            }
+
             WasiType::Array(_) => {
                 todo!()
             }
