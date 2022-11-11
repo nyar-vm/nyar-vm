@@ -20,7 +20,10 @@ pub struct DependentGraph {
 
 impl DependentGraph {
     pub fn get(&self, type_id: &WasiTypeReference) -> &WasiType {
-        self.types.get(&type_id.symbol).expect("Missing Type `` in DependentGraph")
+        match self.types.get(&type_id.symbol) {
+            Some(s) => s,
+            None => panic!("Missing Type `{}` in DependentGraph", type_id.symbol),
+        }
     }
 
     fn build_dag(&self) -> DependentSort<WasiType, WasiModule> {

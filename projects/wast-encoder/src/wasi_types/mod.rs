@@ -90,7 +90,58 @@ impl WasiType {
         }
     }
 }
+impl WasiType {
+    pub fn emit_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            WasiType::Boolean => {
+                write!(w, "(i32.const 0)")
+            }
+            WasiType::Integer8 { .. } => {
+                write!(w, "(i32.const 0)")
+            }
+            WasiType::Integer16 { .. } => {
+                write!(w, "(i32.const 0)")
+            }
+            WasiType::Integer32 { .. } => {
+                write!(w, "(i32.const 0)")
+            }
+            WasiType::Integer64 { .. } => {
+                write!(w, "(i64.const 0)")
+            }
+            WasiType::Float32 => {
+                write!(w, "(f32.const 0)")
+            }
+            WasiType::Float64 => {
+                write!(w, "(f64.const 0)")
+            }
+            WasiType::Option { .. } => {
+                todo!()
+            }
+            WasiType::Result { .. } => {
+                todo!()
+            }
+            WasiType::Resource(_) => {
+                todo!()
+            }
+            WasiType::Record(_) => {
+                todo!()
+            }
+            WasiType::Variant(_) => {
+                todo!()
+            }
+            WasiType::TypeHandler { .. } => {
+                todo!()
+            }
 
+            WasiType::Array(_) => {
+                todo!()
+            }
+            WasiType::External(_) => {
+                todo!()
+            }
+        }
+    }
+}
 impl DependenciesTrace for WasiType {
     #[track_caller]
     fn define_language_types(&self, _: &mut DependentGraph) {

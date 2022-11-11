@@ -1,6 +1,6 @@
 [package]
 name = "wast-encoder"
-version = "0.0.1"
+version = "0.0.2"
 categories = ["wasm"]
 keywords = ["webassembly", "wasm"]
 description = "WAST encoder supporting wasi and wit components"
@@ -14,6 +14,7 @@ exclude = ["package.json", "tests/**"]
 [dependencies]
 convert_case = "0.6.0"
 nyar-error = "0.1.12"
+itertools = "0.12.1"
 semver = "1.0.22"
 indexmap = "2.2.3"
 

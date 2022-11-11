@@ -1,7 +1,7 @@
 use std::{io::Write, path::Path, str::FromStr, sync::Arc};
 
 use wast_encoder::{
-    CanonicalWasi, DependentGraph, Identifier, WasiArrayType, WasiExternalFunction, WasiModule, WasiParameter, WasiRecordField,
+    CanonicalWasi, DependentGraph, Identifier, WasiExternalFunction, WasiModule, WasiParameter, WasiRecordField,
     WasiRecordType, WasiResource, WasiType, WasiTypeReference, WasiVariantItem, WasiVariantType,
 };
 
@@ -26,7 +26,7 @@ fn define_io_types() -> DependentGraph {
         point += WasiRecordField::new(Arc::from("y"), WasiType::Float32);
         global += point;
         let mut printer = WasiExternalFunction::new(m_debugger.clone(), "print-point", "test::print_point");
-        printer.inputs.push(WasiParameter::new("value", WasiTypeReference::new(Identifier::from_str("test::Point").unwrap())));
+        printer.inputs.push(WasiParameter::new("value", WasiTypeReference::new(Identifier::from_str("Point").unwrap())));
         global += printer;
     }
     {

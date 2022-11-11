@@ -1,6 +1,5 @@
-use std::fmt::Write;
-
 use crate::{encoder::WastEncoder, WasiArrayType};
+use std::fmt::Write;
 
 pub enum WasiValue {
     Boolean(bool),
@@ -14,15 +13,27 @@ pub enum WasiValue {
     Unsigned64(u64),
     Float32(f32),
     Float64(f64),
-    Array { r#type: WasiArrayType },
+    DynamicArray { r#type: WasiArrayType, values: Vec<WasiValue> },
 }
 
-impl Default for WasiValue {
-    fn default() -> Self {
-        todo!()
+impl WasiValue {
+    pub fn emit_constant<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Boolean(v) => write!(w, "(i32.const {})", if *v { 1 } else { 0 })?,
+            Self::Integer8(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer16(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer32(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer64(v) => write!(w, "(i64.const {})", v)?,
+            Self::Unsigned8(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned16(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned32(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned64(v) => write!(w, "(i64.const {})", v)?,
+            Self::Float32(v) => write!(w, "(f32.const {})", v)?,
+            Self::Float64(v) => write!(w, "(f64.const {})", v)?,
+            Self::DynamicArray { .. } => {
+                todo!()
+            }
+        }
+        Ok(())
     }
 }
-
-// impl WasiValue {
-//
-// }
