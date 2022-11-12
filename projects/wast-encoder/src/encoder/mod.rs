@@ -26,6 +26,7 @@ pub(crate) struct WastEncoder<'a, W> {
     pub source: &'a CanonicalWasi,
     pub writer: W,
     pub indent: usize,
+    pub state: Vec<WasiType>,
 }
 
 impl CanonicalWasi {
@@ -159,7 +160,7 @@ impl CanonicalWasi {
 
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn new(source: &'a CanonicalWasi, writer: W) -> Self {
-        Self { source, writer, indent: 0 }
+        Self { source, writer, indent: 0, state: vec![] }
     }
 }
 
