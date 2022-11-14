@@ -26,11 +26,14 @@ impl Debug for WasiType {
             Self::Array { .. } => {
                 write!(f, "Array(..))")
             }
-            WasiType::Float32 => {
+            Self::Float32 => {
                 write!(f, "f32")
             }
-            WasiType::Float64 => {
+            Self::Float64 => {
                 write!(f, "f64")
+            }
+            Self::Function(_) => {
+                write!(f, "Function")
             }
         }
     }
@@ -54,11 +57,14 @@ impl Display for WasiType {
             Self::Array { .. } => {
                 write!(f, "Array(..))")
             }
-            WasiType::Float32 => {
+            Self::Float32 => {
                 write!(f, "f32")
             }
-            WasiType::Float64 => {
+            Self::Float64 => {
                 write!(f, "f64")
+            }
+            Self::Function(_) => {
+                write!(f, "Function")
             }
         }
     }
@@ -148,6 +154,9 @@ impl TypeReference for WasiType {
             Self::External(_) => {
                 todo!()
             }
+            Self::Function(_) => {
+                todo!()
+            }
             Self::Array(array) => array.upper_type(w)?,
         }
         Ok(())
@@ -178,6 +187,9 @@ impl TypeReference for WasiType {
                 todo!()
             }
             Self::Float64 => {
+                todo!()
+            }
+            Self::Function(_) => {
                 todo!()
             }
         }
@@ -213,6 +225,9 @@ impl TypeReference for WasiType {
             Self::Float64 => {
                 todo!()
             }
+            Self::Function(_) => {
+                todo!()
+            }
         }
         Ok(())
     }
@@ -246,7 +261,10 @@ impl WasiType {
             Self::Float64 => {
                 todo!()
             }
-            WasiType::Record(_) => {
+            Self::Record(_) => {
+                todo!()
+            }
+            Self::Function(_) => {
                 todo!()
             }
         }
