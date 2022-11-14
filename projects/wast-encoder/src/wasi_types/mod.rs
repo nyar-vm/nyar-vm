@@ -10,8 +10,13 @@ use crate::{
     dag::DependentGraph,
     encoder::WastEncoder,
     helpers::{AliasOuter, ComponentDefine, TypeDefinition, TypeReference},
-    wasi_types::{array::WasiArrayType, functions::WasiFunction, resources::WasiResource, variants::WasiVariantType},
-    DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiRecordType, WasiTypeReference,
+    wasi_types::{
+        array::WasiArrayType,
+        functions::{WasiFunctionBody, WasiNativeFunction},
+        resources::WasiResource,
+        variants::WasiVariantType,
+    },
+    DependenciesTrace, Identifier, WasiFunction, WasiModule, WasiRecordType, WasiTypeReference,
 };
 use std::{cmp::Ordering, ops::AddAssign};
 use WasiType::{Float32, Float64, Integer16, Integer32, Integer64, Integer8};
@@ -69,9 +74,9 @@ pub enum WasiType {
     /// `list` type in WASI
     Array(Box<WasiArrayType>),
     /// `function` type in WASI
-    Function(Box<WasiFunction>),
+    Function(Box<WasiNativeFunction>),
     /// The host function type in WASI
-    External(Box<WasiExternalFunction>),
+    External(Box<WasiFunction>),
 }
 
 impl WasiType {
@@ -79,7 +84,10 @@ impl WasiType {
     pub fn wasm_module(&self) -> Option<&WasiModule> {
         match self {
             Self::Resource(v) => Some(&v.wasi_module),
-            Self::External(v) => Some(&v.wasi_module),
+            Self::External(v) => match &v.body {
+                WasiFunctionBody::External { wasi_module, .. } => Some(wasi_module),
+                WasiFunctionBody::Normal { .. } => None,
+            },
             _ => None,
         }
     }

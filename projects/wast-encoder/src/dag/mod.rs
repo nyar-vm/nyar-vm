@@ -2,7 +2,9 @@ use std::{collections::BTreeMap, fmt::Debug, ops::AddAssign};
 
 use dependent_sort::{DependentSort, TopologicalError};
 
-use crate::{CanonicalImport, Identifier, WasiInstance, WasiModule, WasiType, WasiTypeReference};
+use crate::{
+    wasi_types::functions::WasiFunctionBody, CanonicalImport, Identifier, WasiInstance, WasiModule, WasiType, WasiTypeReference,
+};
 
 mod arithmetic;
 
@@ -49,11 +51,13 @@ impl DependentGraph {
                     sorter += dependent_sort::Task::new_with_dependent(&ty, dependents);
                 }
                 WasiType::TypeHandler { .. } => {}
-
-                WasiType::External(v) => {
-                    v.collect_wasi_types(self, &mut dependents);
-                    sorter += dependent_sort::Task { id: ty, group: Some(&v.wasi_module), dependent_tasks: dependents };
-                }
+                WasiType::External(v) => match &v.body {
+                    WasiFunctionBody::External { wasi_module, .. } => {
+                        v.collect_wasi_types(self, &mut dependents);
+                        sorter += dependent_sort::Task { id: ty, group: Some(wasi_module), dependent_tasks: dependents };
+                    }
+                    WasiFunctionBody::Normal { .. } => {}
+                },
                 WasiType::Array { .. } => {}
                 WasiType::Float32 => {}
                 WasiType::Float64 => {}

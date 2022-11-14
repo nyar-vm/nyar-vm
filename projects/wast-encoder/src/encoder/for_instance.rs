@@ -1,4 +1,7 @@
-use crate::helpers::{TypeReferenceInput, TypeReferenceOutput};
+use crate::{
+    helpers::{TypeReferenceInput, TypeReferenceOutput},
+    wasi_types::functions::WasiFunctionBody,
+};
 
 use super::*;
 
@@ -21,9 +24,14 @@ impl ComponentDefine for CanonicalImport {
 }
 
 impl<'a, W: Write> WastEncoder<'a, W> {
-    pub(crate) fn export_function(&mut self, function: &WasiExternalFunction) -> std::fmt::Result {
-        let name = function.wasi_name.as_str();
-        write!(self, "(export \"{name}\" (func")?;
+    pub(crate) fn export_function(&mut self, function: &WasiFunction) -> std::fmt::Result {
+        match &function.body {
+            WasiFunctionBody::External { wasi_name, .. } => {
+                write!(self, "(export \"{wasi_name}\" (func")?;
+            }
+            WasiFunctionBody::Normal { .. } => {}
+        }
+
         self.indent();
         for input in function.inputs.iter() {
             self.newline()?;
