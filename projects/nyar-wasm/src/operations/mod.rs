@@ -1,128 +1,142 @@
 use crate::{
-    helpers::{IntoWasm, WasmInstruction, WasmName},
-    types::WasmType,
-    values::WasmValue,
-    ArrayType, EnumerationTable, JumpBranch, JumpTable, WasmSymbol,
+    encoder::WastEncoder,
+    helpers::{EmitConstant, EmitDefault, ToWasiType},
+    Identifier, WasiType, WasiValue,
 };
-use std::collections::BTreeMap;
-use wast::{
-    core::{BlockType, Instruction, TableArg, TypeUse},
-    token::{Float32, Float64},
-};
+use std::fmt::Write;
 
-mod codegen;
-mod convert;
+pub(crate) trait Emit {
+    fn emit<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
 
-pub mod branch;
+pub(crate) trait EmitValue {
+    fn emit_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn emit_constant<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
 
-#[derive(Clone, Debug)]
-pub enum Operation {
-    Sequence {
-        code: Vec<Operation>,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum WasiInstruction {
+    /// Create the default value for a given type
+    Default(WasiType),
+    /// Create a constant value
+    Constant(WasiValue),
+    /// Convert stack value to WASI type
+    Convert {
+        /// The target type after convert
+        into: WasiType,
     },
-    Repeats {
-        code: Vec<Operation>,
-        repeats: usize,
+    /// Transmute stack value to WASI type
+    Transmute {
+        /// The target type after transmute
+        into: WasiType,
     },
+    GetField,
+    SetField,
     CallFunction {
-        name: WasmSymbol,
-        input: Vec<Operation>,
-    },
-    GetVariable {
-        kind: VariableKind,
-        variable: WasmSymbol,
-    },
-    SetVariable {
-        kind: VariableKind,
-        variable: WasmSymbol,
-    },
-    TeeVariable {
-        variable: WasmSymbol,
-    },
-    StoreVariable {
-        r#type: WasmType,
-        offset: u64,
-    },
-    GetField {
-        structure: WasmSymbol,
-        field: WasmSymbol,
-    },
-    GetIndex {
-        r#type: ArrayType,
-        index: i32,
-        object: Vec<Operation>,
-    },
-    ArrayCreate {
-        r#type: ArrayType,
-        element: Vec<Operation>,
-    },
-    ArrayLength {
-        object: Vec<Operation>,
-    },
-    ArrayGrow {
-        r#type: ArrayType,
-        capacity: u32,
-    },
-    ArrayFill {
-        array: Vec<Operation>,
-        r#type: ArrayType,
-        element: Vec<Operation>,
-        start: u64,
-        length: u64,
-    },
-    SetField {
-        structure: WasmSymbol,
-        field: WasmSymbol,
-    },
-    Loop {
-        r#continue: WasmSymbol,
-        r#break: WasmSymbol,
-        body: Vec<Operation>,
-    },
-    Goto {
-        label: WasmSymbol,
-    },
-    Drop,
-    Return,
-    Unreachable,
-
-    /// `if cond { } else { }`
-    JumpBranch(JumpBranch),
-    /// `if c1 { } else if c2 { } else { }`
-    JumpTable(JumpTable),
-    /// `case 0: ... else: ...`
-    JumpEnumeration(EnumerationTable),
-    Default {
-        typed: WasmType,
-    },
-    Construct {
-        structure: WasmSymbol,
-    },
-    Constant {
-        value: WasmValue,
+        symbol: Identifier,
     },
     NativeSum {
-        r#type: WasmType,
-        terms: Vec<Operation>,
+        terms: Vec<WasiInstruction>,
     },
-    Convert {
-        from: WasmType,
-        into: WasmType,
-        code: Vec<Operation>,
+    NativeProduct {
+        terms: Vec<WasiInstruction>,
     },
-    Transmute {
-        from: WasmType,
-        into: WasmType,
-        code: Vec<Operation>,
+    Goto {},
+    Return {},
+    Drop {
+        objects: usize,
     },
-    NativeEqual {
-        r#type: WasmType,
-        codes: Vec<Operation>,
-    },
-    NativeEqualZero {
-        native: WasmType,
-        term: Box<Operation>,
-    },
+}
+
+impl WasiInstruction {
+    /// Create a const type
+    pub fn constant<T>(value: T) -> Self
+    where
+        T: Into<WasiValue>,
+    {
+        Self::Constant(value.into())
+    }
+}
+
+impl<'a, W: Write> WastEncoder<'a, W> {
+    pub fn emit_instructions(&mut self, instruction: &[WasiInstruction]) -> std::fmt::Result {
+        for i in instruction {
+            match i {
+                WasiInstruction::Default(v) => {
+                    v.emit_default(self)?;
+                    self.stack.push(v.clone())
+                }
+                WasiInstruction::Constant(v) => {
+                    v.emit_constant(self)?;
+                    self.stack.push(v.to_wasi_type())
+                }
+                WasiInstruction::Convert { into } => {
+                    let last = self.stack.pop();
+                    match last {
+                        Some(last) => {
+                            last.emit_convert(into, self)?;
+                            self.stack.push(into.clone())
+                        }
+                        None => {
+                            panic!("no item on stack!")
+                        }
+                    }
+                }
+                WasiInstruction::Transmute { into } => {
+                    let last = self.stack.pop();
+                    match last {
+                        Some(last) => {
+                            last.emit_transmute(into, self)?;
+                            self.stack.push(into.clone())
+                        }
+                        None => {
+                            panic!("no item on stack!")
+                        }
+                    }
+                }
+                WasiInstruction::GetField => {
+                    todo!()
+                }
+                WasiInstruction::SetField => {
+                    todo!()
+                }
+                WasiInstruction::CallFunction { symbol } => match self.source.get_function(symbol) {
+                    Some(s) => {
+                        write!(self, "call {}", symbol.wasi_id())?;
+                        for input in s.inputs.iter() {
+                            match self.stack.pop() {
+                                Some(s) => {
+                                    if s.ne(&input.r#type) {
+                                        panic!("Mismatch type")
+                                    }
+                                }
+                                None => {
+                                    panic!("Missing parameter")
+                                }
+                            }
+                        }
+                        for output in s.output.clone() {
+                            self.stack.push(output)
+                        }
+                    }
+                    None => {
+                        panic!("Missing function")
+                    }
+                },
+                // (drop drop ...)
+                WasiInstruction::Drop { objects } => write!(self, "({})", "drop ".repeat(*objects).trim_end())?,
+                WasiInstruction::Goto { .. } => {
+                    todo!()
+                }
+                WasiInstruction::Return { .. } => {
+                    todo!()
+                }
+                WasiInstruction::NativeSum { .. } => {}
+                WasiInstruction::NativeProduct { .. } => {}
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -130,38 +144,4 @@ pub enum VariableKind {
     Global,
     Local,
     Table,
-}
-
-impl Operation {
-    pub fn r#loop(label: &str, body: Vec<Operation>) -> Self {
-        Self::Loop {
-            r#continue: WasmSymbol::new(&format!("{label}@continue")),
-            r#break: WasmSymbol::new(&format!("{label}@break")),
-            body,
-        }
-    }
-    pub fn r#continue(label: &str) -> Self {
-        Self::Goto { label: WasmSymbol::new(&format!("{label}@continue")) }
-    }
-    pub fn r#break(label: &str) -> Self {
-        Self::Goto { label: WasmSymbol::new(&format!("{label}@break")) }
-    }
-    pub fn global_get<S: Into<WasmSymbol>>(name: S) -> Self {
-        Self::GetVariable { kind: VariableKind::Global, variable: name.into() }
-    }
-    pub fn global_set<S: Into<WasmSymbol>>(name: S) -> Self {
-        Self::SetVariable { kind: VariableKind::Global, variable: name.into() }
-    }
-    pub fn local_get<S: Into<WasmSymbol>>(name: S) -> Self {
-        Self::GetVariable { kind: VariableKind::Local, variable: name.into() }
-    }
-    pub fn local_set<S: Into<WasmSymbol>>(name: S) -> Self {
-        Self::SetVariable { kind: VariableKind::Local, variable: name.into() }
-    }
-    pub fn local_tee<S: Into<WasmSymbol>>(name: S) -> Self {
-        Self::TeeVariable { variable: name.into() }
-    }
-    pub fn drop(count: usize) -> Self {
-        Self::Repeats { code: vec![Self::Drop], repeats: count }
-    }
 }

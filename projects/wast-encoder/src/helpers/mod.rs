@@ -49,3 +49,13 @@ pub(crate) trait TypeReferenceOutput {
     fn upper_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
     fn lower_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
+
+pub(crate) trait EmitDefault {
+    /// Emit default instruction for the value
+    fn emit_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+
+pub(crate) trait EmitConstant {
+    /// Emit constant instruction for the value
+    fn emit_constant<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}

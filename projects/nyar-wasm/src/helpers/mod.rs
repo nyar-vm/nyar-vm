@@ -1,93 +1,61 @@
-use indexmap::{map::Iter, IndexMap};
-use nyar_error::NyarError;
-use std::{
-    fs::File,
-    intrinsics::transmute,
-    io::Write,
-    path::{Path, PathBuf},
-};
-use wast::{core::Instruction, token::Span};
+use std::fmt::Write;
 
-pub struct IndexedIterator<'i, T> {
-    iter: Iter<'i, String, T>,
-    index: usize,
+use crate::{encoder::WastEncoder, WasiModule, WasiType, WasiValue};
+
+pub trait ToWasiType {
+    fn to_wasi_type(&self) -> WasiType;
 }
 
-impl<'i, T> Iterator for IndexedIterator<'i, T> {
-    type Item = (usize, &'i str, &'i T);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (name, item) = self.iter.next()?;
-        let index = self.index;
-        self.index += 1;
-        Some((index, name, item))
-    }
+pub trait ToWasiValue {
+    fn to_wasi_value(&self) -> WasiValue;
 }
 
-impl<'i, T> DoubleEndedIterator for IndexedIterator<'i, T> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let (name, item) = self.iter.next_back()?;
-        let index = self.index;
-        self.index += 1;
-        Some((index, name, item))
-    }
+/// Mark for type who can import to the component instance
+pub(crate) trait AliasOuter {
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
-impl<'i, T> ExactSizeIterator for IndexedIterator<'i, T> {
-    fn len(&self) -> usize {
-        self.iter.len()
-    }
+pub(crate) trait AliasExport {
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result;
 }
 
-impl<'i, T> IndexedIterator<'i, T> {
-    pub fn new(map: &'i IndexMap<String, T>) -> Self {
-        Self { iter: map.iter(), index: 0 }
-    }
-    pub fn with_index(self, index: usize) -> Self {
-        Self { index, ..self }
-    }
+/// Mark for type who can define in component section
+pub(crate) trait ComponentDefine {
+    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
-pub(crate) trait IntoWasm<'a, Item> {
-    fn as_wast(&'a self) -> Item;
+pub(crate) trait LowerFunction {
+    fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
-pub trait WasmInstruction {
-    fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
-    where
-        'a: 'i;
+pub(crate) trait TypeDefinition {
+    fn upper_type_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_type_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
-#[allow(dead_code)]
-pub(crate) struct WasmName<'a> {
-    name: &'a str,
-    gen: u32,
-    span: Span,
+pub(crate) trait TypeReference {
+    fn upper_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_type_inner<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
-impl<'a> WasmName<'a> {
-    pub fn new(name: &'a str) -> wast::token::Id<'a> {
-        unsafe {
-            let s = WasmName { name, gen: 0, span: Span::from_offset(0) };
-            transmute::<WasmName, wast::token::Id>(s)
-        }
-    }
-    pub fn index(name: &'a str) -> wast::token::Index<'a> {
-        wast::token::Index::Id(Self::new(name))
-    }
-
-    pub fn id(name: &'a str) -> Option<wast::token::Id<'a>> {
-        Some(Self::new(name))
-    }
+pub(crate) trait TypeReferenceInput {
+    fn upper_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
-pub(crate) fn write_wasm_bytes(path: &Path, buffer: Result<Vec<u8>, wast::Error>) -> Result<PathBuf, NyarError> {
-    match buffer {
-        Ok(o) => {
-            let mut file = File::create(path)?;
-            file.write_all(&o)?;
-        }
-        Err(e) => Err(NyarError::custom(e))?,
-    }
-    Ok(path.canonicalize()?)
+pub(crate) trait TypeReferenceOutput {
+    fn upper_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+
+pub(crate) trait EmitDefault {
+    /// Emit default instruction for the value
+    fn emit_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+
+pub(crate) trait EmitConstant {
+    /// Emit constant instruction for the value
+    fn emit_constant<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }

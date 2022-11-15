@@ -1,0 +1,20 @@
+package examples: tests;
+
+world imports {
+  import tuples;
+}
+
+interface tuples {
+  tuple0: func(x: tuple<>);
+  tuple1: func(x: tuple<u8>);
+  tuple2: func(x: tuple<u8, u8>);
+  tuple22: func(x: tuple<tuple<u8, u8>, tuple<u8, u8>>);
+  tuple4: func(x: tuple<u8, u8, u8, u8>);
+  tuple16: func(x: tuple<u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8>);
+  tuple17: func(x: tuple<u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8>);
+
+  tuple-r0: func() -> tuple<>;
+  tuple-r1: func() -> tuple<u8>;
+  tuple-r2: func() -> tuple<u8, f32, f32>;
+}
+
