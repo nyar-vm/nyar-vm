@@ -23,6 +23,7 @@ use WasiType::{Float32, Float64, Integer16, Integer32, Integer64, Integer8};
 
 pub mod array;
 mod display;
+pub mod enumerations;
 pub mod functions;
 pub mod records;
 pub mod reference;

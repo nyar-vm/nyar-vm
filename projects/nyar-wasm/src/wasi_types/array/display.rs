@@ -1,5 +1,18 @@
 use super::*;
 
+impl Display for WasiArrayType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.length {
+            Some(length) => {
+                write!(f, "Array<{}, {}>", self.r#type, length)
+            }
+            None => {
+                write!(f, "Array<{}>", self.r#type)
+            }
+        }
+    }
+}
+
 impl TypeDefinition for WasiArrayType {
     #[track_caller]
     fn upper_type_define<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {

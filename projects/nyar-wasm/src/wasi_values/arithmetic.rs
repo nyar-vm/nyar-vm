@@ -56,7 +56,7 @@ impl ToWasiType for WasiValue {
             Self::Unsigned64(_) => WasiType::Integer8 { signed: false },
             Self::Float32(_) => WasiType::Float32,
             Self::Float64(_) => WasiType::Float64,
-            Self::DynamicArray { r#type, .. } => WasiType::Array(Box::new(r#type.clone())),
+            Self::DynamicArray(v) => v.to_wasi_type(),
         }
     }
 }
