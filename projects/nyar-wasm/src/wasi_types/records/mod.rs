@@ -36,6 +36,6 @@ impl WasiRecordField {
     where
         T: Into<WasiType>,
     {
-        Self { name: name.clone(), wasi_name: name.clone(), r#type: r#type.into() }
+        Self { name: name.clone(), wasi_name: name.clone(), r#type: r#type.into(), default_value: None }
     }
 }

@@ -6,6 +6,10 @@ pub use crate::{
     dag::DependentGraph,
     encoder::{encode_id, encode_kebab, CanonicalWasi},
     instances::WasiInstance,
+    operations::{
+        branch::{JumpBranch, JumpCondition, JumpTable},
+        WasiInstruction,
+    },
     symbols::{
         identifiers::Identifier,
         wasi_publisher::{WasiModule, WasiPublisher},
