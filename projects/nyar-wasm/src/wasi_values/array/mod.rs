@@ -2,7 +2,7 @@ use super::*;
 use crate::Identifier;
 
 /// An array with dynamic value
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct ArrayValue {
     pub r#type: WasiArrayType,
     pub values: Vec<WasiValue>,

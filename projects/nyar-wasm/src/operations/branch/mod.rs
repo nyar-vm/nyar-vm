@@ -49,7 +49,9 @@ pub struct JumpBranch {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JumpCondition {
+    /// The condition of the if statement
     pub condition: Vec<WasiInstruction>,
+    /// The action if condition is true
     pub action: Vec<WasiInstruction>,
 }
 
@@ -89,6 +91,9 @@ impl WasiInstruction {
 
 impl Emit for JumpBranch {
     fn emit<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        for i in &self.main.condition {
+            i.emit(w)?;
+        }
         let recover = std::mem::take(&mut w.stack);
         write!(w, "(if")?;
         w.indent();

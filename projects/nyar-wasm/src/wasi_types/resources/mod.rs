@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::fmt::{Debug, Formatter, Write};
 
 use crate::{
     dag::DependentGraph,
@@ -6,7 +6,7 @@ use crate::{
     DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WasiResource {
     /// Resource language name
     pub symbol: Identifier,
@@ -14,11 +14,22 @@ pub struct WasiResource {
     pub wasi_name: String,
 }
 
+impl Debug for WasiResource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasiResource")
+            .field("symbol", &self.symbol.to_string())
+            .field("module", &self.wasi_module.to_string())
+            .field("name", &self.wasi_name)
+            .finish()
+    }
+}
+
 impl WasiResource {
     pub(crate) fn write_wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(export {} \"{}\" (type (sub resource)))", self.symbol.wasi_id(), self.wasi_name)
     }
 }
+
 impl AliasExport for WasiResource {
     fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
         let id = self.symbol.wasi_id();
@@ -26,12 +37,12 @@ impl AliasExport for WasiResource {
         write!(w, "(alias export ${module} \"{name}\" (type {id}))")
     }
 }
+
 impl AliasOuter for WasiResource {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        // let root = &w.source.name;
-        // let id = self.symbol.wasi_id();
-        // let name = self.wasi_name.as_str();
-        // write!(w, "(alias outer ${root} {id} (type {id}))")?;
+        let root = &w.source.name;
+        let id = self.symbol.wasi_id();
+        write!(w, "(alias outer ${root} {id} (type {id}))")?;
         Ok(())
     }
 }

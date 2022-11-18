@@ -21,8 +21,6 @@ impl Debug for WasiType {
             Self::Record(v) => Debug::fmt(v, f),
             Self::Variant(v) => Debug::fmt(v, f),
             Self::TypeHandler(v) => Debug::fmt(v, f),
-
-            Self::External(v) => write!(f, "External({})", v.symbol),
             Self::Array { .. } => {
                 write!(f, "Array(..))")
             }
@@ -32,9 +30,7 @@ impl Debug for WasiType {
             Self::Float64 => {
                 write!(f, "f64")
             }
-            Self::Function(_) => {
-                write!(f, "Function")
-            }
+            Self::Function(v) => Debug::fmt(v, f),
         }
     }
 }
@@ -53,7 +49,6 @@ impl Display for WasiType {
             Self::Record(v) => Debug::fmt(v, f),
             Self::Variant(v) => Debug::fmt(v, f),
             Self::TypeHandler(v) => Debug::fmt(v, f),
-            Self::External(v) => write!(f, "External({})", v.symbol),
             Self::Array { .. } => {
                 write!(f, "Array(..))")
             }
@@ -151,9 +146,6 @@ impl TypeReference for WasiType {
             Self::Record(v) => v.component_define(w)?,
             Self::Variant(v) => v.component_define(w)?,
             Self::TypeHandler(v) => v.upper_type(w)?,
-            Self::External(_) => {
-                todo!()
-            }
             Self::Function(_) => {
                 todo!()
             }
@@ -180,9 +172,7 @@ impl TypeReference for WasiType {
             Self::Record(_) => w.write_str("i32")?,
             Self::TypeHandler(v) => w.source.graph.get(v).lower_type(w)?,
             Self::Array(array) => array.lower_type(w)?,
-            Self::External(_) => {
-                todo!()
-            }
+
             Self::Float32 => {
                 todo!()
             }
@@ -216,9 +206,7 @@ impl TypeReference for WasiType {
             }
             Self::TypeHandler(v) => w.source.graph.get(v).lower_type(w)?,
             Self::Array(array) => array.lower_type(w)?,
-            Self::External(_) => {
-                todo!()
-            }
+
             Self::Float32 => {
                 todo!()
             }
@@ -251,7 +239,7 @@ impl WasiType {
             }
             Self::Variant(_) => "".to_string(),
             Self::TypeHandler { .. } => "".to_string(),
-            Self::External(_) => "".to_string(),
+
             Self::Array { .. } => {
                 todo!()
             }

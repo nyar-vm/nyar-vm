@@ -48,7 +48,7 @@ impl WasiInstance {
                 todo!()
             }
 
-            WasiType::External(v) => {
+            WasiType::Function(v) => {
                 self.functions.insert(v.symbol.clone(), *v.clone());
             }
             WasiType::Array { .. } => {}
@@ -56,7 +56,6 @@ impl WasiInstance {
             WasiType::Float64 => {}
             WasiType::Record(_) => {}
             WasiType::Boolean => {}
-            WasiType::Function(_) => {}
         }
     }
     pub fn dependencies(&self, dict: &DependentGraph) -> BTreeSet<WasiType> {

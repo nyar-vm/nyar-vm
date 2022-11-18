@@ -38,17 +38,6 @@ pub enum WasiFunctionBody {
     },
 }
 
-/// The type of WASM function
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WasiNativeFunction {
-    /// The type of WASI parameter
-    pub symbol: Identifier,
-    /// The input parameters of the function
-    pub inputs: Vec<WasiParameter>,
-    /// The output parameter of the function
-    pub output: Option<WasiType>,
-}
-
 /// The type of WASI parameter
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WasiParameter {
@@ -145,7 +134,7 @@ impl LowerFunction for WasiFunction {
 
 impl DependenciesTrace for WasiFunction {
     fn define_language_types(&self, dict: &mut DependentGraph) {
-        dict.types.insert(self.symbol.clone(), WasiType::External(Box::new(self.clone())));
+        dict.types.insert(self.symbol.clone(), WasiType::Function(Box::new(self.clone())));
     }
 
     fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)

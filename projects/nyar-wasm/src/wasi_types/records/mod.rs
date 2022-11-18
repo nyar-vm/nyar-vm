@@ -11,7 +11,7 @@ pub struct WasiRecordType {
     pub fields: IndexMap<Arc<str>, WasiRecordField>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct WasiRecordField {
     /// The name of the field
     pub name: Arc<str>,
