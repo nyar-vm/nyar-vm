@@ -4,7 +4,6 @@ use crate::{
     ArrayValue, WasiArrayType, WasiType,
 };
 use std::{
-    borrow::Cow,
     cmp::Ordering,
     fmt::Write,
     hash::{Hash, Hasher},
