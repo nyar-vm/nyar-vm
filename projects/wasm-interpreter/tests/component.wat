@@ -21,19 +21,19 @@
         (field "x" float32)
         (field "y" float32)
     ))
-    (import "wasi:cli/stderr@0.2.0" (instance $wasi:cli/stderr@0.2.0
+    (import "wasi:cli/stderr@0.2.0" (instance $wasi:cli/stderr@0.2.0(alias outer $root $std::io::OutputStream (type $std::io::OutputStream))
         (export "get-stderr" (func
             (result (own $std::io::OutputStream))
         ))
     ))
     (alias export $wasi:cli/stderr@0.2.0 "get-stderr" (func $std::io::standard_error))
-    (import "wasi:cli/stdin@0.2.0" (instance $wasi:cli/stdin@0.2.0
+    (import "wasi:cli/stdin@0.2.0" (instance $wasi:cli/stdin@0.2.0(alias outer $root $std::io::InputStream (type $std::io::InputStream))
         (export "get-stdin" (func
             (result (own $std::io::InputStream))
         ))
     ))
     (alias export $wasi:cli/stdin@0.2.0 "get-stdin" (func $std::io::standard_input))
-    (import "wasi:cli/stdout@0.2.0" (instance $wasi:cli/stdout@0.2.0
+    (import "wasi:cli/stdout@0.2.0" (instance $wasi:cli/stdout@0.2.0(alias outer $root $std::io::OutputStream (type $std::io::OutputStream))
         (export "get-stdout" (func
             (result (own $std::io::OutputStream))
         ))
