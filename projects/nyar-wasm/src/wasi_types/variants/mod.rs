@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    fmt::Write,
+    fmt::{Display, Formatter, Write},
     hash::{Hash, Hasher},
     ops::AddAssign,
     sync::Arc,
@@ -24,6 +24,12 @@ pub struct WasiVariantType {
     pub symbol: Identifier,
     pub wasi_name: String,
     pub variants: IndexMap<Arc<str>, WasiVariantItem>,
+}
+
+impl Display for WasiVariantType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
 }
 
 impl PartialEq for WasiVariantType {
