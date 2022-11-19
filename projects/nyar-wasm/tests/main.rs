@@ -32,19 +32,28 @@ fn define_io_types() -> DependentGraph {
     {
         let wasi_cli_get = WasiModule::from_str("wasi:cli/stdin@0.2.0").unwrap();
         let mut function = WasiFunction::external(wasi_cli_get.clone(), "get-stdin", "std::io::standard_input");
-        function.output = Some(WasiTypeReference::owned(Identifier::from_str("std::io::InputStream").unwrap()).into());
+        function.output.push(WasiParameter::new(
+            "output",
+            WasiTypeReference::owned(Identifier::from_str("std::io::InputStream").unwrap()),
+        ));
         global += function;
     }
     {
         let wasi_cli_get = WasiModule::from_str("wasi:cli/stdout@0.2.0").unwrap();
         let mut function = WasiFunction::external(wasi_cli_get.clone(), "get-stdout", "std::io::standard_output");
-        function.output = Some(WasiTypeReference::owned(Identifier::from_str("std::io::OutputStream").unwrap()).into());
+        function.output.push(WasiParameter::new(
+            "output",
+            WasiTypeReference::owned(Identifier::from_str("std::io::OutputStream").unwrap()),
+        ));
         global += function;
     }
     {
         let wasi_cli_get = WasiModule::from_str("wasi:cli/stderr@0.2.0").unwrap();
         let mut function = WasiFunction::external(wasi_cli_get.clone(), "get-stderr", "std::io::standard_error");
-        function.output = Some(WasiTypeReference::owned(Identifier::from_str("std::io::OutputStream").unwrap()).into());
+        function.output.push(WasiParameter::new(
+            "output",
+            WasiTypeReference::owned(Identifier::from_str("std::io::OutputStream").unwrap()),
+        ));
         global += function;
     }
     {

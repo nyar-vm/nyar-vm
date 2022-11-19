@@ -97,16 +97,16 @@
         
         
         
-        (import "wasi:cli/stderr@0.2.0" "get-stderr" (func $std::io::standard_error (result i32)))
+        (import "wasi:cli/stderr@0.2.0" "get-stderr" (func $std::io::standard_error))
         
-        (import "wasi:cli/stdin@0.2.0" "get-stdin" (func $std::io::standard_input (result i32)))
+        (import "wasi:cli/stdin@0.2.0" "get-stdin" (func $std::io::standard_input))
         
-        (import "wasi:cli/stdout@0.2.0" "get-stdout" (func $std::io::standard_output (result i32)))
+        (import "wasi:cli/stdout@0.2.0" "get-stdout" (func $std::io::standard_output))
         
         
-        (import "unstable:debugger/print" "print-i32" (func $print_i32 (param $value i32)))
-        (import "unstable:debugger/print" "print-u32" (func $print_u32 (param $value i32)))
-        (import "unstable:debugger/print" "print-point" (func $test::print_point (param $value i32)))
+        (import "unstable:debugger/print" "print-i32" (func $print_i32 (param $value i32) (param $value i32)))
+        (import "unstable:debugger/print" "print-u32" (func $print_u32 (param $value i32) (param $value i32)))
+        (import "unstable:debugger/print" "print-point" (func $test::print_point (param $value i32) (param $value i32)))
     )
     (core instance $main (instantiate $Main
         (with "wasi:io/streams@0.2.0" (instance

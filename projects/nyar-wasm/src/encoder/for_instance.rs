@@ -39,7 +39,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         }
         for output in function.output.iter() {
             self.newline()?;
-            output.upper_output(self)?;
+            output.r#type.upper_output(self)?;
         }
         self.dedent(2);
         Ok(())
