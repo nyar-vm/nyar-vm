@@ -1,4 +1,4 @@
-use diagnostic::{Color, Diagnostic, FileID, FileSpan, ReportKind};
+use diagnostic::{Color, Diagnostic, Label, ReportKind, SourceID, SourceSpan};
 use std::{
     char::ParseCharError,
     fmt::{Display, Formatter},
@@ -28,15 +28,15 @@ mod for_ygg;
 pub struct SyntaxError {
     pub info: String,
     pub hint: String,
-    pub span: FileSpan,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Copy, Clone)]
 pub enum ForeignInterfaceError {
-    MissingForeignMark { span: FileSpan },
-    MissingForeignFlag { kind: &'static str, hint: &'static str, span: FileSpan },
-    InvalidForeignModule { span: FileSpan },
-    InvalidForeignName { span: FileSpan },
+    MissingForeignMark { span: SourceSpan },
+    MissingForeignFlag { kind: &'static str, hint: &'static str, span: SourceSpan },
+    InvalidForeignModule { span: SourceSpan },
+    InvalidForeignName { span: SourceSpan },
 }
 
 impl Display for SyntaxError {
@@ -48,7 +48,7 @@ impl Display for SyntaxError {
 impl SyntaxError {
     /// Create a new syntax error with given message
     pub fn new(info: impl Into<String>) -> Self {
-        Self { span: FileSpan::default(), info: info.into(), hint: "".to_string() }
+        Self { span: SourceSpan::default(), info: info.into(), hint: "".to_string() }
     }
     /// Set the excepted hint
     pub fn with_hint<S: ToString>(mut self, hint: S) -> Self {
@@ -56,7 +56,7 @@ impl SyntaxError {
         self
     }
     /// Set the file id
-    pub fn with_file(mut self, file: FileID) -> Self {
+    pub fn with_file(mut self, file: SourceID) -> Self {
         self.span.set_file(file);
         self
     }
@@ -66,7 +66,7 @@ impl SyntaxError {
         self
     }
     /// Set the file span
-    pub fn with_span(mut self, span: FileSpan) -> Self {
+    pub fn with_span(mut self, span: SourceSpan) -> Self {
         self.span = span;
         self
     }
@@ -78,8 +78,8 @@ impl SyntaxError {
     }
     pub fn as_report(&self, kind: ReportKind) -> Diagnostic {
         let mut report = Diagnostic::new(kind).with_location(self.span.get_file(), Some(self.span.get_start()));
-        report.set_message(self.to_string());
-        report.add_label(self.span.as_label(&self.hint).with_color(Color::Red));
+        report.set_message(&self.info);
+        report.add_label(Label::new(self.span).with_message(&self.hint).with_color(Color::Red));
         report.finish()
     }
 }

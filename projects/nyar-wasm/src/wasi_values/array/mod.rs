@@ -4,7 +4,9 @@ use crate::Identifier;
 /// An array with dynamic value
 #[derive(Debug, Clone, Hash)]
 pub struct ArrayValue {
+    /// The type of the array
     pub r#type: WasiArrayType,
+    /// The values of the array
     pub values: Vec<WasiValue>,
 }
 

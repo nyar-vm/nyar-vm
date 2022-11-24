@@ -1,5 +1,5 @@
 use crate::{NyarError, NyarErrorKind};
-use diagnostic::{Color, Diagnostic, FileID, FileSpan, ReportKind};
+use diagnostic::{Color, Diagnostic, Label, ReportKind, SourceID, SourceSpan};
 use std::{
     error::Error,
     fmt::{Debug, Display, Formatter},
@@ -9,7 +9,7 @@ use std::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MissingError {
     pub(crate) kind: MissingErrorKind,
-    pub(crate) span: FileSpan,
+    pub(crate) span: SourceSpan,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,18 +45,18 @@ impl From<MissingError> for NyarError {
 
 impl MissingError {
     pub fn empty() -> Self {
-        Self { kind: MissingErrorKind::EmptyPath, span: FileSpan::default() }
+        Self { kind: MissingErrorKind::EmptyPath, span: SourceSpan::default() }
     }
     pub fn undefined(symbol: &str) -> Self {
-        Self { kind: MissingErrorKind::Undefined(Box::from(symbol)), span: FileSpan::default() }
+        Self { kind: MissingErrorKind::Undefined(Box::from(symbol)), span: SourceSpan::default() }
     }
-    pub fn with_span(self, span: FileSpan) -> Self {
+    pub fn with_span(self, span: SourceSpan) -> Self {
         Self { span, ..self }
     }
     pub fn with_range(self, range: Range<u32>) -> Self {
         Self { span: self.span.with_range(range), ..self }
     }
-    pub fn with_file(self, file: FileID) -> Self {
+    pub fn with_file(self, file: SourceID) -> Self {
         Self { span: self.span.with_file(file), ..self }
     }
     pub fn as_error(self, kind: ReportKind) -> NyarError {
@@ -67,11 +67,11 @@ impl MissingError {
         report.set_message(self.to_string());
         match self.kind {
             MissingErrorKind::EmptyPath => {
-                report.add_label(self.span.as_label("Symbol path cannot be empty").with_color(Color::Red))
+                report.add_label(Label::new(self.span).with_message("Symbol path cannot be empty").with_color(Color::Red))
             }
-            MissingErrorKind::Undefined(_) => {
-                report.add_label(self.span.as_label("You need to declare this symbol by `let` first").with_color(Color::Red))
-            }
+            MissingErrorKind::Undefined(_) => report.add_label(
+                Label::new(self.span).with_message("You need to declare this symbol by `let` first").with_color(Color::Red),
+            ),
         }
         report.finish()
     }

@@ -8,7 +8,7 @@ impl From<ParseError> for SyntaxError {
         SyntaxError {
             info: e.specifics.to_string(),
             hint: "".to_string(),
-            span: FileID::default().with_range(offset..offset + 1),
+            span: SourceID::default().with_range(offset..offset + 1),
         }
     }
 }

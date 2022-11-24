@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 
-use nyar_error::FileSpan;
+use nyar_error::SourceSpan;
 
 use crate::{builtin::texts::StringID, utils::xx_id, ValkyrieString};
 use dashmap::mapref::one::Ref;
@@ -43,7 +43,7 @@ pub static STRING_POOL: LazyLock<ValkyrieUniverse> =
 
 struct ValkyrieIDEntry {
     name: SmallVec<StringID, 4>,
-    span: FileSpan,
+    span: SourceSpan,
 }
 
 impl ValkyrieUniverse {
@@ -112,7 +112,7 @@ impl FromIterator<String> for ValkyrieIDEntry {
 
 impl ValkyrieIDEntry {
     #[must_use]
-    pub fn with_span(self, span: FileSpan) -> Self {
+    pub fn with_span(self, span: SourceSpan) -> Self {
         Self { span, ..self }
     }
     pub fn finish(self) -> ValkyrieID {
@@ -131,7 +131,7 @@ impl ValkyrieID {
     }
 
     /// Set the define location
-    pub fn with_location(self, span: FileSpan) -> Self {
+    pub fn with_location(self, span: SourceSpan) -> Self {
         todo!()
     }
     /// Get the names of the file

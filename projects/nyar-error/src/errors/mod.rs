@@ -1,4 +1,4 @@
-use diagnostic::{Diagnostic, FileID, ReportKind};
+use diagnostic::{Diagnostic, ReportKind, SourceID};
 
 use crate::{parsing::SyntaxError, DuplicateError, MissingError, RuntimeError};
 
@@ -24,7 +24,7 @@ pub enum NyarErrorKind {
 }
 
 impl NyarError {
-    pub fn set_file(&mut self, file: FileID) {
+    pub fn set_file(&mut self, file: SourceID) {
         match self.kind.as_mut() {
             NyarErrorKind::Duplicate(_) => {}
             NyarErrorKind::Runtime(_) => {}
@@ -33,7 +33,7 @@ impl NyarError {
             NyarErrorKind::Missing(s) => s.span.set_file(file),
         }
     }
-    pub fn with_file(mut self, file: FileID) -> Self {
+    pub fn with_file(mut self, file: SourceID) -> Self {
         self.set_file(file);
         self
     }

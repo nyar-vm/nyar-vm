@@ -1,5 +1,5 @@
 use crate::{NyarError, SyntaxError};
-use diagnostic::{FileID, ReportKind};
+use diagnostic::{ReportKind, SourceID};
 use std::ops::Range;
 
 use yggdrasil_rt::{errors::YggdrasilErrorKind, YggdrasilError, YggdrasilRule};
@@ -14,16 +14,16 @@ impl<R: YggdrasilRule> From<YggdrasilError<R>> for SyntaxError {
                     [] => format!("Lexer interrupted, unexpected end of stream."),
                     [s @ ..] => format!("Lexer interrupt, unexpected {:?}.", s),
                 };
-                Self { info, hint: format!("Except {:?}", positives), span: FileID::default().with_range(range) }
+                Self { info, hint: format!("Except {:?}", positives), span: SourceID::default().with_range(range) }
             }
             YggdrasilErrorKind::InvalidNode { .. } => {
-                Self { info: error.variant.to_string(), hint: "".to_string(), span: FileID::default().with_range(range) }
+                Self { info: error.variant.to_string(), hint: "".to_string(), span: SourceID::default().with_range(range) }
             }
             YggdrasilErrorKind::InvalidTag { .. } => {
-                Self { info: error.variant.to_string(), hint: "".to_string(), span: FileID::default().with_range(range) }
+                Self { info: error.variant.to_string(), hint: "".to_string(), span: SourceID::default().with_range(range) }
             }
             YggdrasilErrorKind::CustomError { .. } => {
-                Self { info: error.variant.to_string(), hint: "".to_string(), span: FileID::default().with_range(range) }
+                Self { info: error.variant.to_string(), hint: "".to_string(), span: SourceID::default().with_range(range) }
             }
         }
     }

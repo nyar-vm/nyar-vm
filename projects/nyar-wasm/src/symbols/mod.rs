@@ -11,3 +11,6 @@ use crate::encode_id;
 
 pub mod identifiers;
 pub mod wasi_publisher;
+
+pub mod exports;
+pub mod imports;

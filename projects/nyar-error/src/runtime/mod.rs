@@ -1,4 +1,4 @@
-use diagnostic::{FileSpan, ReportKind};
+use diagnostic::{ReportKind, SourceSpan};
 use std::{
     fmt::{Display, Formatter},
     panic::Location,
@@ -53,7 +53,7 @@ impl RuntimeError {
 }
 
 impl NyarError {
-    pub fn syntax_error(message: impl Into<String>, position: FileSpan) -> Self {
+    pub fn syntax_error(message: impl Into<String>, position: SourceSpan) -> Self {
         let this = SyntaxError { info: message.into(), hint: "".to_string(), span: position };
         NyarErrorKind::Parsing(this).as_error(ReportKind::Error)
     }

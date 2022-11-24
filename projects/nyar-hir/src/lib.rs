@@ -19,7 +19,7 @@ mod structures;
 
 pub use self::packages::ids::{ValkyrieID, ValkyrieUniverse};
 pub use nyar_error::{
-    Failure, FileCache, FileID, MissingError, NyarError as ValkyrieError, Result as ValkyrieResult, RuntimeError, Success,
+    Failure, FileCache, MissingError, NyarError as ValkyrieError, Result as ValkyrieResult, RuntimeError, SourceID, Success,
     SyntaxError,
 };
 mod jars;
