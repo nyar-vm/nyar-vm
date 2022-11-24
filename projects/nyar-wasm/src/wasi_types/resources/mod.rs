@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Formatter, Write};
+use std::{
+    fmt::{Debug, Formatter, Write},
+    sync::Arc,
+};
 
 use crate::{
     dag::DependentGraph,
@@ -11,7 +14,7 @@ pub struct WasiResource {
     /// Resource language name
     pub symbol: Identifier,
     pub wasi_module: WasiModule,
-    pub wasi_name: String,
+    pub wasi_name: Arc<str>,
 }
 
 impl Debug for WasiResource {
@@ -33,7 +36,7 @@ impl WasiResource {
 impl AliasExport for WasiResource {
     fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
         let id = self.symbol.wasi_id();
-        let name = self.wasi_name.as_str();
+        let name = self.wasi_name.as_ref();
         write!(w, "(alias export ${module} \"{name}\" (type {id}))")
     }
 }
@@ -53,7 +56,7 @@ impl WasiResource {
         S: Into<Identifier>,
         M: Into<WasiModule>,
     {
-        Self { symbol: name.into(), wasi_module: wasi_module.into(), wasi_name: wasi_name.to_string() }
+        Self { symbol: name.into(), wasi_module: wasi_module.into(), wasi_name: Arc::from(wasi_name) }
     }
 }
 

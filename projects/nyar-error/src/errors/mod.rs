@@ -2,6 +2,7 @@ use diagnostic::{Diagnostic, FileID, ReportKind};
 
 use crate::{parsing::SyntaxError, DuplicateError, MissingError, RuntimeError};
 
+mod convert;
 pub mod display;
 
 pub type Validation<T> = validatus::Validation<T, NyarError>;

@@ -2,7 +2,7 @@
 pub use crate::{
     duplicates::{DuplicateError, DuplicateKind},
     errors::{NyarError, NyarErrorKind, Result, Validation},
-    parsing::SyntaxError,
+    parsing::{ForeignInterfaceError, SyntaxError},
     runtime::RuntimeError,
 };
 pub mod third_party;

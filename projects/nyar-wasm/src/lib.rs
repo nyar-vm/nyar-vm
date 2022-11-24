@@ -17,7 +17,7 @@ pub use crate::{
     wasi_types::{
         array::WasiArrayType,
         enumerations::{WasiEnumeration, WasiEnumerationItem},
-        functions::{WasiFunction, WasiParameter},
+        functions::{WasiFunction, WasiFunctionBody, WasiParameter},
         records::{WasiRecordField, WasiRecordType},
         reference::{WasiOwnership, WasiTypeReference},
         resources::WasiResource,

@@ -53,7 +53,7 @@ impl MissingError {
     pub fn with_span(self, span: FileSpan) -> Self {
         Self { span, ..self }
     }
-    pub fn with_range(self, range: Range<usize>) -> Self {
+    pub fn with_range(self, range: Range<u32>) -> Self {
         Self { span: self.span.with_range(range), ..self }
     }
     pub fn with_file(self, file: FileID) -> Self {

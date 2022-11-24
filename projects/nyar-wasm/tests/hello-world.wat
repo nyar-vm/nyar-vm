@@ -16,7 +16,6 @@
         (case "closed")
     ))
     (import "wasi:io/streams@0.2.0" (instance $wasi:io/streams@0.2.0
-        (export $std::io::InputStream "input-stream" (type (sub resource)))
         (export $std::io::OutputStream "output-stream" (type (sub resource)))
         (alias outer $root $std::io::StreamError (type $std::io::StreamError?)) (export $std::io::StreamError "stream-error" (type (eq $std::io::StreamError?)))
         (export "[method]output-stream.blocking-write-and-flush" (func
@@ -25,7 +24,6 @@
             (result (result (error $std::io::StreamError)))
         ))
     ))
-    (alias export $wasi:io/streams@0.2.0 "input-stream" (type $std::io::InputStream))
     (alias export $wasi:io/streams@0.2.0 "output-stream" (type $std::io::OutputStream))
     (alias export $wasi:io/streams@0.2.0 "[method]output-stream.blocking-write-and-flush" (func $std::io::OutputStream::write))
     (import "wasi:cli/stdout@0.2.0" (instance $wasi:cli/stdout@0.2.0
@@ -45,11 +43,11 @@
         (import "wasi:io/streams@0.2.0" "[method]output-stream.blocking-write-and-flush" (func $std::io::OutputStream::write (param i32 i32 i32 i32)))
         (import "wasi:cli/stdout@0.2.0" "get-stdout" (func $std::io::standard_output (result i32)))
         (func $main (export "main")
-            (call $std::io::standard_output)
+            call $std::io::standard_output
             i32.const 8
             i32.const 12
             i32.const 0
-            (call $std::io::OutputStream::write)
+            call $std::io::OutputStream::write
         )
         (start $main)
     )

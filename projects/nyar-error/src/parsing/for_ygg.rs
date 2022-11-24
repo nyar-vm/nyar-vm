@@ -1,32 +1,30 @@
 use crate::{NyarError, SyntaxError};
 use diagnostic::{FileID, ReportKind};
+use std::ops::Range;
+
 use yggdrasil_rt::{errors::YggdrasilErrorKind, YggdrasilError, YggdrasilRule};
 
 impl<R: YggdrasilRule> From<YggdrasilError<R>> for SyntaxError {
     fn from(error: YggdrasilError<R>) -> Self {
+        let range = Range { start: error.location.start as u32, end: error.location.end as u32 };
+
         match error.variant {
             YggdrasilErrorKind::InvalidRule { positives, negatives } => {
                 let info = match negatives.as_slice() {
                     [] => format!("Lexer interrupted, unexpected end of stream."),
                     [s @ ..] => format!("Lexer interrupt, unexpected {:?}.", s),
                 };
-                Self { info, hint: format!("Except {:?}", positives), span: FileID::default().with_range(error.location) }
+                Self { info, hint: format!("Except {:?}", positives), span: FileID::default().with_range(range) }
             }
-            YggdrasilErrorKind::InvalidNode { .. } => Self {
-                info: error.variant.to_string(),
-                hint: "".to_string(),
-                span: FileID::default().with_range(error.location),
-            },
-            YggdrasilErrorKind::InvalidTag { .. } => Self {
-                info: error.variant.to_string(),
-                hint: "".to_string(),
-                span: FileID::default().with_range(error.location),
-            },
-            YggdrasilErrorKind::CustomError { .. } => Self {
-                info: error.variant.to_string(),
-                hint: "".to_string(),
-                span: FileID::default().with_range(error.location),
-            },
+            YggdrasilErrorKind::InvalidNode { .. } => {
+                Self { info: error.variant.to_string(), hint: "".to_string(), span: FileID::default().with_range(range) }
+            }
+            YggdrasilErrorKind::InvalidTag { .. } => {
+                Self { info: error.variant.to_string(), hint: "".to_string(), span: FileID::default().with_range(range) }
+            }
+            YggdrasilErrorKind::CustomError { .. } => {
+                Self { info: error.variant.to_string(), hint: "".to_string(), span: FileID::default().with_range(range) }
+            }
         }
     }
 }
