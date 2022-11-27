@@ -56,7 +56,10 @@ impl DependentGraph {
                         v.collect_wasi_types(self, &mut dependents);
                         sorter += dependent_sort::Task { id: ty, group: Some(wasi_module), dependent_tasks: dependents };
                     }
-                    WasiFunctionBody::Normal { .. } => {}
+                    WasiFunctionBody::Normal { .. } => {
+                        v.collect_wasi_types(self, &mut dependents);
+                        sorter += dependent_sort::Task { id: ty, group: None, dependent_tasks: dependents };
+                    }
                 },
                 WasiType::Array { .. } => {}
                 WasiType::Float32 => {}

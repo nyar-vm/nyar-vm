@@ -51,6 +51,15 @@ impl ComponentDefine for WasiType {
         match self {
             Self::Variant(v) => v.component_define(w),
             Self::Record(v) => v.component_define(w),
+            Self::Function(v) => match &v.body {
+                WasiFunctionBody::External { .. } => {
+                    if cfg!(debug_assertions) {
+                        panic!("Imported functions cannot be defined using independent wasi: {v}")
+                    }
+                    Ok(())
+                }
+                WasiFunctionBody::Normal { .. } => Ok(()),
+            },
             _ => panic!("This type cannot be defined in the wasi component section\n    {self}"),
         }
     }

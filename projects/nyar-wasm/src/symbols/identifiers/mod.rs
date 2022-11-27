@@ -1,4 +1,5 @@
 use super::*;
+use std::mem::take;
 
 mod convert;
 mod display;
@@ -33,5 +34,18 @@ impl Identifier {
         S: Into<Arc<str>>,
     {
         Self { namespace: Vec::new(), name: name.into() }
+    }
+    pub fn join<S>(&self, name: S) -> Self
+    where
+        S: Into<Arc<str>>,
+    {
+        match self.name.as_ref() {
+            "" => Self { namespace: self.namespace.clone(), name: name.into() },
+            _ => {
+                let mut namespace = self.namespace.clone();
+                namespace.push(self.name.clone());
+                Self { namespace, name: name.into() }
+            }
+        }
     }
 }

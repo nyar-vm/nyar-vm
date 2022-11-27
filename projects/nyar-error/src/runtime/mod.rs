@@ -10,6 +10,9 @@ mod for_serde;
 #[cfg(feature = "wasmtime")]
 mod for_wasm;
 
+#[cfg(feature = "walkdir")]
+mod for_walkdir;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeError {
     message: String,

@@ -14,3 +14,6 @@ pub use url::Url;
 
 #[cfg(feature = "serde_json")]
 pub use serde_json::Value as JsonValue;
+
+#[cfg(feature = "walkdir")]
+pub use walkdir::WalkDir;
