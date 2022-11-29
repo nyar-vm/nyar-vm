@@ -39,8 +39,10 @@ impl LowerTypes for WasiFunction {
                     write!(w, "(memory $memory \"memory\")")?;
                     write!(w, "(realloc (func $memory \"realloc\"))")?;
                 }
-                w.newline()?;
-                write!(w, "string-encoding=utf8")?;
+                if let Some(encode) = self.need_encoding() {
+                    w.newline()?;
+                    write!(w, "string-encoding={encode}")?;
+                }
                 w.dedent(2);
             }
             WasiFunctionBody::Normal { .. } => {}
