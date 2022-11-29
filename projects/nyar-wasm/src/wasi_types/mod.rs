@@ -97,6 +97,13 @@ impl WasiType {
             _ => None,
         }
     }
+    pub fn is_heap_type(&self) -> bool {
+        match self {
+            Self::Record(_) => true,
+            Self::Array(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl DependenciesTrace for WasiType {

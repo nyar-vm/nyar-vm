@@ -11,8 +11,11 @@ license = "MPL-2.0"
 edition = "2021"
 exclude = ["package.json", "tests/**"]
 
-[dependencies]
+[lib]
+crate-type = ["cdylib"]
 
+[dependencies]
+wit-bindgen = "0.22.0"
 
 [dev-dependencies]
 
