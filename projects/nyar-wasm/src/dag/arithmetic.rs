@@ -1,4 +1,5 @@
 use super::*;
+use crate::helpers::DependenciesTrace;
 
 impl<T> AddAssign<T> for DependentGraph
 where

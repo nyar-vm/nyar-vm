@@ -1,24 +1,5 @@
 use super::*;
-use crate::helpers::ComponentDefine;
-
-impl ComponentDefine for WasiFunction {
-    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
-    }
-
-    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
-    }
-
-    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
-        let id = self.symbol.wasi_id();
-        match &self.body {
-            WasiFunctionBody::External { wasi_name, .. } => write!(w, "(alias export ${module} \"{wasi_name}\" (func {id}))")?,
-            WasiFunctionBody::Normal { .. } => {}
-        }
-        Ok(())
-    }
-}
+use crate::helpers::{ComponentDefine, TypeReferenceOutput};
 
 impl Display for WasiFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -33,6 +14,41 @@ impl Display for WasiFunction {
             }
         }
         f.write_char(')')
+    }
+}
+
+impl ComponentDefine for WasiFunction {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match &self.body {
+            WasiFunctionBody::External { wasi_name, .. } => {
+                write!(w, "(export \"{wasi_name}\" (func")?;
+            }
+            WasiFunctionBody::Native { .. } => {}
+        }
+        w.indent();
+        for input in self.inputs.iter() {
+            w.newline()?;
+            input.upper_input(w)?;
+        }
+        for output in self.output.iter() {
+            w.newline()?;
+            output.r#type.upper_output(w)?;
+        }
+        w.dedent(2);
+        Ok(())
+    }
+
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        let id = self.symbol.wasi_id();
+        match &self.body {
+            WasiFunctionBody::External { wasi_name, .. } => write!(w, "(alias export ${module} \"{wasi_name}\" (func {id}))")?,
+            WasiFunctionBody::Native { .. } => {}
+        }
+        Ok(())
     }
 }
 
@@ -55,7 +71,7 @@ impl LowerTypes for WasiFunction {
                 }
                 w.dedent(2);
             }
-            WasiFunctionBody::Normal { .. } => {}
+            WasiFunctionBody::Native { .. } => {}
         }
         Ok(())
     }
@@ -65,7 +81,7 @@ impl LowerTypes for WasiFunction {
             WasiFunctionBody::External { wasi_module, wasi_name } => {
                 write!(w, "(import \"{}\" \"{}\" (func {}", wasi_module, wasi_name, self.symbol.wasi_id())?;
             }
-            WasiFunctionBody::Normal { .. } => {
+            WasiFunctionBody::Native { .. } => {
                 write!(w, "(func {}", self.symbol.wasi_id())?;
             }
         }
@@ -80,7 +96,7 @@ impl LowerTypes for WasiFunction {
         }
         match &self.body {
             WasiFunctionBody::External { .. } => w.dedent(2),
-            WasiFunctionBody::Normal { .. } => w.dedent(1),
+            WasiFunctionBody::Native { .. } => w.dedent(1),
         }
         Ok(())
     }

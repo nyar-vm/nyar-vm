@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::{
-    dag::DependenciesTrace, helpers::ComponentDefine, DependentGraph, Identifier, WasiFunction, WasiModule, WasiResource,
-    WasiType, WastEncoder,
+    helpers::{ComponentDefine, DependenciesTrace},
+    DependentGraph, Identifier, WasiFunction, WasiModule, WasiResource, WasiType, WastEncoder,
 };
 
 mod convert;

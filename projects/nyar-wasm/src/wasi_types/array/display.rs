@@ -14,11 +14,6 @@ impl Display for WasiArrayType {
 }
 
 impl TypeDefinition for WasiArrayType {
-    #[track_caller]
-    fn upper_type_define<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
-        panic!("The array type cannot be defined in the component")
-    }
-
     ///
     /// ```wat
     /// (type (array i8))

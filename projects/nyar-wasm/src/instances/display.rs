@@ -21,30 +21,31 @@ impl ComponentDefine for WasiInstance {
             w.newline()?;
             wasi.write_wasi_define(w)?;
         }
+        self.alias_outer(w)?;
+        w.dedent(2);
+        self.alias_export(w, &self.module)
+    }
+
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         for imports in self.dependencies(&w.source.graph) {
             imports.alias_outer(w)?;
         }
         for wasi in self.functions.values() {
             w.newline()?;
-            w.export_function(wasi)?;
-        }
-        w.dedent(2);
-        for wasi in self.resources.values() {
-            w.newline()?;
-            wasi.alias_export(w, &self.module)?;
-        }
-        for wasi in self.functions.values() {
-            w.newline()?;
-            wasi.alias_export(w, &self.module)?;
+            wasi.alias_outer(w)?;
         }
         Ok(())
     }
 
-    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
-    }
-
     fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
-        todo!()
+        for wasi in self.resources.values() {
+            w.newline()?;
+            wasi.alias_export(w, module)?;
+        }
+        for wasi in self.functions.values() {
+            w.newline()?;
+            wasi.alias_export(w, module)?;
+        }
+        Ok(())
     }
 }
