@@ -1,6 +1,20 @@
 use super::*;
 
-impl AliasOuter for WasiRecordType {
+impl ComponentDefine for WasiRecordType {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, ";; record {}", self.symbol)?;
+        w.newline()?;
+        write!(w, "(type {} (record", self.symbol.wasi_id())?;
+        w.indent();
+        for field in self.fields.values() {
+            w.newline()?;
+            field.wasi_define(w)?;
+        }
+        w.dedent(2);
+        Ok(())
+        // (field "x" float32)
+    }
+
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         w.newline()?;
         let root = &w.source.name;
@@ -9,29 +23,25 @@ impl AliasOuter for WasiRecordType {
         write!(w, "(alias outer ${root} {id} (type {id}?)) ")?;
         write!(w, "(export {id} \"{name}\" (type (eq {id}?)))")
     }
-}
 
-impl ComponentDefine for WasiRecordType {
-    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, ";; record {}", self.symbol)?;
-        w.newline()?;
-        write!(w, "(type {} (record", self.symbol.wasi_id())?;
-        w.indent();
-        for field in self.fields.values() {
-            w.newline()?;
-            field.component_define(w)?;
-        }
-        w.dedent(2);
-        Ok(())
-        // (field "x" float32)
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
     }
 }
 
 impl ComponentDefine for WasiRecordField {
-    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(field \"{}\" ", self.wasi_name)?;
         self.r#type.upper_type(w)?;
         write!(w, ")")
+    }
+
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
     }
 }
 impl DependenciesTrace for WasiRecordType {

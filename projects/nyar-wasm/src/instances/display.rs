@@ -1,5 +1,3 @@
-use crate::helpers::{AliasExport, AliasOuter};
-
 use super::*;
 
 impl Debug for WasiInstance {
@@ -16,7 +14,7 @@ impl Debug for WasiInstance {
 }
 
 impl ComponentDefine for WasiInstance {
-    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(import \"{name}\" (instance ${name}", name = self.module)?;
         w.indent();
         for wasi in self.resources.values() {
@@ -40,5 +38,13 @@ impl ComponentDefine for WasiInstance {
             wasi.alias_export(w, &self.module)?;
         }
         Ok(())
+    }
+
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
     }
 }

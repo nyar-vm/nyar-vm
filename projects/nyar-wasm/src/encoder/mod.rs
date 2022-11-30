@@ -124,7 +124,9 @@ impl LowerTypes for CanonicalImport {
                     x.canon_lower(w)?;
                 }
             }
-            CanonicalImport::Type(_) => {}
+            CanonicalImport::Type(v) => {
+                println!("lower: {v}")
+            }
         }
         Ok(())
     }
@@ -186,7 +188,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         write!(self.writer, "(component ${}", self.source.name)?;
         self.indent();
         for import in &self.source.imports {
-            import.component_define(self)?;
+            import.wasi_define(self)?;
         }
         for import in &self.source.imports {
             import.canon_lower(self)?;

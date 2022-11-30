@@ -1,4 +1,24 @@
 use super::*;
+use crate::helpers::ComponentDefine;
+
+impl ComponentDefine for WasiFunction {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        let id = self.symbol.wasi_id();
+        match &self.body {
+            WasiFunctionBody::External { wasi_name, .. } => write!(w, "(alias export ${module} \"{wasi_name}\" (func {id}))")?,
+            WasiFunctionBody::Normal { .. } => {}
+        }
+        Ok(())
+    }
+}
 
 impl Display for WasiFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -13,16 +33,6 @@ impl Display for WasiFunction {
             }
         }
         f.write_char(')')
-    }
-}
-impl AliasExport for WasiFunction {
-    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
-        let id = self.symbol.wasi_id();
-        match &self.body {
-            WasiFunctionBody::External { wasi_name, .. } => write!(w, "(alias export ${module} \"{wasi_name}\" (func {id}))")?,
-            WasiFunctionBody::Normal { .. } => {}
-        }
-        Ok(())
     }
 }
 

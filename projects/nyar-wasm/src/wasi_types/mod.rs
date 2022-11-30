@@ -1,12 +1,11 @@
 use crate::{
-    dag::DependentGraph,
     encoder::WastEncoder,
-    helpers::{AliasOuter, ComponentDefine, EmitDefault, TypeDefinition, TypeReference},
+    helpers::{ComponentDefine, EmitDefault, TypeDefinition, TypeReference},
     wasi_types::{
         array::WasiArrayType, flags::WasiFlags, functions::WasiFunctionBody, resources::WasiResource, variants::WasiVariantType,
     },
-    DependenciesTrace, Identifier, WasiEnumeration, WasiFunction, WasiModule, WasiRecordType, WasiSemanticIndex,
-    WasiTypeReference,
+    DependenciesTrace, DependentGraph, Identifier, WasiEnumeration, WasiFunction, WasiModule, WasiRecordType,
+    WasiSemanticIndex, WasiTypeReference,
 };
 use indexmap::IndexMap;
 use std::{
@@ -72,7 +71,7 @@ pub enum WasiType {
     /// `variant` type in WASI
     Variant(WasiVariantType),
     /// `enum` type in WASI
-    Enumeration(WasiEnumeration),
+    Enums(WasiEnumeration),
     /// `enum` type in WASI
     Flags(WasiFlags),
 
@@ -125,15 +124,18 @@ impl DependenciesTrace for WasiType {
         'a: 'i,
     {
         match self {
-            WasiType::Option { inner } => inner.collect_wasi_types(dict, collected),
-            WasiType::Result { success, failure } => {
+            Self::Option { inner } => inner.collect_wasi_types(dict, collected),
+            Self::Result { success, failure } => {
                 success.iter().for_each(|s| s.collect_wasi_types(dict, collected));
                 failure.iter().for_each(|f| f.collect_wasi_types(dict, collected));
             }
-            WasiType::Resource(_) => collected.push(self),
-            WasiType::Variant(_) => collected.push(self),
-            WasiType::TypeHandler(v) => collected.push(dict.get(v)),
-            WasiType::Function(_) => collected.push(self),
+            Self::Resource(_) => collected.push(self),
+            Self::Variant(_) => collected.push(self),
+            Self::Function(_) => collected.push(self),
+            Self::Flags(_) => collected.push(self),
+            Self::Enums(_) => collected.push(self),
+            Self::Record(v) => v.collect_wasi_types(dict, collected),
+            Self::TypeHandler(v) => collected.push(dict.get(v)),
             _ => {}
         };
     }
@@ -170,7 +172,7 @@ impl EmitDefault for WasiType {
             Self::Function(_) => {
                 todo!()
             }
-            Self::Enumeration(_) => w.write_str("i32.const 0"),
+            Self::Enums(_) => w.write_str("i32.const 0"),
             Self::Flags(_) => w.write_str("i32.const 0"),
         }
     }

@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    helpers::{AliasExport, LowerTypes, TypeReferenceInput},
+    helpers::{LowerTypes, TypeReferenceInput},
     operations::WasiInstruction,
     DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };

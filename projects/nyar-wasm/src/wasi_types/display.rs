@@ -1,7 +1,8 @@
+use dependent_sort::Task;
 use std::hash::{DefaultHasher, Hash};
 
 use crate::{
-    helpers::{AliasOuter, ComponentDefine, LowerTypes, TypeReference, TypeReferenceInput, TypeReferenceOutput},
+    helpers::{ComponentDefine, GroupedTask, LowerTypes, TypeReference, TypeReferenceInput, TypeReferenceOutput},
     WasiParameter,
 };
 
@@ -42,22 +43,57 @@ impl Display for WasiType {
             Self::TypeHandler(v) => Display::fmt(v, f),
             Self::Array(v) => Display::fmt(v, f),
             Self::Function(v) => Display::fmt(v, f),
-            Self::Enumeration(v) => Display::fmt(v, f),
+            Self::Enums(v) => Display::fmt(v, f),
             Self::Flags(v) => Display::fmt(v, f),
         }
     }
 }
 
+impl GroupedTask for WasiType {
+    fn dependent_task<'a, 'b>(&'a self, graph: &'b DependentGraph) -> Option<Task<WasiType, WasiModule>>
+    where
+        'b: 'a,
+    {
+        let mut dependents: Vec<&WasiType> = vec![];
+        let task = match self {
+            Self::Resource(v) => Task::new(self).with_group(&v.wasi_module),
+            Self::Record(v) => {
+                v.collect_wasi_types(graph, &mut dependents);
+                Task::new_with_dependent(self, dependents)
+            }
+            Self::Variant(v) => {
+                v.collect_wasi_types(graph, &mut dependents);
+                Task::new_with_dependent(self, dependents)
+            }
+
+            Self::Function(v) => match &v.body {
+                WasiFunctionBody::External { wasi_module, .. } => {
+                    v.collect_wasi_types(graph, &mut dependents);
+                    Task { id: self, group: Some(wasi_module), dependent_tasks: dependents }
+                }
+                WasiFunctionBody::Normal { .. } => {
+                    v.collect_wasi_types(graph, &mut dependents);
+                    Task { id: self, group: None, dependent_tasks: dependents }
+                }
+            },
+            Self::Enums(_) => Task { id: self, group: None, dependent_tasks: dependents },
+            Self::Flags(_) => Task { id: self, group: None, dependent_tasks: dependents },
+            _ => return None,
+        };
+        Some(task)
+    }
+}
+
 impl ComponentDefine for WasiType {
-    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Variant(v) => {
                 w.newline()?;
-                v.component_define(w)
+                v.wasi_define(w)
             }
             Self::Record(v) => {
                 w.newline()?;
-                v.component_define(w)
+                v.wasi_define(w)
             }
             Self::Function(v) => {
                 match &v.body {
@@ -68,8 +104,33 @@ impl ComponentDefine for WasiType {
                 }
                 Ok(())
             }
+            Self::Flags(f) => {
+                w.newline()?;
+                write!(w, "(flags \"{}\" ", f.symbol)
+            }
+            Self::Enums(f) => {
+                w.newline()?;
+                write!(w, "(enum \"{}\" ", f.symbol)
+            }
+            Self::Variant(f) => {
+                w.newline()?;
+                write!(w, "(variant \"{}\" ", f.symbol)
+            }
             _ => panic!("This type cannot be defined in the wasi component section\n    {self}"),
         }
+    }
+
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Resource(v) => v.alias_outer(w),
+            Self::Record(v) => v.alias_outer(w),
+            Self::Variant(v) => v.alias_outer(w),
+            _ => panic!("This type cannot be imported into component instance\n    {self}"),
+        }
+    }
+
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
     }
 }
 
@@ -157,15 +218,15 @@ impl TypeReference for WasiType {
             Self::Resource(_) => {
                 todo!()
             }
-            Self::Record(v) => v.component_define(w)?,
-            Self::Variant(v) => v.component_define(w)?,
+            Self::Record(v) => v.wasi_define(w)?,
+            Self::Variant(v) => v.wasi_define(w)?,
             Self::TypeHandler(v) => v.upper_type(w)?,
             Self::Function(_) => {
                 todo!()
             }
             Self::Array(array) => array.upper_type(w)?,
             Self::Unicode => w.write_str("char")?,
-            Self::Enumeration(_) => {}
+            Self::Enums(_) => {}
             Self::Flags(_) => {}
         }
         Ok(())
@@ -200,7 +261,13 @@ impl TypeReference for WasiType {
             Self::Function(_) => {
                 todo!()
             }
-            _ => {}
+
+            WasiType::Enums(_) => {
+                todo!()
+            }
+            WasiType::Flags(_) => {
+                todo!()
+            }
         }
         Ok(())
     }
@@ -279,23 +346,12 @@ impl WasiType {
             Self::Function(_) => {
                 todo!()
             }
-            Self::Enumeration(_) => {
+            Self::Enums(_) => {
                 todo!()
             }
             Self::Flags(_) => {
                 todo!()
             }
-        }
-    }
-}
-
-impl AliasOuter for WasiType {
-    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        match self {
-            Self::Resource(v) => v.alias_outer(w),
-            Self::Record(v) => v.alias_outer(w),
-            Self::Variant(v) => v.alias_outer(w),
-            _ => panic!("This type cannot be imported into component instance\n    {self}"),
         }
     }
 }

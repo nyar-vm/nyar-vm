@@ -57,7 +57,7 @@ impl WasiInstance {
             WasiType::Record(_) => {}
             WasiType::Boolean => {}
             WasiType::Unicode => {}
-            WasiType::Enumeration(_) => {}
+            WasiType::Enums(_) => {}
             WasiType::Flags(_) => {}
         }
     }

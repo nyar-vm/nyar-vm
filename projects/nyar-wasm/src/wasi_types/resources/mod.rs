@@ -3,11 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    dag::DependentGraph,
-    helpers::{AliasExport, AliasOuter},
-    DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
-};
+use crate::{dag::DependentGraph, helpers::ComponentDefine, DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WasiResource {
@@ -33,15 +29,16 @@ impl WasiResource {
     }
 }
 
-impl AliasExport for WasiResource {
+impl ComponentDefine for WasiResource {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
     fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
         let id = self.symbol.wasi_id();
         let name = self.wasi_name.as_ref();
         write!(w, "(alias export ${module} \"{name}\" (type {id}))")
     }
-}
-
-impl AliasOuter for WasiResource {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         let root = &w.source.name;
         let id = self.symbol.wasi_id();
