@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    helpers::{ComponentDefine, DependenciesTrace},
+    helpers::{ComponentSections, DependenciesTrace},
     DependentGraph, Identifier, WasiFunction, WasiModule, WasiResource, WasiType, WastEncoder,
 };
 

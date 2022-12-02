@@ -13,7 +13,22 @@ impl Display for WasiArrayType {
     }
 }
 
-impl TypeDefinition for WasiArrayType {
+impl ComponentSections for WasiArrayType {
+    fn wasi_define<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
+    }
+
+    fn alias_outer<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
+    }
+
+    fn alias_export<W: Write>(&self, _: &mut WastEncoder<W>, _: &WasiModule) -> std::fmt::Result {
+        unreachable!()
+    }
+
+    fn canon_lower<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
+    }
     ///
     /// ```wat
     /// (type (array i8))
@@ -37,7 +52,7 @@ impl TypeDefinition for WasiArrayType {
     /// (type (array (mut (ref 0))))
     /// (type (array (mut (ref null i31))))
     /// ```
-    fn lower_type_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(type {} (array ", self.symbol.wasi_id())?;
         if self.mutable {
             write!(w, "(mut ")?;

@@ -7,7 +7,7 @@ use std::{
 use nyar_error::NyarError;
 
 use crate::{
-    helpers::{ComponentDefine, DependenciesTrace, LowerTypes},
+    helpers::{ComponentSections, DependenciesTrace},
     wasi_types::functions::WasiFunctionBody,
     DependentGraph, Identifier, WasiFunction, WasiInstance, WasiType,
 };
@@ -110,40 +110,6 @@ impl Default for CanonicalWasi {
 impl AddAssign<WasiInstance> for CanonicalWasi {
     fn add_assign(&mut self, rhs: WasiInstance) {
         self.imports.push(CanonicalImport::Instance(rhs));
-    }
-}
-
-impl LowerTypes for CanonicalImport {
-    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        match self {
-            CanonicalImport::MockMemory => {}
-            CanonicalImport::Instance(v) => {
-                for x in v.functions.values() {
-                    w.newline()?;
-                    x.canon_lower(w)?;
-                }
-            }
-            CanonicalImport::Type(v) => {
-                println!("lower: {v}")
-            }
-        }
-        Ok(())
-    }
-    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        match self {
-            CanonicalImport::MockMemory => {}
-            CanonicalImport::Instance(v) => {
-                for x in v.functions.values() {
-                    w.newline()?;
-                    x.wasm_define(w)?;
-                }
-            }
-            CanonicalImport::Type(t) => {
-                w.newline()?;
-                t.wasm_define(w)?;
-            }
-        }
-        Ok(())
     }
 }
 

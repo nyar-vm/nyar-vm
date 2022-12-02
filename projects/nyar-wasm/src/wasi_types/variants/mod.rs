@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    helpers::{ComponentDefine, DependenciesTrace},
+    helpers::{ComponentSections, DependenciesTrace},
     Identifier, WasiType, WastEncoder,
 };
 

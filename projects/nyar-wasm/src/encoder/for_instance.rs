@@ -1,12 +1,8 @@
-use crate::{
-    helpers::{TypeReferenceInput, TypeReferenceOutput},
-    wasi_types::functions::WasiFunctionBody,
-    WasiModule,
-};
+use crate::WasiModule;
 
 use super::*;
 
-impl ComponentDefine for CanonicalImport {
+impl ComponentSections for CanonicalImport {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::MockMemory => w.write_str(
@@ -26,11 +22,37 @@ impl ComponentDefine for CanonicalImport {
         }
     }
 
-    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
+    fn alias_outer<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
     }
 
-    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
-        todo!()
+    fn alias_export<W: Write>(&self, _: &mut WastEncoder<W>, _: &WasiModule) -> std::fmt::Result {
+        unreachable!()
+    }
+    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::MockMemory => {}
+            Self::Instance(v) => {
+                for x in v.functions.values() {
+                    w.newline()?;
+                    x.canon_lower(w)?;
+                }
+            }
+            Self::Type(_) => {}
+        }
+        Ok(())
+    }
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::MockMemory => {}
+            Self::Instance(v) => {
+                for x in v.functions.values() {
+                    w.newline()?;
+                    x.wasm_define(w)?;
+                }
+            }
+            Self::Type(t) => t.wasm_define(w)?,
+        }
+        Ok(())
     }
 }

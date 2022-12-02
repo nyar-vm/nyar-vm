@@ -1,5 +1,5 @@
 use super::*;
-use crate::helpers::{ComponentDefine, TypeReferenceOutput};
+use crate::helpers::{ComponentSections, TypeReferenceOutput};
 
 impl Display for WasiFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -17,9 +17,14 @@ impl Display for WasiFunction {
     }
 }
 
-impl ComponentDefine for WasiFunction {
-    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
+impl ComponentSections for WasiFunction {
+    fn wasi_define<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        match &self.body {
+            WasiFunctionBody::External { .. } if cfg!(debug_assertions) => {
+                panic!("Imported functions cannot be defined using independent wasi: `{}`", self.symbol)
+            }
+            _ => Ok(()),
+        }
     }
 
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
@@ -50,9 +55,6 @@ impl ComponentDefine for WasiFunction {
         }
         Ok(())
     }
-}
-
-impl LowerTypes for WasiFunction {
     fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match &self.body {
             WasiFunctionBody::External { wasi_module, wasi_name } => {
