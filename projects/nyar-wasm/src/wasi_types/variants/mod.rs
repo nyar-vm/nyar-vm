@@ -1,5 +1,3 @@
-use convert_case::{Case, Casing};
-use indexmap::IndexMap;
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Write},
@@ -21,8 +19,7 @@ mod display;
 pub struct WasiVariantType {
     /// Variant name in language
     pub symbol: Identifier,
-    pub wasi_name: String,
-    pub variants: IndexMap<Arc<str>, WasiVariantItem>,
+    pub variants: Vec<WasiVariantItem>,
 }
 
 impl Display for WasiVariantType {
@@ -51,50 +48,8 @@ impl Ord for WasiVariantType {
 pub struct WasiVariantItem {
     /// Variant name in language
     pub symbol: Arc<str>,
-    pub wasi_name: String,
+    pub wasi_name: Arc<str>,
     pub fields: Option<WasiType>,
-}
-
-impl WasiVariantType {
-    pub fn new<S>(name: S) -> Self
-    where
-        S: Into<Identifier>,
-    {
-        let name = name.into();
-        let wasi_name = name.wasi_name();
-        Self { symbol: name, wasi_name, variants: IndexMap::new() }
-    }
-    /// Custom wasi name for the variant type
-    pub fn with_wasi_name<S>(self, wasi_name: S) -> Self
-    where
-        S: Into<String>,
-    {
-        Self { wasi_name: wasi_name.into(), ..self }
-    }
-}
-
-impl WasiVariantItem {
-    pub fn new<S>(name: S) -> Self
-    where
-        S: Into<Arc<str>>,
-    {
-        let name = name.into();
-        let wasi_name = name.as_ref().to_case(Case::Kebab);
-        Self { symbol: name, wasi_name, fields: None }
-    }
-    /// Custom wasi name for the variant item
-    pub fn with_wasi_name<S>(self, wasi_name: S) -> Self
-    where
-        S: Into<String>,
-    {
-        Self { wasi_name: wasi_name.into(), ..self }
-    }
-    pub fn with_fields<T>(self, field: T) -> Self
-    where
-        T: Into<WasiType>,
-    {
-        Self { fields: Some(field.into()), ..self }
-    }
 }
 
 impl DependenciesTrace for WasiVariantType {
@@ -106,7 +61,7 @@ impl DependenciesTrace for WasiVariantType {
     where
         'a: 'i,
     {
-        self.variants.iter().for_each(|(_, v)| v.collect_wasi_types(dict, collected));
+        self.variants.iter().for_each(|v| v.collect_wasi_types(dict, collected));
     }
 }
 

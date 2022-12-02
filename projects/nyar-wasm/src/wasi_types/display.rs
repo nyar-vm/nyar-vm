@@ -86,27 +86,13 @@ impl GroupedTask for WasiType {
 
 impl ComponentSections for WasiType {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        w.newline()?;
         match self {
-            Self::Record(v) => {
-                w.newline()?;
-                v.wasi_define(w)
-            }
-            Self::Flags(v) => {
-                w.newline()?;
-                v.wasi_define(w)
-            }
-            Self::Enums(v) => {
-                w.newline()?;
-                v.wasi_define(w)
-            }
-            Self::Variant(v) => {
-                w.newline()?;
-                v.wasi_define(w)
-            }
-            Self::Function(v) => {
-                w.newline()?;
-                v.wasi_define(w)
-            }
+            Self::Record(v) => v.wasi_define(w),
+            Self::Flags(v) => v.wasi_define(w),
+            Self::Enums(v) => v.wasi_define(w),
+            Self::Variant(v) => v.wasi_define(w),
+            Self::Function(v) => v.wasi_define(w),
             _ => panic!("This type cannot be defined in the wasi component section\n    {self}"),
         }
     }
