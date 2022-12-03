@@ -40,9 +40,9 @@ optional = true
 
 
 [dependencies.diagnostic]
-version = "0.6.1"
+version = "0.6.4"
 #path = 'C:\Users\Dell\CLionProjects\diagnostic-rs\projects\diagnostic'
-features = ["serde", "url"]
+features = ["serde"]
 
 [dependencies.validatus]
 version = "0.0.6"

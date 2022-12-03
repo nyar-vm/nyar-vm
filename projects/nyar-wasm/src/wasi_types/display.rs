@@ -186,7 +186,7 @@ impl TypeReference for WasiType {
             }?,
             Self::Float32 => w.write_str("float32")?,
             Self::Float64 => w.write_str("float64")?,
-            Self::Option { inner } => {
+            Self::Option { .. } => {
                 todo!()
             }
             Self::Result { success, failure } => {
@@ -212,8 +212,12 @@ impl TypeReference for WasiType {
             }
             Self::Array(array) => array.upper_type(w)?,
             Self::Unicode => w.write_str("char")?,
-            Self::Enums(_) => {}
-            Self::Flags(_) => {}
+            Self::Enums(_) => {
+                todo!()
+            }
+            Self::Flags(_) => {
+                todo!()
+            }
         }
         Ok(())
     }
@@ -237,7 +241,6 @@ impl TypeReference for WasiType {
             Self::Record(v) => write!(w, "(ref eq ${})", v.wasi_name)?,
             Self::TypeHandler(v) => w.source.graph.get(v).canon_lower(w)?,
             Self::Array(array) => array.lower_type(w)?,
-
             Self::Float32 => {
                 todo!()
             }
@@ -247,11 +250,10 @@ impl TypeReference for WasiType {
             Self::Function(_) => {
                 todo!()
             }
-
-            WasiType::Enums(_) => {
+            Self::Enums(_) => {
                 todo!()
             }
-            WasiType::Flags(_) => {
+            Self::Flags(_) => {
                 todo!()
             }
         }
@@ -311,7 +313,7 @@ impl WasiType {
             Self::Integer64 { .. } => "".to_string(),
             Self::Option { .. } => "".to_string(),
             Self::Result { .. } => "".to_string(),
-            Self::Resource(v) => {
+            Self::Resource(..) => {
                 format!("hash{}[\"{}\"]:::resource", hash, self)
             }
             Self::Variant(_) => "".to_string(),

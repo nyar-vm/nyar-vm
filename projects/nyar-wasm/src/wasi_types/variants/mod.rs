@@ -15,10 +15,12 @@ use crate::{
 mod arithmetic;
 mod display;
 
+/// `variant v { empty, wrapper($t) }`
 #[derive(Debug, Clone, Eq)]
 pub struct WasiVariantType {
     /// Variant name in language
     pub symbol: Identifier,
+    /// All variant items of this variant
     pub variants: Vec<WasiVariantItem>,
 }
 
