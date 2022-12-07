@@ -13,7 +13,7 @@ pub struct WasiRecordType {
 
 impl Display for WasiRecordType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        f.debug_struct("record").field("name", &self.wasi_name).finish()
     }
 }
 

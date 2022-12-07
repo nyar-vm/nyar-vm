@@ -56,13 +56,12 @@ pub enum WasiType {
     Float32,
     /// `f64` type in WASI
     Float64,
-
     Option {
         inner: Box<WasiType>,
     },
     Result {
-        success: Option<Box<WasiType>>,
-        failure: Option<Box<WasiType>>,
+        fine: Option<Box<WasiType>>,
+        fail: Option<Box<WasiType>>,
     },
     /// `resource` type in WASI
     Resource(WasiResource),
@@ -125,7 +124,7 @@ impl DependenciesTrace for WasiType {
     {
         match self {
             Self::Option { inner } => inner.collect_wasi_types(dict, collected),
-            Self::Result { success, failure } => {
+            Self::Result { fine: success, fail: failure } => {
                 success.iter().for_each(|s| s.collect_wasi_types(dict, collected));
                 failure.iter().for_each(|f| f.collect_wasi_types(dict, collected));
             }
