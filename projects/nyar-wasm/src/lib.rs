@@ -5,6 +5,7 @@ pub use crate::{
     instances::WasiInstance,
     operations::{
         branch::{JumpBranch, JumpCondition, JumpTable},
+        looping::{LoopEach, LoopRepeat, LoopUntilBody, LoopWhileBody},
         WasiInstruction,
     },
     symbols::{
