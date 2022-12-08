@@ -5,11 +5,12 @@ use crate::{
         branch::EnumerationTable,
         looping::{LoopEach, LoopRepeat, LoopUntilBody, LoopWhileBody},
     },
-    Identifier, JumpBranch, JumpTable, WasiType, WasiValue,
+    Identifier, InfixCall, JumpBranch, JumpTable, WasiType, WasiValue,
 };
 use std::{fmt::Write, sync::Arc};
 
 pub mod branch;
+pub mod infix;
 pub mod looping;
 
 pub(crate) trait Emit {
@@ -59,6 +60,8 @@ pub enum WasiInstruction {
     NativeProduct {
         terms: Vec<WasiInstruction>,
     },
+    /// a == null
+    CallInfix(InfixCall),
     /// `if cond { } else { }`
     JumpBranch(JumpBranch),
     /// `if c1 { } else if c2 { } else { }`
@@ -241,6 +244,7 @@ impl Emit for WasiInstruction {
             Self::NativeProduct { .. } => {
                 todo!()
             }
+            Self::CallInfix(v) => v.emit(w)?,
             Self::JumpBranch(v) => v.emit(w)?,
             Self::JumpTable(_) => {
                 todo!()
