@@ -186,6 +186,9 @@ impl<'a, W: Write> WastEncoder<'a, W> {
                                     write!(self, "(export \"{}\" (func {}))", wasi_name, x.symbol.wasi_id())?;
                                 }
                                 WasiFunctionBody::Native { .. } => {}
+                                WasiFunctionBody::Assembly { text } => {
+                                    write!(self, "{}", text)?;
+                                }
                             }
                         }
                         self.dedent(2);

@@ -31,8 +31,14 @@ impl ComponentSections for WasiRecordType {
     }
 
     fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, "(type {} (record", self.symbol.wasi_id())?;
-        todo!()
+        write!(w, "(type {} (struct", self.symbol.wasi_id())?;
+        w.indent();
+        for field in self.fields.values() {
+            w.newline()?;
+            field.wasm_define(w)?;
+        }
+        w.dedent(2);
+        Ok(())
     }
 }
 
@@ -55,8 +61,10 @@ impl ComponentSections for WasiRecordField {
         unreachable!()
     }
 
-    fn wasm_define<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
-        unreachable!()
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(field \"{}\" ", self.wasi_name)?;
+        self.r#type.lower_type(w)?;
+        write!(w, ")")
     }
 }
 impl DependenciesTrace for WasiRecordType {
