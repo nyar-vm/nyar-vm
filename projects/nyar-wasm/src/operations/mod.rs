@@ -66,6 +66,12 @@ pub enum WasiInstruction {
     /// `case 0: ... else: ...`
     JumpEnumeration(EnumerationTable),
     Goto {},
+    Continue {
+        label: Arc<str>,
+    },
+    Break {
+        label: Arc<str>,
+    },
     Return {},
     Drop {
         objects: usize,
@@ -224,6 +230,8 @@ impl Emit for WasiInstruction {
             Self::Goto { .. } => {
                 todo!()
             }
+            Self::Continue { label } => write!(w, "br ${}%continue", label)?,
+            Self::Break { label } => write!(w, "br ${}%break", label)?,
             Self::Return { .. } => {
                 todo!()
             }
