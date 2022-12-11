@@ -248,10 +248,10 @@ impl TypeReference for WasiType {
             Self::TypeHandler(v) => w.source.graph.get(v).canon_lower(w)?,
             Self::Array(array) => array.lower_type(w)?,
             Self::Float32 => {
-                todo!()
+                w.write_str("f32")?
             }
             Self::Float64 => {
-                todo!()
+                w.write_str("f64")?
             }
             Self::Function(_) => {
                 todo!()
