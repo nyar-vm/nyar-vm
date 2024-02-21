@@ -1,6 +1,6 @@
 use super::*;
 use crate::helpers::WasmName;
-use wast::component::{List, Record, RecordField, Tuple};
+use wast::component::{Enum, List, Record, RecordField, Tuple};
 
 impl<'a, 'i> IntoWasm<'a, wast::component::Type<'i>> for WasmType
 where
@@ -38,19 +38,6 @@ where
     }
 }
 
-impl<'a, 'i> IntoWasm<'a, CoreType<'i>> for WasmType
-where
-    'a: 'i,
-{
-    /// 怎么把组件类型降低为核心类型
-    fn as_wast(&'a self) -> CoreType<'i> {
-        match self {
-            WasmType::Structure(v) => v.as_wast(),
-            _ => unimplemented!("Cast `{:?}` to core type fail", self),
-        }
-    }
-}
-
 impl<'a, 'i> IntoWasm<'a, ComponentValType<'i>> for WasmType
 where
     'a: 'i,
@@ -66,34 +53,40 @@ where
 {
     fn as_wast(&'a self) -> ComponentDefinedType<'i> {
         match self {
+            Self::Any { .. } => {
+                todo!()
+            }
+            Self::Bool => ComponentDefinedType::Primitive(PrimitiveValType::Bool),
+            Self::U8 => ComponentDefinedType::Primitive(PrimitiveValType::U8),
+            Self::U16 => ComponentDefinedType::Primitive(PrimitiveValType::U16),
+            Self::U32 => ComponentDefinedType::Primitive(PrimitiveValType::U32),
+            Self::U64 => ComponentDefinedType::Primitive(PrimitiveValType::U64),
+            Self::I8 => ComponentDefinedType::Primitive(PrimitiveValType::S8),
+            Self::I16 => ComponentDefinedType::Primitive(PrimitiveValType::S16),
+            Self::I32 => ComponentDefinedType::Primitive(PrimitiveValType::S32),
+            Self::I64 => ComponentDefinedType::Primitive(PrimitiveValType::S64),
+            Self::F32 => ComponentDefinedType::Primitive(PrimitiveValType::Float32),
+            Self::F64 => ComponentDefinedType::Primitive(PrimitiveValType::Float64),
+            Self::Unicode => ComponentDefinedType::Primitive(PrimitiveValType::Char),
+            Self::UTF8Text => ComponentDefinedType::Primitive(PrimitiveValType::String),
             Self::Structure(v) => {
                 let fields = v.fields.iter().map(|(k, v)| RecordField { name: k.as_ref(), ty: v.r#type.as_wast() }).collect();
                 ComponentDefinedType::Record(Record { fields })
             }
             Self::Array(v) => ComponentDefinedType::List(List { element: Box::new(v.item_type.as_wast()) }),
             Self::Tuple(v) => ComponentDefinedType::Tuple(Tuple { fields: v.iter().map(|v| v.type_hint.as_wast()).collect() }),
-            _ => ComponentDefinedType::Primitive(self.as_wast()),
-        }
-    }
-}
-
-impl<'a> IntoWasm<'a, PrimitiveValType> for WasmType {
-    fn as_wast(&'a self) -> PrimitiveValType {
-        match self {
-            Self::Bool => PrimitiveValType::Bool,
-            Self::U8 => PrimitiveValType::U8,
-            Self::U16 => PrimitiveValType::U16,
-            Self::U32 => PrimitiveValType::U32,
-            Self::U64 => PrimitiveValType::U64,
-            Self::I8 => PrimitiveValType::S8,
-            Self::I16 => PrimitiveValType::S16,
-            Self::I32 => PrimitiveValType::S32,
-            Self::I64 => PrimitiveValType::S64,
-            Self::F32 => PrimitiveValType::Float32,
-            Self::F64 => PrimitiveValType::Float64,
-            Self::Unicode => PrimitiveValType::Char,
-            Self::UTF8Text => PrimitiveValType::String,
-            _ => unreachable!("`{:?}` is not primitive type", self),
+            Self::Flag(_) => {
+                todo!()
+            }
+            Self::Enumerate(v) => {
+                ComponentDefinedType::Enum(Enum { names: v.fields.values().map(|v| v.name.as_ref()).collect() })
+            }
+            Self::Variant(_) => {
+                todo!()
+            }
+            Self::Reference { .. } => {
+                todo!()
+            }
         }
     }
 }
@@ -178,7 +171,7 @@ where
             Self::Reference { .. } => {
                 todo!()
             }
-            Self::Array(v) => {
+            Self::Array(_) => {
                 vec![ValType::I32]
             }
             Self::Tuple(v) => v.iter().map(|v| v.as_wast()).collect(),
