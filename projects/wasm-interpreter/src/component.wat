@@ -16,10 +16,11 @@
         (export $output-stream "output-stream" (type (sub resource)))
         (alias outer $Root $array (type $array))
         (alias outer $Root $io-error (type $io-error))
-        (alias outer $Root $stream-error (type $stream-error))
 
-        (export $stream-error0 "stream-error" (type (eq $stream-error)))
-        (type $stream-result (result (error $stream-error0)))
+        (alias outer $Root $stream-error (type $stream-error0))
+        (export $stream-error "stream-error" (type (eq $stream-error0)))
+
+        (type $stream-result (result (error $stream-error)))
 
         (export "[method]output-stream.blocking-write-and-flush"
             (func (param "self" (borrow $output-stream)) (param "contents" $array) (result $stream-result))
