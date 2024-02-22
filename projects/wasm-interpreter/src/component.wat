@@ -1,6 +1,4 @@
 (component $Root
-    (type $array (list u8))
-
     (import "wasi:io/error@0.2.0" (instance $wasi:io/error@0.2.0
         (export "error" (type (sub resource)))
     ))
@@ -14,7 +12,6 @@
 
     (import "wasi:io/streams@0.2.0" (instance $wasi:io/streams@0.2.0
         (export $output-stream "output-stream" (type (sub resource)))
-        (alias outer $Root $array (type $array))
         (alias outer $Root $io-error (type $io-error))
 
         (alias outer $Root $stream-error (type $stream-error0))
@@ -23,7 +20,7 @@
         (type $stream-result (result (error $stream-error)))
 
         (export "[method]output-stream.blocking-write-and-flush"
-            (func (param "self" (borrow $output-stream)) (param "contents" $array) (result $stream-result))
+            (func (param "self" (borrow $output-stream)) (param "contents" (list u8)) (result $stream-result))
         )
     ))
     (alias export $wasi:io/streams@0.2.0 "output-stream" (type $output-stream))
@@ -34,4 +31,3 @@
         (export "get-stdout" (func (result (own $output-stream))))
     ))
 )
-
