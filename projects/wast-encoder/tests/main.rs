@@ -1,8 +1,8 @@
 use std::{str::FromStr, sync::Arc};
 
 use wast_encoder::{
-    CanonicalWasi, DependencyLogger, DependentRegistry, ResolveDependencies, WasiFunction, WasiModule, WasiParameter,
-    WasiResource, WasiType,
+    CanonicalWasi, DependencyLogger, DependentRegistry, ResolveDependencies, VariantItem, VariantType, WasiFunction,
+    WasiModule, WasiParameter, WasiResource, WasiType,
 };
 
 #[test]
@@ -15,6 +15,15 @@ fn test_hello_world() {
 
     global += WasiResource::new(wasi_io_error.clone(), "error", "std::io::IoError");
     global += WasiResource::new(wasi_io_streams.clone(), "output-stream", "std::io::OutputStream");
+    //     (type $stream-error (variant
+    //         (case "last-operation-failed" (own $io-error))
+    //         (case "closed")
+    //     ))
+
+    let mut stream_error = VariantType::new("std::io::StreamError");
+    stream_error +=
+        VariantItem::new("LastOperationFailed", WasiType::TypeHandler { name: Arc::from("std::io::IoError"), own: true });
+    stream_error += VariantItem::new("Closed", WasiType::TypeAlias { name: Arc::from("std::io::IoError") });
 
     let mut tracer = DependencyLogger::default();
     let mut f1 = WasiFunction::new(

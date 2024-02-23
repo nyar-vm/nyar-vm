@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{DependencyLogger, encode_id, ResolveDependencies, WasiResource};
+use crate::{DependencyLogger, encode_id, ResolveDependencies, VariantType, WasiResource};
 
 mod display;
 
@@ -29,7 +29,7 @@ pub enum WasiType {
         failure: Option<Box<WasiType>>,
     },
     Resource(WasiResource),
-    Variant(WasiVariant),
+    Variant(VariantType),
     TypeHandler {
         /// Resource language name
         name: Arc<str>,
@@ -51,7 +51,7 @@ impl ResolveDependencies for WasiType {
                 failure.iter().for_each(|f| f.trace_language_types(dict));
             }
             Self::Resource(_) => {}
-            Self::Variant(v) => v.variants.values().for_each(|v| v.trace_language_types(dict)),
+            Self::Variant(v) => v.variants.values().for_each(|v| v.r#type.trace_language_types(dict)),
             Self::TypeHandler { name, .. } => {
                 dict.types.insert(name.clone());
             }
