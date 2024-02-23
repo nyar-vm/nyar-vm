@@ -1,7 +1,7 @@
 use crate::{
     helpers::{IntoWasm, WasmInstruction},
     operations::Operation,
-    symbols::WasmExternalName,
+    symbols::WasiName,
     types::WasmType,
     WasmSymbol,
 };
@@ -22,7 +22,7 @@ pub mod codegen;
 #[derive(Debug)]
 pub struct FunctionType {
     pub symbol: WasmSymbol,
-    pub export: Option<WasmExternalName>,
+    pub export: Option<WasiName>,
     pub entry: bool,
     pub local: BTreeMap<String, WasmParameter>,
     pub signature: FunctionSignature,
@@ -86,9 +86,9 @@ impl FunctionType {
         self.symbol.to_string()
     }
     pub fn auto_export(self, export: bool) -> Self {
-        Self { export: WasmExternalName::create_by(&self.symbol, export), ..self }
+        Self { export: WasiName::create_by(&self.symbol, export), ..self }
     }
-    pub fn with_export<N: Into<WasmExternalName>>(self, export: N) -> Self {
+    pub fn with_export<N: Into<WasiName>>(self, export: N) -> Self {
         Self { export: Some(export.into()), ..self }
     }
     pub fn with_entry(self, entry: bool) -> Self {

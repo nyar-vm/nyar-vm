@@ -11,7 +11,8 @@ edition = "2021"
 exclude = ["package.json", "tests/**"]
 
 [dependencies]
-anyhow = "1.0"
+string-pool = "0.1.0"
+semver = "1.0.22"
 
 
 [dev-dependencies]

@@ -12,7 +12,7 @@ impl Display for WasmSymbol {
     }
 }
 
-impl Debug for WasmExternalName {
+impl Debug for WasiName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.name, f)
     }
@@ -24,7 +24,7 @@ impl Display for WasmPublisher {
     }
 }
 
-impl Display for WasmExternalName {
+impl Display for WasiName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(s) = &self.package {
             write!(f, "{}/", s)?
