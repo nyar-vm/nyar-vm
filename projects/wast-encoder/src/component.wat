@@ -1,27 +1,15 @@
-(component $Root
+(component $root
     (import "wasi:io/error@0.2.0" (instance $wasi:io/error@0.2.0
         (export "error" (type (sub resource)))
-    ))
-    (alias export $wasi:io/error@0.2.0 "error" (type $io-error))
-
-    (type $stream-error (variant
-        (case "last-operation-failed" (own $io-error))
-        (case "closed")
-    ))
-    (type $stream-result (result (error $stream-error)))
-
-    (import "wasi:io/streams@0.2.0" (instance $wasi:io/streams@0.2.0
-        (export $output-stream "output-stream" (type (sub resource)))
-        (alias outer $Root $io-error (type $io-error))
-
-        (alias outer $Root $stream-error (type $stream-error0))
-        (export $stream-error "stream-error" (type (eq $stream-error0)))
-        (type $stream-result (result (error $stream-error)))
-
+        (export "runtime-error" (type (sub resource)))
+        (export "stream-error" (type (sub resource)))
         (export "[method]output-stream.blocking-write-and-flush"
-            (func (param "self" (borrow $output-stream)) (param "contents" (list u8)) (result $stream-result))
+            ;; std::io::OutputStream::blocking-write-and-flush() -> ()
+            (func (param "self" (type ?) (result (type ?))
         )
     ))
-    (alias export $wasi:io/streams@0.2.0 "output-stream" (type $output-stream))
-    (alias export $wasi:io/streams@0.2.0 "[method]output-stream.blocking-write-and-flush" (func $output-stream.blocking-write-and-flush))
+    (alias export $wasi:io/error@0.2.0 "error" (type $std::io::IoError<usize~usize>))
+    (alias export $wasi:io/error@0.2.0 "runtime-error" (type $std::io::RuntimeError))
+    (alias export $wasi:io/error@0.2.0 "stream-error" (type $std::io::StreamError))
+
 )
