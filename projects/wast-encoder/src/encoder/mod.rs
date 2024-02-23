@@ -1,16 +1,20 @@
-use crate::WasiCanonical;
+use crate::{
+    wasi_module::{WasiInstance, WasiModule},
+    WasiCanonical,
+};
 use semver::Version;
-use std::{fmt::Write, sync::Arc};
+use std::{borrow::Cow, fmt::Write, ptr::replace, sync::Arc};
 
 pub struct WastEncoder<'a, W> {
     source: &'a WasiCanonical,
     writer: W,
     indent: usize,
+    indent_text: Cow<'static, str>,
 }
 
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn new(source: &'a WasiCanonical, writer: W) -> Self {
-        Self { source, writer, indent: 0 }
+        Self { source, writer, indent: 0, indent_text: Cow::Borrowed("    ") }
     }
 }
 
@@ -48,13 +52,41 @@ impl<'a, W: Write> Write for WastEncoder<'a, W> {
 //     (alias export $wasi:io/streams@0.2.0 "[method]output-stream.blocking-write-and-flush" (func $output-stream.blocking-write-and-flush))
 // )
 impl<'a, W: Write> WastEncoder<'a, W> {
-    pub(crate) fn write_id(&mut self, id: &str) -> std::fmt::Result {
-        write!(self.writer, "${}", id)
-    }
-    pub(crate) fn encode(&mut self) -> std::fmt::Result {
+    pub fn encode(&mut self) -> std::fmt::Result {
         self.write_str("(component ")?;
         self.write_id(self.source.component.as_ref())?;
 
+        Ok(())
+    }
+    pub(crate) fn write_id(&mut self, id: &str) -> std::fmt::Result {
+        write!(self.writer, "${}", id)
+    }
+    pub fn encode_id(&mut self, id: &str) -> String {
+        let mut alloc = String::with_capacity(id.len());
+        for c in id.chars() {
+            match c {
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ':' | '@' | '/' => alloc.push(c),
+                _ => alloc.push('-'),
+            }
+        }
+        alloc
+    }
+    pub(crate) fn write_name(&mut self, id: &str) -> std::fmt::Result {
+        write!(self.writer, "\"{}\"", id)
+    }
+    pub fn indent(&mut self) {
+        self.indent += 1;
+    }
+    pub fn dedent(&mut self) {
+        self.indent -= 1;
+    }
+    pub fn newline(&mut self) -> std::fmt::Result {
+        self.write_str("\n")?;
+        let range = (0..self.indent).into_iter();
+        for _ in range {
+            let indent = self.indent_text.as_ref();
+            self.writer.write_str(indent)?;
+        }
         Ok(())
     }
 }
