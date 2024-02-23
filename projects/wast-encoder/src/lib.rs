@@ -4,7 +4,7 @@ use std::{
 };
 
 mod encoder;
-mod identifiers;
+mod wasi_module;
 
 pub struct WasiCanonical {
     component: Arc<str>,
