@@ -3,9 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use indexmap::IndexMap;
-
-use crate::{encode_id, wasi_module::WasiModule};
+use crate::{DependencyLogger, encode_id, ResolveDependencies, WasiResource};
 
 mod display;
 
@@ -44,36 +42,23 @@ pub enum WasiType {
     },
 }
 
-#[derive(Clone, Debug)]
-pub struct WasiResource {
-    /// Resource language name
-    pub name: Arc<str>,
-    pub wasi_module: WasiModule,
-    pub wasi_name: String,
-    pub owned: bool,
-}
-
-impl WasiResource {
-    pub fn new<S>(name: S, wasi_name: &str) -> Self
-    where
-        S: Into<Arc<str>>,
-    {
-        Self { name: name.into(), wasi_module: WasiModule::default(), wasi_name: wasi_name.to_string(), owned: true }
+impl ResolveDependencies for WasiType {
+    fn trace_language_types(&self, dict: &mut DependencyLogger) {
+        match self {
+            Self::Option { inner } => inner.trace_language_types(dict),
+            Self::Result { success, failure } => {
+                success.iter().for_each(|s| s.trace_language_types(dict));
+                failure.iter().for_each(|f| f.trace_language_types(dict));
+            }
+            Self::Resource(_) => {}
+            Self::Variant(v) => v.variants.values().for_each(|v| v.trace_language_types(dict)),
+            Self::TypeHandler { name, .. } => {
+                dict.types.insert(name.clone());
+            }
+            Self::TypeAlias { name } => {
+                dict.types.insert(name.clone());
+            }
+            _ => {}
+        };
     }
-    pub fn with_module<M: Into<WasiModule>>(self, wasi: WasiModule) -> Self {
-        Self { wasi_module: wasi, ..self }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct WasiVariant {
-    /// Variant language name
-    pub name: Arc<str>,
-    pub variants: IndexMap<Arc<str>, WasiType>,
-}
-
-#[derive(Clone, Debug)]
-pub struct WasiVariantItem {
-    pub name: Arc<str>,
-    pub variant: Arc<str>,
 }
