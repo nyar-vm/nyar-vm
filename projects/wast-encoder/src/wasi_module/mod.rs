@@ -1,15 +1,18 @@
 use std::{
     collections::BTreeMap,
-    fmt::{Display, Formatter, Write},
-    hash::{Hash, Hasher},
+    fmt::{Display, Formatter},
+    hash::Hash,
+    ops::AddAssign,
     sync::Arc,
 };
 
 use semver::Version;
 
-use crate::{encoder::WastEncoder, wasi_types::WasiFunction};
+use crate::{WasiFunction, WasiResource};
+use crate::wasi_types::DependencyLogger;
 
 mod display;
+mod convert;
 
 pub struct WasiLinker {
     packages: BTreeMap<WasiPublisher, Version>,
@@ -33,8 +36,8 @@ pub struct WasiPublisher {
 impl WasiModule {
     /// Create a new module without a publisher
     pub fn create<S>(name: S) -> Self
-    where
-        S: Into<Arc<str>>,
+        where
+            S: Into<Arc<str>>,
     {
         Self { package: None, name: name.into(), version: None }
     }
@@ -48,39 +51,36 @@ impl WasiModule {
     }
     /// Set the organization and project for the module
     pub fn with_project<O, P>(self, organization: O, project: P) -> Self
-    where
-        O: Into<Arc<str>>,
-        P: Into<Arc<str>>,
+        where
+            O: Into<Arc<str>>,
+            P: Into<Arc<str>>,
     {
         Self { package: Some(WasiPublisher { organization: organization.into(), project: project.into() }), ..self }
     }
 }
 
 pub struct WasiInstance {
-    module: WasiModule,
+    pub module: WasiModule,
     /// language_name: wasi_name
-    resources: BTreeMap<Arc<str>, Arc<str>>,
-    functions: WasiFunction,
+    pub resources: BTreeMap<Arc<str>, WasiResource>,
+    pub functions: BTreeMap<Arc<str>, WasiFunction>,
 }
 
-impl From<&str> for WasiModule {
-    fn from(value: &str) -> Self {
-        Self { name: value.into(), package: None, version: None }
-    }
-}
 
 impl WasiInstance {
     pub fn new<M>(module: M) -> Self
-    where
-        M: Into<WasiModule>,
+        where
+            M: Into<WasiModule>,
     {
-        Self { module: module.into(), resources: Default::default() }
+        Self { module: module.into(), resources: Default::default(), functions: Default::default() }
     }
-    pub fn add_resource<S, T>(&mut self, language_name: S, wasi_name: T)
-    where
-        S: Into<Arc<str>>,
-        T: Into<Arc<str>>,
-    {
-        self.resources.insert(language_name.into(), wasi_name.into());
+    pub fn dependencies(&self) -> DependencyLogger {
+        let mut types = DependencyLogger::default();
+        for function in self.functions.values() {
+            for input in &function.inputs {
+                input.r#type.resolve_dependencies(&mut types)
+            }
+        }
+        types
     }
 }
