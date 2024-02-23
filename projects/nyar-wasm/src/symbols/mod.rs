@@ -27,14 +27,6 @@ pub struct WasmPublisher {
     project: Arc<str>,
 }
 
-/// e.g: `wasi:random/random@0.2.0`
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct WasmExternalName {
-    name: Arc<str>,
-    package: Option<WasmPublisher>,
-    version: Option<Version>,
-}
-
 impl WasmSymbol {
     /// Create a new symbol
     pub fn new(name: &str) -> Self {
@@ -42,7 +34,15 @@ impl WasmSymbol {
     }
 }
 
-impl WasmExternalName {
+/// e.g: `wasi:random/random@0.2.0`
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub struct WasiName {
+    name: Arc<str>,
+    package: Option<WasmPublisher>,
+    version: Option<Version>,
+}
+
+impl WasiName {
     /// Create a new module without a publisher
     pub fn create<S: Into<WasmSymbol>>(name: S) -> Self {
         Self { package: None, name: name.into().inner, version: None }
@@ -50,7 +50,7 @@ impl WasmExternalName {
     /// Create a new module with automatic export
     pub fn create_by(symbol: &WasmSymbol, export: bool) -> Option<Self> {
         match export {
-            true => Some(WasmExternalName { package: None, name: symbol.inner.clone(), version: None }),
+            true => Some(WasiName { package: None, name: symbol.inner.clone(), version: None }),
             false => None,
         }
     }
@@ -68,7 +68,7 @@ impl WasmExternalName {
     }
 }
 
-impl WasmExternalName {
+impl WasiName {
     pub fn short_name(&self) -> &str {
         self.name.as_ref()
     }

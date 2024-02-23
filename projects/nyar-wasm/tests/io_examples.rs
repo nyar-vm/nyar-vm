@@ -1,6 +1,6 @@
 use nyar_wasm::{
-    DataItem, ExternalFunctionType, FieldType, FunctionType, Operation, StructureItem, WasmBuilder, WasmExternalName,
-    WasmParameter, WasmSymbol, WasmType, WasmValue,
+    DataItem, ExternalFunctionType, FieldType, FunctionType, Operation, StructureItem, WasiName, WasmBuilder, WasmParameter,
+    WasmSymbol, WasmType, WasmValue,
 };
 use semver::Version;
 
@@ -101,7 +101,7 @@ pub fn import_random() -> WasmBuilder {
     let version = Version::new(0, 2, 0);
     //
 
-    let random = WasmExternalName::create("random").with_project("wasi", "random").with_version(version.clone());
+    let random = WasiName::create("random").with_project("wasi", "random").with_version(version.clone());
     module.register(
         ExternalFunctionType::new(random.clone(), "get-random-u64")
             .with_local_name("std∷random∷random_seed_safe")
@@ -113,7 +113,7 @@ pub fn import_random() -> WasmBuilder {
     //         .with_input(vec![WasmParameter::new("length").with_type(WasmType::U64)])
     //         .with_output(ArrayType::new("<anonymous>", WasmType::U8)),
     // );
-    let random_insecure = WasmExternalName::create("insecure").with_project("wasi", "random").with_version(version.clone());
+    let random_insecure = WasiName::create("insecure").with_project("wasi", "random").with_version(version.clone());
     module.register(
         ExternalFunctionType::new(random_insecure, "get-insecure-random-u64")
             .with_local_name("std∷random∷random_seed_fast")
