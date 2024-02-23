@@ -6,7 +6,9 @@ use std::{
 
 use semver::Version;
 
-use crate::{wasi_module::WasiModule, WasiFunction, WasiInstance, WasiParameter, WasiType};
+use crate::{wasi_module::WasiModule, WasiFunction, WasiInstance, WasiParameter, WasiResource, WasiType};
+
+mod arithmetic;
 
 pub trait ResolveDependencies {
     fn trace_language_types(&self, dict: &mut DependencyLogger);
@@ -21,26 +23,15 @@ pub trait ResolveDependencies {
 #[derive(Default)]
 pub struct DependentRegistry {
     modules: BTreeMap<WasiModule, Version>,
+    resources: BTreeMap<Arc<str>, WasiResource>,
     types: BTreeMap<Arc<str>, WasiParameter>,
     functions: BTreeMap<Arc<str>, WasiFunction>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct DependencyLogger {
-    types: BTreeSet<Arc<str>>,
-    wasi: BTreeSet<WasiModule>,
-}
-
-impl AddAssign<WasiParameter> for DependentRegistry {
-    fn add_assign(&mut self, rhs: WasiParameter) {
-        self.types.insert(rhs.name.clone(), rhs);
-    }
-}
-
-impl AddAssign<WasiFunction> for DependentRegistry {
-    fn add_assign(&mut self, rhs: WasiFunction) {
-        self.functions.insert(rhs.name.clone(), rhs);
-    }
+    pub(crate) types: BTreeSet<Arc<str>>,
+    pub(crate) wasi: BTreeSet<WasiModule>,
 }
 
 impl DependentRegistry {
@@ -52,7 +43,7 @@ impl DependentRegistry {
     }
     pub fn update_versions(&mut self) {
         for typing in self.types.values_mut() {
-            match typing {
+            match typing.r#type {
                 WasiType::Option { .. } => {}
                 WasiType::Result { .. } => {}
                 WasiType::Resource(_) => {}
@@ -79,24 +70,5 @@ impl ResolveDependencies for WasiInstance {
                 ret.trace_language_types(dict)
             }
         }
-    }
-}
-
-impl ResolveDependencies for WasiType {
-    fn trace_language_types(&self, dict: &mut DependencyLogger) {
-        match self {
-            Self::Option { inner } => inner.trace_language_types(dict),
-            Self::Result { success, failure } => {
-                success.iter().for_each(|s| s.trace_language_types(dict));
-                failure.iter().for_each(|f| f.trace_language_types(dict));
-            }
-            Self::Resource(_) => {}
-            Self::Variant(v) => v.variants.values().for_each(|v| v.trace_language_types(dict)),
-            Self::TypeHandler { name, .. } => {
-                dict.types.insert(name.clone());
-            }
-            Self::TypeAlias { .. } => {}
-            _ => {}
-        };
     }
 }

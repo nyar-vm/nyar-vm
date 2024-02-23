@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::WasiType;
+use crate::{DependencyLogger, ResolveDependencies, WasiModule, WasiType};
 
 mod arithmetic;
 
@@ -14,6 +14,7 @@ mod arithmetic;
 #[derive(Clone, Debug)]
 pub struct WasiFunction {
     pub name: Arc<str>,
+    pub wasi_module: WasiModule,
     pub wasi_name: String,
     pub inputs: Vec<WasiParameter>,
     pub output: Option<WasiType>,
@@ -23,44 +24,56 @@ pub struct WasiFunction {
 pub struct WasiParameter {
     pub name: Arc<str>,
     pub wasi_name: Arc<str>,
+
     pub r#type: WasiType,
 }
 
 impl WasiFunction {
-    pub fn new<S>(name: S, wasi_name: &str) -> Self
+    pub fn new<S, M>(wasi_module: M, wasi_name: &str, name: S) -> Self
     where
         S: Into<Arc<str>>,
+        M: Into<WasiModule>,
     {
-        Self { name: name.into(), wasi_name: wasi_name.to_string(), inputs: vec![], output: None }
+        Self {
+            name: name.into(),
+            wasi_module: wasi_module.into(),
+            wasi_name: wasi_name.to_string(),
+            inputs: vec![],
+            output: None,
+        }
     }
-    pub fn constructor<S>(name: S, wasi_class: &str) -> Self
-    where
-        S: Into<Arc<str>>,
-    {
-        let wasi_name = format!("[constructor]{}", wasi_class);
-        Self { name: name.into(), wasi_name, inputs: vec![], output: None }
-    }
-    pub fn static_method<S>(name: S, wasi_class: &str, wasi_name: &str) -> Self
-    where
-        S: Into<Arc<str>>,
-    {
-        let wasi_name = format!("[static]{}.{}", wasi_class, wasi_name);
-        Self { name: name.into(), wasi_name, inputs: vec![], output: None }
-    }
-    pub fn method<S>(name: S, wasi_class: &str, wasi_name: &str) -> Self
-    where
-        S: Into<Arc<str>>,
-    {
-        let wasi_name = format!("[method]{}.{}", wasi_class, wasi_name);
-        Self { name: name.into(), wasi_name, inputs: vec![], output: None }
-    }
-    pub fn destructor<S>(name: S, wasi_class: &str) -> Self
-    where
-        S: Into<Arc<str>>,
-    {
-        let wasi_name = format!("[resource-drop]{}", wasi_class);
-        Self { name: name.into(), wasi_name, inputs: vec![], output: None }
-    }
+    // pub fn constructor<S, M>(wasi_module: M, wasi_class: &str, name: S) -> Self
+    // where
+    //     S: Into<Arc<str>>,
+    //     M: Into<WasiModule>,
+    // {
+    //     let wasi_name = format!("[constructor]{}", wasi_class);
+    //     Self { name: name.into(), wasi_module: wasi_module.into(), wasi_name, inputs: vec![], output: None }
+    // }
+    // pub fn static_method<S, M>(wasi_module: M, name: S, wasi_class: &str, wasi_name: &str) -> Self
+    // where
+    //     S: Into<Arc<str>>,
+    //     M: Into<WasiModule>,
+    // {
+    //     let wasi_name = format!("[static]{}.{}", wasi_class, wasi_name);
+    //     Self { name: name.into(), wasi_name, inputs: vec![], output: None }
+    // }
+    // pub fn method<S>(name: S, wasi_class: &str, wasi_name: &str) -> Self
+    // where
+    //     S: Into<Arc<str>>,
+    //     M: Into<WasiModule>,
+    // {
+    //     let wasi_name = format!("[method]{}.{}", wasi_class, wasi_name);
+    //     Self { name: name.into(), wasi_name, inputs: vec![], output: None }
+    // }
+    // pub fn destructor<S, M>(name: S, wasi_class: &str) -> Self
+    // where
+    //     S: Into<Arc<str>>,
+    //     M: Into<WasiModule>,
+    // {
+    //     let wasi_name = format!("[resource-drop]{}", wasi_class);
+    //     Self { name: name.into(), wasi_name, inputs: vec![], output: None }
+    // }
 }
 
 impl WasiParameter {
@@ -86,5 +99,18 @@ impl Display for WasiFunction {
             }
         }
         f.write_char(')')
+    }
+}
+
+impl ResolveDependencies for WasiFunction {
+    fn trace_language_types(&self, dict: &mut DependencyLogger) {
+        self.inputs.iter().for_each(|input| input.trace_language_types(dict));
+        self.output.iter().for_each(|output| output.trace_language_types(dict));
+    }
+}
+
+impl ResolveDependencies for WasiParameter {
+    fn trace_language_types(&self, dict: &mut DependencyLogger) {
+        self.r#type.trace_language_types(dict)
     }
 }

@@ -12,6 +12,8 @@ edition = "2021"
 exclude = ["package.json", "tests/**"]
 
 [dependencies]
+convert_case = "0.6.0"
+nyar-error = "0.1.12"
 string-pool = "0.1.0"
 semver = "1.0.22"
 indexmap = "2.2.3"
