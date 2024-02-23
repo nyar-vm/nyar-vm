@@ -1,20 +1,20 @@
-use crate::{
-    wasi_module::{WasiInstance, WasiModule},
-    WasiCanonical,
-};
-use semver::Version;
-use std::{borrow::Cow, fmt::Write, ptr::replace, sync::Arc};
+use std::fmt::Write;
+
+use crate::{CanonicalImport, WasiCanonical};
 
 pub struct WastEncoder<'a, W> {
-    source: &'a WasiCanonical,
-    writer: W,
+    pub(crate) source: &'a WasiCanonical,
+    pub(crate) writer: W,
     indent: usize,
-    indent_text: Cow<'static, str>,
+    indent_text: &'static str,
 }
 
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn new(source: &'a WasiCanonical, writer: W) -> Self {
-        Self { source, writer, indent: 0, indent_text: Cow::Borrowed("    ") }
+        Self { source, writer, indent: 0, indent_text: "    " }
+    }
+    pub fn with_indent_text(self, text: &'static str) -> Self {
+        Self { indent_text: text, ..self }
     }
 }
 
@@ -53,32 +53,49 @@ impl<'a, W: Write> Write for WastEncoder<'a, W> {
 // )
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn encode(&mut self) -> std::fmt::Result {
-        self.write_str("(component ")?;
-        self.write_id(self.source.component.as_ref())?;
+        write!(self.writer, "(component ${}", self.source.name)?;
+        self.indent(true);
+        for import in &self.source.imports {
+            match import {
+                CanonicalImport::Instance(instance) => self.encode_instance(instance)?,
+            }
+        }
 
+        self.dedent(true);
+        self.write_str(")")?;
         Ok(())
     }
     pub(crate) fn write_id(&mut self, id: &str) -> std::fmt::Result {
         write!(self.writer, "${}", id)
     }
     pub fn encode_id(&mut self, id: &str) -> String {
-        let mut alloc = String::with_capacity(id.len());
-        for c in id.chars() {
-            match c {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ':' | '@' | '/' => alloc.push(c),
-                _ => alloc.push('-'),
-            }
-        }
+        let mut alloc = String::with_capacity(id.len() + 1);
+        alloc.push('$');
+        make_kebab(id, &mut alloc);
         alloc
     }
+    pub fn encode_kebab(&mut self, id: &str) -> String {
+        let mut alloc = String::with_capacity(id.len() + 2);
+        alloc.push('"');
+        make_kebab(id, &mut alloc);
+        alloc.push('"');
+        alloc
+    }
+
     pub(crate) fn write_name(&mut self, id: &str) -> std::fmt::Result {
         write!(self.writer, "\"{}\"", id)
     }
-    pub fn indent(&mut self) {
+    pub fn indent(&mut self, newline: bool) {
         self.indent += 1;
+        if newline {
+            self.newline().ok();
+        }
     }
-    pub fn dedent(&mut self) {
+    pub fn dedent(&mut self, newline: bool) {
         self.indent -= 1;
+        if newline {
+            self.newline().ok();
+        }
     }
     pub fn newline(&mut self) -> std::fmt::Result {
         self.write_str("\n")?;
@@ -88,5 +105,14 @@ impl<'a, W: Write> WastEncoder<'a, W> {
             self.writer.write_str(indent)?;
         }
         Ok(())
+    }
+}
+
+fn make_kebab(input: &str, buffer: &mut String) {
+    for c in input.chars() {
+        match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ':' | '@' | '/' => buffer.push(c),
+            _ => buffer.push('-'),
+        }
     }
 }
