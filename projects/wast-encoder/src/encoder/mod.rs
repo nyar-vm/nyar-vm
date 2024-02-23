@@ -1,6 +1,8 @@
 use std::fmt::Write;
 
-use crate::{CanonicalImport, CanonicalWasi};
+use crate::{
+    wasi_module::WasiModule, CanonicalImport, CanonicalWasi, WasiFunction, WasiInstance, WasiParameter, WasiResource, WasiType,
+};
 
 mod for_instance;
 
@@ -56,47 +58,32 @@ impl<'a, W: Write> Write for WastEncoder<'a, W> {
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn encode(&mut self) -> std::fmt::Result {
         write!(self.writer, "(component ${}", self.source.name)?;
-        self.indent(true);
+        self.indent();
         for import in &self.source.imports {
             match import {
                 CanonicalImport::Instance(instance) => self.encode_instance(instance)?,
             }
         }
 
-        self.dedent(true);
-        self.write_str(")")?;
+        self.dedent(1);
         Ok(())
     }
     pub(crate) fn write_id(&mut self, id: &str) -> std::fmt::Result {
         write!(self.writer, "${}", id)
     }
-    pub fn encode_id(&mut self, id: &str) -> String {
-        let mut alloc = String::with_capacity(id.len() + 1);
-        alloc.push('$');
-        make_kebab(id, &mut alloc);
-        alloc
-    }
-    pub fn encode_kebab(&mut self, id: &str) -> String {
-        let mut alloc = String::with_capacity(id.len() + 2);
-        alloc.push('"');
-        make_kebab(id, &mut alloc);
-        alloc.push('"');
-        alloc
-    }
 
     pub(crate) fn write_name(&mut self, id: &str) -> std::fmt::Result {
         write!(self.writer, "\"{}\"", id)
     }
-    pub fn indent(&mut self, newline: bool) {
+    pub fn indent(&mut self) {
         self.indent += 1;
-        if newline {
-            self.newline().ok();
-        }
+        self.newline().ok();
     }
-    pub fn dedent(&mut self, newline: bool) {
+    pub fn dedent(&mut self, end: usize) {
         self.indent -= 1;
-        if newline {
-            self.newline().ok();
+        self.newline().ok();
+        for _ in 0..end {
+            self.write_char(')').ok();
         }
     }
     pub fn newline(&mut self) -> std::fmt::Result {
@@ -108,6 +95,21 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         }
         Ok(())
     }
+}
+
+pub fn encode_id(id: &str) -> String {
+    let mut alloc = String::with_capacity(id.len() + 1);
+    alloc.push('$');
+    make_kebab(id, &mut alloc);
+    alloc
+}
+
+pub fn encode_kebab(id: &str) -> String {
+    let mut alloc = String::with_capacity(id.len() + 2);
+    alloc.push('"');
+    make_kebab(id, &mut alloc);
+    alloc.push('"');
+    alloc
 }
 
 fn make_kebab(input: &str, buffer: &mut String) {
