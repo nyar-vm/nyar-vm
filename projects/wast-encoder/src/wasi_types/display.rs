@@ -80,8 +80,8 @@ impl Display for WasiType {
                     panic!()
                 }
                 Self::TypeHandler { name, own } => match *own {
-                    true => write!(f, "(own {})", encode_id(name))?,
-                    false => write!(f, "(borrow {})", encode_id(name))?,
+                    true => write!(f, "(own {})", name.wasi_id())?,
+                    false => write!(f, "(borrow {})", name.wasi_id())?,
                 },
                 Self::TypeAlias { name } => write!(f, "${}", name)?,
             }

@@ -1,8 +1,6 @@
 use std::fmt::Write;
 
-use crate::{
-    CanonicalImport, CanonicalWasi, wasi_module::WasiModule, WasiFunction, WasiInstance, WasiParameter, WasiResource, WasiType,
-};
+use crate::{CanonicalImport, CanonicalWasi, ExternalFunction, WasiInstance, WasiParameter, WasiResource, WasiType};
 
 mod for_instance;
 

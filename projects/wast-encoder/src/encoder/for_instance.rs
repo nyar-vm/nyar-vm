@@ -1,3 +1,5 @@
+use crate::{Identifier, WasiModule};
+
 use super::*;
 
 impl<'a, W: Write> WastEncoder<'a, W> {
@@ -30,8 +32,8 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         let name = encode_kebab(&resource.wasi_name);
         write!(self, "(export {name} (type (sub resource)))")
     }
-    fn alias_export_resource(&mut self, module: &WasiModule, resource: &WasiResource, name: &str) -> std::fmt::Result {
-        let id = encode_id(name);
+    fn alias_export_resource(&mut self, module: &WasiModule, resource: &WasiResource, name: &Identifier) -> std::fmt::Result {
+        let id = name.wasi_id();
         let name = resource.wasi_name.as_str();
         write!(self, "(alias export ${module} \"{name}\" (type {id}))")
     }
@@ -41,7 +43,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
     fn export_return_type(&mut self, output: &WasiType) -> std::fmt::Result {
         write!(self, "(result {})", output)
     }
-    fn export_function(&mut self, function: &WasiFunction) -> std::fmt::Result {
+    fn export_function(&mut self, function: &ExternalFunction) -> std::fmt::Result {
         let name = function.wasi_name.as_str();
         write!(self, "(export \"{name}\"")?;
         self.indent();
@@ -56,7 +58,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         Ok(())
     }
     //     (alias export $wasi:io/streams@0.2.0 "[method]output-stream.blocking-write-and-flush" (func $output-stream.blocking-write-and-flush))
-    fn alias_export_function(&mut self, module: &WasiModule, function: &WasiFunction, name: &str) -> std::fmt::Result {
+    fn alias_export_function(&mut self, module: &WasiModule, function: &ExternalFunction, name: &str) -> std::fmt::Result {
         let id = encode_id(name);
         let name = function.wasi_name.as_str();
         write!(self, "(alias export ${module} \"{name}\" (func {id}))")
@@ -68,14 +70,15 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         let root = encode_id(&self.source.name);
         match ty {
             WasiType::Resource(resource) => {
-                let name = encode_id(&resource.name);
-                write!(self, "(alias outer {root} {name} (type {name}))")?
+                let id = resource.symbol.wasi_id();
+                let name = resource.wasi_name.as_str();
+                write!(self, "(alias outer {root} \"{name}\" (type {id}))")?
             }
             WasiType::Variant(variant) => {
-                let name = variant.symbol.to_string();
-                let wasi_name = encode_kebab(&name);
-                write!(self, "(alias outer {root} {name} (type {name}?))")?;
-                write!(self, "(export {name} {wasi_name} (type (eq {name}?)))")?
+                let id = variant.symbol.wasi_id();
+                let name = variant.wasi_name.as_str();
+                write!(self, "(alias outer {root} {id} (type {id}?))")?;
+                write!(self, "(export {id} \"{name}\" (type (eq {id}?)))")?
             }
             _ => {}
         }
