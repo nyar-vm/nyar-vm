@@ -1,6 +1,6 @@
 use crate::{
     dag::{DependencyItem, DependentGraph},
-    DependencyLogger, Identifier, ResolveDependencies, WasiModule, WasiType,
+    Identifier, ResolveDependencies, WasiModule, WasiType,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -22,13 +22,14 @@ impl WasiResource {
 }
 
 impl ResolveDependencies for WasiResource {
-    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
-        dict.insert(DependencyItem::Item(WasiType::Resource(self.clone())));
+    fn define_language_types(&self, dict: &mut DependentGraph) {
+        dict.types.insert(self.symbol.clone(), WasiType::Resource(self.clone()));
     }
 
-    fn trace_language_types(&self, _: &mut DependencyLogger) {}
-
-    fn trace_modules(&self, dict: &mut DependencyLogger) {
-        dict.wasi.insert(self.wasi_module.clone());
+    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
+        dict.insert_with_dependency(
+            DependencyItem::Item(WasiType::Resource(self.clone())),
+            DependencyItem::Module(self.wasi_module.clone()),
+        )
     }
 }

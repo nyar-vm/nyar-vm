@@ -39,7 +39,9 @@ impl Display for WasiType {
                     false => write!(f, "&{}", name),
                 }?,
                 Self::TypeAlias { name } => write!(f, "{}", name)?,
-                WasiType::External(_) => {}
+                Self::External(_) => {
+                    panic!()
+                }
             }
         }
         else {
@@ -74,18 +76,15 @@ impl Display for WasiType {
                     };
                     f.write_char(')')?
                 }
-                Self::Resource(_) => {
-                    panic!()
-                }
-                Self::Variant(_) => {
-                    panic!()
-                }
+                Self::Resource(_) => f.write_str("(sub resource)")?,
+                Self::Variant(_) => f.write_str("(variant case)")?,
                 Self::TypeHandler { name, own } => match *own {
                     true => write!(f, "(own {})", name.wasi_id())?,
                     false => write!(f, "(borrow {})", name.wasi_id())?,
                 },
                 Self::TypeAlias { name } => write!(f, "${}", name)?,
-                _ => {}
+
+                Self::External(_) => f.write_str("(func external)")?,
             }
         }
         Ok(())
