@@ -12,7 +12,7 @@ mod arithmetic;
 ///             (func (param "self" (borrow $output-stream)) (param "contents" (list u8)) (result $stream-result))
 ///         )
 #[derive(Clone, Debug)]
-pub struct WasiFunction {
+pub struct ExternalFunction {
     pub name: Arc<str>,
     pub wasi_module: WasiModule,
     pub wasi_name: String,
@@ -28,7 +28,7 @@ pub struct WasiParameter {
     pub r#type: WasiType,
 }
 
-impl WasiFunction {
+impl ExternalFunction {
     pub fn new<S, M>(wasi_module: M, wasi_name: &str, name: S) -> Self
     where
         S: Into<Arc<str>>,
@@ -86,7 +86,7 @@ impl WasiParameter {
     }
 }
 
-impl Display for WasiFunction {
+impl Display for ExternalFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.name)?;
         for (i, input) in self.inputs.iter().enumerate() {
@@ -102,10 +102,14 @@ impl Display for WasiFunction {
     }
 }
 
-impl ResolveDependencies for WasiFunction {
+impl ResolveDependencies for ExternalFunction {
     fn trace_language_types(&self, dict: &mut DependencyLogger) {
         self.inputs.iter().for_each(|input| input.trace_language_types(dict));
         self.output.iter().for_each(|output| output.trace_language_types(dict));
+    }
+
+    fn trace_modules(&self, dict: &mut DependencyLogger) {
+        dict.wasi.insert(self.wasi_module.clone());
     }
 }
 
@@ -113,4 +117,6 @@ impl ResolveDependencies for WasiParameter {
     fn trace_language_types(&self, dict: &mut DependencyLogger) {
         self.r#type.trace_language_types(dict)
     }
+
+    fn trace_modules(&self, _: &mut DependencyLogger) {}
 }

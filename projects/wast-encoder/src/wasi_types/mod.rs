@@ -1,9 +1,6 @@
-use std::{
-    fmt::{Display, Formatter},
-    sync::Arc,
-};
+use std::fmt::{Display, Formatter};
 
-use crate::{DependencyLogger, encode_id, ResolveDependencies, VariantType, WasiResource};
+use crate::{DependencyLogger, Identifier, ResolveDependencies, VariantType, WasiResource};
 
 mod display;
 
@@ -32,13 +29,13 @@ pub enum WasiType {
     Variant(VariantType),
     TypeHandler {
         /// Resource language name
-        name: Arc<str>,
+        name: Identifier,
         own: bool,
     },
     /// A referenced type, the real type needs to be found later
     TypeAlias {
         /// Type language name
-        name: Arc<str>,
+        name: Identifier,
     },
 }
 
@@ -51,7 +48,7 @@ impl ResolveDependencies for WasiType {
                 failure.iter().for_each(|f| f.trace_language_types(dict));
             }
             Self::Resource(_) => {}
-            Self::Variant(v) => v.variants.values().for_each(|v| v.r#type.trace_language_types(dict)),
+            Self::Variant(v) => v.trace_language_types(dict),
             Self::TypeHandler { name, .. } => {
                 dict.types.insert(name.clone());
             }
@@ -60,5 +57,20 @@ impl ResolveDependencies for WasiType {
             }
             _ => {}
         };
+    }
+
+    fn trace_modules(&self, dict: &mut DependencyLogger) {
+        match self {
+            WasiType::Integer8 { .. } => {}
+            WasiType::Integer16 { .. } => {}
+            WasiType::Integer32 { .. } => {}
+            WasiType::Integer64 { .. } => {}
+            WasiType::Option { .. } => {}
+            WasiType::Result { .. } => {}
+            WasiType::Resource(v) => v.trace_modules(dict),
+            WasiType::Variant(v) => v.trace_modules(dict),
+            WasiType::TypeHandler { .. } => {}
+            WasiType::TypeAlias { .. } => {}
+        }
     }
 }

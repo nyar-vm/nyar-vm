@@ -4,11 +4,14 @@ pub use crate::{
     dag::{DependencyLogger, DependentRegistry, ResolveDependencies},
     encoder::{encode_id, encode_kebab, WastEncoder},
     enumerations::{WasiEnumeration, WasiEnumerationItem},
-    functions::{WasiFunction, WasiParameter},
+    functions::{ExternalFunction, WasiParameter},
     resources::WasiResource,
-    symbols::identifiers::Identifier,
+    symbols::{
+        identifiers::Identifier,
+        wasi_publisher::{WasiModule, WasiPublisher},
+    },
     variants::{VariantItem, VariantType},
-    wasi_module::{WasiInstance, WasiModule},
+    wasi_module::WasiInstance,
     wasi_types::WasiType,
 };
 

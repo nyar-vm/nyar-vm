@@ -1,74 +1,20 @@
 use std::{
     collections::BTreeMap,
-    fmt::{Display, Formatter},
-    hash::Hash,
+    fmt::{Debug, Formatter},
     ops::AddAssign,
     sync::Arc,
 };
 
-use semver::Version;
-
-use crate::{WasiFunction, WasiResource};
+use crate::{DependencyLogger, ExternalFunction, Identifier, ResolveDependencies, WasiModule, WasiResource};
 
 mod convert;
 mod display;
 
-pub struct WasiLinker {
-    packages: BTreeMap<WasiPublisher, Version>,
-}
-
-/// e.g: `wasi:random/random@0.2.0`
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct WasiModule {
-    pub package: Option<WasiPublisher>,
-    pub name: Arc<str>,
-    pub version: Option<Version>,
-}
-
-impl Default for WasiModule {
-    fn default() -> Self {
-        Self { package: None, name: Arc::from(""), version: None }
-    }
-}
-
-/// e.g.: `wasi:random`
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub struct WasiPublisher {
-    organization: Arc<str>,
-    project: Arc<str>,
-}
-
-impl WasiModule {
-    /// Create a new module without a publisher
-    pub fn create<S>(name: S) -> Self
-    where
-        S: Into<Arc<str>>,
-    {
-        Self { package: None, name: name.into(), version: None }
-    }
-    /// Set the publisher for the module
-    pub fn with_publisher(self, publisher: WasiPublisher) -> Self {
-        Self { package: Some(publisher), ..self }
-    }
-    /// Set the version for the module
-    pub fn with_version(self, version: Version) -> Self {
-        Self { version: Some(version), ..self }
-    }
-    /// Set the organization and project for the module
-    pub fn with_project<O, P>(self, organization: O, project: P) -> Self
-    where
-        O: Into<Arc<str>>,
-        P: Into<Arc<str>>,
-    {
-        Self { package: Some(WasiPublisher { organization: organization.into(), project: project.into() }), ..self }
-    }
-}
-
 pub struct WasiInstance {
     pub module: WasiModule,
     /// language_name: wasi_name
-    pub resources: BTreeMap<Arc<str>, WasiResource>,
-    pub functions: BTreeMap<Arc<str>, WasiFunction>,
+    pub resources: BTreeMap<Identifier, WasiResource>,
+    pub functions: BTreeMap<Arc<str>, ExternalFunction>,
 }
 
 impl WasiInstance {
@@ -77,5 +23,20 @@ impl WasiInstance {
         M: Into<WasiModule>,
     {
         Self { module: module.into(), resources: Default::default(), functions: Default::default() }
+    }
+}
+
+impl ResolveDependencies for WasiInstance {
+    fn trace_language_types(&self, dict: &mut DependencyLogger) {
+        for (_, resource) in &self.resources {
+            resource.trace_modules(dict);
+        }
+        for (_, function) in &self.functions {
+            function.trace_modules(dict);
+        }
+    }
+
+    fn trace_modules(&self, dict: &mut DependencyLogger) {
+        dict.wasi.remove(&self.module);
     }
 }
