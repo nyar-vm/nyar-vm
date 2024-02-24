@@ -1,15 +1,13 @@
 use std::str::FromStr;
 
 use wast_encoder::{
-    CanonicalWasi, DependentRegistry, ExternalFunction, Identifier, ResolveDependencies, VariantItem, VariantType, WasiModule,
-    WasiParameter, WasiResource, WasiType,
+    DependentRegistry, ExternalFunction, Identifier, ResolveDependencies, VariantItem, VariantType, WasiModule, WasiParameter,
+    WasiResource, WasiType,
 };
 
-#[test]
-fn test_hello_world() {
+fn define_io_types() -> DependentRegistry {
     let mut global = DependentRegistry::default();
 
-    let mut source = CanonicalWasi::default();
     let wasi_io_error = WasiModule::from_str("wasi:io/error@0.2.0").unwrap();
     let wasi_io_streams = WasiModule::from_str("wasi:io/streams@0.2.0").unwrap();
 
@@ -35,11 +33,20 @@ fn test_hello_world() {
         failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
     };
     global += f1;
+    global
+}
+
+#[test]
+fn test_hello_world() {
+    let global = define_io_types();
+
     for (module, instance) in global.group_instances() {
+        println!("{instance:#?}");
         let dep = instance.dependent_modules(&global);
         println!("{module}: {dep:?}")
     }
 
-    let wast = source.encode();
-    println!("{wast}");
+    // let mut source = CanonicalWasi::default();
+    // let wast = source.encode();
+    // println!("{wast}");
 }
