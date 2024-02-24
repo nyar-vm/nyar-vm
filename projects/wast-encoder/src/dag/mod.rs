@@ -1,12 +1,11 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::{Debug, Formatter},
     mem::take,
-    ops::{AddAssign, Index},
-    str::FromStr,
+    ops::AddAssign,
 };
 
-use petgraph::{algo::toposort, data::FromElements, graph::DiGraph};
+use petgraph::{algo::toposort, graph::DiGraph};
 
 use crate::{Identifier, WasiModule, WasiType};
 
@@ -126,67 +125,77 @@ impl DependentGraph {
     }
 }
 
-fn top_sort(adj: Vec<Vec<usize>>, mut indeg: Vec<u32>) -> Vec<usize> {
-    let mut q = indeg.iter().enumerate().filter(|(_, &d)| d == 0).map(|(node, _)| node).collect::<VecDeque<_>>();
-    let mut ret = Vec::new();
-    while let Some(node) = q.pop_front() {
-        ret.push(node);
-        for &nnode in adj[node].iter() {
-            indeg[nnode] -= 1;
-            if indeg[nnode] == 0 {
-                q.push_back(nnode)
-            }
-        }
-    }
-    ret
+// Why is the following code error, how should I modify it to pass the test?
+type GroupId = usize;
+type TaskId = usize;
+
+#[derive(Default)]
+pub struct TaskGroup {
+    tasks: HashMap<TaskId, Task>,
 }
-struct Solution {}
+pub struct Group {
+    id: GroupId,
+    dependent_groups: Vec<GroupId>,
+}
 
-impl Solution {
-    pub fn sort_items(group_count: i32, mut group: Vec<i32>, before_items: Vec<Vec<i32>>) -> Vec<i32> {
-        let items = before_items.len();
-        let mut indeg = vec![0; items];
-        let mut adj = vec![vec![]; items];
-        for (item, deps) in before_items.iter().enumerate() {
-            for &dep in deps {
-                adj[dep as usize].push(item);
-                indeg[item] += 1;
-            }
-        }
-        let items_ids = top_sort(adj, indeg);
-        if items_ids.len() != items {
-            return vec![];
-        }
+pub struct Task {
+    id: usize,
+    group: Option<GroupId>,
+    dependent_tasks: Vec<TaskId>,
+}
 
-        let mut groups = items_ids.into_iter().fold(vec![vec![]; group_count as usize], |mut acc, i| {
-            if group[i] == -1 {
-                group[i] = acc.len() as i32;
-                acc.push(vec![]);
-            }
-            acc[group[i] as usize].push(i as i32);
-            acc
-        });
-
-        let mut indeg = vec![0; groups.len()];
-        let mut adj = vec![vec![]; groups.len()];
-        for (item, deps) in before_items.into_iter().enumerate() {
-            for dep in deps {
-                let (src, dst) = (group[dep as usize] as usize, group[item] as usize);
-                if src == dst {
-                    continue;
-                }
-                adj[src].push(dst);
-                indeg[dst] += 1;
-            }
-        }
-        let group_ids = top_sort(adj, indeg);
-        if group_ids.len() != groups.len() {
-            return vec![];
-        }
-
-        group_ids.into_iter().fold(Vec::new(), |mut acc, i| {
-            acc.append(&mut groups[i]);
-            acc
-        })
+impl AddAssign<Task> for TaskGroup {
+    fn add_assign(&mut self, rhs: Task) {
+        self.tasks.insert(rhs.id, rhs);
     }
+}
+
+impl TaskGroup {
+    pub fn arrange_order(&self) -> Vec<TaskId> {
+        let mut sorted: Vec<TaskId> = Vec::new();
+        let mut visited_tasks: HashSet<TaskId> = HashSet::new();
+        let mut visited_groups: HashSet<GroupId> = HashSet::new();
+        for (_, task) in &self.tasks {
+            if let Some(group_id) = task.group {
+                if !visited_groups.contains(&group_id) {
+                    self.topological_sort(group_id, &mut sorted, &mut visited_tasks);
+                    visited_groups.insert(group_id);
+                }
+            }
+        }
+        for (_, task) in &self.tasks {
+            if !visited_tasks.contains(&task.id) {
+                self.topological_sort(task.id, &mut sorted, &mut visited_tasks);
+            }
+        }
+        sorted.into_iter().rev().collect()
+    }
+
+    fn topological_sort(&self, id: usize, sorted: &mut Vec<usize>, visited: &mut HashSet<usize>) {
+        if visited.contains(&id) {
+            return;
+        }
+        visited.insert(id);
+        if let Some(task) = self.tasks.get(&id) {
+            for dependent_id in &task.dependent_tasks {
+                self.topological_sort(*dependent_id, sorted, visited);
+            }
+        }
+        sorted.push(id);
+    }
+}
+
+#[test]
+fn test() {
+    let mut tasks = TaskGroup::default();
+    tasks += Task { id: 0, group: None, dependent_tasks: vec![] };
+    tasks += Task { id: 1, group: None, dependent_tasks: vec![6] };
+    tasks += Task { id: 2, group: Some(1), dependent_tasks: vec![5] };
+    tasks += Task { id: 3, group: Some(0), dependent_tasks: vec![6] };
+    tasks += Task { id: 4, group: Some(0), dependent_tasks: vec![3, 6] };
+    tasks += Task { id: 5, group: Some(1), dependent_tasks: vec![] };
+    tasks += Task { id: 6, group: Some(0), dependent_tasks: vec![] };
+    tasks += Task { id: 7, group: None, dependent_tasks: vec![] };
+    let sorted = tasks.arrange_order();
+    assert_eq!(sorted, vec![6, 3, 4, 1, 5, 2, 0, 7]);
 }
