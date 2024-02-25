@@ -6,7 +6,7 @@ use crate::{
     DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WasiResource {
     /// Resource language name
     pub symbol: Identifier,
@@ -16,7 +16,7 @@ pub struct WasiResource {
 
 impl WasiResource {
     pub(crate) fn write_wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, "(export \"{}\" (type (sub resource)))", self.wasi_name)
+        write!(w, "(export {} \"{}\" (type (sub resource)))", self.symbol.wasi_id(), self.wasi_name)
     }
 }
 impl AliasExport for WasiResource {
@@ -28,10 +28,11 @@ impl AliasExport for WasiResource {
 }
 impl AliasOuter for WasiResource {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        let root = &w.source.name;
-        let id = self.symbol.wasi_id();
-        let name = self.wasi_name.as_str();
-        write!(w, "(alias outer {root} \"{name}\" (type {id}))")
+        // let root = &w.source.name;
+        // let id = self.symbol.wasi_id();
+        // let name = self.wasi_name.as_str();
+        // write!(w, "(alias outer ${root} {id} (type {id}))")?;
+        Ok(())
     }
 }
 

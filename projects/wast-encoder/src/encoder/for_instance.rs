@@ -20,10 +20,11 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         write!(self, "(export \"{name}\" (func")?;
         self.indent();
         for input in &function.inputs {
+            self.newline()?;
             self.export_parameter(input)?;
-            self.newline()?
         }
         for output in function.output.iter() {
+            self.newline()?;
             output.write_wasi_result(self)?;
         }
         self.dedent(2);

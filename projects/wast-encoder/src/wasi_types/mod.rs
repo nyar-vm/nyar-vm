@@ -6,7 +6,7 @@ use crate::{
 
 mod display;
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WasiType {
     Integer8 {
         signed: bool,
@@ -40,6 +40,16 @@ pub enum WasiType {
         name: Identifier,
     },
     External(Box<ExternalFunction>),
+}
+
+impl WasiType {
+    pub fn wasm_module(&self) -> Option<&WasiModule> {
+        match self {
+            WasiType::Resource(v) => Some(&v.wasi_module),
+            WasiType::External(v) => Some(&v.wasi_module),
+            _ => None,
+        }
+    }
 }
 
 /// Mark for type who can import to the component instance

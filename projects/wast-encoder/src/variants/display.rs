@@ -15,7 +15,7 @@ impl AliasOuter for VariantType {
         let root = &w.source.name;
         let id = self.symbol.wasi_id();
         let name = self.wasi_name.as_str();
-        write!(w, "(alias outer {root} {id} (type {id}?))")?;
+        write!(w, "(alias outer ${root} {id} (type {id}?))")?;
         write!(w, "(export {id} \"{name}\" (type (eq {id}?)))")
     }
 }
@@ -27,11 +27,11 @@ impl ComponentDefine for VariantType {
         write!(w, "(type {} (variant", self.symbol.wasi_id())?;
         w.indent();
         for variant in self.variants.values() {
+            w.newline()?;
             variant.component_define(w)?;
-            w.newline()?
         }
         w.dedent(2);
-        w.newline()
+        Ok(())
     }
 }
 
@@ -44,7 +44,6 @@ impl ComponentDefine for VariantItem {
             w.write_char(' ')?;
             s.write_wasi_reference(w)?
         }
-
         w.write_char(')')
     }
 }

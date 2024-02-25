@@ -1,4 +1,4 @@
-use crate::wasi_types::AliasExport;
+use crate::wasi_types::{AliasExport, AliasOuter};
 
 use super::*;
 
@@ -19,22 +19,25 @@ impl ComponentDefine for WasiInstance {
         write!(w, "(import \"{name}\" (instance ${name}", name = self.module)?;
         w.indent();
         for wasi in self.resources.values() {
-            wasi.write_wasi_define(w)?;
             w.newline()?;
+            wasi.write_wasi_define(w)?;
+        }
+        for imports in self.dependencies(&w.source.graph) {
+            w.newline()?;
+            imports.alias_outer(w)?;
         }
         for wasi in self.functions.values() {
+            w.newline()?;
             w.export_function(wasi)?;
-            w.newline()?
         }
         w.dedent(2);
-        w.newline()?;
         for wasi in self.resources.values() {
+            w.newline()?;
             wasi.alias_export(w, &self.module)?;
-            w.newline()?
         }
         for wasi in self.functions.values() {
+            w.newline()?;
             wasi.alias_export(w, &self.module)?;
-            w.newline()?
         }
         Ok(())
     }
