@@ -32,6 +32,9 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         self.indent();
         for import in &self.source.imports {
             match import {
+                CanonicalImport::Type(ty) => {
+                    write!(self.writer, "(type ${}", ty)?;
+                }
                 CanonicalImport::Instance(instance) => self.encode_instance(instance)?,
             }
         }

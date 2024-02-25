@@ -45,33 +45,21 @@ impl ResolveDependencies for WasiType {
         panic!("Not implemented");
     }
 
-    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
+    fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
+    where
+        'a: 'i,
+    {
         match self {
-            WasiType::Option { inner } => {
-                inner.collect_wasi_types(dict);
-            }
+            WasiType::Option { inner } => inner.collect_wasi_types(dict, collected),
             WasiType::Result { success, failure } => {
-                success.iter().for_each(|s| s.collect_wasi_types(dict));
-                failure.iter().for_each(|f| f.collect_wasi_types(dict));
+                success.iter().for_each(|s| s.collect_wasi_types(dict, collected));
+                failure.iter().for_each(|f| f.collect_wasi_types(dict, collected));
             }
-            WasiType::Resource(v) => {
-                dict.types_buffer.push(WasiType::Resource(v.clone()));
-            }
-            WasiType::Variant(v) => {
-                dict.types_buffer.push(WasiType::Variant(v.clone()));
-            }
-            WasiType::TypeAlias { name } => {
-                dict.types_buffer.extend(dict.types.get(name).cloned());
-            }
-            WasiType::TypeHandler { name, .. } => {
-                dict.types_buffer.extend(dict.types.get(name).cloned());
-                // println!("Buffer2: {:?}", name);
-                // println!("Buffer3: {:?}", dict.types);
-                // println!("Buffer4: {:?}", dict.types_buffer);
-            }
-            WasiType::External(v) => {
-                dict.types_buffer.push(WasiType::External(v.clone()));
-            }
+            WasiType::Resource(_) => collected.push(self),
+            WasiType::Variant(_) => collected.push(self),
+            WasiType::TypeAlias { name } => collected.extend(dict.types.get(name)),
+            WasiType::TypeHandler { name, .. } => collected.extend(dict.types.get(name)),
+            WasiType::External(_) => collected.push(self),
             _ => {}
         };
     }

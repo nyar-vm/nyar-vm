@@ -1,4 +1,8 @@
-use std::{ops::AddAssign, sync::Arc};
+use std::{
+    fmt::{Debug, Formatter},
+    ops::AddAssign,
+    sync::Arc,
+};
 
 pub use crate::{
     dag::{DependentGraph, ResolveDependencies},
@@ -34,6 +38,16 @@ pub struct CanonicalWasi {
 
 pub enum CanonicalImport {
     Instance(WasiInstance),
+    Type(WasiType),
+}
+
+impl Debug for CanonicalImport {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Instance(v) => Debug::fmt(v, f),
+            Self::Type(v) => Debug::fmt(v, f),
+        }
+    }
 }
 
 impl Default for CanonicalWasi {
