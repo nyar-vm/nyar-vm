@@ -1,4 +1,5 @@
-use std::str::FromStr;
+use std::{io::Write, str::FromStr};
+use std::path::Path;
 
 use wast_encoder::{
     CanonicalWasi, DependentGraph, ExternalFunction, Identifier, VariantItem, VariantType, WasiModule, WasiParameter,
@@ -66,6 +67,8 @@ fn define_io_types() -> DependentGraph {
 
 #[test]
 fn test_hello_world() {
+    let component = Path::new(env!("CARGO_MANIFEST_DIR")).join("../wasm-interpreter/src/component.wat");
+    let mut wat = std::fs::File::create(component).unwrap();
     let mut global = define_io_types();
     let dag = global.resolve_imports().unwrap();
     for import in &dag {
@@ -76,5 +79,5 @@ fn test_hello_world() {
     source.imports = dag;
 
     let wast = source.encode();
-    println!("{wast}");
+    wat.write_all(wast.as_bytes()).unwrap();
 }

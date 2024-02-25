@@ -7,7 +7,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         write!(self, "(import \"{name}\" (instance ${name}", name = instance.module)?;
         self.indent();
         for wasi in instance.resources.values() {
-            self.export_resource(wasi)?;
+            wasi.write_wasi_define(self)?;
             self.newline()?;
         }
         for (id, wasi) in instance.functions.values().enumerate() {
@@ -28,20 +28,20 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         }
         Ok(())
     }
-    fn export_resource(&mut self, resource: &WasiResource) -> std::fmt::Result {
-        let name = encode_kebab(&resource.wasi_name);
-        write!(self, "(export {name} (type (sub resource)))")
-    }
     fn alias_export_resource(&mut self, module: &WasiModule, resource: &WasiResource, name: &Identifier) -> std::fmt::Result {
         let id = name.wasi_id();
         let name = resource.wasi_name.as_str();
         write!(self, "(alias export ${module} \"{name}\" (type {id}))")
     }
     fn export_parameter(&mut self, input: &WasiParameter) -> std::fmt::Result {
-        write!(self, "(param {} {}) ", input.wasi_name, input.r#type.as_wasi_type())
+        write!(self, "(param {} ", input.wasi_name)?;
+        input.r#type.write_wasi_reference(self)?;
+        self.write_str(") ")
     }
     fn export_return_type(&mut self, output: &WasiType) -> std::fmt::Result {
-        write!(self, "(result {})", output.as_wasi_type())
+        write!(self, "(result ")?;
+        output.write_wasi_reference(self)?;
+        self.write_str(") ")
     }
     fn export_function(&mut self, function: &ExternalFunction) -> std::fmt::Result {
         let name = function.wasi_name.as_str();
@@ -54,6 +54,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         for output in function.output.iter() {
             self.export_return_type(output)?
         }
+        self.write_str(")")?;
         self.dedent(1);
         Ok(())
     }

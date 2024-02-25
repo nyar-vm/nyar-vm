@@ -1,4 +1,9 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    fmt::Write,
+    hash::{DefaultHasher, Hash, Hasher},
+};
+
+use crate::WastEncoder;
 
 use super::*;
 
@@ -9,7 +14,7 @@ impl Debug for WasiType {
             Self::Integer16 { signed } => write!(f, "{}16", if *signed { "i" } else { "u" }),
             Self::Integer32 { signed } => write!(f, "{}32", if *signed { "i" } else { "u" }),
             Self::Integer64 { signed } => write!(f, "{}64", if *signed { "i" } else { "u" }),
-            Self::Option { inner } => write!(f, "Option<{}>", inner),
+            Self::Option { inner } => write!(f, "Option<{:?}>", inner),
             Self::Result { success: _, failure: _ } => write!(f, "Result<?, ?>"),
             Self::Resource(v) => write!(f, "Resource({})", v.symbol),
             Self::Variant(v) => Debug::fmt(v, f),
@@ -27,7 +32,7 @@ impl Display for WasiType {
             Self::Integer16 { signed } => write!(f, "{}", if *signed { "s" } else { "u" }),
             Self::Integer32 { signed } => write!(f, "{}", if *signed { "s" } else { "u" }),
             Self::Integer64 { signed } => write!(f, "{}", if *signed { "s" } else { "u" }),
-            Self::Option { inner } => write!(f, "Option<{}>", inner.as_wasi_type()),
+            Self::Option { inner } => write!(f, "Option<{}>", inner),
             Self::Result { success: _, failure: _ } => write!(f, "Result<?, ?>"),
             Self::Resource(v) => write!(f, "Resource({})", v.symbol),
             Self::Variant(v) => Debug::fmt(v, f),
@@ -39,49 +44,68 @@ impl Display for WasiType {
 }
 
 impl WasiType {
-    pub fn as_wasi_type(&self) -> String {
+    #[track_caller]
+    pub(crate) fn write_wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Integer8 { signed } => {}
+            Self::Integer16 { signed } => {}
+            Self::Integer32 { signed } => {}
+            Self::Integer64 { signed } => {}
+            Self::Option { inner } => {}
+            Self::Result { success, failure } => {}
+            Self::Resource(_) => unreachable!("Resource types are not defined in the wasi component section"),
+            Self::Variant(v) => v.write_wasi_define(w)?,
+            Self::TypeHandler { name, own } => {}
+            Self::TypeAlias { name } => {}
+            Self::External(_) => {}
+        }
+        Ok(())
+    }
+    pub(crate) fn write_wasi_reference<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Integer8 { signed } => match *signed {
-                true => "i8",
-                false => "u8",
-            }
-            .to_string(),
+                true => w.write_str("i8"),
+                false => w.write_str("u8"),
+            }?,
             Self::Integer16 { signed } => match *signed {
-                true => "i16",
-                false => "u16",
-            }
-            .to_string(),
+                true => w.write_str("i16"),
+                false => w.write_str("u16"),
+            }?,
             Self::Integer32 { signed } => match *signed {
-                true => "i32",
-                false => "u32",
-            }
-            .to_string(),
+                true => w.write_str("i32"),
+                false => w.write_str("u32"),
+            }?,
             Self::Integer64 { signed } => match *signed {
-                true => "i64",
-                false => "u64",
+                true => w.write_str("i64"),
+                false => w.write_str("u64"),
+            }?,
+            Self::Option { inner } => {
+                todo!()
             }
-            .to_string(),
-            Self::Option { inner } => format!("Option<{}>", inner.as_wasi_type()),
             Self::Result { success, failure } => {
-                let mut result = "(result ".to_string();
-                if let Some(success) = success {
-                    result.push_str(&success.as_wasi_type());
+                if let Some(s) = success {
+                    s.write_wasi_reference(w)?
                 }
-                if let Some(failure) = failure {
-                    result.push_str(&format!(" (error {})", failure.as_wasi_type()));
+                if let Some(f) = failure {
+                    w.write_str("(error ")?;
+                    f.write_wasi_reference(w)?;
+                    w.write_str(")")?;
                 }
-                result.push(')');
-                result
             }
-            Self::Resource(_) => "(sub resource)".to_string(),
-            Self::Variant(_) => "(variant case)".to_string(),
-            Self::TypeHandler { name, own } => match *own {
-                true => format!("(own {})", name.wasi_id()),
-                false => format!("(borrow {})", name.wasi_id()),
+            Self::Resource(_) => {
+                todo!()
+            }
+            Self::Variant(v) => v.write_wasi_define(w)?,
+            Self::TypeHandler { name, own } => match own {
+                true => write!(w, "(own {})", name.wasi_id())?,
+                false => write!(w, "(borrow {})", name.wasi_id())?,
             },
-            Self::TypeAlias { name } => name.wasi_id(),
-            Self::External(_) => "(func external)".to_string(),
+            Self::TypeAlias { name } => w.write_str(&name.wasi_id())?,
+            Self::External(_) => {
+                todo!()
+            }
         }
+        Ok(())
     }
     pub fn as_language_type(&self) -> String {
         match self {
@@ -142,7 +166,7 @@ impl WasiType {
             Self::Option { .. } => "".to_string(),
             Self::Result { .. } => "".to_string(),
             Self::Resource(v) => {
-                format!("hash{}[\"{}\"]:::resource", hash, self.as_wasi_type())
+                format!("hash{}[\"{}\"]:::resource", hash, self)
             }
             Self::Variant(_) => "".to_string(),
             Self::TypeHandler { .. } => "".to_string(),
