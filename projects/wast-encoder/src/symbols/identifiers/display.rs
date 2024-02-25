@@ -9,8 +9,9 @@ impl Debug for Identifier {
 impl Display for Identifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for path in &self.namespace {
-            write!(f, "{}∷", path)?;
+            f.write_str(path)?;
+            if f.alternate() { f.write_str("::")? } else { f.write_str("∷")? }
         }
-        write!(f, "{}", self.name)
+        f.write_str(&self.name)
     }
 }

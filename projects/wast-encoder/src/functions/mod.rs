@@ -4,14 +4,12 @@ use std::{
     sync::Arc,
 };
 
-use crate::{dag::DependentGraph, Identifier, ResolveDependencies, WasiModule, WasiType};
+use crate::{dag::DependentGraph, DependenciesTrace, Identifier, WasiModule, WasiType};
 
 mod arithmetic;
+mod display;
 
-///         (export "[method]output-stream.blocking-write-and-flush"
-///             (func (param "self" (borrow $output-stream)) (param "contents" (list u8)) (result $stream-result))
-///         )
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ExternalFunction {
     pub symbol: Identifier,
     pub wasi_module: WasiModule,
@@ -20,7 +18,7 @@ pub struct ExternalFunction {
     pub output: Option<WasiType>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct WasiParameter {
     pub name: Arc<str>,
     pub wasi_name: Arc<str>,
@@ -86,23 +84,7 @@ impl WasiParameter {
     }
 }
 
-impl Display for ExternalFunction {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}(", self.symbol)?;
-        for (i, input) in self.inputs.iter().enumerate() {
-            if i != 0 {
-                f.write_str(", ")?
-            }
-            match input.name.as_ref().eq("self") {
-                true => f.write_str("self")?,
-                false => write!(f, "{}: {:#}", input.name, input.r#type)?,
-            }
-        }
-        f.write_char(')')
-    }
-}
-
-impl ResolveDependencies for ExternalFunction {
+impl DependenciesTrace for ExternalFunction {
     fn define_language_types(&self, dict: &mut DependentGraph) {
         dict.types.insert(self.symbol.clone(), WasiType::External(Box::new(self.clone())));
     }

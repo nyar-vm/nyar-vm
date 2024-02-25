@@ -1,9 +1,13 @@
-use std::{ops::AddAssign, sync::Arc};
+use std::{
+    hash::{Hash, Hasher},
+    ops::AddAssign,
+    sync::Arc,
+};
 
 use convert_case::{Case, Casing};
 use indexmap::IndexMap;
 
-use crate::{dag::DependentGraph, Identifier, ResolveDependencies, WasiType};
+use crate::{dag::DependentGraph, DependenciesTrace, Identifier, WasiType};
 
 mod arithmetic;
 
@@ -15,7 +19,17 @@ pub struct VariantType {
     pub variants: IndexMap<Arc<str>, VariantItem>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl Hash for VariantType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.symbol.hash(state);
+        self.wasi_name.hash(state);
+        self.variants.iter().for_each(|v| {
+            v.hash(state);
+        });
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VariantItem {
     /// Variant name in language
     pub symbol: Arc<str>,
@@ -65,7 +79,7 @@ impl VariantItem {
     }
 }
 
-impl ResolveDependencies for VariantType {
+impl DependenciesTrace for VariantType {
     fn define_language_types(&self, dict: &mut DependentGraph) {
         dict.types.insert(self.symbol.clone(), WasiType::Variant(self.clone()));
     }
@@ -78,7 +92,7 @@ impl ResolveDependencies for VariantType {
     }
 }
 
-impl ResolveDependencies for VariantItem {
+impl DependenciesTrace for VariantItem {
     fn define_language_types(&self, _: &mut DependentGraph) {}
 
     fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
