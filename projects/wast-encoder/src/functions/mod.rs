@@ -40,15 +40,15 @@ impl ExternalFunction {
             output: None,
         }
     }
-    // pub fn constructor<S, M>(wasi_module: M, wasi_class: &str, name: S) -> Self
+    // pub fn constructor<S, M>(instances: M, wasi_class: &str, name: S) -> Self
     // where
     //     S: Into<Arc<str>>,
     //     M: Into<WasiModule>,
     // {
     //     let wasi_name = format!("[constructor]{}", wasi_class);
-    //     Self { name: name.into(), wasi_module: wasi_module.into(), wasi_name, inputs: vec![], output: None }
+    //     Self { name: name.into(), instances: instances.into(), wasi_name, inputs: vec![], output: None }
     // }
-    // pub fn static_method<S, M>(wasi_module: M, name: S, wasi_class: &str, wasi_name: &str) -> Self
+    // pub fn static_method<S, M>(instances: M, name: S, wasi_class: &str, wasi_name: &str) -> Self
     // where
     //     S: Into<Arc<str>>,
     //     M: Into<WasiModule>,

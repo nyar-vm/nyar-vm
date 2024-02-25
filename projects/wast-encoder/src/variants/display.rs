@@ -1,7 +1,3 @@
-use std::fmt::Write;
-
-use crate::WastEncoder;
-
 use super::*;
 
 impl Hash for VariantType {
@@ -14,25 +10,32 @@ impl Hash for VariantType {
     }
 }
 
-impl VariantType {
-    pub(crate) fn write_wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+impl AliasOuter for VariantType {
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        let root = &w.source.name;
+        let id = self.symbol.wasi_id();
+        let name = self.wasi_name.as_str();
+        write!(w, "(alias outer {root} {id} (type {id}?))")?;
+        write!(w, "(export {id} \"{name}\" (type (eq {id}?)))")
+    }
+}
+impl ComponentDefine for VariantType {
+    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, ";; variant {}", self.symbol)?;
         w.newline()?;
         write!(w, "(type {} (variant", self.symbol.wasi_id())?;
         w.indent();
-        for (i, variant) in self.variants.values().enumerate() {
-            if i != 0 {
-                w.newline()?
-            }
-            variant.write_wasi_define(w)?
+        for variant in self.variants.values() {
+            variant.component_define(w)?;
+            w.newline()?
         }
         w.dedent(2);
         w.newline()
     }
 }
 
-impl VariantItem {
-    pub(crate) fn write_wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+impl ComponentDefine for VariantItem {
+    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, ";; {}", self.symbol)?;
         w.newline()?;
         write!(w, "(case \"{}\"", self.wasi_name)?;

@@ -4,7 +4,7 @@ use std::{
     ops::AddAssign,
 };
 
-use crate::{ExternalFunction, Identifier, WasiModule, WasiResource, WasiType};
+use crate::{dag::DependenciesTrace, DependentGraph, ExternalFunction, Identifier, WasiModule, WasiResource, WasiType};
 
 mod convert;
 mod display;
@@ -51,5 +51,10 @@ impl WasiInstance {
                 self.functions.insert(v.symbol.clone(), *v.clone());
             }
         }
+    }
+    pub fn dependencies(&self, dict: &DependentGraph) -> Vec<WasiType> {
+        let mut types = vec![];
+        self.functions.values().for_each(|f| f.collect_wasi_types(dict, &mut types));
+        types.iter().map(|s| (*s).clone()).collect()
     }
 }
