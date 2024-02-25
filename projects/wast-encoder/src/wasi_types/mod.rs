@@ -1,10 +1,10 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
-use crate::{dag::DependentGraph, ExternalFunction, Identifier, ResolveDependencies, VariantType, WasiResource};
+use crate::{dag::DependentGraph, DependenciesTrace, ExternalFunction, Identifier, VariantType, WasiResource};
 
 mod display;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub enum WasiType {
     Integer8 {
         signed: bool,
@@ -40,9 +40,12 @@ pub enum WasiType {
     External(Box<ExternalFunction>),
 }
 
-impl ResolveDependencies for WasiType {
-    fn define_language_types(&self, dict: &mut DependentGraph) {
-        panic!("Not implemented");
+
+
+impl DependenciesTrace for WasiType {
+    #[track_caller]
+    fn define_language_types(&self, _: &mut DependentGraph) {
+        panic!("Invalid Call");
     }
 
     fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Debug, mem::take};
+use std::{collections::BTreeMap, fmt::Debug, ops::AddAssign};
 
 use dependent_sort::{DependentSort, TopologicalError};
 
@@ -6,7 +6,7 @@ use crate::{CanonicalImport, Identifier, WasiInstance, WasiModule, WasiType};
 
 mod arithmetic;
 
-pub trait ResolveDependencies {
+pub(crate) trait DependenciesTrace {
     fn define_language_types(&self, dict: &mut DependentGraph);
     fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
     where
@@ -48,36 +48,21 @@ impl DependentGraph {
         sorter
     }
     pub fn resolve_imports(&self) -> Result<Vec<CanonicalImport>, TopologicalError<WasiType, WasiModule>> {
-        let dag = self.build_dag().sort()?;
         let mut imports = vec![];
-        let mut instance: Option<WasiInstance> = None;
-        for task in dag {
-            match task.group {
-                Some(new) => match instance {
-                    Some(ref mut current) => {
-                        if new.eq(&current.module) {
-                            current.insert(task.id);
-                        }
-                        else {
-                            if let Some(s) = take(&mut instance) {
-                                imports.push(CanonicalImport::Instance(s))
-                            }
-                            let mut current = WasiInstance::new(new.clone());
-                            current.insert(task.id);
-                            instance = Some(current);
-                        }
+        for group in self.build_dag().sort_grouped_hash_specialization()? {
+            match group.id {
+                Some(s) => {
+                    let mut instance = WasiInstance::new(s.clone());
+                    for task in group.tasks {
+                        instance.insert(task);
                     }
-                    None => {
-                        let mut current = WasiInstance::new(new.clone());
-                        current.insert(task.id);
-                        instance = Some(current);
-                    }
-                },
+                    imports.push(CanonicalImport::Instance(instance));
+                }
                 None => {
-                    if let Some(s) = take(&mut instance) {
-                        imports.push(CanonicalImport::Instance(s))
+                    for task in group.tasks {
+                        // only one task in fact
+                        imports.push(CanonicalImport::Type(task.clone()))
                     }
-                    imports.push(CanonicalImport::Type(task.id.clone()));
                 }
             }
         }

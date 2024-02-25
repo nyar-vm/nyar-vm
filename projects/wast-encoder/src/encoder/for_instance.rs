@@ -38,10 +38,10 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         write!(self, "(alias export ${module} \"{name}\" (type {id}))")
     }
     fn export_parameter(&mut self, input: &WasiParameter) -> std::fmt::Result {
-        write!(self, "(param {} {}) ", input.wasi_name, input.r#type)
+        write!(self, "(param {} {}) ", input.wasi_name, input.r#type.as_wasi_type())
     }
     fn export_return_type(&mut self, output: &WasiType) -> std::fmt::Result {
-        write!(self, "(result {})", output)
+        write!(self, "(result {})", output.as_wasi_type())
     }
     fn export_function(&mut self, function: &ExternalFunction) -> std::fmt::Result {
         let name = function.wasi_name.as_str();

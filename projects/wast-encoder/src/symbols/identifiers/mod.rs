@@ -14,7 +14,7 @@ impl Identifier {
         self.name.as_ref().to_case(Case::Kebab)
     }
     pub(crate) fn wasi_id(&self) -> String {
-        encode_id(self.name.as_ref())
+        encode_id(&format!("{self:#}"))
     }
 }
 
