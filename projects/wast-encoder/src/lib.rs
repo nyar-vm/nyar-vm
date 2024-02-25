@@ -4,31 +4,31 @@ use std::{
     sync::Arc,
 };
 
-use crate::dag::DependenciesTrace;
 pub use crate::{
     dag::DependentGraph,
     encoder::{encode_id, encode_kebab, WastEncoder},
     enumerations::{WasiEnumeration, WasiEnumerationItem},
     functions::{ExternalFunction, WasiParameter},
+    instances::WasiInstance,
     resources::WasiResource,
     symbols::{
         identifiers::Identifier,
         wasi_publisher::{WasiModule, WasiPublisher},
     },
     variants::{VariantItem, VariantType},
-    wasi_module::WasiInstance,
     wasi_types::WasiType,
 };
+use crate::dag::DependenciesTrace;
 
 mod dag;
 mod encoder;
 mod enumerations;
 mod functions;
+mod instances;
 mod records;
 mod resources;
 mod symbols;
 mod variants;
-mod wasi_module;
 mod wasi_types;
 
 pub struct CanonicalWasi {

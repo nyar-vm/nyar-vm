@@ -1,4 +1,5 @@
 use std::{
+    fmt::Write,
     hash::{Hash, Hasher},
     ops::AddAssign,
     sync::Arc,
@@ -7,7 +8,11 @@ use std::{
 use convert_case::{Case, Casing};
 use indexmap::IndexMap;
 
-use crate::{dag::DependentGraph, DependenciesTrace, Identifier, WasiType};
+use crate::{
+    dag::DependentGraph,
+    wasi_types::{AliasOuter, ComponentDefine},
+    DependenciesTrace, Identifier, WasiType, WastEncoder,
+};
 
 mod arithmetic;
 mod display;

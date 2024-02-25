@@ -43,24 +43,16 @@ impl Display for WasiType {
     }
 }
 
-impl WasiType {
-    #[track_caller]
-    pub(crate) fn write_wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+impl ComponentDefine for WasiType {
+    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
-            Self::Integer8 { signed } => {}
-            Self::Integer16 { signed } => {}
-            Self::Integer32 { signed } => {}
-            Self::Integer64 { signed } => {}
-            Self::Option { inner } => {}
-            Self::Result { success, failure } => {}
-            Self::Resource(_) => unreachable!("Resource types are not defined in the wasi component section"),
-            Self::Variant(v) => v.write_wasi_define(w)?,
-            Self::TypeHandler { name, own } => {}
-            Self::TypeAlias { name } => {}
-            Self::External(_) => {}
+            Self::Variant(v) => v.component_define(w),
+            _ => panic!("This type cannot be defined in the wasi component section\n    {self}"),
         }
-        Ok(())
     }
+}
+
+impl WasiType {
     pub(crate) fn write_wasi_reference<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Integer8 { signed } => match *signed {
@@ -83,6 +75,7 @@ impl WasiType {
                 todo!()
             }
             Self::Result { success, failure } => {
+                w.write_str("(result ")?;
                 if let Some(s) = success {
                     s.write_wasi_reference(w)?
                 }
@@ -91,11 +84,12 @@ impl WasiType {
                     f.write_wasi_reference(w)?;
                     w.write_str(")")?;
                 }
+                w.write_str(")")?
             }
             Self::Resource(_) => {
                 todo!()
             }
-            Self::Variant(v) => v.write_wasi_define(w)?,
+            Self::Variant(v) => v.component_define(w)?,
             Self::TypeHandler { name, own } => match own {
                 true => write!(w, "(own {})", name.wasi_id())?,
                 false => write!(w, "(borrow {})", name.wasi_id())?,
@@ -107,6 +101,14 @@ impl WasiType {
         }
         Ok(())
     }
+    pub(crate) fn write_wasi_result<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(result ")?;
+        self.write_wasi_reference(w)?;
+        w.write_str(")")
+    }
+}
+
+impl WasiType {
     pub fn as_language_type(&self) -> String {
         match self {
             Self::Integer8 { signed } => match *signed {
@@ -172,6 +174,16 @@ impl WasiType {
             Self::TypeHandler { .. } => "".to_string(),
             Self::TypeAlias { .. } => "".to_string(),
             Self::External(_) => "".to_string(),
+        }
+    }
+}
+
+impl AliasOuter for WasiType {
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Resource(v) => v.alias_outer(w),
+            Self::Variant(v) => v.alias_outer(w),
+            _ => panic!("This type cannot be imported into component instance\n    {self}"),
         }
     }
 }
