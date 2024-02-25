@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{dag::DependentGraph, DependenciesTrace, Identifier, WasiModule, WasiType};
+use crate::{dag::DependentGraph, DependenciesTrace, Identifier, wasi_types::AliasExport, WasiModule, WasiType, WastEncoder};
 
 mod arithmetic;
 mod display;
@@ -40,38 +40,6 @@ impl ExternalFunction {
             output: None,
         }
     }
-    // pub fn constructor<S, M>(instances: M, wasi_class: &str, name: S) -> Self
-    // where
-    //     S: Into<Arc<str>>,
-    //     M: Into<WasiModule>,
-    // {
-    //     let wasi_name = format!("[constructor]{}", wasi_class);
-    //     Self { name: name.into(), instances: instances.into(), wasi_name, inputs: vec![], output: None }
-    // }
-    // pub fn static_method<S, M>(instances: M, name: S, wasi_class: &str, wasi_name: &str) -> Self
-    // where
-    //     S: Into<Arc<str>>,
-    //     M: Into<WasiModule>,
-    // {
-    //     let wasi_name = format!("[static]{}.{}", wasi_class, wasi_name);
-    //     Self { name: name.into(), wasi_name, inputs: vec![], output: None }
-    // }
-    // pub fn method<S>(name: S, wasi_class: &str, wasi_name: &str) -> Self
-    // where
-    //     S: Into<Arc<str>>,
-    //     M: Into<WasiModule>,
-    // {
-    //     let wasi_name = format!("[method]{}.{}", wasi_class, wasi_name);
-    //     Self { name: name.into(), wasi_name, inputs: vec![], output: None }
-    // }
-    // pub fn destructor<S, M>(name: S, wasi_class: &str) -> Self
-    // where
-    //     S: Into<Arc<str>>,
-    //     M: Into<WasiModule>,
-    // {
-    //     let wasi_name = format!("[resource-drop]{}", wasi_class);
-    //     Self { name: name.into(), wasi_name, inputs: vec![], output: None }
-    // }
 }
 
 impl WasiParameter {
@@ -83,7 +51,13 @@ impl WasiParameter {
         Self { name: wasi_name.clone(), wasi_name, r#type }
     }
 }
-
+impl AliasExport for ExternalFunction {
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        let id = self.symbol.wasi_id();
+        let name = self.wasi_name.as_str();
+        write!(w, "(alias export ${module} \"{name}\" (func {id}))")
+    }
+}
 impl DependenciesTrace for ExternalFunction {
     fn define_language_types(&self, dict: &mut DependentGraph) {
         dict.types.insert(self.symbol.clone(), WasiType::External(Box::new(self.clone())));
