@@ -21,24 +21,30 @@ fn define_io_types() -> DependentGraph {
     stream_error += VariantItem::new("Closed");
     global += stream_error;
 
-    let mut f0 = ExternalFunction::new(wasi_io_streams.clone(), "blocking-write", "std::io::OutputStream::write_and_flush");
-    f0 += WasiParameter::new(
-        "self",
-        WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
-    );
-    f0 += WasiType::Result {
-        success: None,
-        failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
-    };
-    global += f0;
+    {
+        // let mut f0 = ExternalFunction::new(wasi_io_streams.clone(), "blocking-write", "std::io::OutputStream::write_and_flush");
+        // f0 += WasiParameter::new(
+        //     "self",
+        //     WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
+        // );
+        // f0 += WasiType::Result {
+        //     success: None,
+        //     failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
+        // };
+        // global += f0;
+    }
 
     let mut f1 = ExternalFunction::new(
         wasi_io_streams.clone(),
-        "blocking-write-and-flush",
+        "[method]output-stream.blocking-write-and-flush",
         "std::io::OutputStream::blocking_write_and_flush",
     );
     f1 += WasiParameter::new(
         "self",
+        WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
+    );
+    f1 += WasiParameter::new(
+        "contents",
         WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
     );
     f1 += WasiType::Result {
@@ -75,6 +81,7 @@ fn test_hello_world() {
     }
 
     let mut source = CanonicalWasi::default();
+    source.graph = global;
     source.imports = dag;
 
     let wast = source.encode();

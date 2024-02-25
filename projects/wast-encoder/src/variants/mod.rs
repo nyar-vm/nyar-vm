@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fmt::Write,
     hash::{Hash, Hasher},
     ops::AddAssign,
@@ -17,7 +18,7 @@ use crate::{
 mod arithmetic;
 mod display;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq)]
 pub struct VariantType {
     /// Variant name in language
     pub symbol: Identifier,
@@ -25,7 +26,23 @@ pub struct VariantType {
     pub variants: IndexMap<Arc<str>, VariantItem>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+impl PartialEq for VariantType {
+    fn eq(&self, other: &Self) -> bool {
+        self.symbol.eq(&other.symbol)
+    }
+}
+impl PartialOrd for VariantType {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.symbol.partial_cmp(&other.symbol)
+    }
+}
+impl Ord for VariantType {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.symbol.cmp(&other.symbol)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariantItem {
     /// Variant name in language
     pub symbol: Arc<str>,

@@ -1,8 +1,6 @@
 use std::fmt::Write;
 
-use crate::{
-    CanonicalImport, CanonicalWasi, ExternalFunction, wasi_types::ComponentDefine, WasiInstance, WasiParameter, WasiResource,
-};
+use crate::{CanonicalImport, CanonicalWasi, ExternalFunction, wasi_types::ComponentDefine, WasiParameter};
 
 mod for_instance;
 
@@ -33,6 +31,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         write!(self.writer, "(component ${}", self.source.name)?;
         self.indent();
         for import in &self.source.imports {
+            self.newline()?;
             import.component_define(self)?;
         }
         self.dedent(1);
@@ -40,7 +39,6 @@ impl<'a, W: Write> WastEncoder<'a, W> {
     }
     pub fn indent(&mut self) {
         self.indent += 1;
-        self.newline().ok();
     }
     pub fn dedent(&mut self, end: usize) {
         self.indent -= 1;

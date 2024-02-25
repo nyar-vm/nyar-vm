@@ -33,6 +33,7 @@ mod wasi_types;
 
 pub struct CanonicalWasi {
     pub name: Arc<str>,
+    pub graph: DependentGraph,
     pub imports: Vec<CanonicalImport>,
     pub type_signatures: bool,
 }
@@ -53,7 +54,7 @@ impl Debug for CanonicalImport {
 
 impl Default for CanonicalWasi {
     fn default() -> Self {
-        Self { name: Arc::from("root"), imports: vec![], type_signatures: true }
+        Self { name: Arc::from("root"), graph: Default::default(), imports: vec![], type_signatures: true }
     }
 }
 

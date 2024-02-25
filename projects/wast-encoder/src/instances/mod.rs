@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Formatter, Write},
     ops::AddAssign,
 };
@@ -55,9 +55,18 @@ impl WasiInstance {
             }
         }
     }
-    pub fn dependencies(&self, dict: &DependentGraph) -> Vec<WasiType> {
+    pub fn dependencies(&self, dict: &DependentGraph) -> BTreeSet<WasiType> {
+        let mut dependencies = BTreeSet::default();
         let mut types = vec![];
         self.functions.values().for_each(|f| f.collect_wasi_types(dict, &mut types));
-        types.iter().map(|s| (*s).clone()).collect()
+        for ty in types {
+            match ty.wasm_module() {
+                Some(s) if s.eq(&self.module) => continue,
+                _ => {
+                    dependencies.insert(ty.clone());
+                }
+            }
+        }
+        dependencies
     }
 }
