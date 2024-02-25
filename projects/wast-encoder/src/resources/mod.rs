@@ -1,7 +1,9 @@
 use std::fmt::Write;
 
 use crate::{
-    dag::DependentGraph, DependenciesTrace, Identifier, wasi_types::AliasOuter, WasiModule, WasiType, WastEncoder,
+    dag::DependentGraph,
+    wasi_types::{AliasExport, AliasOuter},
+    DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -17,7 +19,13 @@ impl WasiResource {
         write!(w, "(export \"{}\" (type (sub resource)))", self.wasi_name)
     }
 }
-
+impl AliasExport for WasiResource {
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        let id = self.symbol.wasi_id();
+        let name = self.wasi_name.as_str();
+        write!(w, "(alias export ${module} \"{name}\" (type {id}))")
+    }
+}
 impl AliasOuter for WasiResource {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         let root = &w.source.name;

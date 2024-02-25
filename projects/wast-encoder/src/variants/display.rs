@@ -19,6 +19,7 @@ impl AliasOuter for VariantType {
         write!(w, "(export {id} \"{name}\" (type (eq {id}?)))")
     }
 }
+
 impl ComponentDefine for VariantType {
     fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, ";; variant {}", self.symbol)?;

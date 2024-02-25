@@ -1,3 +1,5 @@
+use crate::wasi_types::AliasExport;
+
 use super::*;
 
 impl Debug for WasiInstance {
@@ -9,5 +11,31 @@ impl Debug for WasiInstance {
             .field("resources", &resources)
             .field("functions", &functions)
             .finish()
+    }
+}
+
+impl ComponentDefine for WasiInstance {
+    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(import \"{name}\" (instance ${name}", name = self.module)?;
+        w.indent();
+        for wasi in self.resources.values() {
+            wasi.write_wasi_define(w)?;
+            w.newline()?;
+        }
+        for wasi in self.functions.values() {
+            w.export_function(wasi)?;
+            w.newline()?
+        }
+        w.dedent(2);
+        w.newline()?;
+        for wasi in self.resources.values() {
+            wasi.alias_export(w, &self.module)?;
+            w.newline()?
+        }
+        for wasi in self.functions.values() {
+            wasi.alias_export(w, &self.module)?;
+            w.newline()?
+        }
+        Ok(())
     }
 }

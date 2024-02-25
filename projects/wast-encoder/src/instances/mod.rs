@@ -1,10 +1,13 @@
 use std::{
     collections::BTreeMap,
-    fmt::{Debug, Formatter},
+    fmt::{Debug, Formatter, Write},
     ops::AddAssign,
 };
 
-use crate::{dag::DependenciesTrace, DependentGraph, ExternalFunction, Identifier, WasiModule, WasiResource, WasiType};
+use crate::{
+    dag::DependenciesTrace, DependentGraph, ExternalFunction, Identifier, wasi_types::ComponentDefine, WasiModule,
+    WasiResource, WasiType, WastEncoder,
+};
 
 mod convert;
 mod display;
