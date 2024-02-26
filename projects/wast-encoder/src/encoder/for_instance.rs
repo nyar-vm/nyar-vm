@@ -3,6 +3,7 @@ use super::*;
 impl ComponentDefine for CanonicalImport {
     fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
+            Self::MockMemory => w.write_str("(memory 1 1)\n"),
             Self::Type(v) => v.component_define(w),
             Self::Instance(v) => v.component_define(w),
         }

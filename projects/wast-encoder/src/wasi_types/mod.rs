@@ -34,6 +34,9 @@ pub enum WasiType {
         name: Identifier,
         own: bool,
     },
+    Array {
+        inner: Box<WasiType>,
+    },
     /// A referenced type, the real type needs to be found later
     TypeAlias {
         /// Type language name
@@ -45,8 +48,16 @@ pub enum WasiType {
 impl WasiType {
     pub fn wasm_module(&self) -> Option<&WasiModule> {
         match self {
-            WasiType::Resource(v) => Some(&v.wasi_module),
-            WasiType::External(v) => Some(&v.wasi_module),
+            Self::Resource(v) => Some(&v.wasi_module),
+            Self::External(v) => Some(&v.wasi_module),
+            _ => None,
+        }
+    }
+    pub fn language_id(&self) -> Option<&Identifier> {
+        match self {
+            Self::Variant(v) => Some(&v.symbol),
+            Self::Resource(v) => Some(&v.symbol),
+            Self::External(v) => Some(&v.symbol),
             _ => None,
         }
     }
