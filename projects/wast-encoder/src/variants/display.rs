@@ -12,6 +12,7 @@ impl Hash for VariantType {
 
 impl AliasOuter for VariantType {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        w.newline()?;
         let root = &w.source.name;
         let id = self.symbol.wasi_id();
         let name = self.wasi_name.as_str();

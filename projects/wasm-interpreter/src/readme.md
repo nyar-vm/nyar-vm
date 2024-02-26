@@ -1,65 +1,79 @@
-Another benefit is that if all gc types are used, there is no need to bring in a memory allocator, which helps reduce the size and warm up faster.
+- input
 
-rustc's `cabi_export_realloc` takes about 27000 lines of instructions, libc is even larger.
+```vk
+namespace std::io;
 
-Other smaller allocators sacrifice either speed or security.
+#ffi("wasi:io/error@0.2.0", "error")
+resource class IoError { }
+
+variant StreamError {
+    LastOperationFailed {
+        error: IoError
+    },
+    Closed
+}
+
+#ffi("wasi:io/streams", "input-stream")
+resource class InputStream {
+    #ffi("wasi:io/streams", "[method]output-stream.blocking-write-and-flush")
+    blocking_write_and_flush(self, contents: List<u8>) -> Result<(), StreamError>;
+}
+
+#ffi("wasi:cli/stdin", "get-stdin")
+function standard_input() -> InputStream { }
+
+#ffi("wasi:cli/stdout", "get-stdout")
+function standard_output() -> OutputStream { }
+
+#ffi("wasi:cli/stderr", "get-stderr")
+function standard_error() -> OutputStream { }
+```
+
+- output
 
 ```wat
-(component
-    ;; Define a memory allocator
-    (core module $MockMemory ;; Replaced by an actual allocator module, such as libc
-        (func $realloc (export "realloc") (param i32 i32 i32 i32) (result i32)
-            (i32.const 0)
-        )
-        (memory $memory (export "memory") 255)
-    )
-    (core instance $mock_memory (instantiate $MockMemory))
-    ;; import wasi function
-    (import "wasi:random/random@0.2.0" (instance $wasi:random/random@0.2.0
-        (export "get-random-bytes" (func (param "length" u64) (result (list u8))))
+(component $root
+    (import "wasi:io/error@0.2.0" (instance $wasi:io/error@0.2.0
+        (export $std::io::IoError "error" (type (sub resource)))
     ))
-    ;; wasi function to wasm function
-    (core func $wasi:random/random@0.2.0/get-random-bytes (canon lower
-        (func $wasi:random/random@0.2.0 "get-random-bytes")
-        (memory $mock_memory "memory")
-        (realloc (func $mock_memory "realloc"))
+    (alias export $wasi:io/error@0.2.0 "error" (type $std::io::IoError))
+    (type $std::io::StreamError (variant
+        (case "last-operation-failed" (own $std::io::IoError))
+        (case "closed")
     ))
-    ;; import wasm function
-    (core module $TestRandom
-        (type (func (param i64 i32)))
-        (import "wasi:random/random@0.2.0" "get-random-bytes" (func $wasi:random/random@0.2.0/get-random-bytes (type 0)))
-    )
-    ;; instantiate wasm module with wasi instance
-    (core instance $test_random (instantiate $TestRandom
-        (with "wasi:random/random@0.2.0" (instance (export "get-random-bytes" (func $wasi:random/random@0.2.0/get-random-bytes))))
+    (import "wasi:io/streams@0.2.0" (instance $wasi:io/streams@0.2.0
+        (export $std::io::InputStream "input-stream" (type (sub resource)))
+        (export $std::io::OutputStream "output-stream" (type (sub resource)))
+        (alias outer $root $std::io::StreamError (type $std::io::StreamError?))(export $std::io::StreamError "stream-error" (type (eq $std::io::StreamError?)))
+        (export "[method]output-stream.blocking-write-and-flush" (func
+            (param "self" (borrow $std::io::OutputStream)) 
+            (param "contents" (list u8)) 
+            (result (result (error $std::io::StreamError)))
+        ))
     ))
+    (alias export $wasi:io/streams@0.2.0 "input-stream" (type $std::io::InputStream))
+    (alias export $wasi:io/streams@0.2.0 "output-stream" (type $std::io::OutputStream))
+    (alias export $wasi:io/streams@0.2.0 "[method]output-stream.blocking-write-and-flush" (func $std::io::OutputStream::blocking_write_and_flush))
+    (import "wasi:cli/stderr@0.2.0" (instance $wasi:cli/stderr@0.2.0
+        (export "get-stderr" (func
+            (result (own $std::io::OutputStream))
+        ))
+    ))
+    (alias export $wasi:cli/stderr@0.2.0 "get-stderr" (func $std::io::standard_error))
+    (import "wasi:cli/stdin@0.2.0" (instance $wasi:cli/stdin@0.2.0
+        (export "get-stdin" (func
+            (result (own $std::io::InputStream))
+        ))
+    ))
+    (alias export $wasi:cli/stdin@0.2.0 "get-stdin" (func $std::io::standard_input))
+    (import "wasi:cli/stdout@0.2.0" (instance $wasi:cli/stdout@0.2.0
+        (export "get-stdout" (func
+            (result (own $std::io::OutputStream))
+        ))
+    ))
+    (alias export $wasi:cli/stdout@0.2.0 "get-stdout" (func $std::io::standard_output))
 )
 ```
 
-If using the gc type, this can be simplified to:
-
-```wat
-(component
-    ;; import wasi function
-    (import "wasi:random/random@0.2.0" (instance $wasi:random/random@0.2.0
-        (export "get-random-bytes" (func (param "length" u64) (result (list u8))))
-    ))
-    ;; wasi function to wasm function
-    (core func $wasi:random/random@0.2.0/get-random-bytes (canon lower
-        (func $wasi:random/random@0.2.0 "get-random-bytes")
-        reference-type
-    ))
-    ;; import wasm function
-    (core module $TestRandom
-        (type (func (param i64) (result (array u8))))
-        (import "wasi:random/random@0.2.0" "get-random-bytes" (func $wasi:random/random@0.2.0/get-random-bytes (type 0)))
-    )
-    ;; instantiate wasm module with wasi instance
-    (core instance $test_random (instantiate $TestRandom
-        (with "wasi:random/random@0.2.0" (instance (export "get-random-bytes" (func $wasi:random/random@0.2.0/get-random-bytes))))
-    ))
-)
-```
 
 
-Obtaining a field of gc type requires only one instruction and does not require pointer algebra (at least three instructions), further reducing the binary size.

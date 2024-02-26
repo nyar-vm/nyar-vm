@@ -9,5 +9,8 @@
         "push": "yarn test && git push",
         "reset": "git reset Head~ --soft",
         "u": "cargo upgrade --offline --incompatible"
+    },
+    "dependencies": {
+        "@bytecodealliance/jco": "^1.0.2"
     }
 }
