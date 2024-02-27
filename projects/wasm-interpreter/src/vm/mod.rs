@@ -1,51 +1,55 @@
-use std::path::Path;
-
 use wasmtime::{
-    component::{Component, Linker, ResourceTable},
+    component::{Component, Instance, Linker, ResourceTable},
     Config, Engine, Store,
 };
 use wasmtime_wasi::preview2::{WasiCtx, WasiCtxBuilder, WasiView};
 
-pub async fn build_vm(path: &Path) -> anyhow::Result<()> {
+use crate::{Debugger, host::NyarExtension};
+
+pub struct NyarVM {
+    store: Store<ContextView>,
+    instance: Instance,
+}
+
+impl NyarVM {
+    pub async fn load_wast(wast: &str) -> anyhow::Result<Self> {
+        let engine = get_engine()?;
+
+        let component = Component::new(&engine, wast.as_bytes())?;
+
+        let mut linker = Linker::<ContextView>::new(&engine);
+        linker.allow_shadowing(true);
+        wasmtime_wasi::preview2::command::add_to_linker(&mut linker)?;
+
+        Debugger::add_to_linker(&mut linker, |state| &mut state.extension)?;
+
+        let mut builder = WasiCtxBuilder::new();
+        builder.inherit_stderr();
+
+        let mut store = Store::new(&engine, ContextView::new(ResourceTable::default(), builder.build()));
+        let instance = linker.instantiate_async(&mut store, &component).await?;
+        Ok(Self { store, instance })
+    }
+}
+
+fn get_engine() -> anyhow::Result<Engine> {
     let mut config = Config::new();
     config.async_support(true);
     config.wasm_reference_types(true);
     config.wasm_function_references(true);
     config.wasm_component_model(true);
-
-    let engine = Engine::new(&config)?;
-
-    let bytes = std::fs::read(&path)?;
-    let component = Component::new(&engine, &bytes)?;
-
-    let mut linker = Linker::<ContextView>::new(&engine);
-    linker.allow_shadowing(true);
-    wasmtime_wasi::preview2::command::add_to_linker(&mut linker)?;
-
-    let mut builder = WasiCtxBuilder::new();
-    builder.inherit_stderr();
-
-    let mut store = Store::new(&engine, ContextView::new(ResourceTable::default(), builder.build()));
-
-    let instance = linker.instantiate_async(&mut store, &component).await?;
-    let mut exports = instance.exports(&mut store);
-    let _ = exports.root();
-
-    // let f_one = instance.get_typed_func::<(), (i64, )>(&mut store, "tuple1")?;
-    // let result = f_one.call_async(&mut store, ()).await?;
-    // println!("{:?}", result);
-
-    Ok(())
+    Engine::new(&config)
 }
 
 pub struct ContextView {
     wasi: WasiCtx,
     resources: ResourceTable,
+    extension: NyarExtension,
 }
 
 impl ContextView {
     fn new(table: ResourceTable, wasi: WasiCtx) -> Self {
-        Self { resources: table, wasi }
+        Self { resources: table, wasi, extension: NyarExtension {} }
     }
 }
 
