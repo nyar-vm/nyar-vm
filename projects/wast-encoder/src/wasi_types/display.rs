@@ -3,7 +3,7 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
 };
 
-use crate::WastEncoder;
+use crate::{WasiParameter, WastEncoder};
 
 use super::*;
 
@@ -59,7 +59,37 @@ impl ComponentDefine for WasiType {
 }
 
 impl WasiType {
-    pub(crate) fn write_wasi_reference<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    pub(crate) fn write_wasi_result<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(result ")?;
+        self.upper_type(w)?;
+        w.write_str(")")
+    }
+}
+
+impl TypeReferenceInput for WasiParameter {
+    fn upper_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(param ${} ", self.name)?;
+        self.r#type.lower_type(w)?;
+        w.write_str(")")
+    }
+
+    fn lower_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+}
+impl TypeReferenceOutput for WasiType {
+    fn upper_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn lower_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        w.write_str("(result ")?;
+        self.lower_type(w)?;
+        w.write_str(")")
+    }
+}
+impl TypeReference for WasiType {
+    fn upper_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Integer8 { signed } => match *signed {
                 true => w.write_str("i8"),
@@ -83,11 +113,11 @@ impl WasiType {
             Self::Result { success, failure } => {
                 w.write_str("(result ")?;
                 if let Some(s) = success {
-                    s.write_wasi_reference(w)?
+                    s.upper_type(w)?
                 }
                 if let Some(f) = failure {
                     w.write_str("(error ")?;
-                    f.write_wasi_reference(w)?;
+                    f.upper_type(w)?;
                     w.write_str(")")?;
                 }
                 w.write_str(")")?
@@ -106,16 +136,45 @@ impl WasiType {
             }
             Self::Array { inner } => {
                 w.write_str("(list ")?;
-                inner.write_wasi_reference(w)?;
+                inner.upper_type(w)?;
                 w.write_str(")")?
             }
         }
         Ok(())
     }
-    pub(crate) fn write_wasi_result<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, "(result ")?;
-        self.write_wasi_reference(w)?;
-        w.write_str(")")
+
+    fn lower_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Integer8 { .. } => w.write_str("i32")?,
+            Self::Integer16 { .. } => w.write_str("i32")?,
+            Self::Integer32 { .. } => w.write_str("i32")?,
+            Self::Integer64 { .. } => w.write_str("i32")?,
+            Self::Option { .. } => {
+                todo!()
+            }
+            Self::Result { .. } => {
+                todo!()
+            }
+            Self::Resource(_) => {
+                todo!()
+            }
+            Self::Variant(_) => {
+                todo!()
+            }
+            Self::TypeHandler { .. } => {
+                todo!()
+            }
+            Self::Array { .. } => {
+                todo!()
+            }
+            Self::TypeAlias { .. } => {
+                todo!()
+            }
+            Self::External(_) => {
+                todo!()
+            }
+        }
+        Ok(())
     }
 }
 

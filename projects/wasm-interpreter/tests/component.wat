@@ -6,6 +6,12 @@
         (memory $memory (export "memory") 15)
     )
     (core instance $memory (instantiate $MockMemory))
+    (import "wasi:debugger/print" (instance $wasi:debugger/print
+        (export "print-i8" (func
+            (param "i" i8) 
+        ))
+    ))
+    (alias export $wasi:debugger/print "print-i8" (func $print_i8))
     (import "wasi:io/error@0.2.0" (instance $wasi:io/error@0.2.0
         (export $std::io::IoError "error" (type (sub resource)))
     ))
@@ -48,6 +54,11 @@
         ))
     ))
     (alias export $wasi:cli/stdout@0.2.0 "get-stdout" (func $std::io::standard_output))
+    (core func $print_i8 (canon lower
+        (func $wasi:debugger/print "print-i8")
+        (memory $memory "memory")(realloc (func $memory "realloc"))
+        string-encoding=utf8
+    ))
     (core func $std::io::OutputStream::write (canon lower
         (func $wasi:io/streams@0.2.0 "[method]output-stream.write")
         (memory $memory "memory")(realloc (func $memory "realloc"))
@@ -68,4 +79,19 @@
         (memory $memory "memory")(realloc (func $memory "realloc"))
         string-encoding=utf8
     ))
+    (core module $Main
+        
+        
+        (import "wasi:debugger/print" "print-i8" (func $print_i8 (param s))
+        
+        
+        
+        (import "wasi:io/streams@0.2.0" "[method]output-stream.write" (func $std::io::OutputStream::write (param TypeHandler(std∷io∷OutputStream) Array(..))) (result Result<?, ?>))
+        
+        (import "wasi:cli/stderr@0.2.0" "get-stderr" (func $std::io::standard_error (param) (result TypeHandler(std∷io∷OutputStream own)))
+        
+        (import "wasi:cli/stdin@0.2.0" "get-stdin" (func $std::io::standard_input (param) (result TypeHandler(std∷io∷InputStream own)))
+        
+        (import "wasi:cli/stdout@0.2.0" "get-stdout" (func $std::io::standard_output (param) (result TypeHandler(std∷io∷OutputStream own)))
+    )
 )

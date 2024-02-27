@@ -8,8 +8,8 @@ use nyar_error::NyarError;
 
 use crate::{
     dag::DependenciesTrace,
-    DependentGraph,
-    ExternalFunction, wasi_types::{ComponentDefine, LowerFunction}, WasiInstance, WasiParameter, WasiType,
+    wasi_types::{ComponentDefine, LowerFunction},
+    DependentGraph, ExternalFunction, WasiInstance, WasiParameter, WasiType,
 };
 
 mod for_instance;
@@ -143,6 +143,19 @@ impl LowerFunction for CanonicalImport {
         }
         Ok(())
     }
+    fn lower_function_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            CanonicalImport::MockMemory => {}
+            CanonicalImport::Instance(v) => {
+                for x in v.functions.values() {
+                    w.newline()?;
+                    x.lower_function_import(w)?;
+                }
+            }
+            CanonicalImport::Type(_) => {}
+        }
+        Ok(())
+    }
 }
 
 impl CanonicalWasi {
@@ -194,6 +207,19 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         for import in &self.source.imports {
             import.lower_function(self)?;
         }
+        {
+            self.newline()?;
+            write!(self, "(core module $Main")?;
+            self.indent();
+
+            for import in &self.source.imports {
+                self.newline()?;
+                import.lower_function_import(self)?;
+            }
+
+            self.dedent(1);
+        }
+
         self.dedent(1);
         Ok(())
     }
