@@ -1,9 +1,12 @@
-use std::{fmt::Debug, ops::AddAssign, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
-use crate::{dag::DependenciesTrace, encoder::CanonicalImport};
+use crate::{
+    dag::DependenciesTrace,
+    encoder::{CanonicalImport, WastEncoder},
+};
 pub use crate::{
     dag::DependentGraph,
-    encoder::{encode_id, encode_kebab, CanonicalWasi, WastEncoder},
+    encoder::{encode_id, encode_kebab, CanonicalWasi},
     enumerations::{WasiEnumeration, WasiEnumerationItem},
     functions::{ExternalFunction, WasiParameter},
     instances::WasiInstance,

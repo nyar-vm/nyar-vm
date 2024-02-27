@@ -31,13 +31,10 @@
 
 
 
-  (core module $TestRandom
-    (type (func (param i64 i32)))
-    (import "wasi:random/random@0.2.0" "get-random-bytes" (func $wasi:random/random@0.2.0:get-random-bytes (;0;) (type 0)))
-
-  )
-
-
+    (core module $TestRandom
+        (type (func (param i64 i32)))
+        (import "wasi:random/random@0.2.0" "get-random-bytes" (func $wasi:random/random@0.2.0:get-random-bytes (;0;) (type 0)))
+    )
     (core instance $test_random (instantiate $TestRandom
         (with "wasi:random/random@0.2.0" (instance (export "get-random-bytes" (func $wasi:random/random@0.2.0:get-random-bytes))))
     ))
