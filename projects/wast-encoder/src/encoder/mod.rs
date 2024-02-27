@@ -4,9 +4,12 @@ use std::{
     sync::Arc,
 };
 
+use nyar_error::NyarError;
+
 use crate::{
-    dag::DependenciesTrace, DependentGraph, ExternalFunction, wasi_types::ComponentDefine, WasiInstance, WasiParameter,
-    WasiType,
+    dag::DependenciesTrace,
+    DependentGraph,
+    ExternalFunction, wasi_types::{ComponentDefine, LowerFunction}, WasiInstance, WasiParameter, WasiType,
 };
 
 mod for_instance;
@@ -19,16 +22,16 @@ pub struct CanonicalWasi {
     pub indent_text: &'static str,
 }
 
-pub struct WastEncoder<'a, W> {
-    pub(crate) source: &'a CanonicalWasi,
-    pub(crate) writer: W,
-    indent: usize,
+pub(crate) struct WastEncoder<'a, W> {
+    pub source: &'a CanonicalWasi,
+    pub writer: W,
+    pub indent: usize,
 }
 
 impl CanonicalWasi {
     pub fn draw_mermaid(&self) -> String {
         let mut out = String::new();
-        println!("flowchart LR");
+        out.push_str("flowchart LR\n");
         for import in &self.imports {
             match import {
                 CanonicalImport::Instance(v) => {}
@@ -41,7 +44,7 @@ impl CanonicalWasi {
                     WasiType::Result { .. } => {}
                     WasiType::Resource(_) => {}
                     WasiType::Variant(v) => {
-                        println!("    {:#}[\"{}\"]:::variant", v.symbol, v.wasi_name);
+                        out.push_str(&format!("    subgraph \"{}\"\n", v.symbol));
                         // for item in v.variants.keys() {
                         //     println!("    {:#}::{}[\"{}\"]:::variant-item", v.symbol, item, v.wasi_name);
                         // }
@@ -58,12 +61,12 @@ impl CanonicalWasi {
         for import in &self.imports {
             match import {
                 CanonicalImport::Instance(v) => {
-                    println!("    subgraph \"{}\"", v.module);
+                    out.push_str(&format!("    subgraph \"{}\"\n", v.module));
                     for wasi in v.resources.values() {
-                        println!("        {:#}[\"{}\"]:::resource", wasi.symbol, wasi.wasi_name);
+                        out.push_str(&format!("        {:#}[\"{}\"]:::resource\n", wasi.symbol, wasi.wasi_name));
                     }
                     for wasi in v.functions.values() {
-                        println!("        {:#}[\"{}\"]:::function", wasi.symbol, wasi.wasi_name);
+                        out.push_str(&format!("        {:#}[\"{}\"]:::function\n", wasi.symbol, wasi.wasi_name));
                     }
                     for wasi in v.functions.values() {
                         let mut types = vec![];
@@ -72,12 +75,12 @@ impl CanonicalWasi {
                             match ty.language_id() {
                                 None => {}
                                 Some(s) => {
-                                    println!("        {:#} -.-> {:#}", s, wasi.symbol);
+                                    out.push_str(&format!("        {:#} -.-> {:#}\n", s, wasi.symbol));
                                 }
                             }
                         }
                     }
-                    println!("    end")
+                    out.push_str("    end\n");
                 }
                 CanonicalImport::Type(WasiType::Variant(v)) => {
                     let mut types = vec![];
@@ -85,7 +88,7 @@ impl CanonicalWasi {
                     for ty in types {
                         match ty.language_id() {
                             Some(lhs) => {
-                                println!("    {:#} -.-> {:#}", lhs, v.symbol);
+                                out.push_str(&format!("    {:#} -.-> {:#}\n", lhs, v.symbol));
                             }
                             _ => {}
                         }
@@ -126,7 +129,34 @@ impl AddAssign<WasiInstance> for CanonicalWasi {
     }
 }
 
+impl LowerFunction for CanonicalImport {
+    fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            CanonicalImport::MockMemory => {}
+            CanonicalImport::Instance(v) => {
+                for x in v.functions.values() {
+                    w.newline()?;
+                    x.lower_function(w)?;
+                }
+            }
+            CanonicalImport::Type(_) => {}
+        }
+        Ok(())
+    }
+}
+
 impl CanonicalWasi {
+    pub fn new(graph: DependentGraph) -> Result<Self, NyarError> {
+        let dag = match graph.resolve_imports() {
+            Ok(o) => o,
+            Err(e) => Err(NyarError::custom("graph error"))?,
+        };
+        let mut this = CanonicalWasi::default();
+        this.graph = graph;
+        this.imports.push(CanonicalImport::MockMemory);
+        this.imports.extend(dag);
+        Ok(this)
+    }
     pub fn add_instance(&mut self, instance: WasiInstance) {
         self.imports.push(CanonicalImport::Instance(instance));
     }
@@ -140,10 +170,10 @@ impl CanonicalWasi {
 
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn new(source: &'a CanonicalWasi, writer: W) -> Self {
-        Self { source, writer, indent: 0, indent_text: "    " }
+        Self { source, writer, indent: 0 }
     }
     pub fn with_indent_text(self, text: &'static str) -> Self {
-        Self { indent_text: text, ..self }
+        Self { ..self }
     }
 }
 
@@ -160,6 +190,9 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         for import in &self.source.imports {
             self.newline()?;
             import.component_define(self)?;
+        }
+        for import in &self.source.imports {
+            import.lower_function(self)?;
         }
         self.dedent(1);
         Ok(())
@@ -178,7 +211,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         self.write_str("\n")?;
         let range = (0..self.indent).into_iter();
         for _ in range {
-            let indent = self.indent_text.as_ref();
+            let indent = self.source.indent_text.as_ref();
             self.writer.write_str(indent)?;
         }
         Ok(())

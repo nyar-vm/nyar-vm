@@ -33,21 +33,20 @@ fn define_io_types() -> DependentGraph {
         // global += f0;
     }
 
-    let mut f1 = ExternalFunction::new(
-        wasi_io_streams.clone(),
-        "[method]output-stream.blocking-write-and-flush",
-        "std::io::OutputStream::blocking_write_and_flush",
-    );
-    f1 += WasiParameter::new(
-        "self",
-        WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
-    );
-    f1 += WasiParameter::new("contents", WasiType::Array { inner: Box::new(WasiType::Integer8 { signed: false }) });
-    f1 += WasiType::Result {
-        success: None,
-        failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
-    };
-    global += f1;
+    {
+        let mut f1 =
+            ExternalFunction::new(wasi_io_streams.clone(), "[method]output-stream.write", "std::io::OutputStream::write");
+        f1 += WasiParameter::new(
+            "self",
+            WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
+        );
+        f1 += WasiParameter::new("contents", WasiType::Array { inner: Box::new(WasiType::Integer8 { signed: false }) });
+        f1 += WasiType::Result {
+            success: None,
+            failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
+        };
+        global += f1;
+    }
     {
         let wasi_cli_get = WasiModule::from_str("wasi:cli/stdin@0.2.0").unwrap();
         let mut function = ExternalFunction::new(wasi_cli_get.clone(), "get-stdin", "std::io::standard_input");
@@ -76,12 +75,8 @@ fn define_io_types() -> DependentGraph {
 fn test_hello_world() {
     let component = Path::new(env!("CARGO_MANIFEST_DIR")).join("../wasm-interpreter/src/component.wat");
     let mut wat = std::fs::File::create(component).unwrap();
-    let global = define_io_types();
-    let dag = global.resolve_imports().unwrap();
 
-    let mut source = CanonicalWasi::default();
-    source.graph = global;
-    source.imports = dag;
+    let source = CanonicalWasi::new(define_io_types()).unwrap();
 
     println!("{}", source.draw_mermaid());
 

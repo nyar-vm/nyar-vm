@@ -3,7 +3,15 @@ use super::*;
 impl ComponentDefine for CanonicalImport {
     fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
-            Self::MockMemory => w.write_str("(memory 1 1)\n"),
+            Self::MockMemory => w.write_str(
+                r#"(core module $MockMemory
+        (func $realloc (export "realloc") (param i32 i32 i32 i32) (result i32)
+            (i32.const 0)
+        )
+        (memory $memory (export "memory") 15)
+    )
+    (core instance $memory (instantiate $MockMemory))"#,
+            ),
             Self::Type(v) => v.component_define(w),
             Self::Instance(v) => v.component_define(w),
         }

@@ -1,0 +1,18 @@
+package wasi:debugger;
+
+world debugger {
+    import print;
+}
+
+interface print {
+    print-i8: func(i: s8);
+    print-i16: func(i: s16);
+    print-i32: func(i: s32);
+    print-i64: func(i: s64);
+    print-u8: func(u: u8);
+    print-u16: func(u: u16);
+    print-u32: func(u: u32);
+    print-u64: func(u: u64);
+    print-f32: func(f: float32);
+    print-f64: func(f: float64);
+}

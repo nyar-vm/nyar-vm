@@ -4,7 +4,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::{dag::DependentGraph, DependenciesTrace, Identifier, wasi_types::AliasExport, WasiModule, WasiType, WastEncoder};
+use crate::{
+    dag::DependentGraph,
+    DependenciesTrace,
+    Identifier, wasi_types::{AliasExport, LowerFunction}, WasiModule, WasiType, WastEncoder,
+};
 
 mod arithmetic;
 mod display;
@@ -58,6 +62,23 @@ impl AliasExport for ExternalFunction {
         write!(w, "(alias export ${module} \"{name}\" (func {id}))")
     }
 }
+
+impl LowerFunction for ExternalFunction {
+    fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(core func {} (canon lower", self.symbol.wasi_id())?;
+        w.indent();
+        w.newline()?;
+        write!(w, "(func ${} \"{}\")", self.wasi_module, self.wasi_name)?;
+        w.newline()?;
+        write!(w, "(memory $memory \"memory\")")?;
+        write!(w, "(realloc (func $memory \"realloc\"))")?;
+        w.newline()?;
+        write!(w, "string-encoding=utf8")?;
+        w.dedent(2);
+        Ok(())
+    }
+}
+
 impl DependenciesTrace for ExternalFunction {
     fn define_language_types(&self, dict: &mut DependentGraph) {
         dict.types.insert(self.symbol.clone(), WasiType::External(Box::new(self.clone())));
