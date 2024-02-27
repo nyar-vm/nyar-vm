@@ -79,6 +79,22 @@ pub(crate) trait ComponentDefine {
 
 pub(crate) trait LowerFunction {
     fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_function_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+
+pub(crate) trait TypeReference {
+    fn upper_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+
+pub(crate) trait TypeReferenceInput {
+    fn upper_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+
+pub(crate) trait TypeReferenceOutput {
+    fn upper_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
 impl DependenciesTrace for WasiType {

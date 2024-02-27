@@ -3,7 +3,7 @@ name = "nyar-runtime"
 version = "0.0.2"
 categories = ["wasm"]
 keywords = ["webassembly", "wasm"]
-description = "WAST encoder supporting wasi and wit components"
+description = "nyar customized wasi runtime"
 repository = "https://github.com/oovm/vcc"
 documentation = "https://docs.rs/wast-encoder"
 readme = "readme.md"
@@ -13,5 +13,9 @@ exclude = ["package.json", "tests/**"]
 
 [dependencies]
 anyhow = "1.0"
+wat = "1.200.0"
 wasmtime = { version = "18.0.1", features = ["component-model", "async"] }
-wasmtime-wasi = { version = "18.0.1", features = ["tokio", ] }
+wasmtime-wasi = { version = "18.0.1", features = ["tokio"] }
+
+[dev-dependencies]
+tokio = { version = "1.36.0", features = ["full"] }

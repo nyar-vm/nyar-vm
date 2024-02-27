@@ -1,3 +1,5 @@
+use crate::wasi_types::TypeReference;
+
 use super::*;
 
 impl Hash for VariantType {
@@ -43,7 +45,7 @@ impl ComponentDefine for VariantItem {
         write!(w, "(case \"{}\"", self.wasi_name)?;
         if let Some(s) = &self.fields {
             w.write_char(' ')?;
-            s.write_wasi_reference(w)?
+            s.upper_type(w)?
         }
         w.write_char(')')
     }
