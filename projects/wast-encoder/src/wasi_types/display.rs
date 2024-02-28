@@ -39,6 +39,7 @@ impl Display for WasiType {
                     false => write!(f, "&{}", name),
                 }?,
                 Self::TypeAlias { name } => write!(f, "{}", name)?,
+                WasiType::External(_) => {}
             }
         }
         else {
@@ -84,6 +85,7 @@ impl Display for WasiType {
                     false => write!(f, "(borrow {})", name.wasi_id())?,
                 },
                 Self::TypeAlias { name } => write!(f, "${}", name)?,
+                _ => {}
             }
         }
         Ok(())

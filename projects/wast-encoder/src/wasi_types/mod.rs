@@ -1,10 +1,10 @@
 use std::fmt::{Display, Formatter};
 
-use crate::{DependencyLogger, Identifier, ResolveDependencies, VariantType, WasiResource};
+use crate::{dag::DependentGraph, DependencyLogger, Identifier, ResolveDependencies, VariantType, WasiResource};
 
 mod display;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WasiType {
     Integer8 {
         signed: bool,
@@ -40,6 +40,19 @@ pub enum WasiType {
 }
 
 impl ResolveDependencies for WasiType {
+    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
+        match self {
+            WasiType::Option { inner } => inner.collect_wasi_types(dict),
+            WasiType::Result { success, failure } => {
+                success.iter().for_each(|s| s.collect_wasi_types(dict));
+                failure.iter().for_each(|f| f.collect_wasi_types(dict));
+            }
+            WasiType::Resource(v) => v.collect_wasi_types(dict),
+            WasiType::Variant(v) => v.collect_wasi_types(dict),
+            _ => {}
+        };
+    }
+
     fn trace_language_types(&self, dict: &mut DependencyLogger) {
         match self {
             Self::Option { inner } => inner.trace_language_types(dict),
@@ -71,6 +84,7 @@ impl ResolveDependencies for WasiType {
             WasiType::Variant(v) => v.trace_modules(dict),
             WasiType::TypeHandler { .. } => {}
             WasiType::TypeAlias { .. } => {}
+            WasiType::External(_) => {}
         }
     }
 }

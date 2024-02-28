@@ -1,10 +1,12 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Formatter},
-    ops::AddAssign,
+    ops::{AddAssign, Index},
+    str::FromStr,
     sync::Arc,
 };
 
+use petgraph::{algo::toposort, data::FromElements, graph::DiGraph};
 use semver::Version;
 
 use crate::{ExternalFunction, Identifier, VariantType, WasiInstance, WasiModule, WasiResource, WasiType};
@@ -12,6 +14,7 @@ use crate::{ExternalFunction, Identifier, VariantType, WasiInstance, WasiModule,
 mod arithmetic;
 
 pub trait ResolveDependencies {
+    fn collect_wasi_types(&self, dict: &mut DependentGraph);
     fn trace_language_types(&self, dict: &mut DependencyLogger);
     fn trace_modules(&self, dict: &mut DependencyLogger);
     fn dependent_modules(&self, registry: &DependentRegistry) -> BTreeSet<WasiModule> {
@@ -59,6 +62,7 @@ impl DependentRegistry {
                 WasiType::Variant(_) => {}
                 WasiType::TypeHandler { .. } => {}
                 WasiType::TypeAlias { .. } => {}
+                WasiType::External(_) => {}
             }
         }
         instances
@@ -106,5 +110,84 @@ impl DependentRegistry {
                 _ => {}
             }
         }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct WasmType {
+    name: &'static str,
+    module: Option<&'static str>,
+    dependencies: Vec<&'static str>,
+}
+
+impl WasmType {
+    pub fn new(name: &'static str) -> Self {
+        Self { name, module: None, dependencies: vec![] }
+    }
+    pub fn with_module(mut self, module: &'static str) -> Self {
+        self.module = Some(module);
+        self
+    }
+    pub fn with_dependency(mut self, dependency: &'static str) -> Self {
+        self.dependencies.push(dependency);
+        self
+    }
+}
+// #[test]
+// fn test_dag() {
+//     let mut root = Dag::<WasmType, String, u32>::new();
+//     let function_write = root.add_node(WasmType::new("write".to_string()));
+//     let (_, stream_error) =
+//         root.add_child(function_write, "stream-error".to_string(), WasmType::new("stream-error".to_string()));
+//     let (_, io_error) = root.add_child(stream_error, "io-error".to_string(), WasmType::new("io-error".to_string()));
+//
+//     for (edge, node) in root.recursive_walk(&root) {
+//         let item = root.index(node);
+//         println!("{:?}", item);
+//     }
+// }
+
+#[derive(Default, Debug)]
+pub struct DependentGraph {
+    dag: DiGraph<DependencyItem, ()>,
+    types: BTreeSet<WasiType>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DependencyItem {
+    Item(WasiType),
+    Module(WasiModule),
+}
+
+impl DependentGraph {
+    pub fn insert(&mut self, item: DependencyItem) -> petgraph::graph::NodeIndex {
+        for index in self.dag.node_indices() {
+            match self.dag.node_weight(index) {
+                Some(s) if item.eq(s) => return index,
+                _ => continue,
+            }
+        }
+        self.dag.add_node(item)
+    }
+    pub fn insert_with_dependency(&mut self, item: WasiType, dependent: DependencyItem) {
+        let node = self.insert(DependencyItem::Item(item));
+        let dependency = self.insert(dependent);
+        self.dag.add_edge(node, dependency, ());
+    }
+    pub fn topological_sort(&self) -> Vec<DependencyItem> {
+        let mut output = Vec::with_capacity(self.dag.node_count());
+        let sort = match toposort(&self.dag, None) {
+            Ok(o) => o,
+            Err(e) => {
+                panic!("{:?}", e)
+            }
+        };
+        for node in sort.into_iter().rev() {
+            match self.dag.node_weight(node) {
+                Some(s) => output.push(s.clone()),
+                None => continue,
+            }
+        }
+        output
     }
 }

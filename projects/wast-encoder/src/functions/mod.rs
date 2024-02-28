@@ -4,14 +4,14 @@ use std::{
     sync::Arc,
 };
 
-use crate::{DependencyLogger, ResolveDependencies, WasiModule, WasiType};
+use crate::{dag::DependentGraph, DependencyLogger, ResolveDependencies, WasiModule, WasiType};
 
 mod arithmetic;
 
 ///         (export "[method]output-stream.blocking-write-and-flush"
 ///             (func (param "self" (borrow $output-stream)) (param "contents" (list u8)) (result $stream-result))
 ///         )
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalFunction {
     pub name: Arc<str>,
     pub wasi_module: WasiModule,
@@ -20,7 +20,7 @@ pub struct ExternalFunction {
     pub output: Option<WasiType>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WasiParameter {
     pub name: Arc<str>,
     pub wasi_name: Arc<str>,
@@ -103,6 +103,11 @@ impl Display for ExternalFunction {
 }
 
 impl ResolveDependencies for ExternalFunction {
+    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
+        self.inputs.iter().for_each(|input| input.r#type.collect_wasi_types(dict));
+        self.output.iter().for_each(|output| output.collect_wasi_types(dict));
+    }
+
     fn trace_language_types(&self, dict: &mut DependencyLogger) {
         self.inputs.iter().for_each(|input| input.trace_language_types(dict));
         self.output.iter().for_each(|output| output.trace_language_types(dict));
@@ -114,6 +119,10 @@ impl ResolveDependencies for ExternalFunction {
 }
 
 impl ResolveDependencies for WasiParameter {
+    fn collect_wasi_types(&self, dict: &mut DependentGraph) {
+        self.r#type.collect_wasi_types(dict)
+    }
+
     fn trace_language_types(&self, dict: &mut DependencyLogger) {
         self.r#type.trace_language_types(dict)
     }
