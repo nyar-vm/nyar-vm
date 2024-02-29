@@ -21,6 +21,11 @@ pub(crate) trait LowerFunction {
     fn lower_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
+pub(crate) trait TypeDefinition {
+    fn upper_type_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_type_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+}
+
 pub(crate) trait TypeReference {
     fn upper_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
     fn lower_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
