@@ -8,8 +8,8 @@ use nyar_error::NyarError;
 
 use crate::{
     dag::DependenciesTrace,
-    wasi_types::{ComponentDefine, LowerFunction},
-    DependentGraph, ExternalFunction, WasiInstance, WasiParameter, WasiType,
+    helpers::{ComponentDefine, LowerFunction},
+    DependentGraph, ExternalFunction, WasiInstance, WasiType,
 };
 
 mod for_instance;
@@ -143,13 +143,13 @@ impl LowerFunction for CanonicalImport {
         }
         Ok(())
     }
-    fn lower_function_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn lower_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             CanonicalImport::MockMemory => {}
             CanonicalImport::Instance(v) => {
                 for x in v.functions.values() {
                     w.newline()?;
-                    x.lower_function_import(w)?;
+                    x.lower_import(w)?;
                 }
             }
             CanonicalImport::Type(_) => {}
@@ -214,10 +214,40 @@ impl<'a, W: Write> WastEncoder<'a, W> {
 
             for import in &self.source.imports {
                 self.newline()?;
-                import.lower_function_import(self)?;
+                import.lower_import(self)?;
             }
 
             self.dedent(1);
+        }
+        {
+            //     (core instance $main (instantiate $Main
+            //         (with "wasi:debugger/print" (instance
+            //             (export "print-i8" (func $print_i8))
+            //         ))
+            //         (with "wasi:cli/stderr@0.2.0" (instance
+            //             (export "get-stderr" (func $std::io::standard_error))
+            //         ))
+            //     ))
+            self.newline()?;
+            write!(self, "(core instance $main (instantiate $Main")?;
+            self.indent();
+            for import in &self.source.imports {
+                match import {
+                    CanonicalImport::MockMemory => {}
+                    CanonicalImport::Instance(v) => {
+                        self.newline()?;
+                        write!(self, "(with \"{}\" (instance", v.module)?;
+                        self.indent();
+                        for x in v.functions.values() {
+                            self.newline()?;
+                            write!(self, "(export \"{}\" (func {}))", x.wasi_name, x.symbol.wasi_id())?;
+                        }
+                        self.dedent(2);
+                    }
+                    CanonicalImport::Type(_) => {}
+                }
+            }
+            self.dedent(2);
         }
 
         self.dedent(1);

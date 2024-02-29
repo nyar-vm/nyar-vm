@@ -1,10 +1,54 @@
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::{
+    fmt::{Debug, Display, Formatter, Write},
+    hash::{DefaultHasher, Hash, Hasher},
+};
 
 use crate::{
-    dag::DependentGraph, DependenciesTrace, ExternalFunction, Identifier, VariantType, WasiModule, WasiResource, WastEncoder,
+    dag::DependentGraph, DependenciesTrace, ExternalFunction, Identifier, VariantType, WasiModule, WasiParameter, WasiResource,
+    WastEncoder,
 };
 
 mod display;
+
+pub enum WasiValue {
+    Integer8(i8),
+    Integer16(i16),
+    Integer32(i32),
+    Integer64(i64),
+    Unsigned8(u8),
+    Unsigned16(u16),
+    Unsigned32(u32),
+    Unsigned64(u64),
+    Float32(f32),
+    Float64(f64),
+}
+
+impl Default for WasiValue {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
+impl WasiValue {
+    pub fn create<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Integer8(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer16(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer32(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer64(v) => write!(w, "(i64.const {})", v)?,
+            Self::Unsigned8(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned16(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned32(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned64(v) => write!(w, "(i64.const {})", v)?,
+            Self::Float32(v) => write!(w, "(f32.const {})", v)?,
+            Self::Float64(v) => write!(w, "(f64.const {})", v)?,
+        }
+        Ok(())
+    }
+    pub fn create_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        Self::default().create(w)
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WasiType {
@@ -61,40 +105,6 @@ impl WasiType {
             _ => None,
         }
     }
-}
-
-/// Mark for type who can import to the component instance
-pub(crate) trait AliasOuter {
-    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-}
-
-pub(crate) trait AliasExport {
-    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result;
-}
-
-/// Mark for type who can define in component section
-pub(crate) trait ComponentDefine {
-    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-}
-
-pub(crate) trait LowerFunction {
-    fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-    fn lower_function_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-}
-
-pub(crate) trait TypeReference {
-    fn upper_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-    fn lower_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-}
-
-pub(crate) trait TypeReferenceInput {
-    fn upper_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-    fn lower_input<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-}
-
-pub(crate) trait TypeReferenceOutput {
-    fn upper_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-    fn lower_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
 impl DependenciesTrace for WasiType {

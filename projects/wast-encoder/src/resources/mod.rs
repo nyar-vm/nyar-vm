@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use crate::{
     dag::DependentGraph,
-    wasi_types::{AliasExport, AliasOuter},
+    helpers::{AliasExport, AliasOuter},
     DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
 

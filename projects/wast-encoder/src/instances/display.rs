@@ -1,4 +1,4 @@
-use crate::wasi_types::{AliasExport, AliasOuter};
+use crate::helpers::{AliasExport, AliasOuter};
 
 use super::*;
 

@@ -34,10 +34,18 @@ impl NyarVM {
 
 fn get_engine() -> anyhow::Result<Engine> {
     let mut config = Config::new();
-    config.async_support(true);
-    config.wasm_reference_types(true);
-    config.wasm_function_references(true);
-    config.wasm_component_model(true);
+    {
+        config.async_support(true);
+        config.wasm_component_model(true);
+    }
+    {
+        config.debug_info(true);
+        config.wasm_backtrace(true);
+    }
+    {
+        config.wasm_reference_types(true);
+        config.wasm_memory64(true);
+    }
     Engine::new(&config)
 }
 

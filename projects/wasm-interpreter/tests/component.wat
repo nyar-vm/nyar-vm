@@ -8,7 +8,7 @@
     (core instance $memory (instantiate $MockMemory))
     (import "wasi:debugger/print" (instance $wasi:debugger/print
         (export "print-i8" (func
-            (param "i" i8) 
+            (param "i" s8)
         ))
     ))
     (alias export $wasi:debugger/print "print-i8" (func $print_i8))
@@ -28,8 +28,8 @@
         (export $std::io::OutputStream "output-stream" (type (sub resource)))
         (alias outer $root $std::io::StreamError (type $std::io::StreamError?))(export $std::io::StreamError "stream-error" (type (eq $std::io::StreamError?)))
         (export "[method]output-stream.write" (func
-            (param "self" (borrow $std::io::OutputStream)) 
-            (param "contents" (list u8)) 
+            (param "self" (borrow $std::io::OutputStream))
+            (param "contents" (list u8))
             (result (result (error $std::io::StreamError)))
         ))
     ))
@@ -82,16 +82,35 @@
     (core module $Main
         
         
-        (import "wasi:debugger/print" "print-i8" (func $print_i8 (param s))
+        (import "wasi:debugger/print" "print-i8" (func $print_i8 (param $i i32)))
         
         
         
-        (import "wasi:io/streams@0.2.0" "[method]output-stream.write" (func $std::io::OutputStream::write (param TypeHandler(std∷io∷OutputStream) Array(..))) (result Result<?, ?>))
+        (import "wasi:io/streams@0.2.0" "[method]output-stream.write" (func $std::io::OutputStream::write (param $self i32) (param $contents (array i32)) (result result)))
         
-        (import "wasi:cli/stderr@0.2.0" "get-stderr" (func $std::io::standard_error (param) (result TypeHandler(std∷io∷OutputStream own)))
+        (import "wasi:cli/stderr@0.2.0" "get-stderr" (func $std::io::standard_error (result i32)))
         
-        (import "wasi:cli/stdin@0.2.0" "get-stdin" (func $std::io::standard_input (param) (result TypeHandler(std∷io∷InputStream own)))
+        (import "wasi:cli/stdin@0.2.0" "get-stdin" (func $std::io::standard_input (result i32)))
         
-        (import "wasi:cli/stdout@0.2.0" "get-stdout" (func $std::io::standard_output (param) (result TypeHandler(std∷io∷OutputStream own)))
+        (import "wasi:cli/stdout@0.2.0" "get-stdout" (func $std::io::standard_output (result i32)))
     )
+    (core instance $main (instantiate $Main
+        (with "wasi:debugger/print" (instance
+            (export "print-i8" (func $print_i8))
+        ))
+        (with "wasi:io/error@0.2.0" (instance
+        ))
+        (with "wasi:io/streams@0.2.0" (instance
+            (export "[method]output-stream.write" (func $std::io::OutputStream::write))
+        ))
+        (with "wasi:cli/stderr@0.2.0" (instance
+            (export "get-stderr" (func $std::io::standard_error))
+        ))
+        (with "wasi:cli/stdin@0.2.0" (instance
+            (export "get-stdin" (func $std::io::standard_input))
+        ))
+        (with "wasi:cli/stdout@0.2.0" (instance
+            (export "get-stdout" (func $std::io::standard_output))
+        ))
+    ))
 )
