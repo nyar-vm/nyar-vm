@@ -2,7 +2,7 @@
 charset = utf-8
 
 
-[*.pest]
+[*.wit]
 indent_style = space
 indent_size = 4
 

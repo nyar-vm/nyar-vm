@@ -23,6 +23,7 @@ mod dag;
 mod encoder;
 mod enumerations;
 mod functions;
+pub mod helpers;
 mod instances;
 mod records;
 mod resources;

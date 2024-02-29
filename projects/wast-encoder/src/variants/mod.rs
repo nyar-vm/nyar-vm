@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 
 use crate::{
     dag::DependentGraph,
-    wasi_types::{AliasOuter, ComponentDefine},
+    helpers::{AliasOuter, ComponentDefine},
     DependenciesTrace, Identifier, WasiType, WastEncoder,
 };
 
