@@ -47,12 +47,13 @@ impl ExternalFunction {
 }
 
 impl WasiParameter {
-    pub fn new<S>(name: S, r#type: WasiType) -> Self
+    pub fn new<S, T>(name: S, r#type: T) -> Self
     where
         S: Into<Arc<str>>,
+        T: Into<WasiType>,
     {
         let wasi_name = name.into();
-        Self { name: wasi_name.clone(), wasi_name, r#type }
+        Self { name: wasi_name.clone(), wasi_name, r#type: r#type.into() }
     }
 }
 impl AliasExport for ExternalFunction {
