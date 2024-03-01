@@ -19,24 +19,24 @@ mod arithmetic;
 mod display;
 
 #[derive(Debug, Clone, Eq)]
-pub struct VariantType {
+pub struct WasiVariantType {
     /// Variant name in language
     pub symbol: Identifier,
     pub wasi_name: String,
     pub variants: IndexMap<Arc<str>, VariantItem>,
 }
 
-impl PartialEq for VariantType {
+impl PartialEq for WasiVariantType {
     fn eq(&self, other: &Self) -> bool {
         self.symbol.eq(&other.symbol)
     }
 }
-impl PartialOrd for VariantType {
+impl PartialOrd for WasiVariantType {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.symbol.partial_cmp(&other.symbol)
     }
 }
-impl Ord for VariantType {
+impl Ord for WasiVariantType {
     fn cmp(&self, other: &Self) -> Ordering {
         self.symbol.cmp(&other.symbol)
     }
@@ -50,7 +50,7 @@ pub struct VariantItem {
     pub fields: Option<WasiType>,
 }
 
-impl VariantType {
+impl WasiVariantType {
     pub fn new<S>(name: S) -> Self
     where
         S: Into<Identifier>,
@@ -92,7 +92,7 @@ impl VariantItem {
     }
 }
 
-impl DependenciesTrace for VariantType {
+impl DependenciesTrace for WasiVariantType {
     fn define_language_types(&self, dict: &mut DependentGraph) {
         dict.types.insert(self.symbol.clone(), WasiType::Variant(self.clone()));
     }
