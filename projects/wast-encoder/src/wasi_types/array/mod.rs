@@ -7,14 +7,20 @@ mod display;
 pub struct WasiArrayType {
     symbol: Identifier,
     r#type: WasiType,
+    mutable: bool,
 }
 
 impl WasiArrayType {
+    /// Create a new array type
     pub fn new<T>(r#type: T) -> Self
     where
         T: Into<WasiType>,
     {
-        Self { symbol: Identifier::new(""), r#type: r#type.into() }
+        Self { symbol: Identifier::new(""), r#type: r#type.into(), mutable: false }
+    }
+    /// Set the mutable flag of the array elements
+    pub fn with_mutable(self, mutable: bool) -> Self {
+        Self { mutable, ..self }
     }
 }
 

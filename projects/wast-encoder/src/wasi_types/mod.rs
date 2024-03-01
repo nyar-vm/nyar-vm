@@ -1,15 +1,25 @@
 use std::{
     fmt::{Debug, Display, Formatter, Write},
     hash::{Hash, Hasher},
+    sync::Arc,
 };
 
+use indexmap::IndexMap;
+
 use crate::{
-    dag::DependentGraph, encoder::WastEncoder, wasi_types::array::WasiArrayType, DependenciesTrace, ExternalFunction,
-    Identifier, VariantType, WasiModule, WasiResource,
+    dag::DependentGraph,
+    encoder::WastEncoder,
+    helpers::{TypeDefinition, TypeReference},
+    wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType},
+    DependenciesTrace, ExternalFunction, Identifier, WasiModule, WasiParameter,
 };
 
 pub mod array;
 mod display;
+pub mod functions;
+pub mod records;
+pub mod resources;
+pub mod variants;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WasiType {
@@ -33,7 +43,7 @@ pub enum WasiType {
         failure: Option<Box<WasiType>>,
     },
     Resource(WasiResource),
-    Variant(VariantType),
+    Variant(WasiVariantType),
     TypeHandler {
         /// Resource language name
         name: Identifier,

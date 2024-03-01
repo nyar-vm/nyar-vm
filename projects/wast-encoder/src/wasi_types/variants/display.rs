@@ -2,7 +2,7 @@ use crate::helpers::TypeReference;
 
 use super::*;
 
-impl Hash for VariantType {
+impl Hash for WasiVariantType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.symbol.hash(state);
         self.wasi_name.hash(state);
@@ -12,7 +12,7 @@ impl Hash for VariantType {
     }
 }
 
-impl AliasOuter for VariantType {
+impl AliasOuter for WasiVariantType {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         w.newline()?;
         let root = &w.source.name;
@@ -23,7 +23,7 @@ impl AliasOuter for VariantType {
     }
 }
 
-impl ComponentDefine for VariantType {
+impl ComponentDefine for WasiVariantType {
     fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, ";; variant {}", self.symbol)?;
         w.newline()?;
