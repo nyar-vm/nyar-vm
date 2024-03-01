@@ -8,10 +8,10 @@ use indexmap::IndexMap;
 
 use crate::{
     dag::DependentGraph,
+    DependenciesTrace,
     encoder::WastEncoder,
-    helpers::{TypeDefinition, TypeReference},
-    wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType},
-    DependenciesTrace, ExternalFunction, Identifier, WasiModule, WasiParameter,
+    ExternalFunction,
+    helpers::{TypeDefinition, TypeReference}, Identifier, wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType}, WasiModule, WasiParameter,
 };
 
 pub mod array;
