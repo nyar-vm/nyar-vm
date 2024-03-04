@@ -9,7 +9,7 @@ use nyar_error::NyarError;
 use crate::{
     dag::DependenciesTrace,
     helpers::{ComponentDefine, LowerFunction},
-    DependentGraph, ExternalFunction, WasiInstance, WasiType,
+    DependentGraph, WasiExternalFunction, WasiInstance, WasiType,
 };
 
 mod for_instance;

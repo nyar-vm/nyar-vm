@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::{
-    dag::DependenciesTrace, helpers::ComponentDefine, DependentGraph, ExternalFunction, Identifier, WasiModule, WasiResource,
-    WasiType, WastEncoder,
+    dag::DependenciesTrace, helpers::ComponentDefine, DependentGraph, Identifier, WasiExternalFunction, WasiModule,
+    WasiResource, WasiType, WastEncoder,
 };
 
 mod convert;
@@ -16,7 +16,7 @@ pub struct WasiInstance {
     pub module: WasiModule,
     /// language_name: wasi_name
     pub resources: BTreeMap<Identifier, WasiResource>,
-    pub functions: BTreeMap<Identifier, ExternalFunction>,
+    pub functions: BTreeMap<Identifier, WasiExternalFunction>,
 }
 
 impl WasiInstance {
