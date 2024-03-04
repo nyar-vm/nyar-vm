@@ -14,8 +14,9 @@ pub use crate::{
     wasi_types::{
         array::WasiArrayType,
         functions::{WasiExternalFunction, WasiParameter},
+        records::{WasiRecordField, WasiRecordType},
         resources::WasiResource,
-        variants::{VariantItem, WasiVariantType},
+        variants::{WasiVariantItem, WasiVariantType},
         WasiType,
     },
     wasi_values::WasiValue,

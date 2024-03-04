@@ -23,7 +23,7 @@ pub struct WasiVariantType {
     /// Variant name in language
     pub symbol: Identifier,
     pub wasi_name: String,
-    pub variants: IndexMap<Arc<str>, VariantItem>,
+    pub variants: IndexMap<Arc<str>, WasiVariantItem>,
 }
 
 impl PartialEq for WasiVariantType {
@@ -43,7 +43,7 @@ impl Ord for WasiVariantType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct VariantItem {
+pub struct WasiVariantItem {
     /// Variant name in language
     pub symbol: Arc<str>,
     pub wasi_name: String,
@@ -68,7 +68,7 @@ impl WasiVariantType {
     }
 }
 
-impl VariantItem {
+impl WasiVariantItem {
     pub fn new<S>(name: S) -> Self
     where
         S: Into<Arc<str>>,
@@ -105,8 +105,10 @@ impl DependenciesTrace for WasiVariantType {
     }
 }
 
-impl DependenciesTrace for VariantItem {
-    fn define_language_types(&self, _: &mut DependentGraph) {}
+impl DependenciesTrace for WasiVariantItem {
+    fn define_language_types(&self, _: &mut DependentGraph) {
+        unreachable!()
+    }
 
     fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
     where

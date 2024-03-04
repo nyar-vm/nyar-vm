@@ -1,7 +1,7 @@
 use super::*;
 
-impl AddAssign<VariantItem> for WasiVariantType {
-    fn add_assign(&mut self, rhs: VariantItem) {
+impl AddAssign<WasiVariantItem> for WasiVariantType {
+    fn add_assign(&mut self, rhs: WasiVariantItem) {
         self.variants.insert(rhs.symbol.clone(), rhs);
     }
 }

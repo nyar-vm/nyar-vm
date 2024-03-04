@@ -38,7 +38,7 @@ impl ComponentDefine for WasiVariantType {
     }
 }
 
-impl ComponentDefine for VariantItem {
+impl ComponentDefine for WasiVariantItem {
     fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, ";; {}", self.symbol)?;
         w.newline()?;
