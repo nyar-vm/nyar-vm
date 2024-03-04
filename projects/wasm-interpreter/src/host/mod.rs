@@ -68,7 +68,7 @@ impl crate::unstable::debugger::print::Host for NyarExtension {
         Ok(())
     }
 
-    fn print_record(&mut self, value: Point) -> anyhow::Result<()> {
+    fn print_point(&mut self, value: Point) -> anyhow::Result<()> {
         println!("{:?}", value);
         Ok(())
     }

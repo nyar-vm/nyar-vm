@@ -33,12 +33,16 @@ impl DependentGraph {
                 WasiType::Resource(v) => {
                     sorter += dependent_sort::Task::new(ty).with_group(&v.wasi_module);
                 }
+                WasiType::Record(v) => {
+                    v.collect_wasi_types(self, &mut dependents);
+                    sorter += dependent_sort::Task::new_with_dependent(&ty, dependents);
+                }
                 WasiType::Variant(v) => {
                     v.collect_wasi_types(self, &mut dependents);
                     sorter += dependent_sort::Task::new_with_dependent(&ty, dependents);
                 }
                 WasiType::TypeHandler { .. } => {}
-                WasiType::TypeAlias { .. } => {}
+                WasiType::TypeQuery { .. } => {}
                 WasiType::External(v) => {
                     v.collect_wasi_types(self, &mut dependents);
                     sorter += dependent_sort::Task { id: ty, group: Some(&v.wasi_module), dependent_tasks: dependents };

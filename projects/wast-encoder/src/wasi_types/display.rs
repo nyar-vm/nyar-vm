@@ -17,9 +17,10 @@ impl Debug for WasiType {
             Self::Option { inner } => write!(f, "Option<{:?}>", inner),
             Self::Result { success: _, failure: _ } => write!(f, "Result<?, ?>"),
             Self::Resource(v) => write!(f, "Resource({})", v.symbol),
+            Self::Record(v) => Debug::fmt(v, f),
             Self::Variant(v) => Debug::fmt(v, f),
             Self::TypeHandler { name, own } => write!(f, "TypeHandler({}{})", name, if *own { " own" } else { "" }),
-            Self::TypeAlias { name } => write!(f, "TypeAlias({})", name),
+            Self::TypeQuery { name } => write!(f, "TypeAlias({})", name),
             Self::External(v) => write!(f, "External({})", v.symbol),
             Self::Array { .. } => {
                 write!(f, "Array(..))")
@@ -44,9 +45,10 @@ impl Display for WasiType {
             Self::Option { inner } => write!(f, "Option<{}>", inner),
             Self::Result { success: _, failure: _ } => write!(f, "Result<?, ?>"),
             Self::Resource(v) => write!(f, "Resource({})", v.symbol),
+            Self::Record(v) => Debug::fmt(v, f),
             Self::Variant(v) => Debug::fmt(v, f),
             Self::TypeHandler { name, own } => write!(f, "TypeHandler({}{})", name, if *own { " own" } else { "" }),
-            Self::TypeAlias { name } => write!(f, "TypeAlias({})", name),
+            Self::TypeQuery { name } => write!(f, "TypeAlias({})", name),
             Self::External(v) => write!(f, "External({})", v.symbol),
             Self::Array { .. } => {
                 write!(f, "Array(..))")
@@ -65,6 +67,7 @@ impl ComponentDefine for WasiType {
     fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Variant(v) => v.component_define(w),
+            Self::Record(v) => v.component_define(w),
             _ => panic!("This type cannot be defined in the wasi component section\n    {self}"),
         }
     }
@@ -117,6 +120,8 @@ impl TypeReference for WasiType {
                 true => w.write_str("s64"),
                 false => w.write_str("u64"),
             }?,
+            Self::Float32 => w.write_str("float32")?,
+            Self::Float64 => w.write_str("float64")?,
             Self::Option { inner } => {
                 todo!()
             }
@@ -135,22 +140,17 @@ impl TypeReference for WasiType {
             Self::Resource(_) => {
                 todo!()
             }
+            Self::Record(v) => v.component_define(w)?,
             Self::Variant(v) => v.component_define(w)?,
             Self::TypeHandler { name, own } => match own {
                 true => write!(w, "(own {})", name.wasi_id())?,
                 false => write!(w, "(borrow {})", name.wasi_id())?,
             },
-            Self::TypeAlias { name } => w.write_str(&name.wasi_id())?,
+            Self::TypeQuery { name } => w.write_str(&name.wasi_id())?,
             Self::External(_) => {
                 todo!()
             }
             Self::Array(array) => array.upper_type(w)?,
-            Self::Float32 => {
-                todo!()
-            }
-            Self::Float64 => {
-                todo!()
-            }
         }
         Ok(())
     }
@@ -169,14 +169,16 @@ impl TypeReference for WasiType {
             Self::Variant(_) => {
                 todo!()
             }
+            Self::Record(_) => w.write_str("i32")?,
+            Self::TypeQuery { name } => match w.source.graph.types.get(name) {
+                Some(s) => s.lower_type(w)?,
+                None => {}
+            },
             Self::TypeHandler { name, .. } => match w.source.graph.types.get(name) {
                 Some(s) => s.lower_type(w)?,
                 None => {}
             },
             Self::Array(array) => array.lower_type(w)?,
-            Self::TypeAlias { .. } => {
-                todo!()
-            }
             Self::External(_) => {
                 todo!()
             }
@@ -201,6 +203,9 @@ impl TypeReference for WasiType {
             }
             Self::Result { .. } => w.write_str("result")?,
             Self::Resource(_) => w.write_str("resource")?,
+            WasiType::Record(_) => {
+                todo!()
+            }
             Self::Variant(_) => {
                 todo!()
             }
@@ -209,7 +214,7 @@ impl TypeReference for WasiType {
                 None => {}
             },
             Self::Array(array) => array.lower_type(w)?,
-            Self::TypeAlias { .. } => {
+            Self::TypeQuery { .. } => {
                 todo!()
             }
             Self::External(_) => {
@@ -223,62 +228,6 @@ impl TypeReference for WasiType {
             }
         }
         Ok(())
-    }
-}
-
-impl WasiType {
-    pub fn as_language_type(&self) -> String {
-        match self {
-            Self::Integer8 { signed } => match *signed {
-                true => "s8",
-                false => "u8",
-            }
-            .to_string(),
-            Self::Integer16 { signed } => match *signed {
-                true => "s16",
-                false => "u16",
-            }
-            .to_string(),
-            Self::Integer32 { signed } => match *signed {
-                true => "s32",
-                false => "u32",
-            }
-            .to_string(),
-            Self::Integer64 { signed } => match *signed {
-                true => "s64",
-                false => "u64",
-            }
-            .to_string(),
-            Self::Option { inner } => format!("Option<{}>", inner.as_language_type()),
-            Self::Result { success, failure } => {
-                let mut result = "(result ".to_string();
-                if let Some(success) = success {
-                    result.push_str(&success.as_language_type());
-                }
-                if let Some(failure) = failure {
-                    result.push_str(&format!(" (error {})", failure.as_language_type()));
-                }
-                result.push(')');
-                result
-            }
-            Self::Resource(_) => "(sub resource)".to_string(),
-            Self::Variant(_) => "(variant case)".to_string(),
-            Self::TypeHandler { name, own } => match *own {
-                true => format!("{}", name),
-                false => format!("&{}", name),
-            },
-            Self::TypeAlias { name } => format!("{}", name),
-            Self::External(_) => "(func external)".to_string(),
-            WasiType::Array { .. } => {
-                todo!()
-            }
-            Self::Float32 => {
-                todo!()
-            }
-            Self::Float64 => {
-                todo!()
-            }
-        }
     }
 }
 
@@ -299,7 +248,7 @@ impl WasiType {
             }
             Self::Variant(_) => "".to_string(),
             Self::TypeHandler { .. } => "".to_string(),
-            Self::TypeAlias { .. } => "".to_string(),
+            Self::TypeQuery { .. } => "".to_string(),
             Self::External(_) => "".to_string(),
             WasiType::Array { .. } => {
                 todo!()
@@ -310,6 +259,9 @@ impl WasiType {
             Self::Float64 => {
                 todo!()
             }
+            WasiType::Record(_) => {
+                todo!()
+            }
         }
     }
 }
@@ -318,6 +270,7 @@ impl AliasOuter for WasiType {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Resource(v) => v.alias_outer(w),
+            Self::Record(v) => v.alias_outer(w),
             Self::Variant(v) => v.alias_outer(w),
             _ => panic!("This type cannot be imported into component instance\n    {self}"),
         }
