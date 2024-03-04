@@ -11,8 +11,8 @@ use indexmap::IndexMap;
 
 use crate::{
     dag::DependentGraph,
-    DependenciesTrace,
-    helpers::{AliasOuter, ComponentDefine}, Identifier, WasiType, WastEncoder,
+    helpers::{AliasOuter, ComponentDefine},
+    DependenciesTrace, Identifier, WasiType, WastEncoder,
 };
 
 mod arithmetic;

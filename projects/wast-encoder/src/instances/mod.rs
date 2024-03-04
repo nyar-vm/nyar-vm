@@ -54,6 +54,8 @@ impl WasiInstance {
                 self.functions.insert(v.symbol.clone(), *v.clone());
             }
             WasiType::Array { .. } => {}
+            WasiType::Float32 => {}
+            WasiType::Float64 => {}
         }
     }
     pub fn dependencies(&self, dict: &DependentGraph) -> BTreeSet<WasiType> {

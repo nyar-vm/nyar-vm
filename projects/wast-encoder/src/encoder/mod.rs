@@ -53,6 +53,8 @@ impl CanonicalWasi {
                     WasiType::Array { .. } => {}
                     WasiType::TypeAlias { .. } => {}
                     WasiType::External(_) => {}
+                    WasiType::Float32 => {}
+                    WasiType::Float64 => {}
                 },
                 CanonicalImport::MockMemory => {}
             }
