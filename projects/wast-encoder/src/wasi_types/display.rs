@@ -10,6 +10,7 @@ use super::*;
 impl Debug for WasiType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Boolean => write!(f, "bool"),
             Self::Integer8 { signed } => write!(f, "{}8", if *signed { "i" } else { "u" }),
             Self::Integer16 { signed } => write!(f, "{}16", if *signed { "i" } else { "u" }),
             Self::Integer32 { signed } => write!(f, "{}32", if *signed { "i" } else { "u" }),
@@ -38,6 +39,7 @@ impl Debug for WasiType {
 impl Display for WasiType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            WasiType::Boolean => write!(f, "bool"),
             Self::Integer8 { signed } => write!(f, "{}", if *signed { "s" } else { "u" }),
             Self::Integer16 { signed } => write!(f, "{}", if *signed { "s" } else { "u" }),
             Self::Integer32 { signed } => write!(f, "{}", if *signed { "s" } else { "u" }),
@@ -104,6 +106,7 @@ impl TypeReferenceOutput for WasiType {
 impl TypeReference for WasiType {
     fn upper_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
+            Self::Boolean => w.write_str("bool")?,
             Self::Integer8 { signed } => match *signed {
                 true => w.write_str("s8"),
                 false => w.write_str("u8"),
@@ -157,6 +160,7 @@ impl TypeReference for WasiType {
 
     fn lower_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
+            Self::Boolean => w.write_str("i32")?,
             Self::Integer8 { .. } => w.write_str("i32")?,
             Self::Integer16 { .. } => w.write_str("i32")?,
             Self::Integer32 { .. } => w.write_str("i32")?,
@@ -194,6 +198,7 @@ impl TypeReference for WasiType {
 
     fn lower_type_inner<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
+            Self::Boolean => w.write_str("i8")?,
             Self::Integer8 { .. } => w.write_str("i8")?,
             Self::Integer16 { .. } => w.write_str("i16")?,
             Self::Integer32 { .. } => w.write_str("i32")?,
@@ -203,7 +208,7 @@ impl TypeReference for WasiType {
             }
             Self::Result { .. } => w.write_str("result")?,
             Self::Resource(_) => w.write_str("resource")?,
-            WasiType::Record(_) => {
+            Self::Record(_) => {
                 todo!()
             }
             Self::Variant(_) => {
@@ -237,7 +242,8 @@ impl WasiType {
         self.hash(&mut hasher);
         let hash = hasher.finish();
         match self {
-            WasiType::Integer8 { .. } => "".to_string(),
+            Self::Boolean => "".to_string(),
+            Self::Integer8 { .. } => "".to_string(),
             Self::Integer16 { .. } => "".to_string(),
             Self::Integer32 { .. } => "".to_string(),
             Self::Integer64 { .. } => "".to_string(),
@@ -250,7 +256,7 @@ impl WasiType {
             Self::TypeHandler { .. } => "".to_string(),
             Self::TypeQuery { .. } => "".to_string(),
             Self::External(_) => "".to_string(),
-            WasiType::Array { .. } => {
+            Self::Array { .. } => {
                 todo!()
             }
             Self::Float32 => {
