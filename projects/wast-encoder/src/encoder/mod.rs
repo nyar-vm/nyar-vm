@@ -35,27 +35,7 @@ impl CanonicalWasi {
         for import in &self.imports {
             match import {
                 CanonicalImport::Instance(v) => {}
-                CanonicalImport::Type(wasi) => match wasi {
-                    WasiType::Integer8 { .. } => {}
-                    WasiType::Integer16 { .. } => {}
-                    WasiType::Integer32 { .. } => {}
-                    WasiType::Integer64 { .. } => {}
-                    WasiType::Option { .. } => {}
-                    WasiType::Result { .. } => {}
-                    WasiType::Resource(_) => {}
-                    WasiType::Variant(v) => {
-                        out.push_str(&format!("    subgraph \"{}\"\n", v.symbol));
-                        // for item in v.variants.keys() {
-                        //     println!("    {:#}::{}[\"{}\"]:::variant-item", v.symbol, item, v.wasi_name);
-                        // }
-                    }
-                    WasiType::TypeHandler { .. } => {}
-                    WasiType::Array { .. } => {}
-                    WasiType::TypeAlias { .. } => {}
-                    WasiType::External(_) => {}
-                    WasiType::Float32 => {}
-                    WasiType::Float64 => {}
-                },
+                CanonicalImport::Type(wasi) => {}
                 CanonicalImport::MockMemory => {}
             }
         }

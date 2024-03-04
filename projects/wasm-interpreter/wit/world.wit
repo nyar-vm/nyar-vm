@@ -6,8 +6,8 @@ world debugger {
 
 interface print {
   record point {
-    a: u32,
-    b: string,
+    x: f32,
+    y: f32,
   }
 
   // values of this type will be one of the specified cases
@@ -45,7 +45,7 @@ interface print {
   print-char: func(value: char);
   print-str: func(value: string);
   print-tuple: func(value: tuple<u8,s8>);
-  print-record: func(value: point);
+  print-point: func(value: point);
   print-human: func(value: human);
   print-errno: func(value: errno);
   print-permissions: func(value: permissions);

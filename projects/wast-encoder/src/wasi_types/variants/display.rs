@@ -18,7 +18,7 @@ impl AliasOuter for WasiVariantType {
         let root = &w.source.name;
         let id = self.symbol.wasi_id();
         let name = self.wasi_name.as_str();
-        write!(w, "(alias outer ${root} {id} (type {id}?))")?;
+        write!(w, "(alias outer ${root} {id} (type {id}?)) ")?;
         write!(w, "(export {id} \"{name}\" (type (eq {id}?)))")
     }
 }

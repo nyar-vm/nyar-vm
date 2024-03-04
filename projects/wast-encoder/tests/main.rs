@@ -7,26 +7,29 @@ use wast_encoder::{
 
 fn define_io_types() -> DependentGraph {
     let mut global = DependentGraph::default();
-
-    let wasi_io_error = WasiModule::from_str("wasi:io/error@0.2.0").unwrap();
-    let wasi_io_streams = WasiModule::from_str("wasi:io/streams@0.2.0").unwrap();
-
-    global += WasiResource::new(wasi_io_error.clone(), "error", "std::io::IoError");
-    global += WasiResource::new(wasi_io_streams.clone(), "output-stream", "std::io::OutputStream");
-    global += WasiResource::new(wasi_io_streams.clone(), "input-stream", "std::io::InputStream");
-    let mut stream_error = WasiVariantType::new("std::io::StreamError");
-    stream_error += WasiVariantItem::new("LastOperationFailed")
-        .with_fields(WasiType::TypeHandler { name: Identifier::from_str("std::io::IoError").unwrap(), own: true });
-    stream_error += WasiVariantItem::new("Closed");
-    global += stream_error;
-    let debugger = WasiModule::from_str("unstable:debugger/print").unwrap();
+    let m_debugger = WasiModule::from_str("unstable:debugger/print").unwrap();
+    let m_io_error = WasiModule::from_str("wasi:io/error@0.2.0").unwrap();
+    let m_io_streams = WasiModule::from_str("wasi:io/streams@0.2.0").unwrap();
     {
-        let mut point = WasiRecordType::new(Identifier::from_str("test::Point").unwrap());
+        global += WasiResource::new(m_io_error.clone(), "error", "std::io::IoError");
+        global += WasiResource::new(m_io_streams.clone(), "output-stream", "std::io::OutputStream");
+        global += WasiResource::new(m_io_streams.clone(), "input-stream", "std::io::InputStream");
+        let mut stream_error = WasiVariantType::new("std::io::StreamError");
+        stream_error += WasiVariantItem::new("LastOperationFailed")
+            .with_fields(WasiType::TypeHandler { name: Identifier::from_str("std::io::IoError").unwrap(), own: true });
+        stream_error += WasiVariantItem::new("Closed");
+        global += stream_error;
+    }
+    {
+        let mut point = WasiRecordType::new(Identifier::from_str("Point").unwrap());
         point += WasiRecordField::new(Arc::from("x"), WasiType::Float32);
         point += WasiRecordField::new(Arc::from("y"), WasiType::Float32);
         global += point;
-        let function = WasiExternalFunction::new(debugger.clone(), "print-point", "test::print_point");
-        global += function;
+        let mut printer = WasiExternalFunction::new(m_debugger.clone(), "print-point", "test::print_point");
+        printer
+            .inputs
+            .push(WasiParameter::new("value", WasiType::TypeQuery { name: Identifier::from_str("test::Point").unwrap() }));
+        global += printer;
     }
     {
         // let mut f1 = WasiExternalFunction::new(
@@ -84,14 +87,14 @@ fn define_io_types() -> DependentGraph {
         global += function;
     }
     {
-        let mut function = WasiExternalFunction::new(debugger.clone(), "print-i32", "print_i32");
-        function.inputs.push(WasiParameter::new("i", WasiType::Integer8 { signed: true }));
+        let mut function = WasiExternalFunction::new(m_debugger.clone(), "print-i32", "print_i32");
+        function.inputs.push(WasiParameter::new("value", WasiType::Integer32 { signed: true }));
         global += function;
     }
     {
         let wasi_cli_get = WasiModule::from_str("unstable:debugger/print").unwrap();
         let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "print-u32", "print_u32");
-        function.inputs.push(WasiParameter::new("i", WasiType::Integer8 { signed: true }));
+        function.inputs.push(WasiParameter::new("value", WasiType::Integer32 { signed: true }));
         global += function;
     }
     global

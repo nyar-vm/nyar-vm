@@ -47,7 +47,7 @@ impl WasiInstance {
             WasiType::TypeHandler { .. } => {
                 todo!()
             }
-            WasiType::TypeAlias { .. } => {
+            WasiType::TypeQuery { .. } => {
                 todo!()
             }
             WasiType::External(v) => {
@@ -56,6 +56,7 @@ impl WasiInstance {
             WasiType::Array { .. } => {}
             WasiType::Float32 => {}
             WasiType::Float64 => {}
+            WasiType::Record(_) => {}
         }
     }
     pub fn dependencies(&self, dict: &DependentGraph) -> BTreeSet<WasiType> {
