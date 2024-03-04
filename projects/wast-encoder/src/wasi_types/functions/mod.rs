@@ -13,24 +13,45 @@ use crate::{
 mod arithmetic;
 mod display;
 
+/// The type of external WASI function
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExternalFunction {
+pub struct WasiExternalFunction {
+    /// The symbol of the function in source language
     pub symbol: Identifier,
+    /// The external module name registered in WASI host
     pub wasi_module: WasiModule,
+    /// The external function name registered in WASI host
     pub wasi_name: String,
+    /// The input parameters of the function
     pub inputs: Vec<WasiParameter>,
+    /// The output parameter of the function
     pub output: Option<WasiType>,
 }
 
+/// The type of WASM function
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct WasiFunction {
+    /// The type of WASI parameter
+    pub symbol: Identifier,
+    /// The input parameters of the function
+    pub inputs: Vec<WasiParameter>,
+    /// The output parameter of the function
+    pub output: Option<WasiType>,
+}
+
+/// The type of WASI parameter
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WasiParameter {
+    /// The name of the parameter in source language
     pub name: Arc<str>,
+    /// The name of the parameter in WASI host
     pub wasi_name: Arc<str>,
-
+    /// The type of the parameter
     pub r#type: WasiType,
 }
 
-impl ExternalFunction {
+impl WasiExternalFunction {
+    /// Create a new external function type with the given symbol and WASI module
     pub fn new<S, M>(wasi_module: M, wasi_name: &str, name: S) -> Self
     where
         S: Into<Identifier>,
@@ -47,6 +68,7 @@ impl ExternalFunction {
 }
 
 impl WasiParameter {
+    /// Create a new WASI parameter with the given name and type
     pub fn new<S, T>(name: S, r#type: T) -> Self
     where
         S: Into<Arc<str>>,
@@ -56,7 +78,7 @@ impl WasiParameter {
         Self { name: wasi_name.clone(), wasi_name, r#type: r#type.into() }
     }
 }
-impl AliasExport for ExternalFunction {
+impl AliasExport for WasiExternalFunction {
     fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
         let id = self.symbol.wasi_id();
         let name = self.wasi_name.as_str();
@@ -64,7 +86,7 @@ impl AliasExport for ExternalFunction {
     }
 }
 
-impl LowerFunction for ExternalFunction {
+impl LowerFunction for WasiExternalFunction {
     fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(core func {} (canon lower", self.symbol.wasi_id())?;
         w.indent();
@@ -98,7 +120,7 @@ impl LowerFunction for ExternalFunction {
     }
 }
 
-impl DependenciesTrace for ExternalFunction {
+impl DependenciesTrace for WasiExternalFunction {
     fn define_language_types(&self, dict: &mut DependentGraph) {
         dict.types.insert(self.symbol.clone(), WasiType::External(Box::new(self.clone())));
     }

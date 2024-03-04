@@ -21,7 +21,7 @@ impl ComponentDefine for CanonicalImport {
 }
 
 impl<'a, W: Write> WastEncoder<'a, W> {
-    pub(crate) fn export_function(&mut self, function: &ExternalFunction) -> std::fmt::Result {
+    pub(crate) fn export_function(&mut self, function: &WasiExternalFunction) -> std::fmt::Result {
         let name = function.wasi_name.as_str();
         write!(self, "(export \"{name}\" (func")?;
         self.indent();
