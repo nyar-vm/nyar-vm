@@ -44,6 +44,8 @@ impl DependentGraph {
                     sorter += dependent_sort::Task { id: ty, group: Some(&v.wasi_module), dependent_tasks: dependents };
                 }
                 WasiType::Array { .. } => {}
+                WasiType::Float32 => {}
+                WasiType::Float64 => {}
             }
         }
         sorter
