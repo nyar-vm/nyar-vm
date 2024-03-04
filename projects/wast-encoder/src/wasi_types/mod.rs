@@ -24,6 +24,7 @@ pub mod variants;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WasiType {
+    Boolean,
     /// `s8` or `u8` type in WASI
     Integer8 {
         /// Whether the integer is signed or not

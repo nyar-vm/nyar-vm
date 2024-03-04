@@ -61,23 +61,26 @@ impl<'a, W: Write> WastEncoder<'a, W> {
 impl WasiType {
     pub fn emit_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
+            WasiType::Boolean => {
+                write!(w, "(i32.const 0)")
+            }
             WasiType::Integer8 { .. } => {
-                todo!()
+                write!(w, "(i32.const 0)")
             }
             WasiType::Integer16 { .. } => {
-                todo!()
+                write!(w, "(i32.const 0)")
             }
             WasiType::Integer32 { .. } => {
-                todo!()
+                write!(w, "(i32.const 0)")
             }
             WasiType::Integer64 { .. } => {
-                todo!()
+                write!(w, "(i64.const 0)")
             }
             WasiType::Float32 => {
-                todo!()
+                write!(w, "(f32.const 0)")
             }
             WasiType::Float64 => {
-                todo!()
+                write!(w, "(f64.const 0)")
             }
             WasiType::Option { .. } => {
                 todo!()
@@ -107,5 +110,31 @@ impl WasiType {
                 todo!()
             }
         }
+    }
+}
+
+impl WasiValue {
+    pub fn emit_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        Self::default().emit_constant(w)
+    }
+
+    pub fn emit_constant<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Boolean(v) => write!(w, "(i32.const {})", if *v { 1 } else { 0 })?,
+            Self::Integer8(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer16(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer32(v) => write!(w, "(i32.const {})", v)?,
+            Self::Integer64(v) => write!(w, "(i64.const {})", v)?,
+            Self::Unsigned8(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned16(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned32(v) => write!(w, "(i32.const {})", v)?,
+            Self::Unsigned64(v) => write!(w, "(i64.const {})", v)?,
+            Self::Float32(v) => write!(w, "(f32.const {})", v)?,
+            Self::Float64(v) => write!(w, "(f64.const {})", v)?,
+            Self::Array { .. } => {
+                todo!()
+            }
+        }
+        Ok(())
     }
 }

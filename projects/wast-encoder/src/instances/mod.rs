@@ -57,6 +57,7 @@ impl WasiInstance {
             WasiType::Float32 => {}
             WasiType::Float64 => {}
             WasiType::Record(_) => {}
+            WasiType::Boolean => {}
         }
     }
     pub fn dependencies(&self, dict: &DependentGraph) -> BTreeSet<WasiType> {
