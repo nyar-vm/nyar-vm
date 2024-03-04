@@ -32,6 +32,27 @@ fn define_io_types() -> DependentGraph {
         global += printer;
     }
     {
+        let wasi_cli_get = WasiModule::from_str("wasi:cli/stdin@0.2.0").unwrap();
+        let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stdin", "std::io::standard_input");
+        function.output =
+            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::InputStream").unwrap(), own: true });
+        global += function;
+    }
+    {
+        let wasi_cli_get = WasiModule::from_str("wasi:cli/stdout@0.2.0").unwrap();
+        let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stdout", "std::io::standard_output");
+        function.output =
+            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
+        global += function;
+    }
+    {
+        let wasi_cli_get = WasiModule::from_str("wasi:cli/stderr@0.2.0").unwrap();
+        let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stderr", "std::io::standard_error");
+        function.output =
+            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
+        global += function;
+    }
+    {
         // let mut f1 = WasiExternalFunction::new(
         //     wasi_io_streams.clone(),
         //     "[method]output-stream.blocking-write-zeroes-and-flush",
@@ -64,27 +85,6 @@ fn define_io_types() -> DependentGraph {
         //     failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
         // };
         // global += f1;
-    }
-    {
-        let wasi_cli_get = WasiModule::from_str("wasi:cli/stdin@0.2.0").unwrap();
-        let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stdin", "std::io::standard_input");
-        function.output =
-            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::InputStream").unwrap(), own: true });
-        global += function;
-    }
-    {
-        let wasi_cli_get = WasiModule::from_str("wasi:cli/stdout@0.2.0").unwrap();
-        let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stdout", "std::io::standard_output");
-        function.output =
-            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
-        global += function;
-    }
-    {
-        let wasi_cli_get = WasiModule::from_str("wasi:cli/stderr@0.2.0").unwrap();
-        let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stderr", "std::io::standard_error");
-        function.output =
-            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
-        global += function;
     }
     {
         let mut function = WasiExternalFunction::new(m_debugger.clone(), "print-i32", "print_i32");
