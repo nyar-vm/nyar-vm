@@ -1,8 +1,8 @@
-use std::{io::Write, path::Path, str::FromStr};
+use std::{io::Write, path::Path, str::FromStr, sync::Arc};
 
 use wast_encoder::{
-    CanonicalWasi, DependentGraph, Identifier, VariantItem, WasiArrayType, WasiExternalFunction, WasiModule, WasiParameter,
-    WasiResource, WasiType, WasiVariantType,
+    CanonicalWasi, DependentGraph, Identifier, WasiArrayType, WasiExternalFunction, WasiModule, WasiParameter, WasiRecordField,
+    WasiRecordType, WasiResource, WasiType, WasiVariantItem, WasiVariantType,
 };
 
 fn define_io_types() -> DependentGraph {
@@ -15,56 +15,52 @@ fn define_io_types() -> DependentGraph {
     global += WasiResource::new(wasi_io_streams.clone(), "output-stream", "std::io::OutputStream");
     global += WasiResource::new(wasi_io_streams.clone(), "input-stream", "std::io::InputStream");
     let mut stream_error = WasiVariantType::new("std::io::StreamError");
-    stream_error += VariantItem::new("LastOperationFailed")
+    stream_error += WasiVariantItem::new("LastOperationFailed")
         .with_fields(WasiType::TypeHandler { name: Identifier::from_str("std::io::IoError").unwrap(), own: true });
-    stream_error += VariantItem::new("Closed");
+    stream_error += WasiVariantItem::new("Closed");
     global += stream_error;
-
+    let debugger = WasiModule::from_str("unstable:debugger/print").unwrap();
     {
-        // let mut f0 = ExternalFunction::new(wasi_io_streams.clone(), "blocking-write", "std::io::OutputStream::write_and_flush");
-        // f0 += WasiParameter::new(
+        let mut point = WasiRecordType::new(Identifier::from_str("test::Point").unwrap());
+        point += WasiRecordField::new(Arc::from("x"), WasiType::Float32);
+        point += WasiRecordField::new(Arc::from("y"), WasiType::Float32);
+        global += point;
+        let function = WasiExternalFunction::new(debugger.clone(), "print-point", "test::print_point");
+        global += function;
+    }
+    {
+        // let mut f1 = WasiExternalFunction::new(
+        //     wasi_io_streams.clone(),
+        //     "[method]output-stream.blocking-write-zeroes-and-flush",
+        //     "std::io::OutputStream::write_zeros",
+        // );
+        // f1 += WasiParameter::new(
         //     "self",
         //     WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
         // );
-        // f0 += WasiType::Result {
+        // f1 += WasiParameter::new("len", WasiType::Integer64 { signed: false });
+        // f1 += WasiType::Result {
         //     success: None,
         //     failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
         // };
-        // global += f0;
+        // global += f1;
     }
     {
-        let mut f1 = WasiExternalFunction::new(
-            wasi_io_streams.clone(),
-            "[method]output-stream.blocking-write-zeroes-and-flush",
-            "std::io::OutputStream::write_zeros",
-        );
-        f1 += WasiParameter::new(
-            "self",
-            WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
-        );
-        f1 += WasiParameter::new("len", WasiType::Integer64 { signed: false });
-        f1 += WasiType::Result {
-            success: None,
-            failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
-        };
-        global += f1;
-    }
-    {
-        let mut f1 = WasiExternalFunction::new(
-            wasi_io_streams.clone(),
-            "[method]output-stream.blocking-write-and-flush",
-            "std::io::OutputStream::write",
-        );
-        f1 += WasiParameter::new(
-            "self",
-            WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
-        );
-        f1 += WasiParameter::new("contents", WasiArrayType::new(WasiType::Integer8 { signed: false }));
-        f1 += WasiType::Result {
-            success: None,
-            failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
-        };
-        global += f1;
+        // let mut f1 = WasiExternalFunction::new(
+        //     wasi_io_streams.clone(),
+        //     "[method]output-stream.blocking-write-and-flush",
+        //     "std::io::OutputStream::write",
+        // );
+        // f1 += WasiParameter::new(
+        //     "self",
+        //     WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: false },
+        // );
+        // f1 += WasiParameter::new("contents", WasiArrayType::new(WasiType::Integer8 { signed: false }));
+        // f1 += WasiType::Result {
+        //     success: None,
+        //     failure: Some(Box::new(WasiType::TypeAlias { name: Identifier::from_str("std::io::StreamError").unwrap() })),
+        // };
+        // global += f1;
     }
     {
         let wasi_cli_get = WasiModule::from_str("wasi:cli/stdin@0.2.0").unwrap();
@@ -88,8 +84,7 @@ fn define_io_types() -> DependentGraph {
         global += function;
     }
     {
-        let wasi_cli_get = WasiModule::from_str("unstable:debugger/print").unwrap();
-        let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "print-i32", "print_i32");
+        let mut function = WasiExternalFunction::new(debugger.clone(), "print-i32", "print_i32");
         function.inputs.push(WasiParameter::new("i", WasiType::Integer8 { signed: true }));
         global += function;
     }

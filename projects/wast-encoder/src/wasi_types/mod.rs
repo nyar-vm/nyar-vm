@@ -11,7 +11,7 @@ use crate::{
     encoder::WastEncoder,
     helpers::{TypeDefinition, TypeReference},
     wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType},
-    DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiParameter,
+    DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiParameter, WasiRecordType,
 };
 
 pub mod array;
@@ -56,6 +56,8 @@ pub enum WasiType {
     },
     /// `resource` type in WASI
     Resource(WasiResource),
+    /// `record` type in WASI
+    Record(WasiRecordType),
     /// `variant` type in WASI
     Variant(WasiVariantType),
     TypeHandler {
