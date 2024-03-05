@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, fmt::Debug, ops::AddAssign};
 
 use dependent_sort::{DependentSort, TopologicalError};
 
-use crate::{CanonicalImport, Identifier, WasiInstance, WasiModule, WasiType};
+use crate::{CanonicalImport, Identifier, WasiInstance, WasiModule, WasiType, WasiTypeReference};
 
 mod arithmetic;
 
@@ -19,6 +19,10 @@ pub struct DependentGraph {
 }
 
 impl DependentGraph {
+    pub fn get(&self, type_id: &WasiTypeReference) -> &WasiType {
+        self.types.get(&type_id.symbol).expect("Missing Type `` in DependentGraph")
+    }
+
     fn build_dag(&self) -> DependentSort<WasiType, WasiModule> {
         let mut sorter = DependentSort::default();
         for ty in self.types.values() {
@@ -42,7 +46,7 @@ impl DependentGraph {
                     sorter += dependent_sort::Task::new_with_dependent(&ty, dependents);
                 }
                 WasiType::TypeHandler { .. } => {}
-                WasiType::TypeQuery { .. } => {}
+
                 WasiType::External(v) => {
                     v.collect_wasi_types(self, &mut dependents);
                     sorter += dependent_sort::Task { id: ty, group: Some(&v.wasi_module), dependent_tasks: dependents };

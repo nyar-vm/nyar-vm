@@ -2,7 +2,7 @@ use std::{io::Write, path::Path, str::FromStr, sync::Arc};
 
 use wast_encoder::{
     CanonicalWasi, DependentGraph, Identifier, WasiArrayType, WasiExternalFunction, WasiModule, WasiParameter, WasiRecordField,
-    WasiRecordType, WasiResource, WasiType, WasiVariantItem, WasiVariantType,
+    WasiRecordType, WasiResource, WasiType, WasiTypeReference, WasiVariantItem, WasiVariantType,
 };
 
 fn define_io_types() -> DependentGraph {
@@ -16,7 +16,7 @@ fn define_io_types() -> DependentGraph {
         global += WasiResource::new(m_io_streams.clone(), "input-stream", "std::io::InputStream");
         let mut stream_error = WasiVariantType::new("std::io::StreamError");
         stream_error += WasiVariantItem::new("LastOperationFailed")
-            .with_fields(WasiType::TypeHandler { name: Identifier::from_str("std::io::IoError").unwrap(), own: true });
+            .with_fields(WasiTypeReference::new(Identifier::from_str("std::io::IoError").unwrap()));
         stream_error += WasiVariantItem::new("Closed");
         global += stream_error;
     }
@@ -26,30 +26,25 @@ fn define_io_types() -> DependentGraph {
         point += WasiRecordField::new(Arc::from("y"), WasiType::Float32);
         global += point;
         let mut printer = WasiExternalFunction::new(m_debugger.clone(), "print-point", "test::print_point");
-        printer
-            .inputs
-            .push(WasiParameter::new("value", WasiType::TypeQuery { name: Identifier::from_str("test::Point").unwrap() }));
+        printer.inputs.push(WasiParameter::new("value", WasiTypeReference::new(Identifier::from_str("test::Point").unwrap())));
         global += printer;
     }
     {
         let wasi_cli_get = WasiModule::from_str("wasi:cli/stdin@0.2.0").unwrap();
         let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stdin", "std::io::standard_input");
-        function.output =
-            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::InputStream").unwrap(), own: true });
+        function.output = Some(WasiTypeReference::owned(Identifier::from_str("std::io::InputStream").unwrap()).into());
         global += function;
     }
     {
         let wasi_cli_get = WasiModule::from_str("wasi:cli/stdout@0.2.0").unwrap();
         let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stdout", "std::io::standard_output");
-        function.output =
-            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
+        function.output = Some(WasiTypeReference::owned(Identifier::from_str("std::io::OutputStream").unwrap()).into());
         global += function;
     }
     {
         let wasi_cli_get = WasiModule::from_str("wasi:cli/stderr@0.2.0").unwrap();
         let mut function = WasiExternalFunction::new(wasi_cli_get.clone(), "get-stderr", "std::io::standard_error");
-        function.output =
-            Some(WasiType::TypeHandler { name: Identifier::from_str("std::io::OutputStream").unwrap(), own: true });
+        function.output = Some(WasiTypeReference::owned(Identifier::from_str("std::io::OutputStream").unwrap()).into());
         global += function;
     }
     {

@@ -47,9 +47,7 @@ impl WasiInstance {
             WasiType::TypeHandler { .. } => {
                 todo!()
             }
-            WasiType::TypeQuery { .. } => {
-                todo!()
-            }
+
             WasiType::External(v) => {
                 self.functions.insert(v.symbol.clone(), *v.clone());
             }

@@ -11,7 +11,7 @@ use crate::{
     encoder::WastEncoder,
     helpers::{AliasOuter, ComponentDefine, TypeDefinition, TypeReference},
     wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType},
-    DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiRecordType,
+    DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiRecordType, WasiTypeReference,
 };
 use std::{cmp::Ordering, ops::AddAssign};
 
@@ -19,6 +19,7 @@ pub mod array;
 mod display;
 pub mod functions;
 pub mod records;
+pub mod reference;
 pub mod resources;
 pub mod variants;
 
@@ -62,16 +63,8 @@ pub enum WasiType {
     Record(WasiRecordType),
     /// `variant` type in WASI
     Variant(WasiVariantType),
-    TypeHandler {
-        /// Resource language name
-        name: Identifier,
-        own: bool,
-    },
-    /// A referenced type, the real type needs to be found later
-    TypeQuery {
-        /// Type language name
-        name: Identifier,
-    },
+    /// type reference in WASI
+    TypeHandler(WasiTypeReference),
     /// `list` type in WASI
     Array(Box<WasiArrayType>),
     /// The host function type in WASI
@@ -116,8 +109,7 @@ impl DependenciesTrace for WasiType {
             }
             WasiType::Resource(_) => collected.push(self),
             WasiType::Variant(_) => collected.push(self),
-            WasiType::TypeQuery { name } => collected.extend(dict.types.get(name)),
-            WasiType::TypeHandler { name, .. } => collected.extend(dict.types.get(name)),
+            WasiType::TypeHandler(v) => collected.push(dict.get(v)),
             WasiType::External(_) => collected.push(self),
             _ => {}
         };
