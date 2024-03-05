@@ -145,7 +145,6 @@ impl TypeReference for WasiType {
             Self::Record(v) => v.component_define(w)?,
             Self::Variant(v) => v.component_define(w)?,
             Self::TypeHandler(v) => v.upper_type(w)?,
-
             Self::External(_) => {
                 todo!()
             }

@@ -33,7 +33,17 @@ pub enum WasiOwnership {
 
 impl TypeReference for WasiTypeReference {
     fn upper_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        w.source.graph.get(self).upper_type(w)
+        match self.owner {
+            WasiOwnership::Normal => {
+                write!(w, "{}", self.symbol.wasi_id())
+            }
+            WasiOwnership::Owned => {
+                write!(w, "(own {})", self.symbol.wasi_id())
+            }
+            WasiOwnership::Borrow => {
+                write!(w, "(borrow {})", self.symbol.wasi_id())
+            }
+        }
     }
 
     fn lower_type<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {

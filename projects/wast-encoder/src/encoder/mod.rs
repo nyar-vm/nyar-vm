@@ -32,13 +32,7 @@ impl CanonicalWasi {
     pub fn draw_mermaid(&self) -> String {
         let mut out = String::new();
         out.push_str("flowchart LR\n");
-        for import in &self.imports {
-            match import {
-                CanonicalImport::Instance(v) => {}
-                CanonicalImport::Type(wasi) => {}
-                CanonicalImport::MockMemory => {}
-            }
-        }
+        for _ in &self.imports {}
 
         for import in &self.imports {
             match import {
@@ -144,7 +138,7 @@ impl CanonicalWasi {
     pub fn new(graph: DependentGraph) -> Result<Self, NyarError> {
         let dag = match graph.resolve_imports() {
             Ok(o) => o,
-            Err(e) => Err(NyarError::custom("graph error"))?,
+            Err(_) => Err(NyarError::custom("graph error"))?,
         };
         let mut this = CanonicalWasi::default();
         this.graph = graph;
@@ -166,9 +160,6 @@ impl CanonicalWasi {
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn new(source: &'a CanonicalWasi, writer: W) -> Self {
         Self { source, writer, indent: 0 }
-    }
-    pub fn with_indent_text(self, text: &'static str) -> Self {
-        Self { ..self }
     }
 }
 
