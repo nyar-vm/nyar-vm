@@ -20,8 +20,8 @@ impl Debug for WasiType {
             Self::Resource(v) => write!(f, "Resource({})", v.symbol),
             Self::Record(v) => Debug::fmt(v, f),
             Self::Variant(v) => Debug::fmt(v, f),
-            Self::TypeHandler { name, own } => write!(f, "TypeHandler({}{})", name, if *own { " own" } else { "" }),
-            Self::TypeQuery { name } => write!(f, "TypeAlias({})", name),
+            Self::TypeHandler(v) => Debug::fmt(v, f),
+
             Self::External(v) => write!(f, "External({})", v.symbol),
             Self::Array { .. } => {
                 write!(f, "Array(..))")
@@ -49,8 +49,7 @@ impl Display for WasiType {
             Self::Resource(v) => write!(f, "Resource({})", v.symbol),
             Self::Record(v) => Debug::fmt(v, f),
             Self::Variant(v) => Debug::fmt(v, f),
-            Self::TypeHandler { name, own } => write!(f, "TypeHandler({}{})", name, if *own { " own" } else { "" }),
-            Self::TypeQuery { name } => write!(f, "TypeAlias({})", name),
+            Self::TypeHandler(v) => Debug::fmt(v, f),
             Self::External(v) => write!(f, "External({})", v.symbol),
             Self::Array { .. } => {
                 write!(f, "Array(..))")
@@ -145,11 +144,8 @@ impl TypeReference for WasiType {
             }
             Self::Record(v) => v.component_define(w)?,
             Self::Variant(v) => v.component_define(w)?,
-            Self::TypeHandler { name, own } => match own {
-                true => write!(w, "(own {})", name.wasi_id())?,
-                false => write!(w, "(borrow {})", name.wasi_id())?,
-            },
-            Self::TypeQuery { name } => w.write_str(&name.wasi_id())?,
+            Self::TypeHandler(v) => v.upper_type(w)?,
+
             Self::External(_) => {
                 todo!()
             }
@@ -174,14 +170,7 @@ impl TypeReference for WasiType {
                 todo!()
             }
             Self::Record(_) => w.write_str("i32")?,
-            Self::TypeQuery { name } => match w.source.graph.types.get(name) {
-                Some(s) => s.lower_type(w)?,
-                None => {}
-            },
-            Self::TypeHandler { name, .. } => match w.source.graph.types.get(name) {
-                Some(s) => s.lower_type(w)?,
-                None => {}
-            },
+            Self::TypeHandler(v) => w.source.graph.get(v).lower_type(w)?,
             Self::Array(array) => array.lower_type(w)?,
             Self::External(_) => {
                 todo!()
@@ -214,14 +203,8 @@ impl TypeReference for WasiType {
             Self::Variant(_) => {
                 todo!()
             }
-            Self::TypeHandler { name, .. } => match w.source.graph.types.get(name) {
-                Some(s) => s.lower_type(w)?,
-                None => {}
-            },
+            Self::TypeHandler(v) => w.source.graph.get(v).lower_type(w)?,
             Self::Array(array) => array.lower_type(w)?,
-            Self::TypeQuery { .. } => {
-                todo!()
-            }
             Self::External(_) => {
                 todo!()
             }
@@ -254,7 +237,6 @@ impl WasiType {
             }
             Self::Variant(_) => "".to_string(),
             Self::TypeHandler { .. } => "".to_string(),
-            Self::TypeQuery { .. } => "".to_string(),
             Self::External(_) => "".to_string(),
             Self::Array { .. } => {
                 todo!()
