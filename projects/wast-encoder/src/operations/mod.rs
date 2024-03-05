@@ -1,4 +1,5 @@
 use crate::{encoder::WastEncoder, Identifier, WasiType, WasiValue};
+use itertools::Itertools;
 use std::fmt::Write;
 
 pub(crate) trait Emit {
@@ -16,8 +17,10 @@ pub enum WasiInstruction {
     /// Create a constant value
     Constant(WasiValue),
     ///
-    Conversion {
-        from: WasiType,
+    Convert {
+        into: WasiType,
+    },
+    Transmute {
         into: WasiType,
     },
     GetField,
@@ -39,15 +42,24 @@ pub enum WasiInstruction {
     },
 }
 
+impl WasiInstruction {
+    /// Create a const type
+    pub fn constant<T>(value: T) -> Self
+    where
+        T: Into<WasiValue>,
+    {
+        Self::Constant(value.into())
+    }
+}
+
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn emit_instructions(&mut self, instruction: &[WasiInstruction]) -> std::fmt::Result {
         for i in instruction {
             match i {
                 WasiInstruction::Default(v) => v.emit_default(self)?,
                 WasiInstruction::Constant(v) => v.emit_constant(self)?,
-                WasiInstruction::Conversion { from, into } => {
-                    todo!()
-                }
+                WasiInstruction::Convert { from, into } => from.emit_convert(into, self)?,
+                WasiInstruction::Transmute { from, into } => from.emit_transmute(into, self)?,
                 WasiInstruction::GetField => {
                     todo!()
                 }
