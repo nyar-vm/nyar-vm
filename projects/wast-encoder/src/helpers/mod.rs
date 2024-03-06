@@ -1,6 +1,14 @@
 use std::fmt::Write;
 
-use crate::{encoder::WastEncoder, WasiModule};
+use crate::{encoder::WastEncoder, WasiModule, WasiType, WasiValue};
+
+pub trait ToWasiType {
+    fn to_wasi_type(&self) -> WasiType;
+}
+
+pub trait ToWasiValue {
+    fn to_wasi_value(&self) -> WasiValue;
+}
 
 /// Mark for type who can import to the component instance
 pub(crate) trait AliasOuter {

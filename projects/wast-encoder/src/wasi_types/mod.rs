@@ -10,10 +10,11 @@ use crate::{
     dag::DependentGraph,
     encoder::WastEncoder,
     helpers::{AliasOuter, ComponentDefine, TypeDefinition, TypeReference},
-    wasi_types::{array::WasiArrayType, resources::WasiResource, variants::WasiVariantType},
+    wasi_types::{array::WasiArrayType, functions::WasiFunction, resources::WasiResource, variants::WasiVariantType},
     DependenciesTrace, Identifier, WasiExternalFunction, WasiModule, WasiRecordType, WasiTypeReference,
 };
 use std::{cmp::Ordering, ops::AddAssign};
+use WasiType::{Float32, Float64, Integer16, Integer32, Integer64, Integer8};
 
 pub mod array;
 mod display;
@@ -67,6 +68,8 @@ pub enum WasiType {
     TypeHandler(WasiTypeReference),
     /// `list` type in WASI
     Array(Box<WasiArrayType>),
+    /// `function` type in WASI
+    Function(Box<WasiFunction>),
     /// The host function type in WASI
     External(Box<WasiExternalFunction>),
 }
@@ -90,29 +93,55 @@ impl WasiType {
         }
     }
 }
+
+impl DependenciesTrace for WasiType {
+    #[track_caller]
+    fn define_language_types(&self, _: &mut DependentGraph) {
+        panic!("Invalid Call");
+    }
+
+    fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
+    where
+        'a: 'i,
+    {
+        match self {
+            WasiType::Option { inner } => inner.collect_wasi_types(dict, collected),
+            WasiType::Result { success, failure } => {
+                success.iter().for_each(|s| s.collect_wasi_types(dict, collected));
+                failure.iter().for_each(|f| f.collect_wasi_types(dict, collected));
+            }
+            WasiType::Resource(_) => collected.push(self),
+            WasiType::Variant(_) => collected.push(self),
+            WasiType::TypeHandler(v) => collected.push(dict.get(v)),
+            WasiType::External(_) => collected.push(self),
+            _ => {}
+        };
+    }
+}
+
 impl WasiType {
     pub fn emit_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             WasiType::Boolean => {
-                write!(w, "(i32.const 0)")
+                write!(w, "i32.const 0")
             }
-            WasiType::Integer8 { .. } => {
-                write!(w, "(i32.const 0)")
+            Integer8 { .. } => {
+                write!(w, "i32.const 0")
             }
-            WasiType::Integer16 { .. } => {
-                write!(w, "(i32.const 0)")
+            Integer16 { .. } => {
+                write!(w, "i32.const 0")
             }
-            WasiType::Integer32 { .. } => {
-                write!(w, "(i32.const 0)")
+            Integer32 { .. } => {
+                write!(w, "i32.const 0")
             }
-            WasiType::Integer64 { .. } => {
-                write!(w, "(i64.const 0)")
+            Integer64 { .. } => {
+                write!(w, "i64.const 0")
             }
-            WasiType::Float32 => {
-                write!(w, "(f32.const 0)")
+            Float32 => {
+                write!(w, "f32.const 0")
             }
-            WasiType::Float64 => {
-                write!(w, "(f64.const 0)")
+            Float64 => {
+                write!(w, "f64.const 0")
             }
             WasiType::Option { .. } => {
                 todo!()
@@ -139,30 +168,70 @@ impl WasiType {
             WasiType::External(_) => {
                 todo!()
             }
+            WasiType::Function(_) => {
+                todo!()
+            }
         }
     }
-}
-impl DependenciesTrace for WasiType {
-    #[track_caller]
-    fn define_language_types(&self, _: &mut DependentGraph) {
-        panic!("Invalid Call");
-    }
-
-    fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
-    where
-        'a: 'i,
-    {
-        match self {
-            WasiType::Option { inner } => inner.collect_wasi_types(dict, collected),
-            WasiType::Result { success, failure } => {
-                success.iter().for_each(|s| s.collect_wasi_types(dict, collected));
-                failure.iter().for_each(|f| f.collect_wasi_types(dict, collected));
+    pub fn emit_convert<W: Write>(&self, target: &WasiType, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match (self, target) {
+            // any to i32
+            (Integer8 { .. } | Integer16 { .. } | Integer32 { .. }, Integer64 { .. }) => write!(w, "i32.wrap_i64")?,
+            (Float32, Integer8 { signed: true } | Integer16 { signed: true } | Integer32 { signed: true }) => {
+                write!(w, "i32.trunc_f32_s")?
             }
-            WasiType::Resource(_) => collected.push(self),
-            WasiType::Variant(_) => collected.push(self),
-            WasiType::TypeHandler(v) => collected.push(dict.get(v)),
-            WasiType::External(_) => collected.push(self),
-            _ => {}
-        };
+            (Float32, Integer8 { signed: false } | Integer16 { signed: false } | Integer32 { signed: false }) => {
+                write!(w, "i32.trunc_f32_u")?
+            }
+            (Float64, Integer8 { signed: true } | Integer16 { signed: true } | Integer32 { signed: true }) => {
+                write!(w, "i32.trunc_f64_s")?
+            }
+            (Float64, Integer8 { signed: false } | Integer16 { signed: false } | Integer32 { signed: false }) => {
+                write!(w, "i32.trunc_f64_u")?
+            }
+            // any to i64
+            (Integer8 { .. } | Integer16 { .. } | Integer32 { .. }, Integer64 { signed: true }) => {
+                write!(w, "i64.extend_i32_s")?
+            }
+            (Integer8 { .. } | Integer16 { .. } | Integer32 { .. }, Integer64 { signed: false }) => {
+                write!(w, "i64.extend_i32_u")?
+            }
+            (Float32, Integer64 { signed: true }) => write!(w, "i64.trunc_f32_s")?,
+            (Float32, Integer64 { signed: false }) => write!(w, "i64.trunc_f32_u")?,
+            (Float64, Integer64 { signed: true }) => write!(w, "i64.trunc_f64_s")?,
+            (Float64, Integer64 { signed: false }) => write!(w, "i64.trunc_f64_u")?,
+            // any to f32
+            (Integer8 { signed: true } | Integer16 { signed: true } | Integer32 { signed: true }, Float32) => {
+                write!(w, "f32.convert_i32_s")?
+            }
+            (Integer8 { signed: false } | Integer16 { signed: false } | Integer32 { signed: false }, Float32) => {
+                write!(w, "f32.convert_i32_u")?
+            }
+            (Integer64 { signed: true }, Float32) => write!(w, "f32.convert_i64_s")?,
+            (Integer64 { signed: false }, Float32) => write!(w, "f32.convert_i64_u")?,
+            (Float32, Float32) => write!(w, "f32.demote_f64")?,
+            // any to f64
+            (Integer8 { signed: true } | Integer16 { signed: true } | Integer32 { signed: true }, Float64) => {
+                write!(w, "f64.convert_i32_s")?
+            }
+            (Integer8 { signed: false } | Integer16 { signed: false } | Integer32 { signed: false }, Float64) => {
+                write!(w, "f64.convert_i32_u")?
+            }
+            (Integer64 { signed: true }, Float64) => write!(w, "f64.convert_i64_s")?,
+            (Integer64 { signed: false }, Float64) => write!(w, "f64.convert_i64_u")?,
+            (Float32, Float64) => write!(w, "f64.promote_f32")?,
+            _ => unimplemented!("convert {} to {}", self, target),
+        }
+        Ok(())
+    }
+    pub fn emit_transmute<W: Write>(&self, target: &WasiType, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match (self, target) {
+            (Float32, Integer32 { .. }) => write!(w, "i32.reinterpret_f32")?,
+            (Float64, Integer64 { .. }) => write!(w, "i64.reinterpret_f64")?,
+            (Integer32 { .. }, Float32) => write!(w, "f32.reinterpret_i32")?,
+            (Integer64 { .. }, Float64) => write!(w, "f64.reinterpret_i64")?,
+            _ => unimplemented!("transmute {} to {}", self, target),
+        }
+        Ok(())
     }
 }
