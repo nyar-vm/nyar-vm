@@ -51,7 +51,7 @@ impl DependentGraph {
                     sorter += dependent_sort::Task::new_with_dependent(&ty, dependents);
                 }
                 WasiType::TypeHandler { .. } => {}
-                WasiType::External(v) => match &v.body {
+                WasiType::Function(v) => match &v.body {
                     WasiFunctionBody::External { wasi_module, .. } => {
                         v.collect_wasi_types(self, &mut dependents);
                         sorter += dependent_sort::Task { id: ty, group: Some(wasi_module), dependent_tasks: dependents };
@@ -62,7 +62,6 @@ impl DependentGraph {
                 WasiType::Float32 => {}
                 WasiType::Float64 => {}
                 WasiType::Boolean => {}
-                WasiType::Function(_) => {}
             }
         }
         sorter

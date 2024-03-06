@@ -9,7 +9,7 @@ use nyar_error::NyarError;
 use crate::{
     dag::DependenciesTrace,
     helpers::{ComponentDefine, LowerFunction},
-    wasi_types::functions::{WasiFunctionBody, WasiNativeFunction},
+    wasi_types::functions::WasiFunctionBody,
     DependentGraph, Identifier, WasiFunction, WasiInstance, WasiType,
 };
 
@@ -31,7 +31,7 @@ pub(crate) struct WastEncoder<'a, W> {
 }
 
 impl CanonicalWasi {
-    pub fn get_function(&self, symbol: &Identifier) -> Option<&WasiNativeFunction> {
+    pub fn get_function(&self, symbol: &Identifier) -> Option<&WasiFunction> {
         match self.graph.types.get(symbol) {
             Some(WasiType::Function(s)) => Some(s),
             _ => None,
