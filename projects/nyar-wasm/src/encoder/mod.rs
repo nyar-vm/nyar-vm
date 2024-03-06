@@ -25,8 +25,8 @@ pub struct CanonicalWasi {
 
 pub(crate) struct WastEncoder<'a, W> {
     pub source: &'a CanonicalWasi,
-    pub writer: W,
-    pub indent: usize,
+    writer: W,
+    indent_level: usize,
     pub stack: Vec<WasiType>,
 }
 
@@ -168,7 +168,7 @@ impl CanonicalWasi {
 
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn new(source: &'a CanonicalWasi, writer: W) -> Self {
-        Self { source, writer, indent: 0, stack: vec![] }
+        Self { source, writer, indent_level: 0, stack: vec![] }
     }
 }
 
@@ -241,10 +241,10 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         Ok(())
     }
     pub fn indent(&mut self) {
-        self.indent += 1;
+        self.indent_level += 1;
     }
     pub fn dedent(&mut self, end: usize) {
-        self.indent -= 1;
+        self.indent_level -= 1;
         self.newline().ok();
         for _ in 0..end {
             self.write_char(')').ok();
@@ -252,7 +252,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
     }
     pub fn newline(&mut self) -> std::fmt::Result {
         self.write_str("\n")?;
-        let range = (0..self.indent).into_iter();
+        let range = (0..self.indent_level).into_iter();
         for _ in range {
             let indent = self.source.indent_text.as_ref();
             self.writer.write_str(indent)?;
