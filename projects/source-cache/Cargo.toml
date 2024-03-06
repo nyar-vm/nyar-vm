@@ -1,0 +1,16 @@
+[package]
+name = "source-cache"
+version = "0.0.0"
+authors = ["Aster <192607617@qq.com>"]
+description = "Error types for valkyrie language"
+repository = "https://github.com/nyar-vm/nyar-vm/tree/dev/projects/nyar-error"
+documentation = "https://docs.rs/nyar-error"
+readme = "Readme.md"
+license = "MPL-2.0"
+edition = "2021"
+
+[dependencies]
+source-map = "0.14.10"
+
+[features]
+default = []
