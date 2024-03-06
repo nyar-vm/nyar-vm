@@ -1,9 +1,12 @@
 use crate::{
     encoder::WastEncoder,
     helpers::{EmitConstant, EmitDefault, ToWasiType},
-    Identifier, WasiType, WasiValue,
+    operations::branch::EnumerationTable,
+    Identifier, JumpBranch, JumpTable, WasiType, WasiValue,
 };
 use std::fmt::Write;
+
+pub mod branch;
 
 pub(crate) trait Emit {
     fn emit<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
@@ -41,6 +44,12 @@ pub enum WasiInstruction {
     NativeProduct {
         terms: Vec<WasiInstruction>,
     },
+    /// `if cond { } else { }`
+    JumpBranch(JumpBranch),
+    /// `if c1 { } else if c2 { } else { }`
+    JumpTable(JumpTable),
+    /// `case 0: ... else: ...`
+    JumpEnumeration(EnumerationTable),
     Goto {},
     Return {},
     Drop {
@@ -131,8 +140,19 @@ impl<'a, W: Write> WastEncoder<'a, W> {
                 WasiInstruction::Return { .. } => {
                     todo!()
                 }
-                WasiInstruction::NativeSum { .. } => {}
-                WasiInstruction::NativeProduct { .. } => {}
+                WasiInstruction::NativeSum { .. } => {
+                    todo!()
+                }
+                WasiInstruction::NativeProduct { .. } => {
+                    todo!()
+                }
+                WasiInstruction::JumpBranch(v) => v.emit(self)?,
+                WasiInstruction::JumpTable(_) => {
+                    todo!()
+                }
+                WasiInstruction::JumpEnumeration(_) => {
+                    todo!()
+                }
             }
         }
         Ok(())

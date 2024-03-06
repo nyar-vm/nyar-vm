@@ -100,35 +100,6 @@ impl WasmInstruction for Operation {
             }
             Self::Return => w.push(Instruction::Return),
             Self::Unreachable => w.push(Instruction::Unreachable),
-            Self::Convert { from, into, code } => {
-                code.iter().for_each(|i| i.emit(w));
-                match (from, into) {
-                    // u32 -> ?
-                    (WasmType::U32, WasmType::U32) => {}
-                    (WasmType::U32, WasmType::I32) => w.push(Instruction::I32WrapI64),
-                    (WasmType::U32, WasmType::I64) => w.push(Instruction::I64ExtendI32U),
-                    (WasmType::U32, WasmType::F32) => w.push(Instruction::F32ConvertI32U),
-                    (WasmType::U32, WasmType::F64) => w.push(Instruction::F64ConvertI32U),
-                    // i32 -> ?
-                    (WasmType::I32, WasmType::I32) => {}
-                    (WasmType::I32, WasmType::I64) => w.push(Instruction::I64ExtendI32S),
-                    (WasmType::I32, WasmType::F32) => w.push(Instruction::F32ConvertI32S),
-                    (WasmType::I64, WasmType::F32) => w.push(Instruction::F32ConvertI64S),
-                    // f32 -> ?
-                    (WasmType::F32, WasmType::I32) => w.push(Instruction::I32TruncF32S),
-                    (WasmType::F32, WasmType::I64) => w.push(Instruction::I64TruncF32S),
-                    (WasmType::F32, WasmType::F32) => {}
-                    (WasmType::F32, WasmType::F64) => w.push(Instruction::F64PromoteF32),
-                    // f64 -> ?
-                    (WasmType::F64, WasmType::I32) => w.push(Instruction::I32TruncF64S),
-                    (WasmType::F64, WasmType::I64) => w.push(Instruction::I64TruncF64S),
-                    (WasmType::F64, WasmType::F32) => w.push(Instruction::F32DemoteF64),
-                    (WasmType::F64, WasmType::F64) => {}
-                    _ => {
-                        unimplemented!()
-                    }
-                }
-            }
             Self::Transmute { from, into, code } => {
                 code.iter().for_each(|i| i.emit(w));
                 match (from, into) {
@@ -198,23 +169,6 @@ fn block_return(returns: &[WasmType]) -> Option<wast::core::FunctionType> {
     else {
         let result: Vec<_> = returns.iter().map(|i| i.as_wast()).collect();
         Some(wast::core::FunctionType { params: Box::default(), results: Box::from(result) })
-    }
-}
-
-impl WasmInstruction for JumpBranch {
-    /// `if { then } else { else } end`
-    /// `{ then } { else } condition select`
-    fn emit<'a, 'i>(&'a self, w: &mut Vec<Instruction<'i>>)
-    where
-        'a: 'i,
-    {
-        let inline = block_return(&self.r#return);
-        self.main.condition.iter().for_each(|i| i.emit(w));
-        w.push(Instruction::If(Box::new(BlockType { label: None, label_name: None, ty: TypeUse { index: None, inline } })));
-        self.main.action.iter().for_each(|i| i.emit(w));
-        w.push(Instruction::Else(None));
-        self.default.iter().for_each(|i| i.emit(w));
-        w.push(Instruction::End(None))
     }
 }
 
