@@ -11,6 +11,12 @@ pub struct WasiRecordType {
     pub fields: IndexMap<Arc<str>, WasiRecordField>,
 }
 
+impl Display for WasiRecordType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct WasiRecordField {
     /// The name of the field

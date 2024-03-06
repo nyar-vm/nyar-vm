@@ -14,7 +14,6 @@ use crate::{
     DependenciesTrace, Identifier, WasiFunction, WasiModule, WasiRecordType, WasiTypeReference,
 };
 use std::{cmp::Ordering, ops::AddAssign};
-use WasiType::{Boolean, Float32, Float64, Integer16, Integer32, Integer64, Integer8};
 
 pub mod array;
 mod display;
@@ -27,7 +26,10 @@ pub mod variants;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WasiType {
+    /// `bool` type in WASI
     Boolean,
+    /// `char` type in WASI
+    Unicode,
     /// `s8` or `u8` type in WASI
     Integer8 {
         /// Whether the integer is signed or not
@@ -52,6 +54,7 @@ pub enum WasiType {
     Float32,
     /// `f64` type in WASI
     Float64,
+
     Option {
         inner: Box<WasiType>,
     },
@@ -65,12 +68,12 @@ pub enum WasiType {
     Record(WasiRecordType),
     /// `variant` type in WASI
     Variant(WasiVariantType),
-    /// type reference in WASI
-    TypeHandler(WasiTypeReference),
     /// `list` type in WASI
     Array(Box<WasiArrayType>),
     /// `function` type in WASI
     Function(Box<WasiFunction>),
+    /// type reference in WASI
+    TypeHandler(WasiTypeReference),
 }
 
 impl WasiType {
@@ -124,27 +127,14 @@ impl DependenciesTrace for WasiType {
 impl EmitDefault for WasiType {
     fn emit_default<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
-            Boolean => {
-                write!(w, "i32.const 0")
+            Self::Boolean | Self::Integer8 { .. } | Self::Integer16 { .. } | Self::Integer32 { .. } => {
+                w.write_str("i32.const 0")
             }
-            Integer8 { .. } => {
-                write!(w, "i32.const 0")
-            }
-            Integer16 { .. } => {
-                write!(w, "i32.const 0")
-            }
-            Integer32 { .. } => {
-                write!(w, "i32.const 0")
-            }
-            Integer64 { .. } => {
-                write!(w, "i64.const 0")
-            }
-            Float32 => {
-                write!(w, "f32.const 0")
-            }
-            Float64 => {
-                write!(w, "f64.const 0")
-            }
+            Self::Integer64 { .. } => w.write_str("i64.const 0"),
+            Self::Float32 => w.write_str("f32.const 0"),
+            Self::Float64 => w.write_str("f64.const 0"),
+            // U+0020: " "
+            Self::Unicode => w.write_str("f64.const 32"),
             Self::Option { .. } => {
                 todo!()
             }
@@ -175,64 +165,66 @@ impl EmitDefault for WasiType {
 
 impl WasiType {
     pub(crate) fn emit_convert<W: Write>(&self, target: &WasiType, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        use WasiType::{Boolean, Float32, Float64, Integer16, Integer32, Integer64, Integer8};
         match self {
             Boolean => match target {
-                Boolean { .. } | Integer8 { .. } | Integer16 { .. } | Integer32 { .. } => write!(w, "nop")?,
+                Boolean | Integer8 { .. } | Integer16 { .. } | Integer32 { .. } => write!(w, "nop")?,
                 Integer64 { .. } => write!(w, "i64.extend_i32_u")?,
                 Float32 => write!(w, "f32.convert_i32_u")?,
                 Float64 => write!(w, "f64.convert_i32_u")?,
-                _ => unreachable!("convert {} to {}", self, target),
+                _ => unreachable!("Can't convert `{}` to `{}`", self, target),
             },
             Integer8 { signed } | Integer16 { signed } | Integer32 { signed } => match target {
-                Boolean { .. } | Integer8 { .. } | Integer16 { .. } | Integer32 { .. } => write!(w, "nop")?,
-                Integer64 { .. } if signed => write!(w, "i64.extend_i32_s")?,
+                Boolean | Integer8 { .. } | Integer16 { .. } | Integer32 { .. } => write!(w, "nop")?,
+                Integer64 { .. } if *signed => write!(w, "i64.extend_i32_s")?,
                 Integer64 { .. } => write!(w, "i64.extend_i32_u")?,
-                Float32 if signed => write!(w, "f32.convert_i32_s")?,
+                Float32 if *signed => write!(w, "f32.convert_i32_s")?,
                 Float32 => write!(w, "f32.convert_i32_u")?,
-                Float64 if signed => write!(w, "f64.convert_i32_s")?,
+                Float64 if *signed => write!(w, "f64.convert_i32_s")?,
                 Float64 => write!(w, "f64.convert_i32_u")?,
-                _ => unreachable!("convert {} to {}", self, target),
+                _ => unreachable!("Can't convert `{}` to `{}`", self, target),
             },
             Integer64 { signed } => match target {
-                Boolean { .. } | Integer8 { .. } | Integer16 { .. } | Integer32 { .. } => write!(w, "i32.wrap_i64")?,
+                Boolean | Integer8 { .. } | Integer16 { .. } | Integer32 { .. } => write!(w, "i32.wrap_i64")?,
                 Integer64 { .. } => write!(w, "nop")?,
-                Float32 if signed => write!(w, "f32.convert_i64_s")?,
+                Float32 if *signed => write!(w, "f32.convert_i64_s")?,
                 Float32 => write!(w, "f32.convert_i64_u")?,
-                Float64 if signed => write!(w, "f64.convert_i64_s")?,
+                Float64 if *signed => write!(w, "f64.convert_i64_s")?,
                 Float64 => write!(w, "f64.convert_i64_u")?,
-                _ => unreachable!("convert {} to {}", self, target),
+                _ => unreachable!("Can't convert `{}` to `{}`", self, target),
             },
             Float32 => match target {
-                Boolean { .. } | Integer8 { signed: true } | Integer16 { signed: true } | Integer32 { signed: true } => {
+                Boolean | Integer8 { signed: true } | Integer16 { signed: true } | Integer32 { signed: true } => {
                     write!(w, "i32.trunc_f32_s")?
                 }
-                Boolean { .. } | Integer8 { signed: false } | Integer16 { signed: false } | Integer32 { signed: false } => {
+                Integer8 { signed: false } | Integer16 { signed: false } | Integer32 { signed: false } => {
                     write!(w, "i32.trunc_f32_u")?
                 }
                 Integer64 { signed: true } => write!(w, "i64.trunc_f32_s")?,
                 Integer64 { signed: false } => write!(w, "i64.trunc_f32_u")?,
                 Float32 => write!(w, "nop")?,
                 Float64 => write!(w, "f64.promote_f32")?,
-                _ => unreachable!("convert {} to {}", self, target),
+                _ => unreachable!("Can't convert `{}` to `{}`", self, target),
             },
             Float64 => match target {
-                Boolean { .. } | Integer8 { signed: true } | Integer16 { signed: true } | Integer32 { signed: true } => {
+                Boolean | Integer8 { signed: true } | Integer16 { signed: true } | Integer32 { signed: true } => {
                     write!(w, "i32.trunc_f64_s")?
                 }
-                Boolean { .. } | Integer8 { signed: false } | Integer16 { signed: false } | Integer32 { signed: false } => {
+                Integer8 { signed: false } | Integer16 { signed: false } | Integer32 { signed: false } => {
                     write!(w, "i32.trunc_f64_u")?
                 }
                 Integer64 { signed: true } => write!(w, "i64.trunc_f64_s")?,
                 Integer64 { signed: false } => write!(w, "i64.trunc_f64_u")?,
                 Float32 => write!(w, "f32.demote_f64")?,
                 Float64 => write!(w, "nop")?,
-                _ => unreachable!("convert {} to {}", self, target),
+                _ => unreachable!("Can't convert `{}` to `{}`", self, target),
             },
-            _ => unreachable!("convert {} to {}", self, target),
+            _ => unimplemented!("convert {} to {}", self, target),
         }
         Ok(())
     }
     pub(crate) fn emit_transmute<W: Write>(&self, target: &WasiType, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        use WasiType::{Float32, Float64, Integer32, Integer64};
         match (self, target) {
             (Float32, Integer32 { .. }) => write!(w, "i32.reinterpret_f32")?,
             (Float64, Integer64 { .. }) => write!(w, "i64.reinterpret_f64")?,

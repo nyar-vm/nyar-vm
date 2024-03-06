@@ -6,6 +6,12 @@ pub struct WasiTypeReference {
     pub owner: WasiOwnership,
 }
 
+impl Display for WasiTypeReference {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
 impl From<WasiTypeReference> for WasiType {
     fn from(value: WasiTypeReference) -> Self {
         Self::TypeHandler(value)
