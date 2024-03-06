@@ -1,4 +1,8 @@
-use crate::{encoder::WastEncoder, helpers::ToWasiType, Identifier, WasiType, WasiValue};
+use crate::{
+    encoder::WastEncoder,
+    helpers::{EmitConstant, EmitDefault, ToWasiType},
+    Identifier, WasiType, WasiValue,
+};
 use std::fmt::Write;
 
 pub(crate) trait Emit {
