@@ -1,4 +1,5 @@
-Another benefit is that if all gc types are used, there is no need to bring in a memory allocator, which helps reduce the size and warm up faster.
+Another benefit is that if all gc types are used, there is no need to bring in a memory allocator, which helps reduce
+the size and warm up faster.
 
 rustc's `cabi_export_realloc` takes about 27000 lines of instructions, libc is even larger.
 
@@ -61,5 +62,5 @@ If using the gc type, this can be simplified to:
 )
 ```
 
-
-Obtaining a field of gc type requires only one instruction and does not require pointer algebra (at least three instructions), further reducing the binary size.
+Obtaining a field of gc type requires only one instruction and does not require pointer algebra (at least three
+instructions), further reducing the binary size.

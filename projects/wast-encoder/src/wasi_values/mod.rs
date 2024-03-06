@@ -1,9 +1,19 @@
 use crate::{encoder::WastEncoder, helpers::ToWasiType, WasiArrayType, WasiType};
-use std::{borrow::Cow, fmt::Write};
+use std::{
+    borrow::Cow,
+    cmp::Ordering,
+    fmt::Write,
+    hash::{Hash, Hasher},
+};
 
-#[derive(Clone)]
+mod arithmetic;
+
+/// Static values that can be expressed in wasm/wasi
+#[derive(Debug, Clone)]
 pub enum WasiValue {
+    /// The boolean value, `true` or `false`
     Boolean(bool),
+    ///
     Integer8(i8),
     Integer16(i16),
     Integer32(i32),
@@ -14,26 +24,10 @@ pub enum WasiValue {
     Unsigned64(u64),
     Float32(f32),
     Float64(f64),
-    DynamicArray { r#type: WasiArrayType, values: Vec<WasiValue> },
-}
-
-impl ToWasiType for WasiValue {
-    fn to_wasi_type(&self) -> WasiType {
-        match self {
-            Self::Boolean(_) => WasiType::Boolean,
-            Self::Integer8(_) => WasiType::Integer8 { signed: true },
-            Self::Integer16(_) => WasiType::Integer8 { signed: true },
-            Self::Integer32(_) => WasiType::Integer8 { signed: true },
-            Self::Integer64(_) => WasiType::Integer8 { signed: true },
-            Self::Unsigned8(_) => WasiType::Integer8 { signed: false },
-            Self::Unsigned16(_) => WasiType::Integer8 { signed: false },
-            Self::Unsigned32(_) => WasiType::Integer8 { signed: false },
-            Self::Unsigned64(_) => WasiType::Integer8 { signed: false },
-            Self::Float32(_) => WasiType::Float32,
-            Self::Float64(_) => WasiType::Float64,
-            Self::DynamicArray { r#type, .. } => WasiType::Array(Box::new(r#type.clone())),
-        }
-    }
+    DynamicArray {
+        r#type: WasiArrayType,
+        values: Vec<WasiValue>,
+    },
 }
 
 impl WasiValue {

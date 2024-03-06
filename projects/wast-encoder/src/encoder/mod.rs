@@ -9,8 +9,8 @@ use nyar_error::NyarError;
 use crate::{
     dag::DependenciesTrace,
     helpers::{ComponentDefine, LowerFunction},
-    wasi_types::functions::WasiFunction,
-    DependentGraph, Identifier, WasiExternalFunction, WasiInstance, WasiType,
+    wasi_types::functions::{WasiFunctionBody, WasiNativeFunction},
+    DependentGraph, Identifier, WasiFunction, WasiInstance, WasiType,
 };
 
 mod for_instance;
@@ -31,7 +31,7 @@ pub(crate) struct WastEncoder<'a, W> {
 }
 
 impl CanonicalWasi {
-    pub fn get_function(&self, symbol: &Identifier) -> Option<&WasiFunction> {
+    pub fn get_function(&self, symbol: &Identifier) -> Option<&WasiNativeFunction> {
         match self.graph.types.get(symbol) {
             Some(WasiType::Function(s)) => Some(s),
             _ => None,
@@ -51,7 +51,7 @@ impl CanonicalWasi {
                         out.push_str(&format!("        {:#}[\"{}\"]:::resource\n", wasi.symbol, wasi.wasi_name));
                     }
                     for wasi in v.functions.values() {
-                        out.push_str(&format!("        {:#}[\"{}\"]:::function\n", wasi.symbol, wasi.wasi_name));
+                        out.push_str(&format!("        {:#}[\"{}\"]:::function\n", wasi.symbol, wasi.symbol.wasi_id()));
                     }
                     for wasi in v.functions.values() {
                         let mut types = vec![];
@@ -222,7 +222,12 @@ impl<'a, W: Write> WastEncoder<'a, W> {
                         self.indent();
                         for x in v.functions.values() {
                             self.newline()?;
-                            write!(self, "(export \"{}\" (func {}))", x.wasi_name, x.symbol.wasi_id())?;
+                            match &x.body {
+                                WasiFunctionBody::External { wasi_name, .. } => {
+                                    write!(self, "(export \"{}\" (func {}))", wasi_name, x.symbol.wasi_id())?;
+                                }
+                                WasiFunctionBody::Normal { .. } => {}
+                            }
                         }
                         self.dedent(2);
                     }

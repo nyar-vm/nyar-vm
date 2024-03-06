@@ -1,6 +1,6 @@
 use super::*;
 
-impl Display for WasiExternalFunction {
+impl Display for WasiFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.symbol)?;
         for (i, input) in self.inputs.iter().enumerate() {
