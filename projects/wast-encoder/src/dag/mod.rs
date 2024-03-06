@@ -58,6 +58,7 @@ impl DependentGraph {
                 WasiType::Float32 => {}
                 WasiType::Float64 => {}
                 WasiType::Boolean => {}
+                WasiType::Function(_) => {}
             }
         }
         sorter

@@ -9,7 +9,8 @@ use nyar_error::NyarError;
 use crate::{
     dag::DependenciesTrace,
     helpers::{ComponentDefine, LowerFunction},
-    DependentGraph, WasiExternalFunction, WasiInstance, WasiType,
+    wasi_types::functions::WasiFunction,
+    DependentGraph, Identifier, WasiExternalFunction, WasiInstance, WasiType,
 };
 
 mod for_instance;
@@ -26,10 +27,17 @@ pub(crate) struct WastEncoder<'a, W> {
     pub source: &'a CanonicalWasi,
     pub writer: W,
     pub indent: usize,
-    pub state: Vec<WasiType>,
+    pub stack: Vec<WasiType>,
 }
 
 impl CanonicalWasi {
+    pub fn get_function(&self, symbol: &Identifier) -> Option<&WasiFunction> {
+        match self.graph.types.get(symbol) {
+            Some(WasiType::Function(s)) => Some(s),
+            _ => None,
+        }
+    }
+
     pub fn draw_mermaid(&self) -> String {
         let mut out = String::new();
         out.push_str("flowchart LR\n");
@@ -160,7 +168,7 @@ impl CanonicalWasi {
 
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn new(source: &'a CanonicalWasi, writer: W) -> Self {
-        Self { source, writer, indent: 0, state: vec![] }
+        Self { source, writer, indent: 0, stack: vec![] }
     }
 }
 
