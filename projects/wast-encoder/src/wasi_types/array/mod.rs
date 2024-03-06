@@ -10,6 +10,12 @@ pub struct WasiArrayType {
     mutable: bool,
 }
 
+impl Debug for WasiArrayType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
 impl WasiArrayType {
     /// Create a new array type
     pub fn new<T>(r#type: T) -> Self

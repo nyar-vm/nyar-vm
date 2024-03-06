@@ -10,6 +10,7 @@ pub(crate) trait EmitValue {
     fn emit_constant<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WasiInstruction {
     /// Create the default value for a given type
     Default(WasiType),
