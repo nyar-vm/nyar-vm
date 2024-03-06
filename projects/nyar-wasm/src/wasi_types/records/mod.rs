@@ -1,4 +1,5 @@
 use super::*;
+use crate::WasiValue;
 
 mod arithmetic;
 mod display;
@@ -12,10 +13,14 @@ pub struct WasiRecordType {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WasiRecordField {
+    /// The name of the field
     pub name: Arc<str>,
+    /// The WASI name of the field
     pub wasi_name: Arc<str>,
     /// The type of the parameter
     pub r#type: WasiType,
+    /// The default value of the parameter
+    pub default_value: Option<WasiValue>,
 }
 
 impl WasiRecordType {

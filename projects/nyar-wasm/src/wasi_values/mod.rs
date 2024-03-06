@@ -1,7 +1,7 @@
 use crate::{
     encoder::WastEncoder,
     helpers::{EmitConstant, ToWasiType},
-    WasiArrayType, WasiType,
+    ArrayValue, WasiArrayType, WasiType,
 };
 use std::{
     borrow::Cow,
@@ -11,6 +11,9 @@ use std::{
 };
 
 mod arithmetic;
+
+pub mod array;
+pub mod record;
 
 /// Static values that can be expressed in wasm/wasi
 #[derive(Debug, Clone)]
@@ -37,10 +40,7 @@ pub enum WasiValue {
     Float32(f32),
     /// The 64-bit floating point number
     Float64(f64),
-    DynamicArray {
-        r#type: WasiArrayType,
-        values: Vec<WasiValue>,
-    },
+    DynamicArray(ArrayValue),
 }
 
 impl EmitConstant for WasiValue {
@@ -57,9 +57,7 @@ impl EmitConstant for WasiValue {
             Self::Unsigned64(v) => write!(w, "i64.const {}", v)?,
             Self::Float32(v) => write!(w, "f32.const {}", v)?,
             Self::Float64(v) => write!(w, "f64.const {}", v)?,
-            Self::DynamicArray { .. } => {
-                todo!()
-            }
+            Self::DynamicArray(v) => v.emit_constant(w)?,
         }
         Ok(())
     }
