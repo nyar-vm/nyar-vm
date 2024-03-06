@@ -102,8 +102,6 @@ fn test_hello_world() {
 
     let source = CanonicalWasi::new(define_io_types()).unwrap();
 
-    println!("{}", source.draw_mermaid());
-
     let wast = source.encode();
     wat.write_all(wast.as_bytes()).unwrap();
 }

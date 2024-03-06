@@ -70,89 +70,96 @@ impl WasiInstruction {
 impl<'a, W: Write> WastEncoder<'a, W> {
     pub fn emit_instructions(&mut self, instruction: &[WasiInstruction]) -> std::fmt::Result {
         for i in instruction {
-            match i {
-                WasiInstruction::Default(v) => {
-                    v.emit_default(self)?;
-                    self.stack.push(v.clone())
-                }
-                WasiInstruction::Constant(v) => {
-                    v.emit_constant(self)?;
-                    self.stack.push(v.to_wasi_type())
-                }
-                WasiInstruction::Convert { into } => {
-                    let last = self.stack.pop();
-                    match last {
-                        Some(last) => {
-                            last.emit_convert(into, self)?;
-                            self.stack.push(into.clone())
-                        }
-                        None => {
-                            panic!("no item on stack!")
-                        }
-                    }
-                }
-                WasiInstruction::Transmute { into } => {
-                    let last = self.stack.pop();
-                    match last {
-                        Some(last) => {
-                            last.emit_transmute(into, self)?;
-                            self.stack.push(into.clone())
-                        }
-                        None => {
-                            panic!("no item on stack!")
-                        }
-                    }
-                }
-                WasiInstruction::GetField => {
-                    todo!()
-                }
-                WasiInstruction::SetField => {
-                    todo!()
-                }
-                WasiInstruction::CallFunction { symbol } => match self.source.get_function(symbol) {
-                    Some(s) => {
-                        write!(self, "call {}", symbol.wasi_id())?;
-                        for input in s.inputs.iter() {
-                            match self.stack.pop() {
-                                Some(s) => {
-                                    if s.ne(&input.r#type) {
-                                        panic!("Mismatch type")
-                                    }
-                                }
-                                None => {
-                                    panic!("Missing parameter")
-                                }
-                            }
-                        }
-                        for output in s.output.clone() {
-                            self.stack.push(output)
-                        }
+            i.emit(self)?;
+        }
+        Ok(())
+    }
+}
+
+impl Emit for WasiInstruction {
+    fn emit<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            WasiInstruction::Default(v) => {
+                v.emit_default(w)?;
+                w.stack.push(v.clone())
+            }
+            WasiInstruction::Constant(v) => {
+                v.emit_constant(w)?;
+                w.stack.push(v.to_wasi_type())
+            }
+            WasiInstruction::Convert { into } => {
+                let last = w.stack.pop();
+                match last {
+                    Some(last) => {
+                        last.emit_convert(into, w)?;
+                        w.stack.push(into.clone())
                     }
                     None => {
-                        panic!("Missing function")
+                        panic!("no item on stack!")
                     }
-                },
-                // (drop drop ...)
-                WasiInstruction::Drop { objects } => write!(self, "({})", "drop ".repeat(*objects).trim_end())?,
-                WasiInstruction::Goto { .. } => {
-                    todo!()
                 }
-                WasiInstruction::Return { .. } => {
-                    todo!()
+            }
+            WasiInstruction::Transmute { into } => {
+                let last = w.stack.pop();
+                match last {
+                    Some(last) => {
+                        last.emit_transmute(into, w)?;
+                        w.stack.push(into.clone())
+                    }
+                    None => {
+                        panic!("no item on stack!")
+                    }
                 }
-                WasiInstruction::NativeSum { .. } => {
-                    todo!()
+            }
+            WasiInstruction::GetField => {
+                todo!()
+            }
+            WasiInstruction::SetField => {
+                todo!()
+            }
+            WasiInstruction::CallFunction { symbol } => match w.source.get_function(symbol) {
+                Some(s) => {
+                    write!(w, "call {}", symbol.wasi_id())?;
+                    for input in s.inputs.iter() {
+                        match w.stack.pop() {
+                            Some(s) => {
+                                if s.ne(&input.r#type) {
+                                    panic!("Mismatch type")
+                                }
+                            }
+                            None => {
+                                panic!("Missing parameter")
+                            }
+                        }
+                    }
+                    for output in s.output.clone() {
+                        w.stack.push(output)
+                    }
                 }
-                WasiInstruction::NativeProduct { .. } => {
-                    todo!()
+                None => {
+                    panic!("Missing function")
                 }
-                WasiInstruction::JumpBranch(v) => v.emit(self)?,
-                WasiInstruction::JumpTable(_) => {
-                    todo!()
-                }
-                WasiInstruction::JumpEnumeration(_) => {
-                    todo!()
-                }
+            },
+            // (drop drop ...)
+            WasiInstruction::Drop { objects } => write!(w, "({})", "drop ".repeat(*objects).trim_end())?,
+            WasiInstruction::Goto { .. } => {
+                todo!()
+            }
+            WasiInstruction::Return { .. } => {
+                todo!()
+            }
+            WasiInstruction::NativeSum { .. } => {
+                todo!()
+            }
+            WasiInstruction::NativeProduct { .. } => {
+                todo!()
+            }
+            WasiInstruction::JumpBranch(v) => v.emit(w)?,
+            WasiInstruction::JumpTable(_) => {
+                todo!()
+            }
+            WasiInstruction::JumpEnumeration(_) => {
+                todo!()
             }
         }
         Ok(())
