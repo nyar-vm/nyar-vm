@@ -5,7 +5,6 @@ use crate::{
 pub use crate::{
     dag::DependentGraph,
     encoder::{encode_id, encode_kebab, CanonicalWasi},
-    enumerations::{WasiEnumeration, WasiEnumerationItem},
     instances::WasiInstance,
     symbols::{
         identifiers::Identifier,
@@ -13,6 +12,7 @@ pub use crate::{
     },
     wasi_types::{
         array::WasiArrayType,
+        enumerations::{WasiEnumeration, WasiEnumerationItem},
         functions::{WasiFunction, WasiParameter},
         records::{WasiRecordField, WasiRecordType},
         reference::{WasiOwnership, WasiTypeReference},
@@ -20,12 +20,11 @@ pub use crate::{
         variants::{WasiVariantItem, WasiVariantType},
         WasiType,
     },
-    wasi_values::WasiValue,
+    wasi_values::{array::ArrayValue, WasiValue},
 };
 
 mod dag;
 mod encoder;
-mod enumerations;
 pub mod helpers;
 mod instances;
 mod operations;

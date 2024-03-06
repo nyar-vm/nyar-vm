@@ -52,6 +52,7 @@
         string-encoding=utf8
     ))
     (core module $Main
+        (type (array i8))
         (import "unstable:debugger/print" "print-i32" (func $print_i32 (param $value i32)))
         (import "unstable:debugger/print" "print-u32" (func $print_u32 (param $value i32)))
         (func $auto_drop
