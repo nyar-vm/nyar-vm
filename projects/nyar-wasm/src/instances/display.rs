@@ -1,7 +1,4 @@
-use crate::{
-    helpers::{AliasExport, AliasOuter},
-    wasi_types::functions::WasiFunctionBody,
-};
+use crate::helpers::{AliasExport, AliasOuter};
 
 use super::*;
 
