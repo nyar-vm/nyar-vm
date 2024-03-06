@@ -16,6 +16,8 @@ indexmap = "2.2.3"
 wast = "201.0.0"
 string-pool = "0.2.1"
 itertools = "0.12.1"
+convert_case = "0.6.0"
+dependent_sort = "0.2.0"
 
 [dependencies.nyar-error]
 version = "0.1.*"
