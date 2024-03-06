@@ -22,7 +22,7 @@ pub struct WasiFunction {
     /// The input parameters of the function
     pub inputs: Vec<WasiParameter>,
     /// The output parameter of the function
-    pub output: Option<WasiType>,
+    pub output: Vec<WasiParameter>,
     pub body: WasiFunctionBody,
 }
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -59,7 +59,7 @@ impl WasiFunction {
         Self {
             symbol: name.into(),
             inputs: vec![],
-            output: None,
+            output: vec![],
             body: WasiFunctionBody::External { wasi_module: wasi_module.into(), wasi_name: wasi_name.to_string() },
         }
     }
@@ -121,12 +121,9 @@ impl LowerFunction for WasiFunction {
             w.write_str(" ")?;
             input.lower_input(w)?;
         }
-        match &self.output {
-            Some(s) => {
-                w.write_str(" ")?;
-                s.lower_output(w)?;
-            }
-            None => {}
+        for output in &self.inputs {
+            w.write_str(" ")?;
+            output.lower_input(w)?;
         }
         w.write_str("))")
     }
@@ -142,6 +139,6 @@ impl DependenciesTrace for WasiFunction {
         'a: 'i,
     {
         self.inputs.iter().for_each(|input| input.r#type.collect_wasi_types(dict, collected));
-        self.output.iter().for_each(|output| output.collect_wasi_types(dict, collected));
+        self.output.iter().for_each(|output| output.r#type.collect_wasi_types(dict, collected));
     }
 }

@@ -144,22 +144,29 @@ impl EmitDefault for WasiType {
             Self::Resource(_) => {
                 todo!()
             }
-            Self::Record(_) => {
-                todo!()
-            }
+            Self::Record(v) => v.emit_default(w),
             Self::Variant(_) => {
                 todo!()
             }
             Self::TypeHandler { .. } => {
                 todo!()
             }
-            Self::Array(_) => {
-                todo!()
-            }
+            Self::Array(v) => v.emit_default(w),
             Self::Function(_) => {
                 todo!()
             }
         }
+    }
+}
+
+impl EmitDefault for WasiArrayType {
+    fn emit_default<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+}
+impl EmitDefault for WasiRecordType {
+    fn emit_default<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
     }
 }
 
@@ -219,7 +226,7 @@ impl WasiType {
                 Float64 => write!(w, "nop")?,
                 _ => unreachable!("Can't convert `{}` to `{}`", self, target),
             },
-            _ => unimplemented!("convert {} to {}", self, target),
+            _ => unimplemented!("Unknown convert {} to {}", self, target),
         }
         Ok(())
     }
@@ -230,7 +237,7 @@ impl WasiType {
             (Float64, Integer64 { .. }) => write!(w, "i64.reinterpret_f64")?,
             (Integer32 { .. }, Float32) => write!(w, "f32.reinterpret_i32")?,
             (Integer64 { .. }, Float64) => write!(w, "f64.reinterpret_i64")?,
-            _ => unimplemented!("transmute {} to {}", self, target),
+            _ => unimplemented!("Unknown transmute {} to {}", self, target),
         }
         Ok(())
     }

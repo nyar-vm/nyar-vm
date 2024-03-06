@@ -79,15 +79,15 @@ impl<'a, W: Write> WastEncoder<'a, W> {
 impl Emit for WasiInstruction {
     fn emit<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
-            WasiInstruction::Default(v) => {
+            Self::Default(v) => {
                 v.emit_default(w)?;
                 w.stack.push(v.clone())
             }
-            WasiInstruction::Constant(v) => {
+            Self::Constant(v) => {
                 v.emit_constant(w)?;
                 w.stack.push(v.to_wasi_type())
             }
-            WasiInstruction::Convert { into } => {
+            Self::Convert { into } => {
                 let last = w.stack.pop();
                 match last {
                     Some(last) => {
@@ -99,7 +99,7 @@ impl Emit for WasiInstruction {
                     }
                 }
             }
-            WasiInstruction::Transmute { into } => {
+            Self::Transmute { into } => {
                 let last = w.stack.pop();
                 match last {
                     Some(last) => {
@@ -111,13 +111,13 @@ impl Emit for WasiInstruction {
                     }
                 }
             }
-            WasiInstruction::GetField => {
+            Self::GetField => {
                 todo!()
             }
-            WasiInstruction::SetField => {
+            Self::SetField => {
                 todo!()
             }
-            WasiInstruction::CallFunction { symbol } => match w.source.get_function(symbol) {
+            Self::CallFunction { symbol } => match w.source.get_function(symbol) {
                 Some(s) => {
                     write!(w, "call {}", symbol.wasi_id())?;
                     for input in s.inputs.iter() {
@@ -133,7 +133,7 @@ impl Emit for WasiInstruction {
                         }
                     }
                     for output in s.output.clone() {
-                        w.stack.push(output)
+                        w.stack.push(output.r#type)
                     }
                 }
                 None => {
@@ -141,24 +141,24 @@ impl Emit for WasiInstruction {
                 }
             },
             // (drop drop ...)
-            WasiInstruction::Drop { objects } => write!(w, "({})", "drop ".repeat(*objects).trim_end())?,
-            WasiInstruction::Goto { .. } => {
+            Self::Drop { objects } => write!(w, "({})", "drop ".repeat(*objects).trim_end())?,
+            Self::Goto { .. } => {
                 todo!()
             }
-            WasiInstruction::Return { .. } => {
+            Self::Return { .. } => {
                 todo!()
             }
-            WasiInstruction::NativeSum { .. } => {
+            Self::NativeSum { .. } => {
                 todo!()
             }
-            WasiInstruction::NativeProduct { .. } => {
+            Self::NativeProduct { .. } => {
                 todo!()
             }
-            WasiInstruction::JumpBranch(v) => v.emit(w)?,
-            WasiInstruction::JumpTable(_) => {
+            Self::JumpBranch(v) => v.emit(w)?,
+            Self::JumpTable(_) => {
                 todo!()
             }
-            WasiInstruction::JumpEnumeration(_) => {
+            Self::JumpEnumeration(_) => {
                 todo!()
             }
         }
