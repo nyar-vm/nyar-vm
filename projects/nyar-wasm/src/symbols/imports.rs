@@ -5,7 +5,7 @@ use crate::WasiModule;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct WasiImport {
     ///
-    pub module: Option<WasiModule>,
+    pub module: WasiModule,
     ///
     pub name: Arc<str>,
 }
