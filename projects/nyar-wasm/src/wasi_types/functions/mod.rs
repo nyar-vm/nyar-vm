@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    helpers::{AliasExport, LowerFunction, TypeReferenceInput, TypeReferenceOutput},
+    helpers::{AliasExport, LowerFunction, TypeReferenceInput},
     operations::WasiInstruction,
     DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
@@ -31,7 +31,7 @@ pub enum WasiFunctionBody {
         /// The external module name registered in WASI host
         wasi_module: WasiModule,
         /// The external function name registered in WASI host
-        wasi_name: String,
+        wasi_name: Arc<str>,
     },
     Normal {
         bytecodes: Vec<WasiInstruction>,
@@ -51,16 +51,12 @@ pub struct WasiParameter {
 
 impl WasiFunction {
     /// Create a new external function type with the given symbol and WASI module
-    pub fn external<S, M>(wasi_module: M, wasi_name: &str, name: S) -> Self
-    where
-        S: Into<Identifier>,
-        M: Into<WasiModule>,
-    {
+    pub fn external(wasi_module: &WasiModule, wasi_name: &Arc<str>, name: &Identifier) -> Self {
         Self {
-            symbol: name.into(),
+            symbol: name.clone(),
             inputs: vec![],
             output: vec![],
-            body: WasiFunctionBody::External { wasi_module: wasi_module.into(), wasi_name: wasi_name.to_string() },
+            body: WasiFunctionBody::External { wasi_module: wasi_module.clone(), wasi_name: wasi_name.clone() },
         }
     }
 }

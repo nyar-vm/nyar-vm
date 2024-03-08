@@ -16,7 +16,7 @@ convert_case = "0.6.0"
 nyar-error = "0.1.12"
 itertools = "0.12.1"
 semver = "1.0.22"
-indexmap = "2.2.3"
+indexmap = "2.2.5"
 
 [dependencies.dependent_sort]
 version = "0.2.0"

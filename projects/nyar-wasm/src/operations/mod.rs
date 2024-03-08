@@ -80,10 +80,12 @@ impl Emit for WasiInstruction {
     fn emit<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Default(v) => {
+                w.newline();
                 v.emit_default(w)?;
                 w.stack.push(v.clone())
             }
             Self::Constant(v) => {
+                w.newline();
                 v.emit_constant(w)?;
                 w.stack.push(v.to_wasi_type())
             }
@@ -91,6 +93,7 @@ impl Emit for WasiInstruction {
                 let last = w.stack.pop();
                 match last {
                     Some(last) => {
+                        w.newline();
                         last.emit_convert(into, w)?;
                         w.stack.push(into.clone())
                     }

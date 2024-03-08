@@ -1,27 +1,37 @@
-namespace package.io;
+namespace std.io;
 
-#ffi("wasi:io/error@0.2.0", "error")
+#ffi("wasi:io/streams", "input-stream")
+resource class InputStream {
+    #ffi("wasi:io/streams", "[method]output-stream.blocking-write-and-flush")
+    write(self, contents: List<u8>) -> Result<(), StreamError>;
+}
+
+#ffi("wasi:io/streams", "output-stream")
+resource class OutputStream {
+    #ffi("wasi:io/streams", "[method]output-stream.blocking-write-and-flush")
+    write(self, contents: List<u8>) -> Result<(), StreamError>;
+}
+
+#ffi("wasi:io/error", "error")
 resource class IoError { }
 
-variant StreamError {
+union StreamError {
     LastOperationFailed {
         error: IoError
     },
     Closed
 }
 
-#ffi("wasi:io/streams", "input-stream")
-resource class InputStream {
-    #ffi("wasi:io/streams", "[method]output-stream.blocking-write-and-flush")
-    blocking_write_and_flush(self, contents: List<u8>) -> Result<(), StreamError>;
-}
-
 #ffi("wasi:cli/stdin", "get-stdin")
-function standard_input() -> InputStream { }
+external function standard_input() -> InputStream { }
 
 #ffi("wasi:cli/stdout", "get-stdout")
-function standard_output() -> OutputStream { }
+external function standard_output() -> OutputStream { }
 
 #ffi("wasi:cli/stderr", "get-stderr")
-function standard_error() -> OutputStream { }
+external function standard_error() -> OutputStream { }
+
+
+
+
 

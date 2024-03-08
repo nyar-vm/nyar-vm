@@ -31,6 +31,14 @@ pub struct SyntaxError {
     pub span: FileSpan,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum ForeignInterfaceError {
+    MissingForeignMark { span: FileSpan },
+    MissingForeignFlag { kind: &'static str, hint: &'static str, span: FileSpan },
+    InvalidForeignModule { span: FileSpan },
+    InvalidForeignName { span: FileSpan },
+}
+
 impl Display for SyntaxError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.info)
@@ -54,7 +62,7 @@ impl SyntaxError {
     }
     /// Set the file range
     pub fn with_range(mut self, range: &Range<u32>) -> Self {
-        self.span.set_range(Range { start: range.start as usize, end: range.end as usize });
+        self.span.set_range(range.clone());
         self
     }
     /// Set the file span
