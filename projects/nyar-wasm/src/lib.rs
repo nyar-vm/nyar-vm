@@ -11,7 +11,9 @@ pub use crate::{
         WasiInstruction,
     },
     symbols::{
+        exports::WasiExport,
         identifiers::Identifier,
+        imports::WasiImport,
         wasi_publisher::{WasiModule, WasiPublisher},
     },
     wasi_types::{
@@ -24,7 +26,7 @@ pub use crate::{
         variants::{WasiVariantItem, WasiVariantType},
         WasiType,
     },
-    wasi_values::{array::ArrayValue, WasiValue},
+    wasi_values::{array::ArrayValue, record::RecordValue, WasiValue},
 };
 
 mod dag;

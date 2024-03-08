@@ -3,8 +3,11 @@ use crate::WasiRecordType;
 use indexmap::IndexMap;
 use std::sync::Arc;
 
+/// A [record]() value in WASI.
 pub struct RecordValue {
+    /// The type info of the record
     pub r#type: WasiRecordType,
+    /// The override values of the record
     pub values: IndexMap<Arc<str>, WasiValue>,
 }
 

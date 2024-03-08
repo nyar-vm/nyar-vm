@@ -1,4 +1,4 @@
-use diagnostic::FileID;
+use diagnostic::SourceID;
 use std::ops::Range;
 use toml::de::Error;
 
@@ -10,7 +10,7 @@ impl From<Error> for SyntaxError {
             Some(s) => Self {
                 info: value.message().to_string(),
                 hint: "".to_string(),
-                span: FileID::default().with_range(Range { start: s.start as u32, end: s.end as u32 }),
+                span: SourceID::default().with_range(Range { start: s.start as u32, end: s.end as u32 }),
             },
             None => Self { info: value.message().to_string(), hint: "".to_string(), span: Default::default() },
         }

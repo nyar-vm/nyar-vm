@@ -7,7 +7,7 @@ pub use crate::{
 };
 pub mod third_party;
 pub use crate::undefined::MissingError;
-pub use diagnostic::{Diagnostic, FileCache, FileID, FileSpan, ReportKind};
+pub use diagnostic::{Diagnostic, ReportKind, SourceCache, SourceID, SourceSpan};
 pub use validatus::{
     Validate,
     Validation::{Failure, Success},
