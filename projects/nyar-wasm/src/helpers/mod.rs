@@ -25,8 +25,8 @@ pub(crate) trait ComponentDefine {
 }
 
 pub(crate) trait LowerFunction {
-    fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
-    fn lower_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn lower_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
 }
 
 pub(crate) trait TypeDefinition {

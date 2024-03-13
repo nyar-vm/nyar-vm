@@ -72,58 +72,6 @@ impl WasiParameter {
         Self { name: wasi_name.clone(), wasi_name, r#type: r#type.into() }
     }
 }
-impl AliasExport for WasiFunction {
-    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
-        let id = self.symbol.wasi_id();
-        match &self.body {
-            WasiFunctionBody::External { wasi_name, .. } => write!(w, "(alias export ${module} \"{wasi_name}\" (func {id}))")?,
-            WasiFunctionBody::Normal { .. } => {}
-        }
-        Ok(())
-    }
-}
-
-impl LowerFunction for WasiFunction {
-    fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, "(core func {} (canon lower", self.symbol.wasi_id())?;
-        w.indent();
-        w.newline()?;
-        match &self.body {
-            WasiFunctionBody::External { wasi_module, wasi_name } => {
-                write!(w, "(func ${} \"{}\")", wasi_module, wasi_name)?;
-            }
-            WasiFunctionBody::Normal { .. } => {}
-        }
-
-        w.newline()?;
-        write!(w, "(memory $memory \"memory\")")?;
-        write!(w, "(realloc (func $memory \"realloc\"))")?;
-        w.newline()?;
-        write!(w, "string-encoding=utf8")?;
-        w.dedent(2);
-        Ok(())
-    }
-
-    //         (type (func (param i64 i32)))
-    //         (import "wasi:random/random@0.2.0" "get-random-bytes" (func $wasi:random/random@0.2.0:get-random-bytes (;0;) (type 0)))
-    fn lower_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        match &self.body {
-            WasiFunctionBody::External { wasi_module, wasi_name } => {
-                write!(w, "(import \"{}\" \"{}\" (func {}", wasi_module, wasi_name, self.symbol.wasi_id())?;
-            }
-            WasiFunctionBody::Normal { .. } => {}
-        }
-        for input in &self.inputs {
-            w.write_str(" ")?;
-            input.lower_input(w)?;
-        }
-        for output in &self.inputs {
-            w.write_str(" ")?;
-            output.lower_input(w)?;
-        }
-        w.write_str("))")
-    }
-}
 
 impl DependenciesTrace for WasiFunction {
     fn define_language_types(&self, dict: &mut DependentGraph) {

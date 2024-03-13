@@ -115,29 +115,33 @@ impl AddAssign<WasiInstance> for CanonicalWasi {
 }
 
 impl LowerFunction for CanonicalImport {
-    fn lower_function<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn lower_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             CanonicalImport::MockMemory => {}
             CanonicalImport::Instance(v) => {
                 for x in v.functions.values() {
                     w.newline()?;
-                    x.lower_function(w)?;
+                    x.lower_define(w)?;
                 }
             }
-            CanonicalImport::Type(_) => {}
+            CanonicalImport::Type(t) => {
+                println!("lower_define: {}", t)
+            }
         }
         Ok(())
     }
-    fn lower_import<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             CanonicalImport::MockMemory => {}
             CanonicalImport::Instance(v) => {
                 for x in v.functions.values() {
                     w.newline()?;
-                    x.lower_import(w)?;
+                    x.wasm_define(w)?;
                 }
             }
-            CanonicalImport::Type(_) => {}
+            CanonicalImport::Type(t) => {
+                println!("wasm_define: {}", t)
+            }
         }
         Ok(())
     }
@@ -187,7 +191,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
             import.component_define(self)?;
         }
         for import in &self.source.imports {
-            import.lower_function(self)?;
+            import.lower_define(self)?;
         }
         {
             self.newline()?;
@@ -196,9 +200,8 @@ impl<'a, W: Write> WastEncoder<'a, W> {
 
             for import in &self.source.imports {
                 self.newline()?;
-                import.lower_import(self)?;
+                import.wasm_define(self)?;
             }
-
             self.dedent(1);
         }
         {
@@ -231,7 +234,9 @@ impl<'a, W: Write> WastEncoder<'a, W> {
                         }
                         self.dedent(2);
                     }
-                    CanonicalImport::Type(_) => {}
+                    CanonicalImport::Type(t) => {
+                        println!("encode: {}", t)
+                    }
                 }
             }
             self.dedent(2);
