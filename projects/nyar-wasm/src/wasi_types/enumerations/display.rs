@@ -10,7 +10,7 @@ impl ComponentSections for WasiEnumeration {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(type {} (enum", self.symbol.wasi_id())?;
         w.indent();
-        for (index, variant) in self.variants.values().enumerate() {
+        for (index, variant) in self.enumerations.iter().enumerate() {
             w.newline()?;
             write!(w, "\"{}\" ;; {}", variant.wasi_name, index)?;
         }

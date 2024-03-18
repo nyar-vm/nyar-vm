@@ -5,7 +5,6 @@ use super::*;
 impl Hash for WasiVariantType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.symbol.hash(state);
-        self.wasi_name.hash(state);
         self.variants.iter().for_each(|v| {
             v.hash(state);
         });
@@ -18,7 +17,7 @@ impl ComponentSections for WasiVariantType {
         w.newline()?;
         write!(w, "(type {} (variant", self.symbol.wasi_id())?;
         w.indent();
-        for variant in self.variants.values() {
+        for variant in self.variants.iter() {
             w.newline()?;
             variant.wasi_define(w)?;
         }
@@ -29,7 +28,7 @@ impl ComponentSections for WasiVariantType {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         let root = &w.source.name;
         let id = self.symbol.wasi_id();
-        let name = self.wasi_name.as_str();
+        let name = self.symbol.name.as_ref();
         write!(w, "(alias outer ${root} {id} (type {id}?)) ")?;
         write!(w, "(export {id} \"{name}\" (type (eq {id}?)))")
     }

@@ -169,14 +169,6 @@ impl<'a, W: Write> WastEncoder<'a, W> {
             self.dedent(1);
         }
         {
-            //     (core instance $main (instantiate $Main
-            //         (with "wasi:debugger/print" (instance
-            //             (export "print-i8" (func $print_i8))
-            //         ))
-            //         (with "wasi:cli/stderr@0.2.0" (instance
-            //             (export "get-stderr" (func $std::io::standard_error))
-            //         ))
-            //     ))
             self.newline()?;
             write!(self, "(core instance $main (instantiate $Main")?;
             self.indent();
@@ -198,9 +190,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
                         }
                         self.dedent(2);
                     }
-                    CanonicalImport::Type(t) => {
-                        println!("encode: {}", t)
-                    }
+                    CanonicalImport::Type(_) => {}
                 }
             }
             self.dedent(2);
