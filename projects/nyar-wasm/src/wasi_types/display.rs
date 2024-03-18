@@ -42,6 +42,8 @@ impl Display for WasiType {
             Self::TypeHandler(v) => Display::fmt(v, f),
             Self::Array(v) => Display::fmt(v, f),
             Self::Function(v) => Display::fmt(v, f),
+            Self::Enumeration(v) => Display::fmt(v, f),
+            Self::Flags(v) => Display::fmt(v, f),
         }
     }
 }
@@ -102,43 +104,15 @@ impl TypeReferenceOutput for WasiType {
 impl LowerTypes for WasiType {
     fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
-            Self::Boolean => Ok(()),
-            Self::Unicode => Ok(()),
-            Self::Integer8 { .. } => Ok(()),
-            Self::Integer16 { .. } => Ok(()),
-            Self::Integer32 { .. } => Ok(()),
-            Self::Integer64 { .. } => Ok(()),
-            Self::Float32 => Ok(()),
-            Self::Float64 => Ok(()),
-            Self::Option { .. } => Ok(()),
-            Self::Result { .. } => Ok(()),
-            Self::Resource(_) => Ok(()),
-            Self::Record(_) => Ok(()),
-            Self::Variant(_) => Ok(()),
-            Self::Array(_) => Ok(()),
             Self::Function(f) => f.canon_lower(w),
-            Self::TypeHandler(_) => Ok(()),
+            _ => Ok(()),
         }
     }
 
     fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
-            Self::Boolean => Ok(()),
-            Self::Unicode => Ok(()),
-            Self::Integer8 { .. } => Ok(()),
-            Self::Integer16 { .. } => Ok(()),
-            Self::Integer32 { .. } => Ok(()),
-            Self::Integer64 { .. } => Ok(()),
-            Self::Float32 => Ok(()),
-            Self::Float64 => Ok(()),
-            Self::Option { .. } => Ok(()),
-            Self::Result { .. } => Ok(()),
-            Self::Resource(_) => Ok(()),
-            Self::Record(_) => Ok(()),
-            Self::Variant(_) => Ok(()),
-            Self::Array(_) => Ok(()),
             Self::Function(f) => f.wasm_define(w),
-            Self::TypeHandler(_) => Ok(()),
+            _ => Ok(()),
         }
     }
 }
@@ -191,6 +165,8 @@ impl TypeReference for WasiType {
             }
             Self::Array(array) => array.upper_type(w)?,
             Self::Unicode => w.write_str("char")?,
+            Self::Enumeration(_) => {}
+            Self::Flags(_) => {}
         }
         Ok(())
     }
@@ -224,6 +200,7 @@ impl TypeReference for WasiType {
             Self::Function(_) => {
                 todo!()
             }
+            _ => {}
         }
         Ok(())
     }
@@ -258,7 +235,8 @@ impl TypeReference for WasiType {
             Self::Function(_) => {
                 todo!()
             }
-            WasiType::Unicode => {}
+            Self::Unicode => {}
+            _ => {}
         }
         Ok(())
     }
@@ -299,6 +277,12 @@ impl WasiType {
                 todo!()
             }
             Self::Function(_) => {
+                todo!()
+            }
+            Self::Enumeration(_) => {
+                todo!()
+            }
+            Self::Flags(_) => {
                 todo!()
             }
         }

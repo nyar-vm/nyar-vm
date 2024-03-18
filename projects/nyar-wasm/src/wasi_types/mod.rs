@@ -1,23 +1,26 @@
-use std::{
-    fmt::{Debug, Display, Formatter, Write},
-    hash::{Hash, Hasher},
-    sync::Arc,
-};
-
-use indexmap::IndexMap;
-
 use crate::{
     dag::DependentGraph,
     encoder::WastEncoder,
     helpers::{AliasOuter, ComponentDefine, EmitDefault, TypeDefinition, TypeReference},
-    wasi_types::{array::WasiArrayType, functions::WasiFunctionBody, resources::WasiResource, variants::WasiVariantType},
-    DependenciesTrace, Identifier, WasiFunction, WasiModule, WasiRecordType, WasiTypeReference,
+    wasi_types::{
+        array::WasiArrayType, flags::WasiFlags, functions::WasiFunctionBody, resources::WasiResource, variants::WasiVariantType,
+    },
+    DependenciesTrace, Identifier, WasiEnumeration, WasiFunction, WasiModule, WasiRecordType, WasiSemanticIndex,
+    WasiTypeReference,
 };
-use std::{cmp::Ordering, ops::AddAssign};
+use indexmap::IndexMap;
+use std::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter, Write},
+    hash::{Hash, Hasher},
+    ops::AddAssign,
+    sync::Arc,
+};
 
 pub mod array;
 mod display;
 pub mod enumerations;
+pub mod flags;
 pub mod functions;
 pub mod records;
 pub mod reference;
@@ -68,6 +71,11 @@ pub enum WasiType {
     Record(WasiRecordType),
     /// `variant` type in WASI
     Variant(WasiVariantType),
+    /// `enum` type in WASI
+    Enumeration(WasiEnumeration),
+    /// `enum` type in WASI
+    Flags(WasiFlags),
+
     /// `list` type in WASI
     Array(Box<WasiArrayType>),
     /// `function` type in WASI
@@ -162,6 +170,8 @@ impl EmitDefault for WasiType {
             Self::Function(_) => {
                 todo!()
             }
+            Self::Enumeration(_) => w.write_str("i32.const 0"),
+            Self::Flags(_) => w.write_str("i32.const 0"),
         }
     }
 }

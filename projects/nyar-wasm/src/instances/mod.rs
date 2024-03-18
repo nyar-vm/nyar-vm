@@ -57,6 +57,8 @@ impl WasiInstance {
             WasiType::Record(_) => {}
             WasiType::Boolean => {}
             WasiType::Unicode => {}
+            WasiType::Enumeration(_) => {}
+            WasiType::Flags(_) => {}
         }
     }
     pub fn dependencies(&self, dict: &DependentGraph) -> BTreeSet<WasiType> {
