@@ -2,9 +2,7 @@ use std::{collections::BTreeMap, fmt::Debug, ops::AddAssign};
 
 use dependent_sort::{DependentSort, TopologicalError};
 
-use crate::{
-    wasi_types::functions::WasiFunctionBody, CanonicalImport, Identifier, WasiInstance, WasiModule, WasiType, WasiTypeReference,
-};
+use crate::{helpers::GroupedTask, CanonicalImport, Identifier, WasiInstance, WasiModule, WasiType, WasiTypeReference};
 
 mod arithmetic;
 
@@ -31,43 +29,11 @@ impl DependentGraph {
     fn build_dag(&self) -> DependentSort<WasiType, WasiModule> {
         let mut sorter = DependentSort::default();
         for ty in self.types.values() {
-            let mut dependents: Vec<&WasiType> = vec![];
-            match ty {
-                WasiType::Integer8 { .. } => {}
-                WasiType::Integer16 { .. } => {}
-                WasiType::Integer32 { .. } => {}
-                WasiType::Integer64 { .. } => {}
-                WasiType::Option { .. } => {}
-                WasiType::Result { .. } => {}
-                WasiType::Resource(v) => {
-                    sorter += dependent_sort::Task::new(ty).with_group(&v.wasi_module);
+            match ty.dependent_task(self) {
+                Some(s) => {
+                    sorter += s;
                 }
-                WasiType::Record(v) => {
-                    v.collect_wasi_types(self, &mut dependents);
-                    sorter += dependent_sort::Task::new_with_dependent(&ty, dependents);
-                }
-                WasiType::Variant(v) => {
-                    v.collect_wasi_types(self, &mut dependents);
-                    sorter += dependent_sort::Task::new_with_dependent(&ty, dependents);
-                }
-                WasiType::TypeHandler { .. } => {}
-                WasiType::Function(v) => match &v.body {
-                    WasiFunctionBody::External { wasi_module, .. } => {
-                        v.collect_wasi_types(self, &mut dependents);
-                        sorter += dependent_sort::Task { id: ty, group: Some(wasi_module), dependent_tasks: dependents };
-                    }
-                    WasiFunctionBody::Normal { .. } => {
-                        v.collect_wasi_types(self, &mut dependents);
-                        sorter += dependent_sort::Task { id: ty, group: None, dependent_tasks: dependents };
-                    }
-                },
-                WasiType::Array { .. } => {}
-                WasiType::Float32 => {}
-                WasiType::Float64 => {}
-                WasiType::Boolean => {}
-                WasiType::Unicode => {}
-                WasiType::Enumeration(_) => {}
-                WasiType::Flags(_) => {}
+                None => {}
             }
         }
         sorter

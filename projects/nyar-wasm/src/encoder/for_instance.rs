@@ -1,12 +1,13 @@
 use crate::{
     helpers::{TypeReferenceInput, TypeReferenceOutput},
     wasi_types::functions::WasiFunctionBody,
+    WasiModule,
 };
 
 use super::*;
 
 impl ComponentDefine for CanonicalImport {
-    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::MockMemory => w.write_str(
                 r#"(core module $MockMemory
@@ -17,12 +18,20 @@ impl ComponentDefine for CanonicalImport {
     )
     (core instance $memory (instantiate $MockMemory))"#,
             ),
-            Self::Type(v) => v.component_define(w),
+            Self::Type(v) => v.wasi_define(w),
             Self::Instance(v) => {
                 w.newline()?;
-                v.component_define(w)
+                v.wasi_define(w)
             }
         }
+    }
+
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
     }
 }
 

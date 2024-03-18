@@ -1,4 +1,4 @@
-use crate::helpers::TypeReference;
+use crate::{helpers::TypeReference, WasiModule};
 
 use super::*;
 
@@ -12,7 +12,20 @@ impl Hash for WasiVariantType {
     }
 }
 
-impl AliasOuter for WasiVariantType {
+impl ComponentDefine for WasiVariantType {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, ";; variant {}", self.symbol)?;
+        w.newline()?;
+        write!(w, "(type {} (variant", self.symbol.wasi_id())?;
+        w.indent();
+        for variant in self.variants.values() {
+            w.newline()?;
+            variant.wasi_define(w)?;
+        }
+        w.dedent(2);
+        Ok(())
+    }
+
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         w.newline()?;
         let root = &w.source.name;
@@ -21,25 +34,14 @@ impl AliasOuter for WasiVariantType {
         write!(w, "(alias outer ${root} {id} (type {id}?)) ")?;
         write!(w, "(export {id} \"{name}\" (type (eq {id}?)))")
     }
-}
 
-impl ComponentDefine for WasiVariantType {
-    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, ";; variant {}", self.symbol)?;
-        w.newline()?;
-        write!(w, "(type {} (variant", self.symbol.wasi_id())?;
-        w.indent();
-        for variant in self.variants.values() {
-            w.newline()?;
-            variant.component_define(w)?;
-        }
-        w.dedent(2);
-        Ok(())
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
     }
 }
 
 impl ComponentDefine for WasiVariantItem {
-    fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+    fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, ";; {}", self.symbol)?;
         w.newline()?;
         write!(w, "(case \"{}\"", self.wasi_name)?;
@@ -48,5 +50,13 @@ impl ComponentDefine for WasiVariantItem {
             s.upper_type(w)?
         }
         w.write_char(')')
+    }
+
+    fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
     }
 }

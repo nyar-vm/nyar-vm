@@ -1,19 +1,14 @@
+use convert_case::{Case, Casing};
+use indexmap::IndexMap;
 use std::{
     cmp::Ordering,
-    fmt::{Display, Formatter, Write},
+    fmt::{Debug, Display, Formatter, Write},
     hash::{Hash, Hasher},
     ops::AddAssign,
     sync::Arc,
 };
 
-use convert_case::{Case, Casing};
-use indexmap::IndexMap;
-
-use crate::{
-    dag::DependentGraph,
-    helpers::{AliasOuter, ComponentDefine},
-    DependenciesTrace, Identifier, WasiType, WastEncoder,
-};
+use crate::{dag::DependentGraph, helpers::ComponentDefine, DependenciesTrace, Identifier, WasiType, WastEncoder};
 
 mod arithmetic;
 mod display;
@@ -28,7 +23,7 @@ pub struct WasiVariantType {
 
 impl Display for WasiVariantType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        Debug::fmt(self, f)
     }
 }
 
