@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    helpers::{AliasExport, LowerFunction, TypeReferenceInput},
+    helpers::{AliasExport, LowerTypes, TypeReferenceInput},
     operations::WasiInstruction,
     DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
 };
@@ -58,6 +58,20 @@ impl WasiFunction {
             output: vec![],
             body: WasiFunctionBody::External { wasi_module: wasi_module.clone(), wasi_name: wasi_name.clone() },
         }
+    }
+
+    pub fn need_heap(&self) -> bool {
+        for x in self.inputs.iter() {
+            if x.r#type.is_heap_type() {
+                return true;
+            }
+        }
+        for x in self.output.iter() {
+            if x.r#type.is_heap_type() {
+                return true;
+            }
+        }
+        return false;
     }
 }
 

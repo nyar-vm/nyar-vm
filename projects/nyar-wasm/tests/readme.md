@@ -45,3 +45,7 @@ extends Point {
 }
 Point(1.618, 0.618).sum()
 ```
+
+```shell
+wasm-tools component embed --dummy tuples.wit -t
+```

@@ -18,7 +18,10 @@ impl ComponentDefine for CanonicalImport {
     (core instance $memory (instantiate $MockMemory))"#,
             ),
             Self::Type(v) => v.component_define(w),
-            Self::Instance(v) => v.component_define(w),
+            Self::Instance(v) => {
+                w.newline()?;
+                v.component_define(w)
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::hash::{DefaultHasher, Hash};
 
 use crate::{
-    helpers::{AliasOuter, ComponentDefine, TypeReference, TypeReferenceInput, TypeReferenceOutput},
+    helpers::{AliasOuter, ComponentDefine, LowerTypes, TypeReference, TypeReferenceInput, TypeReferenceOutput},
     WasiParameter,
 };
 
@@ -49,17 +49,23 @@ impl Display for WasiType {
 impl ComponentDefine for WasiType {
     fn component_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
-            Self::Variant(v) => v.component_define(w),
-            Self::Record(v) => v.component_define(w),
-            Self::Function(v) => match &v.body {
-                WasiFunctionBody::External { .. } => {
-                    if cfg!(debug_assertions) {
+            Self::Variant(v) => {
+                w.newline()?;
+                v.component_define(w)
+            }
+            Self::Record(v) => {
+                w.newline()?;
+                v.component_define(w)
+            }
+            Self::Function(v) => {
+                match &v.body {
+                    WasiFunctionBody::External { .. } if cfg!(debug_assertions) => {
                         panic!("Imported functions cannot be defined using independent wasi: {v}")
                     }
-                    Ok(())
+                    _ => {}
                 }
-                WasiFunctionBody::Normal { .. } => Ok(()),
-            },
+                Ok(())
+            }
             _ => panic!("This type cannot be defined in the wasi component section\n    {self}"),
         }
     }
@@ -82,7 +88,7 @@ impl TypeReferenceInput for WasiParameter {
 impl TypeReferenceOutput for WasiType {
     fn upper_output<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(result ")?;
-        self.upper_type(w)?;
+        self.lower_type(w)?;
         write!(w, ")")
     }
 
@@ -90,6 +96,50 @@ impl TypeReferenceOutput for WasiType {
         w.write_str("(result ")?;
         self.lower_type(w)?;
         write!(w, ")")
+    }
+}
+
+impl LowerTypes for WasiType {
+    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Boolean => Ok(()),
+            Self::Unicode => Ok(()),
+            Self::Integer8 { .. } => Ok(()),
+            Self::Integer16 { .. } => Ok(()),
+            Self::Integer32 { .. } => Ok(()),
+            Self::Integer64 { .. } => Ok(()),
+            Self::Float32 => Ok(()),
+            Self::Float64 => Ok(()),
+            Self::Option { .. } => Ok(()),
+            Self::Result { .. } => Ok(()),
+            Self::Resource(_) => Ok(()),
+            Self::Record(_) => Ok(()),
+            Self::Variant(_) => Ok(()),
+            Self::Array(_) => Ok(()),
+            Self::Function(f) => f.canon_lower(w),
+            Self::TypeHandler(_) => Ok(()),
+        }
+    }
+
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Boolean => Ok(()),
+            Self::Unicode => Ok(()),
+            Self::Integer8 { .. } => Ok(()),
+            Self::Integer16 { .. } => Ok(()),
+            Self::Integer32 { .. } => Ok(()),
+            Self::Integer64 { .. } => Ok(()),
+            Self::Float32 => Ok(()),
+            Self::Float64 => Ok(()),
+            Self::Option { .. } => Ok(()),
+            Self::Result { .. } => Ok(()),
+            Self::Resource(_) => Ok(()),
+            Self::Record(_) => Ok(()),
+            Self::Variant(_) => Ok(()),
+            Self::Array(_) => Ok(()),
+            Self::Function(f) => f.wasm_define(w),
+            Self::TypeHandler(_) => Ok(()),
+        }
     }
 }
 
@@ -140,9 +190,7 @@ impl TypeReference for WasiType {
                 todo!()
             }
             Self::Array(array) => array.upper_type(w)?,
-            WasiType::Unicode => {
-                todo!()
-            }
+            Self::Unicode => w.write_str("char")?,
         }
         Ok(())
     }
@@ -163,8 +211,8 @@ impl TypeReference for WasiType {
             Self::Variant(_) => {
                 todo!()
             }
-            Self::Record(_) => w.write_str("i32")?,
-            Self::TypeHandler(v) => w.source.graph.get(v).lower_type(w)?,
+            Self::Record(v) => write!(w, "(ref eq ${})", v.wasi_name)?,
+            Self::TypeHandler(v) => w.source.graph.get(v).canon_lower(w)?,
             Self::Array(array) => array.lower_type(w)?,
 
             Self::Float32 => {
@@ -198,7 +246,7 @@ impl TypeReference for WasiType {
             Self::Variant(_) => {
                 todo!()
             }
-            Self::TypeHandler(v) => w.source.graph.get(v).lower_type(w)?,
+            Self::TypeHandler(v) => w.source.graph.get(v).canon_lower(w)?,
             Self::Array(array) => array.lower_type(w)?,
 
             Self::Float32 => {

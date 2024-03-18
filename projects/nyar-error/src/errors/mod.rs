@@ -1,6 +1,6 @@
 use diagnostic::{Diagnostic, ReportKind, SourceID};
 
-use crate::{parsing::SyntaxError, DuplicateError, MissingError, RuntimeError};
+use crate::{parsing::SyntaxError, DuplicateError, MissingError, RuntimeError, SourceSpan};
 
 mod convert;
 pub mod display;
@@ -35,6 +35,20 @@ impl NyarError {
     }
     pub fn with_file(mut self, file: SourceID) -> Self {
         self.set_file(file);
+        self
+    }
+
+    pub fn set_span(&mut self, span: SourceSpan) {
+        match self.kind.as_mut() {
+            NyarErrorKind::Duplicate(_) => {}
+            NyarErrorKind::Runtime(_) => {}
+            NyarErrorKind::Parsing(s) => s.span = span,
+            NyarErrorKind::Custom(_) => {}
+            NyarErrorKind::Missing(s) => s.span = span,
+        }
+    }
+    pub fn with_span(mut self, file: SourceSpan) -> Self {
+        self.set_span(file);
         self
     }
 

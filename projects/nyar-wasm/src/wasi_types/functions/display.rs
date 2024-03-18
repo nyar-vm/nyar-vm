@@ -26,17 +26,19 @@ impl AliasExport for WasiFunction {
     }
 }
 
-impl LowerFunction for WasiFunction {
-    fn lower_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+impl LowerTypes for WasiFunction {
+    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match &self.body {
             WasiFunctionBody::External { wasi_module, wasi_name } => {
                 write!(w, "(core func {} (canon lower", self.symbol.wasi_id())?;
                 w.indent();
                 w.newline()?;
                 write!(w, "(func ${} \"{}\")", wasi_module, wasi_name)?;
-                w.newline()?;
-                write!(w, "(memory $memory \"memory\")")?;
-                write!(w, "(realloc (func $memory \"realloc\"))")?;
+                if self.need_heap() {
+                    w.newline()?;
+                    write!(w, "(memory $memory \"memory\")")?;
+                    write!(w, "(realloc (func $memory \"realloc\"))")?;
+                }
                 w.newline()?;
                 write!(w, "string-encoding=utf8")?;
                 w.dedent(2);
@@ -55,17 +57,19 @@ impl LowerFunction for WasiFunction {
                 write!(w, "(func {}", self.symbol.wasi_id())?;
             }
         }
+        w.indent();
         for input in &self.inputs {
-            w.write_str(" ")?;
+            w.newline()?;
             input.lower_input(w)?;
         }
-        for output in &self.inputs {
-            w.write_str(" ")?;
+        for output in &self.output {
+            w.newline()?;
             output.lower_input(w)?;
         }
         match &self.body {
-            WasiFunctionBody::External { .. } => w.write_str("))"),
-            WasiFunctionBody::Normal { .. } => w.write_str(")"),
+            WasiFunctionBody::External { .. } => w.dedent(2),
+            WasiFunctionBody::Normal { .. } => w.dedent(1),
         }
+        Ok(())
     }
 }

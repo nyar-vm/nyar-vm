@@ -8,7 +8,7 @@ use nyar_error::NyarError;
 
 use crate::{
     dag::DependenciesTrace,
-    helpers::{ComponentDefine, LowerFunction},
+    helpers::{ComponentDefine, LowerTypes},
     wasi_types::functions::WasiFunctionBody,
     DependentGraph, Identifier, WasiFunction, WasiInstance, WasiType,
 };
@@ -114,19 +114,17 @@ impl AddAssign<WasiInstance> for CanonicalWasi {
     }
 }
 
-impl LowerFunction for CanonicalImport {
-    fn lower_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+impl LowerTypes for CanonicalImport {
+    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             CanonicalImport::MockMemory => {}
             CanonicalImport::Instance(v) => {
                 for x in v.functions.values() {
                     w.newline()?;
-                    x.lower_define(w)?;
+                    x.canon_lower(w)?;
                 }
             }
-            CanonicalImport::Type(t) => {
-                println!("lower_define: {}", t)
-            }
+            CanonicalImport::Type(_) => {}
         }
         Ok(())
     }
@@ -140,7 +138,8 @@ impl LowerFunction for CanonicalImport {
                 }
             }
             CanonicalImport::Type(t) => {
-                println!("wasm_define: {}", t)
+                w.newline()?;
+                t.wasm_define(w)?;
             }
         }
         Ok(())
@@ -187,11 +186,10 @@ impl<'a, W: Write> WastEncoder<'a, W> {
         write!(self.writer, "(component ${}", self.source.name)?;
         self.indent();
         for import in &self.source.imports {
-            self.newline()?;
             import.component_define(self)?;
         }
         for import in &self.source.imports {
-            import.lower_define(self)?;
+            import.canon_lower(self)?;
         }
         {
             self.newline()?;
@@ -199,7 +197,6 @@ impl<'a, W: Write> WastEncoder<'a, W> {
             self.indent();
 
             for import in &self.source.imports {
-                self.newline()?;
                 import.wasm_define(self)?;
             }
             self.dedent(1);
