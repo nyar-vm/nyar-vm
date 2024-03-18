@@ -73,6 +73,30 @@ impl WasiFunction {
         }
         return false;
     }
+    pub fn need_encoding(&self) -> Option<&'static str> {
+        for i in self.inputs.iter() {
+            match i.r#type {
+                WasiType::Boolean => {}
+                WasiType::Unicode => {}
+                WasiType::Integer8 { .. } => {}
+                WasiType::Integer16 { .. } => {}
+                WasiType::Integer32 { .. } => {}
+                WasiType::Integer64 { .. } => {}
+                WasiType::Float32 => {}
+                WasiType::Float64 => {}
+                WasiType::Option { .. } => {}
+                WasiType::Result { .. } => {}
+                WasiType::Resource(_) => {}
+                WasiType::Record(_) => {}
+                WasiType::Variant(_) => {}
+                WasiType::Array(_) => {}
+                WasiType::Function(_) => {}
+                WasiType::TypeHandler(_) => {}
+            }
+        }
+
+        None
+    }
 }
 
 impl WasiParameter {
