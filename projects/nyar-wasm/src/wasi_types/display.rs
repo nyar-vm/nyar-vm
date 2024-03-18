@@ -2,7 +2,7 @@ use dependent_sort::Task;
 use std::hash::{DefaultHasher, Hash};
 
 use crate::{
-    helpers::{ComponentDefine, GroupedTask, LowerTypes, TypeReference, TypeReferenceInput, TypeReferenceOutput},
+    helpers::{ComponentSections, GroupedTask, TypeReference, TypeReferenceInput, TypeReferenceOutput},
     WasiParameter,
 };
 
@@ -84,37 +84,28 @@ impl GroupedTask for WasiType {
     }
 }
 
-impl ComponentDefine for WasiType {
+impl ComponentSections for WasiType {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
-            Self::Variant(v) => {
-                w.newline()?;
-                v.wasi_define(w)
-            }
             Self::Record(v) => {
                 w.newline()?;
                 v.wasi_define(w)
             }
+            Self::Flags(v) => {
+                w.newline()?;
+                v.wasi_define(w)
+            }
+            Self::Enums(v) => {
+                w.newline()?;
+                v.wasi_define(w)
+            }
+            Self::Variant(v) => {
+                w.newline()?;
+                v.wasi_define(w)
+            }
             Self::Function(v) => {
-                match &v.body {
-                    WasiFunctionBody::External { .. } if cfg!(debug_assertions) => {
-                        panic!("Imported functions cannot be defined using independent wasi: {v}")
-                    }
-                    _ => {}
-                }
-                Ok(())
-            }
-            Self::Flags(f) => {
                 w.newline()?;
-                write!(w, "(flags \"{}\" ", f.symbol)
-            }
-            Self::Enums(f) => {
-                w.newline()?;
-                write!(w, "(enum \"{}\" ", f.symbol)
-            }
-            Self::Variant(f) => {
-                w.newline()?;
-                write!(w, "(variant \"{}\" ", f.symbol)
+                v.wasi_define(w)
             }
             _ => panic!("This type cannot be defined in the wasi component section\n    {self}"),
         }
@@ -123,14 +114,39 @@ impl ComponentDefine for WasiType {
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         match self {
             Self::Resource(v) => v.alias_outer(w),
-            Self::Record(v) => v.alias_outer(w),
-            Self::Variant(v) => v.alias_outer(w),
+            Self::Record(v) => {
+                w.newline()?;
+                v.alias_outer(w)
+            }
+            Self::Variant(v) => {
+                w.newline()?;
+                v.alias_outer(w)
+            }
             _ => panic!("This type cannot be imported into component instance\n    {self}"),
         }
     }
 
-    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
-        todo!()
+    fn alias_export<W: Write>(&self, _: &mut WastEncoder<W>, _: &WasiModule) -> std::fmt::Result {
+        unreachable!()
+    }
+    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Function(f) => f.canon_lower(w),
+            _ => Ok(()),
+        }
+    }
+
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        match self {
+            Self::Function(f) => {
+                w.newline()?;
+                f.wasm_define(w)
+            }
+            Self::Array(_) => unimplemented!(),
+            Self::Record(_) => unimplemented!(),
+
+            _ => Ok(()),
+        }
     }
 }
 
@@ -159,22 +175,6 @@ impl TypeReferenceOutput for WasiType {
         w.write_str("(result ")?;
         self.lower_type(w)?;
         write!(w, ")")
-    }
-}
-
-impl LowerTypes for WasiType {
-    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        match self {
-            Self::Function(f) => f.canon_lower(w),
-            _ => Ok(()),
-        }
-    }
-
-    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        match self {
-            Self::Function(f) => f.wasm_define(w),
-            _ => Ok(()),
-        }
     }
 }
 

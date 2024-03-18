@@ -1,6 +1,6 @@
 use crate::{
     encoder::WastEncoder,
-    helpers::{ComponentDefine, DependenciesTrace, EmitDefault, TypeDefinition, TypeReference},
+    helpers::{ComponentSections, DependenciesTrace, EmitDefault, TypeReference},
     wasi_types::{
         array::WasiArrayType, flags::WasiFlags, functions::WasiFunctionBody, resources::WasiResource, variants::WasiVariantType,
     },

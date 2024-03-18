@@ -12,7 +12,7 @@ impl Hash for WasiVariantType {
     }
 }
 
-impl ComponentDefine for WasiVariantType {
+impl ComponentSections for WasiVariantType {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, ";; variant {}", self.symbol)?;
         w.newline()?;
@@ -27,7 +27,6 @@ impl ComponentDefine for WasiVariantType {
     }
 
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        w.newline()?;
         let root = &w.source.name;
         let id = self.symbol.wasi_id();
         let name = self.wasi_name.as_str();
@@ -38,9 +37,17 @@ impl ComponentDefine for WasiVariantType {
     fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
         todo!()
     }
+
+    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
 }
 
-impl ComponentDefine for WasiVariantItem {
+impl ComponentSections for WasiVariantItem {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, ";; {}", self.symbol)?;
         w.newline()?;
@@ -57,6 +64,14 @@ impl ComponentDefine for WasiVariantItem {
     }
 
     fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         todo!()
     }
 }

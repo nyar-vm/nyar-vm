@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    helpers::{ComponentDefine, DependenciesTrace},
+    helpers::{ComponentSections, DependenciesTrace},
     Identifier, WasiModule, WasiType, WastEncoder,
 };
 
@@ -33,7 +33,7 @@ impl WasiResource {
     }
 }
 
-impl ComponentDefine for WasiResource {
+impl ComponentSections for WasiResource {
     fn wasi_define<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
         unreachable!("resource can't define in the component!")
     }
@@ -48,6 +48,14 @@ impl ComponentDefine for WasiResource {
         let id = self.symbol.wasi_id();
         let name = self.wasi_name.as_ref();
         write!(w, "(alias export ${module} \"{name}\" (type {id}))")
+    }
+
+    fn canon_lower<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
+    }
+
+    fn wasm_define<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
     }
 }
 

@@ -13,7 +13,7 @@ impl Debug for WasiInstance {
     }
 }
 
-impl ComponentDefine for WasiInstance {
+impl ComponentSections for WasiInstance {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(import \"{name}\" (instance ${name}", name = self.module)?;
         w.indent();
@@ -47,5 +47,13 @@ impl ComponentDefine for WasiInstance {
             wasi.alias_export(w, module)?;
         }
         Ok(())
+    }
+
+    fn canon_lower<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
+    }
+
+    fn wasm_define<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
     }
 }

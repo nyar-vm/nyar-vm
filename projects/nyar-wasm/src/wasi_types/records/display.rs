@@ -1,10 +1,8 @@
 use super::*;
 use crate::helpers::DependenciesTrace;
 
-impl ComponentDefine for WasiRecordType {
+impl ComponentSections for WasiRecordType {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        write!(w, ";; record {}", self.symbol)?;
-        w.newline()?;
         write!(w, "(type {} (record", self.symbol.wasi_id())?;
         w.indent();
         for field in self.fields.values() {
@@ -17,7 +15,6 @@ impl ComponentDefine for WasiRecordType {
     }
 
     fn alias_outer<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        w.newline()?;
         let root = &w.source.name;
         let id = self.symbol.wasi_id();
         let name = self.wasi_name.as_str();
@@ -25,12 +22,21 @@ impl ComponentDefine for WasiRecordType {
         write!(w, "(export {id} \"{name}\" (type (eq {id}?)))")
     }
 
-    fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+    fn alias_export<W: Write>(&self, _: &mut WastEncoder<W>, _: &WasiModule) -> std::fmt::Result {
+        unreachable!()
+    }
+
+    fn canon_lower<W: Write>(&self, _: &mut WastEncoder<W>) -> std::fmt::Result {
+        unreachable!()
+    }
+
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        write!(w, "(type {} (record", self.symbol.wasi_id())?;
         todo!()
     }
 }
 
-impl ComponentDefine for WasiRecordField {
+impl ComponentSections for WasiRecordField {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         write!(w, "(field \"{}\" ", self.wasi_name)?;
         self.r#type.upper_type(w)?;
@@ -42,6 +48,14 @@ impl ComponentDefine for WasiRecordField {
     }
 
     fn alias_export<W: Write>(&self, w: &mut WastEncoder<W>, module: &WasiModule) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn canon_lower<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn wasm_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         todo!()
     }
 }
@@ -68,11 +82,5 @@ impl DependenciesTrace for WasiRecordField {
         'a: 'i,
     {
         self.r#type.collect_wasi_types(dict, collected)
-    }
-}
-
-impl TypeDefinition for WasiRecordType {
-    fn lower_type_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
     }
 }
