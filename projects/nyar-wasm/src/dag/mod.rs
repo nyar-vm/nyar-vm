@@ -6,13 +6,6 @@ use crate::{helpers::GroupedTask, CanonicalImport, Identifier, WasiInstance, Was
 
 mod arithmetic;
 
-pub(crate) trait DependenciesTrace {
-    fn define_language_types(&self, dict: &mut DependentGraph);
-    fn collect_wasi_types<'a, 'i>(&'a self, dict: &'i DependentGraph, collected: &mut Vec<&'i WasiType>)
-    where
-        'a: 'i;
-}
-
 #[derive(Default, Debug)]
 pub struct DependentGraph {
     pub(crate) types: BTreeMap<Identifier, WasiType>,

@@ -1,11 +1,11 @@
 use crate::{
     encoder::WastEncoder,
-    helpers::{ComponentDefine, EmitDefault, TypeDefinition, TypeReference},
+    helpers::{ComponentDefine, DependenciesTrace, EmitDefault, TypeDefinition, TypeReference},
     wasi_types::{
         array::WasiArrayType, flags::WasiFlags, functions::WasiFunctionBody, resources::WasiResource, variants::WasiVariantType,
     },
-    DependenciesTrace, DependentGraph, Identifier, WasiEnumeration, WasiFunction, WasiModule, WasiRecordType,
-    WasiSemanticIndex, WasiTypeReference,
+    DependentGraph, Identifier, WasiEnumeration, WasiFunction, WasiModule, WasiRecordType, WasiSemanticIndex,
+    WasiTypeReference,
 };
 use indexmap::IndexMap;
 use std::{
@@ -90,7 +90,7 @@ impl WasiType {
             Self::Resource(v) => Some(&v.wasi_module),
             Self::Function(v) => match &v.body {
                 WasiFunctionBody::External { wasi_module, .. } => Some(wasi_module),
-                WasiFunctionBody::Normal { .. } => None,
+                WasiFunctionBody::Native { .. } => None,
             },
             _ => None,
         }

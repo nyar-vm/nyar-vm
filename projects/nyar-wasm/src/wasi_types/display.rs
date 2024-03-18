@@ -71,7 +71,7 @@ impl GroupedTask for WasiType {
                     v.collect_wasi_types(graph, &mut dependents);
                     Task { id: self, group: Some(wasi_module), dependent_tasks: dependents }
                 }
-                WasiFunctionBody::Normal { .. } => {
+                WasiFunctionBody::Native { .. } => {
                     v.collect_wasi_types(graph, &mut dependents);
                     Task { id: self, group: None, dependent_tasks: dependents }
                 }

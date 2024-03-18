@@ -6,9 +6,9 @@ use std::{
 
 use crate::{
     dag::DependentGraph,
-    helpers::{LowerTypes, TypeReferenceInput},
+    helpers::{DependenciesTrace, LowerTypes, TypeReferenceInput},
     operations::WasiInstruction,
-    DependenciesTrace, Identifier, WasiModule, WasiType, WastEncoder,
+    Identifier, WasiModule, WasiType, WastEncoder,
 };
 
 mod arithmetic;
@@ -33,7 +33,7 @@ pub enum WasiFunctionBody {
         /// The external function name registered in WASI host
         wasi_name: Arc<str>,
     },
-    Normal {
+    Native {
         bytecodes: Vec<WasiInstruction>,
     },
 }

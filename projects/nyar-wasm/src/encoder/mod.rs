@@ -7,8 +7,7 @@ use std::{
 use nyar_error::NyarError;
 
 use crate::{
-    dag::DependenciesTrace,
-    helpers::{ComponentDefine, LowerTypes},
+    helpers::{ComponentDefine, DependenciesTrace, LowerTypes},
     wasi_types::functions::WasiFunctionBody,
     DependentGraph, Identifier, WasiFunction, WasiInstance, WasiType,
 };
@@ -228,7 +227,7 @@ impl<'a, W: Write> WastEncoder<'a, W> {
                                 WasiFunctionBody::External { wasi_name, .. } => {
                                     write!(self, "(export \"{}\" (func {}))", wasi_name, x.symbol.wasi_id())?;
                                 }
-                                WasiFunctionBody::Normal { .. } => {}
+                                WasiFunctionBody::Native { .. } => {}
                             }
                         }
                         self.dedent(2);

@@ -1,4 +1,5 @@
 use super::*;
+use crate::helpers::DependenciesTrace;
 
 impl Hash for WasiEnumeration {
     fn hash<H: Hasher>(&self, state: &mut H) {

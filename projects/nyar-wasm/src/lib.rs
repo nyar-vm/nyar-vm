@@ -1,7 +1,4 @@
-use crate::{
-    dag::DependenciesTrace,
-    encoder::{CanonicalImport, WastEncoder},
-};
+use crate::encoder::{CanonicalImport, WastEncoder};
 pub use crate::{
     dag::DependentGraph,
     encoder::{encode_id, encode_kebab, CanonicalWasi},

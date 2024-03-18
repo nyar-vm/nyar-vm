@@ -1,4 +1,5 @@
 use super::*;
+use crate::helpers::DependenciesTrace;
 
 impl ComponentDefine for WasiRecordType {
     fn wasi_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
@@ -71,10 +72,6 @@ impl DependenciesTrace for WasiRecordField {
 }
 
 impl TypeDefinition for WasiRecordType {
-    fn upper_type_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
-        todo!()
-    }
-
     fn lower_type_define<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result {
         todo!()
     }

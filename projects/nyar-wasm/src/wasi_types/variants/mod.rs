@@ -8,7 +8,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::{dag::DependentGraph, helpers::ComponentDefine, DependenciesTrace, Identifier, WasiType, WastEncoder};
+use crate::{
+    dag::DependentGraph,
+    helpers::{ComponentDefine, DependenciesTrace},
+    Identifier, WasiType, WastEncoder,
+};
 
 mod arithmetic;
 mod display;
