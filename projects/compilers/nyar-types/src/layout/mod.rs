@@ -74,12 +74,14 @@ pub struct AggregateLayout {
 pub struct AggregateLayoutPlan {
     /// Registered layouts.
     pub layouts: Vec<AggregateLayout>,
-    /// Names treated as inline value types.
+    /// 遗留名称视图（测试夹具可填；生产路径不得读取，存储分类走 `value_type_declarations` / `layout.storage`）。
     pub value_type_names: BTreeSet<String>,
     /// Map from layout key / type name to layout id.
     pub type_name_to_layout: BTreeMap<String, LayoutId>,
     /// 结构声明到布局的稳定绑定；语义消费者不得从名称反查布局。
     pub declaration_to_layout: BTreeMap<crate::ItemId, LayoutId>,
+    /// 按 declaration 登记的 value 存储结构；禁止靠短名判断 `MirStorageKind::Value`。
+    pub value_type_declarations: BTreeSet<crate::ItemId>,
 }
 
 /// Sum type variant layout for nominal lowering.
