@@ -1,10 +1,14 @@
-use crate::types::{SourceID, SourceSpan, hir::{HirBlock, HirExpr, HirExprKind, HirLiteral, HirPattern, ValkyrieType}};
+use crate::types::{
+    SourceID, SourceSpan,
+    hir::{HirBlock, HirExpr, HirExprKind, HirLiteral, HirPattern, ValkyrieType},
+};
 
 use crate::valkyrie::control_flow::TryScopeData;
 use nyar_types::builtin_operator;
 
 use super::{
-    MirBuilder, MirConstant, MirOperand, MirTerminator, control_flow_context::MirLoopContext, infer_builder_operand_type,
+    MirBuilder, MirConstant, MirOperand, MirOperation, MirTerminator, MirValueOrigin, control_flow_context::MirLoopContext,
+    infer_builder_operand_type,
 };
 
 impl MirBuilder {
@@ -17,14 +21,9 @@ impl MirBuilder {
         _condition: &Option<Box<HirExpr>>,
         _body: &HirBlock,
     ) -> MirOperand {
-        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable {
-            operator: builtin_operator::infix_lt(),
-        });
-        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable {
-            operator: builtin_operator::infix_add(),
-        });
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable { operator: builtin_operator::infix_lt() });
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable { operator: builtin_operator::infix_add() });
         return MirOperand::Constant(MirConstant::Unit);
-
     }
 
     fn branch_merge_type(
@@ -32,18 +31,51 @@ impl MirBuilder {
         expected_type: Option<&ValkyrieType>,
         value_types: &std::collections::BTreeMap<super::MirValueRef, ValkyrieType>,
     ) -> Option<ValkyrieType> {
-        expected_type
-            .cloned()
-            .or_else(|| infer_builder_operand_type(result, value_types))
-            .filter(|ty| !matches!(ty, ValkyrieType::Unit))
+        expected_type.cloned().or_else(|| infer_builder_operand_type(result, value_types)).filter(|ty| !matches!(ty, ValkyrieType::Unit))
     }
 
     fn branch_merge_jump_arguments(result: &MirOperand, merge_ty: Option<&ValkyrieType>) -> Vec<MirOperand> {
-        if merge_ty.is_some() {
-            vec![result.clone()]
-        } else {
-            Vec::new()
+        if merge_ty.is_some() { vec![result.clone()] } else { Vec::new() }
+    }
+
+    fn default_constant_for_merge_else(ty: Option<&ValkyrieType>) -> MirConstant {
+        match ty {
+            Some(ValkyrieType::Boolean) => MirConstant::Bool(false),
+            Some(ValkyrieType::Float64) => MirConstant::Float64(ordered_float::OrderedFloat(0.0)),
+            Some(ValkyrieType::Unit) => MirConstant::Unit,
+            Some(ValkyrieType::Utf8) => MirConstant::Utf8(String::new()),
+            Some(ValkyrieType::Utf16) => MirConstant::Utf16(String::new()),
+            _ => MirConstant::Int(0),
         }
+    }
+
+    fn implicit_else_merge_jump_arguments(
+        &mut self,
+        merge_block: super::MirBlockRef,
+        exit_value: &Option<super::MirValueRef>,
+        expected_type: Option<&ValkyrieType>,
+    ) -> Vec<MirOperand> {
+        let merge_parameters = self.blocks[merge_block.0 as usize].parameters.clone();
+        if merge_parameters.is_empty() {
+            return Vec::new();
+        }
+        let fallback_ty = exit_value.and_then(|value| self.value_types.get(&value).cloned()).or_else(|| expected_type.cloned());
+        merge_parameters
+            .iter()
+            .map(|param| {
+                let ty = self.value_types.get(param).cloned().or(fallback_ty.clone());
+                let constant = Self::default_constant_for_merge_else(ty.as_ref());
+                if let Some(ty) = ty {
+                    let value = self.next_value(MirValueOrigin::Literal);
+                    self.push_instruction(MirOperation::LoadConstant { constant, ty: Some(ty.clone()) }, vec![value]);
+                    self.value_types.insert(value, ty);
+                    MirOperand::Value(value)
+                }
+                else {
+                    MirOperand::Constant(constant)
+                }
+            })
+            .collect()
     }
 
     pub(super) fn lower_if_expr(
@@ -102,12 +134,7 @@ impl MirBuilder {
         }
         else {
             if self.terminator.is_none() {
-                let arguments = exit_value
-                    .and_then(|_| {
-                        Self::branch_merge_type(&MirOperand::Constant(MirConstant::Unit), expected_type, &self.value_types)
-                            .map(|_| vec![MirOperand::Constant(MirConstant::Unit)])
-                    })
-                    .unwrap_or_default();
+                let arguments = self.implicit_else_merge_jump_arguments(merge_block, &exit_value, expected_type);
                 self.terminate(MirTerminator::Jump { target: merge_block, arguments });
             }
             false
@@ -176,12 +203,7 @@ impl MirBuilder {
             }
         }
         else if self.terminator.is_none() {
-            let arguments = exit_value
-                .and_then(|_| {
-                    Self::branch_merge_type(&MirOperand::Constant(MirConstant::Unit), None, &self.value_types)
-                        .map(|_| vec![MirOperand::Constant(MirConstant::Unit)])
-                })
-                .unwrap_or_default();
+            let arguments = self.implicit_else_merge_jump_arguments(merge_block, &exit_value, None);
             self.terminate(MirTerminator::Jump { target: merge_block, arguments });
         }
         self.flush_block("if_let_else");

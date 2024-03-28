@@ -5,8 +5,8 @@ use nyar_language::{
     types::{
         Identifier, NamePath, SourceID,
         hir::{
-            GenericType, HirDependencySemanticExport, HirDocumentation, HirEnum, HirField, HirKind, HirModule, HirStruct, HirVariant, HirVisibility,
-            ValkyrieType,
+            GenericType, HirDependencySemanticExport, HirDocumentation, HirEnum, HirField, HirKind, HirModule, HirStruct, HirVariant,
+            HirVisibility, ValkyrieType,
         },
     },
     valkyrie::nominal::{
@@ -16,10 +16,17 @@ use nyar_language::{
 };
 
 #[test]
-fn named_union_does_not_lower_as_numeric_enums() {
+fn named_union_is_not_yet_lowered() {
     let compiler = ValkyrieCompiler::new(SourceID::default());
-    let error = compiler.compile_source("union Limb { Small { value: i64 }, Words { value: i64 } }").unwrap_err();
-    assert!(error.to_string().contains("cannot be lowered as numeric enums"), "{error}");
+    let error = compiler
+        .compile_source(
+            r#"union Limb {
+    small: i64
+    words: i64
+}"#,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("not yet lowered"), "{error}");
 }
 
 #[test]
@@ -92,8 +99,8 @@ fn unite_variants_preserve_base_generics_in_parent_edge() {
     assert_eq!(
         left_parent.generics,
         vec![
-            ValkyrieType::Generic(GenericType { name: Identifier::new("L"), kind: HirKind::Type, bounds: vec![] }),
-            ValkyrieType::Generic(GenericType { name: Identifier::new("R"), kind: HirKind::Type, bounds: vec![] }),
+            ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("L"), kind: HirKind::Type, bounds: vec![] }),
+            ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("R"), kind: HirKind::Type, bounds: vec![] }),
         ]
     );
 }
@@ -110,10 +117,10 @@ fn gadt_variant_result_type_refines_parent_generics() {
     assert_eq!(literal.parents[0].generics, vec![ValkyrieType::Float64]);
 
     let branch = &lowered.variants[1];
-    assert_eq!(branch.generics, vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }]);
+    assert_eq!(branch.generics, vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }]);
     assert_eq!(
         branch.parents[0].generics,
-        vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })]
+        vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })]
     );
 }
 
@@ -197,7 +204,7 @@ fn unite_definition_rejects_variant_result_type_with_undeclared_generic() {
     let mut expr = gadt_unite();
     expr.variants[1].result_type = Some(ValkyrieType::Apply(
         Box::new(ValkyrieType::Named(Identifier::new("Expr"))),
-        vec![ValkyrieType::Generic(GenericType { name: Identifier::new("U"), kind: HirKind::Type, bounds: vec![] })],
+        vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("U"), kind: HirKind::Type, bounds: vec![] })],
     ));
 
     let error = validate_unite_definition(&expr).unwrap_err();
@@ -277,6 +284,8 @@ fn nominal_module_view_surfaces_invalid_unite_definition() {
 
 fn class(name: &str) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -298,6 +307,8 @@ fn class(name: &str) -> HirStruct {
 }
 
 fn subclass(name: &str, parent: &str) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let mut class = class(name);
     class.parents = vec![nyar_language::types::hir::HirParent::new(NamePath::new(vec![Identifier::new(parent)]))];
     class
@@ -353,8 +364,8 @@ fn generic_unite() -> HirEnum {
     let mut enum_def = HirEnum::new_unity(Identifier::new("Either"));
     enum_def.visibility = HirVisibility::public();
     enum_def.generics = vec![
-        GenericType { name: Identifier::new("L"), kind: HirKind::Type, bounds: vec![] },
-        GenericType { name: Identifier::new("R"), kind: HirKind::Type, bounds: vec![] },
+        GenericType { binder: None, name: Identifier::new("L"), kind: HirKind::Type, bounds: vec![] },
+        GenericType { binder: None, name: Identifier::new("R"), kind: HirKind::Type, bounds: vec![] },
     ];
     enum_def.variants = vec![
         HirVariant {
@@ -363,7 +374,7 @@ fn generic_unite() -> HirEnum {
             fields: vec![HirField {
                 name: Identifier::new("value"),
                 doc: HirDocumentation::default(),
-                ty: ValkyrieType::Generic(GenericType { name: Identifier::new("L"), kind: HirKind::Type, bounds: vec![] }),
+                ty: ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("L"), kind: HirKind::Type, bounds: vec![] }),
                 visibility: HirVisibility::public(),
                 is_mutable: false,
             }],
@@ -376,7 +387,7 @@ fn generic_unite() -> HirEnum {
             fields: vec![HirField {
                 name: Identifier::new("value"),
                 doc: HirDocumentation::default(),
-                ty: ValkyrieType::Generic(GenericType { name: Identifier::new("R"), kind: HirKind::Type, bounds: vec![] }),
+                ty: ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("R"), kind: HirKind::Type, bounds: vec![] }),
                 visibility: HirVisibility::public(),
                 is_mutable: false,
             }],
@@ -390,7 +401,7 @@ fn generic_unite() -> HirEnum {
 fn gadt_unite() -> HirEnum {
     let mut enum_def = HirEnum::new_unity(Identifier::new("Expr"));
     enum_def.visibility = HirVisibility::public();
-    enum_def.generics = vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }];
+    enum_def.generics = vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }];
     enum_def.variants = vec![
         HirVariant {
             name: Identifier::new("Literal"),
@@ -421,7 +432,7 @@ fn gadt_unite() -> HirEnum {
                     doc: HirDocumentation::default(),
                     ty: ValkyrieType::Apply(
                         Box::new(ValkyrieType::Named(Identifier::new("Expr"))),
-                        vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                        vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
                     ),
                     visibility: HirVisibility::public(),
                     is_mutable: false,
@@ -429,7 +440,7 @@ fn gadt_unite() -> HirEnum {
             ],
             result_type: Some(ValkyrieType::Apply(
                 Box::new(ValkyrieType::Named(Identifier::new("Expr"))),
-                vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
             )),
             discriminator: None,
         },
@@ -454,13 +465,10 @@ fn int32() -> ValkyrieType {
 //   4. is_unity 不变：源码使用 `unite` 关键字，HIR 中 is_unity=true。
 // ---------------------------------------------------------------------------
 
-#[path = "../../support/valkyrie_v.rs"]
-mod valkyrie_v;
+use crate::support::valkyrie_v;
 
 fn core_types_dir() -> Option<PathBuf> {
-    valkyrie_v::projects()
-        .map(|projects| projects.join("core/source/types"))
-        .filter(|path| path.is_dir())
+    valkyrie_v::projects().map(|projects| projects.join("core/source/types")).filter(|path| path.is_dir())
 }
 
 fn compile_core_type_file(name: &str) -> Option<HirModule> {
@@ -485,7 +493,10 @@ fn find_sum_layout<'a>(layouts: &'a [SumTypeLayout], name: &str) -> &'a SumTypeL
 /// - Some 携带 `value` 字段，None 无字段
 #[test]
 fn core_option_file_is_nominal_unite_with_correct_variants() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
 
     let option = module
         .enums
@@ -514,7 +525,10 @@ fn core_option_file_is_nominal_unite_with_correct_variants() {
 /// - Fine 携带 `value` 字段，Fail 携带 `error` 字段
 #[test]
 fn core_result_file_is_nominal_unite_with_correct_variants() {
-    let Some(module) = compile_core_type_file("Result.v") else { return };
+    let Some(module) = compile_core_type_file("Result.v")
+    else {
+        return;
+    };
 
     let result = module
         .enums
@@ -541,7 +555,10 @@ fn core_result_file_is_nominal_unite_with_correct_variants() {
 /// `[tag(N)]` 写入 HIR discriminator，再进入 SumTypeLayout.tag。
 #[test]
 fn core_option_sum_layout_tags_match_source_annotations() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
     let sum_layouts = nyar_language::MirLowerer::lower_module_semantic(&module).sum_types;
 
     let option_layout = find_sum_layout(&sum_layouts, "Option");
@@ -561,7 +578,10 @@ fn core_option_sum_layout_tags_match_source_annotations() {
 /// `[tag(N)]` 写入 HIR discriminator，再进入 SumTypeLayout.tag。
 #[test]
 fn core_result_sum_layout_tags_match_source_annotations() {
-    let Some(module) = compile_core_type_file("Result.v") else { return };
+    let Some(module) = compile_core_type_file("Result.v")
+    else {
+        return;
+    };
     let sum_layouts = nyar_language::MirLowerer::lower_module_semantic(&module).sum_types;
 
     let result_layout = find_sum_layout(&sum_layouts, "Result");
@@ -584,7 +604,10 @@ fn core_result_sum_layout_tags_match_source_annotations() {
 /// - 变体的 parent 边指向 Option
 #[test]
 fn core_option_unite_lowering_preserves_sealed_family() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
     let option = module.enums.iter().find(|enum_def| enum_def.name == Identifier::new("Option")).expect("Option unite should be present");
 
     let lowered = lower_unite(option, UniteLayout::Tagged);
@@ -605,7 +628,10 @@ fn core_option_unite_lowering_preserves_sealed_family() {
 /// 验证 `core::types::Result` 经 `lower_unite` 后变体为 sealed/final，基类为 abstract/sealed。
 #[test]
 fn core_result_unite_lowering_preserves_sealed_family() {
-    let Some(module) = compile_core_type_file("Result.v") else { return };
+    let Some(module) = compile_core_type_file("Result.v")
+    else {
+        return;
+    };
     let result = module.enums.iter().find(|enum_def| enum_def.name == Identifier::new("Result")).expect("Result unite should be present");
 
     let lowered = lower_unite(result, UniteLayout::Tagged);
@@ -628,7 +654,10 @@ fn core_result_unite_lowering_preserves_sealed_family() {
 /// - 两种布局的变体名列表相同
 #[test]
 fn core_option_unite_exhaustiveness_is_layout_independent() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
     let option = module.enums.iter().find(|enum_def| enum_def.name == Identifier::new("Option")).expect("Option unite should be present");
 
     let tagged = lower_unite(option, UniteLayout::Tagged);
@@ -649,7 +678,10 @@ fn core_option_unite_exhaustiveness_is_layout_independent() {
 /// 运行时布局（tag 值、变体结构、is_unity）不受命名空间变化影响。
 #[test]
 fn core_option_module_namespace_is_core_types() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
 
     let namespace_segments: Vec<&str> = module.name.parts().iter().map(|id| id.as_str()).collect();
     assert_eq!(namespace_segments, vec!["core", "types"]);
@@ -658,7 +690,10 @@ fn core_option_module_namespace_is_core_types() {
 /// 验证 `core::types::Result` 模块的命名空间为 `core::types`。
 #[test]
 fn core_result_module_namespace_is_core_types() {
-    let Some(module) = compile_core_type_file("Result.v") else { return };
+    let Some(module) = compile_core_type_file("Result.v")
+    else {
+        return;
+    };
 
     let namespace_segments: Vec<&str> = module.name.parts().iter().map(|id| id.as_str()).collect();
     assert_eq!(namespace_segments, vec!["core", "types"]);
@@ -669,7 +704,10 @@ fn core_result_module_namespace_is_core_types() {
 /// 迁移前后均应满足：Some <: Option, None <: Option。
 #[test]
 fn core_option_nominal_view_resolves_variants() {
-    let Some(module) = compile_core_type_file("Option.v") else { return };
+    let Some(module) = compile_core_type_file("Option.v")
+    else {
+        return;
+    };
     let view = NominalModuleView::from_module(&module);
 
     assert!(view.matches_nominal_parameter(&Identifier::new("Some"), &Identifier::new("Option")).unwrap());
@@ -679,7 +717,10 @@ fn core_option_nominal_view_resolves_variants() {
 /// 验证 `core::types::Result` 的变体可通过 `NominalModuleView` 解析为 Result 的子类型。
 #[test]
 fn core_result_nominal_view_resolves_variants() {
-    let Some(module) = compile_core_type_file("Result.v") else { return };
+    let Some(module) = compile_core_type_file("Result.v")
+    else {
+        return;
+    };
     let view = NominalModuleView::from_module(&module);
 
     assert!(view.matches_nominal_parameter(&Identifier::new("Fine"), &Identifier::new("Result")).unwrap());
@@ -797,7 +838,10 @@ fn rejects_duplicate_discriminators_in_imported_semantic_export_enums() {
 }
 
 fn int_discriminator(value: i64) -> nyar_language::types::hir::HirExpr {
-    use nyar_language::types::{SourceSpan, hir::HirExprKind, hir::HirLiteral};
+    use nyar_language::types::{
+        SourceSpan,
+        hir::{HirExprKind, HirLiteral},
+    };
     nyar_language::types::hir::HirExpr {
         kind: HirExprKind::Literal(HirLiteral::Integer64(value)),
         span: SourceSpan::new(SourceID::default(), 0, 0),

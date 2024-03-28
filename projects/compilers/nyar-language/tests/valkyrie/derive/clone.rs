@@ -8,6 +8,8 @@ use nyar_language::{
 
 fn create_test_struct(name: &str, fields: Vec<(&str, ValkyrieType)>) -> nyar_language::types::hir::HirStruct {
     nyar_language::types::hir::HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),

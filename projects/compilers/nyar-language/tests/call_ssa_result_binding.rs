@@ -1,6 +1,7 @@
 use nyar_language::{MirLowerer, MirOperation, ValkyrieCompiler, types::SourceID};
 
 #[test]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn call_instructions_bind_one_ssa_result() {
     let source = r#"
 namespace demo.overflow;

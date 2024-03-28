@@ -43,6 +43,8 @@ fn empty_module() -> HirModule {
 
 fn empty_method(name: &str) -> HirFunction {
     HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new(name),
         declaring_namespace: NamePath::default(),

@@ -2,9 +2,11 @@
 
 use std::sync::OnceLock;
 
+use crate::transitional::notedown::{
+    markdown,
+    notedown::{MathType, NotedownBlock, NotedownDocument, NotedownInline, QuoteType},
+};
 use katex::{KatexContext, Settings, render_to_string};
-use std_data::text::markdown;
-use std_data::text::notedown::{MathType, NotedownBlock, NotedownDocument, NotedownInline, QuoteType};
 
 use crate::notedown::highlight::highlight_code_block;
 
@@ -85,7 +87,8 @@ impl<'a> HtmlRenderer<'a> {
                 let start = attrs.start_number;
                 if start == 1 {
                     self.out.push_str("<ol>\n");
-                } else {
+                }
+                else {
                     self.out.push_str(&format!("<ol start=\"{start}\">\n"));
                 }
                 for item in items {
@@ -148,14 +151,15 @@ impl<'a> HtmlRenderer<'a> {
         }
     }
 
-    fn render_header(&mut self, level: u8, inlines: &[NotedownInline], _attr: &std_data::text::notedown::Attr) {
+    fn render_header(&mut self, level: u8, inlines: &[NotedownInline], _attr: &crate::transitional::notedown::notedown::Attr) {
         let level = level.clamp(1, 6);
         let text = inlines_to_plain(inlines);
         let id_attr = if self.options.generate_heading_ids {
             self.heading_counter += 1;
             let id = slugify_heading(&text, self.heading_counter);
             format!(" id=\"{id}\"")
-        } else {
+        }
+        else {
             String::new()
         };
         self.out.push_str(&format!("<h{level}{id_attr}>"));
@@ -176,7 +180,8 @@ impl<'a> HtmlRenderer<'a> {
         self.out.push('>');
         if self.options.highlight_code {
             self.out.push_str(&highlight_code_block(lang, text));
-        } else {
+        }
+        else {
             self.out.push_str(&escape_html(text));
         }
         self.out.push_str("</code></pre></div>\n");
@@ -184,9 +189,9 @@ impl<'a> HtmlRenderer<'a> {
 
     fn render_table(
         &mut self,
-        head: &std_data::text::notedown::TableHead,
-        bodies: &[std_data::text::notedown::TableBody],
-        caption: Option<&std_data::text::notedown::Caption>,
+        head: &crate::transitional::notedown::notedown::TableHead,
+        bodies: &[crate::transitional::notedown::notedown::TableBody],
+        caption: Option<&crate::transitional::notedown::notedown::Caption>,
     ) {
         if let Some(caption) = caption {
             self.out.push_str("<p><em>");
@@ -213,7 +218,7 @@ impl<'a> HtmlRenderer<'a> {
         self.out.push_str("</tbody></table></div>\n");
     }
 
-    fn render_table_row(&mut self, row: &std_data::text::notedown::TableRow, header: bool) {
+    fn render_table_row(&mut self, row: &crate::transitional::notedown::notedown::TableRow, header: bool) {
         self.out.push_str("<tr>\n");
         let tag = if header { "th" } else { "td" };
         for cell in &row.cells {
@@ -265,11 +270,7 @@ impl<'a> HtmlRenderer<'a> {
                 self.out.push_str("</a>");
             }
             NotedownInline::Image { alt, target, .. } => {
-                let title = if target.title.is_empty() {
-                    String::new()
-                } else {
-                    format!(" title=\"{}\"", escape_html_attr(&target.title))
-                };
+                let title = if target.title.is_empty() { String::new() } else { format!(" title=\"{}\"", escape_html_attr(&target.title)) };
                 let alt_text = escape_html_attr(&inlines_to_plain(alt));
                 self.out.push_str(&format!("<img src=\"{}\" alt=\"{alt_text}\"{title} />", escape_html_attr(&target.url)));
             }
@@ -286,7 +287,8 @@ impl<'a> HtmlRenderer<'a> {
                     self.out.push_str("<mark>");
                     self.render_inlines(content);
                     self.out.push_str("</mark>");
-                } else {
+                }
+                else {
                     self.out.push_str("<span");
                     self.write_attr(attr);
                     self.out.push('>');
@@ -352,7 +354,7 @@ impl<'a> HtmlRenderer<'a> {
         }
     }
 
-    fn write_attr(&mut self, attr: &std_data::text::notedown::Attr) {
+    fn write_attr(&mut self, attr: &crate::transitional::notedown::notedown::Attr) {
         if !attr.id.is_empty() {
             self.out.push_str(&format!(" id=\"{}\"", escape_html_attr(&attr.id)));
         }
@@ -370,7 +372,7 @@ fn render_katex(math_type: MathType, latex: &str) -> Result<String, katex::Parse
     render_to_string(katex_ctx(), latex, &settings)
 }
 
-fn is_table_separator_row(row: &std_data::text::notedown::TableRow) -> bool {
+fn is_table_separator_row(row: &crate::transitional::notedown::notedown::TableRow) -> bool {
     row.cells.iter().all(|cell| {
         let text: String = cell
             .iter()
@@ -408,7 +410,8 @@ fn slugify_heading(text: &str, counter: u32) -> String {
         if ch.is_alphanumeric() {
             slug.push(ch.to_ascii_lowercase());
             last_dash = false;
-        } else if (ch == ' ' || ch == '-' || ch == '_') && !last_dash && !slug.is_empty() {
+        }
+        else if (ch == ' ' || ch == '-' || ch == '_') && !last_dash && !slug.is_empty() {
             slug.push('-');
             last_dash = true;
         }

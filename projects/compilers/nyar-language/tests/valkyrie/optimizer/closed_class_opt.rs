@@ -17,6 +17,8 @@ fn int64_type() -> ValkyrieType {
 
 fn create_closed_class(name: &str) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -44,24 +46,32 @@ fn create_closed_class(name: &str) -> HirStruct {
 }
 
 fn create_open_class(name: &str) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let mut class = create_closed_class(name);
     class.is_open = true;
     class
 }
 
 fn create_sealed_class(name: &str) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let mut class = create_closed_class(name);
     class.is_sealed = true;
     class
 }
 
 fn create_abstract_class(name: &str) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let mut class = create_closed_class(name);
     class.is_abstract = true;
     class
 }
 
 fn create_final_class(name: &str) -> HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
     let mut class = create_closed_class(name);
     class.is_final = true;
     class

@@ -97,6 +97,8 @@ fn nested_catch_dispatch_preserves_handler_stack_order() {
 #[test]
 fn break_expr_uses_loop_exit_parameter() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: nyar_language::types::NamePath::default(),
@@ -143,6 +145,8 @@ fn break_expr_uses_loop_exit_parameter() {
 #[test]
 fn fallthrough_jumps_to_next_arm_entry() {
     let function = HirFunction {
+        declaration: None,
+        instance: None,
         where_constraints: Vec::new(),
         name: Identifier::new("main"),
         declaring_namespace: nyar_language::types::NamePath::default(),

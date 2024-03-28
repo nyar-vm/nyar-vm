@@ -11,6 +11,8 @@ use nyar_language::{
 
 fn create_wire_struct(name: &str, wire_field: (&str, &str)) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),
@@ -113,6 +115,8 @@ fn test_wire_injector_skips_manual_impl() {
         target: ValkyrieType::Named(Identifier::new("OrderSystem")),
         trait_path: Some(NamePath::new(vec![Identifier::new(WIREABLE_TRAIT)])),
         methods: vec![HirFunction {
+        declaration: None,
+        instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("apply_wire"),
             doc: HirDocumentation::default(),

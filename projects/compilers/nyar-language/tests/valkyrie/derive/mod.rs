@@ -14,6 +14,8 @@ use nyar_language::{
 
 fn create_test_struct(name: &str, fields: Vec<(&str, ValkyrieType)>) -> HirStruct {
     HirStruct {
+        constructor_declaration: None,
+        constructor_instance: None,
         name: Identifier::new(name),
         namespace: vec![],
         doc: HirDocumentation::default(),

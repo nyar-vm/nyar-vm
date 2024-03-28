@@ -36,6 +36,7 @@ impl TestMirBuilder {
                 BTreeMap::new(),
                 BTreeMap::new(),
                 BTreeMap::new(),
+                super::CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() },
                 None,
             ),
         }
@@ -153,7 +154,9 @@ pub fn lower_test_function(expr: HirExpr) -> MirFunction {
         &mut AggregateLayoutPlan::default(),
         &BTreeMap::new(),
         &BTreeMap::new(),
+        &super::CallableReturnTypes { by_symbol: BTreeMap::new(), by_instance: BTreeMap::new() },
         None,
+        Vec::new(),
         &mut Vec::new(),
     )
 }

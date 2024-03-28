@@ -6,8 +6,7 @@ use nyar_language::{
     },
 };
 
-#[path = "../../support/valkyrie_v.rs"]
-mod valkyrie_v;
+use crate::support::valkyrie_v;
 
 fn compile(source: &str) -> nyar_language::types::hir::HirModule {
     ValkyrieCompiler::new(SourceID { version_id: 9300 }).compile_source(source).expect("compile")
@@ -158,7 +157,10 @@ micro maybe_value(flag: bool) -> i64? {
 
 #[test]
 fn compiles_feature_matrix_test_bundle() {
-    let Some(base) = valkyrie_v::feature_matrix_test() else { return };
+    let Some(base) = valkyrie_v::feature_matrix_test()
+    else {
+        return;
+    };
     let mut combined = String::new();
     for name in ["async_effect.v", "benchmark.v", "enums_flags.v", "mezzo_macro.v", "nullable.v"] {
         let path = base.join(name);
@@ -174,7 +176,10 @@ fn compiles_feature_matrix_test_bundle() {
 
 #[test]
 fn compiles_feature_matrix_effect_catch_compile_only() {
-    let Some(base) = valkyrie_v::feature_matrix_test() else { return };
+    let Some(base) = valkyrie_v::feature_matrix_test()
+    else {
+        return;
+    };
     let path = base.join("compile_only/effect_catch.v");
     let source = std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {}", path.display()));
     ValkyrieCompiler::new(SourceID { version_id: 9304 })
@@ -184,7 +189,10 @@ fn compiles_feature_matrix_effect_catch_compile_only() {
 
 #[test]
 fn compiles_feature_matrix_test_bundle_with_await() {
-    let Some(base) = valkyrie_v::feature_matrix_test() else { return };
+    let Some(base) = valkyrie_v::feature_matrix_test()
+    else {
+        return;
+    };
     let path = base.join("async_effect.v");
     let mut source = std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {}", path.display()));
     source.push_str(

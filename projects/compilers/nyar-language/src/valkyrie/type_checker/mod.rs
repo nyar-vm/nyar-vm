@@ -640,6 +640,9 @@ impl ValueTypeChecker {
                     self.scan_expr(class_name, arg, locals, errors);
                 }
             }
+            HirExprKind::Cast { expr, .. } => {
+                self.scan_expr(class_name, expr, locals, errors);
+            }
             HirExprKind::FieldInit { value, .. } => {
                 self.scan_expr(class_name, value, locals, errors);
             }
@@ -726,7 +729,7 @@ impl ValueTypeChecker {
             | HirExprKind::BlockOn(expr)
             | HirExprKind::Raise(expr)
             | HirExprKind::Resume(expr)
-            | HirExprKind::TryPropagate(expr) => {
+            | HirExprKind::TryPropagate { inner: expr, .. } => {
                 self.scan_expr(class_name, expr, locals, errors);
             }
             HirExprKind::Catch { expr, arms } => {
@@ -830,6 +833,35 @@ pub enum ReturnSemantics {
 #[derive(Debug, Default)]
 pub struct CopySemanticsValidator {
     value_types: BTreeSet<Identifier>,
+    value_type_declarations: BTreeSet<nyar_types::ItemId>,
+}
+
+/// HIR 层仍可能以 `Named("usize")` 等形式出现的标量别名；它们与整数/浮点一样可拷贝。
+fn is_copy_compatible_primitive_alias(name: &str) -> bool {
+    matches!(
+        name,
+        "usize"
+            | "isize"
+            | "byte"
+            | "sbyte"
+            | "u8"
+            | "i8"
+            | "u16"
+            | "i16"
+            | "u32"
+            | "i32"
+            | "u64"
+            | "i64"
+            | "u128"
+            | "i128"
+            | "f32"
+            | "f64"
+            | "f128"
+            | "bool"
+            | "char"
+            | "utf8"
+            | "utf16"
+    )
 }
 
 impl CopySemanticsValidator {
@@ -840,12 +872,16 @@ impl CopySemanticsValidator {
     pub fn register_value_type(&mut self, class: &HirStruct) {
         if class.is_value_type {
             self.value_types.insert(class.name.clone());
+            if let Some(declaration) = class.constructor_declaration {
+                self.value_type_declarations.insert(declaration);
+            }
         }
     }
 
     fn is_value(&self, ty: &HirType) -> bool {
         match ty {
-            HirType::Named(name) => self.value_types.contains(name),
+            HirType::Named(name) => is_copy_compatible_primitive_alias(name.as_str()) || self.value_types.contains(name),
+            HirType::Nominal { declaration, .. } => self.value_type_declarations.contains(declaration),
             HirType::Tuple(_) | HirType::FixedArray { .. } => true,
             _ => false,
         }
@@ -892,7 +928,9 @@ impl CopySemanticsValidator {
             | HirType::Integer128 { .. } => true,
             HirType::Tuple(items) => items.iter().all(|item| self.is_copy_compatible(item)),
             HirType::FixedArray { element, .. } => self.is_copy_compatible(element),
-            HirType::Named(name) => self.value_types.contains(name),
+            HirType::Named(name) => is_copy_compatible_primitive_alias(name.as_str()) || self.value_types.contains(name),
+            // 已绑定 declaration：按声明侧值类型登记判断，禁止再按短名回查。
+            HirType::Nominal { declaration, .. } => self.value_type_declarations.contains(declaration),
             HirType::Array(_)
             | HirType::Function(_)
             | HirType::TypeLambda(_)

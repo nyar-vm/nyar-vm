@@ -5,18 +5,31 @@
 
 use std::path::Path;
 
-use emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 use miette::{Result, miette};
-use nyar::{ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, TargetBackendFamily};
+use nyar::{ArtifactPartitionPlan, TargetBackendFamily};
+use nyar_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 
-use crate::{CompilerSourceGroup, ValkyrieCompiler};
-use crate::valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program};
+use crate::{
+    CompilerSourceGroup, ValkyrieCompiler,
+    valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program},
+};
+
+use super::{context::CompilerBuildContext, evidence::CompilerCompileEvidence};
+
+/// 完整目标产物与编译证据。
+#[derive(Debug)]
+pub struct CompilerArtifactReport {
+    /// 驱动层产物报告。
+    pub driver: nyar_emitter::DriverCompileReport,
+    /// 可复现的编译证据。
+    pub evidence: CompilerCompileEvidence,
+}
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
 struct CompilerBuildBundle {
     compiled_program: nyar_types::CompiledProgram,
     artifact_plan: ArtifactPartitionPlan,
-    wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
+    wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
 }
 
 impl CompilerBuildBundle {
@@ -24,33 +37,21 @@ impl CompilerBuildBundle {
     fn surface_counts(&self) -> (usize, usize) {
         build_output_surface_counts(&self.compiled_program)
     }
-
 }
 
 /// 从 Resolver 提供的源码组生产唯一目标 bundle。
 fn compile_source_groups_to_backend_bundle(
     compiler: &ValkyrieCompiler,
     groups: &[CompilerSourceGroup],
-    arch: &str,
-    target: CanonicalTarget,
-    clr_suspend_strategy: ClrSuspendStrategy,
-    wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
+    context: &CompilerBuildContext,
 ) -> Result<CompilerBuildBundle> {
-    let groups = groups
-        .iter()
-        .cloned()
-        .map(|mut group| {
-            group.source = preprocess_target_templates(&group.source, arch);
-            group
-        })
-        .collect::<Vec<_>>();
     let compiled_program = compiler
-        .compile_source_groups_to_program(&groups)
+        .compile_source_groups_to_program_with_host_bindings(groups, &context.selected_host_providers, &context.arch)
         .map_err(|error| miette!("Compiler semantic snapshot failed: {error}"))?;
-    let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, target, clr_suspend_strategy)
+    let artifact_plan = plan_artifacts_from_compiled_program(&compiled_program, context.target.clone(), context.clr_suspend_strategy)
         .map_err(|error| miette!("Compiler representation planning failed: {error:?}"))?;
-    let bundle = CompilerBuildBundle { compiled_program, artifact_plan, wasm_package_kind };
-    validate_artifact_surface(&bundle, wasm_package_kind)?;
+    let bundle = CompilerBuildBundle { compiled_program, artifact_plan, wasm_package_kind: context.wasm_package_kind };
+    validate_artifact_surface(&bundle, context.wasm_package_kind)?;
     Ok(bundle)
 }
 
@@ -58,42 +59,34 @@ fn compile_source_groups_to_backend_bundle(
 pub fn compile_source_groups_to_artifacts(
     compiler: &ValkyrieCompiler,
     groups: &[CompilerSourceGroup],
-    arch: &str,
-    target: CanonicalTarget,
-    clr_suspend_strategy: ClrSuspendStrategy,
-    wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind,
+    context: &CompilerBuildContext,
     output_dir: &Path,
     project_name: &str,
     emit_wat_sidecar: bool,
     generate_runtime_config: bool,
-) -> Result<emitter::DriverCompileReport> {
-    let bundle = compile_source_groups_to_backend_bundle(
-        compiler,
-        groups,
-        arch,
-        target,
-        clr_suspend_strategy,
-        wasm_package_kind,
-    )?;
-    emitter::compile_frontend_bundle_with_bundled_backends(
+) -> Result<CompilerArtifactReport> {
+    let bundle = compile_source_groups_to_backend_bundle(compiler, groups, context)?;
+    let evidence = CompilerCompileEvidence::from_success(groups, &bundle.compiled_program, &context.selected_host_providers);
+    let driver = nyar_emitter::compile_frontend_bundle_with_bundled_backends(
         &bundle,
         output_dir,
         project_name,
         emit_wat_sidecar,
         generate_runtime_config,
-    )
+    )?;
+    Ok(CompilerArtifactReport { driver, evidence })
 }
 
-fn validate_artifact_surface(bundle: &CompilerBuildBundle, wasm_package_kind: emitter::nyar_backend_wasi::WasmPackageKind) -> Result<()> {
+fn validate_artifact_surface(bundle: &CompilerBuildBundle, wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind) -> Result<()> {
     if bundle.artifact_plan.target.to_profile(None).backend_family != TargetBackendFamily::Wasm {
         return Ok(());
     }
     let (export_count, entry_count) = bundle.surface_counts();
     match wasm_package_kind {
-        emitter::nyar_backend_wasi::WasmPackageKind::Library if export_count == 0 => {
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Library if export_count == 0 => {
             Err(miette!("`artifact: library` requires at least one resolved export"))
         }
-        emitter::nyar_backend_wasi::WasmPackageKind::Binary if entry_count == 0 => {
+        nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary if entry_count == 0 => {
             Err(miette!("`artifact: binary` requires a resolved main entry"))
         }
         _ => Ok(()),
@@ -105,7 +98,7 @@ impl FrontendBuildBundle for CompilerBuildBundle {
         self
     }
 
-    fn wasm_package_kind(&self) -> emitter::nyar_backend_wasi::WasmPackageKind {
+    fn wasm_package_kind(&self) -> nyar_emitter::nyar_backend_wasi::WasmPackageKind {
         self.wasm_package_kind
     }
 
@@ -149,75 +142,57 @@ impl PlannedArtifactPartitionsView for CompilerBuildBundle {
     }
 }
 
-fn preprocess_target_templates(source: &str, arch: &str) -> String {
-    let mut result = String::with_capacity(source.len());
-    let mut pos = 0;
-    while pos < source.len() {
-        let Some(rel) = source[pos..].find("<% match ") else {
-            result.push_str(&source[pos..]);
-            break;
-        };
-        let abs = pos + rel;
-        result.push_str(&source[pos..abs]);
-        match std_data::text::valkyrie::tgrammar::parse_tgrammar_fragment(&source[abs..]) {
-            Ok((nodes, consumed)) if nodes.len() == 1 => {
-                let fragment = &source[abs..abs + consumed];
-                if let std_data::text::valkyrie::tgrammar::TgNode::Match(match_node) = &nodes[0]
-                    && match_node.scrutinee.trim() == "arch"
-                {
-                    let selected = select_arch_match_body(match_node, arch);
-                    result.push_str(&preprocess_target_templates(&tg_root_to_source(selected, fragment), arch));
-                }
-                else {
-                    result.push_str(fragment);
-                }
-                pos = abs + consumed;
-            }
-            _ => {
-                result.push_str(&source[abs..abs + 2]);
-                pos = abs + 2;
-            }
-        }
-    }
-    result
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nyar::{CanonicalTarget, ClrSuspendStrategy};
+    use nyar_emitter::nyar_backend_wasi::WasmPackageKind;
 
-fn select_arch_match_body<'a>(
-    match_node: &'a std_data::text::valkyrie::tgrammar::TgMatch,
-    arch: &str,
-) -> &'a [std_data::text::valkyrie::tgrammar::TgNode] {
-    for arm in &match_node.arms {
-        if arm.pattern.as_deref().map(normalize_case_pattern).as_deref() == Some(arch) {
-            return &arm.body;
-        }
-    }
-    match_node
-        .arms
-        .iter()
-        .find(|arm| arm.pattern.is_none())
-        .map(|arm| arm.body.as_slice())
-        .unwrap_or(&[])
-}
+    const TEMPLATE_SOURCE: &str = r#"<% match arch %>
+<% case "wasm32" %>
+[main] micro main() -> i32 { return 23 }
+<% else %>
+[main] micro main() -> i32 { return 0 }
+<% end %>"#;
 
-fn normalize_case_pattern(pattern: &str) -> String {
-    let pattern = pattern.trim();
-    if (pattern.starts_with('"') && pattern.ends_with('"')) || (pattern.starts_with('\'') && pattern.ends_with('\'')) {
-        pattern[1..pattern.len().saturating_sub(1)].to_string()
+    fn template_groups_from_source(source: String) -> [CompilerSourceGroup; 1] {
+        [CompilerSourceGroup {
+            dependency_key: "app".to_string(),
+            name: "app".to_string(),
+            source,
+            sources: Vec::new(),
+            direct_dependencies: Vec::new(),
+        }]
     }
-    else {
-        pattern.to_string()
+
+    #[test]
+    fn structured_target_templates_compile_with_arch_context() {
+        let groups = template_groups_from_source(TEMPLATE_SOURCE.to_string());
+        let context = CompilerBuildContext::new(
+            "wasm32",
+            CanonicalTarget::parse("node").expect("node"),
+            ClrSuspendStrategy::default(),
+            WasmPackageKind::Binary,
+        );
+        let bundle =
+            compile_source_groups_to_backend_bundle(&ValkyrieCompiler::default(), &groups, &context).expect("structured TGrammar must compile");
+        assert_eq!(bundle.surface_counts(), (0, 1));
     }
-}
 
-fn tg_root_to_source(nodes: &[std_data::text::valkyrie::tgrammar::TgNode], fragment: &str) -> String {
-    nodes.iter().map(|node| node_to_source(node, fragment)).collect()
-}
-
-fn node_to_source(node: &std_data::text::valkyrie::tgrammar::TgNode, fragment: &str) -> String {
-    use std_data::text::valkyrie::tgrammar::{TgIf, TgLoop, TgMatch, TgNode};
-    let span = match node {
-        TgNode::Text { span, .. } | TgNode::Stmt { span, .. } | TgNode::Comment { span, .. } => span.clone(),
-        TgNode::If(TgIf { span, .. }) | TgNode::Loop(TgLoop { span, .. }) | TgNode::Match(TgMatch { span, .. }) => span.clone(),
-    };
-    fragment[span].to_string()
+    #[test]
+    fn structured_target_templates_compile_after_resolver_style_snapshot() {
+        let mut source = String::new();
+        source.push_str(TEMPLATE_SOURCE);
+        source.push('\n');
+        let groups = template_groups_from_source(source);
+        let context = CompilerBuildContext::new(
+            "wasm32",
+            CanonicalTarget::parse("node").expect("node"),
+            ClrSuspendStrategy::default(),
+            WasmPackageKind::Binary,
+        );
+        let bundle = compile_source_groups_to_backend_bundle(&ValkyrieCompiler::default(), &groups, &context)
+            .expect("resolver-style snapshot must compile");
+        assert_eq!(bundle.surface_counts(), (0, 1));
+    }
 }

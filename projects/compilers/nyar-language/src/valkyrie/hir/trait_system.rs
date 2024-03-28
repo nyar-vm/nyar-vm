@@ -12,7 +12,7 @@ use crate::{
     hir::row::{RowMethodSignature, RowRequirement, RowRequirementError},
     types::{
         Identifier, NamePath,
-        hir::{HirImpl, HirModule, HirStruct, HirTrait, ValkyrieType as HirType},
+        hir::{HirImpl, HirModule, HirStruct, HirTrait, HirTraitBound, ValkyrieType, ValkyrieType as HirType},
         witness::{MethodEntry, MethodId, MethodPath, ModuleId, TraitId, TypeId, TypeMetadata, WitnessTable, WitnessTableBuilder},
     },
 };
@@ -82,17 +82,48 @@ pub enum TraitModuleError {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TraitModuleView {
     traits: BTreeMap<Identifier, HirTrait>,
+    declarations: BTreeMap<nyar_types::ItemId, HirTrait>,
     structs: BTreeMap<Identifier, HirStruct>,
     impls: Vec<HirImpl>,
 }
 
 impl TraitModuleView {
     pub fn from_module(module: &HirModule) -> Self {
-        Self {
+        let mut view = Self {
             traits: module.traits.iter().map(|item| (item.name.clone(), item.clone())).collect(),
+            declarations: BTreeMap::new(),
             structs: module.structs.iter().map(|item| (item.name.clone(), item.clone())).collect(),
-            impls: module.impls.clone(),
+            impls: Vec::new(),
+        };
+        fn collect(module: &HirModule, view: &mut TraitModuleView) {
+            for definition in &module.traits {
+                if let Some(identity) = definition.declaration {
+                    view.declarations.entry(identity).or_insert_with(|| definition.clone());
+                }
+            }
+            for implementation in &module.impls {
+                if !view.impls.contains(implementation) {
+                    view.impls.push(implementation.clone());
+                }
+            }
+            for export in &module.imported_semantic_exports {
+                for definition in &export.traits {
+                    if let Some(identity) = definition.declaration {
+                        view.declarations.entry(identity).or_insert_with(|| definition.clone());
+                    }
+                }
+                for implementation in &export.impls {
+                    if !view.impls.contains(implementation) {
+                        view.impls.push(implementation.clone());
+                    }
+                }
+            }
+            for child in &module.submodules {
+                collect(child, view);
+            }
         }
+        collect(module, &mut view);
+        view
     }
 
     pub fn satisfy_named_trait(&self, candidate_name: &Identifier, trait_name: &Identifier) -> Result<NamedTraitWitness, TraitModuleError> {
@@ -101,6 +132,84 @@ impl TraitModuleView {
 
         satisfy_named_trait_with_traits(candidate, trait_def, &self.impls, Some(&self.traits))
             .map_err(|error| TraitModuleError::Satisfaction { error })
+    }
+
+    /// 按已解析的目标类型与 trait 声明身份检查显式实现；允许 primitive 等非结构类型参与 evidence。
+    pub fn satisfy_explicit_type(&self, candidate: &ValkyrieType, bound: &HirTraitBound) -> Result<NamedTraitWitness, TraitModuleError> {
+        let declaration = bound
+            .declaration
+            .ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
+        let trait_def = self
+            .declarations
+            .get(&declaration)
+            .ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
+        let matches = self
+            .impls
+            .iter()
+            .filter(|item| {
+                item.trait_declaration == Some(declaration) && item.target == *candidate && item.trait_arguments == bound.type_arguments
+            })
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(TraitModuleError::Satisfaction {
+                error: if matches.is_empty() {
+                    TraitSatisfactionError::MissingExplicitImplForSuperTraits { trait_path: bound.trait_path.clone() }
+                }
+                else {
+                    TraitSatisfactionError::AmbiguousExplicitImpls {
+                        trait_path: bound.trait_path.clone(),
+                        target: HirType::from(candidate.clone()),
+                    }
+                },
+            });
+        }
+        let implementation = matches[0];
+        // 父 trait 尚未拥有解析后的 bound 合同，不得用名称递归制造成功证据。
+        if !trait_def.super_traits.is_empty() {
+            return Err(TraitModuleError::Satisfaction {
+                error: TraitSatisfactionError::MissingExplicitImplForSuperTraits { trait_path: bound.trait_path.clone() },
+            });
+        }
+        for method in trait_def.methods.iter().chain(trait_def.default_methods.iter().filter(|method| method.is_abstract)) {
+            let candidate_method = find_explicit_method(implementation, &bound.trait_path, &method.name)
+                .map_err(|error| TraitModuleError::Satisfaction { error })?;
+            let Some(candidate_method) = candidate_method
+            else {
+                return Err(TraitModuleError::Satisfaction {
+                    error: TraitSatisfactionError::MissingMethodBinding { trait_path: bound.trait_path.clone(), name: method.name.clone() },
+                });
+            };
+            let actual_params = candidate_method.params.iter().map(|param| param.ty.clone()).collect::<Vec<_>>();
+            let expected_params = method.params.iter().map(|param| param.ty.clone()).collect::<Vec<_>>();
+            if candidate_method.declaration.is_none()
+                || candidate_method.is_abstract
+                || actual_params != expected_params
+                || candidate_method.return_type != method.return_type
+            {
+                return Err(TraitModuleError::Satisfaction {
+                    error: TraitSatisfactionError::MissingMethodBinding { trait_path: bound.trait_path.clone(), name: method.name.clone() },
+                });
+            }
+        }
+        let associated_types =
+            collect_associated_types(implementation, trait_def, &bound.trait_path).map_err(|error| TraitModuleError::Satisfaction { error })?;
+        for equation in &bound.associated_types {
+            if associated_types.get(&equation.name) != Some(&HirType::from(equation.ty.clone())) {
+                return Err(TraitModuleError::Satisfaction {
+                    error: TraitSatisfactionError::MissingAssociatedTypeBinding {
+                        trait_path: bound.trait_path.clone(),
+                        name: equation.name.clone(),
+                    },
+                });
+            }
+        }
+        Ok(NamedTraitWitness {
+            trait_path: bound.trait_path.clone(),
+            target: HirType::from(candidate.clone()),
+            source: TraitWitnessSource::ExplicitImpl,
+            method_bindings: Vec::new(),
+            associated_types,
+        })
     }
 }
 
@@ -457,10 +566,12 @@ fn impl_where_constraint_pairs(impl_block: &HirImpl) -> BTreeSet<(HirType, crate
     impl_block
         .where_constraints
         .iter()
-        .flat_map(|constraint| constraint.bounds.iter().cloned().map(|bound| {
-            let mut bound = bound;
-            bound.associated_types.sort();
-            (constraint.target.clone(), bound)
-        }))
+        .flat_map(|constraint| {
+            constraint.bounds.iter().cloned().map(|bound| {
+                let mut bound = bound;
+                bound.associated_types.sort();
+                (constraint.target.clone(), bound)
+            })
+        })
         .collect()
 }

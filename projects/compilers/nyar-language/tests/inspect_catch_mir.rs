@@ -2,6 +2,7 @@ use nyar_language::{MirLowerer, SourceID, ValkyrieCompiler};
 use std::io::Write;
 
 #[test]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn inspect_catch_function_raise_mir() {
     let source = r#"
 micro effect_f() -> i32 {

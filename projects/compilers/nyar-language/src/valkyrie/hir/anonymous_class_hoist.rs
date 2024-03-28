@@ -159,7 +159,7 @@ fn hoist_expr(expr: &mut HirExpr, context: &mut HoistContext, locals: &BTreeMap<
         HirExprKind::Return(Some(value))
         | HirExprKind::Yield(Some(value))
         | HirExprKind::Resume(value)
-        | HirExprKind::TryPropagate(value)
+        | HirExprKind::TryPropagate { inner: value, .. }
         | HirExprKind::Raise(value)
         | HirExprKind::Await(value)
         | HirExprKind::Awake(value)

@@ -6,7 +6,7 @@ pub mod interpret;
 pub mod module;
 pub mod semantic_bridge;
 
+pub use crate::transitional::guest_scripts::bash::{BashError, BashScript};
 pub use interpret::{BashValue, evaluate_bash_script, evaluate_bash_source};
 pub use module::BashModule;
 pub use semantic_bridge::BashSemanticBridge;
-pub use std_data::text::bash::{BashError, BashScript};

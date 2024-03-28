@@ -1,18 +1,28 @@
-//! `AST` 类型表达式到 `HIR` 类型的 lowering 与预检查。
-use std::{cell::RefCell, collections::BTreeSet};
-
-use crate::types::{
-    Identifier,
-    hir::{FunctionType, RowMethodType, RowType, ValkyrieType},
+//! Oak `AST` 类型表达式到 `HIR` 类型的 lowering 与预检查。
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
 };
-use std_data::text::valkyrie::{ParseError, RootStatement, TypeExpression, ValkyrieRoot, ast::TypePath as AstTypePath};
+
+use crate::{
+    types::{
+        Identifier,
+        hir::{FunctionType, GenericType, HirKind, RowMethodType, RowType, ValkyrieType},
+    },
+    valkyrie::frontend::{
+        self, ParseError, ValkyrieRoot,
+        ast::{
+            NamePath as AstNamePath, TypeExpression,
+            type_nodes::{FunctionType as AstFunctionType, OptionalType, TupleType},
+        },
+    },
+};
+use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 thread_local! {
     static SHADOWED_BUILTIN_TYPE_ALIASES: RefCell<Vec<BTreeSet<String>>> = RefCell::new(Vec::new());
     static MODULE_TYPE_ALIASES: RefCell<Vec<BTreeMap<String, ModuleTypeAliasEntry>>> = RefCell::new(Vec::new());
 }
-
-use std::collections::BTreeMap;
 
 /// 模块类型别名条目：可携带泛型形参。
 #[derive(Debug, Clone)]
@@ -75,58 +85,59 @@ impl Drop for ModuleTypeAliasScope {
     }
 }
 
-/// 校验前端 `AST` 类型表达式是否满足当前 `HIR` lowering 前提。
+/// 校验 Oak `AST` 类型表达式是否满足当前 `HIR` lowering 前提。
 pub(crate) fn validate_type_expression(ty: &TypeExpression) -> Result<(), ParseError> {
     match ty {
-        TypeExpression::Path(path) => {
-            if let Some(name) = path.name.parts.last() {
-                validate_source_text_type_name(name)?;
-                if let Some(canonical_name) = legacy_builtin_type_alias(name) {
+        TypeExpression::Namepath(path) => {
+            if let Some(part) = path.parts.last() {
+                validate_source_text_type_name(&part.name)?;
+                if let Some(canonical_name) = legacy_builtin_type_alias(&part.name) {
                     return Err(ParseError::invalid(format!(
-                        "legacy builtin type alias `{name}` has been removed; use `{canonical_name}` explicitly"
+                        "legacy builtin type alias `{name}` has been removed; use `{canonical_name}` explicitly",
+                        name = part.name
                     )));
                 }
             }
-            for argument in &path.arguments {
+        }
+        TypeExpression::Generic(generic) => {
+            validate_source_text_type_name(&generic.name.name)?;
+        }
+        TypeExpression::Tuple(tuple) => {
+            for element in &tuple.elements {
+                validate_type_expression(element)?;
+            }
+        }
+        TypeExpression::Function(function) => {
+            for param in &function.params {
+                validate_type_expression(param)?;
+            }
+            validate_type_expression(&function.return_type)?;
+        }
+        TypeExpression::Optional(optional) => validate_type_expression(&optional.inner)?,
+        TypeExpression::AssociatedType(associated) => {
+            validate_source_text_type_name(&associated.name.name)?;
+            validate_source_text_type_name(&associated.base.name)?;
+        }
+        TypeExpression::QualifiedAssociatedType(qualified) => {
+            validate_type_expression(&qualified.ty)?;
+            validate_source_text_type_name(&qualified.name.name)?;
+        }
+        TypeExpression::Binary(node) => {
+            validate_type_expression(&node.lhs)?;
+            validate_type_expression(&node.rhs)?;
+        }
+        TypeExpression::Unary(node) => validate_type_expression(&node.base)?,
+        TypeExpression::Apply(apply) => {
+            validate_type_expression(&apply.base)?;
+            for argument in &apply.arguments {
                 validate_type_expression(argument)?;
             }
         }
-        TypeExpression::Array { item, .. } => validate_type_expression(item)?,
-        TypeExpression::FixedArray { item, .. } => validate_type_expression(item)?,
-        TypeExpression::Tuple { items, .. } => {
-            for item in items {
-                validate_type_expression(item)?;
-            }
-        }
-        TypeExpression::Pointer { item, .. } => validate_type_expression(item)?,
-        TypeExpression::Row { methods, .. } => {
-            for method in methods {
-                for param in &method.params {
-                    validate_type_expression(param)?;
-                }
-                validate_type_expression(&method.return_type)?;
-            }
-        }
-        TypeExpression::Union { items, .. } => {
-            for item in items {
-                validate_type_expression(item)?;
-            }
-        }
-        TypeExpression::Intersection { items, .. } => {
-            for item in items {
-                validate_type_expression(item)?;
-            }
-        }
-        TypeExpression::Associated { .. } | TypeExpression::Nullable { .. } | TypeExpression::Function { .. } => {}
     }
     Ok(())
 }
 
 /// Reject source-level text aliases that do not identify a language encoding.
-///
-/// This is deliberately a source boundary check. Canonical Semantic MIR has
-/// only explicit `Utf8` and `Utf16` types, so an unqualified text name must
-/// never reach MIR where a backend carrier could give it accidental meaning.
 pub fn validate_source_text_type_name(name: &str) -> Result<(), ParseError> {
     if is_legacy_text_type_name(name) {
         return Err(ParseError::invalid(format!(
@@ -136,45 +147,78 @@ pub fn validate_source_text_type_name(name: &str) -> Result<(), ParseError> {
     Ok(())
 }
 
-/// 将 `AST` 类型表达式降到最小 `HIR` 类型表示。
+/// 将 Oak `AST` 类型表达式降到最小 `HIR` 类型表示。
 pub(crate) fn lower_type_expression(ty: &TypeExpression) -> ValkyrieType {
     match ty {
-        TypeExpression::Path(path) => lower_type_path(path),
-        TypeExpression::Array { item, .. } => ValkyrieType::Array(Box::new(lower_type_expression(item))),
-        TypeExpression::FixedArray { item, length, .. } => {
-            ValkyrieType::FixedArray { element: Box::new(lower_type_expression(item)), length: usize::try_from(*length).unwrap_or(usize::MAX) }
-        }
-        TypeExpression::Tuple { items, .. } => {
-            if items.is_empty() {
+        TypeExpression::Namepath(path) => lower_type_namepath(path),
+        TypeExpression::Generic(generic) => ValkyrieType::Generic(GenericType {
+            binder: None,
+            name: Identifier::new(&generic.name.name),
+            kind: HirKind::Type,
+            bounds: Vec::new(),
+        }),
+        TypeExpression::Tuple(tuple) => {
+            if tuple.elements.is_empty() {
                 ValkyrieType::Unit
             }
             else {
-                ValkyrieType::Tuple(items.iter().map(lower_type_expression).collect())
+                ValkyrieType::Tuple(tuple.elements.iter().map(lower_type_expression).collect())
             }
         }
-        TypeExpression::Pointer { item, .. } => lower_type_expression(item),
-        TypeExpression::Row { methods, .. } => ValkyrieType::Row(RowType {
-            methods: methods
-                .iter()
-                .map(|method| RowMethodType {
-                    name: method.name.name.clone(),
-                    params: method.params.iter().map(lower_type_expression).collect(),
-                    return_type: lower_type_expression(&method.return_type),
-                })
-                .collect(),
-        }),
-        TypeExpression::Associated { ty, .. } => lower_type_expression(ty),
-        TypeExpression::Nullable { item, .. } => flatten_nullable_type(lower_type_expression(item)),
-        TypeExpression::Function { params, return_type, .. } => ValkyrieType::Function(Box::new(FunctionType {
-            params: params.iter().map(lower_type_expression).collect(),
-            return_type: lower_type_expression(return_type),
+        TypeExpression::Function(function) => ValkyrieType::Function(Box::new(FunctionType {
+            params: function.params.iter().map(lower_type_expression).collect(),
+            return_type: lower_type_expression(&function.return_type),
         })),
-        TypeExpression::Union { items, .. } => ValkyrieType::Union(items.iter().map(lower_type_expression).collect()),
-        TypeExpression::Intersection { items, .. } => ValkyrieType::Intersection(items.iter().map(lower_type_expression).collect()),
+        TypeExpression::Optional(optional) => flatten_nullable_type(lower_type_expression(&optional.inner)),
+        TypeExpression::AssociatedType(associated) => ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+            base: if associated.base.name == "Self" {
+                ValkyrieType::SelfType
+            }
+            else {
+                ValkyrieType::Named(Identifier::new(&associated.base.name))
+            },
+            name: Identifier::new(&associated.name.name),
+            type_arguments: Vec::new(),
+        })),
+        TypeExpression::QualifiedAssociatedType(qualified) => {
+            let base = lower_type_expression(&qualified.ty);
+            ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+                base,
+                name: Identifier::new(&qualified.name.name),
+                type_arguments: qualified.trait_path.parts.iter().map(|part| ValkyrieType::Named(Identifier::new(&part.name))).collect(),
+            }))
+        }
+        TypeExpression::Binary(node) => match node.operator {
+            ValkyrieTokenType::Pipe => ValkyrieType::Union(vec![lower_type_expression(&node.lhs), lower_type_expression(&node.rhs)]),
+            ValkyrieTokenType::Ampersand => {
+                ValkyrieType::Intersection(vec![lower_type_expression(&node.lhs), lower_type_expression(&node.rhs)])
+            }
+            _ => lower_type_expression(&node.lhs),
+        },
+        TypeExpression::Unary(node) => match node.operator {
+            ValkyrieTokenType::BracketL => {
+                let element = lower_type_expression(&node.base);
+                if let Some(length_expr) = &node.length {
+                    let length = match length_expr {
+                        frontend::ast::TermExpression::IntegerLiteral { value, .. } => value.parse().unwrap_or(0),
+                        _ => 0,
+                    };
+                    ValkyrieType::FixedArray { element: Box::new(element), length }
+                }
+                else {
+                    ValkyrieType::Array(Box::new(element))
+                }
+            }
+            _ => lower_type_expression(&node.base),
+        },
+        TypeExpression::Apply(apply) => {
+            let base = lower_type_expression(&apply.base);
+            let arguments = apply.arguments.iter().map(lower_type_expression).collect();
+            ValkyrieType::Apply(Box::new(base), arguments)
+        }
     }
 }
 
-/// `T?` lowers to a structured nullable type; nested `T??` flattens to one layer.
 fn flatten_nullable_type(inner: ValkyrieType) -> ValkyrieType {
     match inner {
         ValkyrieType::Nullable(payload) => ValkyrieType::Nullable(payload),
@@ -185,50 +229,59 @@ fn flatten_nullable_type(inner: ValkyrieType) -> ValkyrieType {
 /// 渲染类型表达式，供错误消息与回退路径使用。
 pub(crate) fn render_type_expression(ty: &TypeExpression) -> String {
     match ty {
-        TypeExpression::Path(path) => {
-            let base = path.name.parts.join("::");
-            if path.arguments.is_empty() {
-                base
-            }
-            else {
-                let args = path.arguments.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
-                format!("{base}<{args}>")
-            }
-        }
-        TypeExpression::Array { item, .. } => format!("[{}]", render_type_expression(item)),
-        TypeExpression::FixedArray { item, length, .. } => format!("[{}; {length}]", render_type_expression(item)),
-        TypeExpression::Tuple { items, .. } => {
-            if items.is_empty() {
+        TypeExpression::Namepath(path) => path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>().join("::"),
+        TypeExpression::Generic(generic) => generic.name.name.clone(),
+        TypeExpression::Tuple(tuple) => {
+            if tuple.elements.is_empty() {
                 return "()".to_string();
             }
-            let inner = items.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
+            let inner = tuple.elements.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
             format!("({inner})")
         }
-        TypeExpression::Pointer { kind, item, .. } => {
-            let prefix = match kind {
-                std_data::text::valkyrie::ast::PointerKind::ReadOnly => "\u{25C7}",
-                std_data::text::valkyrie::ast::PointerKind::Mutable => "\u{25C6}",
+        TypeExpression::Function(function) => {
+            let params_str = function.params.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
+            format!("micro({params_str}) -> {}", render_type_expression(&function.return_type))
+        }
+        TypeExpression::Optional(optional) => {
+            format!("{}?", render_type_expression(&optional.inner))
+        }
+        TypeExpression::AssociatedType(associated) => {
+            format!("{}::{}", associated.base.name, associated.name.name)
+        }
+        TypeExpression::QualifiedAssociatedType(qualified) => {
+            format!(
+                "<{} as {}>::{}",
+                render_type_expression(&qualified.ty),
+                render_type_expression(&TypeExpression::Namepath(Box::new(qualified.trait_path.clone()))),
+                qualified.name.name
+            )
+        }
+        TypeExpression::Binary(node) => {
+            let op = match node.operator {
+                ValkyrieTokenType::Pipe => " | ",
+                ValkyrieTokenType::Ampersand => " & ",
+                _ => " ",
             };
-            format!("{prefix}{}", render_type_expression(item))
+            format!("{}{}{}", render_type_expression(&node.lhs), op, render_type_expression(&node.rhs))
         }
-        TypeExpression::Row { methods, .. } => {
-            let inner = methods
-                .iter()
-                .map(|method| {
-                    let params = method.params.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
-                    format!("{}({params}) -> {}", method.name, render_type_expression(&method.return_type))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{{ {inner} }}")
-        }
-        TypeExpression::Associated { name, ty, .. } => format!("{name}={}", render_type_expression(ty)),
-        TypeExpression::Nullable { item, .. } => format!("{}?", render_type_expression(item)),
-        TypeExpression::Union { items, .. } => items.iter().map(render_type_expression).collect::<Vec<_>>().join(" | "),
-        TypeExpression::Intersection { items, .. } => items.iter().map(render_type_expression).collect::<Vec<_>>().join(" & "),
-        TypeExpression::Function { params, return_type, .. } => {
-            let params_str = params.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
-            format!("micro({params_str}) -> {}", render_type_expression(return_type))
+        TypeExpression::Unary(node) => match node.operator {
+            ValkyrieTokenType::BracketL => {
+                if let Some(length_expr) = &node.length {
+                    let length = match length_expr {
+                        frontend::ast::TermExpression::IntegerLiteral { value, .. } => value.clone(),
+                        _ => "?".to_string(),
+                    };
+                    format!("[{}; {}]", render_type_expression(&node.base), length)
+                }
+                else {
+                    format!("[{}]", render_type_expression(&node.base))
+                }
+            }
+            _ => render_type_expression(&node.base),
+        },
+        TypeExpression::Apply(apply) => {
+            let args = apply.arguments.iter().map(render_type_expression).collect::<Vec<_>>().join(", ");
+            format!("{}<{}>", render_type_expression(&apply.base), args)
         }
     }
 }
@@ -254,7 +307,7 @@ fn legacy_builtin_type_alias(name: &str) -> Option<&'static str> {
     }
 }
 
-fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
+pub(crate) fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     match name {
         "i8" => Some(ValkyrieType::Integer8 { signed: true }),
         "i16" => Some(ValkyrieType::Integer16 { signed: true }),
@@ -270,7 +323,6 @@ fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
         "char" => Some(ValkyrieType::Character),
         "utf8" => Some(ValkyrieType::Utf8),
         "utf16" => Some(ValkyrieType::Utf16),
-        // C ABI / syscall 字节串：显式身份，禁止与 utf8 混用弱别名 `string`
         "c_str" => Some(ValkyrieType::Named(Identifier::new("c_str"))),
         "unit" => Some(ValkyrieType::Unit),
         "void" => Some(ValkyrieType::Void),
@@ -278,16 +330,21 @@ fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     }
 }
 
-fn collect_shadowed_builtin_type_aliases(root: &ValkyrieRoot) -> BTreeSet<String> {
-    root.statements
-        .iter()
-        .filter_map(|statement| match statement {
-            RootStatement::TypeAlias(alias) if canonical_builtin_type(alias.name.name.as_str()).is_some() => {
-                Some(alias.name.name.as_str().to_string())
-            }
-            _ => None,
-        })
-        .collect()
+/// `i64(x)` / `f64(x)` 等单实参类型名调用：仅数值 builtin，不含 utf8/bool 等（那些走显式转换函数）。
+pub(crate) fn numeric_builtin_cast_type(name: &str) -> Option<ValkyrieType> {
+    match canonical_builtin_type(name)? {
+        ty @ (ValkyrieType::Integer8 { .. }
+        | ValkyrieType::Integer16 { .. }
+        | ValkyrieType::Integer32 { .. }
+        | ValkyrieType::Integer64 { .. }
+        | ValkyrieType::Float32
+        | ValkyrieType::Float64) => Some(ty),
+        _ => None,
+    }
+}
+
+fn collect_shadowed_builtin_type_aliases(_root: &ValkyrieRoot) -> BTreeSet<String> {
+    BTreeSet::new()
 }
 
 fn is_shadowed_builtin_type(name: &str) -> bool {
@@ -301,7 +358,6 @@ fn expand_module_type_alias(name: &str, arguments: &[ValkyrieType], visiting: &m
     MODULE_TYPE_ALIASES.with(|stack| {
         let entry = stack.borrow().last().and_then(|aliases| aliases.get(name).cloned())?;
         if entry.params.len() != arguments.len() {
-            // 形参个数不匹配时不展开，留给后续类型检查报错。
             return None;
         }
         visiting.insert(name.to_string());
@@ -372,54 +428,67 @@ fn expand_type_aliases(ty: &ValkyrieType, visiting: &mut BTreeSet<String>) -> Va
     }
 }
 
-fn lower_type_path(path: &AstTypePath) -> ValkyrieType {
-    let last = path.name.parts.last().cloned().unwrap_or_default();
-    if path.name.parts.len() == 1 && last.as_str() == "Self" {
+fn lower_type_namepath(path: &AstNamePath) -> ValkyrieType {
+    // 只消费 Oak 产出的结构化 NamePath；禁止按 span 切片重解析源码。
+    let parts = path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>();
+    let last = parts.last().copied().unwrap_or_default();
+    if parts.len() == 1 && last == "Self" {
         return ValkyrieType::SelfType;
     }
-    if path.name.parts.first().is_some_and(|part| part == "Self") {
+    if parts.first().is_some_and(|part| *part == "Self") {
         let mut base = ValkyrieType::SelfType;
-        for (index, name) in path.name.parts.iter().enumerate().skip(1) {
+        for name in parts.iter().skip(1) {
             base = ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
                 base,
                 name: Identifier::new(name),
-                type_arguments: if index + 1 == path.name.parts.len() {
-                    path.arguments.iter().map(lower_type_expression).collect()
-                } else {
-                    Vec::new()
-                },
+                type_arguments: Vec::new(),
             }));
         }
         return base;
     }
-    let base = if !is_shadowed_builtin_type(last.as_str())
-        && (path.name.parts.len() == 1 || is_known_builtin_type_namespace(&path.name.parts, last.as_str()))
-    {
-        canonical_builtin_type(last.as_str()).unwrap_or_else(|| ValkyrieType::Named(Identifier::new(&last)))
+    // `Type::Assoc`：两段且非已知命名空间前缀时保留 Associated，禁止丢前缀只留短名。
+    // `core::…` / `std::…` 等限定路径仍走下方短名/builtin 规则，供 bind 按声明冻结。
+    if parts.len() == 2 && !is_known_builtin_type_namespace(&parts, last) && !is_module_root_prefix(parts[0]) {
+        let head = parts[0];
+        let base = if !is_shadowed_builtin_type(head) {
+            canonical_builtin_type(head).unwrap_or_else(|| ValkyrieType::Named(Identifier::new(head)))
+        }
+        else {
+            ValkyrieType::Named(Identifier::new(head))
+        };
+        return ValkyrieType::Associated(Box::new(crate::types::hir::AssociatedType {
+            base,
+            name: Identifier::new(last),
+            type_arguments: Vec::new(),
+        }));
+    }
+    if parts.len() > 1 && !is_known_builtin_type_namespace(&parts, last) {
+        return ValkyrieType::Named(Identifier::new(&parts.join(".")));
+    }
+    let base = if !is_shadowed_builtin_type(last) && (parts.len() == 1 || is_known_builtin_type_namespace(&parts, last)) {
+        canonical_builtin_type(last).unwrap_or_else(|| ValkyrieType::Named(Identifier::new(last)))
     }
     else {
-        ValkyrieType::Named(Identifier::new(&last))
+        ValkyrieType::Named(Identifier::new(last))
     };
-    let arguments: Vec<ValkyrieType> = path.arguments.iter().map(lower_type_expression).collect();
-    if path.name.parts.len() == 1 {
-        if let Some(expanded) = expand_module_type_alias(last.as_str(), &arguments, &mut BTreeSet::new()) {
+    if parts.len() == 1 {
+        if let Some(expanded) = expand_module_type_alias(last, &[], &mut BTreeSet::new()) {
             return expanded;
         }
     }
-    // 名义 `Array<T>` 与语法糖 `[T]` 共用 `ValkyrieType::Array`（语言数组身份）。
-    // 解析期完成名→结构化类型；后续不得再按 `"Array"` 字符串猜。
-    if last.as_str() == "Array" && arguments.len() == 1 {
-        return ValkyrieType::Array(Box::new(arguments.into_iter().next().expect("len checked")));
-    }
-    if arguments.is_empty() { base } else { ValkyrieType::Apply(Box::new(base), arguments) }
+    base
 }
 
-fn is_known_builtin_type_namespace(parts: &[String], last: &str) -> bool {
+fn is_module_root_prefix(name: &str) -> bool {
+    matches!(name, "core" | "std" | "self")
+}
+
+fn is_known_builtin_type_namespace(parts: &[&str], last: &str) -> bool {
     let prefix = &parts[..parts.len().saturating_sub(1)];
     match prefix {
-        [core, primitive] if core == "core" && primitive == "primitive" => canonical_builtin_type(last).is_some(),
-        [core, text] if core == "core" && text == "text" => matches!(last, "char" | "utf8" | "utf16" | "c_str"),
-        [std, text] if std == "std" && text == "text" => matches!(last, "utf8" | "utf16" | "c_str"),
+        ["core", "primitive"] => canonical_builtin_type(last).is_some(),
+        ["core", "text"] => matches!(last, "char" | "utf8" | "utf16" | "c_str"),
+        ["std", "text"] => matches!(last, "utf8" | "utf16" | "c_str"),
         _ => false,
     }
 }
@@ -427,14 +496,21 @@ fn is_known_builtin_type_namespace(parts: &[String], last: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std_data::text::valkyrie::ast::TypePath;
+    use crate::{
+        types::Identifier as HirIdentifier,
+        valkyrie::frontend::ast::{Identifier, NamePath, type_nodes::TypeUnaryNode},
+    };
+    use oak_core::Range;
+
+    fn oak_span(len: usize) -> Range<usize> {
+        Range { start: 0, end: len }
+    }
 
     fn path_type(name: &str) -> TypeExpression {
-        TypeExpression::Path(TypePath {
-            name: std_data::text::valkyrie::ast::NamePath { parts: vec![name.to_string()], span: 0..name.len() },
-            arguments: Vec::new(),
-            span: 0..name.len(),
-        })
+        TypeExpression::Namepath(Box::new(NamePath {
+            parts: vec![Identifier { name: name.to_string(), span: oak_span(name.len()) }],
+            span: oak_span(name.len()),
+        }))
     }
 
     #[test]
@@ -454,32 +530,69 @@ mod tests {
         }
         assert_eq!(canonical_builtin_type("utf8"), Some(ValkyrieType::Utf8));
         assert_eq!(canonical_builtin_type("utf16"), Some(ValkyrieType::Utf16));
-        assert_eq!(canonical_builtin_type("c_str"), Some(ValkyrieType::Named(Identifier::new("c_str"))));
+        assert_eq!(canonical_builtin_type("c_str"), Some(ValkyrieType::Named(HirIdentifier::new("c_str"))));
         assert!(canonical_builtin_type("string").is_none());
     }
 
     #[test]
-    fn nominal_array_path_shares_identity_with_bracket_sugar() {
-        let sugar = TypeExpression::Array {
-            item: Box::new(path_type("i32")),
-            span: 0..0,
-        };
-        let nominal = TypeExpression::Path(TypePath {
-            name: std_data::text::valkyrie::ast::NamePath { parts: vec!["Array".to_string()], span: 0..5 },
-            arguments: vec![path_type("i32")],
-            span: 0..5,
-        });
-        let qualified = TypeExpression::Path(TypePath {
-            name: std_data::text::valkyrie::ast::NamePath {
-                parts: vec!["std".into(), "collection".into(), "Array".into()],
-                span: 0..20,
-            },
-            arguments: vec![path_type("i32")],
-            span: 0..20,
-        });
+    fn std_text_utf16_path_lowers_to_utf16_builtin() {
+        let path = TypeExpression::Namepath(Box::new(NamePath {
+            parts: vec![
+                Identifier { name: "std".into(), span: oak_span(3) },
+                Identifier { name: "text".into(), span: oak_span(4) },
+                Identifier { name: "utf16".into(), span: oak_span(5) },
+            ],
+            span: oak_span(14),
+        }));
+        assert_eq!(lower_type_expression(&path), ValkyrieType::Utf16);
+    }
+
+    #[test]
+    fn generic_apply_type_lowers_to_hir_apply() {
+        use crate::valkyrie::frontend::ast::type_nodes::ApplyType;
+
+        let apply =
+            TypeExpression::Apply(Box::new(ApplyType { base: path_type("Option"), arguments: vec![path_type("i32")], span: oak_span(0) }));
+        let lowered = lower_type_expression(&apply);
+        assert_eq!(
+            lowered,
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(HirIdentifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }],),
+        );
+    }
+
+    #[test]
+    fn named_array_is_not_structural_bracket_sugar() {
+        use crate::valkyrie::frontend::ast::type_nodes::ApplyType;
+        let named =
+            TypeExpression::Apply(Box::new(ApplyType { base: path_type("Array"), arguments: vec![path_type("i32")], span: oak_span(0) }));
+        assert_eq!(
+            lower_type_expression(&named),
+            ValkyrieType::Apply(Box::new(ValkyrieType::Named(HirIdentifier::new("Array"))), vec![ValkyrieType::Integer32 { signed: true }],)
+        );
+    }
+
+    #[test]
+    fn dotted_module_type_path_keeps_full_name() {
+        let path = TypeExpression::Namepath(Box::new(NamePath {
+            parts: vec![
+                Identifier { name: "leetcode".into(), span: oak_span(8) },
+                Identifier { name: "two_sum".into(), span: oak_span(7) },
+                Identifier { name: "Solution".into(), span: oak_span(8) },
+            ],
+            span: oak_span(25),
+        }));
+        assert_eq!(lower_type_expression(&path), ValkyrieType::Named(HirIdentifier::new("leetcode.two_sum.Solution")));
+    }
+
+    #[test]
+    fn bracket_sugar_lowers_to_array() {
+        let sugar = TypeExpression::Unary(Box::new(TypeUnaryNode {
+            operator: ValkyrieTokenType::BracketL,
+            base: path_type("i32"),
+            length: None,
+            span: oak_span(0),
+        }));
         let expected = ValkyrieType::Array(Box::new(ValkyrieType::Integer32 { signed: true }));
         assert_eq!(lower_type_expression(&sugar), expected);
-        assert_eq!(lower_type_expression(&nominal), expected);
-        assert_eq!(lower_type_expression(&qualified), expected);
     }
 }

@@ -1,6 +1,3 @@
-//! AWSL 文本格式化（CST → Document）。
+//! AWSL 文本格式化（Oak token-gap；解析在 `oak-awsl`）。
 
-mod cst_format;
 pub(crate) mod source_format;
-
-pub use cst_format::format_awsl_cst;

@@ -13,6 +13,10 @@ use crate::{Identifier, SourceSpan};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirTrait {
+    /// Compiler 为 trait 本体分配的声明身份。
+    pub declaration: Option<nyar_types::ItemId>,
+    /// Oak 语法所声明的 namespace；只用于 Resolver 输入及诊断。
+    pub declaring_namespace: crate::NamePath,
     /// The name of the trait.
     pub name: Identifier,
     /// Documentation for the trait.

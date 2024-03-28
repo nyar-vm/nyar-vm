@@ -266,12 +266,12 @@ fn test_where_clause() {
     let where_clause = WhereClause::new(
         vec![
             WhereBound {
-                ty: ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
+                ty: ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
                 traits: vec![make_trait_name("Display")],
                 span: None,
             },
             WhereBound {
-                ty: ValkyrieType::Generic(GenericType { name: Identifier::new("U"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
+                ty: ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("U"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
                 traits: vec![make_trait_name("Clone")],
                 span: None,
             },
@@ -526,7 +526,7 @@ fn test_associated_type_constraint_with_nested_function_and_associated_type_mism
 #[test]
 fn test_where_clause_uses_binding_from_associated_type_constraint() {
     let mut solver = ConstraintSolver::new();
-    let generic_t = ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] });
+    let generic_t = ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] });
 
     solver.register_associated_type_impl(
         ValkyrieType::Named(Identifier::new("MapperFactory")),
@@ -568,7 +568,7 @@ fn test_where_clause_uses_binding_from_associated_type_constraint() {
 #[test]
 fn test_where_clause_reports_trait_error_after_associated_type_binding() {
     let mut solver = ConstraintSolver::new();
-    let generic_t = ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] });
+    let generic_t = ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] });
 
     solver.register_associated_type_impl(
         ValkyrieType::Named(Identifier::new("MapperFactory")),
@@ -647,7 +647,7 @@ fn test_where_clause_empty() {
 
     let mut clause = WhereClause::empty();
     clause.add_bound(WhereBound {
-        ty: ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
+        ty: ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
         traits: vec![make_trait_name("Display")],
         span: None,
     });
@@ -731,7 +731,7 @@ fn test_unity_variant_subtype() {
     let option_enum = HirEnum {
         name: Identifier::new("Option"),
         is_unity: true,
-        generics: vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
+        generics: vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
         variants: vec![
             HirVariant { name: Identifier::new("Some"), doc: Default::default(), fields: vec![], result_type: None, discriminator: None },
             HirVariant { name: Identifier::new("None"), doc: Default::default(), fields: vec![], result_type: None, discriminator: None },
@@ -760,7 +760,7 @@ fn test_gadt_variant_result_type_subtype() {
     let expr_enum = HirEnum {
         name: Identifier::new("Expr"),
         is_unity: true,
-        generics: vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
+        generics: vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
         variants: vec![
             HirVariant {
                 name: Identifier::new("Literal"),
@@ -781,7 +781,7 @@ fn test_gadt_variant_result_type_subtype() {
                 fields: vec![],
                 result_type: Some(ValkyrieType::Apply(
                     Box::new(ValkyrieType::Named(Identifier::new("Expr"))),
-                    vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                    vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
                 )),
                 discriminator: None,
             },
@@ -815,7 +815,7 @@ fn test_gadt_variant_result_type_matches_nested_tuple_pattern() {
     let pair_expr_enum = HirEnum {
         name: Identifier::new("PairExpr"),
         is_unity: true,
-        generics: vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
+        generics: vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
         variants: vec![HirVariant {
             name: Identifier::new("PairValue"),
             doc: Default::default(),
@@ -823,8 +823,8 @@ fn test_gadt_variant_result_type_matches_nested_tuple_pattern() {
             result_type: Some(ValkyrieType::Apply(
                 Box::new(ValkyrieType::Named(Identifier::new("PairExpr"))),
                 vec![ValkyrieType::Tuple(vec![
-                    ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
-                    ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
+                    ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
+                    ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
                 ])],
             )),
             discriminator: None,
@@ -860,7 +860,7 @@ fn test_gadt_variant_result_type_matches_function_with_nested_apply_tuple_return
     let callable_enum = HirEnum {
         name: Identifier::new("Callable"),
         is_unity: true,
-        generics: vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
+        generics: vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
         variants: vec![HirVariant {
             name: Identifier::new("Duplicator"),
             doc: Default::default(),
@@ -868,12 +868,12 @@ fn test_gadt_variant_result_type_matches_function_with_nested_apply_tuple_return
             result_type: Some(ValkyrieType::Apply(
                 Box::new(ValkyrieType::Named(Identifier::new("Callable"))),
                 vec![ValkyrieType::Function(FunctionType {
-                    params: vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                    params: vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
                     return_type: Box::new(ValkyrieType::Apply(
                         Box::new(ValkyrieType::Named(Identifier::new("Boxed"))),
                         vec![ValkyrieType::Tuple(vec![
-                            ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
-                            ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
+                            ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
+                            ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
                         ])],
                     )),
                 })],
@@ -937,8 +937,8 @@ fn test_gadt_variant_result_type_matches_function_with_nested_associated_type() 
         name: Identifier::new("StreamCallable"),
         is_unity: true,
         generics: vec![
-            GenericType { name: Identifier::new("Iter"), kind: HirKind::Type, bounds: vec![] },
-            GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] },
+            GenericType { binder: None, name: Identifier::new("Iter"), kind: HirKind::Type, bounds: vec![] },
+            GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] },
         ],
         variants: vec![HirVariant {
             name: Identifier::new("NextMapper"),
@@ -947,26 +947,26 @@ fn test_gadt_variant_result_type_matches_function_with_nested_associated_type() 
             result_type: Some(ValkyrieType::Apply(
                 Box::new(ValkyrieType::Named(Identifier::new("StreamCallable"))),
                 vec![
-                    ValkyrieType::Generic(GenericType { name: Identifier::new("Iter"), kind: HirKind::Type, bounds: vec![] }),
+                    ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("Iter"), kind: HirKind::Type, bounds: vec![] }),
                     ValkyrieType::Function(FunctionType {
-                        params: vec![ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                        params: vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
                         return_type: Box::new(ValkyrieType::Apply(
                             Box::new(ValkyrieType::Named(Identifier::new("Boxed"))),
                             vec![ValkyrieType::Tuple(vec![
                                 ValkyrieType::Associated(AssociatedType {
                                     base: Box::new(ValkyrieType::Generic(GenericType {
-                                        name: Identifier::new("Iter"),
+                                        binder: None, name: Identifier::new("Iter"),
                                         kind: HirKind::Type,
                                         bounds: vec![],
                                     })),
                                     name: Identifier::new("Item"),
                                     type_arguments: vec![ValkyrieType::Generic(GenericType {
-                                        name: Identifier::new("T"),
+                                        binder: None, name: Identifier::new("T"),
                                         kind: HirKind::Type,
                                         bounds: vec![],
                                     })],
                                 }),
-                                ValkyrieType::Generic(GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
+                                ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
                             ])],
                         )),
                     }),
@@ -1061,8 +1061,8 @@ fn test_unity_variant_subtype_with_type_args() {
         name: Identifier::new("Result"),
         is_unity: true,
         generics: vec![
-            GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] },
-            GenericType { name: Identifier::new("E"), kind: HirKind::Type, bounds: vec![] },
+            GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] },
+            GenericType { binder: None, name: Identifier::new("E"), kind: HirKind::Type, bounds: vec![] },
         ],
         variants: vec![
             HirVariant { name: Identifier::new("Fine"), doc: Default::default(), fields: vec![], result_type: None, discriminator: None },
@@ -1093,7 +1093,7 @@ fn test_unity_variant_not_subtype_of_different_unity() {
     let option_enum = HirEnum {
         name: Identifier::new("Option"),
         is_unity: true,
-        generics: vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
+        generics: vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
         variants: vec![
             HirVariant { name: Identifier::new("Some"), doc: Default::default(), fields: vec![], result_type: None, discriminator: None },
             HirVariant { name: Identifier::new("None"), doc: Default::default(), fields: vec![], result_type: None, discriminator: None },
@@ -1106,8 +1106,8 @@ fn test_unity_variant_not_subtype_of_different_unity() {
         name: Identifier::new("Result"),
         is_unity: true,
         generics: vec![
-            GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] },
-            GenericType { name: Identifier::new("E"), kind: HirKind::Type, bounds: vec![] },
+            GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] },
+            GenericType { binder: None, name: Identifier::new("E"), kind: HirKind::Type, bounds: vec![] },
         ],
         variants: vec![
             HirVariant { name: Identifier::new("Fine"), doc: Default::default(), fields: vec![], result_type: None, discriminator: None },
@@ -1136,7 +1136,7 @@ fn test_unity_subtype_constraint() {
     let option_enum = HirEnum {
         name: Identifier::new("Option"),
         is_unity: true,
-        generics: vec![GenericType { name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
+        generics: vec![GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }],
         variants: vec![
             HirVariant { name: Identifier::new("Some"), doc: Default::default(), fields: vec![], result_type: None, discriminator: None },
             HirVariant { name: Identifier::new("None"), doc: Default::default(), fields: vec![], result_type: None, discriminator: None },
