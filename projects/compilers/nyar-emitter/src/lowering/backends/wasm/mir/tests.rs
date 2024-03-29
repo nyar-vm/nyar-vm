@@ -8,7 +8,7 @@
     use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout};
     use std::collections::BTreeMap;
     use std::sync::Arc;
-    use std_data::binary::wasm::{TYPE_FORM_ARRAY, TYPE_FORM_STRUCT, VALTYPE_ANYREF, VALTYPE_I32, VALTYPE_REF, WasmGcOpcode, WasmMiscOpcode, WasmOpcode};
+    use acorn_wasm::{TYPE_FORM_ARRAY, TYPE_FORM_STRUCT, VALTYPE_ANYREF, VALTYPE_I32, VALTYPE_REF, WasmGcOpcode, WasmMiscOpcode, WasmOpcode};
 
     #[test]
     fn mir_wasm_module_includes_memory_and_copy_for_aggregate_copy() {
@@ -29,6 +29,8 @@
             }],
             value_type_names: ["Point".to_string()].into_iter().collect(),
             type_name_to_layout: [("Point".to_string(), 1)].into_iter().collect(),
+            declaration_to_layout: Default::default(),
+            value_type_declarations: Default::default(),
         };
         let mut mir_map = std::collections::BTreeMap::new();
         mir_map.insert(
@@ -222,6 +224,8 @@
             }],
             value_type_names: ["Point".to_string()].into_iter().collect(),
             type_name_to_layout: [("Point".to_string(), 1)].into_iter().collect(),
+            declaration_to_layout: Default::default(),
+            value_type_declarations: Default::default(),
         };
         submission.entry_operation = Some(QualifiedName::new(vec![nyar::Identifier::new("main")]));
         let mut mir_map = std::collections::BTreeMap::new();
@@ -422,6 +426,8 @@
             }],
             value_type_names: [].into_iter().collect(),
             type_name_to_layout: [("Foo".to_string(), 1)].into_iter().collect(),
+            declaration_to_layout: Default::default(),
+            value_type_declarations: Default::default(),
         };
         submission
     }
@@ -831,6 +837,8 @@
             }],
             value_type_names: ["Diag".to_string()].into_iter().collect(),
             type_name_to_layout: [("Diag".to_string(), 1)].into_iter().collect(),
+            declaration_to_layout: Default::default(),
+            value_type_declarations: Default::default(),
         };
         let value_types: BTreeMap<ValueRef, NyarType> = [
             (ValueRef(0), NyarType::Named(nyar::Identifier::new("Diag"))),
@@ -919,6 +927,8 @@
             }],
             value_type_names: ["Point".to_string()].into_iter().collect(),
             type_name_to_layout: [("Point".to_string(), 1)].into_iter().collect(),
+            declaration_to_layout: Default::default(),
+            value_type_declarations: Default::default(),
         };
         attach_functions(
             &mut submission,

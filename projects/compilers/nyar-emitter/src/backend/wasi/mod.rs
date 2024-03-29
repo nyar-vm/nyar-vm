@@ -1,7 +1,7 @@
 //! `WebAssembly` 二进制后端容器入口，覆盖 `WasmJsGlue` 与 `WasiComponent` 两种宿主边界。
 //!
-//! 这里按 `wasm / wat / wit` 三个输出格式收口，
-//! 相关格式模型与编解码统一由 `std-data` 提供。
+//! 这里按 `wasm / wat / wit` 三个输出格式收口。
+//! `WASM` 二进制模型与编解码由 `acorn-wasm` 提供；组件 `WIT` 文本由本模块直接生成。
 
 #![warn(missing_docs)]
 
@@ -19,20 +19,14 @@ use nyar::{
 };
 
 use crate::backend::binding_builders::{BindingGenerationContext, generate_host_binding_artifacts};
-use std_data::binary::wasm::{parse_export_section, parse_import_section};
+use acorn_wasm::{parse_export_section, parse_import_section};
 
+pub use acorn_wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection};
 pub use component::WasiPreview;
 pub(crate) use component::{
     WASI_PREVIEW2_VERSION, WASI_PREVIEW3_VERSION, WitBindingBuilder, package_core_wasm_as_component, wasi_adapt_import_for_preview,
     wasi_cli_run_export_name, wasi_cli_run_export_name_for, wasi_versioned_import_module, wasi_versioned_import_module_for,
     write_component_wit_package, write_component_wit_package_for,
-};
-pub use std_data::{
-    binary::wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection},
-    text::{
-        wat::{WatDocument, WatError},
-        wit::{WitError, WitInterface, WitPackage},
-    },
 };
 pub use witness_dispatch::{
     WasmTraitFatPointer, WitnessMethodSlot, WitnessTableLayout, materialize_witness_bytes, plan_witness_table_layout, resolve_witness_call,
@@ -114,7 +108,9 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
     fn validate(&self, input: &Self::Input) -> Result<()> {
         match input.host_boundary {
             HostProjectionBoundary::WasmJsGlue | HostProjectionBoundary::WasiComponent => {}
-            other => return Err(miette::miette!("`WASM` 后端只支持 `WasmJsGlue/WasiComponent`，实际得到 {:?}", other)),
+            other => {
+                return Err(miette::miette!("`WASM` 后端只支持 `WasmJsGlue/WasiComponent`，实际得到 {:?}", other));
+            }
         };
 
         // This is intentionally a physical gate, separate from Semantic MIR
@@ -141,9 +137,7 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
             _ => unreachable!(),
         };
         if !exports.contains(required_entry) {
-            if !input.library_wasm_exports.is_empty()
-                && input.library_wasm_exports.iter().all(|name| exports.contains(name))
-            {
+            if !input.library_wasm_exports.is_empty() && input.library_wasm_exports.iter().all(|name| exports.contains(name)) {
                 return Ok(());
             }
             return Err(miette::miette!("WASM pre-emission verifier: required `{required_entry}` function export is absent"));
@@ -180,13 +174,16 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
                     package_core_wasm_as_component(&core_wasm_path, &wit_package_path, &component_path)?;
                 }
             }
-            other => return Err(miette::miette!("`WASM` 后端不支持的 host boundary：{:?}", other)),
+            other => {
+                return Err(miette::miette!("`WASM` 后端不支持的 host boundary：{:?}", other));
+            }
         }
 
         let mut artifacts = ArtifactSet::default();
         let core_path = if matches!(input.host_boundary, HostProjectionBoundary::WasmJsGlue) {
             format!("{artifact_stem}.wasm")
-        } else {
+        }
+        else {
             format!("{artifact_stem}.core.wasm")
         };
         artifacts.push(ArtifactDescriptor {

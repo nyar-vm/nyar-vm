@@ -6,15 +6,17 @@
 
 use std::{fs, path::Path};
 
+use acorn_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
 use miette::{IntoDiagnostic, Result, WrapErr};
 use nyar::{
     abstractions::ArtifactFormat,
     packaging::{ArtifactDescriptor, TargetLane},
 };
-use std_data::binary::wasm::{parse_export_section, WasmBinaryModule, WasmExternalKind};
 
-use crate::backend::binding_builders::{BindingGenerationContext, HostBindingBuilder};
-use crate::nyar_backend_wasi::WasmPackageKind;
+use crate::{
+    backend::binding_builders::{BindingGenerationContext, HostBindingBuilder},
+    nyar_backend_wasi::WasmPackageKind,
+};
 
 /// `WASM + JS glue` 宿主绑定生成器。
 pub(crate) struct JsGlueBindingBuilder;
@@ -29,11 +31,7 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
             WasmPackageKind::Library => true,
             WasmPackageKind::Binary => false,
         };
-        let library_invoke = if library_mode {
-            read_library_invoke_spec(&wasm_path)
-        } else {
-            None
-        };
+        let library_invoke = if library_mode { read_library_invoke_spec(&wasm_path) } else { None };
         let launcher = build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref());
         fs::write(&launcher_path, launcher).into_diagnostic().wrap_err_with(|| format!("写入 Node 启动壳失败：{}", launcher_path.display()))?;
 
@@ -147,17 +145,17 @@ fn render_import_object_literal(imports: &[(String, String)]) -> String {
 /// 不注入伪导入，确保非 CLI 产物的 `stdout` 不被污染。
 /// Library wasm modules export explicit `[export]` symbols (e.g. `twoSum`) without `main`.
 fn is_library_wasm_module(wasm_path: &Path) -> bool {
-    let Ok(bytes) = fs::read(wasm_path) else {
+    let Ok(bytes) = fs::read(wasm_path)
+    else {
         return false;
     };
-    let Ok(module) = WasmBinaryModule::from_bytes(&bytes) else {
+    let Ok(module) = WasmBinaryModule::from_bytes(&bytes)
+    else {
         return false;
     };
     let exports = parse_export_section(&module);
     let has_entry = exports.iter().any(|item| item.name == "main" || item.name == "_start");
-    let has_named_function = exports.iter().any(|item| {
-        item.kind == WasmExternalKind::Func && item.name != "main" && item.name != "_start"
-    });
+    let has_named_function = exports.iter().any(|item| item.kind == WasmExternalKind::Func && item.name != "main" && item.name != "_start");
     has_named_function && !has_entry
 }
 
@@ -205,7 +203,7 @@ function demarshalLibraryReturn(kind, value) {{
         const out = [];
         const at = exports[GLUE_LIST_I64.at];
         for (let i = 0; i < len; i++) {{
-            // V `ArrayList` 下标为 1-based ordinal（与 `⁅cardinal⁆` 一致）。
+            // V `ArrayList.at` 使用序数索引（1-based）；JS 循环 `i` 是基数（0-based），故传 `i + 1`。
             out.push(Number(at(value, i + 1)));
         }}
         return out;
@@ -247,7 +245,8 @@ let exports;"#,
         else {
             r#"const importObject = {};
 let wasmInstance;
-let exports;"#.to_string()
+let exports;"#
+                .to_string()
         }
     }
     else if has_imports {
@@ -575,13 +574,15 @@ const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
 "#,
                 marshaler = marshaler
             )
-        } else {
+        }
+        else {
             String::new()
         },
         cli_dispatch = if library_mode { "" } else { cli_dispatch },
         executable_tail = if library_mode {
             String::new()
-        } else {
+        }
+        else {
             format!(
                 r#"const exports = instance.exports;
 const entry = exports.main ?? exports._start;

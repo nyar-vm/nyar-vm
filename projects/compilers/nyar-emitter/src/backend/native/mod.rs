@@ -5,15 +5,15 @@ mod executable;
 
 use std::path::PathBuf;
 
+use crate::transitional::binary::{
+    coff::{CoffMachine, CoffObjectWriter, CoffSection, CoffSymbol, coff_object_from_sections},
+    pe::extract_pe_section,
+};
 use miette::{IntoDiagnostic, Result, WrapErr, miette};
 use nyar::{
     abstractions::{ArtifactFormat, BackendInputKind, BinaryArch, BinaryFlavor, BinaryTarget, TargetFamily},
     backends::{BackendDescriptor, CompilationOptions, TargetCodeGenBackend},
     packaging::{ArtifactDescriptor, ArtifactSet, TargetLane},
-};
-use std_data::binary::{
-    coff::{CoffMachine, CoffObjectWriter, CoffSection, CoffSymbol, coff_object_from_sections},
-    pe::extract_pe_section,
 };
 
 pub use executable::{NativeExecutableError, NativeExecutableKind, classify_native_executable};

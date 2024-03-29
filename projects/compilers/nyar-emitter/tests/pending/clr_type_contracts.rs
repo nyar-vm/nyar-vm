@@ -20,6 +20,8 @@ fn value_storage_emits_msil_value_type_def() {
         }],
         value_type_names: BTreeSet::from(["Point".to_string()]),
         type_name_to_layout: BTreeMap::from([("Point".to_string(), 1)]),
+        declaration_to_layout: BTreeMap::new(),
+        value_type_declarations: BTreeSet::new(),
     };
 
     let types = build_clr_type_defs(&plan);
@@ -46,6 +48,8 @@ fn reference_storage_emits_msil_reference_type_def() {
         }],
         value_type_names: BTreeSet::new(),
         type_name_to_layout: BTreeMap::from([("Widget".to_string(), 2)]),
+        declaration_to_layout: BTreeMap::new(),
+        value_type_declarations: BTreeSet::new(),
     };
 
     let types = build_clr_type_defs(&plan);

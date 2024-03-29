@@ -1,5 +1,5 @@
 use nyar_bytecode::{NyarConstant, NyarFunction, NyarModuleData};
-use std_data::binary::{
+use nyar_emitter::transitional::binary::{
     elf::{NativeElfImage, NativeElfWriter, SharedElfImage, SharedElfWriter, SharedObjectExport},
     pe::{NativePeImage, NativePeWriter},
 };

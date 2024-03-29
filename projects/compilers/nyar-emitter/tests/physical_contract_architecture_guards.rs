@@ -2,10 +2,14 @@
 
 use std::{fs, path::PathBuf};
 
+fn production_source(source: String) -> String {
+    source.split("#[cfg(test)]").next().expect("source prefix must exist").to_string()
+}
+
 #[test]
 fn physical_contract_is_free_of_legacy_semantic_fallbacks() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lowering/features/physical_contract.rs");
-    let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let source = production_source(fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display())));
     for pattern in [
         ".symbol.contains(",
         ".symbol.starts_with(",

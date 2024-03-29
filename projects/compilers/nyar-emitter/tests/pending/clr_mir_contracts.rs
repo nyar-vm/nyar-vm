@@ -186,6 +186,8 @@ fn emits_msil_type_defs_for_value_layout_plan() {
         }],
         value_type_names: BTreeSet::from(["Point".to_string()]),
         type_name_to_layout: BTreeMap::from([("Point".to_string(), 1)]),
+        declaration_to_layout: BTreeMap::new(),
+        value_type_declarations: BTreeSet::new(),
     };
     let mir_fn = MirFunction {
         symbol: "main".to_string(),
@@ -1012,6 +1014,8 @@ fn unite_payload_field_get_ignores_stale_algebraic_term_layout() {
         ],
         value_type_names: BTreeSet::from(["AlgebraicTerm".to_string()]),
         type_name_to_layout: BTreeMap::from([("AlgebraicTerm".to_string(), 1), ("Result".to_string(), 2)]),
+        declaration_to_layout: BTreeMap::new(),
+        value_type_declarations: BTreeSet::new(),
     };
     let mir_fn = MirFunction {
         symbol: "std::data::text::von::parse_von_tokens".to_string(),

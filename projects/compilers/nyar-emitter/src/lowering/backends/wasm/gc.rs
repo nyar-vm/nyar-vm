@@ -1,10 +1,8 @@
 //! Mandatory wasm-gc type builders for Valkyrie reference semantics on wasm/wasi.
+use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmValueType, encode_arraytype_raw, encode_structtype_raw};
 use nyar::NyarType;
-use std_data::binary::wasm::{
-    VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmValueType, encode_arraytype_raw, encode_structtype_raw,
-};
 
-/// Abbreviated nyref valtype byte (semantic alias into std-data).
+/// Abbreviated `anyref` valtype byte (`acorn-wasm` `VALTYPE_ANYREF`).
 pub(crate) const WASM_GC_ANYREF: u8 = VALTYPE_ANYREF;
 
 /// WASM-GC structtype 类型段条目。

@@ -1,25 +1,25 @@
 //! `CLR` 二进制后端。
 //!
 //! 直接写入 `PE/COFF` 二进制，不依赖 `ilasm`，保证跨平台可用。
-//! `MSIL / PE / COFF` 格式模型与编解码统一由 `std-data` 提供。
+//! `MSIL / PE / COFF` 格式模型经 [`crate::transitional`] 过渡，待迁入 Acorn。
 
 #![warn(missing_docs)]
 
 pub mod hosting;
 mod msil_text_writer;
 
-pub use hosting::{DotNetFramework, DotNetRuntimeConfig, DotNetRuntimeOptions, write_dotnet_deps_json, write_dotnet_runtime_config};
-pub use msil_text_writer::MsilTextWriter;
-pub use std_data::{
+pub use crate::transitional::{
     binary::{
         coff::{CoffHeader, CoffMachine, CoffObject, CoffRelocation, CoffRelocationKind, CoffSection, CoffSymbol},
         pe::{ClrMetadataBuilder, ClrMetadataError, PeWriter, PeWriterError, PeWriterOptions},
     },
-    text::msil::{
+    msil::{
         MethodBodyEncoder, MethodBodyError, MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef,
         MsilMethodSignature, MsilModule, MsilOpcode, MsilParser, MsilTextMethod, MsilType, MsilTypeDef,
     },
 };
+pub use hosting::{DotNetFramework, DotNetRuntimeConfig, DotNetRuntimeOptions, write_dotnet_deps_json, write_dotnet_runtime_config};
+pub use msil_text_writer::MsilTextWriter;
 
 use std::path::PathBuf;
 
