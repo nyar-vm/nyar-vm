@@ -13,7 +13,7 @@ fn env_lock() -> &'static Mutex<()> {
 }
 
 fn with_isolated_home<T>(f: impl FnOnce(&Path) -> T) -> T {
-    let _guard = env_lock().lock().expect("env lock");
+    let _guard = env_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let home = TempDir::new().expect("temp home");
     let previous = std::env::var_os("NYAR_HOME");
     // SAFETY: guarded by process-wide mutex for these tests.
@@ -34,7 +34,7 @@ fn write_package_fixture(dir: &Path, name: &str, version: &str) {
     std::fs::write(
         dir.join("package.von"),
         format!(
-            "{{\n    name: \"{name}\",\n    version: \"{version}\",\n    description: \"smoke package\",\n    publishConfig: {{\n        registry: \"npm\",\n        access: \"public\",\n        tag: \"latest\",\n    }},\n}}\n"
+            "{{\n    name: \"{name}\",\n    version: \"{version}\",\n    publishConfig: {{\n        registry: \"npm\",\n        access: \"public\",\n        tag: \"latest\",\n    }},\n}}\n"
         ),
     )
     .expect("write package.von");
@@ -80,7 +80,6 @@ fn write_publish_target_fixture(dir: &Path) {
         r#"{
     name: "smoke.tools",
     version: "workspace",
-    description: "smoke publish-target package",
     publish: [
         {
             target: "node",

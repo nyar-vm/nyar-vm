@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use oak_von::from_str;
 use serde::{Deserialize, Serialize};
-use std_data::text::von::from_str;
 
 use crate::{PackageManagerError, PackageManifest, ProjectLayout, Result};
 
@@ -12,9 +12,9 @@ use crate::{PackageManagerError, PackageManifest, ProjectLayout, Result};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct WorkspaceManifest {
     #[serde(default)]
-    pub name: Option<String>,
+    pub name: String,
     #[serde(default)]
-    pub version: Option<String>,
+    pub version: String,
     #[serde(default)]
     pub members: Vec<String>,
 }
