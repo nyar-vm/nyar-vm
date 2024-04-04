@@ -4,30 +4,30 @@ A Scala language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-scala` is a compiler frontend that brings the Scala programming language to the Nyar VM. It provides a modern, expressive runtime for Scala applications, mapping Scala's unique features—like implicit parameters and algebraic data types—to Nyar's native execution engine and algebraic effects.
+`rusty-scala` brings Scala to the Nyar VM, mapping implicit parameters, algebraic data types, and other Scala features to the Nyar execution engine and algebraic effects.
 
 ## Features
 
-- **Modern & Concise**: Full support for Scala's expressive syntax and functional programming features.
-- **Strong Typing**: Maintains Scala's powerful type system guarantees during the lowering process to Gaia IR.
-- **Managed Object Model**: Maps Scala classes, traits, and objects to Nyar's native object system.
-- **JIT Optimization**: Optimized execution of hot Scala code paths via `nyar-jit`.
+- **Modern and concise**: Scala expressiveness and functional features.
+- **Strong typing**: Scala type guarantees preserved when lowering to Gaia IR.
+- **Managed object model**: classes, traits, and objects mapped to the Nyar object system.
+- **JIT optimization**: hot Scala paths optimized via `nyar-jit`.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `class`, `trait`, `object`, `def`, `val`, `var`.
-- **Functional Features**: Lambdas, higher-order functions, and pattern matching.
-- **Standard Library**: Initial support for core Scala standard library functions.
+- **Core syntax**: `class`, `trait`, `object`, `def`, `val`, `var`.
+- **Functional**: lambdas, higher-order functions, pattern matching.
+- **Standard library**: initial support for the Scala standard library core.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run main.scala
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_scala::RustyScalaFrontend;

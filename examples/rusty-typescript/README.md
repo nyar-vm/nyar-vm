@@ -4,40 +4,40 @@ A TypeScript language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-typescript` is a sophisticated compiler frontend for the TypeScript language, targeting the Nyar VM. It supports modern TypeScript features, including decorators and JSX, and provides both JIT (via `nyar-vm`) and AOT (compiling to WebAssembly) execution paths.
+`rusty-typescript` targets modern TypeScript with decorators and JSX, supporting both JIT execution on `nyar-vm` and AOT compilation to WebAssembly.
 
 ## Features
 
-- **Modern TypeScript Support**: Includes support for decorators, JSX/TSX, and modern ES features.
-- **Dual-Mode Execution**:
-  - **JIT Mode**: Compiles to Gaia IR for execution on `nyar-vm` with dynamic optimizations.
-  - **AOT Mode**: Compiles directly to WebAssembly (WASM) for deployment in browser or edge environments.
-- **Robust Type System**: Integrated with `nyar-aot` for constraint-based type analysis and optimization.
-- **WASM Interop**: Built-in support for generating WASM modules using `wit-bindgen`.
-- **Optimization Pipeline**: Uses E-Graph equality saturation for high-quality code generation.
+- **Modern TypeScript**: decorators, JSX/TSX, and contemporary ES features.
+- **Dual execution**:
+  - **JIT**: lowers to unified IR and runs on `nyar-vm` with dynamic optimization.
+  - **AOT**: emits WebAssembly for browser or edge deployment.
+- **Type system**: integrates with `nyar-aot` for constraint analysis.
+- **WASM interop**: WASM modules via `wit-bindgen` integration paths.
+- **Optimization**: E-Graph saturation improves emitted code quality.
 
-## Supported Constructs
+## Supported constructs
 
-- **TS-Specific Features**: Interfaces, Enums, Type Aliases, Generics, Decorators.
-- **Modern JavaScript**: Classes, Modules (ESM), Async/Await, Destructuring.
-- **JSX/TSX**: Direct support for React-style components and templating.
-- **Metaprogramming**: Integrated with Nyar's macro and reflection systems.
+- **TS features**: interfaces, enums, type aliases, generics, decorators.
+- **Modern JavaScript**: classes, ESM, async/await, destructuring.
+- **JSX/TSX**: React-style components and templates.
+- **Metaprogramming**: hooks into Nyar macro and reflection facilities where enabled.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run script.ts
 ```
 
-### Compiling to WebAssembly
+### Compile to WebAssembly
 
 ```bash
 nyar compile script.ts -o output.wasm
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_typescript::RustyTypescriptFrontend;
@@ -45,7 +45,6 @@ use nyar_types::NyarFrontend;
 
 let frontend = RustyTypescriptFrontend::new();
 let ast = frontend.parse("const x: number = 42; console.log(x);").unwrap();
-// Lower to tree and generate code
 ```
 
 ## License

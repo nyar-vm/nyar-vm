@@ -4,33 +4,33 @@ A C language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-c` is a compiler frontend that allows C source code to be executed on the Nyar VM. It provides a bridge between low-level systems programming and Nyar's high-level managed environment, allowing C code to benefit from automatic memory management and JIT optimization.
+`rusty-c` runs C source on the Nyar VM, bridging procedural C with a managed runtime (GC + JIT) instead of a raw native-only process model.
 
 ## Features
 
-- **C99/C11 Compatibility**: Support for standard C syntax and common extensions.
-- **Managed Execution**: C code runs within the `nyar-vm` environment, with automatic garbage collection for heap-allocated memory (via custom `malloc`/`free` mappings).
-- **Pointer Safety**: Implements a safe pointer model within the VM to prevent common C memory errors like buffer overflows.
-- **Nyar Integration**: Translates C's procedural model into efficient Gaia IR.
-- **JIT Optimization**: Hot C functions are automatically compiled to native machine code by `nyar-jit`.
+- **C99/C11 subset**: standard syntax and common extensions.
+- **Managed execution**: heap allocations can route through GC-aware allocators.
+- **Pointer model**: VM-enforced pointer rules to reduce common memory errors.
+- **Nyar integration**: lowers procedural C to efficient unified IR.
+- **JIT**: hot functions compiled by `nyar-jit`.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `struct`, `union`, `enum`, `typedef`.
-- **Control Flow**: `if`, `switch`, `for`, `while`, `do-while`, `goto`.
-- **Functions**: Support for recursion, function pointers, and variadic functions.
-- **Pointers & Arrays**: Multi-dimensional arrays and complex pointer arithmetic.
-- **Preprocessors**: Support for standard C preprocessor directives (via external preprocessor or integrated pass).
+- **Core syntax**: `struct`, `union`, `enum`, `typedef`.
+- **Control flow**: `if`, `switch`, `for`, `while`, `do-while`, `goto`.
+- **Functions**: recursion, function pointers, variadics.
+- **Pointers and arrays**: multi-dimensional arrays and pointer arithmetic (within supported subset).
+- **Preprocessor**: standard C preprocessing (integrated or external pass).
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run main.c
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_c::RustyCFrontend;
@@ -38,7 +38,6 @@ use nyar_types::NyarFrontend;
 
 let frontend = RustyCFrontend::new();
 let ast = frontend.parse("int main() { return 42; }").unwrap();
-// Lower and execute via NyarVM
 ```
 
 ## License

@@ -4,34 +4,34 @@ An F# language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-fsharp` is a compiler frontend that brings the elegance and power of F#—a functional-first language—to the Nyar VM. It enables developers to write concise, correct, and performant code, leveraging Nyar's advanced runtime features like algebraic effects and multi-tier JIT optimization.
+`rusty-fsharp` brings the functional-first F# to the Nyar VM for writing concise, correct, and high-performance code with algebraic effects and multi-tier JIT.
 
 ## Features
 
-- **Functional-First Design**: Robust support for F#'s core functional programming constructs, including immutability, first-class functions, and pattern matching.
-- **Algebraic Effects Integration**: Maps F#'s computation expressions (like `async { ... }` or `seq { ... }`) to Nyar's native algebraic effects and delimited continuations.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Provides high-performance execution for hot functional code paths.
-  - **`nyar-gc`**: Automatic, precise memory management for complex data structures and closures.
-  - **`nyar-aot`**: Supports E-Graph based optimization for pure functional transformations.
-- **Type Safety**: Leverages F#'s strong type system, mapped to Nyar's internal type representation.
+- **Functional-first**: immutability, first-class functions, pattern matching.
+- **Algebraic effects**: computation expressions (e.g. `async { ... }`, `seq { ... }`) mapped to Nyar effects and delimited continuations.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: high-performance execution of hot functional paths.
+  - **`nyar-gc`**: precise memory management for closures and complex structures.
+  - **`nyar-aot`**: E-Graph optimization for pure function transformations.
+- **Type safety**: F#'s strong type system mapped to Nyar internal type representation.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `let` bindings, `module`, `type` definitions (records, unions).
-- **Functions**: Anonymous functions, currying, and partial application.
-- **Pattern Matching**: Exhaustive pattern matching on records and discriminated unions.
-- **Computation Expressions**: Mapping to Nyar's native effect handler system.
+- **Core syntax**: `let`, `module`, `type` (records, unions).
+- **Functions**: anonymous functions, currying, partial application.
+- **Pattern matching**: exhaustive matching on records and discriminated unions.
+- **Computation expressions**: mapped to Nyar effect handlers.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run script.fs
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_fsharp::RustyFSharpFrontend;

@@ -4,33 +4,33 @@ A C# language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-csharp` is a compiler frontend that allows C# source code to be executed on the Nyar VM. It provides a robust, managed environment for C# applications, mapping the .NET-style object model to Nyar's native execution engine and advanced garbage collector.
+`rusty-csharp` executes C# source on the Nyar VM, mapping .NET-style OOP onto Nyar's object system and GC.
 
 ## Features
 
-- **Modern C# Syntax**: Support for a significant subset of modern C# language features.
-- **Managed Object Model**: Maps C# classes, interfaces, and structs to Nyar's native object system.
-- **Algebraic Effects Integration**: Maps C# `async`/`await` and task-based patterns to Nyar's native algebraic effects.
-- **Strong Typing**: Maintains C#'s strong, static type system during the lowering process to Gaia IR.
-- **JIT Optimization**: Leverages `nyar-jit` for high-performance execution of hot code paths.
+- **Modern C# subset**: contemporary language features where implemented.
+- **Managed object model**: classes, interfaces, structs on Nyar objects.
+- **Algebraic effects**: `async`/`await` and Task patterns on Nyar effects.
+- **Static typing**: preserved through lowering to unified IR.
+- **JIT**: hot paths accelerated by `nyar-jit`.
 
-## Supported Constructs
+## Supported constructs
 
-- **Object-Oriented Features**: Classes, Inheritance, Interfaces, Properties, Events.
-- **Generics**: Support for generic types and methods via Nyar's witness tables.
-- **LINQ**: Support for basic LINQ expressions and query syntax.
-- **Async/Await**: Native support for asynchronous programming.
-- **Standard Library**: Initial support for core `System` namespace types.
+- **OOP**: classes, inheritance, interfaces, properties, events.
+- **Generics**: type and method generics via witness tables.
+- **LINQ**: basic query expressions.
+- **Async/await**: first-class async lowering.
+- **Standard library**: initial `System` namespace coverage.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run Program.cs
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_csharp::RustyCSharpFrontend;
@@ -38,7 +38,6 @@ use nyar_types::NyarFrontend;
 
 let frontend = RustyCSharpFrontend::new();
 let ast = frontend.parse("class Program { static void Main() { System.Console.WriteLine(\"Hello from C#!\"); } }").unwrap();
-// Lower and execute via NyarVM
 ```
 
 ## License

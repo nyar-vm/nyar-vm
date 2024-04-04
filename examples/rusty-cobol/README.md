@@ -4,35 +4,35 @@ A COBOL language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-cobol` is a specialized compiler frontend that brings the venerable COBOL language to the modern Nyar VM ecosystem. It allows legacy business logic and data processing applications to run on a high-performance, JIT-optimized runtime with advanced garbage collection and concurrency support.
+`rusty-cobol` brings COBOL business logic to the modern Nyar VM, enabling legacy data-processing applications to run on a high-performance runtime with JIT optimization, advanced GC, and concurrency support.
 
 ## Features
 
-- **Standard COBOL Support**: Aims to support common COBOL dialects and standards (COBOL-85/2002).
-- **Modern Execution Environment**: Runs COBOL code on the `nyar-vm`, providing benefits like automatic memory management (via `nyar-gc`) and multi-tier JIT optimization.
-- **Data Division Mapping**: Maps COBOL's complex data structures and pictures to Nyar's native types and objects.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Optimizes hot business logic paths and numeric processing.
-  - **`nyar-gc`**: Automatically manages the lifecycle of managed COBOL records.
-  - **`nyar-aot`**: Supports Ahead-of-Time optimization for batch processing modules.
-- **Interoperability**: Seamlessly integrates with modern Nyar languages for hybrid application development.
+- **Standard COBOL**: oriented toward COBOL-85/2002 and other common dialects and standards.
+- **Modern execution environment**: runs on `nyar-vm` with `nyar-gc` and multi-tier JIT.
+- **Data Division mapping**: complex data structures such as PICTURE mapped to Nyar types and objects.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: optimization of hot business logic and numeric processing.
+  - **`nyar-gc`**: managed lifecycle for COBOL records.
+  - **`nyar-aot`**: ahead-of-time optimization for batch processing modules.
+- **Interop**: mixed development with modern Nyar languages.
 
-## Supported Constructs
+## Supported constructs
 
-- **Divisions**: Identification, Environment, Data, and Procedure divisions.
-- **Data Types**: Alphanumeric, Numeric (including fixed-point decimals), and Group items.
-- **Control Flow**: `PERFORM`, `IF`, `EVALUATE`, `GO TO`.
-- **File I/O**: Initial support for standard COBOL file handling operations.
+- **Divisions**: Identification, Environment, Data, Procedure.
+- **Data types**: alphanumeric, numeric (including fixed-point decimal), group items.
+- **Control flow**: `PERFORM`, `IF`, `EVALUATE`, `GO TO`.
+- **File I/O**: initial support for standard COBOL file operations.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run program.cbl
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_cobol::RustyCobolFrontend;

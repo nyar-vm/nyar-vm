@@ -4,34 +4,34 @@ A Julia language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-julia` is a compiler frontend that brings the Julia programming language—known for its combination of high-level ease and low-level performance—to the Nyar VM ecosystem. It targets scientific computing, data analysis, and general-purpose programming by mapping Julia's multiple dispatch and dynamic type system to Nyar's advanced runtime.
+`rusty-julia` brings Julia, combining high-level ease of use with low-level performance, to the Nyar VM for scientific computing and data analysis, mapping multiple dispatch and dynamic typing to the Nyar advanced runtime.
 
 ## Features
 
-- **Multiple Dispatch**: Maps Julia's core multiple dispatch paradigm to Nyar's native virtual call and dynamic dispatch mechanisms.
-- **Just-In-Time Specialization**: Leverages `nyar-jit` to perform type-specialized compilation for hot code paths, similar to Julia's own LLVM-based JIT.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Provides multi-tier optimization (Baseline, Optimizing, Extreme) for numeric kernels.
-  - **`nyar-gc`**: Manages complex object graphs and arrays with high-performance mark-and-sweep.
-  - **`nyar-aot`**: Supports Ahead-of-Time optimization of static Julia modules using E-Graph saturation.
-- **Metaprogramming**: Support for Julia's powerful macro and expression manipulation system, integrated with Nyar's native metaprogramming primitives.
+- **Multiple dispatch**: mapped to Nyar virtual dispatch and dynamic dispatch.
+- **JIT specialization**: `nyar-jit` type-specialized compilation of hot paths, similar to Julia's LLVM JIT.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: multi-tier optimization of numerical kernels.
+  - **`nyar-gc`**: high-performance mark-and-sweep for complex object graphs and arrays.
+  - **`nyar-aot`**: E-Graph ahead-of-time optimization for static Julia modules.
+- **Metaprogramming**: macros and expression manipulation integrated with Nyar metaprogramming primitives.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `function`, `struct`, `module`, `macro`.
-- **Control Flow**: `if`, `while`, `for`, `try/catch`.
-- **Types**: Support for parametric types and abstract type hierarchies.
-- **Arrays**: Native integration with Nyar's array representation for high-performance linear algebra.
+- **Core syntax**: `function`, `struct`, `module`, `macro`.
+- **Control flow**: `if`, `while`, `for`, `try/catch`.
+- **Types**: parametric types and abstract type hierarchies.
+- **Arrays**: integrated with Nyar array representation for linear algebra support.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run analysis.jl
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_julia::RustyJuliaFrontend;

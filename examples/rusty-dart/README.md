@@ -4,35 +4,35 @@ A Dart language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-dart` is a compiler frontend that brings the Dart programming language to the Nyar VM ecosystem. It provides a high-performance runtime for Dart applications, leveraging Nyar's advanced JIT compilation, garbage collection, and algebraic effects for both mobile and server-side scenarios.
+`rusty-dart` brings Dart to the Nyar VM for mobile and server-side scenarios, providing a high-performance runtime with JIT, GC, and algebraic effects.
 
 ## Features
 
-- **Modern Dart Support**: Targeted at modern Dart specifications, including null safety and sound typing.
-- **Efficient Object System**: Maps Dart's class-based object model, mixins, and extensions to Nyar's native object system.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Provides multi-tier optimization (Baseline to Extreme) for hot Dart code.
-  - **`nyar-gc`**: Leverages Nyar's precise garbage collector for high-performance memory management.
-  - **Algebraic Effects**: Maps Dart's `async/await`, `Future`, and `Stream` abstractions to Nyar's native effects and continuations.
-- **Hot Reload Capability**: Designed to support future hot-reload features within the Nyar development environment.
+- **Modern Dart**: modern specifications including null safety and sound typing.
+- **Efficient object system**: classes, mixins, and extensions mapped to the Nyar object system.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: multi-tier optimization from Baseline to Extreme.
+  - **`nyar-gc`**: precise GC for Dart objects.
+  - **Algebraic effects**: `async`/`await`, `Future`, and `Stream` mapped to Nyar effects and continuations.
+- **Hot reload**: design space reserved for hot reload within the Nyar development environment.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `class`, `mixin`, `extension`, `enum`.
-- **Functions**: Support for closures, arrow functions, and optional parameters.
-- **Collections**: Integrated support for Dart Lists, Sets, and Maps.
-- **Async Programming**: Full support for `async`, `await`, and `yield`.
-- **Type System**: Support for Dart's sound type system and null safety checks.
+- **Core syntax**: `class`, `mixin`, `extension`, `enum`.
+- **Functions**: closures, arrow functions, optional parameters.
+- **Collections**: List, Set, Map.
+- **Async**: `async`, `await`, `yield`.
+- **Type system**: sound typing and null-safety checks.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run main.dart
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_dart::RustyDartFrontend;

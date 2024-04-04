@@ -4,23 +4,23 @@ A Clojure language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-clojure` is a compiler frontend that brings the Clojure programming language to the Nyar VM. It provides a functional and concurrent runtime for Clojure applications, mapping Clojure's Lisp-style features to Nyar's native execution engine and algebraic effects.
+`rusty-clojure` brings Clojure to the Nyar VM, providing a runtime for functional and concurrent Clojure programs by mapping Lisp-style features to the Nyar execution engine and algebraic effects.
 
 ## Features
 
-- **Functional & Concurrent**: Support for Clojure's immutable data structures and functional programming model.
-- **Lisp-style Syntax**: Maps Clojure's S-expression based syntax to Nyar's internal representation.
-- **JIT Optimization**: Optimized execution of hot Clojure code paths via `nyar-jit`.
+- **Functional and concurrent**: immutable data structures and a functional programming model.
+- **Lisp syntax**: S-expressions mapped to Nyar internal representation.
+- **JIT optimization**: hot paths optimized via `nyar-jit`.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run main.clj
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_clojure::RustyClojureFrontend;

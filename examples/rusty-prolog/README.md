@@ -4,34 +4,34 @@ A Prolog language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-prolog` is a compiler frontend that brings logic programming to the Nyar VM ecosystem. It maps Prolog's core concepts—unification, backtracking, and logical variables—to Nyar's native algebraic effects and high-performance runtime, enabling the integration of logic-based reasoning into modern applications.
+`rusty-prolog` brings logic programming to the Nyar VM, mapping unification, backtracking, and logic variables to Nyar algebraic effects and a high-performance runtime for integrating logical reasoning into modern applications.
 
 ## Features
 
-- **Logical Reasoning**: Full support for Horn clause logic, unification, and depth-first search.
-- **Algebraic Effects Integration**: Implements Prolog's backtracking and non-deterministic execution using Nyar's native delimited continuations and effect handlers.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Optimizes hot unification paths and recursive predicate calls.
-  - **`nyar-gc`**: Automatically manages the lifecycle of logical variables and choice points.
-  - **`nyar-aot`**: Supports E-Graph based optimization for logical goal transformations.
-- **Interoperability**: Seamlessly call Prolog predicates from other Nyar languages like Python or Rust.
+- **Logical reasoning**: Horn clauses, unification, and depth-first search.
+- **Algebraic effects**: backtracking and nondeterministic execution via delimited continuations and effect handlers.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: optimization of hot unification paths and recursive predicates.
+  - **`nyar-gc`**: lifecycle management for logic variables and choice points.
+  - **`nyar-aot`**: E-Graph optimization of logic goals.
+- **Interop**: Prolog predicates callable from other Nyar languages such as Python and Rust.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: Facts, rules, and queries.
-- **Unification**: Robust implementation of Prolog's unification algorithm.
-- **Control**: Support for the cut (`!`) operator, negation as failure, and logical disjunction.
-- **Builtins**: Standard Prolog predicates for arithmetic, list manipulation, and I/O.
+- **Core syntax**: facts, rules, and queries.
+- **Unification**: Prolog unification algorithm.
+- **Control**: cut `!`, negation as failure, logical or.
+- **Builtins**: standard predicates for arithmetic, lists, I/O, and more.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run knowledge_base.pl
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_prolog::RustyPrologFrontend;

@@ -4,34 +4,34 @@ A Nim language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-nim` is a compiler frontend that brings the Nim programming language—focused on efficiency, expressiveness, and elegant syntax—to the Nyar VM ecosystem. It allows Nim's powerful features to be executed within a managed, JIT-optimized environment, combining the performance of systems programming with the safety of a modern VM.
+`rusty-nim` brings Nim, focused on efficiency, expressiveness, and elegant syntax, to the Nyar VM, combining systems-level performance with modern VM safety in a managed JIT environment.
 
 ## Features
 
-- **Systems Performance with Managed Safety**: Maps Nim's efficient code generation patterns to Nyar's optimized Gaia IR.
-- **Expressive Syntax**: Robust support for Nim's indentation-based syntax and functional features.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Provides multi-tier optimization for hot Nim procedures and loops.
-  - **`nyar-gc`**: Leverages Nyar's precise garbage collector for automatic memory management.
-  - **`nyar-aot`**: Supports E-Graph based saturation optimization for static Nim modules.
-- **Metaprogramming**: Integrated with Nyar's native macro system to support Nim's powerful compile-time code generation.
+- **Systems performance + managed safety**: Nim code-generation patterns mapped to optimized Gaia IR.
+- **Expressive syntax**: indentation-based syntax and functional features.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: multi-tier optimization of hot procedures and loops.
+  - **`nyar-gc`**: precise GC automatic memory management.
+  - **`nyar-aot`**: E-Graph saturation optimization for static Nim modules.
+- **Metaprogramming**: Nim compile-time code generation integrated with the Nyar macro system.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `proc`, `type`, `var`, `let`, `const`.
-- **Control Flow**: `if`, `case`, `while`, `for`, `block`.
-- **Types**: Support for objects, enums, arrays, and sequences.
-- **Templates & Macros**: Basic support for Nim's metaprogramming features.
+- **Core syntax**: `proc`, `type`, `var`, `let`, `const`.
+- **Control flow**: `if`, `case`, `while`, `for`, `block`.
+- **Types**: objects, enums, arrays, sequences.
+- **Templates and macros**: initial support for Nim metaprogramming.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run script.nim
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_nim::RustyNimFrontend;

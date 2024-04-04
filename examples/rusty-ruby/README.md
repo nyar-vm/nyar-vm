@@ -4,34 +4,34 @@ A Ruby language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-ruby` is a high-performance Ruby frontend for the Nyar VM ecosystem. It brings the elegance and programmer-centric philosophy of Ruby to a modern, JIT-optimized runtime, enabling Ruby applications to benefit from advanced features like algebraic effects, multi-tier execution, and precise garbage collection.
+`rusty-ruby` brings Ruby's expressiveness and programmer-friendly philosophy to a modern JIT runtime, with algebraic effects, multi-tier execution, and precise GC.
 
 ## Features
 
-- **Programmer Happiness**: Full support for Ruby's expressive syntax and dynamic object model.
-- **Pure Object Orientation**: Maps Ruby's "everything is an object" model to Nyar's native object system and virtual dispatch.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Optimizes hot Ruby methods and blocks into native machine code.
-  - **`nyar-gc`**: Provides high-performance, precise memory management for managed Ruby objects.
-  - **Algebraic Effects**: Used to implement Ruby's powerful control flow, including blocks, procs, and exception handling.
-- **Dynamic Meta-Programming**: Supports Ruby's dynamic nature through Nyar's integrated metaprogramming primitives.
+- **Programmer experience**: Ruby expressiveness and dynamic object model.
+- **Pure object-oriented**: "everything is an object" mapped to the Nyar object system and virtual dispatch.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: hot methods and blocks compiled to native code.
+  - **`nyar-gc`**: high-performance precise collection for Ruby objects.
+  - **Algebraic effects**: control flow for blocks, procs, and exceptions.
+- **Dynamic metaprogramming**: Ruby dynamic features via Nyar metaprogramming primitives.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `class`, `module`, `def`, `attr_accessor`.
-- **Control Flow**: `if`, `unless`, `while`, `until`, `begin/rescue/ensure`.
-- **Blocks & Procs**: Full support for Ruby's block syntax and closure model.
-- **Standard Library**: Integrated with Nyar's FFI for core Ruby library support.
+- **Core syntax**: `class`, `module`, `def`, `attr_accessor`.
+- **Control flow**: `if`, `unless`, `while`, `until`, `begin/rescue/ensure`.
+- **Blocks and procs**: Ruby block syntax and closure model.
+- **Standard library**: core library support via Nyar FFI.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run application.rb
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_ruby::RustyRubyFrontend;

@@ -1,37 +1,37 @@
 # rusty-nix
 
-A Nix language frontend for the Nyar VM.
+A Nix expression language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-nix` is a compiler frontend that brings the Nix expression language to the Nyar VM ecosystem. It allows Nix expressions to be evaluated within a high-performance, managed environment, leveraging Nyar's advanced features like algebraic effects for sandboxing and lazy evaluation.
+`rusty-nix` brings the Nix expression language to the Nyar VM for evaluation in a high-performance managed environment, with algebraic effects for sandboxing and lazy evaluation.
 
 ## Features
 
-- **Lazy Evaluation**: Maps Nix's core lazy evaluation model to Nyar's native thunks and demand-driven execution.
-- **Pure Functional Paradigm**: Robust support for immutable data structures and side-effect-free evaluation.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Optimizes hot evaluation paths and functional transformations.
-  - **`nyar-gc`**: Efficiently manages the lifecycle of thousands of small, short-lived objects common in Nix evaluations.
-  - **Algebraic Effects**: Used to implement flexible sandboxing and resource management for Nix builds.
-- **Reproducible Evaluation**: Designed to maintain Nix's core guarantee of reproducibility within the Nyar runtime.
+- **Lazy evaluation**: mapped to Nyar thunks and on-demand execution.
+- **Purely functional**: immutable data structures and side-effect-free evaluation.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: optimization of hot evaluation paths and function transformations.
+  - **`nyar-gc`**: efficient collection of many short-lived small objects in Nix evaluation.
+  - **Algebraic effects**: sandboxing and resource management.
+- **Reproducible evaluation**: preserves Nix reproducibility guarantees within the Nyar runtime.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `let` expressions, `with` statements, `if-then-else`.
-- **Functions**: Support for lambda expressions, attribute set patterns, and partial application.
-- **Data Structures**: Lists, attribute sets (recursive and non-recursive), and strings with interpolation.
-- **Builtins**: Integrated with Nyar's FFI system to provide standard Nix builtin functions.
+- **Core syntax**: `let`, `with`, `if-then-else`.
+- **Functions**: lambdas, attribute-set patterns, partial application.
+- **Data structures**: lists, attribute sets (recursive and non-recursive), interpolated strings.
+- **Builtins**: standard Nix built-in functions via Nyar FFI.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run expression.nix
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_nix::RustyNixFrontend;

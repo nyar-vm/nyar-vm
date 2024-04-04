@@ -1,37 +1,37 @@
 # rusty-tcl
 
-A TCL language frontend for the Nyar VM.
+A Tcl language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-tcl` is a compiler frontend that brings the TCL (Tool Command Language) to the Nyar VM ecosystem. Known for its simplicity and extensibility, TCL finds a new home in Nyar, where it can be used for everything from simple scripting to complex system orchestration, all running on a high-performance JIT-optimized runtime.
+`rusty-tcl` brings Tcl (Tool Command Language), simple and extensible, to the Nyar VM for everything from simple scripts to complex system orchestration, running on a JIT-optimized high-performance runtime.
 
 ## Features
 
-- **Everything is a String**: Maintains TCL's core philosophy while efficiently mapping strings to Nyar's internal representations (including NaN-boxed values where possible).
-- **Command-Centric Design**: Implements TCL's command evaluation model using Nyar's flexible virtual call and effect system.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Optimizes hot command sequences and script loops.
-  - **`nyar-gc`**: Automatically manages memory for TCL variables and dynamic strings.
-  - **Algebraic Effects**: Used to implement TCL's control flow commands and error handling patterns.
-- **Extensible Architecture**: Easily add new TCL commands by bridging to Nyar's FFI or other languages.
+- **Everything is a string**: preserves Tcl's core philosophy while efficiently mapping to Nyar internal representation (including NaN-boxing).
+- **Command-centric design**: Tcl command evaluation model implemented via Nyar virtual dispatch and effect system.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: optimization of hot command sequences and script loops.
+  - **`nyar-gc`**: automatic management of Tcl variables and dynamic strings.
+  - **Algebraic effects**: Tcl control-flow commands and error-handling patterns.
+- **Extensible architecture**: new Tcl commands via Nyar FFI or bridges to other languages.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: Command substitution, variable substitution, backslash substitution.
-- **Variables**: Support for global and local variables via the `set` command.
-- **Control Flow**: Basic support for `if`, `while`, and custom control structures.
-- **Procedures**: Support for defining and calling `proc` with local scoping.
+- **Core syntax**: command substitution, variable substitution, backslash substitution.
+- **Variables**: global and local variables via `set`.
+- **Control flow**: basic support for `if`, `while`, and custom control structures.
+- **Procedures**: `proc` definition and invocation with local scope.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run script.tcl
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_tcl::RustyTclFrontend;

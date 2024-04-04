@@ -4,23 +4,23 @@ A Groovy language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-groovy` is a compiler frontend that brings the Groovy programming language to the Nyar VM. It provides a dynamic and flexible runtime for Groovy applications, mapping Groovy's features to Nyar's native execution engine.
+`rusty-groovy` brings Groovy to the Nyar VM, providing a runtime for dynamic, flexible Groovy applications by mapping Groovy features to the Nyar native execution engine.
 
 ## Features
 
-- **Dynamic & Flexible**: Full support for Groovy's dynamic syntax and functional programming features.
-- **Managed Object Model**: Maps Groovy classes and traits to Nyar's native object system.
-- **JIT Optimization**: Optimized execution of hot Groovy code paths via `nyar-jit`.
+- **Dynamic and flexible**: Groovy dynamic syntax and functional features.
+- **Managed object model**: Groovy classes and traits mapped to the Nyar object system.
+- **JIT optimization**: hot Groovy paths optimized via `nyar-jit`.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run main.groovy
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_groovy::RustyGroovyFrontend;

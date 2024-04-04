@@ -1,36 +1,36 @@
 # rusty-kotlin
 
-A Kotlin language frontend for the Nyar VM.
+A Kotlin language frontend for the Nyar VM (Kotlin variant implementation within the `rusty-scala` workspace).
 
 ## Overview
 
-`rusty-kotlin` is a compiler frontend that brings the Kotlin programming language to the Nyar VM. It provides a modern, expressive runtime for Kotlin applications, mapping Kotlin's unique features—like null safety and coroutines—to Nyar's native execution engine and algebraic effects.
+`rusty-kotlin` brings Kotlin to the Nyar VM, mapping null safety, coroutines, and other features to the Nyar execution engine and algebraic effects.
 
 ## Features
 
-- **Modern & Concise**: Full support for Kotlin's expressive syntax and functional programming features.
-- **Null Safety**: Maintains Kotlin's null safety guarantees during the lowering process to Gaia IR.
-- **Coroutine Support**: Maps Kotlin's coroutines and suspending functions to Nyar's native algebraic effects and continuations.
-- **Managed Object Model**: Maps Kotlin classes, interfaces, and data classes to Nyar's native object system.
-- **JIT Optimization**: Optimized execution of hot Kotlin code paths via `nyar-jit`.
+- **Modern and concise**: Kotlin expressiveness and functional features.
+- **Null safety**: null-safety guarantees preserved when lowering to Gaia IR.
+- **Coroutines**: coroutines and `suspend` mapped to Nyar algebraic effects and continuations.
+- **Managed object model**: classes, interfaces, and data classes mapped to the Nyar object system.
+- **JIT optimization**: hot Kotlin paths optimized via `nyar-jit`.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `class`, `data class`, `interface`, `fun`, `val`, `var`.
-- **Null Safety**: Support for nullable types (`?`), safe calls (`?.`), and elvis operator (`?:`).
-- **Functional Features**: Lambdas, higher-order functions, and extension functions.
-- **Coroutines**: Native support for `suspend` functions and structured concurrency.
-- **Standard Library**: Initial support for core Kotlin standard library functions.
+- **Core syntax**: `class`, `data class`, `interface`, `fun`, `val`, `var`.
+- **Null safety**: nullable types `?`, safe call `?.`, Elvis `?:`.
+- **Functional**: lambdas, higher-order functions, extension functions.
+- **Coroutines**: `suspend` and structured concurrency.
+- **Standard library**: initial support for the Kotlin standard library core.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run main.kt
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_kotlin::RustyKotlinFrontend;

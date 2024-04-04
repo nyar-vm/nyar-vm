@@ -4,34 +4,34 @@ A Scheme language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-scheme` is a compiler frontend that brings the elegance and minimalism of Scheme—a classic Lisp dialect—to the Nyar VM ecosystem. It maps Scheme's core concepts like first-class continuations, proper tail calls, and hygienic macros to Nyar's native runtime, providing a high-performance home for functional programming.
+`rusty-scheme` brings the minimalism of classic Lisp dialect Scheme to the Nyar VM, mapping first-class continuations, proper tail calls, and hygienic macros to the Nyar native runtime.
 
 ## Features
 
-- **Minimalist Lisp Dialect**: Support for the core R5RS/R6RS/R7RS Scheme specifications.
-- **First-Class Continuations**: Implements `call-with-current-continuation` using Nyar's native algebraic effects and delimited continuations.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Optimizes hot recursive functions and functional transformations.
-  - **`nyar-gc`**: Automatically manages the lifecycle of pairs, closures, and symbols.
-  - **Proper Tail Calls**: Guaranteed tail-call optimization provided by the Nyar VM core.
-- **Hygienic Macros**: Integrated with Nyar's macro system for safe and powerful code generation.
+- **Minimal Lisp**: oriented toward R5RS/R6RS/R7RS core specifications.
+- **First-class continuations**: `call-with-current-continuation` via Nyar algebraic effects and delimited continuations.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: optimization of hot recursion and function transformations.
+  - **`nyar-gc`**: lifecycle management for pairs, closures, and symbols.
+  - **Proper tail calls**: tail-call optimization guaranteed by the Nyar VM core.
+- **Hygienic macros**: integrated with the Nyar macro system.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `define`, `lambda`, `if`, `set!`, `quote`.
-- **Data Types**: Symbols, lists (pairs), numbers, booleans, and characters.
-- **Control Flow**: `cond`, `case`, `do`, `begin`.
-- **Continuations**: Full support for `call/cc` and related control abstractions.
+- **Core syntax**: `define`, `lambda`, `if`, `set!`, `quote`.
+- **Data types**: symbols, lists (pairs), numbers, booleans, characters.
+- **Control flow**: `cond`, `case`, `do`, `begin`.
+- **Continuations**: `call/cc` and related control abstractions.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run script.scm
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_scheme::RustySchemeFrontend;

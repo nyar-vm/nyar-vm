@@ -4,35 +4,35 @@ An Elixir language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-elixir` is a compiler frontend that brings the Elixir programming language to the Nyar VM ecosystem. It focuses on Elixir's strengths in functional programming and concurrency, mapping Elixir's processes and message passing to Nyar's native task system and algebraic effects.
+`rusty-elixir` brings Elixir to the Nyar VM, mapping the process model and message passing to Nyar lightweight tasks and algebraic effects to leverage functional and concurrent strengths.
 
 ## Features
 
-- **Functional Paradigm**: Full support for Elixir's immutable data structures and pattern matching.
-- **Concurrency & Fault Tolerance**: Maps Elixir's process model to Nyar's native lightweight tasks and actor-based primitives.
-- **Nyar Ecosystem Integration**:
-  - **`nyar-jit`**: Provides high-performance execution of hot functional code paths and recursions.
-  - **`nyar-gc`**: Automatically manages the lifecycle of atoms, maps, and other managed Elixir types.
-  - **Algebraic Effects**: Uses Nyar's native effects to implement Elixir's control flow, error handling, and concurrency patterns.
-- **Metaprogramming**: Integrated with Nyar's macro system to support Elixir's powerful `quote` and `unquote` capabilities.
+- **Functional paradigm**: immutable data structures and pattern matching.
+- **Concurrency and fault tolerance**: Elixir processes mapped to Nyar actor-style primitives.
+- **Nyar ecosystem integration**:
+  - **`nyar-jit`**: optimization of hot functional paths and recursion.
+  - **`nyar-gc`**: lifecycle management for managed types such as atoms and maps.
+  - **Algebraic effects**: control flow, error handling, and concurrency patterns.
+- **Metaprogramming**: `quote`/`unquote` integrated with the Nyar macro system.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `defmodule`, `def`, `fn`, `quote`, `unquote`.
-- **Pattern Matching**: Robust support for complex pattern matching in function heads and `case` statements.
-- **Data Types**: Atoms, Lists, Maps, Tuples, and Binaries.
-- **Piping**: Native support for the `|>` operator.
-- **Protocols**: Implementation of Elixir protocols via Nyar's witness tables.
+- **Core syntax**: `defmodule`, `def`, `fn`, `quote`, `unquote`.
+- **Pattern matching**: complex patterns in function heads and `case`.
+- **Data types**: atoms, lists, maps, tuples, binaries.
+- **Pipe operator**: `|>`.
+- **Protocols**: Elixir protocols via witness tables.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run script.ex
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_elixir::RustyElixirFrontend;

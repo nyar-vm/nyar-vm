@@ -4,33 +4,33 @@ A Go language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-go` is a compiler frontend that brings the Go programming language to the Nyar VM. It focuses on Go's strengths—simplicity and concurrency—by mapping Go's goroutines and channels to Nyar's native concurrency primitives and algebraic effects.
+`rusty-go` brings Go to the Nyar VM, mapping goroutines and channels to Nyar lightweight tasks and algebraic effects.
 
 ## Features
 
-- **Go-style Concurrency**: Goroutines and channels implemented via Nyar's lightweight task system.
-- **Efficient Memory Management**: Integrated with `nyar-gc` for robust garbage collection.
-- **Fast Startup**: Optimized for quick compilation and execution, ideal for microservices and scripting.
-- **Nyar Integration**: Seamlessly compiles to Gaia IR for JIT-optimized performance.
-- **Static Typing**: Maintains Go's strong, static type system during the lowering process.
+- **Go-style concurrency**: goroutines and channels on Nyar's task system.
+- **Managed memory**: integrates with `nyar-gc`.
+- **Fast startup**: tuned for microservices and scripting workloads.
+- **Nyar integration**: lowers to unified IR for JIT optimization.
+- **Static typing**: preserves Go's static type discipline during lowering.
 
-## Supported Constructs
+## Supported constructs
 
-- **Core Syntax**: `package`, `import`, `func`, `var`, `type`.
-- **Concurrency**: `go` keyword, `chan`, `select`.
-- **Control Flow**: `if`, `for`, `switch`, `defer`.
-- **Data Types**: Slices, Maps, Structs, Interfaces.
-- **Pointers**: Safe pointer support consistent with Go's memory model.
+- **Core syntax**: `package`, `import`, `func`, `var`, `type`.
+- **Concurrency**: `go`, `chan`, `select`.
+- **Control flow**: `if`, `for`, `switch`, `defer`.
+- **Data types**: slices, maps, structs, interfaces.
+- **Pointers**: pointer support aligned with Go memory model expectations.
 
-## Getting Started
+## Getting started
 
-### Usage via Nyar CLI
+### Via Nyar CLI
 
 ```bash
 nyar run main.go
 ```
 
-### Usage as a Library
+### As a library
 
 ```rust
 use rusty_go::frontend::RustyGoFrontend;
@@ -38,7 +38,6 @@ use nyar_types::NyarFrontend;
 
 let frontend = RustyGoFrontend::new();
 let ast = frontend.parse("package main\nfunc main() { println(\"Hello from Go!\") }").unwrap();
-// Lower and execute via NyarVM
 ```
 
 ## License
