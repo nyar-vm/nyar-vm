@@ -1,19 +1,18 @@
 # @nyar-vm/nyar-wasm32-wasi
 
-`wasm32-wasip1` Wasm collect for Nyar VM hosts.
+Prebuilt **Wasm WASI host sidecar** for Nyar VM. **Not a public import target.**
 
-## Artifact
+This package is pulled automatically when installing `@nyar-vm/nyar` on Wasm-capable hosts.
 
-| File | Description |
-| --- | --- |
-| `nyar_wasm.wasm` | Wasm module (`../../hosts/nyar-wasm`) |
+## Example
 
-## Build (maintainers)
+Application code imports the main package only:
 
-```bash
-pnpm build:wasm
+```typescript
+import { createNyarHost } from "@nyar-vm/nyar";
+
+const host = await createNyarHost();
+await host.runBytecode(bytes);
 ```
 
-## License
-
-MIT
+Build and publish pipelines are documented for maintainers in the repository; they are not repeated here.

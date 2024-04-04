@@ -1,19 +1,18 @@
 # @nyar-vm/nyar-linux-x64
 
-Linux x64 native Node-API collect for Nyar VM hosts.
+Prebuilt **native host sidecar** for Nyar VM on Linux x64. **Not a public import target.**
 
-## Artifact
+This package is pulled automatically when installing `@nyar-vm/nyar` on a matching host.
 
-| File | Description |
-| --- | --- |
-| `libnyar_napi.so` | Node-API native host (`../../hosts/nyar-napi`) |
+## Example
 
-## Build (maintainers)
+Application code imports the main package only:
 
-```bash
-pnpm build:napi
+```typescript
+import { createNyarHost } from "@nyar-vm/nyar";
+
+const host = await createNyarHost();
+await host.runBytecode(bytes);
 ```
 
-## License
-
-MIT
+Build and publish pipelines are documented for maintainers in the repository; they are not repeated here.

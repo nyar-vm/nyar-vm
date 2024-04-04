@@ -9,6 +9,7 @@
         "build:napi": "node scripts/build.mjs napi",
         "build:wasm": "node scripts/build.mjs wasm",
         "build:native": "npx tsx scripts/build.ts",
+        "prepare:npm": "node scripts/prepare-npm-publish.mjs",
         "migrate:compiler-flow": "node scripts/reshape-compiler-flow.mjs",
         "fmt": "nifty format",
         "fmt:check": "nifty format --check",
@@ -20,9 +21,9 @@
         "u": "cargo upgrade --incompatible"
     },
     "devDependencies": {
-        "@biomejs/biome": "^1.0.0",
-        "@doki-land/nifty": "^0.0.3",
-        "typescript": "^5.0.0"
+        "@biomejs/biome": "^2.5.15",
+        "@doki-land/nifty": "^0.0.12",
+        "typescript": "^7.0.2"
     },
     "packageManager": "pnpm@9.15.4"
 }
