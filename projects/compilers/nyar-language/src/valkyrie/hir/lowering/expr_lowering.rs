@@ -40,7 +40,10 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
                 kind: HirStatementKind::Let {
                     is_mutable: has_modifier(&binding.annotations, "mut"),
                     pattern: lower_pattern(&binding.pattern, source_id, span.clone()),
-                    initializer: Some(Box::new(lower_term_expression(&binding.expr, source_id, span_range.clone()))),
+                    initializer: binding
+                        .expr
+                        .as_ref()
+                        .map(|expr| Box::new(lower_term_expression(expr, source_id, span_range.clone()))),
                     ty: binding.ty.as_ref().map(lower_type_expression),
                 },
                 span,
