@@ -84,6 +84,12 @@ mod tests {
     }
 
     #[test]
+    fn parses_nullable_suffix_return_type() {
+        let output = parse("micro parse_i32(s: utf8) -> i64? { return null }");
+        output.result.expect("后缀 `?` 可空返回类型应可解析");
+    }
+
+    #[test]
     #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn parses_generic_and_structure_declarations() {
         let output = parse("class Box[T] { value: T } micro identity[T](value: T) -> T { return value }");
