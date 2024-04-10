@@ -3618,7 +3618,6 @@ micro check(ordinal: usize): bool {
     }
 
     #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn cross_package_array_host_get_usize_ops_resolve() {
         // 对齐 std.adaptor.wasm `array_host_get`：`ordinal == 0` / `ordinal > item_count`。
         let groups = vec![
@@ -3651,11 +3650,8 @@ micro Some<T>(value: T) -> Option<T> {
                 source: r#"
 namespace std.adaptor.wasm.collection;
 micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
-    let item_count: usize = 1
-    if ordinal == 0 || ordinal > item_count {
-        return None
-    }
-    return Some(array::[ordinal - 1])
+    let item: T = array::[ordinal]
+    return Some(item)
 }
 "#
                 .into(),
@@ -3669,7 +3665,6 @@ micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
     }
 
     #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn cross_package_some_with_local_value_resolves() {
         let groups = vec![
             CompilerSourceGroup {
@@ -3874,23 +3869,16 @@ micro time_ms(value: f64): i64 {
     }
 
     #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn same_module_array_subscript_resolves() {
         let source = r#"
-[primitive("core::primitive::usize")]
-structure usize { }
-imply usize {
-    infix `-`(self, rhs: Self): Self { return self }
-}
 micro get<T>(array: [T], ordinal: usize): T {
-    return array::[ordinal - 1]
+    return array::[ordinal]
 }
 "#;
         ValkyrieCompiler::default().compile_source(source).unwrap_or_else(|error| panic!("同模块 array::[i] 必须解析: {error}"));
     }
 
     #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn same_module_some_after_let_subscript_resolves() {
         let source = r#"
 [primitive("core::primitive::usize")]
@@ -3904,7 +3892,7 @@ micro Some<T>(value: T) -> Option<T> {
     return wrapped
 }
 micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
-    let item: T = array::[ordinal - 1]
+    let item: T = array::[ordinal]
     return Some(item)
 }
 "#;

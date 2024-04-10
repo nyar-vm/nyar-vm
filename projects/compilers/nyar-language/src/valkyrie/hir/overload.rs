@@ -353,8 +353,8 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
         array_type.clone(),
         OverloadMatchKind::NominalExact,
     );
-    // `array::[i]` / `array::[i] = v` 降低为 postfix `[]` / `[]=`；必须挂 operator_id，
-    // 否则 Operator 调用点找不到候选（不能按 Array.get 短名猜）。
+    // 序数下标 `receiver[i]` → postfix `[]` / `[]=`；基数下标 `receiver::[i]` → `⁅⁆` / `⁅⁆=`。
+    // 两类都必须挂 operator_id，否则 Operator 调用点找不到候选（不能按 Array.get 短名猜）。
     let mut get = OverloadCandidate::new(
         NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("get")]),
         OverloadDomain::Operator,
@@ -366,12 +366,28 @@ fn language_builtin_candidates() -> Vec<OverloadCandidate> {
     let mut set = OverloadCandidate::new(
         NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("set")]),
         OverloadDomain::Operator,
-        vec![array_type, index_type, element_type],
+        vec![array_type.clone(), index_type.clone(), element_type.clone()],
         ValkyrieType::Unit,
         OverloadMatchKind::NominalExact,
     );
     set.operator_id = builtin_operator::lookup(OperatorFixity::Postfix, "[]=");
-    vec![length, push, get, set]
+    let mut cardinal_get = OverloadCandidate::new(
+        NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("get")]),
+        OverloadDomain::Operator,
+        vec![array_type.clone(), index_type.clone()],
+        element_type.clone(),
+        OverloadMatchKind::NominalExact,
+    );
+    cardinal_get.operator_id = builtin_operator::lookup(OperatorFixity::Postfix, "⁅⁆");
+    let mut cardinal_set = OverloadCandidate::new(
+        NamePath::new(vec![Identifier::new("builtin"), Identifier::new("array"), Identifier::new("set")]),
+        OverloadDomain::Operator,
+        vec![array_type, index_type, element_type],
+        ValkyrieType::Unit,
+        OverloadMatchKind::NominalExact,
+    );
+    cardinal_set.operator_id = builtin_operator::lookup(OperatorFixity::Postfix, "⁅⁆=");
+    vec![length, push, get, set, cardinal_get, cardinal_set]
 }
 
 /// 按候选符号的 [`IntrinsicId`] 做形实参合同（非调用点拼写）。
@@ -427,6 +443,9 @@ fn match_intrinsic_builtin_candidate(
             if !matches!(array_ty, ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. }) {
                 return None;
             }
+            let return_type = type_relations
+                .nominal_type_for_name(&Identifier::new("usize"))
+                .unwrap_or_else(|| candidate.signature.return_type.clone());
             Some(OverloadCandidate {
                 declaration: candidate.declaration,
                 instance: candidate.instance,
@@ -437,7 +456,7 @@ fn match_intrinsic_builtin_candidate(
                 owner: None,
                 trait_owner: candidate.trait_owner.clone(),
                 domain: OverloadDomain::Function,
-                signature: OverloadSignature { params: vec![array_ty], return_type: candidate.signature.return_type.clone() },
+                signature: OverloadSignature { params: vec![array_ty], return_type },
                 match_kind: OverloadMatchKind::NominalExact,
                 param_specs: Vec::new(),
                 generic_binders: candidate.generic_binders.clone(),
@@ -523,11 +542,11 @@ fn match_intrinsic_builtin_candidate(
                 return None;
             }
             let array_ty = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
-            let ValkyrieType::Array(element) = &array_ty
-            else {
-                return None;
+            let element = match &array_ty {
+                ValkyrieType::Array(element) => element.as_ref().clone(),
+                ValkyrieType::FixedArray { element, .. } => element.as_ref().clone(),
+                _ => return None,
             };
-            let element = element.as_ref().clone();
             let index_ty = infer_scrutinee_type(&args[1].value, locals, struct_fields, singleton_names)?;
             // 绑定后索引常为 `Nominal{usize}`；不得只认 Integer* / Named。
             if !type_relations.is_numeric_type(&index_ty) {
@@ -560,11 +579,11 @@ fn match_intrinsic_builtin_candidate(
                 return None;
             }
             let array_ty = infer_scrutinee_type(&args[0].value, locals, struct_fields, singleton_names)?;
-            let ValkyrieType::Array(element) = &array_ty
-            else {
-                return None;
+            let element = match &array_ty {
+                ValkyrieType::Array(element) => element.as_ref().clone(),
+                ValkyrieType::FixedArray { element, .. } => element.as_ref().clone(),
+                _ => return None,
             };
-            let element = element.as_ref().clone();
             let index_ty = infer_scrutinee_type(&args[1].value, locals, struct_fields, singleton_names)?;
             // 与 ArrayGet 相同：绑定后索引常为 `Nominal{usize}`。
             if !type_relations.is_numeric_type(&index_ty) {
@@ -1760,6 +1779,13 @@ fn try_resolve_call(
     }
     if let HirExprKind::Path(path) = &callee.kind {
         if path.parts().len() >= 2 {
+            let segments = path.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
+            // `builtin.array.length` 等语言 intrinsic 路径不得走限定自由函数解析；
+            // 否则会提前 `return None` 且永远匹配不到 `language_builtin_candidates`。
+            if IntrinsicId::resolve_from_segments(&segments).is_some() {
+                // fall through to callee_name / intrinsic matching below
+            }
+            else {
             let type_owner = &path.parts()[path.parts().len() - 2];
             let method_name = path.parts().last().expect("qualified call path must have a final segment");
             if singleton_names.contains(type_owner) {
@@ -1791,6 +1817,7 @@ fn try_resolve_call(
                 );
             }
             return try_resolve_qualified_free_function(path, args, candidates, type_relations, locals, struct_fields, singleton_names);
+            }
         }
     }
 
@@ -4330,6 +4357,16 @@ micro pick(flag: bool) -> Option<i64> {
                 arguments: vec![ValkyrieType::Integer64 { signed: true }],
             }
         );
+    }
+
+    #[test]
+    fn resolves_array_subscript_on_generic_heap_array_param() {
+        let source = r#"
+micro get<T>(array: [T], ordinal: i64): T {
+    return array::[ordinal]
+}
+"#;
+        crate::ValkyrieCompiler::default().compile_source(source).expect("generic heap array subscript");
     }
 
     fn test_sum_nominal(declaration_index: u32, arguments: Vec<ValkyrieType>) -> ValkyrieType {
