@@ -77,7 +77,7 @@ impl MirBuilder {
         Some(ValkyrieType::Nominal { declaration, arguments: type_args.to_vec() })
     }
 
-    /// ??????????????????Result ?????????? impl ??Result ?? binder??
+    /// 仅从 impl 实参或 sum declaration 的 Generic binder 补全 Result 类型参数；禁止发明 `Named(T/E)`。
     fn pad_result_type_args(&self, type_args: Vec<ValkyrieType>) -> Vec<ValkyrieType> {
         if type_args.len() >= 2 {
             return type_args;
@@ -85,7 +85,7 @@ impl MirBuilder {
         let error_arg = self.impl_type_arguments.get(1).cloned().or_else(|| {
             self.result_declaration.and_then(|declaration| {
                 super::MirSumDeclaration::find_by_declaration(&self.sum_types, declaration)
-                    .and_then(|sum| sum.generics.get(1).map(|generic| ValkyrieType::Named(generic.name.clone())))
+                    .and_then(|sum| sum.generics.get(1).map(|generic| ValkyrieType::Generic(generic.clone())))
             })
         });
         match type_args.len() {
@@ -93,12 +93,22 @@ impl MirBuilder {
                 if self.impl_type_arguments.len() >= 2 {
                     self.impl_type_arguments.clone()
                 }
+                else if let Some(declaration) = self.result_declaration {
+                    super::MirSumDeclaration::find_by_declaration(&self.sum_types, declaration)
+                        .map(|sum| sum.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect())
+                        .unwrap_or_default()
+                }
                 else {
-                    vec![ValkyrieType::Named(Identifier::new("T")), error_arg.unwrap_or_else(|| ValkyrieType::Named(Identifier::new("E")))]
+                    Vec::new()
                 }
             }
             1 => {
-                vec![type_args[0].clone(), error_arg.unwrap_or_else(|| ValkyrieType::Named(Identifier::new("E")))]
+                if let Some(error) = error_arg {
+                    vec![type_args[0].clone(), error]
+                }
+                else {
+                    type_args
+                }
             }
             _ => type_args,
         }
@@ -118,7 +128,7 @@ impl MirBuilder {
             return from_context;
         }
         super::MirSumDeclaration::find_by_declaration(&self.sum_types, declaration)
-            .map(|sum| sum.generics.iter().map(|generic| ValkyrieType::Named(generic.name.clone())).collect())
+            .map(|sum| sum.generics.iter().map(|generic| ValkyrieType::Generic(generic.clone())).collect())
             .unwrap_or_default()
     }
 

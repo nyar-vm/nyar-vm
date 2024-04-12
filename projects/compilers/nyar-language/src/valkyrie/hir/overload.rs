@@ -1065,41 +1065,8 @@ fn resolve_expr_calls(
                 );
             }
         }
-        HirExprKind::FieldAccess { object, field } => {
+        HirExprKind::FieldAccess { object, .. } => {
             resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, contextual_type);
-            // 裸 `array.length`（非 `length()` 调用）在 HIR 冻结为 ArrayLen Invoke；
-            // MIR 不得再按字段名改写。名义类型上已有 `length` FieldId 时保持字段访问。
-            if field.as_str() == "length" {
-                let receiver_ty = infer_scrutinee_type(object, locals, struct_fields, singleton_names);
-                let is_array = receiver_ty.as_ref().is_some_and(|ty| matches!(ty, ValkyrieType::Array(_) | ValkyrieType::FixedArray { .. }));
-                let has_nominal_length_field = receiver_ty.as_ref().is_some_and(|ty| {
-                    struct_fields.fields_of(ty).is_some_and(|fields| fields.iter().any(|item| item.name.as_str() == "length"))
-                });
-                if is_array && !has_nominal_length_field {
-                    let span = expr.span.clone();
-                    let args = vec![HirCallArgument::positional(object.as_ref().clone())];
-                    let callee = HirExpr {
-                        kind: HirExprKind::Path(NamePath::new(vec![
-                            Identifier::new("builtin"),
-                            Identifier::new("array"),
-                            Identifier::new("length"),
-                        ])),
-                        span: span.clone(),
-                    };
-                    let resolved = try_resolve_call(
-                        HirCallKind::Function,
-                        &callee,
-                        &args,
-                        candidates,
-                        type_relations,
-                        locals,
-                        struct_fields,
-                        singleton_names,
-                        contextual_type,
-                    );
-                    expr.kind = HirExprKind::Call { call_kind: HirCallKind::Function, callee: Box::new(callee), args, resolved };
-                }
-            }
         }
         HirExprKind::GenericApply { callee, .. }
         | HirExprKind::FieldInit { value: callee, .. }
@@ -5155,6 +5122,29 @@ micro negate_flag(flag: bool) -> bool {
             panic!("expected resolved boolean not: {expression:?}")
         };
         assert_eq!(resolved.parameter_types, vec![ValkyrieType::Boolean]);
+    }
+
+    #[test]
+    fn array_length_field_access_is_not_rewritten_to_intrinsic() {
+        let compiler = ValkyrieCompiler::default();
+        let hir = compiler
+            .compile_source(
+                r#"
+micro len(items: [i32]) -> usize {
+    let count: usize = items.length
+    return count
+}
+"#,
+            )
+            .expect("compile");
+        let function = hir.functions.iter().find(|item| item.name.as_str() == "len").expect("len");
+        let HirStatementKind::Let { initializer: Some(initializer), .. } = &function.body.statements[0].kind else {
+            panic!("expected let with initializer, got {:?}", function.body.statements[0].kind);
+        };
+        assert!(
+            matches!(initializer.kind, HirExprKind::FieldAccess { .. }),
+            "array.length must stay field access, not intrinsic rewrite: {initializer:?}"
+        );
     }
 
     #[test]

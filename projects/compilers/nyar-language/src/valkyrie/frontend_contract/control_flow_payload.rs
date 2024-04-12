@@ -78,7 +78,7 @@ fn collect_witness_binding(
 
 fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method_name: &str) -> Option<SuspendWitnessBinding> {
     let trait_impl = find_trait_impl(hir_module, trait_name)?;
-    let type_name = impl_type_name(trait_impl)?;
+    let type_name = impl_type_name(hir_module, trait_impl)?;
     let (index, method) = trait_impl.methods.iter().enumerate().find(|(_, method)| method.name.as_str() == method_name)?;
     let resolved_index = u32::try_from(index).ok()?;
     let impl_symbol = format!("{}.{}", type_name, method.name);
@@ -92,29 +92,78 @@ fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method_nam
 }
 
 fn find_trait_impl<'a>(hir_module: &'a HirModule, trait_name: &str) -> Option<&'a HirImpl> {
-    hir_module
-        .impls
-        .iter()
-        .filter(|item| item.trait_path.as_ref().is_some_and(|path| path.name().as_str() == trait_name))
-        .find(|item| impl_type_name(item).is_some())
+    let trait_declaration = resolve_trait_declaration(hir_module, trait_name)?;
+    let mut impls: Vec<&'a HirImpl> = Vec::new();
+    collect_trait_impls(hir_module, &mut impls);
+    impls
+        .into_iter()
+        .filter(|item| item.trait_declaration == Some(trait_declaration))
+        .find(|item| impl_type_name(hir_module, item).is_some())
+}
+
+fn collect_trait_impls<'a>(module: &'a HirModule, out: &mut Vec<&'a HirImpl>) {
+    out.extend(module.impls.iter());
+    for child in &module.submodules {
+        collect_trait_impls(child, out);
+    }
+}
+
+fn resolve_trait_declaration(hir_module: &HirModule, trait_name: &str) -> Option<nyar_types::ItemId> {
+    let mut matches = Vec::new();
+    collect_trait_declarations(hir_module, trait_name, &mut matches);
+    matches.sort_unstable();
+    matches.dedup();
+    if matches.len() == 1 {
+        Some(matches[0])
+    }
+    else {
+        None
+    }
+}
+
+fn collect_trait_declarations(module: &HirModule, trait_name: &str, matches: &mut Vec<nyar_types::ItemId>) {
+    for trait_def in &module.traits {
+        if trait_def.name.as_str() == trait_name {
+            if let Some(declaration) = trait_def.declaration {
+                matches.push(declaration);
+            }
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for trait_def in &export.traits {
+            if trait_def.name.as_str() == trait_name {
+                if let Some(declaration) = trait_def.declaration {
+                    matches.push(declaration);
+                }
+            }
+        }
+    }
+    for child in &module.submodules {
+        collect_trait_declarations(child, trait_name, matches);
+    }
 }
 
 #[cfg(test)]
 mod witness_identity_tests {
     use super::*;
-    use crate::{Identifier, NamePath, ValkyrieCompiler};
+    use crate::ValkyrieCompiler;
 
     fn module() -> HirModule {
-        let mut hir = ValkyrieCompiler::default()
-            .compile_source("micro output() -> i64 { 1 } micro poll() -> bool { true }")
-            .expect("夹具方法来自当前源码");
-        hir.impls.push(HirImpl {
-            target: ValkyrieType::Named(Identifier::new("Task")),
-            trait_path: Some(NamePath::new(vec![Identifier::new("Future")])),
-            methods: hir.functions.clone(),
-            ..HirImpl::default()
-        });
-        hir
+        ValkyrieCompiler::default()
+            .compile_source(
+                r#"
+class Task { }
+trait Future {
+    micro output(self): i64
+    micro poll(self): bool
+}
+imply Task: Future {
+    micro output(self) -> i64 { return 1 }
+    micro poll(self) -> bool { return true }
+}
+"#,
+            )
+            .expect("夹具方法来自当前源码")
     }
 
     #[test]
@@ -135,12 +184,44 @@ mod witness_identity_tests {
     }
 }
 
-fn impl_type_name(trait_impl: &HirImpl) -> Option<String> {
+fn impl_type_name(hir_module: &HirModule, trait_impl: &HirImpl) -> Option<String> {
     match &trait_impl.target {
         ValkyrieType::Named(name) => Some(name.as_str().to_string()),
         ValkyrieType::Apply(base, _) => named_type_name(base).map(str::to_string),
+        ValkyrieType::Nominal { declaration, .. } => find_type_name_by_declaration(hir_module, *declaration).map(|name| name.as_str().to_string()),
         _ => None,
     }
+}
+
+fn find_type_name_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Option<crate::types::Identifier> {
+    for item in &module.structs {
+        if item.constructor_declaration == Some(declaration) {
+            return Some(item.name.clone());
+        }
+    }
+    for item in &module.enums {
+        if item.declaration == Some(declaration) {
+            return Some(item.name.clone());
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.structs {
+            if item.constructor_declaration == Some(declaration) {
+                return Some(item.name.clone());
+            }
+        }
+        for item in &export.enums {
+            if item.declaration == Some(declaration) {
+                return Some(item.name.clone());
+            }
+        }
+    }
+    for child in &module.submodules {
+        if let Some(name) = find_type_name_by_declaration(child, declaration) {
+            return Some(name);
+        }
+    }
+    None
 }
 
 fn generator_trait_name(payload_type: Option<&ValkyrieType>) -> Option<&str> {
