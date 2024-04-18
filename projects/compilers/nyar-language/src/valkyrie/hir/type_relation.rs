@@ -18,7 +18,7 @@ use crate::{
     },
     types::{
         Identifier,
-        hir::{GenericBinderId, HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType},
+        hir::{GenericBinderId, HirEnum, HirModule, HirStruct, HirWhereConstraint, RowType, TraitObject, ValkyrieType},
     },
 };
 
@@ -47,6 +47,8 @@ pub struct TypeRelationContext {
     traits: TraitModuleView,
     structs: BTreeMap<Identifier, HirStruct>,
     structs_by_declaration: BTreeMap<nyar_types::ItemId, HirStruct>,
+    enums: BTreeMap<Identifier, HirEnum>,
+    enums_by_declaration: BTreeMap<nyar_types::ItemId, HirEnum>,
     callable_constraints: Vec<HirWhereConstraint>,
 }
 
@@ -54,20 +56,28 @@ impl TypeRelationContext {
     pub fn from_module(module: &HirModule) -> Self {
         let mut structs = BTreeMap::new();
         let mut structs_by_declaration = BTreeMap::new();
+        let mut enums = BTreeMap::new();
+        let mut enums_by_declaration = BTreeMap::new();
         collect_relation_structs(module, &mut structs, &mut structs_by_declaration);
+        collect_relation_enums(module, &mut enums, &mut enums_by_declaration);
         Self {
             nominal: NominalModuleView::from_module(module),
             traits: TraitModuleView::from_module(module),
             structs,
             structs_by_declaration,
+            enums,
+            enums_by_declaration,
             callable_constraints: Vec::new(),
         }
     }
 
     /// 短名 → 已冻结的 `Nominal{ItemId}`（有 declaration 时）；供 Self/AutoType 回收，禁止只写回 Named。
     pub fn nominal_type_for_name(&self, name: &Identifier) -> Option<ValkyrieType> {
-        let item = self.structs.get(name)?;
-        Some(ValkyrieType::Nominal { declaration: item.constructor_declaration?, arguments: Vec::new() })
+        if let Some(item) = self.structs.get(name) {
+            return Some(ValkyrieType::Nominal { declaration: item.constructor_declaration?, arguments: Vec::new() });
+        }
+        let item = self.enums.get(name)?;
+        Some(ValkyrieType::Nominal { declaration: item.declaration?, arguments: Vec::new() })
     }
 
     /// 字面量特化用：`Named("usize")` 与对应 `Nominal{ItemId}` 都算数值类型。
@@ -264,6 +274,30 @@ impl TypeRelationContext {
 
     fn matches_non_error(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> bool {
         !matches!(self.match_parameter(actual, expected), ParameterMatchResult::NoMatch { .. })
+    }
+}
+
+fn collect_relation_enums(
+    module: &HirModule,
+    by_name: &mut BTreeMap<Identifier, HirEnum>,
+    by_declaration: &mut BTreeMap<nyar_types::ItemId, HirEnum>,
+) {
+    for item in &module.enums {
+        by_name.entry(item.name.clone()).or_insert_with(|| item.clone());
+        if let Some(declaration) = item.declaration {
+            by_declaration.entry(declaration).or_insert_with(|| item.clone());
+        }
+    }
+    for export in &module.imported_semantic_exports {
+        for item in &export.enums {
+            by_name.entry(item.name.clone()).or_insert_with(|| item.clone());
+            if let Some(declaration) = item.declaration {
+                by_declaration.entry(declaration).or_insert_with(|| item.clone());
+            }
+        }
+    }
+    for submodule in &module.submodules {
+        collect_relation_enums(submodule, by_name, by_declaration);
     }
 }
 

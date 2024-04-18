@@ -1395,7 +1395,68 @@ fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), ParseError>
     for submodule in &mut module.submodules {
         bind_declared_nominal_types(submodule)?;
     }
+    // `imply Option<T>` 等块头无显式泛型参数时，target 实参仍须回收为 owner 的 Generic binder。
+    propagate_impl_owner_type_generics(module);
     Ok(())
+}
+
+fn lookup_owner_generics_by_declaration(module: &HirModule, declaration: nyar_types::ItemId) -> Vec<GenericType> {
+    if let Some(item) = module.enums.iter().find(|item| item.declaration == Some(declaration)) {
+        return item.generics.clone();
+    }
+    if let Some(item) = module.structs.iter().find(|item| item.constructor_declaration == Some(declaration)) {
+        return item.generics.clone();
+    }
+    for export in &module.imported_semantic_exports {
+        if let Some(item) = export.enums.iter().find(|item| item.declaration == Some(declaration)) {
+            return item.generics.clone();
+        }
+        if let Some(item) = export.structs.iter().find(|item| item.constructor_declaration == Some(declaration)) {
+            return item.generics.clone();
+        }
+    }
+    for submodule in &module.submodules {
+        let nested = lookup_owner_generics_by_declaration(submodule, declaration);
+        if !nested.is_empty() {
+            return nested;
+        }
+    }
+    Vec::new()
+}
+
+fn combined_impl_generic_context(module: &HirModule, implementation: &HirImpl) -> Vec<GenericType> {
+    let mut generics = implementation.generics.clone();
+    let owner_generics = match &implementation.target {
+        ValkyrieType::Nominal { declaration, .. } => lookup_owner_generics_by_declaration(module, *declaration),
+        _ => Vec::new(),
+    };
+    for owner in owner_generics {
+        if !generics.iter().any(|item| item.name == owner.name) {
+            generics.push(owner);
+        }
+    }
+    generics
+}
+
+fn propagate_impl_owner_type_generics(module: &mut HirModule) {
+    let bindings = module
+        .impls
+        .iter()
+        .map(|implementation| combined_impl_generic_context(module, implementation))
+        .collect::<Vec<_>>();
+    for (implementation, generics) in module.impls.iter_mut().zip(bindings) {
+        propagate_declared_generic_binders(&mut implementation.target, &generics);
+        for method in &mut implementation.methods {
+            propagate_declared_generic_binders(&mut method.return_type, &generics);
+            for param in &mut method.params {
+                propagate_declared_generic_binders(&mut param.ty, &generics);
+            }
+            propagate_generic_binders_in_block(&mut method.body, &generics);
+        }
+    }
+    for submodule in &mut module.submodules {
+        propagate_impl_owner_type_generics(submodule);
+    }
 }
 
 /// 整份 HIR 模块（含子模块）已冻结 callable `ItemInstanceId` 的最大下标。
@@ -3465,6 +3526,18 @@ imply TextSpan {
     }
 
     #[test]
+    fn imply_option_unwrap_resolves_instance_method_contract() {
+        let source = r#"
+unite Option<T> { Some { value: T }, None }
+imply Option<T> {
+    micro unwrap(self) -> T { match self { case Some(value): value case None: return None } }
+}
+micro test(x: Option<i64>) -> i64 { return x.unwrap() }
+"#;
+        compile(source).expect("imply Option::unwrap 必须通过调用合同");
+    }
+
+    #[test]
     fn option_or_else_some_construct_binds_nominal_without_short_name() {
         // 对齐生产 `core/source/types/Option.v`：`unite` 变体 + 自由函数 `Some` 同名并存时，
         // `or_else` 臂内 `Some(value)` 必须冻结 Constructor 合同，不得 SMIR003。
@@ -3703,7 +3776,7 @@ micro wrap<T>(value: T): Option<T> {
     #[test]
     #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
     fn cross_package_array_host_get_links_without_orphan_callable() {
-        // 对齐 std.adaptor.wasm Array.v：`array.length` / `array::[i]` / Some/None 不得留下无合同 Call。
+        // 对齐 std.adaptor.wasm Array.v：`builtin.array.length` / `array::[i]` / Some/None 不得留下无合同 Call。
         let groups = vec![
             CompilerSourceGroup {
                 dependency_key: "core".into(),
@@ -3734,14 +3807,14 @@ micro Some<T>(value: T) -> Option<T> {
                 source: r#"
 namespace std.adaptor.wasm.collection;
 micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
-    let item_count: usize = array.length
+    let item_count: usize = builtin.array.length(array)
     if ordinal == 0 || ordinal > item_count {
         return None
     }
     return Some(array::[ordinal - 1])
 }
 micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
-    let item_count: usize = array.length
+    let item_count: usize = builtin.array.length(array)
     if ordinal == 0 || ordinal > item_count {
         return
     }
