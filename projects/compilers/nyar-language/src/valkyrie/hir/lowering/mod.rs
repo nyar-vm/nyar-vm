@@ -53,13 +53,12 @@ mod source_group_tests {
         else {
             panic!("缺少语法诊断")
         };
-        let groups = vec![CompilerSourceGroup {
-            dependency_key: "broken.package".into(),
-            name: "broken.package".into(),
-            source: String::new(),
-            sources: vec![super::CompilerSourceFile { path: "source/broken.v".into(), source: source.into() }],
-            direct_dependencies: vec![],
-        }];
+        let groups = vec![CompilerSourceGroup::from_source_files(
+            "broken.package",
+            "broken.package",
+            vec![super::CompilerSourceFile { path: "source/broken.v".into(), source: source.into() }],
+            vec![],
+        )];
         let error = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect_err("不能生成残缺 HIR");
         let super::ParseError::Invalid { message, span } = error
         else {
@@ -67,6 +66,69 @@ mod source_group_tests {
         };
         assert_eq!(span, expected_span);
         assert!(message.contains("broken.package") && message.contains("source/broken.v"), "{message}");
+    }
+
+    #[test]
+    fn unreachable_inventory_parse_failure_does_not_block_entry_group() {
+        let groups = vec![
+            CompilerSourceGroup {
+                dependency_key: "library".into(),
+                name: "library".into(),
+                source: String::new(),
+                sources: vec![
+                    super::CompilerSourceFile { path: "source/good.v".into(), source: "micro answer() -> i32 { return 23 }".into() },
+                    super::CompilerSourceFile { path: "source/broken.v".into(), source: "micro broken() { value = }".into() },
+                ],
+                direct_dependencies: vec![],
+                tolerate_inventory_parse_failures: true,
+                body_lowering_source_paths: None,
+            },
+            CompilerSourceGroup::single_source(
+                "app",
+                "app",
+                "micro run() -> i32 { let value: i32 = answer(); return value }",
+            )
+            .with_direct_dependencies(vec!["library".into()]),
+        ];
+        let modules = ValkyrieCompiler::default()
+            .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+            .expect("不可达库存语法错误不得阻塞入口");
+        assert_eq!(modules.len(), 2);
+        assert!(modules[0].functions.iter().any(|function| function.name.as_str() == "answer"));
+    }
+
+    #[test]
+    fn entry_group_inventory_parse_failure_fails_closed() {
+        let groups = vec![CompilerSourceGroup::from_source_files(
+            "app",
+            "app",
+            vec![super::CompilerSourceFile { path: "solution.v".into(), source: "micro broken() { value = }".into() }],
+            vec![],
+        )];
+        let error = ValkyrieCompiler::default()
+            .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+            .expect_err("入口文件语法错误必须失败");
+        assert!(error.to_string().contains("solution.v"), "{error}");
+    }
+
+    #[test]
+    fn body_lowering_source_paths_skip_unreachable_files() {
+        let groups = vec![CompilerSourceGroup {
+            dependency_key: "library".into(),
+            name: "library".into(),
+            source: String::new(),
+            sources: vec![
+                super::CompilerSourceFile { path: "source/good.v".into(), source: "micro answer() -> i32 { return 23 }".into() },
+                super::CompilerSourceFile { path: "source/broken.v".into(), source: "micro broken() { value = }".into() },
+            ],
+            direct_dependencies: vec![],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: Some(std::collections::BTreeSet::from(["source/good.v".into()])),
+        }];
+        let modules = ValkyrieCompiler::default()
+            .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
+            .expect("body lowering 路径应跳过不可达坏文件");
+        assert!(modules[0].functions.iter().any(|function| function.name.as_str() == "answer"));
     }
 
     fn first_call(function: &super::HirFunction) -> &crate::types::hir::HirResolvedCall {
@@ -90,6 +152,8 @@ mod source_group_tests {
                 source: "micro answer() -> i32 { return 23 }".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec![],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "app".into(),
@@ -97,6 +161,8 @@ mod source_group_tests {
                 source: "micro run() -> i32 { let value: i32 = answer(); return value }".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["library".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("完整源码闭包的 HIR");
@@ -153,6 +219,8 @@ mod source_group_tests {
                 source: "micro helper() -> i32 { return missing() }".into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "app".into(),
@@ -160,6 +228,8 @@ mod source_group_tests {
                 source: "micro main(".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["library".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("完整源码闭包必须先完成物化");
@@ -175,6 +245,8 @@ mod source_group_tests {
                 source: "micro answer() -> i32 { return 1 }".into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "app".into(),
@@ -182,6 +254,8 @@ mod source_group_tests {
                 source: "micro main() -> i32 { return answer() }".into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("完整闭包不授予未声明依赖可见性");
@@ -197,6 +271,8 @@ mod source_group_tests {
                 source: "micro answer() -> i32 { return 1 }".into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "app".into(),
@@ -204,6 +280,8 @@ mod source_group_tests {
                 source: "micro main() -> i32 { return answer() }".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["core".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let output = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("compiler closes source groups");
@@ -220,6 +298,8 @@ mod source_group_tests {
                 source: "micro answer() -> i32 { return 23 } micro unused() -> bool { return true }".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec![],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "library".into(),
@@ -227,6 +307,8 @@ mod source_group_tests {
                 source: "micro relay() -> i32 { return answer() }".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["base".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "app".into(),
@@ -234,6 +316,8 @@ mod source_group_tests {
                 source: "micro run() -> i32 { return relay() }".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["library".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let output = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect("实例闭包必须贯穿 Canonical 校验及表示规划");
@@ -346,6 +430,7 @@ mod source_group_tests {
             source: "micro main() { return }".into(),
             sources: Vec::new(),
             direct_dependencies: vec!["missing".into()],
+            ..Default::default()
         }];
         let error = ValkyrieCompiler::default()
             .compile_source_groups_to_program(&groups)
@@ -362,6 +447,8 @@ mod source_group_tests {
                 source: "micro first() { return }".into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "same".into(),
@@ -369,6 +456,8 @@ mod source_group_tests {
                 source: "micro second() { return }".into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("duplicate dependency identity must fail");
@@ -603,7 +692,7 @@ pub struct ValkyrieCompiler {
 }
 
 /// Resolver 交给 Compiler 的有序源码语义组。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CompilerSourceGroup {
     /// Resolver 分配的稳定依赖身份。
     pub dependency_key: String,
@@ -616,6 +705,49 @@ pub struct CompilerSourceGroup {
     pub sources: Vec<CompilerSourceFile>,
     /// 只允许引用已完成链接的直接依赖身份。
     pub direct_dependencies: Vec<String>,
+    /// 依赖包 inventory：单文件 parse 失败时记入库存诊断并继续，不阻塞入口组。
+    /// 入口工程组必须为 `false`；可达文件的语法错误仍会在引用时结构化失败。
+    pub tolerate_inventory_parse_failures: bool,
+    /// 限定进入 Oak parse 与 HIR body lowering 的仓相对路径；`None` 表示组内全部 `sources`。
+    pub body_lowering_source_paths: Option<std::collections::BTreeSet<String>>,
+}
+
+impl CompilerSourceGroup {
+    /// 测试与旧夹具用的最小源码组；入口组默认 fail-closed。
+    pub fn single_source(dependency_key: &str, name: &str, source: &str) -> Self {
+        Self {
+            dependency_key: dependency_key.into(),
+            name: name.into(),
+            source: source.into(),
+            sources: Vec::new(),
+            direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
+        }
+    }
+
+    /// 多文件生产组；默认不启用 inventory 容错。
+    pub fn from_source_files(
+        dependency_key: &str,
+        name: &str,
+        sources: Vec<CompilerSourceFile>,
+        direct_dependencies: Vec<String>,
+    ) -> Self {
+        Self {
+            dependency_key: dependency_key.into(),
+            name: name.into(),
+            source: String::new(),
+            sources,
+            direct_dependencies,
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
+        }
+    }
+
+    pub(crate) fn with_direct_dependencies(mut self, direct_dependencies: Vec<String>) -> Self {
+        self.direct_dependencies = direct_dependencies;
+        self
+    }
 }
 
 /// 一个具有独立 source span 边界的 Valkyrie 源文件。
@@ -996,19 +1128,23 @@ impl ValkyrieCompiler {
             return self.parse_source_group_without_call_resolution(&group.source, imported_semantic_exports, module_name, arch);
         }
         let mut merged: Option<HirModule> = None;
+        let mut lowered_file_count = 0usize;
         for file in &group.sources {
-            let mut root = frontend::parse_source(&file.source).map_err(|error| match error {
-                ParseError::Invalid { message, span } => {
-                    ParseError::Invalid { message: format!("源码组 `{}` 文件 `{}`: {message}", group.dependency_key, file.path), span }
+            if let Some(allowed) = &group.body_lowering_source_paths {
+                if !allowed.contains(&file.path) {
+                    continue;
                 }
-                other => other,
-            })?;
-            expand_macros_in_root(&mut root);
-            expand_templates_in_root(&mut root, &file.source, arch)?;
-            let module = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name.clone())
-            }))
-            .map_err(|_| ParseError::invalid(format!("source file `{}` contains an unexpanded syntax node", file.path)))??;
+            }
+            let module = match self.parse_and_lower_source_file(group, file, imported_semantic_exports, module_name.clone(), arch) {
+                Ok(module) => module,
+                Err(error) => {
+                    if group.tolerate_inventory_parse_failures {
+                        continue;
+                    }
+                    return Err(error);
+                }
+            };
+            lowered_file_count += 1;
             if let Some(target) = &mut merged {
                 target.imports.extend(module.imports);
                 target.warnings.extend(module.warnings);
@@ -1031,9 +1167,37 @@ impl ValkyrieCompiler {
                 merged = Some(module);
             }
         }
-        let hir = merged.ok_or_else(|| ParseError::invalid(format!("semantic source group `{}` has no source files", group.name)))?;
+        if lowered_file_count == 0 {
+            return Err(ParseError::invalid(format!(
+                "semantic source group `{}` has no body-lowering source files",
+                group.dependency_key
+            )));
+        }
+        let hir = merged.expect("lowered_file_count > 0 implies merged HirModule");
         validate_interop_surface(&hir)?;
         Ok(hir)
+    }
+
+    fn parse_and_lower_source_file(
+        &self,
+        group: &CompilerSourceGroup,
+        file: &CompilerSourceFile,
+        imported_semantic_exports: &[HirDependencySemanticExport],
+        module_name: Option<NamePath>,
+        arch: &str,
+    ) -> Result<HirModule, ParseError> {
+        let mut root = frontend::parse_source(&file.source).map_err(|error| match error {
+            ParseError::Invalid { message, span } => {
+                ParseError::Invalid { message: format!("源码组 `{}` 文件 `{}`: {message}", group.dependency_key, file.path), span }
+            }
+            other => other,
+        })?;
+        expand_macros_in_root(&mut root);
+        expand_templates_in_root(&mut root, &file.source, arch)?;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            AstToHir::new(self.source_id).lower_root_without_call_resolution(&root, imported_semantic_exports, module_name)
+        }))
+        .map_err(|_| ParseError::invalid(format!("source file `{}` contains an unexpanded syntax node", file.path)))?
     }
 
     /// Lowers parser output into a HIR module.
@@ -3203,6 +3367,8 @@ enums Status {
                 .into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "app".into(),
@@ -3210,6 +3376,8 @@ enums Status {
                 source: "micro main() { return }".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["dep".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("consumer with imported enums");
@@ -3279,6 +3447,8 @@ unite Choice {
                 .into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "app".into(),
@@ -3286,6 +3456,8 @@ unite Choice {
                 source: "micro main() { return }".into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["dep".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("consumer with imported unite");
@@ -3716,6 +3888,8 @@ micro Some<T>(value: T) -> Option<T> {
                 .into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "std.adaptor.wasm".into(),
@@ -3730,6 +3904,8 @@ micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
                 .into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["core".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         ValkyrieCompiler::default()
@@ -3754,6 +3930,8 @@ micro Some<T>(value: T) -> Option<T> {
                 .into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "app".into(),
@@ -3766,6 +3944,8 @@ micro wrap<T>(value: T): Option<T> {
                 .into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["core".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         ValkyrieCompiler::default()
@@ -3800,6 +3980,8 @@ micro Some<T>(value: T) -> Option<T> {
                 .into(),
                 sources: Vec::new(),
                 direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
             CompilerSourceGroup {
                 dependency_key: "std.adaptor.wasm".into(),
@@ -3824,6 +4006,8 @@ micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
                 .into(),
                 sources: Vec::new(),
                 direct_dependencies: vec!["core".into()],
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
             },
         ];
         let compiler = ValkyrieCompiler::default();

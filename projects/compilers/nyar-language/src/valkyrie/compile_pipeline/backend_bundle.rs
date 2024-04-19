@@ -162,6 +162,7 @@ mod tests {
             source,
             sources: Vec::new(),
             direct_dependencies: Vec::new(),
+            ..Default::default()
         }]
     }
 

@@ -24,6 +24,8 @@ pub mod parser;
 pub mod printer;
 /// Resolver 侧目标模板展开；Compiler 不得调用。
 pub mod resolver_staging;
+/// 入口驱动的语义闭包规划。
+pub mod semantic_closure;
 pub(crate) mod source_format;
 pub(crate) mod symbols;
 pub mod text;

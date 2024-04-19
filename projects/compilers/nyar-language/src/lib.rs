@@ -43,6 +43,7 @@ pub use valkyrie::{
     derive,
     frontend_contract::{ConcretizeError, concretize_mir_function_types, concretize_type},
     hir::{AstToHir, CaptureAnalyzer, CompilerSourceFile, CompilerSourceGroup, ValkyrieCompiler},
+    semantic_closure::{SemanticGroupPlan, plan_semantic_groups},
     lint::{lint_valkyrie_source, lint_valkyrie_vx_source},
     mir,
     mir::{

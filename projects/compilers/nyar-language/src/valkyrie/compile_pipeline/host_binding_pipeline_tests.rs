@@ -23,6 +23,8 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
             source: "[host_provider(demo.write)] micro write(value: i32) -> i32 { return value }".into(),
             sources: Vec::new(),
             direct_dependencies: Vec::new(),
+        tolerate_inventory_parse_failures: false,
+        body_lowering_source_paths: None,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -32,6 +34,8 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
                 .into(),
             sources: Vec::new(),
             direct_dependencies: vec!["adaptor".into()],
+        tolerate_inventory_parse_failures: false,
+        body_lowering_source_paths: None,
         },
     ];
     let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "adaptor.write".into() }];
@@ -61,6 +65,8 @@ fn missing_host_provider_binding_keeps_contract_import() {
             source: "[host_provider(demo.write)] micro write(value: i32) -> i32 { return value }".into(),
             sources: Vec::new(),
             direct_dependencies: Vec::new(),
+        tolerate_inventory_parse_failures: false,
+        body_lowering_source_paths: None,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -70,6 +76,8 @@ fn missing_host_provider_binding_keeps_contract_import() {
                 .into(),
             sources: Vec::new(),
             direct_dependencies: vec!["adaptor".into()],
+        tolerate_inventory_parse_failures: false,
+        body_lowering_source_paths: None,
         },
     ];
     let program = ValkyrieCompiler::default()

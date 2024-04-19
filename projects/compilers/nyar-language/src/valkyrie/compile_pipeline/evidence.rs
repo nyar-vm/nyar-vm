@@ -54,6 +54,20 @@ fn semantic_closure_hash(groups: &[CompilerSourceGroup]) -> String {
         for dependency in &group.direct_dependencies {
             parts.push(dependency.clone());
         }
+        parts.push(if group.tolerate_inventory_parse_failures {
+            "inventory-tolerant".into()
+        } else {
+            "inventory-strict".into()
+        });
+        match &group.body_lowering_source_paths {
+            None => parts.push("body-lowering:all".into()),
+            Some(paths) => {
+                parts.push("body-lowering:subset".into());
+                for path in paths {
+                    parts.push(path.clone());
+                }
+            }
+        }
     }
     let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
     combined_content_hash(&borrowed)
@@ -87,6 +101,8 @@ mod tests {
             source: "[main] micro main() -> i32 { return 23 }".into(),
             sources: Vec::new(),
             direct_dependencies: Vec::new(),
+            tolerate_inventory_parse_failures: false,
+            body_lowering_source_paths: None,
         }];
         let context = CompilerBuildContext::new(
             "wasm32",
