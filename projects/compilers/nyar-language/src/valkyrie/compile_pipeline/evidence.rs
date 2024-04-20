@@ -40,6 +40,13 @@ pub fn host_provider_binding_hash_for_bindings(host_bindings: &[CompilerHostProv
 }
 
 fn semantic_closure_hash(groups: &[CompilerSourceGroup]) -> String {
+    if let Some(first) = groups.first() {
+        if let Some(digest) = &first.closure_digest {
+            if groups.iter().all(|group| group.closure_digest.as_ref() == Some(digest)) {
+                return digest.clone();
+            }
+        }
+    }
     let mut parts = Vec::new();
     for group in groups {
         parts.push(group.dependency_key.clone());
@@ -103,6 +110,7 @@ mod tests {
             direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
+            closure_digest: None,
         }];
         let context = CompilerBuildContext::new(
             "wasm32",

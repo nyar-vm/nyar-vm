@@ -25,6 +25,7 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
             direct_dependencies: Vec::new(),
         tolerate_inventory_parse_failures: false,
         body_lowering_source_paths: None,
+        closure_digest: None,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -36,6 +37,7 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
             direct_dependencies: vec!["adaptor".into()],
         tolerate_inventory_parse_failures: false,
         body_lowering_source_paths: None,
+        closure_digest: None,
         },
     ];
     let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "adaptor.write".into() }];
@@ -67,6 +69,7 @@ fn missing_host_provider_binding_keeps_contract_import() {
             direct_dependencies: Vec::new(),
         tolerate_inventory_parse_failures: false,
         body_lowering_source_paths: None,
+        closure_digest: None,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
@@ -78,6 +81,7 @@ fn missing_host_provider_binding_keeps_contract_import() {
             direct_dependencies: vec!["adaptor".into()],
         tolerate_inventory_parse_failures: false,
         body_lowering_source_paths: None,
+        closure_digest: None,
         },
     ];
     let program = ValkyrieCompiler::default()

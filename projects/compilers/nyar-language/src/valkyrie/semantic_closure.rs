@@ -2,9 +2,93 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use nyar_types::combined_content_hash;
+
 use crate::valkyrie::frontend::{ast, parse_source};
 
-/// 单个源码组的 body lowering 计划。
+/// 预 HIR 声明种类；与后续 `ItemId` 分配一一对应，不依赖短名认亲。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DeclarationKind {
+    Micro,
+    Structure,
+    Class,
+    Trait,
+    Enum,
+    Union,
+    Flags,
+    TypeAlias,
+    TypeFunction,
+    Method,
+    ImplyMethod,
+}
+
+impl DeclarationKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Micro => "micro",
+            Self::Structure => "structure",
+            Self::Class => "class",
+            Self::Trait => "trait",
+            Self::Enum => "enum",
+            Self::Union => "union",
+            Self::Flags => "flags",
+            Self::TypeAlias => "type_alias",
+            Self::TypeFunction => "type_function",
+            Self::Method => "method",
+            Self::ImplyMethod => "imply_method",
+        }
+    }
+}
+
+/// 预 HIR 稳定声明身份：依赖组 + 仓相对路径 + 种类 + 名称。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DeclarationKey {
+    /// Resolver 分配的依赖组身份。
+    pub dependency_key: String,
+    /// 仓相对源码路径。
+    pub source_path: String,
+    /// 顶层声明种类。
+    pub kind: DeclarationKind,
+    /// 声明短名（namespace 内暂以文件路径消歧）。
+    pub name: String,
+}
+
+/// 单条声明索引：不降低函数体，只记录 import 边界。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclarationIndexEntry {
+    /// 稳定声明身份。
+    pub key: DeclarationKey,
+    /// 文件级 `using` 路径（仓相对逻辑名）。
+    pub import_paths: BTreeSet<String>,
+}
+
+/// 单组语义闭包切片。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupSemanticClosure {
+    /// 依赖组身份。
+    pub dependency_key: String,
+    /// 依赖包 inventory 是否容忍单文件 parse 失败。
+    pub tolerate_inventory_parse_failures: bool,
+    /// 进入 body lowering 的仓相对路径。
+    pub body_lowering_source_paths: BTreeSet<String>,
+    /// 本组 body lowering 覆盖的声明身份。
+    pub body_lowering_declarations: BTreeSet<DeclarationKey>,
+}
+
+/// 入口驱动的完整语义闭包：声明索引 + body lowering 边界 + digest。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SemanticClosure {
+    /// 各依赖组的 body lowering 切片。
+    pub groups: Vec<GroupSemanticClosure>,
+    /// 全 inventory 声明索引（含不可达文件）。
+    pub declaration_index: BTreeMap<DeclarationKey, DeclarationIndexEntry>,
+    /// 入口闭包内被引用的声明身份。
+    pub demanded_declarations: BTreeSet<DeclarationKey>,
+    /// 闭包稳定摘要。
+    pub digest: String,
+}
+
+/// 单个源码组的 body lowering 计划（兼容旧 API）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticGroupPlan {
     /// 依赖包 inventory 是否容忍单文件 parse 失败。
@@ -13,15 +97,27 @@ pub struct SemanticGroupPlan {
     pub body_lowering_source_paths: Option<BTreeSet<String>>,
 }
 
-/// 从入口组与其依赖 inventory 规划各组的 body lowering 边界。
-pub fn plan_semantic_groups(groups: &[(&str, bool, &[(String, String)])]) -> Vec<SemanticGroupPlan> {
+/// 从入口组与其依赖 inventory 规划完整语义闭包。
+pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> SemanticClosure {
     let indexed_groups = groups
         .iter()
         .map(|(dependency_key, is_entry, files)| {
-            let indexed = files.iter().map(|(path, source)| index_source_file(path, source)).collect::<Vec<_>>();
+            let indexed = files
+                .iter()
+                .map(|(path, source)| index_source_file(dependency_key, path, source))
+                .collect::<Vec<_>>();
             (*dependency_key, *is_entry, indexed)
         })
         .collect::<Vec<_>>();
+
+    let mut declaration_index = BTreeMap::new();
+    for (_, _, files) in &indexed_groups {
+        for file in files {
+            for entry in &file.entries {
+                declaration_index.insert(entry.key.clone(), entry.clone());
+            }
+        }
+    }
 
     let mut demanded_symbols = BTreeSet::new();
     for (_, is_entry, files) in &indexed_groups {
@@ -49,23 +145,76 @@ pub fn plan_semantic_groups(groups: &[(&str, bool, &[(String, String)])]) -> Vec
         }
     }
 
-    indexed_groups
+    let mut closure_groups = Vec::with_capacity(indexed_groups.len());
+    let mut demanded_declarations = BTreeSet::new();
+    for (dependency_key, is_entry, files) in indexed_groups {
+        let body_lowering_source_paths = if is_entry {
+            files.iter().map(|file| file.path.clone()).collect()
+        }
+        else {
+            expand_dependency_body_paths(&files, &demanded_symbols)
+        };
+        let body_lowering_declarations = declaration_keys_for_paths(&files, &body_lowering_source_paths);
+        demanded_declarations.extend(body_lowering_declarations.iter().cloned());
+        closure_groups.push(GroupSemanticClosure {
+            dependency_key: dependency_key.to_string(),
+            tolerate_inventory_parse_failures: !is_entry,
+            body_lowering_source_paths,
+            body_lowering_declarations,
+        });
+    }
+
+    let digest = compute_closure_digest(&closure_groups, &demanded_declarations);
+    SemanticClosure { groups: closure_groups, declaration_index, demanded_declarations, digest }
+}
+
+/// 从入口组与其依赖 inventory 规划各组的 body lowering 边界。
+pub fn plan_semantic_groups(groups: &[(&str, bool, &[(String, String)])]) -> Vec<SemanticGroupPlan> {
+    plan_semantic_closure(groups)
+        .groups
         .into_iter()
-        .map(|(_, is_entry, files)| {
-            if is_entry {
-                SemanticGroupPlan {
-                    tolerate_inventory_parse_failures: false,
-                    body_lowering_source_paths: Some(files.iter().map(|file| file.path.clone()).collect()),
-                }
-            }
-            else {
-                SemanticGroupPlan {
-                    tolerate_inventory_parse_failures: true,
-                    body_lowering_source_paths: Some(expand_dependency_body_paths(&files, &demanded_symbols)),
-                }
-            }
+        .map(|group| SemanticGroupPlan {
+            tolerate_inventory_parse_failures: group.tolerate_inventory_parse_failures,
+            body_lowering_source_paths: Some(group.body_lowering_source_paths),
         })
         .collect()
+}
+
+fn compute_closure_digest(groups: &[GroupSemanticClosure], demanded: &BTreeSet<DeclarationKey>) -> String {
+    let mut parts = Vec::new();
+    for group in groups {
+        parts.push(group.dependency_key.clone());
+        parts.push(if group.tolerate_inventory_parse_failures {
+            "inventory-tolerant".into()
+        } else {
+            "inventory-strict".into()
+        });
+        for path in &group.body_lowering_source_paths {
+            parts.push(path.clone());
+        }
+        for key in &group.body_lowering_declarations {
+            parts.push(format_declaration_key(key));
+        }
+    }
+    for key in demanded {
+        parts.push(format!("demanded:{}", format_declaration_key(key)));
+    }
+    let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
+    combined_content_hash(&borrowed)
+}
+
+fn format_declaration_key(key: &DeclarationKey) -> String {
+    format!("{}::{}::{}::{}", key.dependency_key, key.source_path, key.kind.as_str(), key.name)
+}
+
+fn declaration_keys_for_paths(files: &[IndexedFile], paths: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
+    let mut keys = BTreeSet::new();
+    for file in files {
+        if paths.contains(&file.path) {
+            keys.extend(file.entries.iter().map(|entry| entry.key.clone()));
+        }
+    }
+    keys
 }
 
 fn expand_dependency_body_paths(files: &[IndexedFile], seeds: &BTreeSet<String>) -> BTreeSet<String> {
@@ -110,8 +259,8 @@ fn build_declaration_index(files: &[IndexedFile]) -> BTreeMap<String, BTreeSet<S
         if !file.parse_ok {
             continue;
         }
-        for declaration in &file.declarations {
-            index.entry(declaration.clone()).or_default().insert(file.path.clone());
+        for entry in &file.entries {
+            index.entry(entry.key.name.clone()).or_default().insert(file.path.clone());
         }
     }
     index
@@ -121,85 +270,121 @@ fn build_declaration_index(files: &[IndexedFile]) -> BTreeMap<String, BTreeSet<S
 struct IndexedFile {
     path: String,
     parse_ok: bool,
-    declarations: BTreeSet<String>,
+    entries: Vec<DeclarationIndexEntry>,
     referenced_symbols: BTreeSet<String>,
 }
 
-fn index_source_file(path: &str, source: &str) -> IndexedFile {
+fn index_source_file(dependency_key: &str, path: &str, source: &str) -> IndexedFile {
     match parse_source(source) {
         Ok(root) => {
-            let mut declarations = BTreeSet::new();
+            let mut entries = Vec::new();
             let mut referenced_symbols = BTreeSet::new();
-            collect_items(&root.items, &mut declarations, &mut referenced_symbols);
-            IndexedFile { path: path.to_string(), parse_ok: true, declarations, referenced_symbols }
+            let mut import_paths = BTreeSet::new();
+            collect_items(dependency_key, path, &root.items, &mut entries, &mut referenced_symbols, &mut import_paths);
+            IndexedFile { path: path.to_string(), parse_ok: true, entries, referenced_symbols }
         }
         Err(_) => IndexedFile {
             path: path.to_string(),
             parse_ok: false,
-            declarations: BTreeSet::new(),
+            entries: Vec::new(),
             referenced_symbols: BTreeSet::new(),
         },
     }
 }
 
-fn collect_items(items: &[ast::StatementNode], declarations: &mut BTreeSet<String>, references: &mut BTreeSet<String>) {
+fn register_declaration(
+    dependency_key: &str,
+    source_path: &str,
+    kind: DeclarationKind,
+    name: &str,
+    entries: &mut Vec<DeclarationIndexEntry>,
+    import_paths: &BTreeSet<String>,
+) {
+    entries.push(DeclarationIndexEntry {
+        key: DeclarationKey {
+            dependency_key: dependency_key.to_string(),
+            source_path: source_path.to_string(),
+            kind,
+            name: name.to_string(),
+        },
+        import_paths: import_paths.clone(),
+    });
+}
+
+fn collect_items(
+    dependency_key: &str,
+    source_path: &str,
+    items: &[ast::StatementNode],
+    entries: &mut Vec<DeclarationIndexEntry>,
+    references: &mut BTreeSet<String>,
+    import_paths: &mut BTreeSet<String>,
+) {
     for item in items {
-        collect_item(item, declarations, references);
+        collect_item(dependency_key, source_path, item, entries, references, import_paths);
     }
 }
 
-fn collect_item(item: &ast::StatementNode, declarations: &mut BTreeSet<String>, references: &mut BTreeSet<String>) {
+fn collect_item(
+    dependency_key: &str,
+    source_path: &str,
+    item: &ast::StatementNode,
+    entries: &mut Vec<DeclarationIndexEntry>,
+    references: &mut BTreeSet<String>,
+    import_paths: &mut BTreeSet<String>,
+) {
     match item {
-        ast::StatementNode::Namespace(namespace) => collect_items(&namespace.items, declarations, references),
-        ast::StatementNode::Using(using) => collect_using(using, references),
+        ast::StatementNode::Namespace(namespace) => collect_items(dependency_key, source_path, &namespace.items, entries, references, import_paths),
+        ast::StatementNode::Using(using) => collect_using(using, references, import_paths),
         ast::StatementNode::Class(class) => {
-            declarations.insert(class.name.name.clone());
-            collect_structure_body(&class.body, declarations, references);
+            register_declaration(dependency_key, source_path, DeclarationKind::Class, &class.name.name, entries, import_paths);
+            collect_structure_body(dependency_key, source_path, &class.body, entries, references, import_paths);
         }
         ast::StatementNode::Structure(structure) => {
-            declarations.insert(structure.name.name.clone());
-            collect_structure_body(&structure.body, declarations, references);
+            register_declaration(dependency_key, source_path, DeclarationKind::Structure, &structure.name.name, entries, import_paths);
+            collect_structure_body(dependency_key, source_path, &structure.body, entries, references, import_paths);
         }
         ast::StatementNode::Union(union_def) => {
-            declarations.insert(union_def.name.name.clone());
+            register_declaration(dependency_key, source_path, DeclarationKind::Union, &union_def.name.name, entries, import_paths);
             for field in &union_def.body.fields {
                 collect_type_expression(&field.typing, references);
             }
         }
         ast::StatementNode::Flags(flags) => {
-            declarations.insert(flags.name.name.clone());
+            register_declaration(dependency_key, source_path, DeclarationKind::Flags, &flags.name.name, entries, import_paths);
         }
         ast::StatementNode::Enums(enums) => {
-            declarations.insert(enums.name.name.clone());
+            register_declaration(dependency_key, source_path, DeclarationKind::Enum, &enums.name.name, entries, import_paths);
             for variant in &enums.variants {
                 references.insert(variant.name.name.clone());
             }
         }
         ast::StatementNode::Trait(trait_def) => {
-            declarations.insert(trait_def.name.name.clone());
-            collect_structure_body(&trait_def.body, declarations, references);
+            register_declaration(dependency_key, source_path, DeclarationKind::Trait, &trait_def.name.name, entries, import_paths);
+            collect_structure_body(dependency_key, source_path, &trait_def.body, entries, references, import_paths);
         }
-        ast::StatementNode::Imply(imply) => collect_imply(imply, declarations, references),
+        ast::StatementNode::Imply(imply) => collect_imply(dependency_key, source_path, imply, entries, references, import_paths),
         ast::StatementNode::Micro(micro) => {
-            declarations.insert(micro.name.name.clone());
+            register_declaration(dependency_key, source_path, DeclarationKind::Micro, &micro.name.name, entries, import_paths);
             collect_micro(micro, references);
         }
         ast::StatementNode::TypeAlias(alias) => {
-            declarations.insert(alias.name.name.clone());
+            register_declaration(dependency_key, source_path, DeclarationKind::TypeAlias, &alias.name.name, entries, import_paths);
             collect_type_expression(&alias.target, references);
         }
         ast::StatementNode::TypeFunction(type_function) => {
-            declarations.insert(type_function.name.name.clone());
+            register_declaration(dependency_key, source_path, DeclarationKind::TypeFunction, &type_function.name.name, entries, import_paths);
             collect_type_function(type_function, references);
         }
         ast::StatementNode::Let(let_stmt) => collect_let(let_stmt, references),
         ast::StatementNode::ExprStmt(expr_stmt) => collect_term(&expr_stmt.expr, references),
-        ast::StatementNode::Statement(inner) => collect_item(inner, declarations, references),
+        ast::StatementNode::Statement(inner) => collect_item(dependency_key, source_path, inner, entries, references, import_paths),
         _ => {}
     }
 }
 
-fn collect_using(using: &ast::UsingDeclaration, references: &mut BTreeSet<String>) {
+fn collect_using(using: &ast::UsingDeclaration, references: &mut BTreeSet<String>, import_paths: &mut BTreeSet<String>) {
+    let path = using.path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>().join("::");
+    import_paths.insert(path);
     collect_name_path(&using.path, references);
     for import in &using.imports {
         references.insert(import.name.clone());
@@ -209,13 +394,20 @@ fn collect_using(using: &ast::UsingDeclaration, references: &mut BTreeSet<String
     }
 }
 
-fn collect_imply(imply: &ast::ImplyDeclaration, declarations: &mut BTreeSet<String>, references: &mut BTreeSet<String>) {
+fn collect_imply(
+    dependency_key: &str,
+    source_path: &str,
+    imply: &ast::ImplyDeclaration,
+    entries: &mut Vec<DeclarationIndexEntry>,
+    references: &mut BTreeSet<String>,
+    import_paths: &BTreeSet<String>,
+) {
     collect_type_expression(&imply.target_type, references);
     if let Some(trait_type) = &imply.trait_type {
         collect_type_expression(trait_type, references);
     }
     for method in &imply.methods {
-        declarations.insert(method.name.name.clone());
+        register_declaration(dependency_key, source_path, DeclarationKind::ImplyMethod, &method.name.name, entries, import_paths);
         collect_method(method, references);
     }
 }
@@ -258,12 +450,19 @@ fn collect_type_function(type_function: &ast::TypeFunction, references: &mut BTr
     collect_block(&type_function.body, references);
 }
 
-fn collect_structure_body(body: &ast::StructureBody, declarations: &mut BTreeSet<String>, references: &mut BTreeSet<String>) {
+fn collect_structure_body(
+    dependency_key: &str,
+    source_path: &str,
+    body: &ast::StructureBody,
+    entries: &mut Vec<DeclarationIndexEntry>,
+    references: &mut BTreeSet<String>,
+    import_paths: &BTreeSet<String>,
+) {
     for field in &body.fields {
         collect_type_expression(&field.typing, references);
     }
     for method in &body.methods {
-        declarations.insert(method.name.name.clone());
+        register_declaration(dependency_key, source_path, DeclarationKind::Method, &method.name.name, entries, import_paths);
         collect_method(method, references);
     }
 }
@@ -490,9 +689,9 @@ fn is_builtin_symbol(name: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn plan_from_groups(groups: &[(&str, bool, Vec<(String, String)>)]) -> Vec<SemanticGroupPlan> {
+    fn plan_from_groups(groups: &[(&str, bool, Vec<(String, String)>)]) -> SemanticClosure {
         let refs = groups.iter().map(|(key, is_entry, files)| (*key, *is_entry, files.as_slice())).collect::<Vec<_>>();
-        plan_semantic_groups(&refs)
+        plan_semantic_closure(&refs)
     }
 
     #[test]
@@ -512,19 +711,21 @@ mod tests {
                 vec![("solution.v".into(), "micro run() -> i32 { let value: i32 = answer(); return value }".into())],
             ),
         ];
-        let plans = plan_from_groups(&groups);
-        assert!(plans[0].tolerate_inventory_parse_failures);
-        assert_eq!(plans[0].body_lowering_source_paths, Some(BTreeSet::from(["source/good.v".into()])));
-        assert!(!plans[1].tolerate_inventory_parse_failures);
-        assert_eq!(plans[1].body_lowering_source_paths, Some(BTreeSet::from(["solution.v".into()])));
+        let closure = plan_from_groups(&groups);
+        assert!(closure.groups[0].tolerate_inventory_parse_failures);
+        assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/good.v".into()]));
+        assert!(!closure.groups[1].tolerate_inventory_parse_failures);
+        assert_eq!(closure.groups[1].body_lowering_source_paths, BTreeSet::from(["solution.v".into()]));
+        assert!(!closure.digest.is_empty());
+        assert!(closure.demanded_declarations.iter().any(|key| key.name == "answer"));
     }
 
     #[test]
     fn reachable_inventory_syntax_error_remains_in_body_paths() {
         let groups = [("app", true, vec![("solution.v".into(), "micro broken() { value = }".into())])];
-        let plans = plan_from_groups(&groups);
-        assert!(!plans[0].tolerate_inventory_parse_failures);
-        assert_eq!(plans[0].body_lowering_source_paths, Some(BTreeSet::from(["solution.v".into()])));
+        let closure = plan_from_groups(&groups);
+        assert!(!closure.groups[0].tolerate_inventory_parse_failures);
+        assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["solution.v".into()]));
     }
 
     #[test]
@@ -542,9 +743,9 @@ mod tests {
             ),
             ("app", true, vec![("solution.v".into(), "micro run() -> i32 { return relay() }".into())]),
         ];
-        let plans = plan_from_groups(&groups);
-        assert_eq!(plans[0].body_lowering_source_paths, Some(BTreeSet::from(["source/answer.v".into()])));
-        assert_eq!(plans[1].body_lowering_source_paths, Some(BTreeSet::from(["source/relay.v".into()])));
+        let closure = plan_from_groups(&groups);
+        assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/answer.v".into()]));
+        assert_eq!(closure.groups[1].body_lowering_source_paths, BTreeSet::from(["source/relay.v".into()]));
     }
 
     #[test]
@@ -560,8 +761,21 @@ mod tests {
             ),
             ("app", true, vec![("solution.v".into(), "micro run() -> i32 { return answer() }".into())]),
         ];
-        let plans = plan_from_groups(&groups);
-        assert_eq!(plans[0].body_lowering_source_paths, Some(BTreeSet::from(["source/answer.v".into()])));
-        assert!(!plans[0].body_lowering_source_paths.as_ref().expect("dependency closure paths").contains("source/unused.v"));
+        let closure = plan_from_groups(&groups);
+        assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/answer.v".into()]));
+        assert!(!closure.groups[0].body_lowering_source_paths.contains("source/unused.v"));
+    }
+
+    #[test]
+    fn closure_digest_is_stable_for_identical_input() {
+        let groups = [(
+            "app",
+            true,
+            vec![("solution.v".into(), "micro run() -> i32 { return 23 }".into())],
+        )];
+        let first = plan_from_groups(&groups);
+        let second = plan_from_groups(&groups);
+        assert_eq!(first.digest, second.digest);
+        assert_eq!(first.declaration_index.len(), 1);
     }
 }
