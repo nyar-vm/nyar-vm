@@ -53,6 +53,13 @@ pub struct DeclarationKey {
     pub name: String,
 }
 
+impl DeclarationKey {
+    /// 稳定编码身份；Resolver→Compiler 的声明计划键与闭包 digest 使用同一编码。
+    pub fn encoded(&self) -> String {
+        format!("{}::{}::{}::{}", self.dependency_key, self.source_path, self.kind.as_str(), self.name)
+    }
+}
+
 /// 单条声明索引：不降低函数体，只记录 import 边界。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeclarationIndexEntry {
@@ -67,8 +74,6 @@ pub struct DeclarationIndexEntry {
 pub struct GroupSemanticClosure {
     /// 依赖组身份。
     pub dependency_key: String,
-    /// 依赖包 inventory 是否容忍单文件 parse 失败。
-    pub tolerate_inventory_parse_failures: bool,
     /// 进入 body lowering 的仓相对路径。
     pub body_lowering_source_paths: BTreeSet<String>,
     /// 本组 body lowering 覆盖的声明身份。
@@ -86,15 +91,6 @@ pub struct SemanticClosure {
     pub demanded_declarations: BTreeSet<DeclarationKey>,
     /// 闭包稳定摘要。
     pub digest: String,
-}
-
-/// 单个源码组的 body lowering 计划（兼容旧 API）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SemanticGroupPlan {
-    /// 依赖包 inventory 是否容忍单文件 parse 失败。
-    pub tolerate_inventory_parse_failures: bool,
-    /// 进入 Oak parse 与 HIR body lowering 的仓相对路径。
-    pub body_lowering_source_paths: Option<BTreeSet<String>>,
 }
 
 /// 从入口组与其依赖 inventory 规划完整语义闭包。
@@ -158,7 +154,6 @@ pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> Se
         demanded_declarations.extend(body_lowering_declarations.iter().cloned());
         closure_groups.push(GroupSemanticClosure {
             dependency_key: dependency_key.to_string(),
-            tolerate_inventory_parse_failures: !is_entry,
             body_lowering_source_paths,
             body_lowering_declarations,
         });
@@ -168,43 +163,22 @@ pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> Se
     SemanticClosure { groups: closure_groups, declaration_index, demanded_declarations, digest }
 }
 
-/// 从入口组与其依赖 inventory 规划各组的 body lowering 边界。
-pub fn plan_semantic_groups(groups: &[(&str, bool, &[(String, String)])]) -> Vec<SemanticGroupPlan> {
-    plan_semantic_closure(groups)
-        .groups
-        .into_iter()
-        .map(|group| SemanticGroupPlan {
-            tolerate_inventory_parse_failures: group.tolerate_inventory_parse_failures,
-            body_lowering_source_paths: Some(group.body_lowering_source_paths),
-        })
-        .collect()
-}
-
 fn compute_closure_digest(groups: &[GroupSemanticClosure], demanded: &BTreeSet<DeclarationKey>) -> String {
     let mut parts = Vec::new();
     for group in groups {
         parts.push(group.dependency_key.clone());
-        parts.push(if group.tolerate_inventory_parse_failures {
-            "inventory-tolerant".into()
-        } else {
-            "inventory-strict".into()
-        });
         for path in &group.body_lowering_source_paths {
             parts.push(path.clone());
         }
         for key in &group.body_lowering_declarations {
-            parts.push(format_declaration_key(key));
+            parts.push(key.encoded());
         }
     }
     for key in demanded {
-        parts.push(format!("demanded:{}", format_declaration_key(key)));
+        parts.push(format!("demanded:{}", key.encoded()));
     }
     let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();
     combined_content_hash(&borrowed)
-}
-
-fn format_declaration_key(key: &DeclarationKey) -> String {
-    format!("{}::{}::{}::{}", key.dependency_key, key.source_path, key.kind.as_str(), key.name)
 }
 
 fn declaration_keys_for_paths(files: &[IndexedFile], paths: &BTreeSet<String>) -> BTreeSet<DeclarationKey> {
@@ -712,9 +686,7 @@ mod tests {
             ),
         ];
         let closure = plan_from_groups(&groups);
-        assert!(closure.groups[0].tolerate_inventory_parse_failures);
         assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["source/good.v".into()]));
-        assert!(!closure.groups[1].tolerate_inventory_parse_failures);
         assert_eq!(closure.groups[1].body_lowering_source_paths, BTreeSet::from(["solution.v".into()]));
         assert!(!closure.digest.is_empty());
         assert!(closure.demanded_declarations.iter().any(|key| key.name == "answer"));
@@ -724,7 +696,6 @@ mod tests {
     fn reachable_inventory_syntax_error_remains_in_body_paths() {
         let groups = [("app", true, vec![("solution.v".into(), "micro broken() { value = }".into())])];
         let closure = plan_from_groups(&groups);
-        assert!(!closure.groups[0].tolerate_inventory_parse_failures);
         assert_eq!(closure.groups[0].body_lowering_source_paths, BTreeSet::from(["solution.v".into()]));
     }
 

@@ -53,17 +53,9 @@ fn semantic_closure_hash(groups: &[CompilerSourceGroup]) -> String {
         for file in &group.sources {
             parts.push(combined_content_hash(&[file.path.as_str(), file.source.as_str()]));
         }
-        if group.sources.is_empty() {
-            parts.push("semantic-sources:missing".into());
-        }
         for dependency in &group.direct_dependencies {
             parts.push(dependency.clone());
         }
-        parts.push(if group.tolerate_inventory_parse_failures {
-            "inventory-tolerant".into()
-        } else {
-            "inventory-strict".into()
-        });
         match &group.body_lowering_source_paths {
             None => parts.push("body-lowering:all".into()),
             Some(paths) => {
