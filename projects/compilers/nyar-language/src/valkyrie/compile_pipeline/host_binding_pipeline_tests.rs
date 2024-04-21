@@ -17,28 +17,18 @@ fn invoke_callee(canonical: &nyar_types::CanonicalProgram, instance: ItemInstanc
 #[test]
 fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
     let groups = [
-        CompilerSourceGroup {
-            dependency_key: "adaptor".into(),
-            name: "adaptor".into(),
-            source: "[host_provider(demo.write)] micro write(value: i32) -> i32 { return value }".into(),
-            sources: Vec::new(),
-            direct_dependencies: Vec::new(),
-        tolerate_inventory_parse_failures: false,
-        body_lowering_source_paths: None,
-        closure_digest: None,
-        },
-        CompilerSourceGroup {
-            dependency_key: "app".into(),
-            name: "demo".into(),
-            source: "[host_contract] micro write(value: i32) -> i32 { } \
-                [main] micro main() -> i32 { return write(1) }"
-                .into(),
-            sources: Vec::new(),
-            direct_dependencies: vec!["adaptor".into()],
-        tolerate_inventory_parse_failures: false,
-        body_lowering_source_paths: None,
-        closure_digest: None,
-        },
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "[host_provider(demo.write)] micro write(value: i32) -> i32 { return value }",
+        ),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro write(value: i32) -> i32 { } \
+                [main] micro main() -> i32 { return write(1) }",
+        )
+            .with_direct_dependencies(vec!["adaptor".into()]),
     ];
     let bindings = vec![CompilerHostProviderBinding { contract: "demo.write".into(), symbol: "adaptor.write".into() }];
     let program = ValkyrieCompiler::default()
@@ -61,28 +51,18 @@ fn selected_host_provider_rewrites_contract_calls_in_full_source_closure() {
 #[test]
 fn missing_host_provider_binding_keeps_contract_import() {
     let groups = [
-        CompilerSourceGroup {
-            dependency_key: "adaptor".into(),
-            name: "adaptor".into(),
-            source: "[host_provider(demo.write)] micro write(value: i32) -> i32 { return value }".into(),
-            sources: Vec::new(),
-            direct_dependencies: Vec::new(),
-        tolerate_inventory_parse_failures: false,
-        body_lowering_source_paths: None,
-        closure_digest: None,
-        },
-        CompilerSourceGroup {
-            dependency_key: "app".into(),
-            name: "demo".into(),
-            source: "[host_contract] micro write(value: i32) -> i32 { } \
-                [main] micro main() -> i32 { return write(1) }"
-                .into(),
-            sources: Vec::new(),
-            direct_dependencies: vec!["adaptor".into()],
-        tolerate_inventory_parse_failures: false,
-        body_lowering_source_paths: None,
-        closure_digest: None,
-        },
+        CompilerSourceGroup::single_source(
+            "adaptor",
+            "adaptor",
+            "[host_provider(demo.write)] micro write(value: i32) -> i32 { return value }",
+        ),
+        CompilerSourceGroup::single_source(
+            "app",
+            "demo",
+            "[host_contract] micro write(value: i32) -> i32 { } \
+                [main] micro main() -> i32 { return write(1) }",
+        )
+            .with_direct_dependencies(vec!["adaptor".into()]),
     ];
     let program = ValkyrieCompiler::default()
         .compile_source_groups_to_program_with_host_bindings(&groups, &[], TEST_ARCH)

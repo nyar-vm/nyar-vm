@@ -151,8 +151,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "library".into(),
                 name: "library".into(),
-                source: "micro answer() -> i32 { return 23 }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "library.v".into(), source: "micro answer() -> i32 { return 23 }".into() }],
                 direct_dependencies: vec![],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -161,8 +161,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "app".into(),
                 name: "app".into(),
-                source: "micro run() -> i32 { let value: i32 = answer(); return value }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: "micro run() -> i32 { let value: i32 = answer(); return value }".into() }],
                 direct_dependencies: vec!["library".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -220,8 +220,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "library".into(),
                 name: "library".into(),
-                source: "micro helper() -> i32 { return missing() }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "library.v".into(), source: "micro helper() -> i32 { return missing() }".into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -230,8 +230,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "app".into(),
                 name: "app".into(),
-                source: "micro main(".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: "micro main(".into() }],
                 direct_dependencies: vec!["library".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -248,8 +248,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "library".into(),
                 name: "library".into(),
-                source: "micro answer() -> i32 { return 1 }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "library.v".into(), source: "micro answer() -> i32 { return 1 }".into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -258,8 +258,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "app".into(),
                 name: "app".into(),
-                source: "micro main() -> i32 { return answer() }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: "micro main() -> i32 { return answer() }".into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -276,8 +276,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "core".into(),
                 name: "core".into(),
-                source: "micro answer() -> i32 { return 1 }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "core.v".into(), source: "micro answer() -> i32 { return 1 }".into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -286,8 +286,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "app".into(),
                 name: "app".into(),
-                source: "micro main() -> i32 { return answer() }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: "micro main() -> i32 { return answer() }".into() }],
                 direct_dependencies: vec!["core".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -305,8 +305,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "base".into(),
                 name: "base".into(),
-                source: "micro answer() -> i32 { return 23 } micro unused() -> bool { return true }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "base.v".into(), source: "micro answer() -> i32 { return 23 } micro unused() -> bool { return true }".into() }],
                 direct_dependencies: vec![],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -315,8 +315,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "library".into(),
                 name: "library".into(),
-                source: "micro relay() -> i32 { return answer() }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "library.v".into(), source: "micro relay() -> i32 { return answer() }".into() }],
                 direct_dependencies: vec!["base".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -325,8 +325,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "app".into(),
                 name: "app".into(),
-                source: "micro run() -> i32 { return relay() }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: "micro run() -> i32 { return relay() }".into() }],
                 direct_dependencies: vec!["library".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -440,8 +440,8 @@ mod source_group_tests {
         let groups = vec![CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
-            source: "micro main() { return }".into(),
-            sources: Vec::new(),
+            source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: "micro main() { return }".into() }],
             direct_dependencies: vec!["missing".into()],
             ..Default::default()
         }];
@@ -457,8 +457,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "same".into(),
                 name: "first".into(),
-                source: "micro first() { return }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "first.v".into(), source: "micro first() { return }".into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -467,8 +467,8 @@ mod source_group_tests {
             CompilerSourceGroup {
                 dependency_key: "same".into(),
                 name: "second".into(),
-                source: "micro second() { return }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "second.v".into(), source: "micro second() { return }".into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -713,10 +713,9 @@ pub struct CompilerSourceGroup {
     pub dependency_key: String,
     /// 诊断和模块身份使用的名称。
     pub name: String,
-    /// 已完成 staging 的源码内容。
+    /// 遗留字段；Resolver 与 Compiler 只认 `sources`，不得再拼接单段文本。
     pub source: String,
     /// 生产源码闭包中的独立文件；每个文件必须单独经过 Oak parse。
-    /// `source` 仅保留给旧测试夹具，生产 Resolver 不再把文件拼成一段文本。
     pub sources: Vec<CompilerSourceFile>,
     /// 只允许引用已完成链接的直接依赖身份。
     pub direct_dependencies: Vec<String>,
@@ -730,18 +729,14 @@ pub struct CompilerSourceGroup {
 }
 
 impl CompilerSourceGroup {
-    /// 测试与旧夹具用的最小源码组；入口组默认 fail-closed。
+    /// 测试与单文件夹具用的最小源码组；入口组默认 fail-closed。
     pub fn single_source(dependency_key: &str, name: &str, source: &str) -> Self {
-        Self {
-            dependency_key: dependency_key.into(),
-            name: name.into(),
-            source: source.into(),
-            sources: Vec::new(),
-            direct_dependencies: Vec::new(),
-            tolerate_inventory_parse_failures: false,
-            body_lowering_source_paths: None,
-            closure_digest: None,
-        }
+        Self::from_source_files(
+            dependency_key,
+            name,
+            vec![CompilerSourceFile { path: format!("{name}.v"), source: source.into() }],
+            Vec::new(),
+        )
     }
 
     /// 多文件生产组；默认不启用 inventory 容错。
@@ -1144,7 +1139,10 @@ impl ValkyrieCompiler {
         arch: &str,
     ) -> Result<HirModule, ParseError> {
         if group.sources.is_empty() {
-            return self.parse_source_group_without_call_resolution(&group.source, imported_semantic_exports, module_name, arch);
+            return Err(ParseError::invalid(format!(
+                "semantic source group `{}` has no source files; Resolver must submit per-file sources",
+                group.dependency_key
+            )));
         }
         let mut merged: Option<HirModule> = None;
         let mut lowered_file_count = 0usize;
@@ -3377,14 +3375,13 @@ enums Status {
             CompilerSourceGroup {
                 dependency_key: "dep".into(),
                 name: "dep".into(),
-                source: r#"
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "dep.v".into(), source: r#"
 enums Status {
     Active = 2
     Inactive
 }
-"#
-                .into(),
-                sources: Vec::new(),
+"#.into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -3393,8 +3390,8 @@ enums Status {
             CompilerSourceGroup {
                 dependency_key: "app".into(),
                 name: "app".into(),
-                source: "micro main() { return }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: "micro main() { return }".into() }],
                 direct_dependencies: vec!["dep".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -3458,15 +3455,14 @@ enums Status {
             CompilerSourceGroup {
                 dependency_key: "dep".into(),
                 name: "dep".into(),
-                source: r#"
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "dep.v".into(), source: r#"
 unite Choice {
     [tag(2)]
     A { x: i64 }
     B { y: i64 }
 }
-"#
-                .into(),
-                sources: Vec::new(),
+"#.into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -3475,8 +3471,8 @@ unite Choice {
             CompilerSourceGroup {
                 dependency_key: "app".into(),
                 name: "app".into(),
-                source: "micro main() { return }".into(),
-                sources: Vec::new(),
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: "micro main() { return }".into() }],
                 direct_dependencies: vec!["dep".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -3892,7 +3888,8 @@ micro check(ordinal: usize): bool {
             CompilerSourceGroup {
                 dependency_key: "core".into(),
                 name: "core".into(),
-                source: r#"
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "core.v".into(), source: r#"
 namespace core::primitive;
 [primitive("core::primitive::usize")]
 structure usize { }
@@ -3907,9 +3904,7 @@ micro Some<T>(value: T) -> Option<T> {
     let wrapped: Option<T> = Some(value)
     return wrapped
 }
-"#
-                .into(),
-                sources: Vec::new(),
+"#.into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -3918,15 +3913,14 @@ micro Some<T>(value: T) -> Option<T> {
             CompilerSourceGroup {
                 dependency_key: "std.adaptor.wasm".into(),
                 name: "std.adaptor.wasm".into(),
-                source: r#"
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "std.adaptor.wasm.v".into(), source: r#"
 namespace std.adaptor.wasm.collection;
 micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
     let item: T = array::[ordinal]
     return Some(item)
 }
-"#
-                .into(),
-                sources: Vec::new(),
+"#.into() }],
                 direct_dependencies: vec!["core".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -3944,16 +3938,15 @@ micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
             CompilerSourceGroup {
                 dependency_key: "core".into(),
                 name: "core".into(),
-                source: r#"
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "core.v".into(), source: r#"
 namespace core::types;
 unite Option<T> { Some { value: T }, None }
 micro Some<T>(value: T) -> Option<T> {
     let wrapped: Option<T> = Some(value)
     return wrapped
 }
-"#
-                .into(),
-                sources: Vec::new(),
+"#.into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -3962,13 +3955,12 @@ micro Some<T>(value: T) -> Option<T> {
             CompilerSourceGroup {
                 dependency_key: "app".into(),
                 name: "app".into(),
-                source: r#"
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "app.v".into(), source: r#"
 micro wrap<T>(value: T): Option<T> {
     return Some(value)
 }
-"#
-                .into(),
-                sources: Vec::new(),
+"#.into() }],
                 direct_dependencies: vec!["core".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -3988,7 +3980,8 @@ micro wrap<T>(value: T): Option<T> {
             CompilerSourceGroup {
                 dependency_key: "core".into(),
                 name: "core".into(),
-                source: r#"
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "core.v".into(), source: r#"
 namespace core::primitive;
 [primitive("core::primitive::usize")]
 structure usize { }
@@ -4003,9 +3996,7 @@ micro Some<T>(value: T) -> Option<T> {
     let wrapped: Option<T> = Some(value)
     return wrapped
 }
-"#
-                .into(),
-                sources: Vec::new(),
+"#.into() }],
                 direct_dependencies: Vec::new(),
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,
@@ -4014,7 +4005,8 @@ micro Some<T>(value: T) -> Option<T> {
             CompilerSourceGroup {
                 dependency_key: "std.adaptor.wasm".into(),
                 name: "std.adaptor.wasm".into(),
-                source: r#"
+                source: String::new(),
+                sources: vec![super::CompilerSourceFile { path: "std.adaptor.wasm.v".into(), source: r#"
 namespace std.adaptor.wasm.collection;
 micro array_host_get<T>(array: [T], ordinal: usize): Option<T> {
     let item_count: usize = builtin.array.length(array)
@@ -4030,9 +4022,7 @@ micro array_host_set<T>(mut array: [T], ordinal: usize, value: T): unit {
     }
     array::[ordinal - 1] = value
 }
-"#
-                .into(),
-                sources: Vec::new(),
+"#.into() }],
                 direct_dependencies: vec!["core".into()],
             tolerate_inventory_parse_failures: false,
             body_lowering_source_paths: None,

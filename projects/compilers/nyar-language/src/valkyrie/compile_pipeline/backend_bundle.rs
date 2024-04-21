@@ -10,7 +10,7 @@ use nyar::{ArtifactPartitionPlan, TargetBackendFamily};
 use nyar_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
 
 use crate::{
-    CompilerSourceGroup, ValkyrieCompiler,
+    CompilerSourceFile, CompilerSourceGroup, ValkyrieCompiler,
     valkyrie::{assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program},
 };
 
@@ -156,14 +156,12 @@ mod tests {
 <% end %>"#;
 
     fn template_groups_from_source(source: String) -> [CompilerSourceGroup; 1] {
-        [CompilerSourceGroup {
-            dependency_key: "app".to_string(),
-            name: "app".to_string(),
-            source,
-            sources: Vec::new(),
-            direct_dependencies: Vec::new(),
-            ..Default::default()
-        }]
+        [CompilerSourceGroup::from_source_files(
+            "app",
+            "app",
+            vec![CompilerSourceFile { path: "app.v".into(), source }],
+            Vec::new(),
+        )]
     }
 
     #[test]

@@ -50,13 +50,11 @@ fn semantic_closure_hash(groups: &[CompilerSourceGroup]) -> String {
     let mut parts = Vec::new();
     for group in groups {
         parts.push(group.dependency_key.clone());
-        if group.sources.is_empty() {
-            parts.push(combined_content_hash(&[&group.source]));
+        for file in &group.sources {
+            parts.push(combined_content_hash(&[file.path.as_str(), file.source.as_str()]));
         }
-        else {
-            for file in &group.sources {
-                parts.push(combined_content_hash(&[file.path.as_str(), file.source.as_str()]));
-            }
+        if group.sources.is_empty() {
+            parts.push("semantic-sources:missing".into());
         }
         for dependency in &group.direct_dependencies {
             parts.push(dependency.clone());
@@ -102,16 +100,7 @@ mod tests {
 
     #[test]
     fn compile_evidence_is_stable_for_the_same_source_closure() {
-        let groups = [CompilerSourceGroup {
-            dependency_key: "app".into(),
-            name: "app".into(),
-            source: "[main] micro main() -> i32 { return 23 }".into(),
-            sources: Vec::new(),
-            direct_dependencies: Vec::new(),
-            tolerate_inventory_parse_failures: false,
-            body_lowering_source_paths: None,
-            closure_digest: None,
-        }];
+        let groups = [CompilerSourceGroup::single_source("app", "app", "[main] micro main() -> i32 { return 23 }")];
         let context = CompilerBuildContext::new(
             "wasm32",
             CanonicalTarget::parse("node").expect("node"),
