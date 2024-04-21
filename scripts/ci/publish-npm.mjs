@@ -20,15 +20,15 @@ const PACKAGES_ROOT = path.join(ROOT, 'projects', 'packages');
 
 /** @type {{ short: string, packageDir: string, os: string[], cpu: string[], artifact: string }[]} */
 const NATIVE_PLATFORMS = [
-    { short: 'win32-x64', packageDir: 'nyar-win32-x64', os: ['win32'], cpu: ['x64'], artifact: 'nyar_napi.dll' },
-    { short: 'linux-x64', packageDir: 'nyar-linux-x64', os: ['linux'], cpu: ['x64'], artifact: 'libnyar_napi.so' },
-    { short: 'darwin-x64', packageDir: 'nyar-darwin-x64', os: ['darwin'], cpu: ['x64'], artifact: 'libnyar_napi.dylib' },
+    { short: 'win32-x64', packageDir: 'nyar-win32-x64', os: ['win32'], cpu: ['x64'], artifact: 'nyar.win32-x64-msvc.node' },
+    { short: 'linux-x64', packageDir: 'nyar-linux-x64', os: ['linux'], cpu: ['x64'], artifact: 'nyar.linux-x64-gnu.node' },
+    { short: 'darwin-x64', packageDir: 'nyar-darwin-x64', os: ['darwin'], cpu: ['x64'], artifact: 'nyar.darwin-x64.node' },
     {
         short: 'darwin-arm64',
         packageDir: 'nyar-darwin-arm64',
         os: ['darwin'],
         cpu: ['arm64'],
-        artifact: 'libnyar_napi.dylib',
+        artifact: 'nyar.darwin-arm64.node',
     },
 ];
 
@@ -173,11 +173,23 @@ function stageCollectPackage(spec, version, artifactsRoot) {
 
     const artDir = path.join(artifactsRoot, spec.short);
     const artifactName = spec.artifact;
+    const stageLib = path.join(stage, 'lib');
+    fs.mkdirSync(stageLib, { recursive: true });
+    const stageArtifact = path.join(stageLib, artifactName);
     const fromArtifact = path.join(artDir, artifactName);
-    const fromPackage = path.join(abs, artifactName);
-    if (!copyIfExists(fromArtifact, path.join(stage, artifactName)) && !copyIfExists(fromPackage, path.join(stage, artifactName))) {
-        console.log(` · ${name}: no ${artifactName} in artifacts or package tree — publish metadata-only`);
+    const fromArtifactLib = path.join(artDir, 'lib', artifactName);
+    const fromPackage = path.join(abs, 'lib', artifactName);
+    const fromPackageLegacy = path.join(abs, artifactName);
+    if (
+        !copyIfExists(fromArtifactLib, stageArtifact) &&
+        !copyIfExists(fromArtifact, stageArtifact) &&
+        !copyIfExists(fromPackage, stageArtifact) &&
+        !copyIfExists(fromPackageLegacy, stageArtifact)
+    ) {
+        console.log(` · ${name}: no lib/${artifactName} in artifacts or package tree — publish metadata-only`);
     }
+
+    copyIfExists(path.join(abs, 'index.mjs'), path.join(stage, 'index.mjs'));
 
     for (const doc of ['readme.md', 'README.md']) {
         copyIfExists(path.join(abs, doc), path.join(stage, doc));
@@ -270,7 +282,10 @@ function publishMain(version, artifactsRoot) {
         const collectName = `@nyar/nyar-${plat.short}`;
         const artDir = path.join(artifactsRoot, plat.short);
         const hasArtifact =
-            fs.existsSync(path.join(artDir, plat.artifact)) || fs.existsSync(path.join(PACKAGES_ROOT, plat.packageDir, plat.artifact));
+            fs.existsSync(path.join(artDir, 'lib', plat.artifact)) ||
+            fs.existsSync(path.join(artDir, plat.artifact)) ||
+            fs.existsSync(path.join(PACKAGES_ROOT, plat.packageDir, 'lib', plat.artifact)) ||
+            fs.existsSync(path.join(PACKAGES_ROOT, plat.packageDir, plat.artifact));
         if (hasArtifact || versionExists(collectName, version)) {
             optionalNatives[collectName] = version;
         } else {

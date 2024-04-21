@@ -2,6 +2,7 @@
     "name": "@nyar/nyar-linux-x64",
     "version": "0.0.0",
     "description": "Nyar native collect — Linux x64 (Node-API host)",
+    "type": "module",
     "license": "MIT",
     "os": [
         "linux"
@@ -9,8 +10,14 @@
     "cpu": [
         "x64"
     ],
+    "main": "./index.mjs",
+    "exports": {
+        ".": "./index.mjs",
+        "./package.json": "./package.json"
+    },
     "files": [
-        "libnyar_napi.so",
+        "index.mjs",
+        "lib",
         "readme.md",
         "README.md"
     ],

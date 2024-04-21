@@ -1,1 +1,5 @@
+lib/
+*.node
+nyar_napi.dll
+libnyar_napi.so
 libnyar_napi.dylib

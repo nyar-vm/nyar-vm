@@ -1,0 +1,35 @@
+{
+    "name": "@nyar/commander",
+    "version": "0.0.0",
+    "type": "module",
+    "description": "i18n-first TypeScript CLI framework for Nyar host tools",
+    "license": "MIT",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "src",
+        "readme.md",
+        "README.md"
+    ],
+    "scripts": {
+        "prepack": "node ../../../scripts/prepare-npm-publish.mjs",
+        "test": "node --experimental-strip-types --test tests/**/*.test.ts"
+    },
+    "engines": {
+        "node": ">=20"
+    },
+    "keywords": [
+        "nyar",
+        "cli",
+        "i18n"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
+        "directory": "projects/packages/nyar-commander"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}

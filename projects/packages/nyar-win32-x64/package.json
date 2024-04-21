@@ -2,6 +2,7 @@
     "name": "@nyar/nyar-win32-x64",
     "version": "0.0.0",
     "description": "Nyar native collect — Windows x64 (Node-API host)",
+    "type": "module",
     "license": "MIT",
     "os": [
         "win32"
@@ -9,8 +10,14 @@
     "cpu": [
         "x64"
     ],
+    "main": "./index.mjs",
+    "exports": {
+        ".": "./index.mjs",
+        "./package.json": "./package.json"
+    },
     "files": [
-        "nyar_napi.dll",
+        "index.mjs",
+        "lib",
         "readme.md",
         "README.md"
     ],

@@ -2,6 +2,7 @@
     "name": "@nyar/nyar-darwin-arm64",
     "version": "0.0.0",
     "description": "Nyar native collect — darwin arm64 (Node-API host)",
+    "type": "module",
     "license": "MIT",
     "os": [
         "darwin"
@@ -9,8 +10,14 @@
     "cpu": [
         "arm64"
     ],
+    "main": "./index.mjs",
+    "exports": {
+        ".": "./index.mjs",
+        "./package.json": "./package.json"
+    },
     "files": [
-        "libnyar_napi.dylib",
+        "index.mjs",
+        "lib",
         "readme.md",
         "README.md"
     ],

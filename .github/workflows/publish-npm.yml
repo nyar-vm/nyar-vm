@@ -109,13 +109,15 @@ jobs:
           out="dist/${{ matrix.short }}"
           mkdir -p "$out"
           case "${{ matrix.short }}" in
-            win32-x64) src="projects/packages/nyar-win32-x64/nyar_napi.dll" ;;
-            linux-x64) src="projects/packages/nyar-linux-x64/libnyar_napi.so" ;;
-            darwin-x64|darwin-arm64) src="projects/packages/nyar-${{ matrix.short }}/libnyar_napi.dylib" ;;
+            win32-x64) src="projects/packages/nyar-win32-x64/lib/nyar.win32-x64-msvc.node" ;;
+            linux-x64) src="projects/packages/nyar-linux-x64/lib/nyar.linux-x64-gnu.node" ;;
+            darwin-x64) src="projects/packages/nyar-darwin-x64/lib/nyar.darwin-x64.node" ;;
+            darwin-arm64) src="projects/packages/nyar-darwin-arm64/lib/nyar.darwin-arm64.node" ;;
             *) echo "unknown platform ${{ matrix.short }}" >&2; exit 1 ;;
           esac
           if [[ -f "$src" ]]; then
-            cp "$src" "$out/$(basename "$src")"
+            mkdir -p "$out/lib"
+            cp "$src" "$out/lib/$(basename "$src")"
           else
             echo "missing native binary $src — metadata-only collect allowed" >&2
           fi

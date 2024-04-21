@@ -11,20 +11,44 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** @typedef {{ triple: string, packageDir: string, tool: "cargo" | "zigbuild" }} NativeTarget */
+/** @typedef {{ triple: string, packageDir: string, tool: "cargo" | "zigbuild", npmTriple: string, short: string }} NativeTarget */
 /** @typedef {{ triple: string, packageDir: string, libName: string, destName: string }} WasmTarget */
 
 const NATIVE_TARGETS = [
-    { triple: "x86_64-pc-windows-msvc", packageDir: "nyar-win32-x64", tool: "cargo" },
-    { triple: "x86_64-unknown-linux-musl", packageDir: "nyar-linux-x64", tool: "zigbuild" },
-    { triple: "x86_64-apple-darwin", packageDir: "nyar-darwin-x64", tool: "zigbuild" },
-    { triple: "aarch64-apple-darwin", packageDir: "nyar-darwin-arm64", tool: "zigbuild" },
+    {
+        triple: "x86_64-pc-windows-msvc",
+        packageDir: "nyar-win32-x64",
+        tool: "cargo",
+        npmTriple: "win32-x64-msvc",
+        short: "win32-x64",
+    },
+    {
+        triple: "x86_64-unknown-linux-musl",
+        packageDir: "nyar-linux-x64",
+        tool: "zigbuild",
+        npmTriple: "linux-x64-gnu",
+        short: "linux-x64",
+    },
+    {
+        triple: "x86_64-apple-darwin",
+        packageDir: "nyar-darwin-x64",
+        tool: "zigbuild",
+        npmTriple: "darwin-x64",
+        short: "darwin-x64",
+    },
+    {
+        triple: "aarch64-apple-darwin",
+        packageDir: "nyar-darwin-arm64",
+        tool: "zigbuild",
+        npmTriple: "darwin-arm64",
+        short: "darwin-arm64",
+    },
 ];
 
 const WASM_TARGETS = [
@@ -190,17 +214,39 @@ function copyArtifact(src, dest) {
 }
 
 /**
+ * @param {string} npmTriple
+ */
+function nativeCollectBinaryName(npmTriple) {
+    return `nyar.${npmTriple}.node`;
+}
+
+/**
  * @param {string} triple
+ * @param {boolean} release
  * @param {string} libName
  */
-function nativeCollectDestName(triple, libName) {
-    if (triple.includes("windows")) {
-        return `${libName}.dll`;
+function findNativeArtifact(triple, release, libName) {
+    const candidates = nativeLibCandidates(triple, release, libName);
+    for (const candidate of candidates) {
+        if (existsSync(candidate)) {
+            return candidate;
+        }
     }
-    if (triple.includes("apple")) {
-        return `lib${libName}.dylib`;
+    const profile = release ? "release" : "debug";
+    const depsDir = join(ROOT, "target", triple, profile, "deps");
+    if (existsSync(depsDir)) {
+        for (const name of readdirSync(depsDir)) {
+            if (
+                (name === libName ||
+                    name.startsWith(`${libName}.`) ||
+                    name.startsWith(`lib${libName}.`)) &&
+                (name.endsWith(".dll") || name.endsWith(".so") || name.endsWith(".dylib") || name.endsWith(".node"))
+            ) {
+                return join(depsDir, name);
+            }
+        }
     }
-    return `lib${libName}.so`;
+    throw new Error(`missing build artifact (tried: ${candidates.join(", ")})`);
 }
 
 /**
@@ -216,11 +262,18 @@ function buildNapi(opts) {
         console.log(`\n→ ${build.triple} (${build.tool}) → projects/packages/${target.packageDir}`);
         cargoBuildTarget(build.triple, release, build.tool, "nyar-napi");
 
-        const src = resolveArtifact(nativeLibCandidates(build.triple, release, "nyar_napi"));
-        const destName = nativeCollectDestName(build.triple, "nyar_napi");
-        const dest = join(ROOT, "projects", "packages", target.packageDir, destName);
+        const src = findNativeArtifact(build.triple, release, "nyar_napi");
+        const destName = nativeCollectBinaryName(target.npmTriple);
+        const destDir = join(ROOT, "projects", "packages", target.packageDir);
+        const dest = join(destDir, "lib", destName);
         copyArtifact(src, dest);
-        console.log(`  copied ${destName}`);
+        for (const legacy of ["nyar_napi.dll", "libnyar_napi.so", "libnyar_napi.dylib", "nyar.node", destName]) {
+            const legacyPath = join(destDir, legacy);
+            if (existsSync(legacyPath)) {
+                unlinkSync(legacyPath);
+            }
+        }
+        console.log(`  copied lib/${destName}`);
     }
 }
 
