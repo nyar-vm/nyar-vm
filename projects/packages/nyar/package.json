@@ -1,12 +1,13 @@
 {
     "name": "@nyar/nyar",
     "version": "0.0.0",
-    "description": "Nyar VM — cross-platform CLI (assembled from platform collects).",
+    "description": "Nyar VM host CLI (@nyar/commander) and orthogonal nyar-napi bindings.",
     "type": "module",
     "license": "MIT",
     "main": "src/index.ts",
     "exports": {
-        ".": "./src/index.ts"
+        ".": "./src/index.ts",
+        "./cli": "./src/cli/cli.ts"
     },
     "bin": {
         "nyar": "bin/nyar.js"
@@ -18,9 +19,11 @@
         "README.md"
     ],
     "scripts": {
-        "prepack": "node ../../../scripts/prepare-npm-publish.mjs"
+        "prepack": "node ../../../scripts/prepare-npm-publish.mjs",
+        "test": "node --experimental-strip-types --test tests/**/*.test.ts"
     },
     "dependencies": {
+        "@nyar/commander": "workspace:*",
         "@nyar/nyar-unknown-wasm32": "workspace:*"
     },
     "optionalDependencies": {

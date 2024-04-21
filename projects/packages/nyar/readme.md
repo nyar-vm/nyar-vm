@@ -1,19 +1,31 @@
 # @nyar/nyar
 
-Cross-platform npm facade for the Nyar VM CLI and host APIs. Native and Wasm sidecars are published as separate platform packages under `projects/packages/`.
+Cross-platform Nyar host CLI and TypeScript facade. **CLI orchestration** lives here (`@nyar/commander`); **orthogonal native capabilities** are exported from `nyar-napi` via `src/native.ts`.
 
-## Example
+## CLI
 
-```typescript
-import { createNyarHost } from "@nyar/nyar";
-
-const host = await createNyarHost();
-await host.runBytecode(bytes);
+```bash
+nyar version
+nyar host-info
+nyar runtime list
+nyar runtime prepare --family wasi --artifact ./app.wasm --entry main
 ```
 
-Platform-specific binaries (`nyar-win32-x64`, `nyar-linux-x64`, `nyar-darwin-*`, `nyar-unknown-wasm32`) are resolved automatically when this package is installed on a matching host.
+## Programmatic native surface
 
-Build collect steps (`pnpm build:napi`, `pnpm build:wasm`) live in repository maintainer docs, not on this registry page.
+```typescript
+import { getHostInfo, listRuntimeFamilies, prepareRuntimeCommand } from '@nyar/nyar';
+
+const info = getHostInfo();
+const families = listRuntimeFamilies();
+const cmd = prepareRuntimeCommand({
+    family: 'wasi',
+    artifact: '/path/to/app.wasm',
+    entry: 'main',
+});
+```
+
+Platform collects (`nyar-win32-x64`, `nyar-linux-x64`, `nyar-darwin-*`, `nyar-unknown-wasm32`) are resolved automatically when installed on a matching host.
 
 ## License
 

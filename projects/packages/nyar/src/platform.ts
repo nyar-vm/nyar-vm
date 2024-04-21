@@ -48,10 +48,7 @@ export function resolveCollect(): NyarCollect {
     if (nativePackage) {
         const req = requireOptional(nativePackage);
         if (req) {
-            const entry =
-                HOST_KEY === 'win32-x64'
-                    ? req.resolve('./nyar_napi.dll')
-                    : req.resolve(`./libnyar_napi.${HOST_KEY.startsWith('darwin') ? 'dylib' : 'so'}`);
+            const entry = req.resolve('./index.mjs');
             return { kind: 'native', packageName: nativePackage, entry };
         }
     }
