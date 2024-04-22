@@ -22,6 +22,6 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Biome check
-        run: pnpm exec biome check projects/packages documentation/package.json package.json
+        run: pnpm exec biome check projects/packages/nyar projects/packages/nyar-commander documentation/package.json package.json
       - name: Prepare npm package readmes
         run: node scripts/prepare-npm-publish.mjs

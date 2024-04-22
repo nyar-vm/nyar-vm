@@ -11,10 +11,10 @@
  *   EVENT_NAME=push GITHUB_REF=refs/tags/v0.0.1 GITHUB_SHA=… node scripts/ci/bind-publish-tag.mjs
  */
 
-import { spawnSync } from 'node:child_process';
+import {spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 

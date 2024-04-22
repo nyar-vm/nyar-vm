@@ -5,7 +5,7 @@
  * or when required matrix jobs (ubuntu publish host) succeeded even if other OS failed.
  */
 
-import { spawnSync } from 'node:child_process';
+import {spawnSync} from 'node:child_process';
 
 const REPO = process.env.GITHUB_REPOSITORY || 'nyar-vm/nyar-vm.rs';
 const TAG_SHA = String(process.env.TAG_SHA || process.argv.find((a) => a.startsWith('--sha='))?.slice(6) || '')
@@ -25,7 +25,7 @@ function gh(args) {
     const r = spawnSync('gh', args, {
         encoding: 'utf8',
         shell: false,
-        env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '' },
+        env: {...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN || ''},
     });
     if (r.status !== 0) {
         fail(r.stderr?.trim() || r.stdout?.trim() || `gh ${args.join(' ')} exit ${r.status}`);

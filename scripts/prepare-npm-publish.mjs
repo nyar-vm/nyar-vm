@@ -7,16 +7,16 @@
  *   node scripts/prepare-npm-publish.mjs --check
  */
 
-import { copyFileSync, existsSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import {copyFileSync, existsSync, readdirSync} from "node:fs";
+import {dirname, join, resolve} from "node:path";
+import {fileURLToPath} from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGES_DIR = join(ROOT, "projects", "packages");
 const CHECK_ONLY = process.argv.includes("--check");
 
 function packageDirs() {
-    return readdirSync(PACKAGES_DIR, { withFileTypes: true })
+    return readdirSync(PACKAGES_DIR, {withFileTypes: true})
         .filter((entry) => entry.isDirectory())
         .map((entry) => join(PACKAGES_DIR, entry.name))
         .filter((dir) => existsSync(join(dir, "package.json")));
