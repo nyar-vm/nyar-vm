@@ -8,8 +8,10 @@ pub enum WorkspaceCacheError {
     /// Filesystem I/O failure.
     #[error("workspace cache IO error at {path}: {source}")]
     Io {
+        /// 发生 I/O 错误的路径。
         path: PathBuf,
         #[source]
+        /// 底层 I/O 错误。
         source: std::io::Error,
     },
     /// Failed to encode a cache entry as `.nyar`.
@@ -17,7 +19,12 @@ pub enum WorkspaceCacheError {
     Encode(String),
     /// Failed to decode a cache entry.
     #[error("failed to decode cache entry at {path}: {detail}")]
-    Decode { path: PathBuf, detail: String },
+    Decode {
+        /// 解码失败的缓存条目路径。
+        path: PathBuf,
+        /// 解码错误详情。
+        detail: String,
+    },
 }
 
 impl WorkspaceCacheError {

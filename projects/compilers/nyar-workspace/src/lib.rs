@@ -1,4 +1,5 @@
 //! Workspace-level content-addressed disk cache for Nyar tooling.
+#![deny(missing_docs)]
 
 mod error;
 mod hash;
