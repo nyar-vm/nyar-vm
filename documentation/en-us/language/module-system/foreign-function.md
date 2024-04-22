@@ -1,6 +1,7 @@
 # Foreign Function Interface (FFI)
 
-Valkyrie provides a powerful FFI system that supports interoperation with various languages such as C, C++, Rust, Python, and JavaScript, enabling efficient cross-language calls and data exchange.
+Valkyrie provides a powerful FFI system that supports interoperation with various languages such as C, C++, Rust,
+Python, and JavaScript, enabling efficient cross-language calls and data exchange.
 
 ## C/C++ Interoperability
 
@@ -230,7 +231,8 @@ micro valkyrie_free_string(s: *mut i8) {
 
 ## Python Interoperability
 
-Valkyrie provides native interop support with Python, allowing you to import Python modules and call their functions directly.
+Valkyrie provides native interop support with Python, allowing you to import Python modules and call their functions
+directly.
 
 ```valkyrie
 using std::python
@@ -875,4 +877,6 @@ micro check_library_compatibility(required: LibraryVersion, actual: LibraryVersi
 }
 ```
 
-Valkyrie's FFI system provides safe and efficient cross-language interop capabilities, supporting integration with mainstream programming languages and runtime environments, providing a powerful infrastructure for building complex multi-language applications.
+Valkyrie's FFI system provides safe and efficient cross-language interop capabilities, supporting integration with
+mainstream programming languages and runtime environments, providing a powerful infrastructure for building complex
+multi-language applications.

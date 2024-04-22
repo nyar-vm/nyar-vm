@@ -1,4 +1,3 @@
-
 ## 面向物件程式設計
 
 Valkyrie 支援基於類別的面向物件程式設計，提供類別定義、建構函式、方法和繼承等特性。
@@ -80,7 +79,6 @@ class Student(Person) {
     student_id: string
 }
 ```
-
 
 ## 標誌型別 (flags)
 
@@ -328,7 +326,6 @@ class SortedList<T> where T: Ord {
     }
 }
 ```
-
 
 ## 屬性和裝飾器
 

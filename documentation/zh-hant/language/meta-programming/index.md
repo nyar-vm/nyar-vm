@@ -1,6 +1,7 @@
 # Valkyrie 元編程架構
 
-Valkyrie 提供了強大的元編程支持，允許在編譯時進行代碼生成、變換和分析。通過集成在編譯器中的元編程系統，Valkyrie 能夠實現宏系統、編譯時計算、類型級編程等高級能力。
+Valkyrie 提供了強大的元編程支持，允許在編譯時進行代碼生成、變換和分析。通過集成在編譯器中的元編程系統，Valkyrie
+能夠實現宏系統、編譯時計算、類型級編程等高級能力。
 
 ## 元編程架構概覽
 
@@ -27,6 +28,7 @@ Valkyrie 的元編程系統深度集成在多層 IR 架構中，在不同層次�
 ### [編譯時計算](./compile-time-computation.md)
 
 **常量表達式求值**:
+
 ```valkyrie
 // 編譯時常量計算
 let FIBONACCI_10: i32 = ↯evaluate(fibonacci(10))
@@ -37,6 +39,7 @@ let CONFIG_KEY: string = ↯evaluate(↯format("app.{}.version", ↯env("BUILD_T
 ```
 
 **編譯時函數執行**:
+
 ```valkyrie
 // 標記為編譯時函數
 @const_fn
@@ -63,6 +66,7 @@ micro build_state_machine() -> StateMachine {
 ### [宏系統](./macro-system.md)
 
 **聲明式宏**:
+
 ```valkyrie
 // 模式匹配宏
 macro vec_of {
@@ -86,6 +90,7 @@ let numbers = ↯vec_of(1, 2, 3, 4, 5)
 ```
 
 **過程宏**:
+
 ```valkyrie
 // 自定義派生宏
 @derive(Serialize, Deserialize, Debug)
@@ -112,6 +117,7 @@ let sql_query = ↯sql(
 ### [代碼生成](./code-generation.md)
 
 **基於模板的代碼生成**:
+
 ```valkyrie
 // 模板定義
 ↯template {
@@ -147,6 +153,7 @@ let sql_query = ↯sql(
 ```
 
 **反射驅動的代碼生成**:
+
 ```valkyrie
 // 自動生成序列化代碼
 @auto_serialize
@@ -171,6 +178,7 @@ impl Serialize for Config {
 ### [類型級編程](./type-level-programming.md)
 
 **類型級函數**:
+
 ```valkyrie
 // 類型級計算
 type Add(a: Nat, b: Nat) -> Nat {
@@ -194,6 +202,7 @@ where
 ```
 
 **依賴類型支持**:
+
 ```valkyrie
 // 長度依賴的向量類型
 class Vector⟨T, const N: usize⟩ {

@@ -1,6 +1,7 @@
 # Widget Type (Widget)
 
-The Widget type is a special class type in Valkyrie specifically designed for UI development. It provides high-level abstractions for building modern user interfaces, supporting responsive design, state management, and event handling.
+The Widget type is a special class type in Valkyrie specifically designed for UI development. It provides high-level
+abstractions for building modern user interfaces, supporting responsive design, state management, and event handling.
 
 ## Basic Widget Definition
 

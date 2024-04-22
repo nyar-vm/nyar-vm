@@ -1,6 +1,7 @@
 # Type System
 
-Valkyrie provides a powerful and flexible type system, supporting static type checking, type inference, and advanced type features.
+Valkyrie provides a powerful and flexible type system, supporting static type checking, type inference, and advanced
+type features.
 
 ## Basic Types
 

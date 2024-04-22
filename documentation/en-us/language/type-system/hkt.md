@@ -1,6 +1,7 @@
 # Higher-Kinded Types (HKT)
 
-Higher-Kinded Types (HKT) are an advanced feature of the Valkyrie type system that allows for abstraction over type constructors, enabling more powerful generic programming patterns.
+Higher-Kinded Types (HKT) are an advanced feature of the Valkyrie type system that allows for abstraction over type
+constructors, enabling more powerful generic programming patterns.
 
 ## Basic Concepts
 

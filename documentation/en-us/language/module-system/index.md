@@ -1,6 +1,7 @@
 # Module System
 
-Valkyrie uses a module system based on namespaces and imports (`using`), providing flexible code organization and dependency management.
+Valkyrie uses a module system based on namespaces and imports (`using`), providing flexible code organization and
+dependency management.
 
 ## Namespace Declaration (namespace)
 
@@ -452,4 +453,5 @@ namespace api {
     pub using v2.*
 }
 ```
+
 ```

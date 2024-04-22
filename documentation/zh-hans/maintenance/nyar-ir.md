@@ -7,18 +7,21 @@
 Nyar 字节码指令分为若干逻辑组，涵盖了从基础栈操作到高级代数效应处理的所有功能。
 
 ### 1. 基础栈操作
+
 - `Push`: 将常量压入栈。
 - `Pop`: 弹出栈顶元素。
 - `Dup`: 复制栈顶元素。
 - `Swap`: 交换栈顶两个元素。
 
 ### 2. 变量访问
+
 - `LoadLocal` / `StoreLocal`: 访问函数局部变量。
 - `LoadGlobal` / `StoreGlobal`: 访问模块全局变量。
 - `LoadUpvalue` / `StoreUpvalue`: 访问闭包捕获的变量（Upvalues）。
 - `CloseUpvalues`: 关闭特定范围内的 Upvalues。
 
 ### 3. 控制流
+
 - `Jump`: 无条件跳转。
 - `JumpIfFalse`: 条件跳转（当栈顶为 false 时）。
 - `JumpIfNull`: 条件跳转（当栈顶为 null 时）。
@@ -26,6 +29,7 @@ Nyar 字节码指令分为若干逻辑组，涵盖了从基础栈操作到高级
 - `Halt`: 停止 VM 执行。
 
 ### 4. 调用与分发
+
 - `Call`: 直接调用。
 - `CallVirtual`: 虚函数调用。
 - `CallDynamic`: 动态分发调用。
@@ -36,6 +40,7 @@ Nyar 字节码指令分为若干逻辑组，涵盖了从基础栈操作到高级
 - `TailCall`: 尾调用优化。
 
 ### 5. 对象与数据结构
+
 - `NewObject`: 创建新对象。
 - `GetField` / `SetField`: 访问对象字段。
 - `NewArray` / `NewList` / `MakeTuple`: 创建容器类型。
@@ -44,7 +49,9 @@ Nyar 字节码指令分为若干逻辑组，涵盖了从基础栈操作到高级
 - `NewDynObject`: 创建动态对象（字典）。
 
 ### 6. 代数效应与协程 (Effect System)
+
 Nyar VM 的核心特性之一是对代数效应的原生支持：
+
 - `Perform`: 触发一个 Effect。
 - `WithHandler`: 绑定 Effect 处理器。
 - `ResumeWith`: 恢复延续（Continuation）。
@@ -52,7 +59,9 @@ Nyar VM 的核心特性之一是对代数效应的原生支持：
 - `Await`: 异步等待。
 
 ### 7. 类型扩展指令 (Extensions)
+
 为了提升数值运算和字符串处理性能，Nyar 定义了专门的扩展指令集：
+
 - `I32Ext` / `I64Ext`: 整数算术、比较及位运算。
 - `F32Ext` / `F64Ext`: 浮点数运算。
 - `BigIntExt`: 高精度整数运算。

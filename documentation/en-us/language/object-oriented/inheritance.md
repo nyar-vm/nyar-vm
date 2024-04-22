@@ -2,7 +2,9 @@
 
 ## Overview
 
-Valkyrie supports multiple inheritance, allowing a class to inherit from multiple parent classes simultaneously. Multiple inheritance uses the C3 linearization algorithm to resolve Method Resolution Order (MRO) issues, ensuring consistency and predictability in inheritance.
+Valkyrie supports multiple inheritance, allowing a class to inherit from multiple parent classes simultaneously.
+Multiple inheritance uses the C3 linearization algorithm to resolve Method Resolution Order (MRO) issues, ensuring
+consistency and predictability in inheritance.
 
 ## Basic Multiple Inheritance Syntax
 
@@ -447,4 +449,5 @@ Features of Valkyrie's multiple inheritance system:
 4. **Anonymous Class Support**: Supports temporary multiple inheritance class definitions
 5. **Type Safety**: Compile-time checks for the validity of inheritance relationships
 
-Proper use of multiple inheritance can achieve flexible code reuse, but it should be used with caution, prioritizing composition and interface design.
+Proper use of multiple inheritance can achieve flexible code reuse, but it should be used with caution, prioritizing
+composition and interface design.

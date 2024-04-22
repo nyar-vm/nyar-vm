@@ -1,6 +1,8 @@
 # Generators
 
-Valkyrie's generators are special functions that can produce a series of values using the `yield` keyword. Generators provide a way of lazy computation, calculating the next value only when needed, which is ideal for handling large datasets or infinite sequences.
+Valkyrie's generators are special functions that can produce a series of values using the `yield` keyword. Generators
+provide a way of lazy computation, calculating the next value only when needed, which is ideal for handling large
+datasets or infinite sequences.
 
 ## Basic Generator Syntax
 
@@ -72,7 +74,9 @@ let total_count = processor.return_value()  # Get the final return value
 
 ### Sequence Environments
 
-In addition to defining an entire `micro` function as a generator, Valkyrie supports using `sequence` environments to define generators locally within regular functions. This allows you to produce a lazy sequence without changing the nature of the entire function.
+In addition to defining an entire `micro` function as a generator, Valkyrie supports using `sequence` environments to
+define generators locally within regular functions. This allows you to produce a lazy sequence without changing the
+nature of the entire function.
 
 #### Local Generators
 

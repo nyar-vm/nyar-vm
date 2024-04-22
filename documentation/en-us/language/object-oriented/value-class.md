@@ -1,10 +1,13 @@
 # Value Classes and Immutability
 
-Value classes are a modeling approach centered around the "immutable representation of values". It emphasizes that once an object is created, its observable state no longer changes; any "modification" is expressed by creating a new instance. Value classes help improve concurrency safety, reasonability, and test-friendliness.
+Value classes are a modeling approach centered around the "immutable representation of values". It emphasizes that once
+an object is created, its observable state no longer changes; any "modification" is expressed by creating a new
+instance. Value classes help improve concurrency safety, reasonability, and test-friendliness.
 
 ## Why Choose Immutability
 
-- Simplify Concurrency: Immutable objects can be safely shared between threads/coroutines without complex synchronization.
+- Simplify Concurrency: Immutable objects can be safely shared between threads/coroutines without complex
+  synchronization.
 - Easier to Reason: State won't be accidentally changed by external factors, making behavior more predictable.
 - Facilitate Caching and Reuse: Same input yields same output, allowing for safe caching or structural sharing.
 - Test-Friendly: No need to construct various intermediate states; focus only on input and output.
@@ -81,7 +84,8 @@ class Email {
 
 ## Equality and Hashing
 
-Value classes emphasize "content-based" equality. When implementing equality/hashing, it should only be based on observable fields:
+Value classes emphasize "content-based" equality. When implementing equality/hashing, it should only be based on
+observable fields:
 
 ```valkyrie
 class RGB {

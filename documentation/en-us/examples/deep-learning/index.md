@@ -76,6 +76,7 @@ let feature_maps = conv.forward(&images)  # [N, 3, H, W] -> [N, 64, H, W]
 # 池化层
 let pooled = feature_maps.max_pool2d(kernel_size: 2, stride: 2)
 ```
+
 ```
 
 ## 优化器
@@ -162,6 +163,7 @@ let lstm = LSTM::new(
 let (output, (hidden, cell)) = lstm.forward(&sequence, None)
 let predictions = linear.forward(&output[:, -1, :])  # 使用最后时刻的输出
 ```
+
 ```
 
 ## 训练流程
@@ -219,12 +221,15 @@ micro evaluate_model(model: &Sequential, test_loader: &DataLoader) -> f32 {
     correct as f32 / total as f32
 }
 ```
+
 ## 文档导航
 
 ### [自动微分](auto-differentiation.md)
+
 详细介绍 Valkyrie 的自动微分系统，包括前向模式、反向模式和计算图构建。
 
 ### [Einstein 操作符](einstein-operators.md)
+
 学习使用 Einstein 记号进行张量操作，包括重排、约简和复杂的张量变换。
 
 ## 总结

@@ -2,7 +2,9 @@
 
 ## Overview
 
-Valkyrie's Trait system provides a powerful abstraction mechanism, supporting interface definitions, default implementations, multiple inheritance, and anonymous traits. The Trait system is a core component of object-oriented programming in Valkyrie.
+Valkyrie's Trait system provides a powerful abstraction mechanism, supporting interface definitions, default
+implementations, multiple inheritance, and anonymous traits. The Trait system is a core component of object-oriented
+programming in Valkyrie.
 
 ## Basic Trait Definition
 

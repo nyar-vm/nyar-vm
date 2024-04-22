@@ -47,25 +47,29 @@ LLVM 是工業界的標準，提供了最強大的優化能力。
 ## 技術選型建議
 
 ### 1. 短期目標：Cranelift
-作為第一個原生後端，**Cranelift** 是最佳選擇。它與 Valkyrie 的 SSA 結構高度匹配，且能夠同時滿足 AOT 和未來可能的 JIT 需求。
+
+作為第一個原生後端， **Cranelift** 是最佳選擇。它與 Valkyrie 的 SSA 結構高度匹配，且能夠同時滿足 AOT 和未來可能的 JIT 需求。
 
 ### 2. 長期目標：LLVM
+
 對於追求極致性能的發布版本，可以引入 LLVM 後端作為可選組件。
 
 ### 3. 特殊需求：自定義 LIR 轉換
-如果需要極致精簡的嵌入式運行時，或者現有的後端難以支持 Valkyrie 的代數效應（Algebraic Effects）和延續（Continuations），則考慮從 LIR 直接生成機器碼。
+
+如果需要極致精簡的嵌入式運行時，或者現有的後端難以支持 Valkyrie 的代數效應（Algebraic Effects）和延續（Continuations），則考慮從
+LIR 直接生成機器碼。
 
 ## 實施路徑
 
 1. **第一階段 (調研)**:
-   - 評估 `valkyrie-types` 中的 `SsaProgram` 是否包含 Cranelift 所需的所有語義信息。
-   - 實驗性實現一個簡單的 `Ssa -> Cranelift` 轉換器，支持加法和返回。
+    - 評估 `valkyrie-types` 中的 `SsaProgram` 是否包含 Cranelift 所需的所有語義信息。
+    - 實驗性實現一個簡單的 `Ssa -> Cranelift` 轉換器，支持加法和返回。
 
 2. **第二階段 (基礎實現)**:
-   - 實現完整的類型映射。
-   - 實現函數調用規約（Calling Convention）的處理。
-   - 實現基本塊的線性化。
+    - 實現完整的類型映射。
+    - 實現函數調用規約（Calling Convention）的處理。
+    - 實現基本塊的線性化。
 
 3. **第三階段 (高級特性)**:
-   - 處理代數效應（可能需要特殊的棧操作或運行時支持）。
-   - 實現調試信息（DWARF）生成。
+    - 處理代數效應（可能需要特殊的棧操作或運行時支持）。
+    - 實現調試信息（DWARF）生成。

@@ -1,6 +1,7 @@
 # Union Types
 
-Union types are a powerful feature of Valkyrie's type system for representing multiple possible values. They allow a value to choose one from several different variants, each of which can carry different types of data.
+Union types are a powerful feature of Valkyrie's type system for representing multiple possible values. They allow a
+value to choose one from several different variants, each of which can carry different types of data.
 
 ## Basic Union Types
 
@@ -291,4 +292,5 @@ union ValidationResult⟨T⟩ {
     }
 }
 ```
+
 ```

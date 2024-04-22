@@ -1,6 +1,7 @@
 # 反應式編程
 
-反應式編程是一種基於數據流和變化傳播的編程範式。在 Valkyrie 中，反應式編程通過 Observable、Signal 和 Reactive 等抽象提供了強大的數據流處理能力。
+反應式編程是一種基於數據流和變化傳播的編程範式。在 Valkyrie 中，反應式編程通過 Observable、Signal 和 Reactive
+等抽象提供了強大的數據流處理能力。
 
 ## 核心概念
 

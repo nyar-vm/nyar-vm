@@ -16,11 +16,11 @@ Rusty TypeScript 的编译侧重于类型检查后的代码简化：
 1. **解析**: 使用 `oak-typescript` 生成 AST。
 2. **类型检查**: 在 `type_system` 模块中进行符号分析与类型推导。
 3. **Lowering 转换**:
-   - **类型擦除**: 移除所有类型注解，仅保留运行时逻辑。
-   - **模块转换**: 将 `import`/`export` 转换为 `ImportInfo` 和 `ExportInfo`。
+    - **类型擦除**: 移除所有类型注解，仅保留运行时逻辑。
+    - **模块转换**: 将 `import`/`export` 转换为 `ImportInfo` 和 `ExportInfo`。
 4. **字节码生成**:
-   - 使用 `NyarTranslator` 将简化后的 UIR 转换为 Nyar 操作码。
-   - 匿名函数映射为 `Lambda` 指令。
+    - 使用 `NyarTranslator` 将简化后的 UIR 转换为 Nyar 操作码。
+    - 匿名函数映射为 `Lambda` 指令。
 
 ## 对象模型处理
 
@@ -30,10 +30,10 @@ Rusty TypeScript 的编译侧重于类型检查后的代码简化：
 
 ## Builtin 与 FFI 实现
 
-- **宿主环境**: 
-   - 模拟浏览器或 Node.js 的全局对象（如 `console`, `process`）。
-   - 通过 `ImportInfo` 链接到宿主提供的原生符号。
-- **FFI 实现**: 
-   - 使用 `declare` 关键字定义外部符号。
-   - 运行时通过 Nyar VM 的模块加载器自动解析并绑定到外部函数。
+- **宿主环境**:
+    - 模拟浏览器或 Node.js 的全局对象（如 `console`, `process`）。
+    - 通过 `ImportInfo` 链接到宿主提供的原生符号。
+- **FFI 实现**:
+    - 使用 `declare` 关键字定义外部符号。
+    - 运行时通过 Nyar VM 的模块加载器自动解析并绑定到外部函数。
 - **类型擦除验证**: 确保 TypeScript 的静态类型不影响生成的字节码执行效率，仅作为开发期的辅助。

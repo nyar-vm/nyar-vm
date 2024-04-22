@@ -458,7 +458,8 @@ let value2 = counter.increment()  # 12
 
 ### Return Value Limitations
 
-**Important**: Anonymous classes cannot be used as function return types; this causes type inference errors and compilation issues.
+**Important**: Anonymous classes cannot be used as function return types; this causes type inference errors and
+compilation issues.
 
 ```valkyrie
 # ❌ Error: Cannot return anonymous class
@@ -577,4 +578,5 @@ Valkyrie's anonymous class features:
 4. **Closure Distinction**: Clearly distinguished from closure syntax
 5. **Pattern Support**: Suitable for Factory, Strategy, Builder, and other design patterns
 
-Anonymous classes are particularly suitable for scenarios requiring temporary objects, callback handling, and functional programming.
+Anonymous classes are particularly suitable for scenarios requiring temporary objects, callback handling, and functional
+programming.

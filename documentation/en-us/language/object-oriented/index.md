@@ -1,7 +1,7 @@
-
 ## Object-Oriented Programming
 
-Valkyrie supports class-based object-oriented programming, providing features such as class definitions, constructors, methods, and inheritance.
+Valkyrie supports class-based object-oriented programming, providing features such as class definitions, constructors,
+methods, and inheritance.
 
 ### Special Class Types
 
@@ -80,7 +80,6 @@ class Student(Person) {
     student_id: string
 }
 ```
-
 
 ## Flags (flags)
 
@@ -328,7 +327,6 @@ class SortedList<T> where T: Ord {
     }
 }
 ```
-
 
 ## Attributes and Decorators
 

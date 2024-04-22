@@ -1,6 +1,8 @@
 # Reactive Programming
 
-Reactive programming is a programming paradigm based on data streams and the propagation of change. In Valkyrie, reactive programming provides powerful data stream processing capabilities through abstractions such as Observable, Signal, and Reactive.
+Reactive programming is a programming paradigm based on data streams and the propagation of change. In Valkyrie,
+reactive programming provides powerful data stream processing capabilities through abstractions such as Observable,
+Signal, and Reactive.
 
 ## Core Concepts
 
@@ -525,4 +527,5 @@ let resilient_stream = risky_stream
     .filter { $result? }
 ```
 
-Through these reactive programming patterns, Valkyrie provides powerful and flexible data stream processing capabilities, enabling developers to build responsive and maintainable applications.
+Through these reactive programming patterns, Valkyrie provides powerful and flexible data stream processing
+capabilities, enabling developers to build responsive and maintainable applications.

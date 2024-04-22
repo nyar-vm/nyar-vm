@@ -2,7 +2,8 @@
 
 ## 概述
 
-Workspace 模式是 Valkyrie 語言的多項目管理模式，透過 `legions.json` 文件定義工作區配置。當項目根目錄存在 `legions.json` 文件時，該目錄被識別為 workspace 模式。
+Workspace 模式是 Valkyrie 語言的多項目管理模式，透過 `legions.json` 文件定義工作區配置。當項目根目錄存在 `legions.json`
+文件時，該目錄被識別為 workspace 模式。
 
 ## 文件結構
 

@@ -1,16 +1,20 @@
 # 实体组件系统 (ECS)
 
-Valkyrie 提供了高性能的实体组件系统 (Entity Component System) 实现，这是现代游戏引擎的核心架构模式。ECS 将游戏对象分解为实体 (Entity)、组件 (Component) 和系统 (System)，实现了高度的模块化和性能优化。
+Valkyrie 提供了高性能的实体组件系统 (Entity Component System) 实现，这是现代游戏引擎的核心架构模式。ECS 将游戏对象分解为实体
+(Entity)、组件 (Component) 和系统 (System)，实现了高度的模块化和性能优化。
 
 ## 核心概念
 
 ### 实体 (Entity)
+
 实体是游戏世界中对象的唯一标识符，本身不包含数据或行为。
 
 ### 组件 (Component)
+
 组件是纯数据结构，描述实体的属性和状态。
 
 ### 系统 (System)
+
 系统包含游戏逻辑，对具有特定组件组合的实体进行操作。
 
 ## 基本ECS实现

@@ -1,6 +1,7 @@
 # Error Handling
 
-Valkyrie uses `try` statements and the `catch` mechanism to handle errors. `try` is an independent statement that can be integrated with the type system.
+Valkyrie uses `try` statements and the `catch` mechanism to handle errors. `try` is an independent statement that can be
+integrated with the type system.
 
 ## Try Statement
 
@@ -322,4 +323,5 @@ micro process_file_safely(path: string) -> Result⟨string, FileError⟩ {
 }
 ```
 
-Error handling implemented through the Effect system provides type-safe, structured, and easily composable error management capabilities, significantly enhancing the robustness of applications.
+Error handling implemented through the Effect system provides type-safe, structured, and easily composable error
+management capabilities, significantly enhancing the robustness of applications.

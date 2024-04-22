@@ -1,12 +1,15 @@
 # Valkyrie Metaprogramming Architecture
 
-Valkyrie provides powerful metaprogramming support, allowing for code generation, transformation, and analysis at compile time. Through the integrated metaprogramming system in the compiler, Valkyrie can achieve advanced capabilities such as macro systems, compile-time computation, and type-level programming.
+Valkyrie provides powerful metaprogramming support, allowing for code generation, transformation, and analysis at
+compile time. Through the integrated metaprogramming system in the compiler, Valkyrie can achieve advanced capabilities
+such as macro systems, compile-time computation, and type-level programming.
 
 ## Metaprogramming Architecture Overview
 
 ### Positioning of Metaprogramming in the Compiler
 
-Valkyrie's metaprogramming system is deeply integrated within the multi-layer IR architecture, providing corresponding capabilities at different levels:
+Valkyrie's metaprogramming system is deeply integrated within the multi-layer IR architecture, providing corresponding
+capabilities at different levels:
 
 ```
 Source Code + Metaprogramming Instructions
@@ -27,6 +30,7 @@ Target Code + Runtime Support
 ### [Compile-time Computation](./compile-time-computation.md)
 
 **Constant Expression Evaluation**:
+
 ```valkyrie
 // Compile-time constant computation
 let FIBONACCI_10: i32 = @evaluate(fibonacci(10))
@@ -37,6 +41,7 @@ let CONFIG_KEY: string = @evaluate(@format("app.{}.version", @env("BUILD_TARGET"
 ```
 
 **Compile-time Function Execution**:
+
 ```valkyrie
 // Marked as a compile-time function
 @const_fn
@@ -63,6 +68,7 @@ micro build_state_machine() -> StateMachine {
 ### [Macro System](./macro-system.md)
 
 **Declarative Macros**:
+
 ```valkyrie
 // Pattern matching macro
 macro vec_of {
@@ -86,6 +92,7 @@ let numbers = @vec_of(1, 2, 3, 4, 5)
 ```
 
 **Procedural Macros**:
+
 ```valkyrie
 // Custom derive macro
 @derive(Serialize, Deserialize, Debug)
@@ -112,6 +119,7 @@ let sql_query = @sql(
 ### [Code Generation](./code-generation.md)
 
 **Template-based Code Generation**:
+
 ```valkyrie
 // Template definition
 @template {
@@ -147,6 +155,7 @@ let sql_query = @sql(
 ```
 
 **Reflection-driven Code Generation**:
+
 ```valkyrie
 // Automatically generate serialization code
 @auto_serialize
@@ -171,6 +180,7 @@ impl Serialize for Config {
 ### [Type-level Programming](./type-level-programming.md)
 
 **Type-level Functions**:
+
 ```valkyrie
 // Type-level computation
 type Add(a: Nat, b: Nat) -> Nat {
@@ -194,6 +204,7 @@ where
 ```
 
 **Dependent Type Support**:
+
 ```valkyrie
 // Length-dependent vector type
 class Vector⟨T, const N: usize⟩ {

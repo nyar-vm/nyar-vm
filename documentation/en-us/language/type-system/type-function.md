@@ -1,6 +1,7 @@
 # Type Function
 
-Type functions are a powerful feature in the Valkyrie language used for calculations at the type level. Defined using the `mezzo` keyword, type functions allow for the manipulation and transformation of types at compile time.
+Type functions are a powerful feature in the Valkyrie language used for calculations at the type level. Defined using
+the `mezzo` keyword, type functions allow for the manipulation and transformation of types at compile time.
 
 ## Basic Syntax
 

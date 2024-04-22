@@ -39,7 +39,9 @@ features:
 
 ## What is Valkyrie?
 
-Valkyrie is a modern functional programming language designed for building reliable, high-performance applications. It combines an algebraic effects system with a strong type system to provide a brand-new programming experience for developers.
+Valkyrie is a modern functional programming language designed for building reliable, high-performance applications. It
+combines an algebraic effects system with a strong type system to provide a brand-new programming experience for
+developers.
 
 ### Core Features
 
@@ -85,6 +87,7 @@ match user_result {
 ```
 
 This simple Valkyrie program demonstrates:
+
 - Definition and usage of algebraic effects
 - Strong type system and type inference
 - Pattern matching and conditional guards
@@ -99,4 +102,7 @@ Ready to experience the power of Valkyrie?
 ## Why Choose Valkyrie?
 
 ### 🎯 **Solving Real Problems**
-Traditional programming languages often struggle when dealing with side effects. Valkyrie's algebraic effects system provides an elegant solution, making exception handling, asynchronous programming, and state management simple and powerful.
+
+Traditional programming languages often struggle when dealing with side effects. Valkyrie's algebraic effects system
+provides an elegant solution, making exception handling, asynchronous programming, and state management simple and
+powerful.

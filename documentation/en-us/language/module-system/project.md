@@ -2,7 +2,8 @@
 
 ## 概述
 
-Project 模式是 Valkyrie 语言的单项目管理模式，通过 `legion.json` 文件定义项目配置。当目录中存在 `legion.json` 文件且没有 `legions.json` 文件时，该目录被识别为独立项目模式。
+Project 模式是 Valkyrie 语言的单项目管理模式，通过 `legion.json` 文件定义项目配置。当目录中存在 `legion.json` 文件且没有
+`legions.json` 文件时，该目录被识别为独立项目模式。
 
 ## 文件结构
 

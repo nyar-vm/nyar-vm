@@ -22,6 +22,7 @@ let get_random = micro() { random() }
 A closure is a special type of anonymous function that can capture variables from its defining environment.
 
 ### Closure Syntax
+
 Closures are defined using curly braces `{}`, and parameters use the `$` prefix:
 
 ```valkyrie

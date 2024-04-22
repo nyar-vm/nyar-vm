@@ -158,8 +158,9 @@ let X_test = X.index_select(test_indices, axis=0)
 let y_train = y.index_select(train_indices, axis=0)
 let y_test = y.index_select(test_indices, axis=0)
 ```
-        
+
         # 当缓冲区满时进行批量更新
+
 ## 总结
 
 本文档展示了如何使用 Valkyrie 的 Array 和 ArrayND 类型进行机器学习任务。重点关注数组操作的实际使用，包括：
@@ -172,8 +173,9 @@ let y_test = y.index_select(test_indices, axis=0)
 
 通过这些示例，您可以了解如何利用 Valkyrie 的内置数组功能来构建机器学习应用。
 for (name, (mean, std)) in results {
-    print("{}: {:.3} (+/- {:.3})", name, mean, std * 2)
+print ("{}: {:.3} (+/- {:.3})", name, mean, std * 2)
 }
+
 ```
 
 ### 3. 特征工程自动化

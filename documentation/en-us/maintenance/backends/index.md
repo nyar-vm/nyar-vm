@@ -1,6 +1,7 @@
 # Backend Maintenance Guide
 
-This document introduces the compilation flow and design considerations for various backends supported by the Nyar compiler.
+This document introduces the compilation flow and design considerations for various backends supported by the Nyar
+compiler.
 
 ## Overview
 
@@ -22,5 +23,7 @@ Nyar supports multiple backends, each with its own characteristics and optimizat
 As of 2026-01-30, Nyar VM uses a stack-based LIR.
 
 **Rationale**:
+
 - **Simplicity**: Mapping SSA to stack-based LIR is more direct than register allocation.
-- **Performance**: Generating stack-based instructions allows for natural utilization of the operand stack and avoids excessive local variable access.
+- **Performance**: Generating stack-based instructions allows for natural utilization of the operand stack and avoids
+  excessive local variable access.

@@ -99,28 +99,32 @@ imply Unicode {
 ```
 
 # 具名參數調用
-let user = create_user(name: "Alice", active: false)
-let result = sum(1, 2, 3, 4, 5)
+
+let user = create_user (name: "Alice", active: false)
+let result = sum (1, 2, 3, 4, 5)
 
 # 引用參數
-micro modify_array(arr: [i32]) {
-    for i in 0..<arr.len() {
-        arr[i] *= 2
-    }
+
+micro modify_array (arr: [i32]) {
+for i in 0..<arr.len () {
+arr[i] *= 2
+}
 }
 
 # 泛型參數
-micro identity⟨T⟩(value: T) -> T {
-    value
+
+micro identity⟨T⟩ (value: T) -> T {
+value
 }
 
-micro map⟨T, U⟩(items: [T], transform: micro(T) -> U) -> [U] {
-    let mut result = []
-    for item in items {
-        result.push(transform(item))
-    }
-    result
+micro map⟨T, U⟩ (items: [T], transform: micro (T) -> U) -> [U] {
+let mut result = []
+for item in items {
+result.push (transform (item))
 }
+result
+}
+
 ```
 
 ### 高階函數

@@ -1,6 +1,7 @@
 # Effect System
 
-Valkyrie's effect system provides powerful side-effect management and control flow mechanisms, including exception handling, coroutines, generators, reactive programming, aspect-oriented programming, and dependency injection.
+Valkyrie's effect system provides powerful side-effect management and control flow mechanisms, including exception
+handling, coroutines, generators, reactive programming, aspect-oriented programming, and dependency injection.
 
 ## Effect System Components
 
@@ -15,7 +16,8 @@ Valkyrie's effect system provides powerful side-effect management and control fl
 
 # Exception Handling System
 
-In Valkyrie, any object can be thrown and caught as an exception. This provides a flexible error handling mechanism that allows programs to handle various exceptional situations in a structured way.
+In Valkyrie, any object can be thrown and caught as an exception. This provides a flexible error handling mechanism that
+allows programs to handle various exceptional situations in a structured way.
 
 ## Basic Exception Handling
 

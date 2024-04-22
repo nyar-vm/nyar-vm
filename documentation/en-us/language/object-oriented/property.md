@@ -2,7 +2,9 @@
 
 ## Overview
 
-Valkyrie's property system provides an elegant way to encapsulate field access, allowing developers to define getter and setter methods while maintaining concise access syntax. The property system follows the Uniform Access Principle, making field access and method calls syntactically consistent.
+Valkyrie's property system provides an elegant way to encapsulate field access, allowing developers to define getter and
+setter methods while maintaining concise access syntax. The property system follows the Uniform Access Principle, making
+field access and method calls syntactically consistent.
 
 ## Basic Property Definition
 

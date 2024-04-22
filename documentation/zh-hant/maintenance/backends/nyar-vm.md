@@ -7,18 +7,22 @@ NyarVM 是 Nyar 的內部參考解釋器。
 `Source -> AST -> HIR -> CFG -> SSA -> LIR -> VM Execution`
 
 ### 1. AST -> HIR
+
 - 負責：消除語法糖，解析作用域，處理陰影（Shadowing）。
 - 實現：由前端提供（如 `oak-rust`）。
 
 ### 2. HIR -> CFG
+
 - 負責：將結構化控制流（if, while, loop）轉換為基本塊和跳轉。
 - 實現：`nyar-aot`。
 
 ### 3. CFG -> SSA
+
 - 負責：構造靜態單賦值形式，插入 Phi 節點。
 - 實現：`nyar-aot`。
 
 ### 4. SSA -> LIR
+
 - 負責：Phi 消除，以及向下放到棧式指令。
 - 實現：[compiler.rs](file:///e:/%E6%99%AE%E9%81%8D%E4%BC%98%E5%8C%96/nyar-vm/projects/nyar-vm/src/bytecode/compiler.rs)。
 - 當前狀態：
@@ -29,6 +33,7 @@ NyarVM 是 Nyar 的內部參考解釋器。
     - [x] 棧幀深度計算。
 
 ### 5. VM Execution
+
 - 負責：執行 LIR 指令，管理運行棧、堆和 Effect 處理器。
 - 實現：[interpreter.rs](file:///e:/%E6%99%AE%E9%81%8D%E4%BC%98%E5%8C%96/nyar-vm/projects/nyar-vm/src/vm/interpreter.rs)。
 - 當前狀態：
@@ -40,6 +45,7 @@ NyarVM 是 Nyar 的內部參考解釋器。
     - [x] 代碼覆蓋率統計。
 
 ### 6. FFI 機制
+
 - **設計**：FFI 標記通過 Annotation (如 `@import`) 掛載於 `micro` 函數聲明之上。
 - **優勢**：
     - **類型安全**：利用函數的 `parameters` 和 `returns` 定義，編譯器能準確生成參數封送（Marshaling）代碼。
@@ -51,6 +57,7 @@ NyarVM 是 Nyar 的內部參考解釋器。
     ```
 
 ### 7. Deep JIT Optimization
+
 - **觸發層級**：JIT 編譯器工作在 **SSA / HIR** 層面，而非 LIR。
 - **核心邏輯**：
     - **語義保留**：在 SSA 層面保留了完整的類型信息、對象邊界和顯式的效應（Effects）流向。
@@ -60,7 +67,9 @@ NyarVM 是 Nyar 的內部參考解釋器。
         - **內存優化**：進行更精確的逃逸分析，將對象標量化。
 
 ### 棧式計算機
+
 NyarVM 的 LIR 是一個棧式指令集，優化了生成難度，並且能更自然地與現代運行時對接。
 
 ### Phi 消除
+
 通過消除 Phi 節點並將 SSA 變量映射到棧槽或局部變量，將 SSA 降低為 LIR。

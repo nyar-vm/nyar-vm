@@ -1,16 +1,23 @@
 # Aspect-Oriented Programming (AOP)
 
-Aspect-Oriented Programming (AOP) is a programming paradigm that increases modularity by allowing the separation of cross-cutting concerns (such as logging, security, transaction management, etc.) from the core business logic. In Valkyrie, AOP is implemented through the Effect system, providing powerful and flexible aspect-oriented programming capabilities.
+Aspect-Oriented Programming (AOP) is a programming paradigm that increases modularity by allowing the separation of
+cross-cutting concerns (such as logging, security, transaction management, etc.) from the core business logic. In
+Valkyrie, AOP is implemented through the Effect system, providing powerful and flexible aspect-oriented programming
+capabilities.
 
 ## Basic Concepts
 
 ### Aspect
+
 An Aspect is a modular unit of a cross-cutting concern, containing code to be executed at specific join points.
 
 ### Join Point
-A Join Point is a point during the execution of a program where aspect code can be inserted, such as method calls or field accesses.
+
+A Join Point is a point during the execution of a program where aspect code can be inserted, such as method calls or
+field accesses.
 
 ### Advice
+
 Advice is the code executed at a join point, including before advice, after advice, around advice, etc.
 
 ## AOP in the Effect System
@@ -275,15 +282,20 @@ class AspectChain {
 ## Best Practices
 
 ### 1. Single Responsibility for Aspects
-Each aspect should focus on a single cross-cutting concern, avoiding mixing multiple functionalities within a single aspect.
+
+Each aspect should focus on a single cross-cutting concern, avoiding mixing multiple functionalities within a single
+aspect.
 
 ### 2. Rational Use of Aspect Order
+
 When multiple aspects act on the same join point, consider their execution order.
 
 ### 3. Avoid Strong Coupling Between Aspects
+
 Aspects should remain independent, avoiding mutual dependencies.
 
 ### 4. Performance Considerations
+
 Aspects increase the overhead of method calls; use them cautiously in performance-sensitive scenarios.
 
 ```valkyrie
@@ -331,4 +343,5 @@ with log_handler, metrics_handler {
 }
 ```
 
-AOP implemented through the Effect system provides type-safe, highly composable, and easy-to-test aspect programming capabilities, making the management of cross-cutting concerns more elegant and powerful.
+AOP implemented through the Effect system provides type-safe, highly composable, and easy-to-test aspect programming
+capabilities, making the management of cross-cutting concerns more elegant and powerful.

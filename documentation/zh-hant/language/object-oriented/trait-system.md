@@ -2,7 +2,8 @@
 
 ## 概述
 
-Valkyrie 的 Trait 系統提供了強大的抽象機制，支持接口定義、默認實現、多重繼承和匿名 trait。Trait 系統是 Valkyrie 面向對象編程的核心組成部分。
+Valkyrie 的 Trait 系統提供了強大的抽象機制，支持接口定義、默認實現、多重繼承和匿名 trait。Trait 系統是 Valkyrie
+面向對象編程的核心組成部分。
 
 ## 基本 Trait 定義
 

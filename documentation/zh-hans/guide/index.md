@@ -238,9 +238,11 @@ match divide(10, 2) {
 ```
 
 # 使用类
-let person = Person::new("Alice", 30)
-person.speak()
-let info = person.get_info()
+
+let person = Person::new ("Alice", 30)
+person.speak ()
+let info = person.get_info ()
+
 ```
 
 ## 模块系统

@@ -1,6 +1,7 @@
 # 界面组件 (Widget)：一切的基石
 
-在 Valkyrie 的世界里，UI 并非虚幻的标记，而是由真实的**对象**构建而成的。`widget` 是 Valkyrie 中专门为 UI 设计的类类型，它是整个 UI 系统的逻辑原点。
+在 Valkyrie 的世界里，UI 并非虚幻的标记，而是由真实的 **对象**构建而成的。`widget` 是 Valkyrie 中专门为 UI 设计的类类型，它是整个
+UI 系统的逻辑原点。
 
 ## 1. 组件的对象本质
 
@@ -38,9 +39,10 @@ widget Button {
 
 ## 2. 布局与组合模式
 
-Widget 系统使用**组合模式**来管理嵌套结构。
+Widget 系统使用 **组合模式**来管理嵌套结构。
 
 ### 弹性布局 (FlexBox)
+
 ```valkyrie
 widget FlexBox {
     children: [FlexChild],
@@ -92,7 +94,9 @@ widget Counter {
 ## 4. 高级特性
 
 ### 响应式设计 (Responsive)
+
 利用组件的生命周期和方法，可以轻松实现媒体查询：
+
 ```valkyrie
 widget Responsive {
     current_breakpoint: String,
@@ -104,15 +108,17 @@ widget Responsive {
 ```
 
 ### 虚拟滚动与模态框
+
 这些高级组件同样基于 Widget 类实现，将复杂的 DOM 操作封装在对象方法中。
 
 ---
 
 ## 魔法的真相：对象层级即 UI 结构
 
-为什么 Widget 系统让人感到自然？因为它回归了软件工程最经典的**组合模式 (Composite Pattern)**。
+为什么 Widget 系统让人感到自然？因为它回归了软件工程最经典的 **组合模式 (Composite Pattern)**。
 
 当你在屏幕上看到一个复杂的界面时，你在内存中拥有的是一颗完整、透明的对象树。这种设计保证了 UI 系统具有极高的可预测性：
+
 - **没有黑盒**：每一个组件都是一个可以被调试、扩展的普通对象。
 - **配置即方法**：流式接口 (Fluent Interface) 让对象配置读起来像自然语言。
 - **单一真理来源**：UI 的视觉嵌套直接映射为对象的组合嵌套。

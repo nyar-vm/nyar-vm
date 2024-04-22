@@ -1,6 +1,7 @@
 # 芯片设计
 
-Valkyrie 提供了类似于 Scala Chisel 的硬件描述语言 (HDL) 功能，支持数字电路设计、FPGA 开发、ASIC 设计等。通过类型安全的硬件抽象和强大的元编程能力，Valkyrie 为现代芯片设计提供了高效的开发环境。
+Valkyrie 提供了类似于 Scala Chisel 的硬件描述语言 (HDL) 功能，支持数字电路设计、FPGA 开发、ASIC
+设计等。通过类型安全的硬件抽象和强大的元编程能力，Valkyrie 为现代芯片设计提供了高效的开发环境。
 
 ## 核心概念
 

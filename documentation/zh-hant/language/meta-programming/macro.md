@@ -84,7 +84,6 @@ let config_content: string = ↯compile_time_read_file("config.toml")
 }
 ```
 
-
 ### 代碼生成
 
 ```valkyrie

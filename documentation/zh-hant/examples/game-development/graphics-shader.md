@@ -1,6 +1,7 @@
 # Valkyrie 图形编程与 Shader 开发
 
-Valkyrie 语言原生支持图形编程，可以直接编写 shader 代码，无需依赖 GLSL 或 HLSL。通过内置的图形 API 和 wgpu 集成，Valkyrie 提供了现代化的 GPU 编程体验。
+Valkyrie 语言原生支持图形编程，可以直接编写 shader 代码，无需依赖 GLSL 或 HLSL。通过内置的图形 API 和 wgpu 集成，Valkyrie
+提供了现代化的 GPU 编程体验。
 
 ## Valkyrie Shader 语言特性
 

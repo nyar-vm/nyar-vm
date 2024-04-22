@@ -1,6 +1,7 @@
 # 网页开发
 
-Valkyrie 提供了现代化的网页开发框架，支持服务端渲染、客户端应用、WebAssembly 集成、实时通信等功能，为构建高性能 Web 应用提供完整的解决方案。
+Valkyrie 提供了现代化的网页开发框架，支持服务端渲染、客户端应用、WebAssembly 集成、实时通信等功能，为构建高性能 Web
+应用提供完整的解决方案。
 
 ## Web 服务器框架
 
@@ -1401,4 +1402,5 @@ async micro create_post(data: CreatePostRequest) -> Result<Post, DatabaseError> 
 }
 ```
 
-Valkyrie 网页开发框架提供了完整的现代 Web 开发工具链，支持高性能服务器、灵活的路由系统、强大的模板引擎、WebAssembly 集成和实时通信功能，为构建各种规模的 Web 应用提供了坚实的基础。
+Valkyrie 网页开发框架提供了完整的现代 Web 开发工具链，支持高性能服务器、灵活的路由系统、强大的模板引擎、WebAssembly
+集成和实时通信功能，为构建各种规模的 Web 应用提供了坚实的基础。

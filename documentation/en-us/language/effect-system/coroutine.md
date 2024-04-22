@@ -1,6 +1,9 @@
 # Coroutines
 
-Valkyrie provides powerful coroutine support, implementing cooperative multitasking through the `yield` keyword. Coroutines allow functions to pause and resume execution, making them ideal for handling asynchronous operations and state machines. The primary difference between coroutines and generators is that coroutines focus more on pausing and resuming control flow, rather than just producing a sequence of values.
+Valkyrie provides powerful coroutine support, implementing cooperative multitasking through the `yield` keyword.
+Coroutines allow functions to pause and resume execution, making them ideal for handling asynchronous operations and
+state machines. The primary difference between coroutines and generators is that coroutines focus more on pausing and
+resuming control flow, rather than just producing a sequence of values.
 
 ## Coroutine State Management
 

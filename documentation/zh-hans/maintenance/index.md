@@ -1,21 +1,22 @@
 # 核心项目维护指南
 
-Nyar VM 采用了高度模块化的架构设计，旨在构建一个跨语言、跨平台的通用运行时环境。其核心理念是通过 `ProjectChomsky` 的 `UIR`（Universal IR）作为中转站，实现“一次编写，多处编译/执行”。
+Nyar VM 采用了高度模块化的架构设计，旨在构建一个跨语言、跨平台的通用运行时环境。其核心理念是通过 `ProjectChomsky` 的 `UIR`
+（Universal IR）作为中转站，实现“一次编写，多处编译/执行”。
 
 ## 架构总览
 
 Nyar VM 的生态系统主要分为三层：
 
-1.  **前端层 (Frontends)**: 各类编程语言前端（如 Mini-C, Mini-Java 等），负责将源码解析为 AST 并逐步降级。
-2.  **中间层 (Infrastructure)**:
-    -   **nyar-types**: HIR, CFG, SSA, LIR 的核心定义。
-    -   **nyar-gc**: 托管堆内存管理。
-    -   **ProjectChomsky**: 核心优化引擎（基于 E-Graph 的普遍优化）。
-3.  **执行层 (Execution)**:
-    -   **nyar-vm**: 栈式字节码解释器与异步运行时。
-    -   **nyar-jit**: 基于热点分析的即时编译。
-    -   **nyar-aot**: 静态编译驱动，负责从 SSA/LIR 到目标构件（Native/WASM/JVM）的转换与优化。
-    -   **nyar-tools**: 开发者工具链。
+1. **前端层 (Frontends)**: 各类编程语言前端（如 Mini-C, Mini-Java 等），负责将源码解析为 AST 并逐步降级。
+2. **中间层 (Infrastructure)**:
+    - **nyar-types**: HIR, CFG, SSA, LIR 的核心定义。
+    - **nyar-gc**: 托管堆内存管理。
+    - **ProjectChomsky**: 核心优化引擎（基于 E-Graph 的普遍优化）。
+3. **执行层 (Execution)**:
+    - **nyar-vm**: 栈式字节码解释器与异步运行时。
+    - **nyar-jit**: 基于热点分析的即时编译。
+    - **nyar-aot**: 静态编译驱动，负责从 SSA/LIR 到目标构件（Native/WASM/JVM）的转换与优化。
+    - **nyar-tools**: 开发者工具链。
 
 ## 项目调用关系
 

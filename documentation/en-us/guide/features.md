@@ -2,11 +2,14 @@
 
 ## Overview
 
-Nyar is a modern programming language designed to provide powerful expressiveness and extreme performance. This guide details the core features and advanced functionality of the Nyar language, helping developers deeply understand and utilize it.
+Nyar is a modern programming language designed to provide powerful expressiveness and extreme performance. This guide
+details the core features and advanced functionality of the Nyar language, helping developers deeply understand and
+utilize it.
 
 ## Compiler Architecture
 
 Nyar's compiler adopts a modern design, providing:
+
 - Highly optimized incremental compilation infrastructure
 - Multi-layer intermediate representations (AST → HIR → CFG → SSA → LIR)
 - Pluggable code generation backends
@@ -734,4 +737,6 @@ The Valkyrie language provides a rich set of features:
 7. **Performance**: Zero-cost abstractions and compile-time optimizations
 8. **Security**: Memory safety and error handling mechanisms
 
-These features enable Valkyrie to adapt to various programming scenarios, from systems programming to application development, and from functional to object-oriented programming, providing an excellent development experience and runtime performance.
+These features enable Valkyrie to adapt to various programming scenarios, from systems programming to application
+development, and from functional to object-oriented programming, providing an excellent development experience and
+runtime performance.

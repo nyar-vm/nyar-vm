@@ -2,10 +2,12 @@
 
 ## Overview
 
-Valkyrie provides a powerful macro system that supports compile-time code generation and metaprogramming. The macro system is divided into two main parts:
+Valkyrie provides a powerful macro system that supports compile-time code generation and metaprogramming. The macro
+system is divided into two main parts:
 
 - **Macro (`@`)**: Compile-time function calls that do not capture subsequent parameters.
-- **Annotation (`@`)**: Compile-time annotations that capture and act on subsequent declarations like `class`, `micro`, etc.
+- **Annotation (`@`)**: Compile-time annotations that capture and act on subsequent declarations like `class`, `micro`,
+  etc.
 
 ## Macro vs Annotation
 
@@ -199,4 +201,5 @@ macro vec_of {
 
 ### Procedural Macros
 
-Procedural macros are more powerful metaprogramming tools that allow direct manipulation of AST or TokenStream. For more details, please refer to the [Procedural Macro Development Guide](./procedural-macros.md).
+Procedural macros are more powerful metaprogramming tools that allow direct manipulation of AST or TokenStream. For more
+details, please refer to the [Procedural Macro Development Guide](./procedural-macros.md).

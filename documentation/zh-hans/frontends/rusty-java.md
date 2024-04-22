@@ -15,12 +15,12 @@ Rusty Java 采用结构化的 AST 到 UIR 转换策略：
 
 1. **解析**: 使用 `oak-java` 将 `.java` 源码解析为高阶 AST。
 2. **UIR 转换 (Lowering)**:
-   - 使用 `NyarTranslator` 将 AST 节点转换为 `IKunTree`。
-   - **类结构**: 映射为 `IKunTree::Extension` 节点（如 `"class"`, `"method"`, `"field"`）。
-   - **方法体**: 递归降低为基础意图（Intents），如 `Constant`, `Symbol`, `Call`。
+    - 使用 `NyarTranslator` 将 AST 节点转换为 `IKunTree`。
+    - **类结构**: 映射为 `IKunTree::Extension` 节点（如 `"class"`, `"method"`, `"field"`）。
+    - **方法体**: 递归降低为基础意图（Intents），如 `Constant`, `Symbol`, `Call`。
 3. **字节码生成**:
-   - `NyarBackend` 遍历 `IKunTree`，发射 Nyar VM 操作码。
-   - 方法被封装为 `Chunk`，并添加到 `NyarModule` 的导出表中。
+    - `NyarBackend` 遍历 `IKunTree`，发射 Nyar VM 操作码。
+    - 方法被封装为 `Chunk`，并添加到 `NyarModule` 的导出表中。
 
 ## 对象模型处理
 
@@ -33,7 +33,7 @@ Rusty Java 采用结构化的 AST 到 UIR 转换策略：
 ## Builtin 与 FFI 实现
 
 - **内建库**: 模拟 `java.lang` 包，提供 `System.out.println` 等核心 API 的内建实现。
-- **符号解析**: 
-   - 使用 `CallSymbol` 访问全局函数。
-   - 通过 `ImportInfo` 管理跨包/跨模块的类引用。
+- **符号解析**:
+    - 使用 `CallSymbol` 访问全局函数。
+    - 通过 `ImportInfo` 管理跨包/跨模块的类引用。
 - **FFI 支持**: 允许通过 `native` 关键字声明并链接到 C 语言编写的底层实现。

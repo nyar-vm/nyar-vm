@@ -7,6 +7,7 @@
 ### Q: Valkyrie 与其他函数式语言有什么区别？
 
 A: Valkyrie 的独特之处在于：
+
 - **代数效应系统**：原生支持代数效应，优雅处理副作用
 - **多目标编译**：可编译到 WebAssembly、JavaScript 和原生代码
 - **现代语法**：结合函数式特性与现代语法设计
@@ -16,6 +17,7 @@ A: Valkyrie 的独特之处在于：
 ### Q: 什么是代数效应？为什么重要？
 
 A: 代数效应是一种处理副作用的抽象机制：
+
 - **统一抽象**：将异常、异步、状态管理等副作用统一处理
 - **可组合性**：效应可以自由组合和嵌套
 - **控制反转**：调用者决定如何处理效应，而不是被调用者
@@ -37,11 +39,12 @@ micro counter() -> Int {
 ### Q: Valkyrie 支持哪些数据类型？
 
 A: Valkyrie 支持丰富的类型系统：
+
 - **基础类型**：Int, Float, String, Bool, Unit
 - **容器类型**：List&lt;T&gt;, Array&lt;T&gt;, Map&lt;K,V&gt;, Set&lt;T&gt;
-- **可选类型**：Option&lt;T&gt; (Some(value) | None)
-- **结果类型**：Result&lt;T,E&gt; (Fine(value) | Fail(error))
-- **函数类型**：(A, B) -> C
+- **可选类型**：Option&lt;T&gt; (Some (value) | None)
+- **结果类型**：Result&lt;T,E&gt; (Fine (value) | Fail (error))
+- **函数类型**： (A, B) -> C
 - **代数数据类型**：自定义的 sum 和 product 类型
 - **效应类型**：带有效应标注的函数类型
 
@@ -159,6 +162,7 @@ micro process_data(data: JSObject) -> JSObject {
 ### Q: 性能如何？有哪些优化？
 
 A: Valkyrie 提供多种性能优化：
+
 - **尾调用优化**：自动优化尾递归
 - **内联优化**：小函数自动内联
 - **死代码消除**：移除未使用的代码
@@ -170,6 +174,7 @@ A: Valkyrie 提供多种性能优化：
 ### Q: 有哪些开发工具支持？
 
 A: Valkyrie 提供完整的工具链：
+
 - **编译器**：`valkyrie` CLI 工具
 - **包管理器**：内置的依赖管理
 - **格式化工具**：`valkyrie fmt` 代码格式化
@@ -240,6 +245,7 @@ optimization = "release"
 ### Q: 如何学习 Valkyrie？
 
 A: 推荐的学习路径：
+
 1. **基础语法**：从函数式编程概念开始
 2. **类型系统**：理解代数数据类型和模式匹配
 3. **代数效应**：掌握效应的定义和处理
@@ -249,6 +255,7 @@ A: 推荐的学习路径：
 ### Q: 有哪些学习资源？
 
 A: 可用的学习资源：
+
 - **官方教程**：[快速开始指南](/guide/getting-started)
 - **示例项目**：[代码示例](/examples/)
 - **API 文档**：完整的标准库文档
@@ -258,6 +265,7 @@ A: 可用的学习资源：
 ### Q: 如何贡献到 Valkyrie 项目？
 
 A: 贡献方式：
+
 1. **报告问题**：提交 bug 报告和功能请求
 2. **改进文档**：完善文档和示例
 3. **编写代码**：实现新功能或修复问题
@@ -267,6 +275,7 @@ A: 贡献方式：
 ### Q: Valkyrie 的发展路线图是什么？
 
 A: 主要发展方向：
+
 - **语言特性**：模块系统、宏系统、并发原语
 - **工具改进**：更好的错误信息、调试体验、IDE 支持
 - **性能优化**：编译速度、运行时性能、内存使用
@@ -276,6 +285,7 @@ A: 主要发展方向：
 ---
 
 如果您的问题没有在这里找到答案，请：
+
 - 查看 [官方文档](/guide/)
 - 提交 [GitHub Issue](https://github.com/valkyrie-lang/valkyrie/issues)
 - 参与 [社区讨论](https://github.com/valkyrie-lang/valkyrie/discussions)

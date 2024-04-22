@@ -2,7 +2,9 @@
 
 ## Overview
 
-Workspace mode is the multi-project management mode for the Valkyrie language, defining workspace configurations through the `legions.json` file. When a `legions.json` file exists in the project root directory, that directory is recognized as being in workspace mode.
+Workspace mode is the multi-project management mode for the Valkyrie language, defining workspace configurations through
+the `legions.json` file. When a `legions.json` file exists in the project root directory, that directory is recognized
+as being in workspace mode.
 
 ## File Structure
 
@@ -100,9 +102,11 @@ workspace-root/
 
 ### 2. Property Inheritance
 
-Workspaces support an automatic property inheritance mechanism. If member projects do not explicitly define certain metadata, they will automatically inherit it from the `legions.json` in the workspace root.
+Workspaces support an automatic property inheritance mechanism. If member projects do not explicitly define certain
+metadata, they will automatically inherit it from the `legions.json` in the workspace root.
 
 #### Workspace Configuration (`legions.json`)
+
 ```json5
 {
     "name": "my-workspace",
@@ -118,7 +122,9 @@ Workspaces support an automatic property inheritance mechanism. If member projec
 ```
 
 #### Member Project Configuration (`projects/my-pkg/legion.json`)
-Common metadata (such as version, authors, license, etc.) is **automatically inherited**, requiring no extra configuration:
+
+Common metadata (such as version, authors, license, etc.) is **automatically inherited**, requiring no extra
+configuration:
 
 ```json5
 {
@@ -135,6 +141,7 @@ Common metadata (such as version, authors, license, etc.) is **automatically inh
 ```
 
 Automatically inherited properties include:
+
 - `version`
 - `description`
 - `authors`
@@ -146,8 +153,10 @@ Automatically inherited properties include:
 ### 3. Dependency Sharing
 
 - **Direct Reference**: Packages within the workspace can directly `using` each other by name.
-- **Dependency Declaration**: Although dependency versions can be inherited from the workspace, each package must still explicitly list the dependencies it uses in its `legion.json`.
-- **Dependency Promotion**: Dependencies defined in `legions.json` act as a shared pool, referenced by member projects via `true`.
+- **Dependency Declaration**: Although dependency versions can be inherited from the workspace, each package must still
+  explicitly list the dependencies it uses in its `legion.json`.
+- **Dependency Promotion**: Dependencies defined in `legions.json` act as a shared pool, referenced by member projects
+  via `true`.
 - **Recursive Search**: Supports wildcard patterns for recursive project discovery.
 
 ### 4. Dependency Management

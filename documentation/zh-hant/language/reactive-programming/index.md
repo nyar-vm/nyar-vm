@@ -1,4 +1,3 @@
-
 ## 异步原语与类型系统
 
 ### Future：底层异步原语
@@ -35,6 +34,7 @@ let composed = async {
 ```
 
 特点：
+
 - `async { ... }` 是表达式，返回一个 Promise 句柄，可被存入变量、作为参数传递或进一步组合。
 - Promise 不会自动阻塞当前线程，如何"运行"由下节的 run.* 与 `awake` 控制。
 
@@ -89,23 +89,23 @@ _bg = bg_promise.awake   # 触发后台刷新并忽略结果
 对于返回 Future 的方法调用（Promise 等 Future 实例）：
 
 1. **自动执行规则**：
-   - `obj.call_fut()` 本身就相当于 `obj.call_fut.await()`，会自动执行并等待结果
-   - 括号可以省略：`obj.call_fut` 等价于 `obj.call_fut()`
+    - `obj.call_fut()` 本身就相当于 `obj.call_fut.await()`，会自动执行并等待结果
+    - 括号可以省略：`obj.call_fut` 等价于 `obj.call_fut()`
 
 2. **显式控制语义**：
-   - `obj.call_fut.await` - 显式等待（与自动执行等价）
-   - `obj.call_fut.awake` - fire-and-forget 语义，不等待结果
-   - `obj.call_fut.block` - 阻塞等待（同步上下文中使用）
+    - `obj.call_fut.await` - 显式等待（与自动执行等价）
+    - `obj.call_fut.awake` - fire-and-forget 语义，不等待结果
+    - `obj.call_fut.block` - 阻塞等待（同步上下文中使用）
 
 3. **函数绑定**：
-   - `let f = obj.call_fut` - 不会自动执行，而是把返回 future 的函数绑定到 f
-   - 静态方法遵循同样的规则
+    - `let f = obj.call_fut` - 不会自动执行，而是把返回 future 的函数绑定到 f
+    - 静态方法遵循同样的规则
 
 4. **错误处理**：
-   - `?` 操作符用于 Result 类型的错误传播，与 await 无关
-   - `promise.run.await` 用于等待 Promise 完成
-   - `promise.run.block` 用于阻塞等待 Promise 完成
-   - 如果需要错误传播，在整个表达式后使用：`promise.run.await?`
+    - `?` 操作符用于 Result 类型的错误传播，与 await 无关
+    - `promise.run.await` 用于等待 Promise 完成
+    - `promise.run.block` 用于阻塞等待 Promise 完成
+    - 如果需要错误传播，在整个表达式后使用：`promise.run.await?`
 
 ### Promise 高级用法
 

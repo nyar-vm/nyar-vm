@@ -1,6 +1,7 @@
 # Getting Started with Nyar
 
-Welcome to Nyar! Nyar is a modern functional programming language that provides a powerful type system, a flexible module system, and rich language features.
+Welcome to Nyar! Nyar is a modern functional programming language that provides a powerful type system, a flexible
+module system, and rich language features.
 
 ## What is Nyar?
 

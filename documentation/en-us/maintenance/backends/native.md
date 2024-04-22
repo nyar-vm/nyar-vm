@@ -1,6 +1,7 @@
 # Native Backend Evaluation and Proposals
 
-This document evaluates the proposals for adding native instruction set (x86, x64, arm64, riscv) support to the Valkyrie compiler.
+This document evaluates the proposals for adding native instruction set (x86, x64, arm64, riscv) support to the Valkyrie
+compiler.
 
 ## Proposals Overview
 
@@ -8,7 +9,8 @@ There are three main paths to supporting native instruction sets, each with diff
 
 ### Option A: Based on Cranelift (Recommended)
 
-Cranelift is a high-performance, cross-platform code generator written entirely in Rust, intended as a lightweight alternative to LLVM.
+Cranelift is a high-performance, cross-platform code generator written entirely in Rust, intended as a lightweight
+alternative to LLVM.
 
 - **Entry Point**: **SSA (Static Single Assignment)**
 - **Advantages**:
@@ -47,25 +49,30 @@ Write an emitter directly on top of `LIR` for a specific architecture.
 ## Technical Selection Recommendations
 
 ### 1. Short-term Goal: Cranelift
-As the first native backend, **Cranelift** is the best choice. It matches Valkyrie's SSA structure perfectly and can satisfy both AOT and future JIT requirements.
+
+As the first native backend, **Cranelift** is the best choice. It matches Valkyrie's SSA structure perfectly and can
+satisfy both AOT and future JIT requirements.
 
 ### 2. Long-term Goal: LLVM
+
 For release versions pursuing extreme performance, the LLVM backend can be introduced as an optional component.
 
 ### 3. Special Requirements: Custom LIR Transformation
-If an extremely compact embedded runtime is required, or if existing backends have difficulty supporting Valkyrie's algebraic effects and continuations, consider generating machine code directly from LIR.
+
+If an extremely compact embedded runtime is required, or if existing backends have difficulty supporting Valkyrie's
+algebraic effects and continuations, consider generating machine code directly from LIR.
 
 ## Implementation Path
 
 1. **Phase 1 (Research)**:
-   - Evaluate whether `SsaProgram` in `valkyrie-types` contains all the semantic information required by Cranelift.
-   - Experimentally implement a simple `Ssa -> Cranelift` converter supporting addition and return.
+    - Evaluate whether `SsaProgram` in `valkyrie-types` contains all the semantic information required by Cranelift.
+    - Experimentally implement a simple `Ssa -> Cranelift` converter supporting addition and return.
 
 2. **Phase 2 (Basic Implementation)**:
-   - Implement full type mapping.
-   - Implement handling of calling conventions.
-   - Implement linearization of basic blocks.
+    - Implement full type mapping.
+    - Implement handling of calling conventions.
+    - Implement linearization of basic blocks.
 
 3. **Phase 3 (Advanced Features)**:
-   - Handle algebraic effects (may require special stack operations or runtime support).
-   - Implement debug information (DWARF) generation.
+    - Handle algebraic effects (may require special stack operations or runtime support).
+    - Implement debug information (DWARF) generation.

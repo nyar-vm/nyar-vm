@@ -14,17 +14,21 @@ Nyar VM 的对象级动态技术赋予了语言高度的灵活性，支持动态
 
 Nyar VM 通过底层的指令集支持复杂的面向对象和函数式多态特性：
 
-- **Witness Tables (见证表)**：这是实现 Trait 多态的核心。通过 `GetWitnessTable` 指令，VM 可以为特定类生成满足特定 Trait 的方法映射表。这类似于 C++ 的虚函数表（vtable），但在运行时更加动态。
+- **Witness Tables (见证表)**：这是实现 Trait 多态的核心。通过 `GetWitnessTable` 指令，VM 可以为特定类生成满足特定 Trait
+  的方法映射表。这类似于 C++ 的虚函数表（vtable），但在运行时更加动态。
 - **WitnessMethod 调用**：通过 `WitnessMethod` 指令，VM 可以从见证表中提取具体的闭包并执行。这种方式实现了真正的接口多态，允许代码编写时不依赖于具体实现类。
-- **Existential Types (存在类型)**：指令集预留了 `OpenExistential` 和 `CloseExistential`，用于处理封装了具体类型信息的 Trait 对象。这支持了类似于 Rust `dyn Trait` 的行为，使得不同类型但实现相同接口的对象可以存储在同一个集合中。
-- **Abstract Class (抽象类)**：通过 `InstanceOf`, `CheckCast` 和 `Cast` 指令，VM 支持基于继承层次结构的类型检查和强制转换。这为抽象基类和类层次结构的多态性提供了基础。
+- **Existential Types (存在类型)**：指令集预留了 `OpenExistential` 和 `CloseExistential`，用于处理封装了具体类型信息的
+  Trait 对象。这支持了类似于 Rust `dyn Trait` 的行为，使得不同类型但实现相同接口的对象可以存储在同一个集合中。
+- **Abstract Class (抽象类)**：通过 `InstanceOf`, `CheckCast` 和 `Cast` 指令，VM
+  支持基于继承层次结构的类型检查和强制转换。这为抽象基类和类层次结构的多态性提供了基础。
 
 ## 3. 动态分发与内置操作
 
 Nyar VM 的指令集内置了对动态行为的支持：
 
 - **多态调用**：`InvokeMethod` 不仅仅用于类成员函数。它会根据 `Value` 的运行时标签（ValueTag）自动选择执行路径。
-- **内置方法映射**：对于基础类型（如 `Int`, `String`, `Array`），VM 预定义了一系列标准方法（如 `add`, `len`, `push`）。这使得开发者可以用统一的语法操作不同类型的数据。
+- **内置方法映射**：对于基础类型（如 `Int`, `String`, `Array`），VM 预定义了一系列标准方法（如 `add`, `len`, `push`
+  ）。这使得开发者可以用统一的语法操作不同类型的数据。
 - **集合动态性**：数组（Array）和列表（List）支持动态扩容、切片以及元素类型的混合存储。
 
 ## 4. 运行时求值 (Eval)

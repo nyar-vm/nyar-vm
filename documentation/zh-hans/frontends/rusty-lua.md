@@ -25,12 +25,12 @@ Rusty Lua 采用双层 IR 转换策略以实现深度优化：
 
 1. **解析**: 使用 `oak-lua` 将源码解析为 UIR。
 2. **Gaia IR 生成 (Lowering)**:
-   - 使用 `GaiaTranslator` 将 `IKunTree` 转换为 `Gaia` 指令。
-   - 局部变量被映射到 `GaiaFunction` 的寄存器槽位。
-   - 字符串常量被提取到 `GaiaModule` 的常量池中。
+    - 使用 `GaiaTranslator` 将 `IKunTree` 转换为 `Gaia` 指令。
+    - 局部变量被映射到 `GaiaFunction` 的寄存器槽位。
+    - 字符串常量被提取到 `GaiaModule` 的常量池中。
 3. **块与跳转**:
-   - 将 Lua 的控制流映射为 `GaiaBlock`。
-   - 通过 `GaiaTerminator` 实现循环与分支跳转。
+    - 将 Lua 的控制流映射为 `GaiaBlock`。
+    - 通过 `GaiaTerminator` 实现循环与分支跳转。
 
 ## 对象模型处理
 
@@ -41,9 +41,9 @@ Rusty Lua 采用双层 IR 转换策略以实现深度优化：
 ## Builtin 与 FFI 实现
 
 - **标准库**: 提供 `print`, `type`, `pairs`, `ipairs` 等核心函数的内建实现。
-- **C API 模拟**: 
-   - 允许通过 Nyar VM 的栈操作接口与 Rust/C 函数交互。
-   - 支持动态加载 `.so`/`.dll` 并将其中的函数注册到 Lua 环境。
-- **闭包实现**: 
-   - 使用 `ManagedInstruction` 处理闭包创建。
-   - VM 自动管理捕获变量的生命周期。
+- **C API 模拟**:
+    - 允许通过 Nyar VM 的栈操作接口与 Rust/C 函数交互。
+    - 支持动态加载 `.so`/`.dll` 并将其中的函数注册到 Lua 环境。
+- **闭包实现**:
+    - 使用 `ManagedInstruction` 处理闭包创建。
+    - VM 自动管理捕获变量的生命周期。

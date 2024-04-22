@@ -15,11 +15,11 @@ Rusty C# 的编译路径与 Java 类似，但增加了对 C# 特有语法的处�
 
 1. **解析阶段**: 使用 `oak-csharp`（或兼容层）生成红绿树结构的 AST。
 2. **Lowering 逻辑**:
-   - 将属性访问转换为隐式的方法调用（`get_Property` / `set_Property`）。
-   - 事件绑定映射为对内部委托列表的更新操作。
-3. **UIR 增强**: 
-   - 使用 `Extension` 节点描述 C# 特有的元数据，如 `[Attribute]`。
-   - 泛型定义在 UIR 层面保留原始信息，支持运行时实例化。
+    - 将属性访问转换为隐式的方法调用（`get_Property` / `set_Property`）。
+    - 事件绑定映射为对内部委托列表的更新操作。
+3. **UIR 增强**:
+    - 使用 `Extension` 节点描述 C# 特有的元数据，如 `[Attribute]`。
+    - 泛型定义在 UIR 层面保留原始信息，支持运行时实例化。
 
 ## 对象模型处理
 
@@ -29,8 +29,8 @@ Rusty C# 的编译路径与 Java 类似，但增加了对 C# 特有语法的处�
 
 ## Builtin 与 FFI 实现
 
-- **P/Invoke 模拟**: 
-   - 通过 `[DllImport]` 样式的元数据触发 FFI 流程。
-   - 自动生成数据封送（Marshaling）代码。
+- **P/Invoke 模拟**:
+    - 通过 `[DllImport]` 样式的元数据触发 FFI 流程。
+    - 自动生成数据封送（Marshaling）代码。
 - **内建类型**: 映射 Nyar VM 的基础类型到 `System.Int32`, `System.String` 等标准名称。
 - **异常处理**: 实现 `try-catch-finally` 到 Nyar VM `ExceptionHandler` 的映射。

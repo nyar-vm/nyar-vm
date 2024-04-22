@@ -1,16 +1,22 @@
 # Inversion of Control (IoC)
 
-Inversion of Control (IoC) is a design principle that achieves loose coupling by transferring the management of object creation and dependencies from the objects themselves to an external container or framework. In Valkyrie, IoC is implemented through the Effect system, providing powerful dependency injection and service location capabilities.
+Inversion of Control (IoC) is a design principle that achieves loose coupling by transferring the management of object
+creation and dependencies from the objects themselves to an external container or framework. In Valkyrie, IoC is
+implemented through the Effect system, providing powerful dependency injection and service location capabilities.
 
 ## Basic Concepts
 
 ### Dependency Injection (DI)
-Dependency Injection is an implementation of IoC where dependency objects are injected externally rather than being created inside the object.
+
+Dependency Injection is an implementation of IoC where dependency objects are injected externally rather than being
+created inside the object.
 
 ### Service Locator
+
 A service locator is a central registry used to find and obtain service instances.
 
 ### Lifecycle Management
+
 The container is responsible for managing the lifecycle of objects, including creation, initialization, and disposal.
 
 ## IoC in the Effect System
@@ -474,15 +480,19 @@ container.register_factory(UserRepository, {
 ## Best Practices
 
 ### 1. Interface Segregation
+
 Define small, focused interfaces rather than large, all-encompassing ones.
 
 ### 2. Single Responsibility
+
 Each service should have a single responsibility to avoid over-complexity.
 
 ### 3. Lifecycle Management
+
 Choose appropriate lifecycles for services to avoid memory leaks and resource waste.
 
 ### 4. Circular Dependency Detection
+
 Implement circular dependency detection in the container to avoid infinite recursion.
 
 ```valkyrie
@@ -541,4 +551,5 @@ class WebApplication {
 }
 ```
 
-IoC implemented through the Effect system provides type-safe, flexibly configured, and easily testable dependency injection, resulting in a cleaner and more maintainable application architecture.
+IoC implemented through the Effect system provides type-safe, flexibly configured, and easily testable dependency
+injection, resulting in a cleaner and more maintainable application architecture.

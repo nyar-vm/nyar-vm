@@ -12,13 +12,13 @@
 
 `nyar-aot` 的核心是一个驱动循环，它协调前端解析器与后端生成器：
 
-1.  **Intent Collection**: 收集前端生成的所有 `IKun` 意图。
-2.  **Global Optimization**: 驱动 `ProjectChomsky` 在 E-Graph 中进行大规模变换。
-3.  **Cost-based Extraction**: 根据目标后端的 `CostModel` 提取出成本最低（执行最快）的代码树 `IKunTree`。
-4.  **Artifact Generation**:
-    -   **Native**: 生成 ELF/Mach-O/PE 可执行文件。
-    -   **WASM**: 生成符合 WASI 标准的 `.wasm` 组件。
-    -   **JVM/CLR**: 生成 `.class` 或 `.dll` 文件。
+1. **Intent Collection**: 收集前端生成的所有 `IKun` 意图。
+2. **Global Optimization**: 驱动 `ProjectChomsky` 在 E-Graph 中进行大规模变换。
+3. **Cost-based Extraction**: 根据目标后端的 `CostModel` 提取出成本最低（执行最快）的代码树 `IKunTree`。
+4. **Artifact Generation**:
+    - **Native**: 生成 ELF/Mach-O/PE 可执行文件。
+    - **WASM**: 生成符合 WASI 标准的 `.wasm` 组件。
+    - **JVM/CLR**: 生成 `.class` 或 `.dll` 文件。
 
 ## 后端开发接口
 

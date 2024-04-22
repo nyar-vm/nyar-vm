@@ -1,13 +1,17 @@
 # Valkyrie Error Handling and Diagnostics Guide
 
-Valkyrie adopts a structured, internationalization-first error handling mechanism. Each error is not just a text message, but a data structure containing rich metadata, designed to provide an IDE-level diagnostic experience.
+Valkyrie adopts a structured, internationalization-first error handling mechanism. Each error is not just a text
+message, but a data structure containing rich metadata, designed to provide an IDE-level diagnostic experience.
 
 ## 1. Design Principles
 
 - **Structured**: Errors should contain an error code, an i18n key, and parameterized data.
-- **Internationalization (i18n)**: Error messages should not be hardcoded but looked up via a `key` in localization files for different languages.
-- **Lightweight**: Use the `Box<ErrorKind>` pattern to ensure the error type size remains minimal, optimizing performance.
-- **No Magic Macros**: Strictly avoid using `thiserror` or `anyhow`. All error implementations should remain explicit and easy to trace.
+- **Internationalization (i18n)**: Error messages should not be hardcoded but looked up via a `key` in localization
+  files for different languages.
+- **Lightweight**: Use the `Box<ErrorKind>` pattern to ensure the error type size remains minimal, optimizing
+  performance.
+- **No Magic Macros**: Strictly avoid using `thiserror` or `anyhow`. All error implementations should remain explicit
+  and easy to trace.
 
 ## 2. Core Data Structures
 
@@ -38,7 +42,8 @@ pub struct ValkyrieHelp {
 
 ### `ValkyrieErrorKind`
 
-Errors are categorized using an enum, with each variant carrying the parameterized data required for that error. The `key` is implicitly determined by the variant type:
+Errors are categorized using an enum, with each variant carrying the parameterized data required for that error. The
+`key` is implicitly determined by the variant type:
 
 ```rust
 pub enum ValkyrieErrorKind {
@@ -104,15 +109,19 @@ impl ValkyrieError {
 
 1. **Triggering the Error**: The compiler constructs a `ValkyrieError` when it detects an issue.
 2. **Carrying Data**: The error object carries only the `key` and `data` (e.g., `{ "name": "foo" }`).
-3. **Rendering Diagnostics**: 
-   - The diagnostic system loads translation files (e.g., `en-US.toml`) based on the current locale.
-   - It finds the template using the `key`: `error.type.mismatch = "Type mismatch: expected {expected}, but found {found}"`.
-   - It populates the template with values from `data`.
+3. **Rendering Diagnostics**:
+    - The diagnostic system loads translation files (e.g., `en-US.toml`) based on the current locale.
+    - It finds the template using the `key`:
+      `error.type.mismatch = "Type mismatch: expected {expected}, but found {found}"`.
+    - It populates the template with values from `data`.
 
 ## 5. Best Practices
 
 - **Keep ErrorKind Pure**: Include only the data necessary for further analysis or recovery.
-- **Deferred Rendering**: Do not format strings when constructing errors. Formatting should only occur during final output to the user.
+- **Deferred Rendering**: Do not format strings when constructing errors. Formatting should only occur during final
+  output to the user.
 - **Use Error Codes**: Assign a permanent error code to each user-facing error so users can consult the documentation.
-- **No `anyhow`**: The compiler needs strongly-typed errors to decide whether to proceed to subsequent stages; `anyhow` loses this type information.
-- **No `thiserror`**: We need custom `Diagnostic` implementations; manually implementing the `Display` and `Error` traits provides greater flexibility.
+- **No `anyhow`**: The compiler needs strongly-typed errors to decide whether to proceed to subsequent stages; `anyhow`
+  loses this type information.
+- **No `thiserror`**: We need custom `Diagnostic` implementations; manually implementing the `Display` and `Error`
+  traits provides greater flexibility.

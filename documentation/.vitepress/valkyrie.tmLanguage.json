@@ -2,7 +2,9 @@
     "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
     "name": "valkyrie",
     "scopeName": "source.valkyrie",
-    "fileTypes": ["valkyrie"],
+    "fileTypes": [
+        "valkyrie"
+    ],
     "patterns": [
         {
             "include": "#comments"

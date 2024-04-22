@@ -1,6 +1,7 @@
 # Unit System
 
-Valkyrie provides a powerful compile-time unit system that ensures the correctness of physical quantity calculations through macros and the type system, preventing errors from mismatched units.
+Valkyrie provides a powerful compile-time unit system that ensures the correctness of physical quantity calculations
+through macros and the type system, preventing errors from mismatched units.
 
 ## Basic Unit Definitions
 
