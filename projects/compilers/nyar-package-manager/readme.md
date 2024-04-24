@@ -4,7 +4,10 @@ Core package manager for the Legion ecosystem: manifests, resolution, lockfiles,
 
 ## Overview
 
-`nyar-package-manager` orchestrates dependency graphs, on-disk project layout, vendor/auth stores, and registry-backed install/publish flows. Registry wire protocols live in `nyar-package-registry`; this crate focuses on **project state** and **solver behavior**. Product CLIs supply a `ProjectLayout` (manifest filenames, ignore rules, cache roots) rather than hard-coding Legion-specific paths inside the library.
+`nyar-package-manager` orchestrates dependency graphs, on-disk project layout, vendor/auth stores, and registry-backed
+install/publish flows. Registry wire protocols live in `nyar-package-registry`; this crate focuses on **project state**
+and **solver behavior**. Product CLIs supply a `ProjectLayout` (manifest filenames, ignore rules, cache roots) rather
+than hard-coding Legion-specific paths inside the library.
 
 ## Features
 

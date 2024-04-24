@@ -541,12 +541,7 @@ impl PackageManager {
         match &self.mode {
             ProjectMode::Workspace { workspace, .. } => {
                 let version = workspace.version.trim();
-                if version.is_empty() || version == "workspace" {
-                    None
-                }
-                else {
-                    Some(workspace.version.clone())
-                }
+                if version.is_empty() || version == "workspace" { None } else { Some(workspace.version.clone()) }
             }
             _ => None,
         }
@@ -898,11 +893,7 @@ fn resolve_legacy_registry(options: &PublishOptions, manifest: &PackageManifest)
     if !options.registry_name.is_empty() {
         return options.registry_name.clone();
     }
-    if manifest.publish_config.registry.is_empty() {
-        options.registry_name.clone()
-    } else {
-        manifest.publish_config.registry.clone()
-    }
+    if manifest.publish_config.registry.is_empty() { options.registry_name.clone() } else { manifest.publish_config.registry.clone() }
 }
 
 fn resolve_publish_version(target_version: &str, manifest_version: &str, workspace_version: Option<&str>) -> Result<String> {

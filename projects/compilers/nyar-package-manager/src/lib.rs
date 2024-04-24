@@ -1,7 +1,7 @@
 //! Nyar package manager core library.
+#![deny(missing_docs)]
 
 mod auth;
-mod von_format;
 mod cache;
 mod credentials;
 mod error;
@@ -17,6 +17,7 @@ mod resolve;
 mod scripts;
 mod security;
 mod version;
+mod von_format;
 mod workspace;
 
 pub use auth::{LoginResult, VendorAuthStore, VendorManager};
