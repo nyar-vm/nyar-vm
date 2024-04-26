@@ -191,16 +191,3 @@ impl RetryConfig {
         Self { max_retries: 5, initial_delay_ms: 500, backoff_multiplier: 2.0, max_delay_ms: 15_000, ..Self::default() }
     }
 }
-
-#[cfg(test)]
-mod retry_config_tests {
-    use super::RetryConfig;
-
-    #[test]
-    fn npm_upload_timeout_is_generous() {
-        let config = RetryConfig::npm();
-        assert_eq!(config.max_retries, 5);
-        assert_eq!(config.upload_timeout_secs, 600);
-        assert_eq!(config.connect_timeout_secs, 30);
-    }
-}

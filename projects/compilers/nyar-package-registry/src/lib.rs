@@ -1,4 +1,5 @@
 //! Pluggable registry adapters for the Nyar package manager.
+#![deny(missing_docs)]
 
 mod conda;
 pub mod credentials;
