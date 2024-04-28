@@ -4,17 +4,18 @@ Host runtime dispatch for `legion run` and native/Wasm/Node embedding.
 
 ## Overview
 
-`nyar-runner` schedules **compiled artifacts** to target runtimes. It owns FFI, effect hooks, runner registration, and target descriptors—not the Valkyrie language main chain.
+`nyar-runner` schedules **compiled artifacts** to target runtimes. It owns FFI, effect hooks, runner registration, and
+target descriptors—not the Valkyrie language main chain.
 
 ## Target modules
 
-| Module | Runs |
-|:---|:---|
-| `src/jvm` | Java / JVM artifacts |
-| `src/clr` | .NET / CLR |
-| `src/wasm` | Node + Wasm JS glue |
-| `src/wasi` | Wasmtime / WASI |
-| `src/windows` | Native `.exe` |
+| Module        | Runs                 |
+|:--------------|:---------------------|
+| `src/jvm`     | Java / JVM artifacts |
+| `src/clr`     | .NET / CLR           |
+| `src/wasm`    | Node + Wasm JS glue  |
+| `src/wasi`    | Wasmtime / WASI      |
+| `src/windows` | Native `.exe`        |
 
 `nyar-wasm` and `nyar-napi` re-export this crate as the shared host surface for platform packages.
 

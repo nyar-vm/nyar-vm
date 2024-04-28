@@ -11,13 +11,13 @@ Runtime dispatch source for `nyar-runner` (rustdoc module doc).
 
 ## Target mapping
 
-| Module | Runs as |
-|:---|:---|
-| `jvm` | Java |
-| `clr` | .NET |
-| `wasm` | Node |
+| Module    | Runs as       |
+|:----------|:--------------|
+| `jvm`     | Java          |
+| `clr`     | .NET          |
+| `wasm`    | Node          |
 | `windows` | native `.exe` |
-| `wasi` | Wasmtime |
+| `wasi`    | Wasmtime      |
 
 ## Forbidden
 

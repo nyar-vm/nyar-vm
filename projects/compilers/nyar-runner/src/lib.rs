@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 /// 统一运行时家族门面与运行模板描述。
 pub mod runtime;
