@@ -14,7 +14,12 @@ pub enum TermPattern {
     /// 符号模式。
     Symbol(QualifiedName),
     /// 操作应用模式。
-    Apply { operator: QualifiedName, arguments: Vec<TermPattern> },
+    Apply {
+        /// 被应用的操作符限定名。
+        operator: QualifiedName,
+        /// 各参数子模式。
+        arguments: Vec<TermPattern>,
+    },
 }
 
 impl TermPattern {

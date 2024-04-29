@@ -4,14 +4,17 @@ Object-algebraic optimization skeleton for the Nyar platform.
 
 ## Overview
 
-`nyar-optimizer` provides **E-Graph** sessions, rewrite rules, and **Futamura projection** families over object-algebraic programs. It sits between closed semantic input and `nyar` artifact planning—not a single unified IR enum.
+`nyar-optimizer` provides **E-Graph** sessions, rewrite rules, and **Futamura projection** families over
+object-algebraic programs. It sits between closed semantic input and `nyar` artifact planning—not a single unified IR
+enum.
 
 ## Responsibilities
 
 - Accept object-algebraic program boundaries after upstream semantic closure.
 - Run equivalence rewriting and extraction strategies inside an E-Graph session.
 - Select `futa_*` projection families per target family instead of emitting one closed IR shape.
-- Model host boundaries separately from reference-object management (JS glue / WASI components may share GC reference semantics but not host binding rules).
+- Model host boundaries separately from reference-object management (JS glue / WASI components may share GC reference
+  semantics but not host binding rules).
 
 ## Current status
 

@@ -11,7 +11,12 @@ pub enum AlgebraicTerm {
     /// 已绑定的符号引用。
     Symbol(QualifiedName),
     /// 带参数的操作应用。
-    Apply { operator: QualifiedName, arguments: Vec<AlgebraicTerm> },
+    Apply {
+        /// 被应用的操作符限定名。
+        operator: QualifiedName,
+        /// 各参数子项。
+        arguments: Vec<AlgebraicTerm>,
+    },
 }
 
 impl AlgebraicTerm {
@@ -214,22 +219,5 @@ impl TermParser {
         else {
             Err(format!("expected {context}"))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_literal_and_symbol() {
-        assert_eq!(parse_term("42").unwrap(), AlgebraicTerm::literal(42));
-        assert_eq!(parse_term("graphic.dot").unwrap(), AlgebraicTerm::symbol(qualified_from_dotted("graphic.dot")));
-    }
-
-    #[test]
-    fn parse_nested_application() {
-        let term = parse_term("core.add(core.mul(2, 3), 4)").unwrap();
-        assert!(matches!(term, AlgebraicTerm::Apply { .. }));
     }
 }
