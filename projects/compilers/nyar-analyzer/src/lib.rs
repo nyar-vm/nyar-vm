@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 /// 前端无关源码格式化 / printer 基础设施（平台层）。
 pub mod format;

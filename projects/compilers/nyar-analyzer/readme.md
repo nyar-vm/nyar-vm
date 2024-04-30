@@ -4,19 +4,22 @@ Frontend-neutral analysis contracts for the Nyar platform.
 
 ## Overview
 
-`nyar-analyzer` consumes **already-closed** facts from language frontends and expresses them in a target-agnostic shape for `nyar` planning, lane selection, and packaging. It does not own Valkyrie `HIR` / `MIR` / `LIR` and does not parse source text.
+`nyar-analyzer` consumes **already-closed** facts from language frontends and expresses them in a target-agnostic shape
+for `nyar` planning, lane selection, and packaging. It does not own Valkyrie `HIR` / `MIR` / `LIR` and does not parse
+source text.
 
 ## Core types
 
-| Type | Role |
-|:---|:---|
-| `ProgramFacts` | Module-level summary: entries, imports/exports, functions, nominal types, capabilities |
-| `EntryContract` / `ImportContract` / `ExportContract` | Neutral linking conventions |
-| `FunctionAnalysis` | Suspend/async/host-interop flags, external import links, reference-management hints |
-| `TypeDefinitionFact` | Enum / unite / flags layout facts for downstream backends |
-| `RuntimeRequirement` | Declared runtime needs (re-exported from `nyar-types`) |
+| Type                                                  | Role                                                                                   |
+|:------------------------------------------------------|:---------------------------------------------------------------------------------------|
+| `ProgramFacts`                                        | Module-level summary: entries, imports/exports, functions, nominal types, capabilities |
+| `EntryContract` / `ImportContract` / `ExportContract` | Neutral linking conventions                                                            |
+| `FunctionAnalysis`                                    | Suspend/async/host-interop flags, external import links, reference-management hints    |
+| `TypeDefinitionFact`                                  | Enum / unite / flags layout facts for downstream backends                              |
+| `RuntimeRequirement`                                  | Declared runtime needs (re-exported from `nyar-types`)                                 |
 
-Helper methods on `ProgramFacts` include `primary_entry`, `requires_capability`, and reference-management aggregation across functions.
+Helper methods on `ProgramFacts` include `primary_entry`, `requires_capability`, and reference-management aggregation
+across functions.
 
 ## Subsystems
 

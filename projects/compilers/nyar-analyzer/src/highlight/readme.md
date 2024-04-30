@@ -4,10 +4,10 @@ Frontend-neutral syntax highlighting contracts (aligned with JetBrains IDE platf
 
 ## Layers
 
-| Layer | Location | Role |
-|:---|:---|:---|
-| Platform | `nyar-analyzer::highlight` | `HighlightKind`, `HighlightSpan`, `Highlighter` trait, `HighlighterKind`, `Registry`, `hl-*` HTML |
-| Language plugin | `nyar-language::{lang}::highlight` | Multiple passes per language: `Lexical` + `Semantic` |
+| Layer           | Location                           | Role                                                                                              |
+|:----------------|:-----------------------------------|:--------------------------------------------------------------------------------------------------|
+| Platform        | `nyar-analyzer::highlight`         | `HighlightKind`, `HighlightSpan`, `Highlighter` trait, `HighlighterKind`, `Registry`, `hl-*` HTML |
+| Language plugin | `nyar-language::{lang}::highlight` | Multiple passes per language: `Lexical` + `Semantic`                                              |
 
 ## Multi-pass highlighting
 
@@ -18,4 +18,5 @@ One `language_id` may register several highlighters:
 
 `HighlighterRegistry::highlight_merged` applies lexical first, then semantic overlay.
 
-Concrete languages **must not** be implemented inside `nyar-analyzer`; the analyzer also does not depend on `std-data` lexers directly.
+Concrete languages **must not** be implemented inside `nyar-analyzer`; the analyzer also does not depend on `std-data`
+lexers directly.
