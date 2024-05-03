@@ -20,17 +20,23 @@ pub struct SourceSpan {
     pub span: Range<u32>,
 }
 
+/// 源码中的行列位置（1-based）。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Position {
+    /// 行号（从 1 开始）。
     pub line: u32,
+    /// 列号（从 1 开始）。
     pub column: u32,
 }
 
+/// 带文件 URL 的源码位置。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Location {
+    /// 源文件 URL。
     pub file: Url,
+    /// 文件内的行列位置。
     pub position: Position,
 }
 

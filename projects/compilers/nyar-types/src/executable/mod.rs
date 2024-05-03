@@ -282,29 +282,42 @@ pub enum InstructionKind {
         /// Element values in evaluation order already sequenced by SSA/CFG.
         elements: Vec<Operand>,
     },
+    /// 从数组读取元素。
     ArrayGet {
+        /// 数组操作数。
         array: Operand,
+        /// 下标操作数。
         index: Operand,
     },
+    /// 向数组写入元素。
     ArraySet {
+        /// 数组操作数。
         array: Operand,
+        /// 下标操作数。
         index: Operand,
+        /// 要写入的元素值。
         value: Operand,
     },
+    /// 读取数组长度。
     ArrayLength {
+        /// 数组操作数。
         array: Operand,
     },
     /// Append one element to a growable array; returns the array reference.
     ArrayPush {
+        /// 可增长数组操作数。
         array: Operand,
+        /// 要追加的元素值。
         value: Operand,
     },
     /// Test whether a nullable value is null.
     NullIsNull {
+        /// 可空值操作数。
         value: Operand,
     },
     /// Unwrap a non-null nullable payload.
     NullUnwrap {
+        /// 已确认为非 null 的可空值操作数。
         value: Operand,
     },
 }

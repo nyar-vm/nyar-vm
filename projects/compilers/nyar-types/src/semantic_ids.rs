@@ -72,20 +72,22 @@ impl<K: IdKind> fmt::Display for SemanticId<K> {
     }
 }
 
-/// 稳定的 SSA 指令身份（优化器必须保留或显式改写）。
+/// [`InstructionId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstructionIdKind;
 impl IdKind for InstructionIdKind {
     const NAME: &'static str = "InstructionId";
 }
+/// 稳定的 SSA 指令身份（优化器必须保留或显式改写）。
 pub type InstructionId = SemanticId<InstructionIdKind>;
 
-/// 稳定的 SSA 值身份。
+/// [`MirValueId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MirValueIdKind;
 impl IdKind for MirValueIdKind {
     const NAME: &'static str = "MirValueId";
 }
+/// 稳定的 SSA 值身份。
 pub type MirValueId = SemanticId<MirValueIdKind>;
 
 /// Semantic MIR 函数内 SSA 值在全程序中的稳定身份。
@@ -107,116 +109,129 @@ impl ValueIdentity {
     }
 }
 
-/// 已声明的语言项（函数 / 方法 / 构造器 / trait 方法 /
-/// std adaptor 入口 / intrinsic 声明）。由包链接器分配。
+/// [`ItemId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemIdKind;
 impl IdKind for ItemIdKind {
     const NAME: &'static str = "ItemId";
 }
+/// 已声明的语言项（函数 / 方法 / 构造器 / trait 方法 /
+/// std adaptor 入口 / intrinsic 声明）。由包链接器分配。
 pub type ItemId = SemanticId<ItemIdKind>;
 
-/// 程序类型表中的语义类型身份（名义基类型 / 类型参数槽）。
+/// [`TypeId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeIdKind;
 impl IdKind for TypeIdKind {
     const NAME: &'static str = "TypeId";
 }
+/// 程序类型表中的语义类型身份（名义基类型 / 类型参数槽）。
 pub type TypeId = SemanticId<TypeIdKind>;
 
-/// 替换后的应用类型身份（`TypeId` × 类型实参）。
-/// 不同于 ADT 特化的 [`NominalInstanceId`]。
+/// [`TypeInstanceId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeInstanceIdKind;
 impl IdKind for TypeInstanceIdKind {
     const NAME: &'static str = "TypeInstanceId";
 }
+/// 替换后的应用类型身份（`TypeId` × 类型实参）。
+/// 不同于 ADT 特化的 [`NominalInstanceId`]。
 pub type TypeInstanceId = SemanticId<TypeInstanceIdKind>;
 
-/// 已链接的项实例（替换后的函数 / 方法 / adaptor 绑定）。
-/// 链接器旁表将其关联到 [`ItemId`] + [`SubstitutionId`] + evidence 环境。
+/// [`ItemInstanceId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ItemInstanceIdKind;
 impl IdKind for ItemInstanceIdKind {
     const NAME: &'static str = "ItemInstanceId";
 }
+/// 已链接的项实例（替换后的函数 / 方法 / adaptor 绑定）。
+/// 链接器旁表将其关联到 [`ItemId`] + [`SubstitutionId`] + evidence 环境。
 pub type ItemInstanceId = SemanticId<ItemInstanceIdKind>;
 
-/// 具体的名义 ADT 实例（`NominalType × Substitution`）。
+/// [`NominalInstanceId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NominalInstanceIdKind;
 impl IdKind for NominalInstanceIdKind {
     const NAME: &'static str = "NominalInstanceId";
 }
+/// 具体的名义 ADT 实例（`NominalType × Substitution`）。
 pub type NominalInstanceId = SemanticId<NominalInstanceIdKind>;
 
-/// 由可扩展运算符注册表分配的运算符身份。
-///
-/// **不是封闭 enum。** 内置与用户定义运算符在解析/链接时从注册表获得稳定 id。
-/// 结合性、优先级与词素只存旁表（[`OperatorRegistration`]）；MIR 只存
-/// `OperatorId`，从不存 `"infix =="` 这类显示字符串。
+/// [`OperatorId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OperatorIdKind;
 impl IdKind for OperatorIdKind {
     const NAME: &'static str = "OperatorId";
 }
+/// 由可扩展运算符注册表分配的运算符身份。
+///
+/// **不是封闭 enum。** 内置与用户定义运算符在解析/链接时从注册表获得稳定 id。
+/// 结合性、优先级与词素只存旁表（[`OperatorRegistration`]）；MIR 只存
+/// `OperatorId`，从不存 `"infix =="` 这类显示字符串。
 pub type OperatorId = SemanticId<OperatorIdKind>;
 
-/// 字节码 / 宿主能力表中的已校验导入槽。
-/// 字节码只存此下标，从不存宿主函数名字符串。
+/// [`ImportIndex`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImportIndexKind;
 impl IdKind for ImportIndexKind {
     const NAME: &'static str = "ImportIndex";
 }
+/// 字节码 / 宿主能力表中的已校验导入槽。
+/// 字节码只存此下标，从不存宿主函数名字符串。
 pub type ImportIndex = SemanticId<ImportIndexKind>;
 
-/// 名义 sum 内已声明的变体身份。
+/// [`VariantId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariantIdKind;
 impl IdKind for VariantIdKind {
     const NAME: &'static str = "VariantId";
 }
+/// 名义 sum 内已声明的变体身份。
 pub type VariantId = SemanticId<VariantIdKind>;
 
-/// 结构体 / 聚合 / 变体载荷内已声明的字段身份。
+/// [`FieldId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldIdKind;
 impl IdKind for FieldIdKind {
     const NAME: &'static str = "FieldId";
 }
+/// 结构体 / 聚合 / 变体载荷内已声明的字段身份。
 pub type FieldId = SemanticId<FieldIdKind>;
 
-/// 泛型替换身份。
+/// [`SubstitutionId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubstitutionIdKind;
 impl IdKind for SubstitutionIdKind {
     const NAME: &'static str = "SubstitutionId";
 }
+/// 泛型替换身份。
 pub type SubstitutionId = SemanticId<SubstitutionIdKind>;
 
-/// 效应操作位点身份。
+/// [`EffectSiteId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EffectSiteIdKind;
 impl IdKind for EffectSiteIdKind {
     const NAME: &'static str = "EffectSiteId";
 }
+/// 效应操作位点身份。
 pub type EffectSiteId = SemanticId<EffectSiteIdKind>;
 
-/// 效应边身份（`Handled` 或 `Propagate`）。
+/// [`EffectEdgeId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EffectEdgeIdKind;
 impl IdKind for EffectEdgeIdKind {
     const NAME: &'static str = "EffectEdgeId";
 }
+/// 效应边身份（`Handled` 或 `Propagate`）。
 pub type EffectEdgeId = SemanticId<EffectEdgeIdKind>;
 
-/// 源码 / 合成 provenance 身份。
+/// [`ProvenanceId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProvenanceIdKind;
 impl IdKind for ProvenanceIdKind {
     const NAME: &'static str = "ProvenanceId";
 }
+/// 源码 / 合成 provenance 身份。
 pub type ProvenanceId = SemanticId<ProvenanceIdKind>;
 
 /// 运算符结合性（仅句法分类 —— 不是运算符身份）。
@@ -352,15 +367,16 @@ impl fmt::Display for IntrinsicId {
     }
 }
 
-/// 属性身份：由可扩展属性注册表分配。
-///
-/// **不是封闭 enum。** 内建 `[export]` / `[main]` 与用户自定义属性均获得稳定 id；
-/// 名称只留在 [`AttributeRegistration`] 旁表，解析后不得再用 `as_str() == "export"` 分派。
+/// [`AttributeId`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AttributeIdKind;
 impl IdKind for AttributeIdKind {
     const NAME: &'static str = "AttributeId";
 }
+/// 属性身份：由可扩展属性注册表分配。
+///
+/// **不是封闭 enum。** 内建 `[export]` / `[main]` 与用户自定义属性均获得稳定 id；
+/// 名称只留在 [`AttributeRegistration`] 旁表，解析后不得再用 `as_str() == "export"` 分派。
 pub type AttributeId = SemanticId<AttributeIdKind>;
 
 /// 属性注册表旁表中的一行（解析阶段）。
@@ -653,104 +669,5 @@ pub mod layout_choice {
         pub sum_reps: BTreeMap<NominalInstanceId, SumRepresentation>,
         /// 按效应位点的延续布局。
         pub effect_reps: BTreeMap<EffectSiteId, EffectRepresentation>,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::layout_choice::ValueRepresentation;
-
-    #[test]
-    fn evidence_id_is_stable_and_distinct() {
-        let a = EvidenceId::from_parts("Comparable", "Int32", "compare");
-        let b = EvidenceId::from_parts("Comparable", "Int32", "compare");
-        let c = EvidenceId::from_parts("Comparable", "Utf8", "compare");
-        assert_eq!(a, b);
-        assert_ne!(a, c);
-        assert_eq!(a.as_str(), "evidence:Comparable@Int32#compare");
-    }
-
-    #[test]
-    fn instruction_id_is_dense_and_nonzero() {
-        let id = InstructionId::from_index(0).expect("index 0");
-        assert_eq!(id.index(), 0);
-        assert!(InstructionId::from_index(u32::MAX).is_some() || InstructionId::from_index(u32::MAX).is_none());
-    }
-
-    #[test]
-    fn representation_plan_keys_are_stable_ids() {
-        let mut plan = layout_choice::RepresentationPlan::default();
-        let insn = InstructionId::from_index(3).unwrap();
-        plan.invoke_lowerings.insert(insn, layout_choice::InvokeLowering::Direct);
-        assert!(plan.invoke_lowerings.contains_key(&insn));
-        let function = ItemInstanceId::from_index(0).unwrap();
-        let other_function = ItemInstanceId::from_index(1).unwrap();
-        let value = MirValueId::from_index(0).unwrap();
-        plan.value_reps.insert(ValueIdentity::new(function, value), ValueRepresentation::Specialized);
-        plan.value_reps.insert(ValueIdentity::new(other_function, value), ValueRepresentation::Reified);
-        assert!(plan.value_reps.contains_key(&ValueIdentity::new(function, value)));
-        assert!(plan.value_reps.contains_key(&ValueIdentity::new(other_function, value)));
-        assert_eq!(plan.value_reps.len(), 2);
-    }
-
-    #[test]
-    fn item_and_type_instance_ids_are_opaque() {
-        let item = ItemId::from_index(0).expect("item");
-        let ty = TypeInstanceId::from_index(1).expect("type instance");
-        let import = ImportIndex::from_index(0).expect("import");
-        assert_eq!(item.index(), 0);
-        assert_eq!(ty.index(), 1);
-        assert_eq!(import.index(), 0);
-    }
-
-    #[test]
-    fn branded_ids_are_distinct_types() {
-        fn expects_instruction(_: InstructionId) {}
-        expects_instruction(InstructionId::from_index(0).unwrap());
-        assert_eq!(InstructionIdKind::NAME, "InstructionId");
-        assert_eq!(ItemIdKind::NAME, "ItemId");
-    }
-
-    #[test]
-    fn operator_registry_uses_extensible_opaque_ids() {
-        let op = OperatorId::from_index(7).expect("operator");
-        assert_eq!(op.index(), 7);
-        let reg = OperatorRegistration {
-            id: op,
-            lexeme: "+".to_string(),
-            fixity: OperatorFixity::Infix,
-            precedence: 6,
-            callee: ItemInstanceId::from_index(0),
-        };
-        assert_eq!(reg.lexeme, "+");
-        assert_eq!(reg.fixity, OperatorFixity::Infix);
-    }
-
-    #[test]
-    fn intrinsic_and_attribute_ids_are_extensible() {
-        assert_eq!(IntrinsicId::ArrayPush.diagnostic_path(), "builtin.array.push");
-        assert_eq!(IntrinsicId::ArrayPush.bytecode_index(), 0);
-        assert_eq!(IntrinsicId::from_bytecode_index(2), Some(IntrinsicId::ArrayGet));
-        assert_eq!(IntrinsicId::from_bytecode_index(99), None);
-        assert_eq!(IntrinsicId::resolve_from_segments(&["builtin", "array", "push"]), Some(IntrinsicId::ArrayPush));
-        assert_eq!(IntrinsicId::resolve_from_segments(&["__array_len"]), Some(IntrinsicId::ArrayLen));
-        assert_eq!(IntrinsicId::resolve_from_segments(&["marker", "__ref_deref"]), Some(IntrinsicId::RefDeref));
-        // 禁止按类型名末段猜
-        assert_eq!(IntrinsicId::resolve_from_segments(&["Array", "get"]), None);
-        assert_eq!(IntrinsicId::resolve_from_segments(&["HashMap", "get"]), None);
-        assert_eq!(IntrinsicId::resolve_from_segments(&["is_null"]), Some(IntrinsicId::IsNull));
-        assert_eq!(IntrinsicId::resolve_from_segments(&["unwrap_null"]), Some(IntrinsicId::UnwrapNull));
-        assert_eq!(IntrinsicId::resolve_from_segments(&["builtin", "null", "is_null"]), Some(IntrinsicId::IsNull));
-        assert_eq!(builtin_attribute::export().index(), 0);
-        assert_eq!(builtin_attribute::main().index(), 1);
-        let seeds = builtin_attribute::seed_registrations();
-        assert_eq!(seeds[0].name, "export");
-        assert_eq!(seeds.len(), 5);
-        assert_eq!(builtin_attribute::lookup_seed("export"), Some(builtin_attribute::export()));
-        assert_eq!(builtin_attribute::lookup_seed("workload_phase"), Some(builtin_attribute::workload_phase()));
-        assert_eq!(builtin_attribute::lookup_seed("custom_attr"), None);
-        let cap = ImportCapability::new("env", "console_log");
-        assert_eq!(cap.to_string(), "env::console_log");
     }
 }

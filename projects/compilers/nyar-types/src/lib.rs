@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 //! Rust seed 路径共用的最小类型与语义身份。
 
