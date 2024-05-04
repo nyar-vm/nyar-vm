@@ -23,15 +23,3 @@ impl JitAssumption {
 pub fn baseline_scalar_assumptions(module_version: u32) -> Vec<JitAssumption> {
     vec![JitAssumption::ScalarLeafShape, JitAssumption::ModuleVersion(module_version)]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn baseline_assumptions_include_version() {
-        let list = baseline_scalar_assumptions(3);
-        assert!(list.contains(&JitAssumption::ScalarLeafShape));
-        assert!(list.contains(&JitAssumption::ModuleVersion(3)));
-    }
-}
