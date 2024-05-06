@@ -1,3 +1,5 @@
+//! 解释器执行期错误类型与诊断信息。
+
 use std::fmt::{Display, Formatter};
 
 use miette::Diagnostic;

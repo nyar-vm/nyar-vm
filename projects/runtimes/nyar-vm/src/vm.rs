@@ -1,3 +1,5 @@
+//! 对外 VM 入口：加载模块、调用导出函数与管理执行器生命周期。
+
 use crate::{
     error::NyarRuntimeError,
     executor::{Executor, validate_argument_count},

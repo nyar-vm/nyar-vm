@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 //! Nyar bytecode VM — language-agnostic `.nyar` / Nyar IR runtime.
 //!

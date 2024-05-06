@@ -1,3 +1,5 @@
+//! 已加载 `.nyar` 模块：函数表、常量池、导入解析与全局槽。
+
 use nyar_bytecode::{
     NyarConstant, NyarExport, NyarFunction, NyarGlobal, NyarImport, NyarLayout, NyarModuleData, NyarWitnessDispatchEntry, decode_module,
 };

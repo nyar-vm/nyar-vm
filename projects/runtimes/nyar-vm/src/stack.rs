@@ -1,3 +1,5 @@
+//! 解释器操作数栈。
+
 use crate::{error::NyarRuntimeError, value::Value};
 
 /// Operand stack for the interpreter.

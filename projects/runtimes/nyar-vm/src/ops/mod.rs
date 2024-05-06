@@ -1,3 +1,5 @@
+//! 内码操作分派：算术、控制流、对象与宿主调用。
+
 use nyar_bytecode::NyarHeadCode;
 
 use crate::{
