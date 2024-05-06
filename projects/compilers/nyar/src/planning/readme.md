@@ -7,10 +7,13 @@ Neutral orchestration plans owned by `nyar`.
 - Accept only validated `CanonicalProgram`; standalone frontend facts are not a success entry.
 - Combine targets, lanes, capabilities, and runtime requirements into `ArtifactPartitionPlan`.
 - Emit closed `PartitionBackendRequirement` values from partition plans for the selection layer.
-- Carry host boundaries and reference-object management strategy in partition plans so GC/RC policy does not leak into backend families or launcher details.
+- Carry host boundaries and reference-object management strategy in partition plans so GC/RC policy does not leak into
+  backend families or launcher details.
 - Provide stable entry for backend selection, downstream lowering, and packaging.
-- Partition entry, operation roots, and fragment views use `ItemInstanceId`, consuming Canonical fragment contracts directly.
-- Equational optimization name views carry no entry, import, or call edges; name equality must not rebind callable roots.
+- Partition entry, operation roots, and fragment views use `ItemInstanceId`, consuming Canonical fragment contracts
+  directly.
+- Equational optimization name views carry no entry, import, or call edges; name equality must not rebind callable
+  roots.
 
 ## Forbidden
 

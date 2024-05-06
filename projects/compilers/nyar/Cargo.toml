@@ -2,7 +2,7 @@
 name = "nyar"
 version.workspace = true
 edition.workspace = true
- description = "Generic optimization backend orchestration for multi-frontend compilers"
+description = "Generic optimization backend orchestration for multi-frontend compilers"
 authors.workspace = true
 license.workspace = true
 

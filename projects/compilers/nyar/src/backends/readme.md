@@ -14,8 +14,10 @@ Target-specific backend implementations and minimal backend interfaces.
 - **CLR** backend accepts valid `ClrImage` or equivalent input only.
 - **JVM** backend accepts `JvmClassFile`-style input only.
 - **WASM** backend accepts `WasmModule`-style input only.
-- **native** backend accepts native-lane low-level input only; it must not consume CLR/JVM/WASM container models directly.
-- If input still has unclosed witness edges, non-static effect dispatch, or unresolved row/nominal facts, `validate()` must fail.
+- **native** backend accepts native-lane low-level input only; it must not consume CLR/JVM/WASM container models
+  directly.
+- If input still has unclosed witness edges, non-static effect dispatch, or unresolved row/nominal facts, `validate()`
+  must fail.
 
 ## Relationship to HIR / MIR / LIR
 

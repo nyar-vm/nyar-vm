@@ -4,7 +4,9 @@ Multi-frontend optimization backend orchestration for the Nyar platform.
 
 ## Overview
 
-`nyar` consumes neutral **`ProgramFacts`** from `nyar-analyzer` and object-algebraic input from `nyar-optimizer`, then produces **`ArtifactPartitionPlan`**, target lanes, backend selection, and packaging protocols. It unifies **orchestration**, not a single physical IR shared by every target.
+`nyar` consumes neutral **`ProgramFacts`** from `nyar-analyzer` and object-algebraic input from `nyar-optimizer`, then
+produces **`ArtifactPartitionPlan`**, target lanes, backend selection, and packaging protocols. It unifies
+**orchestration**, not a single physical IR shared by every target.
 
 ## Pipeline
 
@@ -22,11 +24,13 @@ ProgramFacts
   -> ArtifactSet
 ```
 
-What is unified is how partitions reach the correct route and deliver artifacts—not one backend IR for CLR, JVM, GPU, and VM alike.
+What is unified is how partitions reach the correct route and deliver artifacts—not one backend IR for CLR, JVM, GPU,
+and VM alike.
 
 ## Upstream boundary
 
-Language semantics (`row`, `trait` / `imply`, `class` / `sealed class`, `unite`, `effect`, …) must close **before** `nyar`:
+Language semantics (`row`, `trait` / `imply`, `class` / `sealed class`, `unite`, `effect`, …) must close **before**
+`nyar`:
 
 - Row method requirements become closed member facts in HIR, not downstream row witnesses.
 - Open dispatch stays explicit (`witness`, `effect-handler`); never disguised as static calls.
@@ -51,25 +55,25 @@ Language semantics (`row`, `trait` / `imply`, `class` / `sealed class`, `unite`,
 ### LIR
 
 - Not one shared type—a **family** after partitioning:
-  - CPU/VM → Nyar-style low-level IR
-  - CLR → ECMA-335-oriented (`ClrImage`, MSIL, PE)
-  - JVM → classfile model
-  - WASM → structured control flow + sections
-  - GPU → DXIL / SPIR-V / MSL directly
+    - CPU/VM → Nyar-style low-level IR
+    - CLR → ECMA-335-oriented (`ClrImage`, MSIL, PE)
+    - JVM → classfile model
+    - WASM → structured control flow + sections
+    - GPU → DXIL / SPIR-V / MSL directly
 
 `src/data_formats/*` holds target containers and low-level encodings, not a language-level LIR superset.
 
 ## Crate layout
 
-| Path | Role |
-|:---|:---|
-| `src/abstractions` | `TargetFamily`, `BackendInputKind`, minimal backend traits |
-| `src/planning` | Facts → `ArtifactPartitionPlan` |
-| `src/lanes` | Partition → target-specific input |
-| `src/selection` | Backend choice per lane/input |
-| `src/backends` | Per-backend `validate()` / `compile()` |
-| `src/data_formats/*` | MSIL, PE, COFF, ClrImage, … |
-| `src/packaging` | `OutputSpec`, `ArtifactSet`, sidecars |
+| Path                 | Role                                                       |
+|:---------------------|:-----------------------------------------------------------|
+| `src/abstractions`   | `TargetFamily`, `BackendInputKind`, minimal backend traits |
+| `src/planning`       | Facts → `ArtifactPartitionPlan`                            |
+| `src/lanes`          | Partition → target-specific input                          |
+| `src/selection`      | Backend choice per lane/input                              |
+| `src/backends`       | Per-backend `validate()` / `compile()`                     |
+| `src/data_formats/*` | MSIL, PE, COFF, ClrImage, …                                |
+| `src/packaging`      | `OutputSpec`, `ArtifactSet`, sidecars                      |
 
 ## GPU shader path
 

@@ -1,6 +1,6 @@
 use nyar::{
     BackendCandidate, BackendInputKind, BackendSelector, BinaryFlavor, BinaryTarget, HostProjectionBoundary, PartitionBackendRequirement,
-    ReferenceManagement, RewriteTheory, SemanticFragment, TargetFamily, TargetLane,
+    ReferenceManagement, TargetFamily, TargetLane,
 };
 
 #[test]

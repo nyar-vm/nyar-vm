@@ -108,7 +108,9 @@ pub struct SuspendFunctionArtifact {
 /// dispatch case：`case_key` → 目标 block 标签。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuspendDispatchCase {
+    /// dispatch switch 的 case 键。
     pub case_key: u32,
+    /// 跳转目标基本块标签。
     pub block_label: String,
 }
 
@@ -130,13 +132,21 @@ pub struct SuspendWitnessBinding {
 /// 单个 suspend 状态。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuspendStateArtifact {
+    /// 状态机内唯一状态标识。
     pub state_id: u32,
+    /// 挂起时触发的效应名称。
     pub effect: String,
+    /// 恢复后进入的 dispatch case 键。
     pub resume_case_key: u32,
+    /// 承载帧数据的载体字段名。
     pub frame_carrier: String,
+    /// 跨挂起需保留的 spill 槽字段名。
     pub spill_fields: Vec<String>,
+    /// 挂起点基本块标签。
     pub suspend_block_label: String,
+    /// 恢复后继续执行的基本块标签。
     pub resume_block_label: String,
+    /// 恢复基本块期望的参数个数。
     pub resume_parameter_count: usize,
     /// Statically resolved witness calls consumed by this suspend state.
     pub witness_bindings: Vec<SuspendWitnessBinding>,

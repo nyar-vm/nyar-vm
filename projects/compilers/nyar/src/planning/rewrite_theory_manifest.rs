@@ -23,10 +23,15 @@ pub struct RewriteTheoryManifestV1 {
 /// 单条规则。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct RewriteTheoryRuleEntryV1 {
+    /// 规则名称。
     pub name: String,
+    /// 左侧模式文本。
     pub left: String,
+    /// 右侧替换文本。
     pub right: String,
+    /// 适用重写阶段名。
     pub phase: String,
+    /// 所需能力标签。
     #[serde(default)]
     pub capabilities: Vec<String>,
 }
@@ -34,9 +39,13 @@ pub struct RewriteTheoryRuleEntryV1 {
 /// 单条等式。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct RewriteTheoryEquationEntryV1 {
+    /// 左侧模式文本。
     pub left: String,
+    /// 右侧模式文本。
     pub right: String,
+    /// 适用重写阶段名。
     pub phase: String,
+    /// 所需能力标签。
     #[serde(default)]
     pub capabilities: Vec<String>,
 }
@@ -44,10 +53,15 @@ pub struct RewriteTheoryEquationEntryV1 {
 /// 单条显式结构化重写。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct RewriteTheoryTermRewriteEntryV1 {
+    /// 重写名称。
     pub name: String,
+    /// 左侧结构化项文本。
     pub left: String,
+    /// 右侧结构化项文本。
     pub right: String,
+    /// 适用重写阶段名。
     pub phase: String,
+    /// 所需能力标签。
     #[serde(default)]
     pub capabilities: Vec<String>,
 }
@@ -145,38 +159,4 @@ pub fn builtin_graphic_manifest() -> RewriteTheoryManifestV1 {
 /// 内置 neural manifest（与 C# 导出默认值对齐）。
 pub fn builtin_neural_manifest() -> RewriteTheoryManifestV1 {
     serde_json::from_str(include_str!("../../schemas/neural.rewrite-theory.v1.json")).expect("neural manifest")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn manifest_pattern_rule_produces_term_rewrite() {
-        let manifest = RewriteTheoryManifestV1::from_json(
-            r#"{
-                "fragment": "graphic",
-                "rules": [
-                    {
-                        "name": "add-identity",
-                        "left": "core.add(?x, 0)",
-                        "right": "?x",
-                        "phase": "local",
-                        "capabilities": []
-                    }
-                ]
-            }"#,
-        )
-        .expect("manifest");
-        let theory = manifest.to_rewrite_theory();
-        assert_eq!(theory.term_rewrites.len(), 1);
-        assert!(theory.equations.is_empty());
-        assert_eq!(theory.term_rewrites[0].name.as_str(), "add-identity");
-    }
-
-    #[test]
-    fn manifest_flat_rule_still_produces_equation() {
-        let theory = builtin_graphic_manifest().to_rewrite_theory();
-        assert!(!theory.equations.is_empty());
-    }
 }

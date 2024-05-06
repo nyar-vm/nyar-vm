@@ -10,7 +10,8 @@ Target-neutral backend abstractions.
 ## Design constraints
 
 - `BackendInputKind` declares what each backend actually consumes; inputs need not share one underlying structure.
-- What may be unified here is lane selection, artifact description, and interface boundaries—not the physical representation of CLR / JVM / WASM / GPU.
+- What may be unified here is lane selection, artifact description, and interface boundaries—not the physical
+  representation of CLR / JVM / WASM / GPU.
 - Adding a target means new route declarations and input kinds, not compatibility fields stuffed into old inputs.
 
 ## Interface boundary

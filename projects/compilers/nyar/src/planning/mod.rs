@@ -1,3 +1,5 @@
+#![doc = include_str!("readme.md")]
+
 pub mod control_flow;
 pub mod rewrite_theory_manifest;
 
