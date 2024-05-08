@@ -1,4 +1,4 @@
-use crate::{ValkyrieCompiler, mir::MirLowerer};
+use nyar_language::{ValkyrieCompiler, mir::MirLowerer};
 
 const HOST_CONTRACT_SOURCE: &str = "[host_contract] micro foreign(value: i32) -> i32 { } \
     micro caller(value: i32) -> i32 { return foreign(value) }";
@@ -31,7 +31,7 @@ fn source_bare_declaration_cannot_supply_an_executable_call_target() {
 }
 
 #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn source_entry_declaration_requires_a_function_body() {
     let error = ValkyrieCompiler::default().compile_source("[main] micro entry() -> i32;").expect_err("Oak 前端要求 micro 必须带函数体");
     assert!(error.to_string().contains("body") || error.to_string().contains("Missing"));

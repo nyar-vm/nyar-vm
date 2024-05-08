@@ -1,8 +1,8 @@
 //! `[workload_phase]` → `begin_phase` / `end_phase` Call 展开。
 
-use crate::{types::SourceID, valkyrie::hir::ValkyrieCompiler};
+use nyar_language::{types::SourceID, valkyrie::hir::ValkyrieCompiler};
 
-use super::{MirConstant, MirFunction, MirLowerer, MirModule, MirOperand, MirOperation};
+use nyar_language::valkyrie::mir::ssa::{MirConstant, MirFunction, MirLowerer, MirModule, MirOperand, MirOperation};
 
 fn compile_mir(source: &str) -> MirModule {
     let hir = ValkyrieCompiler::new(SourceID { version_id: 9501 }).compile_source(source).expect("compile");
@@ -64,7 +64,7 @@ micro handle() -> i32 {
 
 #[test]
 fn workload_phase_keeps_open_across_yield_terminator_shape() {
-    use super::{MirEffectKind, MirTerminator};
+    use nyar_language::valkyrie::mir::ssa::{MirEffectKind, MirTerminator};
 
     // 纯合同：Yield 不得关闭阶段；Raise→runtime 必须关闭。
     assert!(!matches!(

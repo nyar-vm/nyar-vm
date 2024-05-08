@@ -7,8 +7,7 @@ use crate::types::{
 
 use super::{
     MirBuilder, MirConstant, MirDiagnostic, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin,
-    MirValueRef, callee_name_matches, infer_builder_operand_type, lower_literal, lower_resolved_callee, named_type_name,
-    plain_type_pattern_matches,
+    MirValueRef, infer_builder_operand_type, lower_literal, lower_resolved_callee, named_type_name, plain_type_pattern_matches,
     value_semantics::{LayoutId, ensure_layout_for_type, ensure_unite_tagged_layout, layout_id_for_type, storage_kind_for_type},
 };
 use crate::hir::nullable_payload_type;

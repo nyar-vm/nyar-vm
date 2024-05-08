@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use crate::{
     hir::is_nullable_type,
     types::{
@@ -10,10 +8,10 @@ use crate::{
 use nyar_types::IntrinsicId;
 
 use super::{
-    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValueOrigin, MirValueRef,
+    MirBuilder, MirConstant, MirInstruction, MirOperand, MirOperation, MirStorageKind, MirValueOrigin,
     builtin_helpers::resolve_intrinsic_id,
     callee_name_matches,
-    expr_helpers::{is_array_shaped_valkyrie_type, lower_resolved_callee, named_type_name, peel_generic_apply, receiver_method_owner_name},
+    expr_helpers::{is_array_shaped_valkyrie_type, lower_resolved_callee, named_type_name, peel_generic_apply},
     infer_builder_operand_type, lower_callee_operand,
     value_semantics::{ensure_layout_for_type, layout_id_for_type, storage_kind_for_type},
 };

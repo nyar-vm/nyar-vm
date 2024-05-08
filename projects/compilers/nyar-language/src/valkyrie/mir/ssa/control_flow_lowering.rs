@@ -3,7 +3,6 @@ use crate::types::{
     hir::{HirBlock, HirExpr, HirExprKind, HirLiteral, HirPattern, ValkyrieType},
 };
 
-use crate::valkyrie::control_flow::TryScopeData;
 use nyar_types::builtin_operator;
 
 use super::{

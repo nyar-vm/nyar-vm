@@ -1,7 +1,7 @@
-use super::{MirBuilder, MirDiagnostic, MirLowerer, MirOperand, MirOperation};
-use crate::{
+use nyar_language::{
     Identifier, NamePath, ValkyrieCompiler,
     types::hir::{HirExprKind, ValkyrieType},
+    valkyrie::mir::ssa::{MirBuilder, MirDiagnostic, MirLowerer, MirOperand, MirOperation},
 };
 
 #[test]
@@ -21,7 +21,7 @@ fn missing_hir_static_contract_cannot_be_reconstructed_from_spelling() {
     assert!(
         !caller.blocks.iter().flat_map(|block| &block.instructions).any(|instruction| matches!(instruction.kind, MirOperation::Call { .. }))
     );
-    assert!(crate::valkyrie::mir::validation::validate_semantic_module(&mir).is_err());
+    assert!(nyar_language::valkyrie::mir::validation::validate_semantic_module(&mir).is_err());
 }
 
 #[test]
@@ -110,7 +110,7 @@ micro apply(left: Number, right: Number) -> bool { left + right }
     else {
         panic!("运算符调用必须绑定声明");
     };
-    assert_eq!(*call_kind, crate::types::hir::HirCallKind::Operator(nyar_types::builtin_operator::infix_add()));
+    assert_eq!(*call_kind, nyar_language::types::hir::HirCallKind::Operator(nyar_types::builtin_operator::infix_add()));
     assert_eq!(resolved.instance, Some(instance));
     assert!(resolved.has_receiver, "receiver 由声明中的 self 参数决定");
     assert_eq!(resolved.return_type, ValkyrieType::Boolean);
@@ -133,7 +133,7 @@ micro apply(left: Number, right: Number) -> bool { left + right }
 }
 
 #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn integer_pattern_comparisons_fail_without_operator_callable_contracts() {
     let hir = ValkyrieCompiler::default()
         .compile_source(
@@ -163,7 +163,7 @@ micro range_match(value: i64) -> i64 {
         })
         .collect::<Vec<_>>();
     assert_eq!(unresolved, vec![nyar_types::builtin_operator::infix_lt(); 2]);
-    assert!(crate::valkyrie::mir::validation::validate_module(&mir).is_err());
+    assert!(nyar_language::valkyrie::mir::validation::validate_module(&mir).is_err());
 }
 
 #[test]
@@ -185,11 +185,11 @@ micro demo(value: u32): u32 {
         )
         .expect("u32 subtraction must parse");
     let mir = MirLowerer::lower_module_semantic(&hir);
-    crate::valkyrie::mir::validation::validate_semantic_module(&mir).expect("u32 subtraction call must match declared return type");
+    nyar_language::valkyrie::mir::validation::validate_semantic_module(&mir).expect("u32 subtraction call must match declared return type");
 }
 
 #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn some_short_name_without_sum_identity_fails_closed() {
     let mut hir = ValkyrieCompiler::default()
         .compile_source(
@@ -236,15 +236,15 @@ fn integer_literal_equality_does_not_fabricate_a_false_result() {
         Default::default(),
         Default::default(),
         Default::default(),
-        super::CallableReturnTypes { by_symbol: Default::default(), by_instance: Default::default() },
+        nyar_language::valkyrie::mir::ssa::CallableReturnTypes { by_symbol: Default::default(), by_instance: Default::default() },
         None,
     );
     let result = builder.lower_eq_constant_operand(
-        MirOperand::Constant(crate::valkyrie::mir::MirConstant::Int(1)),
-        crate::valkyrie::mir::MirConstant::Int(1),
+        MirOperand::Constant(nyar_language::valkyrie::mir::MirConstant::Int(1)),
+        nyar_language::valkyrie::mir::MirConstant::Int(1),
         &ValkyrieType::Integer64 { signed: true },
     );
-    assert_eq!(result, MirOperand::Constant(crate::valkyrie::mir::MirConstant::Unit));
+    assert_eq!(result, MirOperand::Constant(nyar_language::valkyrie::mir::MirConstant::Unit));
     assert!(matches!(
         builder.diagnostics.as_slice(),
         [MirDiagnostic::UnresolvedOperatorCallable { operator }]

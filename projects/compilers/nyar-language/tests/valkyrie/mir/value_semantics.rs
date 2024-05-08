@@ -82,10 +82,7 @@ fn tuple_and_fixed_array_types_are_value_semantic() {
         MirStorageKind::Reference
     );
     // Named 短名不得再认亲为 value 存储。
-    assert_eq!(
-        storage_kind_for_type(&ValkyrieType::Named(Identifier::new("Point")), &value_declarations),
-        MirStorageKind::Reference
-    );
+    assert_eq!(storage_kind_for_type(&ValkyrieType::Named(Identifier::new("Point")), &value_declarations), MirStorageKind::Reference);
 }
 
 #[test]
