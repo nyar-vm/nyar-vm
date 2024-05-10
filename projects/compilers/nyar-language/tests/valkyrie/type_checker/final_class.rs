@@ -77,8 +77,8 @@ fn create_class_with_final_method(name: &str, method_name: &str) -> HirStruct {
         parents: vec![],
         fields: vec![],
         methods: vec![HirFunction {
-        declaration: None,
-        instance: None,
+            declaration: None,
+            instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new(method_name),
             declaring_namespace: NamePath::default(),
@@ -158,8 +158,8 @@ fn create_class_with_override_method(name: &str, parents: Vec<HirParent>, method
         parents,
         fields: vec![],
         methods: vec![HirFunction {
-        declaration: None,
-        instance: None,
+            declaration: None,
+            instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new(method_name),
             declaring_namespace: NamePath::default(),

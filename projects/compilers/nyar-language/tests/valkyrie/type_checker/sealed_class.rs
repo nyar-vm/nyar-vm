@@ -13,7 +13,11 @@ fn test_sealed_class_registry() {
     let sealed_name = create_test_identifier("Shape");
     let sealed_class = HirStruct {
         constructor_declaration: None,
-        constructor_instance: None, name: sealed_name.clone(), is_sealed: true, ..Default::default() };
+        constructor_instance: None,
+        name: sealed_name.clone(),
+        is_sealed: true,
+        ..Default::default()
+    };
 
     registry.register_sealed_class(&sealed_class);
 
@@ -36,7 +40,11 @@ fn test_exhaustiveness_check() {
     let sealed_name = create_test_identifier("Shape");
     let sealed_class = HirStruct {
         constructor_declaration: None,
-        constructor_instance: None, name: sealed_name.clone(), is_sealed: true, ..Default::default() };
+        constructor_instance: None,
+        name: sealed_name.clone(),
+        is_sealed: true,
+        ..Default::default()
+    };
 
     registry.register_sealed_class(&sealed_class);
 

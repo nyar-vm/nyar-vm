@@ -1,8 +1,5 @@
 use crate::{
-    types::{
-        Identifier, SourceSpan,
-        hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind},
-    },
+    types::hir::{HirExpr, HirExprKind, HirFunction, HirModule, HirPattern, HirStatement, HirStatementKind},
     valkyrie::{frontend::ParseError, hir::PatternRefutability},
 };
 

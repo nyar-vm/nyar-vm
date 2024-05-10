@@ -37,13 +37,13 @@ fn create_abstract_class(name: &str, abstract_methods: Vec<Identifier>) -> HirSt
 }
 
 fn create_concrete_class(name: &str, parents: Vec<HirParent>, methods: Vec<Identifier>) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     let hir_methods: Vec<HirFunction> = methods
         .into_iter()
         .map(|m| HirFunction {
-        declaration: None,
-        instance: None,
+            declaration: None,
+            instance: None,
             where_constraints: Vec::new(),
             name: m,
             declaring_namespace: NamePath::default(),

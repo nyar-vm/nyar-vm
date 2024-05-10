@@ -1,8 +1,8 @@
 use nyar_language::type_checker::*;
 
 use nyar_language::types::{
-    hir::{AssociatedType, FunctionType, GenericType, ValkyrieType},
     Identifier, NamePath,
+    hir::{AssociatedType, FunctionType, GenericType, ValkyrieType},
 };
 
 fn make_trait_name(name: &str) -> NamePath {
@@ -150,7 +150,10 @@ fn test_unify_function_types() {
     });
     assert!(solver.unify(&t1, &t2, None).is_ok());
 
-    let t3 = ValkyrieType::Function(FunctionType { params: vec![ValkyrieType::Integer64 { signed: true }], return_type: Box::new(ValkyrieType::Utf8) });
+    let t3 = ValkyrieType::Function(FunctionType {
+        params: vec![ValkyrieType::Integer64 { signed: true }],
+        return_type: Box::new(ValkyrieType::Utf8),
+    });
     assert!(solver.unify(&t1, &t3, None).is_err());
 }
 
@@ -219,7 +222,11 @@ fn test_is_subtype() {
 fn test_solver_clear() {
     let mut solver = ConstraintSolver::new();
     solver.add_constraint(TypeConstraint::trait_bound(TypeVar(0), make_trait_name("Display"), None));
-    solver.register_trait_impl(TraitImpl { ty: ValkyrieType::Integer64 { signed: true }, trait_name: make_trait_name("Clone"), type_args: vec![] });
+    solver.register_trait_impl(TraitImpl {
+        ty: ValkyrieType::Integer64 { signed: true },
+        trait_name: make_trait_name("Clone"),
+        type_args: vec![],
+    });
 
     solver.clear();
 
@@ -266,12 +273,22 @@ fn test_where_clause() {
     let where_clause = WhereClause::new(
         vec![
             WhereBound {
-                ty: ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
+                ty: ValkyrieType::Generic(GenericType {
+                    binder: None,
+                    name: Identifier::new("T"),
+                    kind: nyar_language::types::hir::HirKind::Type,
+                    bounds: vec![],
+                }),
                 traits: vec![make_trait_name("Display")],
                 span: None,
             },
             WhereBound {
-                ty: ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("U"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
+                ty: ValkyrieType::Generic(GenericType {
+                    binder: None,
+                    name: Identifier::new("U"),
+                    kind: nyar_language::types::hir::HirKind::Type,
+                    bounds: vec![],
+                }),
                 traits: vec![make_trait_name("Clone")],
                 span: None,
             },
@@ -526,7 +543,12 @@ fn test_associated_type_constraint_with_nested_function_and_associated_type_mism
 #[test]
 fn test_where_clause_uses_binding_from_associated_type_constraint() {
     let mut solver = ConstraintSolver::new();
-    let generic_t = ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] });
+    let generic_t = ValkyrieType::Generic(GenericType {
+        binder: None,
+        name: Identifier::new("T"),
+        kind: nyar_language::types::hir::HirKind::Type,
+        bounds: vec![],
+    });
 
     solver.register_associated_type_impl(
         ValkyrieType::Named(Identifier::new("MapperFactory")),
@@ -568,7 +590,12 @@ fn test_where_clause_uses_binding_from_associated_type_constraint() {
 #[test]
 fn test_where_clause_reports_trait_error_after_associated_type_binding() {
     let mut solver = ConstraintSolver::new();
-    let generic_t = ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] });
+    let generic_t = ValkyrieType::Generic(GenericType {
+        binder: None,
+        name: Identifier::new("T"),
+        kind: nyar_language::types::hir::HirKind::Type,
+        bounds: vec![],
+    });
 
     solver.register_associated_type_impl(
         ValkyrieType::Named(Identifier::new("MapperFactory")),
@@ -647,7 +674,12 @@ fn test_where_clause_empty() {
 
     let mut clause = WhereClause::empty();
     clause.add_bound(WhereBound {
-        ty: ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: nyar_language::types::hir::HirKind::Type, bounds: vec![] }),
+        ty: ValkyrieType::Generic(GenericType {
+            binder: None,
+            name: Identifier::new("T"),
+            kind: nyar_language::types::hir::HirKind::Type,
+            bounds: vec![],
+        }),
         traits: vec![make_trait_name("Display")],
         span: None,
     });
@@ -743,7 +775,8 @@ fn test_unity_variant_subtype() {
     solver.register_unity_type(&option_enum);
 
     let some_type = ValkyrieType::Named(Identifier::new("Some"));
-    let option_type = ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }]);
+    let option_type =
+        ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }]);
 
     assert!(solver.is_subtype(&some_type, &option_type));
 
@@ -868,12 +901,27 @@ fn test_gadt_variant_result_type_matches_function_with_nested_apply_tuple_return
             result_type: Some(ValkyrieType::Apply(
                 Box::new(ValkyrieType::Named(Identifier::new("Callable"))),
                 vec![ValkyrieType::Function(FunctionType {
-                    params: vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                    params: vec![ValkyrieType::Generic(GenericType {
+                        binder: None,
+                        name: Identifier::new("T"),
+                        kind: HirKind::Type,
+                        bounds: vec![],
+                    })],
                     return_type: Box::new(ValkyrieType::Apply(
                         Box::new(ValkyrieType::Named(Identifier::new("Boxed"))),
                         vec![ValkyrieType::Tuple(vec![
-                            ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
-                            ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
+                            ValkyrieType::Generic(GenericType {
+                                binder: None,
+                                name: Identifier::new("T"),
+                                kind: HirKind::Type,
+                                bounds: vec![],
+                            }),
+                            ValkyrieType::Generic(GenericType {
+                                binder: None,
+                                name: Identifier::new("T"),
+                                kind: HirKind::Type,
+                                bounds: vec![],
+                            }),
                         ])],
                     )),
                 })],
@@ -949,24 +997,36 @@ fn test_gadt_variant_result_type_matches_function_with_nested_associated_type() 
                 vec![
                     ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("Iter"), kind: HirKind::Type, bounds: vec![] }),
                     ValkyrieType::Function(FunctionType {
-                        params: vec![ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] })],
+                        params: vec![ValkyrieType::Generic(GenericType {
+                            binder: None,
+                            name: Identifier::new("T"),
+                            kind: HirKind::Type,
+                            bounds: vec![],
+                        })],
                         return_type: Box::new(ValkyrieType::Apply(
                             Box::new(ValkyrieType::Named(Identifier::new("Boxed"))),
                             vec![ValkyrieType::Tuple(vec![
                                 ValkyrieType::Associated(AssociatedType {
                                     base: Box::new(ValkyrieType::Generic(GenericType {
-                                        binder: None, name: Identifier::new("Iter"),
+                                        binder: None,
+                                        name: Identifier::new("Iter"),
                                         kind: HirKind::Type,
                                         bounds: vec![],
                                     })),
                                     name: Identifier::new("Item"),
                                     type_arguments: vec![ValkyrieType::Generic(GenericType {
-                                        binder: None, name: Identifier::new("T"),
+                                        binder: None,
+                                        name: Identifier::new("T"),
                                         kind: HirKind::Type,
                                         bounds: vec![],
                                     })],
                                 }),
-                                ValkyrieType::Generic(GenericType { binder: None, name: Identifier::new("T"), kind: HirKind::Type, bounds: vec![] }),
+                                ValkyrieType::Generic(GenericType {
+                                    binder: None,
+                                    name: Identifier::new("T"),
+                                    kind: HirKind::Type,
+                                    bounds: vec![],
+                                }),
                             ])],
                         )),
                     }),
@@ -1075,8 +1135,10 @@ fn test_unity_variant_subtype_with_type_args() {
     solver.register_unity_type(&result_enum);
 
     let fine_type = ValkyrieType::Named(Identifier::new("Fine"));
-    let result_type =
-        ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Result"))), vec![ValkyrieType::Integer32 { signed: true }, ValkyrieType::Utf8]);
+    let result_type = ValkyrieType::Apply(
+        Box::new(ValkyrieType::Named(Identifier::new("Result"))),
+        vec![ValkyrieType::Integer32 { signed: true }, ValkyrieType::Utf8],
+    );
 
     assert!(solver.is_subtype(&fine_type, &result_type));
 
@@ -1121,8 +1183,10 @@ fn test_unity_variant_not_subtype_of_different_unity() {
     solver.register_unity_type(&result_enum);
 
     let some_type = ValkyrieType::Named(Identifier::new("Some"));
-    let result_type =
-        ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Result"))), vec![ValkyrieType::Integer32 { signed: true }, ValkyrieType::Utf8]);
+    let result_type = ValkyrieType::Apply(
+        Box::new(ValkyrieType::Named(Identifier::new("Result"))),
+        vec![ValkyrieType::Integer32 { signed: true }, ValkyrieType::Utf8],
+    );
 
     assert!(!solver.is_subtype(&some_type, &result_type));
 }
@@ -1148,7 +1212,8 @@ fn test_unity_subtype_constraint() {
     solver.register_unity_type(&option_enum);
 
     let some_type = ValkyrieType::Named(Identifier::new("Some"));
-    let option_type = ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }]);
+    let option_type =
+        ValkyrieType::Apply(Box::new(ValkyrieType::Named(Identifier::new("Option"))), vec![ValkyrieType::Integer32 { signed: true }]);
 
     solver.add_constraint(TypeConstraint::subtype(some_type, option_type, None));
 

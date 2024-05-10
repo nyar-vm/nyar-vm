@@ -33,13 +33,21 @@ fn empty_module(structs: Vec<HirStruct>) -> HirModule {
 fn class(name: &str, parents: Vec<HirParent>) -> HirStruct {
     HirStruct {
         constructor_declaration: None,
-        constructor_instance: None, name: Identifier::new(name), parents, ..Default::default() }
+        constructor_instance: None,
+        name: Identifier::new(name),
+        parents,
+        ..Default::default()
+    }
 }
 
 fn open_class(name: &str) -> HirStruct {
     HirStruct {
         constructor_declaration: None,
-        constructor_instance: None, name: Identifier::new(name), is_open: true, ..Default::default() }
+        constructor_instance: None,
+        name: Identifier::new(name),
+        is_open: true,
+        ..Default::default()
+    }
 }
 
 fn sealed_class(name: &str, namespace: &[&str]) -> HirStruct {
@@ -56,13 +64,21 @@ fn sealed_class(name: &str, namespace: &[&str]) -> HirStruct {
 fn final_class(name: &str) -> HirStruct {
     HirStruct {
         constructor_declaration: None,
-        constructor_instance: None, name: Identifier::new(name), is_final: true, ..Default::default() }
+        constructor_instance: None,
+        name: Identifier::new(name),
+        is_final: true,
+        ..Default::default()
+    }
 }
 
 fn abstract_class(name: &str) -> HirStruct {
     HirStruct {
         constructor_declaration: None,
-        constructor_instance: None, name: Identifier::new(name), is_abstract: true, ..Default::default() }
+        constructor_instance: None,
+        name: Identifier::new(name),
+        is_abstract: true,
+        ..Default::default()
+    }
 }
 
 fn parent(name: &str) -> HirParent {
@@ -70,8 +86,8 @@ fn parent(name: &str) -> HirParent {
 }
 
 fn with_namespace(mut class: HirStruct, namespace: &[&str]) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     class.namespace = namespace.iter().map(|part| Identifier::new(part)).collect();
     class
 }
