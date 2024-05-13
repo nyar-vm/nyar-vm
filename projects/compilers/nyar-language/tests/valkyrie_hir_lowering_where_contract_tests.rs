@@ -1,7 +1,13 @@
-use super::*;
+use nyar_language::{
+    ValkyrieCompiler,
+    types::{
+        Identifier,
+        hir::{HirAssociatedTypeBinding, HirTraitBound, HirWhereConstraint, ValkyrieType},
+    },
+};
 
 #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn return_type_is_independent_of_multiple_qualified_bounds() {
     let module = ValkyrieCompiler::default().compile_source(
         "micro present<T, U>(value: T, other: U): utf8 where T: first::Display + second.Display, U: Mapper<i32, bool, Item = utf8> { return \"ok\" }"
@@ -21,7 +27,7 @@ fn return_type_is_independent_of_multiple_qualified_bounds() {
 }
 
 #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn repeated_traits_keep_equations_attached_to_each_bound() {
     let module = ValkyrieCompiler::default()
         .compile_source("micro present<T>(value: T): utf8 where T: Mapper<i32, Item = utf8> + Mapper<bool, Item = i32> { return \"ok\" }")
@@ -45,7 +51,7 @@ fn intersection_bounds_and_type_function_constraints_are_preserved() {
 }
 
 #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn bound_nominal_types_share_the_signature_declaration_identity() {
     let module = ValkyrieCompiler::default()
         .compile_source("class Card {} micro present(value: Card): utf8 where Card: Mapper<Card, Item = Card> { return \"ok\" }")

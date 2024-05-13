@@ -7,7 +7,7 @@ use crate::{
         WildcardPattern, pattern_nodes::ElsePattern,
     },
 };
-use nyar_types::{OperatorFixity, OperatorId, builtin_operator};
+
 use oak_valkyrie::lexer::token_type::ValkyrieTokenType;
 
 pub(super) fn lower_block(body: &Block, source_id: SourceID, fallback_span: Range<usize>) -> HirBlock {
@@ -40,10 +40,7 @@ fn lower_statement(statement: &Statement, source_id: SourceID, fallback_span: Ra
                 kind: HirStatementKind::Let {
                     is_mutable: has_modifier(&binding.annotations, "mut"),
                     pattern: lower_pattern(&binding.pattern, source_id, span.clone()),
-                    initializer: binding
-                        .expr
-                        .as_ref()
-                        .map(|expr| Box::new(lower_term_expression(expr, source_id, span_range.clone()))),
+                    initializer: binding.expr.as_ref().map(|expr| Box::new(lower_term_expression(expr, source_id, span_range.clone()))),
                     ty: binding.ty.as_ref().map(lower_type_expression),
                 },
                 span,
@@ -124,7 +121,8 @@ fn parse_pattern_literal(value: &str) -> HirLiteral {
     }
 }
 
-pub(super) fn lower_term_expression(expression: &TermExpression, source_id: SourceID, fallback_span: Range<usize>) -> HirExpr {
+#[doc(hidden)]
+pub fn lower_term_expression(expression: &TermExpression, source_id: SourceID, fallback_span: Range<usize>) -> HirExpr {
     lower_term_expression_with_context(expression, source_id, fallback_span, false)
 }
 
@@ -183,16 +181,16 @@ fn lower_term_expression_with_context(
                 HirExprKind::FieldAccess { object: Box::new(object), field: Identifier::new(member) }
             }
         }
-        TermExpression::Index { receiver, index, .. } => lower_operator_call_kind(
-            subscript_operator_id(false),
+        TermExpression::Index { receiver, index, .. } => lower_operator_member_call(
+            SUBSCRIPT_MEMBER,
             vec![
                 HirCallArgument::positional(lower_term_expression_with_context(receiver, source_id, span_range.clone(), false)),
                 HirCallArgument::positional(lower_term_expression_with_context(index, source_id, span_range.clone(), false)),
             ],
             span.clone(),
         ),
-        TermExpression::Offset { receiver, offset, .. } => lower_operator_call_kind(
-            registered_operator(OperatorFixity::Postfix, "⁅⁆"),
+        TermExpression::Offset { receiver, offset, .. } => lower_operator_member_call(
+            CARDINAL_SUBSCRIPT_MEMBER,
             vec![
                 HirCallArgument::positional(lower_term_expression_with_context(receiver, source_id, span_range.clone(), false)),
                 HirCallArgument::positional(lower_term_expression_with_context(offset, source_id, span_range.clone(), false)),
@@ -284,7 +282,6 @@ fn lower_term_expression_with_context(
                 })
                 .collect::<Vec<HirExpr>>();
             HirExprKind::Call {
-                call_kind: HirCallKind::Function,
                 callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("with")])), span: span.clone() }),
                 args: vec![HirCallArgument::positional(object)]
                     .into_iter()
@@ -334,8 +331,8 @@ fn lower_unary_expression(node: &TermUnaryNode, source_id: SourceID, fallback_sp
         )
     }
     else {
-        lower_operator_call_kind(
-            unary_operator_id(&node.operator),
+        lower_operator_member_call(
+            prefix_operator_member(&node.operator),
             vec![HirCallArgument::positional(lower_term_expression_with_context(&node.base, source_id, fallback_span, false))],
             span,
         )
@@ -348,8 +345,8 @@ fn lower_binary_expression(node: &TermBinaryNode, source_id: SourceID, fallback_
     match node.operator {
         ValkyrieTokenType::Eq => {
             if let TermExpression::Index { receiver, index, .. } | TermExpression::Offset { receiver, offset: index, .. } = lhs {
-                return lower_operator_call_kind(
-                    registered_operator(OperatorFixity::Postfix, if matches!(lhs, TermExpression::Index { .. }) { "[]=" } else { "⁅⁆=" }),
+                return lower_operator_member_call(
+                    if matches!(lhs, TermExpression::Index { .. }) { SUBSCRIPT_ASSIGN_MEMBER } else { CARDINAL_SUBSCRIPT_ASSIGN_MEMBER },
                     vec![
                         HirCallArgument::positional(lower_term_expression_with_context(receiver, source_id, fallback_span.clone(), false)),
                         HirCallArgument::positional(lower_term_expression_with_context(index, source_id, fallback_span.clone(), false)),
@@ -368,8 +365,8 @@ fn lower_binary_expression(node: &TermBinaryNode, source_id: SourceID, fallback_
         }
         ValkyrieTokenType::AndAnd => lower_short_circuit_and(lhs, rhs, source_id, fallback_span, span),
         ValkyrieTokenType::OrOr => lower_short_circuit_or(lhs, rhs, source_id, fallback_span, span),
-        _ => lower_operator_call_kind(
-            binary_operator_id(&node.operator),
+        _ => lower_operator_member_call(
+            infix_operator_member(&node.operator),
             vec![
                 HirCallArgument::positional(lower_term_expression_with_context(lhs, source_id, fallback_span.clone(), false)),
                 HirCallArgument::positional(lower_term_expression_with_context(rhs, source_id, fallback_span, false)),
@@ -538,17 +535,17 @@ fn lower_method_call_kind(member: &str, args: Vec<HirCallArgument>, span: Source
     lower_canonical_call_arguments(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new(member)])), span: span.clone() }, args)
 }
 
-fn lower_operator_call_kind(operator: OperatorId, args: Vec<HirCallArgument>, span: SourceSpan) -> HirExprKind {
-    HirExprKind::Call {
-        call_kind: HirCallKind::Operator(operator),
-        callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("operator")])), span }),
-        args,
-        resolved: None,
-    }
+/// AST 运算符语法糖在 HIR 早期展开为接收者的普通成员调用。
+///
+/// 成员名与运算符声明的 HIR 成员名同为 `{fixity} {lexeme}`（见 `operator_member_name`）：
+/// `a + b` 展开为接收者 `a` 的 `infix +` 调用，`a[i]` 展开为 `a` 的 `suffix []` 调用。
+/// HIR/MIR/LIR 不再持有 unary/binary/operator 语义类别，也不存在运算符身份表。
+fn lower_operator_member_call(member: &str, args: Vec<HirCallArgument>, span: SourceSpan) -> HirExprKind {
+    lower_canonical_call_arguments(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new(member)])), span }, args)
 }
 
 fn lower_canonical_call_arguments(callee: HirExpr, args: Vec<HirCallArgument>) -> HirExprKind {
-    HirExprKind::Call { call_kind: HirCallKind::Function, callee: Box::new(callee), args, resolved: None }
+    HirExprKind::Call { callee: Box::new(callee), args, resolved: None }
 }
 
 fn lower_short_circuit_and(
@@ -636,43 +633,43 @@ fn lower_string_literal(literal: &StringLiteral, source_id: SourceID, fallback_s
     }
 }
 
-fn registered_operator(fixity: OperatorFixity, lexeme: &str) -> OperatorId {
-    builtin_operator::lookup(fixity, lexeme).expect("parser operator must exist in the builtin registry")
-}
+/// 序数下标 `receiver[i]` / `receiver[i] = v` 的成员名。
+const SUBSCRIPT_MEMBER: &str = "suffix []";
+/// 序数下标赋值 `receiver[i] = v` 的成员名。
+const SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix []=";
+/// 基数下标 `receiver::[i]` 的成员名。
+const CARDINAL_SUBSCRIPT_MEMBER: &str = "suffix ⁅⁆";
+/// 基数下标赋值 `receiver::[i] = v` 的成员名。
+const CARDINAL_SUBSCRIPT_ASSIGN_MEMBER: &str = "suffix ⁅⁆=";
 
-fn binary_operator_id(op: &ValkyrieTokenType) -> OperatorId {
+fn infix_operator_member(op: &ValkyrieTokenType) -> &'static str {
     match op {
-        ValkyrieTokenType::Plus => registered_operator(OperatorFixity::Infix, "+"),
-        ValkyrieTokenType::Minus => registered_operator(OperatorFixity::Infix, "-"),
-        ValkyrieTokenType::Star => registered_operator(OperatorFixity::Infix, "*"),
-        ValkyrieTokenType::Slash => registered_operator(OperatorFixity::Infix, "/"),
-        ValkyrieTokenType::Percent => registered_operator(OperatorFixity::Infix, "%"),
-        ValkyrieTokenType::EqEq => registered_operator(OperatorFixity::Infix, "=="),
-        ValkyrieTokenType::NotEq => registered_operator(OperatorFixity::Infix, "!="),
-        ValkyrieTokenType::LessThan => registered_operator(OperatorFixity::Infix, "<"),
-        ValkyrieTokenType::LessEq => registered_operator(OperatorFixity::Infix, "<="),
-        ValkyrieTokenType::GreaterThan => registered_operator(OperatorFixity::Infix, ">"),
-        ValkyrieTokenType::GreaterEq => registered_operator(OperatorFixity::Infix, ">="),
-        ValkyrieTokenType::LeftShift => registered_operator(OperatorFixity::Infix, "<<"),
-        ValkyrieTokenType::RightShift => registered_operator(OperatorFixity::Infix, ">>"),
-        ValkyrieTokenType::Ampersand => registered_operator(OperatorFixity::Infix, "&"),
-        ValkyrieTokenType::Pipe => registered_operator(OperatorFixity::Infix, "|"),
-        ValkyrieTokenType::Caret => registered_operator(OperatorFixity::Infix, "^"),
-        ValkyrieTokenType::DotDot => registered_operator(OperatorFixity::Infix, ".."),
-        _ => registered_operator(OperatorFixity::Infix, "+"),
+        ValkyrieTokenType::Plus => "infix +",
+        ValkyrieTokenType::Minus => "infix -",
+        ValkyrieTokenType::Star => "infix *",
+        ValkyrieTokenType::Slash => "infix /",
+        ValkyrieTokenType::Percent => "infix %",
+        ValkyrieTokenType::EqEq => "infix ==",
+        ValkyrieTokenType::NotEq => "infix !=",
+        ValkyrieTokenType::LessThan => "infix <",
+        ValkyrieTokenType::LessEq => "infix <=",
+        ValkyrieTokenType::GreaterThan => "infix >",
+        ValkyrieTokenType::GreaterEq => "infix >=",
+        ValkyrieTokenType::LeftShift => "infix <<",
+        ValkyrieTokenType::RightShift => "infix >>",
+        ValkyrieTokenType::Ampersand => "infix &",
+        ValkyrieTokenType::Pipe => "infix |",
+        ValkyrieTokenType::Caret => "infix ^",
+        ValkyrieTokenType::DotDot => "infix ..",
+        _ => "infix +",
     }
 }
 
-fn unary_operator_id(op: &ValkyrieTokenType) -> OperatorId {
+fn prefix_operator_member(op: &ValkyrieTokenType) -> &'static str {
     match op {
-        ValkyrieTokenType::Minus => registered_operator(OperatorFixity::Prefix, "-"),
-        ValkyrieTokenType::Bang => registered_operator(OperatorFixity::Prefix, "!"),
-        _ => registered_operator(OperatorFixity::Prefix, "-"),
+        ValkyrieTokenType::Bang => "prefix !",
+        _ => "prefix -",
     }
-}
-
-fn subscript_operator_id(is_assignment: bool) -> OperatorId {
-    if is_assignment { registered_operator(OperatorFixity::Postfix, "[]=") } else { registered_operator(OperatorFixity::Postfix, "[]") }
 }
 
 pub(super) fn extract_name_path(expression: &TermExpression) -> Option<NamePath> {
@@ -709,76 +706,5 @@ fn plain_string_literal_text(literal: &StringLiteral) -> Option<&str> {
     match &literal.segments[0] {
         StringSegment::Text(text) => Some(text.content.as_str()),
         StringSegment::Interpolation(_) => None,
-    }
-}
-
-#[cfg(test)]
-mod assignment_lowering_tests {
-    use super::*;
-
-    fn lower(source: &str) -> HirExpr {
-        let root = frontend::parse_source(source).expect("完整 AST");
-        let frontend::ast::StatementNode::Micro(function) = &root.items[0]
-        else {
-            panic!("缺少函数")
-        };
-        let Statement::Expression(statement) = &function.body.statements[0]
-        else {
-            panic!("缺少表达式")
-        };
-        lower_term_expression(&statement.expr, SourceID::default(), 0..source.len())
-    }
-
-    #[test]
-    fn assignment_and_field_write_keep_structured_targets() {
-        assert!(matches!(lower("micro update() { value = 7 }").kind, HirExprKind::Assign { .. }));
-        assert!(matches!(lower("micro update() { object.field = 7 }").kind, HirExprKind::StoreField { .. }));
-    }
-
-    #[test]
-    fn iteration_source_is_not_a_boolean_condition() {
-        assert!(matches!(
-            lower("micro visit() { loop item in values { consume(item) } }").kind,
-            HirExprKind::Loop { pattern: Some(_), iterator: Some(_), condition: None, .. }
-        ));
-        assert!(matches!(
-            lower("micro visit() { while ready { consume() } }").kind,
-            HirExprKind::Loop { pattern: None, iterator: None, condition: Some(_), .. }
-        ));
-    }
-
-    #[test]
-    fn bitwise_or_is_an_operator_call_not_a_pipeline() {
-        for (source, lexeme) in [
-            ("micro bits() { left | right }", "|"),
-            ("micro bits() { left & right }", "&"),
-            ("micro bits() { left << right }", "<<"),
-            ("micro bits() { left >> right }", ">>"),
-        ] {
-            let HirExprKind::Call { call_kind: HirCallKind::Operator(operator), args, .. } = lower(source).kind
-            else {
-                panic!("按位表达式缺少运算符身份")
-            };
-            assert_eq!(operator, registered_operator(OperatorFixity::Infix, lexeme));
-            assert_eq!(args.len(), 2);
-        }
-    }
-
-    #[test]
-    fn ordinal_and_cardinal_access_bind_distinct_operators() {
-        for (source, lexeme, arity) in [
-            ("micro read() { values[1] }", "[]", 2),
-            ("micro read() { values⁅0⁆ }", "⁅⁆", 2),
-            ("micro read() { values::[0] }", "⁅⁆", 2),
-            ("micro write() { values[1] = 7 }", "[]=", 3),
-            ("micro write() { values⁅0⁆ = 7 }", "⁅⁆=", 3),
-        ] {
-            let HirExprKind::Call { call_kind: HirCallKind::Operator(operator), args, .. } = lower(source).kind
-            else {
-                panic!("下标缺少运算符合同")
-            };
-            assert_eq!(operator, registered_operator(OperatorFixity::Postfix, lexeme));
-            assert_eq!(args.len(), arity);
-        }
     }
 }

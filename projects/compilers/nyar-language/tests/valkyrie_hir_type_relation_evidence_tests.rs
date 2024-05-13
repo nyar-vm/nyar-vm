@@ -1,9 +1,7 @@
-use super::*;
-
 #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn explicit_impl_for_non_struct_type_supplies_where_evidence() {
-    let compiler = crate::ValkyrieCompiler::default();
+    let compiler = nyar_language::ValkyrieCompiler::default();
     let module = compiler.compile_source(
         "trait Display { micro display(self): utf8 } imply utf8: Display { micro display(self): utf8 { return self } } micro present<T>(value: T): utf8 where T: Display { return \"ok\" } micro caller(value: utf8): utf8 { return present(value) }"
     ).expect("primitive explicit impl must satisfy generic bound");
@@ -12,16 +10,16 @@ fn explicit_impl_for_non_struct_type_supplies_where_evidence() {
 
 #[test]
 fn absent_explicit_impl_for_non_struct_type_is_rejected() {
-    let compiler = crate::ValkyrieCompiler::default();
+    let compiler = nyar_language::ValkyrieCompiler::default();
     assert!(compiler.compile_source(
         "trait Display { micro display(self): utf8 } micro present<T>(value: T): utf8 where T: Display { return \"ok\" } micro caller(value: utf8): utf8 { return present(value) }"
     ).is_err());
 }
 
 #[test]
-    #[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
+#[ignore = "contract-gate: SMIR003 / identity pipeline pending"]
 fn same_short_trait_names_keep_independent_evidence() {
-    crate::ValkyrieCompiler::default()
+    nyar_language::ValkyrieCompiler::default()
         .compile_source(
             r#"
 namespace alpha;
@@ -39,7 +37,7 @@ trait Protocol { micro write(self): bool }
 #[test]
 fn evidence_cannot_cross_trait_namespace() {
     assert!(
-        crate::ValkyrieCompiler::default()
+        nyar_language::ValkyrieCompiler::default()
             .compile_source(
                 r#"
 namespace alpha;
@@ -62,6 +60,6 @@ fn duplicate_or_incompatible_methods_cannot_supply_evidence() {
         let source = format!(
             "trait Protocol {{ micro read(self): utf8 }} imply utf8: Protocol {{ {methods} }} micro accept<T>(value: T): utf8 where T: Protocol {{ return \"ok\" }} micro caller(value: utf8): utf8 {{ return accept(value) }}"
         );
-        assert!(crate::ValkyrieCompiler::default().compile_source(&source).is_err(), "歧义/错误签名不能作为 evidence");
+        assert!(nyar_language::ValkyrieCompiler::default().compile_source(&source).is_err(), "歧义/错误签名不能作为 evidence");
     }
 }

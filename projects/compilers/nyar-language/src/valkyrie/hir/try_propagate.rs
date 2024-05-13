@@ -13,11 +13,15 @@ use crate::{
 /// `?` 操作数形态。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TryPropagateKind {
+    /// `T?`：值为 null 时早退。
     Nullable(ValkyrieType),
     /// `Option<T>`：`None` 早退，`Some` 解出 payload。
     Option(ValkyrieType),
+    /// `Result<T, E>`：错误变体早退，成功变体解出 payload。
     Result {
+        /// 成功载荷类型。
         ok: ValkyrieType,
+        /// 错误载荷类型。
         err: ValkyrieType,
     },
 }
@@ -303,11 +307,12 @@ fn render_type_name(ty: &ValkyrieType) -> String {
     }
 }
 
-/// `Fine` / `Fail` 变体名，与文档 unite 定义一致。
+/// `Fine` 变体的限定路径（与文档 unite 定义一致）。
 pub fn fine_variant_path() -> NamePath {
     NamePath::new(vec![Identifier::new("Fine")])
 }
 
+/// `Fail` 变体的限定路径（与文档 unite 定义一致）。
 pub fn fail_variant_path() -> NamePath {
     NamePath::new(vec![Identifier::new("Fail")])
 }

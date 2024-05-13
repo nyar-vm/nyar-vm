@@ -34,9 +34,6 @@ pub mod try_propagate;
 pub mod type_lowering;
 /// 统一类型判定入口。
 pub mod type_relation;
-#[cfg(test)]
-mod type_relation_evidence_tests;
-
 pub use crate::types::hir::*;
 pub use anonymous_class_hoist::hoist_anonymous_classes;
 pub(crate) use ast_validation::validate_ast_root;
@@ -54,5 +51,4 @@ pub use try_propagate::{
 };
 pub(crate) use type_lowering::{
     BuiltinTypeAliasScope, ModuleTypeAliasScope, lower_type_expression, numeric_builtin_cast_type, render_type_expression,
-    validate_type_expression,
 };

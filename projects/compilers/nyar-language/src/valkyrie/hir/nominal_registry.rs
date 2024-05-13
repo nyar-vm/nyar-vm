@@ -45,26 +45,32 @@ impl NominalTypeRegistry {
         self.enum_def(name).map(|enum_def| enum_def.variants.iter().map(|variant| variant.name.clone()).collect()).unwrap_or_default()
     }
 
+    /// 判断名称是否为 sum 类型（enum 或 unite）。
     pub fn is_sum_type(&self, name: &Identifier) -> bool {
         self.enums.contains_key(name) || self.unites.contains_key(name)
     }
 
+    /// 查找 enum 或 unite 定义。
     pub fn enum_def(&self, name: &Identifier) -> Option<&HirEnum> {
         self.enums.get(name).or_else(|| self.unites.get(name))
     }
 
+    /// 查找 flags 类型定义。
     pub fn flags_def(&self, name: &Identifier) -> Option<&HirFlags> {
         self.flags.get(name)
     }
 
+    /// 返回 flags 类型的成员列表。
     pub fn flags_members(&self, name: &Identifier) -> &[HirFlagMember] {
         self.flags.get(name).map(|flags| flags.members.as_slice()).unwrap_or(&[])
     }
 
+    /// 查找已降低的 unite 布局。
     pub fn lower_unite(&self, name: &Identifier) -> Result<&LoweredUnite, NominalModuleError> {
         self.lowered_unites.get(name).ok_or_else(|| super::nominal::NominalModuleError::UnknownType { name: name.clone() })
     }
 
+    /// 根据已覆盖变体名推断唯一所属 enum。
     pub fn enum_from_covered_variants(&self, covered: &[Identifier]) -> Option<Identifier> {
         let mut candidates = Vec::new();
         for (enum_name, enum_def) in self.enums.iter().chain(self.unites.iter()) {
@@ -90,18 +96,22 @@ impl NominalTypeRegistry {
         }
     }
 
+    /// 遍历全部 enum 定义。
     pub fn enums(&self) -> impl Iterator<Item = &HirEnum> {
         self.enums.values()
     }
 
+    /// 遍历全部 unite 定义。
     pub fn unites(&self) -> impl Iterator<Item = &HirEnum> {
         self.unites.values()
     }
 
+    /// 遍历全部 flags 定义。
     pub fn flags(&self) -> impl Iterator<Item = &HirFlags> {
         self.flags.values()
     }
 
+    /// 查找 enum 内指定变体定义。
     pub fn variant_def(&self, enum_name: &Identifier, variant_name: &Identifier) -> Option<&HirVariant> {
         self.enum_def(enum_name)?.variants.iter().find(|variant| &variant.name == variant_name)
     }

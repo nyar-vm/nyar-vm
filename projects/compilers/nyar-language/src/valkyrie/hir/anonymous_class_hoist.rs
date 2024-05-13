@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use crate::types::{
     Identifier,
     hir::{
-        HirBlock, HirDocumentation, HirExpr, HirExprKind, HirField, HirModule, HirParent, HirStatement, HirStatementKind, HirStruct,
-        HirVisibility, ValkyrieType,
+        HirBlock, HirDocumentation, HirExpr, HirExprKind, HirField, HirModule, HirStatement, HirStatementKind, HirStruct, HirVisibility,
+        ValkyrieType,
     },
 };
 

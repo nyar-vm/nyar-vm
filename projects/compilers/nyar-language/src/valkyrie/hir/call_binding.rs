@@ -8,15 +8,39 @@ use crate::{
     },
 };
 
+/// 调用实参与形参绑定错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallBindingError {
-    PositionalOnlyPassedByName { name: Identifier },
-    KeywordOnlyPassedPositionally { name: Identifier },
-    UnknownKeyword { name: Identifier },
-    DuplicateKeyword { name: Identifier },
+    /// 仅位置参数被按名传递。
+    PositionalOnlyPassedByName {
+        /// 参数名。
+        name: Identifier,
+    },
+    /// 仅关键字参数被按位置传递。
+    KeywordOnlyPassedPositionally {
+        /// 参数名。
+        name: Identifier,
+    },
+    /// 未知关键字参数。
+    UnknownKeyword {
+        /// 参数名。
+        name: Identifier,
+    },
+    /// 重复的关键字参数。
+    DuplicateKeyword {
+        /// 参数名。
+        name: Identifier,
+    },
+    /// 关键字参数之后出现位置参数。
     PositionalAfterKeyword,
+    /// 位置参数数量超出允许范围。
     TooManyPositionalArguments,
-    MissingRequiredArgument { name: Identifier },
+    /// 缺少必需参数。
+    MissingRequiredArgument {
+        /// 参数名。
+        name: Identifier,
+    },
+    /// 关键字可变参数之后出现多余关键字。
     UnexpectedKeywordAfterKeywordRest,
 }
 
@@ -147,86 +171,5 @@ fn map_literal_expr(entries: Vec<(Identifier, HirExpr)>, span: SourceSpan) -> Hi
             resolved: None,
         },
         span,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::{SourceSpan, hir::HirIdentifier};
-
-    fn param(name: &str, binding_kind: HirParameterBindingKind) -> HirParam {
-        HirParam {
-            name: HirIdentifier { name: Identifier::new(name), shadow_index: 0, span: SourceSpan::new(SourceID::default(), 0, 0) },
-            ty: crate::types::hir::ValkyrieType::Unit,
-            is_mutable: false,
-            binding_kind,
-            default: None,
-            variadic: HirVariadicKind::None,
-        }
-    }
-
-    fn param_with_default(name: &str, binding_kind: HirParameterBindingKind, default: i64) -> HirParam {
-        HirParam {
-            default: Some(HirExpr {
-                kind: crate::types::hir::HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(default)),
-                span: SourceSpan::new(SourceID::default(), 0, 0),
-            }),
-            ..param(name, binding_kind)
-        }
-    }
-
-    fn positional(value: i64) -> HirCallArgument {
-        HirCallArgument::positional(HirExpr {
-            kind: crate::types::hir::HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(value)),
-            span: SourceSpan::new(SourceID::default(), 0, 0),
-        })
-    }
-
-    fn keyword(name: &str, value: i64) -> HirCallArgument {
-        HirCallArgument {
-            name: Some(Identifier::new(name)),
-            value: HirExpr {
-                kind: crate::types::hir::HirExprKind::Literal(crate::types::hir::HirLiteral::Integer64(value)),
-                span: SourceSpan::new(SourceID::default(), 0, 0),
-            },
-        }
-    }
-
-    #[test]
-    fn binds_mixed_positional_and_keyword() {
-        let params = vec![
-            param("a", HirParameterBindingKind::PositionalOnly),
-            param("b", HirParameterBindingKind::PositionalOrKeyword),
-            param("c", HirParameterBindingKind::KeywordOnly),
-        ];
-        let args = vec![positional(1), positional(2), keyword("c", 3)];
-        let bound = bind_call_arguments(&params, &args).expect("bind");
-        assert_eq!(bound.len(), 3);
-    }
-
-    #[test]
-    fn fills_default_arguments() {
-        let params = vec![
-            param("a", HirParameterBindingKind::PositionalOnly),
-            param_with_default("b", HirParameterBindingKind::PositionalOrKeyword, 1),
-            param_with_default("c", HirParameterBindingKind::KeywordOnly, 0),
-        ];
-        let bound = bind_call_arguments(&params, &[positional(9)]).expect("bind");
-        assert_eq!(bound.len(), 3);
-    }
-
-    #[test]
-    fn rejects_positional_only_by_name() {
-        let params = vec![param("a", HirParameterBindingKind::PositionalOnly)];
-        let err = bind_call_arguments(&params, &[keyword("a", 1)]).unwrap_err();
-        assert!(matches!(err, CallBindingError::PositionalOnlyPassedByName { .. }));
-    }
-
-    #[test]
-    fn rejects_keyword_only_positionally() {
-        let params = vec![param("c", HirParameterBindingKind::KeywordOnly)];
-        let err = bind_call_arguments(&params, &[positional(1)]).unwrap_err();
-        assert!(matches!(err, CallBindingError::KeywordOnlyPassedPositionally { .. }));
     }
 }

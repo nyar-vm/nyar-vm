@@ -11,7 +11,8 @@ pub(super) enum ConstValue {
     Bool(bool),
 }
 
-pub(super) fn eval_const_condition(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<bool, ParseError> {
+#[doc(hidden)]
+pub fn eval_const_condition(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<bool, ParseError> {
     if tokens.is_empty() {
         return Ok(true);
     }
@@ -51,11 +52,8 @@ pub(super) fn const_value_to_source(value: &ConstValue) -> String {
 }
 
 /// `loop _ in start..end` 的半开整数区间 `[start, end)`。
-pub(super) fn parse_const_loop_range(
-    source: &str,
-    header: &[Token<ValkyrieTokenType>],
-    arch: &str,
-) -> Result<std::ops::Range<i64>, ParseError> {
+#[doc(hidden)]
+pub fn parse_const_loop_range(source: &str, header: &[Token<ValkyrieTokenType>], arch: &str) -> Result<std::ops::Range<i64>, ParseError> {
     let tokens = meaningful_tokens(header);
     if tokens.len() < 3 {
         return Err(ParseError::invalid("TGrammar `loop` 仅支持 `loop _ in start..end` 常量整数范围"));
@@ -120,7 +118,8 @@ fn parse_const_range_tokens(source: &str, tokens: &[Token<ValkyrieTokenType>]) -
     Err(ParseError::invalid("TGrammar `loop` 范围必须是 `start..end` 常量整数"))
 }
 
-fn parse_const_range_text(text: &str) -> Option<std::ops::Range<i64>> {
+#[doc(hidden)]
+pub fn parse_const_range_text(text: &str) -> Option<std::ops::Range<i64>> {
     let text = text.trim();
     let split = text.find("..")?;
     let start = text[..split].trim().parse::<i64>().ok()?;
@@ -247,72 +246,5 @@ fn values_equal(left: &ConstValue, right: &ConstValue) -> Result<bool, ParseErro
             Ok((*lhs && *rhs != 0) || (!*lhs && *rhs == 0))
         }
         _ => Err(ParseError::invalid("TGrammar 比较两侧类型不兼容")),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use oak_core::Token;
-
-    fn tokens_from(source: &str, kinds: &[(ValkyrieTokenType, std::ops::Range<usize>)]) -> Vec<Token<ValkyrieTokenType>> {
-        kinds.iter().map(|(kind, span)| Token { kind: *kind, span: oak_core::Range { start: span.start, end: span.end } }).collect()
-    }
-
-    #[test]
-    fn range_i64_iterates_twice_for_zero_to_two() {
-        let range = parse_const_range_text("0..2").expect("range");
-        assert_eq!(range, 0..2);
-        assert_eq!(range.count(), 2);
-    }
-
-    #[test]
-    fn parse_loop_range_from_parsed_header() {
-        use crate::valkyrie::frontend::{ast::Statement, parse_source};
-        use oak_valkyrie::ast::{StatementNode, TemplateNode};
-        let source = r#"micro main() -> i32 {
-<% loop _ in 0..2 %>
-return 1
-<% end %>
-}"#;
-        let root = parse_source(source).expect("parse");
-        let StatementNode::Micro(micro) = &root.items[0]
-        else {
-            panic!("expected micro")
-        };
-        let Statement::Template(template) = &micro.body.statements[0]
-        else {
-            panic!("expected template")
-        };
-        let TemplateNode::Loop(loop_node) = template.as_ref()
-        else {
-            panic!("expected loop")
-        };
-        assert_eq!(parse_const_loop_range(source, &loop_node.header, "native").expect("range"), 0..2);
-    }
-
-    #[test]
-    fn parse_loop_range_from_compact_literal() {
-        let source = "_ in 0..2";
-        let tokens = tokens_from(
-            source,
-            &[
-                (ValkyrieTokenType::Underscore, 0..1),
-                (ValkyrieTokenType::Keyword(ValkyrieKeywords::In), 2..4),
-                (ValkyrieTokenType::FloatLiteral, 5..9),
-            ],
-        );
-        assert_eq!(parse_const_loop_range(source, &tokens, "native").expect("range"), 0..2);
-    }
-
-    #[test]
-    fn eval_arch_equality_predicate() {
-        let source = r#"arch == "wasm32""#;
-        let tokens = tokens_from(
-            source,
-            &[(ValkyrieTokenType::Identifier, 0..4), (ValkyrieTokenType::EqEq, 5..7), (ValkyrieTokenType::StringLiteral, 8..16)],
-        );
-        assert!(eval_const_condition(source, &tokens, "wasm32").expect("eval"));
-        assert!(!eval_const_condition(source, &tokens, "native").expect("eval"));
     }
 }
