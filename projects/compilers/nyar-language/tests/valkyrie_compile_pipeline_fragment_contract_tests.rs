@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::canonical_program_from_semantic_mir;
-use crate::{ValkyrieCompiler, mir::MirLowerer};
+use nyar_language::{ValkyrieCompiler, mir::MirLowerer, valkyrie::compile_pipeline::canonical_program_from_semantic_mir};
 
 #[test]
 fn fragment_contract_ignores_colliding_diagnostic_labels() {

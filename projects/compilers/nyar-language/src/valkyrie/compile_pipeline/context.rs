@@ -20,8 +20,11 @@ pub struct CompilerHostProviderBinding {
 pub struct CompilerBuildContext {
     /// 目标架构键；仅供 adaptor/模板合同使用，不得触发 Compiler 内文本重解析。
     pub arch: String,
+    /// 规范化编译目标（wasm、native、CLR 等）。
     pub target: CanonicalTarget,
+    /// CLR 后端挂起/恢复策略。
     pub clr_suspend_strategy: ClrSuspendStrategy,
+    /// Wasm 产物形态（模块或组件）。
     pub wasm_package_kind: WasmPackageKind,
     /// 装配层已按 target/profile 过滤的 host provider 选择结果。
     pub selected_host_providers: Vec<CompilerHostProviderBinding>,
