@@ -6,11 +6,7 @@ pub struct OriginalDefinitionHandler;
 impl OriginalDefinitionHandler {
     pub async fn handle(state: &ServerState, uri: &str, position: Position) -> Vec<LocationRange> {
         if let Some(symbol) = state.query_symbol_at_position(uri, position).await {
-            let full_name = if symbol.namespace.is_empty() {
-                symbol.name.clone()
-            } else {
-                format!("{}::{}", symbol.namespace, symbol.name)
-            };
+            let full_name = if symbol.namespace.is_empty() { symbol.name.clone() } else { format!("{}::{}", symbol.namespace, symbol.name) };
 
             if let Some(target_type) = state.index.get_type_alias_target(&full_name) {
                 return Self::resolve_type_to_location(state, &target_type, &symbol.namespace);
@@ -23,12 +19,7 @@ impl OriginalDefinitionHandler {
         vec![]
     }
 
-    async fn find_original_through_usings(
-        state: &ServerState,
-        uri: &str,
-        symbol_name: &str,
-        context_ns: &str,
-    ) -> Option<LocationRange> {
+    async fn find_original_through_usings(state: &ServerState, uri: &str, symbol_name: &str, context_ns: &str) -> Option<LocationRange> {
         let doc = state.documents.get(uri)?;
         let ast = doc.ast.as_ref()?;
 
@@ -49,10 +40,7 @@ impl OriginalDefinitionHandler {
             if ns != context_ns {
                 if let Some(ns_map) = state.index.symbols.get(&ns) {
                     if let Some(symbol) = ns_map.get(symbol_name) {
-                        return Some(LocationRange {
-                            uri: symbol.uri.clone().into(),
-                            range: symbol.range.clone(),
-                        });
+                        return Some(LocationRange { uri: symbol.uri.clone().into(), range: symbol.range.clone() });
                     }
                 }
             }
@@ -68,10 +56,7 @@ impl OriginalDefinitionHandler {
                 let ns = parts[..parts.len() - 1].join("::");
                 if let Some(ns_map) = state.index.symbols.get(&ns) {
                     if let Some(symbol) = ns_map.get(*type_name) {
-                        return vec![LocationRange {
-                            uri: symbol.uri.clone().into(),
-                            range: symbol.range.clone(),
-                        }];
+                        return vec![LocationRange { uri: symbol.uri.clone().into(), range: symbol.range.clone() }];
                     }
                 }
             }
@@ -79,10 +64,7 @@ impl OriginalDefinitionHandler {
 
         if let Some(ns_map) = state.index.symbols.get(context_ns) {
             if let Some(symbol) = ns_map.get(type_name) {
-                return vec![LocationRange {
-                    uri: symbol.uri.clone().into(),
-                    range: symbol.range.clone(),
-                }];
+                return vec![LocationRange { uri: symbol.uri.clone().into(), range: symbol.range.clone() }];
             }
         }
 

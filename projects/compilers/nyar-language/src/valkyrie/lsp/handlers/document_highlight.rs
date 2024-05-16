@@ -41,7 +41,7 @@ impl DocumentHighlightHandler {
                     if f.name.name == name {
                         highlights.push(DocumentHighlight {
                             range: span_to_lsp_range(f.name.span.clone()),
-                            kind: Some(DocumentHighlightKind::Write)
+                            kind: Some(DocumentHighlightKind::Write),
                         });
                     }
                     Self::collect_highlights_in_block(&f.body, name, doc, highlights);
@@ -50,7 +50,7 @@ impl DocumentHighlightHandler {
                     if c.name.name == name {
                         highlights.push(DocumentHighlight {
                             range: span_to_lsp_range(c.name.span.clone()),
-                            kind: Some(DocumentHighlightKind::Write)
+                            kind: Some(DocumentHighlightKind::Write),
                         });
                     }
                     Self::collect_highlights(&c.items, name, doc, highlights);
@@ -60,7 +60,7 @@ impl DocumentHighlightHandler {
                         if part.name == name {
                             highlights.push(DocumentHighlight {
                                 range: span_to_lsp_range(part.span.clone()),
-                                kind: Some(DocumentHighlightKind::Write)
+                                kind: Some(DocumentHighlightKind::Write),
                             });
                         }
                     }
@@ -73,7 +73,7 @@ impl DocumentHighlightHandler {
                     if w.name.name == name {
                         highlights.push(DocumentHighlight {
                             range: span_to_lsp_range(w.name.span.clone()),
-                            kind: Some(DocumentHighlightKind::Write)
+                            kind: Some(DocumentHighlightKind::Write),
                         });
                     }
                     Self::collect_highlights(&w.items, name, doc, highlights);
@@ -82,7 +82,7 @@ impl DocumentHighlightHandler {
                     if m.name.name == name {
                         highlights.push(DocumentHighlight {
                             range: span_to_lsp_range(m.name.span.clone()),
-                            kind: Some(DocumentHighlightKind::Write)
+                            kind: Some(DocumentHighlightKind::Write),
                         });
                     }
                     Self::collect_highlights_in_block(&m.body, name, doc, highlights);
@@ -97,10 +97,8 @@ impl DocumentHighlightHandler {
             Statement::Let { pattern, expr, .. } => {
                 if let Pattern::Variable { name: id, .. } = pattern {
                     if id.name == name {
-                        highlights.push(DocumentHighlight {
-                            range: span_to_lsp_range(id.span.clone()),
-                            kind: Some(DocumentHighlightKind::Write)
-                        });
+                        highlights
+                            .push(DocumentHighlight { range: span_to_lsp_range(id.span.clone()), kind: Some(DocumentHighlightKind::Write) });
                     }
                 }
                 Self::collect_highlights_in_expr(expr, name, doc, highlights);
@@ -121,19 +119,14 @@ impl DocumentHighlightHandler {
         match expr {
             Expr::Ident(id) => {
                 if id.name == name {
-                    highlights.push(DocumentHighlight {
-                        range: span_to_lsp_range(id.span.clone()),
-                        kind: Some(DocumentHighlightKind::Read)
-                    });
+                    highlights.push(DocumentHighlight { range: span_to_lsp_range(id.span.clone()), kind: Some(DocumentHighlightKind::Read) });
                 }
             }
             Expr::Path(path) => {
                 for part in &path.parts {
                     if part.name == name {
-                        highlights.push(DocumentHighlight {
-                            range: span_to_lsp_range(part.span.clone()),
-                            kind: Some(DocumentHighlightKind::Read)
-                        });
+                        highlights
+                            .push(DocumentHighlight { range: span_to_lsp_range(part.span.clone()), kind: Some(DocumentHighlightKind::Read) });
                     }
                 }
             }
@@ -153,10 +146,8 @@ impl DocumentHighlightHandler {
             Expr::Field { receiver, field, .. } => {
                 Self::collect_highlights_in_expr(receiver, name, doc, highlights);
                 if field.name == name {
-                    highlights.push(DocumentHighlight {
-                        range: span_to_lsp_range(field.span.clone()),
-                        kind: Some(DocumentHighlightKind::Read)
-                    });
+                    highlights
+                        .push(DocumentHighlight { range: span_to_lsp_range(field.span.clone()), kind: Some(DocumentHighlightKind::Read) });
                 }
             }
             Expr::Index { receiver, index, .. } => {
@@ -174,7 +165,7 @@ impl DocumentHighlightHandler {
                     if param.name.name == name {
                         highlights.push(DocumentHighlight {
                             range: span_to_lsp_range(param.name.span.clone()),
-                            kind: Some(DocumentHighlightKind::Write)
+                            kind: Some(DocumentHighlightKind::Write),
                         });
                     }
                 }
@@ -238,7 +229,7 @@ impl DocumentHighlightHandler {
                     if field.0.name == name {
                         highlights.push(DocumentHighlight {
                             range: span_to_lsp_range(field.0.span.clone()),
-                            kind: Some(DocumentHighlightKind::Read)
+                            kind: Some(DocumentHighlightKind::Read),
                         });
                     }
                     if let Some(value) = &field.1 {
@@ -250,19 +241,11 @@ impl DocumentHighlightHandler {
         }
     }
 
-    fn collect_highlights_in_pattern(
-        pattern: &Pattern,
-        name: &str,
-        _doc: &DocumentState,
-        highlights: &mut Vec<DocumentHighlight>,
-    ) {
+    fn collect_highlights_in_pattern(pattern: &Pattern, name: &str, _doc: &DocumentState, highlights: &mut Vec<DocumentHighlight>) {
         match pattern {
             Pattern::Variable { name: id, .. } => {
                 if id.name == name {
-                    highlights.push(DocumentHighlight {
-                        range: span_to_lsp_range(id.span.clone()),
-                        kind: Some(DocumentHighlightKind::Write)
-                    });
+                    highlights.push(DocumentHighlight { range: span_to_lsp_range(id.span.clone()), kind: Some(DocumentHighlightKind::Write) });
                 }
             }
             _ => {}

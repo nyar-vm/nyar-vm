@@ -19,8 +19,6 @@ pub use document::{is_awsl_uri, script_offset_at, script_offset_range};
 pub use hover::AwslHoverHandler;
 pub use inlay_hint::AwslInlayHintHandler;
 pub use references::AwslReferencesHandler;
-pub use script::{map_script_range_to_file, resolve_script_view, AwslScriptView};
+pub use script::{AwslScriptView, map_script_range_to_file, resolve_script_view};
 pub use semantic_tokens::AwslSemanticTokensHandler;
-pub use widget::{
-    component_stem_from_uri, map_synthetic_span_to_file, synthetic_widget_source, widget_name_from_root,
-};
+pub use widget::{component_stem_from_uri, map_synthetic_span_to_file, synthetic_widget_source, widget_name_from_root};

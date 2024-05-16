@@ -1,25 +1,21 @@
 //! AWSL 诊断与 widget 语义接入
 
-use oak_awsl::{
-    extract_component_abi_from_script, AbiSeverity, ComponentAbiIndex,
-};
+use oak_awsl::{AbiSeverity, ComponentAbiIndex, extract_component_abi_from_script};
 
-use super::document::{parse_awsl, script_offset_range};
-use super::naming::{abi_issue_to_diagnostic, collect_naming_diagnostics, map_synthetic_diagnostic_to_file, shift_diagnostic_spans};
-use super::vx::parse_awsl_script_vx;
-use super::widget::{component_stem_from_uri, synthetic_widget_source, widget_name_from_root};
-use crate::state::DocumentState;
-use crate::state::ServerState;
-use crate::types::{SourceID, ValkyrieError};
+use super::{
+    document::{parse_awsl, script_offset_range},
+    naming::{abi_issue_to_diagnostic, collect_naming_diagnostics, map_synthetic_diagnostic_to_file, shift_diagnostic_spans},
+    vx::parse_awsl_script_vx,
+    widget::{component_stem_from_uri, synthetic_widget_source, widget_name_from_root},
+};
+use crate::{
+    state::{DocumentState, ServerState},
+    types::{SourceID, ValkyrieError},
+};
 use nyar_language::ValkyrieCompiler;
 
 /// 编译 AWSL 文档：解析模板 + 将 script 作为 **vx** widget 体编译并索引
-pub fn compile_awsl_document(
-    uri: &str,
-    text: &str,
-    doc_state: &mut DocumentState,
-    server: Option<&ServerState>,
-) -> Vec<ValkyrieError> {
+pub fn compile_awsl_document(uri: &str, text: &str, doc_state: &mut DocumentState, server: Option<&ServerState>) -> Vec<ValkyrieError> {
     let mut diagnostics = Vec::new();
     let source_id = doc_state.file_id.unwrap_or_default();
 
@@ -81,9 +77,7 @@ pub fn compile_awsl_document(
                         doc_state.ast = Some(ast);
                     }
                     Err(e) => {
-                        if let (Some(base), Some(prefix)) =
-                            (doc_state.awsl_script_base, doc_state.awsl_synthetic_prefix)
-                        {
+                        if let (Some(base), Some(prefix)) = (doc_state.awsl_script_base, doc_state.awsl_synthetic_prefix) {
                             diagnostics.push(map_synthetic_diagnostic_to_file(base, prefix, e));
                         }
                         else {
@@ -113,7 +107,8 @@ pub fn compile_awsl_document(
                     if let Some(label) = diag.labels.first_mut() {
                         label.key = Some(if issue.kind == oak_awsl::AbiIssueKind::NotSnakeCase {
                             "AWSL ABI lint".into()
-                        } else {
+                        }
+                        else {
                             "AWSL ABI cross-file".into()
                         });
                         label.span = crate::types::SourceSpan::new(source_id, span.start as u32, span.end as u32);
@@ -136,12 +131,9 @@ fn should_emit_abi_issue(issue: &oak_awsl::AbiIssue) -> bool {
     }
 }
 
-fn map_script_diagnostic_to_file(
-    root: &oak_awsl::AwslRoot,
-    text: &str,
-    mut diag: ValkyrieError,
-) -> ValkyrieError {
-    let Some(script_start) = script_offset_range(root, text).map(|r| r.start) else {
+fn map_script_diagnostic_to_file(root: &oak_awsl::AwslRoot, text: &str, mut diag: ValkyrieError) -> ValkyrieError {
+    let Some(script_start) = script_offset_range(root, text).map(|r| r.start)
+    else {
         return diag;
     };
     shift_diagnostic_spans(&mut diag, script_start);

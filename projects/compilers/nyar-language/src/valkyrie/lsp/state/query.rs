@@ -1,17 +1,14 @@
-use super::{AstTraverser, ClassInfo, DocumentState, GlobalSymbol, IdentifierFinder, MemberInfo, ParameterInfo, ServerState, SymbolFinder, SymbolInfo, TypeSignature, VisitorContext};
+use super::{
+    AstTraverser, ClassInfo, DocumentState, GlobalSymbol, IdentifierFinder, MemberInfo, ParameterInfo, ServerState, SymbolFinder, SymbolInfo,
+    TypeSignature, VisitorContext,
+};
 use crate::types::Position;
 use oak_lsp::types::LocationRange;
 use std::sync::Arc;
 
 impl ServerState {
     /// 查找符号定义，并记录依赖关系
-    pub async fn resolve_symbol(
-        &self,
-        name: &str,
-        uri: &str,
-        caller_ns: &str,
-        caller_name: Option<&str>,
-    ) -> Option<Arc<GlobalSymbol>> {
+    pub async fn resolve_symbol(&self, name: &str, uri: &str, caller_ns: &str, caller_name: Option<&str>) -> Option<Arc<GlobalSymbol>> {
         let ast = self.documents.get(uri).and_then(|d| d.ast.clone())?;
         let mut current_namespace = String::new();
 
@@ -80,13 +77,7 @@ impl ServerState {
             }
         }
 
-        let context = VisitorContext {
-            uri,
-            doc: &doc,
-            offset,
-            context_ns: &current_namespace,
-            context_symbol: None,
-        };
+        let context = VisitorContext { uri, doc: &doc, offset, context_ns: &current_namespace, context_symbol: None };
 
         // 先尝试使用 SymbolFinder
         let symbol_finder = SymbolFinder::new(self);
@@ -107,13 +98,7 @@ impl ServerState {
         let view = resolve_script_view(&doc, position)?;
         let script_offset = view.script_doc.position_to_offset(view.script_position);
 
-        let context = VisitorContext {
-            uri,
-            doc: &view.script_doc,
-            offset: script_offset,
-            context_ns: "",
-            context_symbol: None,
-        };
+        let context = VisitorContext { uri, doc: &view.script_doc, offset: script_offset, context_ns: "", context_symbol: None };
 
         let symbol_finder = SymbolFinder::new(self);
         let mut symbol = if let Some(s) = AstTraverser::traverse_items(&view.ast.items, &symbol_finder, &context).await {
@@ -128,8 +113,6 @@ impl ServerState {
         symbol.location.range = map_script_range_to_file(&view.file_range, symbol.location.range);
         Some(symbol)
     }
-
-
 
     /// 从 Micro 函数定义中提取类型签名
     fn extract_micro_signature(micro: &oak_valkyrie::ast::MicroDefinition) -> TypeSignature {
@@ -187,9 +170,7 @@ impl ServerState {
 
     /// 从 Class 定义中提取类信息
     fn extract_class_info(class: &oak_valkyrie::ast::Class) -> ClassInfo {
-        let parent_class = class.parents.first().map(|p| {
-            p.name.parts.iter().map(|part| part.name.clone()).collect::<Vec<_>>().join("::")
-        });
+        let parent_class = class.parents.first().map(|p| p.name.parts.iter().map(|part| part.name.clone()).collect::<Vec<_>>().join("::"));
 
         let implements: Vec<String> = class
             .parents
@@ -224,12 +205,8 @@ impl ServerState {
     /// 格式化类型注解为字符串
     fn format_type_annotation(ty: &oak_valkyrie::ast::Type) -> String {
         match ty {
-            oak_valkyrie::ast::Type::Named { path, .. } => {
-                path.parts.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join("::")
-            }
-            oak_valkyrie::ast::Type::Generic { name, .. } => {
-                name.name.clone()
-            }
+            oak_valkyrie::ast::Type::Named { path, .. } => path.parts.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join("::"),
+            oak_valkyrie::ast::Type::Generic { name, .. } => name.name.clone(),
             oak_valkyrie::ast::Type::Function { params, return_type, .. } => {
                 let param_strs: Vec<String> = params.iter().map(|p| Self::format_type_annotation(p)).collect();
                 let ret_str = Self::format_type_annotation(return_type);

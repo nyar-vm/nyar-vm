@@ -1,11 +1,11 @@
 #![doc = include_str!("readme.md")]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![feature(new_range_api)]
 
 use oak_lsp::LspServer;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{info, warn, Level};
+use tracing::{Level, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 pub mod backend;
@@ -46,7 +46,7 @@ impl LogLevel {
             LogLevel::Warn => Some(Level::WARN),
             LogLevel::Info => Some(Level::INFO),
             LogLevel::Debug => Some(Level::DEBUG),
-            LogLevel::Trace => Some(Level::TRACE)
+            LogLevel::Trace => Some(Level::TRACE),
         }
     }
 
@@ -101,21 +101,12 @@ fn init_logging(options: &LspOptions) -> Result<(), Box<dyn std::error::Error>> 
     if let Some(lvl) = level {
         if let Some(ref log_file) = options.log_file {
             let file = std::fs::File::create(log_file)?;
-            let subscriber = FmtSubscriber::builder()
-                .with_max_level(lvl)
-                .with_writer(file)
-                .with_ansi(false)
-                .finish();
-            tracing::subscriber::set_global_default(subscriber)
-                .map_err(|e| format!("Failed to set tracing subscriber: {}", e))?;
-        } else {
-            let subscriber = FmtSubscriber::builder()
-                .with_max_level(lvl)
-                .with_writer(std::io::stderr)
-                .with_ansi(true)
-                .finish();
-            tracing::subscriber::set_global_default(subscriber)
-                .map_err(|e| format!("Failed to set tracing subscriber: {}", e))?;
+            let subscriber = FmtSubscriber::builder().with_max_level(lvl).with_writer(file).with_ansi(false).finish();
+            tracing::subscriber::set_global_default(subscriber).map_err(|e| format!("Failed to set tracing subscriber: {}", e))?;
+        }
+        else {
+            let subscriber = FmtSubscriber::builder().with_max_level(lvl).with_writer(std::io::stderr).with_ansi(true).finish();
+            tracing::subscriber::set_global_default(subscriber).map_err(|e| format!("Failed to set tracing subscriber: {}", e))?;
         }
     }
 
@@ -128,11 +119,7 @@ pub async fn start_lsp_server(options: LspOptions) -> Result<(), Box<dyn std::er
 
     info!("Starting Valkyrie LSP Server (log level: {})", options.log_level);
 
-    if let Some(port) = options.tcp_port {
-        start_tcp_server(port).await
-    } else {
-        start_stdio_server().await
-    }
+    if let Some(port) = options.tcp_port { start_tcp_server(port).await } else { start_stdio_server().await }
 }
 
 /// 启动基于标准输入输出的 LSP 服务器

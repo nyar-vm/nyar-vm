@@ -47,10 +47,7 @@ impl<V: Vfs> ValkyrieLanguageService<V> {
 
     /// 自定义方法：获取 AST
     pub async fn get_ast(&self, params: Value) -> LspResult<Value> {
-        let uri = params
-            .get("uri")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| LspError::InvalidParams("Missing uri parameter".to_string()))?;
+        let uri = params.get("uri").and_then(|v| v.as_str()).ok_or_else(|| LspError::InvalidParams("Missing uri parameter".to_string()))?;
 
         debug!("Getting AST for {}", uri);
 
@@ -62,10 +59,7 @@ impl<V: Vfs> ValkyrieLanguageService<V> {
 
     /// 自定义方法：获取 HIR
     pub async fn get_hir(&self, params: Value) -> LspResult<Value> {
-        let uri = params
-            .get("uri")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| LspError::InvalidParams("Missing uri parameter".to_string()))?;
+        let uri = params.get("uri").and_then(|v| v.as_str()).ok_or_else(|| LspError::InvalidParams("Missing uri parameter".to_string()))?;
 
         debug!("Getting HIR for {}", uri);
 
@@ -80,16 +74,12 @@ impl<V: Vfs> ValkyrieLanguageService<V> {
 
     /// 自定义方法：查询符号
     pub async fn query_symbol(&self, params: Value) -> LspResult<Value> {
-        let uri = params
-            .get("uri")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| LspError::InvalidParams("Missing uri parameter".to_string()))?;
+        let uri = params.get("uri").and_then(|v| v.as_str()).ok_or_else(|| LspError::InvalidParams("Missing uri parameter".to_string()))?;
 
-        let position =
-            params.get("position").ok_or_else(|| LspError::InvalidParams("Missing position parameter".to_string()))?;
+        let position = params.get("position").ok_or_else(|| LspError::InvalidParams("Missing position parameter".to_string()))?;
 
-        let position: Position = serde_json::from_value(position.clone())
-            .map_err(|e| LspError::InvalidParams(format!("Invalid position: {}", e)))?;
+        let position: Position =
+            serde_json::from_value(position.clone()).map_err(|e| LspError::InvalidParams(format!("Invalid position: {}", e)))?;
 
         debug!("Querying symbol at {}:{}:{}", uri, position.line, position.character);
 
@@ -101,16 +91,12 @@ impl<V: Vfs> ValkyrieLanguageService<V> {
 
     /// 自定义方法：跳转到原定义
     pub async fn get_original_definition(&self, params: Value) -> LspResult<Value> {
-        let uri = params
-            .get("uri")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| LspError::InvalidParams("Missing uri parameter".to_string()))?;
+        let uri = params.get("uri").and_then(|v| v.as_str()).ok_or_else(|| LspError::InvalidParams("Missing uri parameter".to_string()))?;
 
-        let position =
-            params.get("position").ok_or_else(|| LspError::InvalidParams("Missing position parameter".to_string()))?;
+        let position = params.get("position").ok_or_else(|| LspError::InvalidParams("Missing position parameter".to_string()))?;
 
-        let position: Position = serde_json::from_value(position.clone())
-            .map_err(|e| LspError::InvalidParams(format!("Invalid position: {}", e)))?;
+        let position: Position =
+            serde_json::from_value(position.clone()).map_err(|e| LspError::InvalidParams(format!("Invalid position: {}", e)))?;
 
         debug!("Getting original definition at {}:{}:{}", uri, position.line, position.character);
 
@@ -157,11 +143,7 @@ impl<V: Vfs + WritableVfs + Send + Sync + 'static> LanguageService for ValkyrieL
         &self.workspace
     }
 
-    fn hover(
-        &self,
-        uri: &str,
-        range: core::range::Range<usize>,
-    ) -> impl std::future::Future<Output = Option<Hover>> + Send + '_ {
+    fn hover(&self, uri: &str, range: core::range::Range<usize>) -> impl std::future::Future<Output = Option<Hover>> + Send + '_ {
         let uri = uri.to_string();
         async move {
             let position = self.offset_to_position(&uri, range.start).await?;
@@ -180,11 +162,7 @@ impl<V: Vfs + WritableVfs + Send + Sync + 'static> LanguageService for ValkyrieL
         }
     }
 
-    fn definition(
-        &self,
-        uri: &str,
-        range: core::range::Range<usize>,
-    ) -> impl std::future::Future<Output = Vec<LocationRange>> + Send + '_ {
+    fn definition(&self, uri: &str, range: core::range::Range<usize>) -> impl std::future::Future<Output = Vec<LocationRange>> + Send + '_ {
         let uri = uri.to_string();
         async move {
             let position = match self.offset_to_position(&uri, range.start).await {
@@ -210,11 +188,7 @@ impl<V: Vfs + WritableVfs + Send + Sync + 'static> LanguageService for ValkyrieL
         }
     }
 
-    fn implementation(
-        &self,
-        uri: &str,
-        range: core::range::Range<usize>,
-    ) -> impl std::future::Future<Output = Vec<LocationRange>> + Send + '_ {
+    fn implementation(&self, uri: &str, range: core::range::Range<usize>) -> impl std::future::Future<Output = Vec<LocationRange>> + Send + '_ {
         let uri = uri.to_string();
         async move {
             let position = match self.offset_to_position(&uri, range.start).await {
@@ -225,11 +199,7 @@ impl<V: Vfs + WritableVfs + Send + Sync + 'static> LanguageService for ValkyrieL
         }
     }
 
-    fn references(
-        &self,
-        uri: &str,
-        range: core::range::Range<usize>,
-    ) -> impl std::future::Future<Output = Vec<LocationRange>> + Send + '_ {
+    fn references(&self, uri: &str, range: core::range::Range<usize>) -> impl std::future::Future<Output = Vec<LocationRange>> + Send + '_ {
         let uri = uri.to_string();
         async move {
             let position = match self.offset_to_position(&uri, range.start).await {
@@ -270,11 +240,7 @@ impl<V: Vfs + WritableVfs + Send + Sync + 'static> LanguageService for ValkyrieL
         async move { handlers::FoldingRangeHandler::handle(&self.state, &uri).await }
     }
 
-    fn signature_help(
-        &self,
-        uri: &str,
-        range: Range<usize>,
-    ) -> impl std::future::Future<Output = Option<SignatureHelp>> + Send + '_ {
+    fn signature_help(&self, uri: &str, range: Range<usize>) -> impl std::future::Future<Output = Option<SignatureHelp>> + Send + '_ {
         let uri = uri.to_string();
         async move {
             let position = match self.offset_to_position(&uri, range.start).await {
@@ -290,11 +256,7 @@ impl<V: Vfs + WritableVfs + Send + Sync + 'static> LanguageService for ValkyrieL
         async move { handlers::InlayHintHandler::handle(&self.state, &uri).await }
     }
 
-    fn document_highlight(
-        &self,
-        uri: &str,
-        range: Range<usize>,
-    ) -> impl std::future::Future<Output = Vec<DocumentHighlight>> + Send + '_ {
+    fn document_highlight(&self, uri: &str, range: Range<usize>) -> impl std::future::Future<Output = Vec<DocumentHighlight>> + Send + '_ {
         let uri = uri.to_string();
         async move {
             let position = match self.offset_to_position(&uri, range.start).await {
@@ -319,11 +281,7 @@ impl<V: Vfs + WritableVfs + Send + Sync + 'static> LanguageService for ValkyrieL
         }
     }
 
-    fn range_formatting(
-        &self,
-        uri: &str,
-        range: Range<usize>,
-    ) -> impl std::future::Future<Output = Vec<TextEdit>> + Send + '_ {
+    fn range_formatting(&self, uri: &str, range: Range<usize>) -> impl std::future::Future<Output = Vec<TextEdit>> + Send + '_ {
         let uri = uri.to_string();
         async move {
             let options = FormattingOptions {

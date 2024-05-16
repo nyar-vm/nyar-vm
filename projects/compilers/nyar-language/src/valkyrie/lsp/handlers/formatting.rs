@@ -1,7 +1,7 @@
-use nyar_language::formatter::{FormatConfigLoader, FormatOptions, SourceKind, source_kind_from_extension, format_source, format_source_range};
 use crate::state::ServerState;
 use core::range::Range;
 use nyar_analyzer::format::ByteRange;
+use nyar_language::formatter::{FormatConfigLoader, FormatOptions, SourceKind, format_source, format_source_range, source_kind_from_extension};
 use oak_lsp::types::*;
 use serde::{Deserialize, Serialize};
 
@@ -45,12 +45,7 @@ impl FormattingHandler {
         vec![TextEdit { range: Range { start: 0, end: doc.text.len() }, new_text: output }]
     }
 
-    pub async fn handle_range(
-        state: &ServerState,
-        uri: &str,
-        range: Range<usize>,
-        lsp_options: FormattingOptions,
-    ) -> Vec<TextEdit> {
+    pub async fn handle_range(state: &ServerState, uri: &str, range: Range<usize>, lsp_options: FormattingOptions) -> Vec<TextEdit> {
         let doc = match state.get_document(uri) {
             Some(d) => d,
             None => return vec![],

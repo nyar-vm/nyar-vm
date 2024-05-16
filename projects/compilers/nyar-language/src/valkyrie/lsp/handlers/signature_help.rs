@@ -85,11 +85,7 @@ impl SignatureHelpHandler {
 
             Some(SignatureHelp {
                 signatures: vec![SignatureInformation {
-                    label: format!(
-                        "{}({})",
-                        caller_name,
-                        parameters.iter().map(|p| p.label.as_str()).collect::<Vec<_>>().join(", ")
-                    ),
+                    label: format!("{}({})", caller_name, parameters.iter().map(|p| p.label.as_str()).collect::<Vec<_>>().join(", ")),
                     documentation: Some(format!("Signature help for {}", caller_name)),
                     parameters: Some(parameters),
                     active_parameter,
@@ -103,11 +99,7 @@ impl SignatureHelpHandler {
         }
     }
 
-    fn find_call_at<'a>(
-        items: &'a [Item],
-        offset: usize,
-        found: &mut Option<(&'a Expr, &'a [Expr], core::range::Range<usize>)>,
-    ) {
+    fn find_call_at<'a>(items: &'a [Item], offset: usize, found: &mut Option<(&'a Expr, &'a [Expr], core::range::Range<usize>)>) {
         for item in items {
             match item {
                 Item::TypeFunction(func) => {
@@ -136,11 +128,7 @@ impl SignatureHelpHandler {
         }
     }
 
-    fn find_call_in_stmt<'a>(
-        stmt: &'a Statement,
-        offset: usize,
-        found: &mut Option<(&'a Expr, &'a [Expr], core::range::Range<usize>)>,
-    ) {
+    fn find_call_in_stmt<'a>(stmt: &'a Statement, offset: usize, found: &mut Option<(&'a Expr, &'a [Expr], core::range::Range<usize>)>) {
         match stmt {
             Statement::Let { expr, .. } => {
                 Self::find_call_in_expr(expr, offset, found);
@@ -151,11 +139,7 @@ impl SignatureHelpHandler {
         }
     }
 
-    fn find_call_in_block<'a>(
-        block: &'a Block,
-        offset: usize,
-        found: &mut Option<(&'a Expr, &'a [Expr], core::range::Range<usize>)>,
-    ) {
+    fn find_call_in_block<'a>(block: &'a Block, offset: usize, found: &mut Option<(&'a Expr, &'a [Expr], core::range::Range<usize>)>) {
         for stmt in &block.statements {
             Self::find_call_in_stmt(stmt, offset, found);
             if found.is_some() {
@@ -164,11 +148,7 @@ impl SignatureHelpHandler {
         }
     }
 
-    fn find_call_in_expr<'a>(
-        expr: &'a Expr,
-        offset: usize,
-        found: &mut Option<(&'a Expr, &'a [Expr], core::range::Range<usize>)>,
-    ) {
+    fn find_call_in_expr<'a>(expr: &'a Expr, offset: usize, found: &mut Option<(&'a Expr, &'a [Expr], core::range::Range<usize>)>) {
         match expr {
             Expr::Call { callee, args, span } => {
                 if span.contains(&offset) {

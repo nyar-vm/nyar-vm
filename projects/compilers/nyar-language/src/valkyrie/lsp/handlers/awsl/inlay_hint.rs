@@ -1,8 +1,10 @@
 //! AWSL inlay hints (`<script>` span remap).
 
 use super::widget::map_synthetic_span_to_file;
-use crate::handlers::utils::make_source_position;
-use crate::state::{DocumentState, ServerState};
+use crate::{
+    handlers::utils::make_source_position,
+    state::{DocumentState, ServerState},
+};
 use oak_lsp::types::*;
 use oak_valkyrie::ast::{Expr, Item, Pattern, Statement};
 
@@ -41,23 +43,14 @@ impl AwslInlayHintHandler {
         Some(map_synthetic_span_to_file(base, prefix, synthetic_end..synthetic_end).start)
     }
 
-    fn push_type_hint(
-        doc: &DocumentState,
-        synthetic_end: usize,
-        label: String,
-        hints: &mut Vec<InlayHint>,
-    ) {
-        let Some(file_offset) = Self::map_span_end(doc, synthetic_end) else {
+    fn push_type_hint(doc: &DocumentState, synthetic_end: usize, label: String, hints: &mut Vec<InlayHint>) {
+        let Some(file_offset) = Self::map_span_end(doc, synthetic_end)
+        else {
             return;
         };
         let pos = doc.offset_to_position(file_offset);
         hints.push(InlayHint {
-            position: make_source_position(
-                file_offset,
-                pos.line + 1,
-                pos.character + 1,
-                0,
-            ),
+            position: make_source_position(file_offset, pos.line + 1, pos.character + 1, 0),
             label,
             kind: Some(InlayHintKind::Type),
             tooltip: Some("Inferred type".to_string()),
@@ -66,14 +59,10 @@ impl AwslInlayHintHandler {
         });
     }
 
-    async fn type_label_for_pattern(
-        state: &ServerState,
-        uri: &str,
-        doc: &DocumentState,
-        pattern: &Pattern,
-    ) -> String {
+    async fn type_label_for_pattern(state: &ServerState, uri: &str, doc: &DocumentState, pattern: &Pattern) -> String {
         let span = Self::pattern_span(pattern);
-        let Some(file_offset) = Self::map_span_end(doc, span.start) else {
+        let Some(file_offset) = Self::map_span_end(doc, span.start)
+        else {
             return ": Unknown".to_string();
         };
         let position = doc.offset_to_position(file_offset);
@@ -86,13 +75,7 @@ impl AwslInlayHintHandler {
     }
 
     #[async_recursion::async_recursion]
-    async fn collect_items_hints(
-        items: &[Item],
-        doc: &DocumentState,
-        state: &ServerState,
-        uri: &str,
-        hints: &mut Vec<InlayHint>,
-    ) {
+    async fn collect_items_hints(items: &[Item], doc: &DocumentState, state: &ServerState, uri: &str, hints: &mut Vec<InlayHint>) {
         for item in items {
             match item {
                 Item::Statement(Statement::Let { pattern, .. }) => {
@@ -134,13 +117,7 @@ impl AwslInlayHintHandler {
         }
     }
 
-    async fn collect_stmt_hints(
-        stmt: &Statement,
-        doc: &DocumentState,
-        state: &ServerState,
-        uri: &str,
-        hints: &mut Vec<InlayHint>,
-    ) {
+    async fn collect_stmt_hints(stmt: &Statement, doc: &DocumentState, state: &ServerState, uri: &str, hints: &mut Vec<InlayHint>) {
         match stmt {
             Statement::Let { pattern, .. } => {
                 let span = Self::pattern_span(pattern);

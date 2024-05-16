@@ -20,11 +20,7 @@ impl PrepareRenameHandler {
             handlers::awsl::AwslReferencesHandler::rename_locations(state, uri, position).await
         }
         else {
-            handlers::ReferencesHandler::handle(state, uri, position)
-                .await
-                .into_iter()
-                .map(|loc| (loc.uri.to_string(), loc.range))
-                .collect()
+            handlers::ReferencesHandler::handle(state, uri, position).await.into_iter().map(|loc| (loc.uri.to_string(), loc.range)).collect()
         };
 
         if references.is_empty() {

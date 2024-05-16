@@ -38,13 +38,7 @@ impl InlayHintHandler {
     }
 
     #[async_recursion::async_recursion]
-    async fn collect_items_hints(
-        items: &[Item],
-        doc: &DocumentState,
-        state: &ServerState,
-        uri: &str,
-        hints: &mut Vec<InlayHint>,
-    ) {
+    async fn collect_items_hints(items: &[Item], doc: &DocumentState, state: &ServerState, uri: &str, hints: &mut Vec<InlayHint>) {
         for item in items {
             match item {
                 Item::Statement(Statement::Let { pattern, .. }) => {
@@ -53,18 +47,17 @@ impl InlayHintHandler {
                     let line = pos.line + 1;
                     let column = pos.character + 1;
 
-                    let label =
-                        if let Some(info) = state.query_symbol_at_position(uri, doc.offset_to_position(span.start)).await {
-                            if let Some(ty) = info.type_info {
-                                format!(": {}", ty.replace("var ", "").replace("function ", ""))
-                            }
-                            else {
-                                ": Unknown".to_string()
-                            }
+                    let label = if let Some(info) = state.query_symbol_at_position(uri, doc.offset_to_position(span.start)).await {
+                        if let Some(ty) = info.type_info {
+                            format!(": {}", ty.replace("var ", "").replace("function ", ""))
                         }
                         else {
                             ": Unknown".to_string()
-                        };
+                        }
+                    }
+                    else {
+                        ": Unknown".to_string()
+                    };
 
                     hints.push(InlayHint {
                         position: make_source_position(span.end, line, column, span.end - span.start),
@@ -82,12 +75,7 @@ impl InlayHintHandler {
                             let line = pos.line + 1;
                             let column = pos.character + 1;
                             hints.push(InlayHint {
-                                position: make_source_position(
-                                    param.name.span.end,
-                                    line,
-                                    column,
-                                    param.name.span.end - param.name.span.start,
-                                ),
+                                position: make_source_position(param.name.span.end, line, column, param.name.span.end - param.name.span.start),
                                 label: ": Any".to_string(),
                                 kind: Some(InlayHintKind::Type),
                                 tooltip: Some("Implicit type".to_string()),
@@ -107,12 +95,7 @@ impl InlayHintHandler {
                             let line = pos.line + 1;
                             let column = pos.character + 1;
                             hints.push(InlayHint {
-                                position: make_source_position(
-                                    param.name.span.end,
-                                    line,
-                                    column,
-                                    param.name.span.end - param.name.span.start,
-                                ),
+                                position: make_source_position(param.name.span.end, line, column, param.name.span.end - param.name.span.start),
                                 label: ": Any".to_string(),
                                 kind: Some(InlayHintKind::Type),
                                 tooltip: Some("Implicit type".to_string()),
@@ -139,13 +122,7 @@ impl InlayHintHandler {
         }
     }
 
-    async fn collect_stmt_hints(
-        stmt: &Statement,
-        doc: &DocumentState,
-        state: &ServerState,
-        uri: &str,
-        hints: &mut Vec<InlayHint>,
-    ) {
+    async fn collect_stmt_hints(stmt: &Statement, doc: &DocumentState, state: &ServerState, uri: &str, hints: &mut Vec<InlayHint>) {
         match stmt {
             Statement::Let { pattern, .. } => {
                 let span = Self::pattern_span(pattern);
@@ -179,13 +156,7 @@ impl InlayHintHandler {
         }
     }
 
-    async fn collect_expr_hints(
-        expr: &Expr,
-        _doc: &DocumentState,
-        _state: &ServerState,
-        _uri: &str,
-        _hints: &mut Vec<InlayHint>,
-    ) {
+    async fn collect_expr_hints(expr: &Expr, _doc: &DocumentState, _state: &ServerState, _uri: &str, _hints: &mut Vec<InlayHint>) {
         match expr {
             Expr::Call { args, .. } => for _arg in args {},
             _ => {}

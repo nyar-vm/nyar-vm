@@ -20,7 +20,14 @@ impl<'a> super::AstVisitor<SymbolInfo> for SymbolFinder<'a> {
             Item::Using(u) => {
                 for part in &u.path.parts {
                     if context.offset >= part.span.start && context.offset <= part.span.end {
-                        let ns_so_far: String = u.path.parts.iter().take_while(|p| p.span.start <= part.span.start).map(|p| p.name.clone()).collect::<Vec<_>>().join("::");
+                        let ns_so_far: String = u
+                            .path
+                            .parts
+                            .iter()
+                            .take_while(|p| p.span.start <= part.span.start)
+                            .map(|p| p.name.clone())
+                            .collect::<Vec<_>>()
+                            .join("::");
                         if let Some(global) = self.state.resolve_namespace_or_symbol(&ns_so_far, context.uri, context.context_ns) {
                             return Some(SymbolInfo {
                                 name: global.name.clone(),
@@ -116,13 +123,11 @@ impl<'a> super::AstVisitor<SymbolInfo> for SymbolFinder<'a> {
                 }
                 return AstTraverser::traverse_items(&c.items, self, context).await;
             }
-            Item::Statement(s) => {
-                self.visit_statement(s, context).await
-            }
+            Item::Statement(s) => self.visit_statement(s, context).await,
             _ => None,
         }
     }
-    
+
     async fn visit_expr(&self, expr: &Expr, context: &VisitorContext) -> Option<SymbolInfo> {
         match expr {
             Expr::Ident(id) => {
@@ -203,9 +208,7 @@ impl<'a> super::AstVisitor<SymbolInfo> for SymbolFinder<'a> {
                 }
                 self.visit_expr(right, context).await
             }
-            Expr::Unary { expr, .. } => {
-                self.visit_expr(expr, context).await
-            }
+            Expr::Unary { expr, .. } => self.visit_expr(expr, context).await,
             Expr::If { condition, then_branch, else_branch, .. } => {
                 if let Some(a) = self.visit_expr(condition, context).await {
                     return Some(a);
@@ -218,13 +221,11 @@ impl<'a> super::AstVisitor<SymbolInfo> for SymbolFinder<'a> {
                 }
                 None
             }
-            Expr::Block(b) => {
-                AstTraverser::traverse_statements(&b.statements, self, context).await
-            }
+            Expr::Block(b) => AstTraverser::traverse_statements(&b.statements, self, context).await,
             _ => None,
         }
     }
-    
+
     async fn visit_statement(&self, stmt: &Statement, context: &VisitorContext) -> Option<SymbolInfo> {
         match stmt {
             Statement::Let { expr, span, .. } => {

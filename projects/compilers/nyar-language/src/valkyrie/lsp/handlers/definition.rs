@@ -1,5 +1,4 @@
-use crate::{state::ServerState, types::Position};
-use crate::handlers;
+use crate::{handlers, state::ServerState, types::Position};
 use oak_lsp::types::LocationRange;
 
 pub struct DefinitionHandler;

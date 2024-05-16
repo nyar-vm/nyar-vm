@@ -167,12 +167,7 @@ impl LegionManager {
                     deps.push(dep_name.clone());
                 }
             }
-            let node = DependencyNode {
-                name: config.name.clone(),
-                version: config.version.clone(),
-                path: path.clone(),
-                dependencies: deps,
-            };
+            let node = DependencyNode { name: config.name.clone(), version: config.version.clone(), path: path.clone(), dependencies: deps };
             self.dependency_graph.insert(config.name.clone(), node);
         }
     }
@@ -192,14 +187,9 @@ impl LegionManager {
                     }
 
                     let version = dep_config.version().unwrap_or("*").to_string();
-                    let resolved_path =
-                        self.resolve_dep_path(dep_name, dep_config, path).unwrap_or_else(|| PathBuf::from(dep_name));
+                    let resolved_path = self.resolve_dep_path(dep_name, dep_config, path).unwrap_or_else(|| PathBuf::from(dep_name));
 
-                    dep_usage.entry(dep_name.clone()).or_insert_with(Vec::new).push((
-                        config.name.clone(),
-                        version,
-                        resolved_path,
-                    ));
+                    dep_usage.entry(dep_name.clone()).or_insert_with(Vec::new).push((config.name.clone(), version, resolved_path));
                 }
             }
         }
@@ -209,8 +199,7 @@ impl LegionManager {
                 let versions: HashSet<String> = usages.iter().map(|(_, v, _)| v.clone()).collect();
 
                 if versions.len() > 1 {
-                    let conflicting_versions: Vec<(String, String)> =
-                        usages.iter().map(|(pkg, v, _)| (pkg.clone(), v.clone())).collect();
+                    let conflicting_versions: Vec<(String, String)> = usages.iter().map(|(pkg, v, _)| (pkg.clone(), v.clone())).collect();
                     self.version_conflicts.push(VersionConflict { name: dep_name.clone(), conflicting_versions });
                     warn!("Version conflict detected for dependency '{}': {:?}", dep_name, versions);
                 }
@@ -218,12 +207,7 @@ impl LegionManager {
                 let (first_pkg, first_version, first_path) = &usages[0];
                 self.hoisted_dependencies.insert(
                     dep_name.clone(),
-                    HoistedDependency {
-                        name: dep_name,
-                        version: first_version.clone(),
-                        ref_count: usages.len(),
-                        path: first_path.clone(),
-                    },
+                    HoistedDependency { name: dep_name, version: first_version.clone(), ref_count: usages.len(), path: first_path.clone() },
                 );
                 debug!("Hoisted dependency '{}' (version: {}, used by {} packages)", first_pkg, first_version, usages.len());
             }
@@ -341,8 +325,7 @@ impl LegionManager {
         if name == "package" {
             if let Some(config) = self.find_project_config(current_dir) {
                 // 返回项目根目录，或者 library 目录
-                let project_dir =
-                    self.projects.keys().find(|p| self.projects.get(*p).map(|c| c.name == config.name).unwrap_or(false))?;
+                let project_dir = self.projects.keys().find(|p| self.projects.get(*p).map(|c| c.name == config.name).unwrap_or(false))?;
                 let lib_dir = project_dir.join("library");
                 return if lib_dir.exists() { Some(lib_dir) } else { Some(project_dir.to_path_buf()) };
             }
@@ -483,11 +466,7 @@ impl LegionManager {
                 if path.is_dir() {
                     self.collect_valkyrie_source_files(&path, sources);
                 }
-                else if path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .is_some_and(|ext| valkyrie_family_extensions().any(|e| e == ext))
-                {
+                else if path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| valkyrie_family_extensions().any(|e| e == ext)) {
                     sources.push(path);
                 }
             }

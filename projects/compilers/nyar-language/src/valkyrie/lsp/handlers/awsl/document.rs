@@ -13,18 +13,9 @@ pub fn parse_awsl(text: &str) -> Result<AwslRoot, String> {
 }
 
 /// 若 `offset` 落在 `<script>` 块内，返回块范围及块内相对偏移
-pub fn script_offset_at(
-    root: &AwslRoot,
-    source: &str,
-    offset: usize,
-) -> Option<(std::ops::Range<usize>, usize)> {
+pub fn script_offset_at(root: &AwslRoot, source: &str, offset: usize) -> Option<(std::ops::Range<usize>, usize)> {
     let range = script_offset_range(root, source)?;
-    if range.contains(&offset) {
-        Some((range, offset - range.start))
-    }
-    else {
-        None
-    }
+    if range.contains(&offset) { Some((range, offset - range.start)) } else { None }
 }
 
 /// 返回 `<script>` 块内容在源文件中的字节范围（不含标签本身）
@@ -35,10 +26,5 @@ pub fn script_offset_range(root: &AwslRoot, source: &str) -> Option<std::ops::Ra
     let body_start = source[open_pos..].find('>')? + open_pos + 1;
     let close = "</script>";
     let close_pos = source[body_start..].find(close)? + body_start;
-    if close_pos > body_start {
-        Some(body_start..close_pos)
-    }
-    else {
-        None
-    }
+    if close_pos > body_start { Some(body_start..close_pos) } else { None }
 }

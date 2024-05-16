@@ -1,5 +1,4 @@
-use crate::{errors::LspResult, state::ServerState, types::Position};
-use crate::handlers;
+use crate::{errors::LspResult, handlers, state::ServerState, types::Position};
 use oak_lsp::types::{CompletionItem, CompletionItemKind};
 use oak_valkyrie::ast::{Block, Expr, Item, Pattern, Statement};
 
@@ -416,11 +415,7 @@ impl CompletionHandler {
 
     /// 解析表达式的类型
     async fn resolve_expression_type(state: &ServerState, uri: &str, expr_text: &str) -> Option<crate::state::GlobalSymbol> {
-        let simple_name = expr_text
-            .split(['.', ':'])
-            .next()
-            .unwrap_or(expr_text)
-            .trim_end_matches(':');
+        let simple_name = expr_text.split(['.', ':']).next().unwrap_or(expr_text).trim_end_matches(':');
 
         for doc_ref in state.documents.iter() {
             let doc = doc_ref.value();
@@ -625,20 +620,13 @@ impl CompletionHandler {
             parts.push(format!("返回: {}", Self::format_type(ret)));
         }
 
-        if parts.is_empty() {
-            None
-        }
-        else {
-            Some(parts.join("\n"))
-        }
+        if parts.is_empty() { None } else { Some(parts.join("\n")) }
     }
 
     /// 格式化类型
     fn format_type(ty: &oak_valkyrie::ast::Type) -> String {
         match ty {
-            oak_valkyrie::ast::Type::Named { path, .. } => {
-                path.parts.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join("::")
-            }
+            oak_valkyrie::ast::Type::Named { path, .. } => path.parts.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join("::"),
             oak_valkyrie::ast::Type::Generic { name, .. } => name.name.clone(),
             oak_valkyrie::ast::Type::Function { params, return_type, .. } => {
                 let param_strs: Vec<String> = params.iter().map(|p| Self::format_type(p)).collect();
@@ -812,9 +800,7 @@ impl CompletionHandler {
 
         if let Some(ret) = &f.return_type {
             let type_str = match ret {
-                oak_valkyrie::ast::Type::Named { path, .. } => {
-                    path.parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join("::")
-                }
+                oak_valkyrie::ast::Type::Named { path, .. } => path.parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join("::"),
                 oak_valkyrie::ast::Type::Generic { name, .. } => name.name.clone(),
                 oak_valkyrie::ast::Type::Tuple { elements, .. } => {
                     let elems: Vec<String> = elements.iter().map(|t| format!("{:?}", t)).collect();
@@ -828,12 +814,7 @@ impl CompletionHandler {
             parts.push(format!("返回: {}", type_str));
         }
 
-        if parts.is_empty() {
-            None
-        }
-        else {
-            Some(parts.join("\n"))
-        }
+        if parts.is_empty() { None } else { Some(parts.join("\n")) }
     }
 
     /// 将 SymbolKind 转换为 CompletionItemKind

@@ -1,6 +1,8 @@
-use crate::state::{ClassInfo, ServerState, SymbolInfo, TypeSignature};
-use crate::types::Position;
-use crate::handlers;
+use crate::{
+    handlers,
+    state::{ClassInfo, ServerState, SymbolInfo, TypeSignature},
+    types::Position,
+};
 use oak_lsp::types::Hover;
 
 /// Hover 信息处理器
@@ -121,7 +123,8 @@ impl HoverHandler {
                 let icon = Self::get_kind_icon(&member.kind);
                 if let Some(ref type_info) = member.type_info {
                     markdown.push_str(&format!("{} `{}`: `{}`\n", icon, member.name, type_info));
-                } else {
+                }
+                else {
                     markdown.push_str(&format!("{} `{}`\n", icon, member.name));
                 }
             }

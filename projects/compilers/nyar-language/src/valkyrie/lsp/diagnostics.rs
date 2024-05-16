@@ -1,7 +1,6 @@
 /// 诊断信息管理。
 ///
 /// 将编译器诊断转换为 LSP 诊断格式。
-
 use crate::types::{HelpMessage, LabeledSpan, ReportKind, ValkyrieError, ValkyrieErrorKind};
 use core::range::Range;
 use oak_lsp::types::{Diagnostic, DiagnosticSeverity};
@@ -18,24 +17,16 @@ pub struct DiagnosticsManager {
 impl DiagnosticsManager {
     /// 创建默认诊断管理器。
     pub fn new() -> Self {
-        Self {
-            filter_config: DiagnosticFilterConfig::default(),
-        }
+        Self { filter_config: DiagnosticFilterConfig::default() }
     }
 
     /// 使用指定配置创建诊断管理器。
     pub fn with_config(config: DiagnosticFilterConfig) -> Self {
-        Self {
-            filter_config: config,
-        }
+        Self { filter_config: config }
     }
 
     /// 将编译器诊断转换为 LSP 诊断。
-    pub fn convert_to_lsp_diagnostics(
-        &self,
-        compiler_diagnostics: &[ValkyrieError],
-        source: &str,
-    ) -> Vec<Diagnostic> {
+    pub fn convert_to_lsp_diagnostics(&self, compiler_diagnostics: &[ValkyrieError], source: &str) -> Vec<Diagnostic> {
         let mut result = Vec::new();
 
         for diag in compiler_diagnostics {
@@ -79,13 +70,7 @@ impl DiagnosticsManager {
         let code = self.extract_error_code_string(diag);
         let message = self.build_diagnostic_message(diag);
 
-        Some(Diagnostic {
-            range,
-            severity: Some(severity),
-            code,
-            source: Some("valkyrie".to_string()),
-            message,
-        })
+        Some(Diagnostic { range, severity: Some(severity), code, source: Some("valkyrie".to_string()), message })
     }
 
     fn convert_related_diagnostics(&self, diag: &ValkyrieError, source: &str) -> Vec<Diagnostic> {
@@ -110,41 +95,19 @@ impl DiagnosticsManager {
         related
     }
 
-    fn convert_secondary_label(
-        &self,
-        diag: &ValkyrieError,
-        label: &LabeledSpan,
-        source: &str,
-    ) -> Option<Diagnostic> {
+    fn convert_secondary_label(&self, diag: &ValkyrieError, label: &LabeledSpan, source: &str) -> Option<Diagnostic> {
         let range = self.label_to_range(label, source)?;
         let severity = self.map_secondary_severity(diag);
         let message = self.build_label_message(label);
 
-        Some(Diagnostic {
-            range,
-            severity: Some(severity),
-            code: None,
-            source: Some("valkyrie".to_string()),
-            message,
-        })
+        Some(Diagnostic { range, severity: Some(severity), code: None, source: Some("valkyrie".to_string()), message })
     }
 
-    fn convert_help_message(
-        &self,
-        diag: &ValkyrieError,
-        help: &HelpMessage,
-        source: &str,
-    ) -> Option<Diagnostic> {
+    fn convert_help_message(&self, diag: &ValkyrieError, help: &HelpMessage, source: &str) -> Option<Diagnostic> {
         let range = self.extract_primary_range(diag, source)?;
         let message = self.build_help_message(help);
 
-        Some(Diagnostic {
-            range,
-            severity: Some(DiagnosticSeverity::Hint),
-            code: None,
-            source: Some("valkyrie".to_string()),
-            message,
-        })
+        Some(Diagnostic { range, severity: Some(DiagnosticSeverity::Hint), code: None, source: Some("valkyrie".to_string()), message })
     }
 
     fn extract_primary_range(&self, diag: &ValkyrieError, source: &str) -> Option<Range<usize>> {
@@ -154,9 +117,7 @@ impl DiagnosticsManager {
             }
         }
 
-        diag.labels
-            .first()
-            .and_then(|label| self.label_to_range(label, source))
+        diag.labels.first().and_then(|label| self.label_to_range(label, source))
     }
 
     fn label_to_range(&self, label: &LabeledSpan, _source: &str) -> Option<Range<usize>> {
@@ -167,10 +128,7 @@ impl DiagnosticsManager {
             return None;
         }
 
-        Some(Range {
-            start: start_offset,
-            end: end_offset,
-        })
+        Some(Range { start: start_offset, end: end_offset })
     }
 
     fn map_severity(&self, diag: &ValkyrieError) -> DiagnosticSeverity {
@@ -221,7 +179,8 @@ impl DiagnosticsManager {
             ValkyrieErrorKind::IoError { message, path } => {
                 if let Some(path) = path {
                     format!("I/O 错误: {} (路径: {})", message, path)
-                } else {
+                }
+                else {
                     format!("I/O 错误: {}", message)
                 }
             }
@@ -241,10 +200,7 @@ impl DiagnosticsManager {
     }
 
     fn build_label_message(&self, label: &LabeledSpan) -> String {
-        let mut message = label
-            .key
-            .clone()
-            .unwrap_or_else(|| "备注".to_string());
+        let mut message = label.key.clone().unwrap_or_else(|| "备注".to_string());
 
         for (k, v) in &label.data {
             message.push_str(&format!("\n  {}: {}", k, v));
@@ -336,11 +292,7 @@ pub struct DiagnosticFilterConfig {
 
 impl Default for DiagnosticFilterConfig {
     fn default() -> Self {
-        Self {
-            ignore_warnings: false,
-            ignore_hints: false,
-            excluded_codes: Vec::new(),
-        }
+        Self { ignore_warnings: false, ignore_hints: false, excluded_codes: Vec::new() }
     }
 }
 
@@ -371,16 +323,12 @@ impl DiagnosticFilterConfig {
 
 /// 错误码工具。
 pub mod error_code_utils {
-    use crate::types::ValkyrieErrorKind;
     use super::ERROR_CODE_PREFIX;
+    use crate::types::ValkyrieErrorKind;
 
     /// 解析错误码字符串。
     pub fn parse_error_code(code: &str) -> Option<u32> {
-        if code.starts_with(ERROR_CODE_PREFIX) {
-            u32::from_str_radix(&code[1..], 16).ok()
-        } else {
-            None
-        }
+        if code.starts_with(ERROR_CODE_PREFIX) { u32::from_str_radix(&code[1..], 16).ok() } else { None }
     }
 
     /// 获取错误类型所属分类。

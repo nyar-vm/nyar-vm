@@ -41,29 +41,20 @@ impl ReferencesHandler {
             match item {
                 Item::TypeFunction(f) => {
                     if f.name.name == name {
-                        locations.push(LocationRange {
-                            uri: uri.to_string().into(),
-                            range: span_to_range_usize(f.name.span.clone()),
-                        });
+                        locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(f.name.span.clone()) });
                     }
                     Self::collect_references_in_block(&f.body, name, uri, locations);
                 }
                 Item::Class(c) => {
                     if c.name.name == name {
-                        locations.push(LocationRange {
-                            uri: uri.to_string().into(),
-                            range: span_to_range_usize(c.name.span.clone()),
-                        });
+                        locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(c.name.span.clone()) });
                     }
                     Self::collect_references(&c.items, name, uri, _doc, locations);
                 }
                 Item::Namespace(n) => {
                     for part in &n.name.parts {
                         if part.name == name {
-                            locations.push(LocationRange {
-                                uri: uri.to_string().into(),
-                                range: span_to_range_usize(part.span.clone()),
-                            });
+                            locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(part.span.clone()) });
                         }
                     }
                     Self::collect_references(&n.items, name, uri, _doc, locations);
@@ -73,19 +64,13 @@ impl ReferencesHandler {
                 }
                 Item::Widget(w) => {
                     if w.name.name == name {
-                        locations.push(LocationRange {
-                            uri: uri.to_string().into(),
-                            range: span_to_range_usize(w.name.span.clone()),
-                        });
+                        locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(w.name.span.clone()) });
                     }
                     Self::collect_references(&w.items, name, uri, _doc, locations);
                 }
                 Item::Micro(m) => {
                     if m.name.name == name {
-                        locations.push(LocationRange {
-                            uri: uri.to_string().into(),
-                            range: span_to_range_usize(m.name.span.clone()),
-                        });
+                        locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(m.name.span.clone()) });
                     }
                     Self::collect_references_in_block(&m.body, name, uri, locations);
                 }
@@ -99,8 +84,7 @@ impl ReferencesHandler {
             Statement::Let { pattern, expr, .. } => {
                 if let Pattern::Variable { name: id, .. } = pattern {
                     if id.name == name {
-                        locations
-                            .push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(id.span.clone()) });
+                        locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(id.span.clone()) });
                     }
                 }
                 Self::collect_references_in_expr(expr, name, uri, locations);
@@ -127,8 +111,7 @@ impl ReferencesHandler {
             Expr::Path(path) => {
                 for part in &path.parts {
                     if part.name == name {
-                        locations
-                            .push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(part.span.clone()) });
+                        locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(part.span.clone()) });
                     }
                 }
             }
@@ -148,8 +131,7 @@ impl ReferencesHandler {
             Expr::Field { receiver, field, .. } => {
                 Self::collect_references_in_expr(receiver, name, uri, locations);
                 if field.name == name {
-                    locations
-                        .push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(field.span.clone()) });
+                    locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(field.span.clone()) });
                 }
             }
             Expr::Index { receiver, index, .. } => {
@@ -165,10 +147,7 @@ impl ReferencesHandler {
             Expr::Lambda(lambda) => {
                 for param in &lambda.params {
                     if param.name.name == name {
-                        locations.push(LocationRange {
-                            uri: uri.to_string().into(),
-                            range: span_to_range_usize(param.name.span.clone()),
-                        });
+                        locations.push(LocationRange { uri: uri.to_string().into(), range: span_to_range_usize(param.name.span.clone()) });
                     }
                 }
                 Self::collect_references_in_block(&lambda.body, name, uri, locations);

@@ -1,5 +1,7 @@
-use crate::handlers;
-use crate::state::{DocumentState, ServerState};
+use crate::{
+    handlers,
+    state::{DocumentState, ServerState},
+};
 use oak_lsp::types::*;
 use oak_valkyrie::ast::*;
 

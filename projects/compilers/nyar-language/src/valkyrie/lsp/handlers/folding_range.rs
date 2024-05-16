@@ -45,10 +45,8 @@ impl FoldingRangeHandler {
                 });
             }
             Item::Namespace(ns) => {
-                ranges.push(FoldingRange {
-                    range: core::range::Range { start: ns.span.start as usize, end: ns.span.end as usize },
-                    kind: None,
-                });
+                ranges
+                    .push(FoldingRange { range: core::range::Range { start: ns.span.start as usize, end: ns.span.end as usize }, kind: None });
                 for member in &ns.items {
                     Self::collect_from_item(member, _doc, ranges);
                 }
@@ -60,10 +58,7 @@ impl FoldingRangeHandler {
                 });
             }
             Item::Widget(w) => {
-                ranges.push(FoldingRange {
-                    range: core::range::Range { start: w.span.start as usize, end: w.span.end as usize },
-                    kind: None,
-                });
+                ranges.push(FoldingRange { range: core::range::Range { start: w.span.start as usize, end: w.span.end as usize }, kind: None });
                 for member in &w.items {
                     Self::collect_from_item(member, _doc, ranges);
                 }

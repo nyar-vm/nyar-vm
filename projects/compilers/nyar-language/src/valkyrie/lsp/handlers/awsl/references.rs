@@ -2,17 +2,20 @@
 
 use std::ops::Range;
 
-use oak_lsp::types::LocationRange;
 use oak_awsl::{
-    abi_declaration_span, awsl_stem_from_component_tag, classify_abi_cursor, collect_abi_references,
-    collect_template_bindings, find_template_binding_at, AbiSymbolKind, ComponentAbiIndex, TemplateBindingKind,
+    AbiSymbolKind, ComponentAbiIndex, TemplateBindingKind, abi_declaration_span, awsl_stem_from_component_tag, classify_abi_cursor,
+    collect_abi_references, collect_template_bindings, find_template_binding_at,
 };
+use oak_lsp::types::LocationRange;
 
-use super::document::{is_awsl_uri, map_script_range_to_file, script_offset_range};
-use super::widget::map_synthetic_span_to_file;
-use super::widget::{component_stem_from_uri, widget_name_from_stem};
-use crate::state::{AwslAbiEntry, ServerState};
-use crate::types::Position;
+use super::{
+    document::{is_awsl_uri, map_script_range_to_file, script_offset_range},
+    widget::{component_stem_from_uri, map_synthetic_span_to_file, widget_name_from_stem},
+};
+use crate::{
+    state::{AwslAbiEntry, ServerState},
+    types::Position,
+};
 
 pub struct AwslReferencesHandler;
 
@@ -46,19 +49,13 @@ impl AwslReferencesHandler {
     }
 
     pub async fn rename_locations(state: &ServerState, uri: &str, position: Position) -> Vec<(String, Range<usize>)> {
-        Self::handle(state, uri, position)
-            .await
-            .into_iter()
-            .map(|loc| (loc.uri.to_string(), loc.range))
-            .collect()
+        Self::handle(state, uri, position).await.into_iter().map(|loc| (loc.uri.to_string(), loc.range)).collect()
     }
 
-    async fn references_for_template_binding(
-        state: &ServerState,
-        binding: &oak_awsl::TemplateBinding,
-    ) -> Vec<LocationRange> {
+    async fn references_for_template_binding(state: &ServerState, binding: &oak_awsl::TemplateBinding) -> Vec<LocationRange> {
         let widget = awsl_stem_from_component_tag(&binding.component_tag);
-        let Some(entry) = state.awsl_abi_for_widget(&widget) else {
+        let Some(entry) = state.awsl_abi_for_widget(&widget)
+        else {
             return Vec::new();
         };
         let decl_kind = match binding.kind {
@@ -89,10 +86,7 @@ impl AwslReferencesHandler {
             if let Some(root) = &owner.awsl_root {
                 for reference in collect_abi_references(abi, owner.script_text().as_deref().unwrap_or(""), root) {
                     if reference.name == name {
-                        locations.push(LocationRange {
-                            uri: owner_uri.to_string().into(),
-                            range: reference.span,
-                        });
+                        locations.push(LocationRange { uri: owner_uri.to_string().into(), range: reference.span });
                     }
                 }
             }
@@ -112,37 +106,23 @@ impl AwslReferencesHandler {
 
     fn abi_decl_location(entry: &AwslAbiEntry, kind: AbiSymbolKind, name: &str) -> LocationRange {
         let span = abi_declaration_span(&entry.abi, kind, name).unwrap_or(0..0);
-        let range = if span.is_empty() {
-            0..0
-        }
-        else {
-            span.start + entry.script_base_offset..span.end + entry.script_base_offset
-        };
-        LocationRange {
-            uri: entry.uri.clone().into(),
-            range,
-        }
+        let range = if span.is_empty() { 0..0 } else { span.start + entry.script_base_offset..span.end + entry.script_base_offset };
+        LocationRange { uri: entry.uri.clone().into(), range }
     }
 
-    fn template_binding_locations(
-        state: &ServerState,
-        name: &str,
-        kind: TemplateBindingKind,
-    ) -> Vec<LocationRange> {
+    fn template_binding_locations(state: &ServerState, name: &str, kind: TemplateBindingKind) -> Vec<LocationRange> {
         let mut out = Vec::new();
         for doc_ref in state.documents.iter() {
             if !is_awsl_uri(doc_ref.key()) {
                 continue;
             }
-            let Some(root) = &doc_ref.awsl_root else {
+            let Some(root) = &doc_ref.awsl_root
+            else {
                 continue;
             };
             for binding in collect_template_bindings(root) {
                 if binding.name == name && binding.kind == kind {
-                    out.push(LocationRange {
-                        uri: doc_ref.key().clone().into(),
-                        range: binding.key_span.clone(),
-                    });
+                    out.push(LocationRange { uri: doc_ref.key().clone().into(), range: binding.key_span.clone() });
                 }
             }
         }
@@ -155,10 +135,12 @@ impl AwslReferencesHandler {
             if !is_awsl_uri(doc_ref.key()) {
                 continue;
             }
-            let Some(ast) = &doc_ref.ast else {
+            let Some(ast) = &doc_ref.ast
+            else {
                 continue;
             };
-            let Some((base, prefix)) = (doc_ref.awsl_script_base, doc_ref.awsl_synthetic_prefix) else {
+            let Some((base, prefix)) = (doc_ref.awsl_script_base, doc_ref.awsl_synthetic_prefix)
+            else {
                 continue;
             };
             Self::collect_ident_refs_in_items(&ast.items, name, doc_ref.key(), base, prefix, &mut out);
@@ -172,10 +154,12 @@ impl AwslReferencesHandler {
             if !is_awsl_uri(doc_ref.key()) {
                 continue;
             }
-            let Some(ast) = &doc_ref.ast else {
+            let Some(ast) = &doc_ref.ast
+            else {
                 continue;
             };
-            let Some((base, prefix)) = (doc_ref.awsl_script_base, doc_ref.awsl_synthetic_prefix) else {
+            let Some((base, prefix)) = (doc_ref.awsl_script_base, doc_ref.awsl_synthetic_prefix)
+            else {
                 continue;
             };
             Self::collect_emit_refs_in_items(&ast.items, event_name, doc_ref.key(), base, prefix, &mut out);
@@ -267,10 +251,7 @@ impl AwslReferencesHandler {
         use oak_valkyrie::ast::Expr;
         match expr {
             Expr::Ident(id) if id.name == name => {
-                out.push(LocationRange {
-                    uri: uri.to_string().into(),
-                    range: map_synthetic_span_to_file(base, prefix, id.span.clone()),
-                });
+                out.push(LocationRange { uri: uri.to_string().into(), range: map_synthetic_span_to_file(base, prefix, id.span.clone()) });
             }
             Expr::Call { callee, args, .. } => {
                 Self::collect_ident_refs_in_expr(callee, name, uri, base, prefix, out);

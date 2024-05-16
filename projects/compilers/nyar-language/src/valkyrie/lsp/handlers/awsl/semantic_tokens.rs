@@ -16,7 +16,8 @@ pub struct AwslSemanticTokensHandler;
 
 impl AwslSemanticTokensHandler {
     pub fn collect(doc: &DocumentState, tokens: &mut Vec<SemanticToken>) {
-        let Some(root) = &doc.awsl_root else {
+        let Some(root) = &doc.awsl_root
+        else {
             return;
         };
 
@@ -28,7 +29,8 @@ impl AwslSemanticTokensHandler {
             push_token(doc, tokens, binding.key_span.start, len, token_type);
         }
 
-        let Some(abi) = &doc.component_abi else {
+        let Some(abi) = &doc.component_abi
+        else {
             return;
         };
         let base = doc.awsl_script_base.unwrap_or(0);
@@ -50,11 +52,7 @@ impl AwslSemanticTokensHandler {
         }
     }
 
-    fn collect_script_tokens(
-        doc: &DocumentState,
-        items: &[oak_valkyrie::ast::Item],
-        tokens: &mut Vec<SemanticToken>,
-    ) {
+    fn collect_script_tokens(doc: &DocumentState, items: &[oak_valkyrie::ast::Item], tokens: &mut Vec<SemanticToken>) {
         use oak_valkyrie::ast::{Expr, Item, Statement};
         let base = doc.awsl_script_base.unwrap_or(0);
         let prefix = doc.awsl_synthetic_prefix.unwrap_or(0);
@@ -74,13 +72,7 @@ impl AwslSemanticTokensHandler {
         }
     }
 
-    fn collect_emit_tokens(
-        doc: &DocumentState,
-        expr: &oak_valkyrie::ast::Expr,
-        base: usize,
-        prefix: usize,
-        tokens: &mut Vec<SemanticToken>,
-    ) {
+    fn collect_emit_tokens(doc: &DocumentState, expr: &oak_valkyrie::ast::Expr, base: usize, prefix: usize, tokens: &mut Vec<SemanticToken>) {
         use oak_valkyrie::ast::Expr;
         if let Expr::Call { callee, .. } = expr {
             if let Expr::Ident(id) = callee.as_ref() {

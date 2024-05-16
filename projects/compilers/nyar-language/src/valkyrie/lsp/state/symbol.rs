@@ -259,11 +259,7 @@ impl GlobalIndex {
                 self.register_class_inheritance(&parent_key, &child_key);
             }
             for trait_name in &symbol.implemented_traits {
-                let trait_key = if trait_name.contains("::") {
-                    trait_name.clone()
-                } else {
-                    format!("{}::{}", symbol.namespace, trait_name)
-                };
+                let trait_key = if trait_name.contains("::") { trait_name.clone() } else { format!("{}::{}", symbol.namespace, trait_name) };
                 let impl_info = TraitImplementation {
                     implementor: symbol.name.clone(),
                     implementor_namespace: symbol.namespace.clone(),
@@ -284,10 +280,8 @@ impl GlobalIndex {
         }
 
         self.file_symbols.insert(uri.to_string(), arc_symbols);
-        self.file_states.insert(
-            uri.to_string(),
-            FileIndexState { uri: uri.to_string(), content_hash, symbol_hashes, namespace: namespace.to_string() },
-        );
+        self.file_states
+            .insert(uri.to_string(), FileIndexState { uri: uri.to_string(), content_hash, symbol_hashes, namespace: namespace.to_string() });
     }
 
     /// 移除文件的符号索引

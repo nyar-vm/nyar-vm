@@ -22,7 +22,7 @@ impl WorkspaceSymbolHandler {
                         name: symbol.name.clone(),
                         kind: symbol.kind,
                         location: LocationRange { uri: symbol.uri.clone().into(), range: symbol.range.clone() },
-                        container_name: Some(ns_map_ref.key().clone())
+                        container_name: Some(ns_map_ref.key().clone()),
                     });
                 }
             }

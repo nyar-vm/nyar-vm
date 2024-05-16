@@ -14,10 +14,7 @@ impl RenameHandler {
             }
             let mut changes = HashMap::new();
             for (file_uri, range) in locations {
-                changes.entry(file_uri).or_insert_with(Vec::new).push(TextEdit {
-                    range,
-                    new_text: new_name.clone(),
-                });
+                changes.entry(file_uri).or_insert_with(Vec::new).push(TextEdit { range, new_text: new_name.clone() });
             }
             return Some(WorkspaceEdit { changes });
         }

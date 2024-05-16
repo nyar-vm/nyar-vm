@@ -6,11 +6,7 @@ pub struct ImplementationHandler;
 impl ImplementationHandler {
     pub async fn handle(state: &ServerState, uri: &str, position: Position) -> Vec<LocationRange> {
         if let Some(symbol) = state.query_symbol_at_position(uri, position).await {
-            let full_name = if symbol.namespace.is_empty() {
-                symbol.name.clone()
-            } else {
-                format!("{}::{}", symbol.namespace, symbol.name)
-            };
+            let full_name = if symbol.namespace.is_empty() { symbol.name.clone() } else { format!("{}::{}", symbol.namespace, symbol.name) };
 
             match symbol.kind.as_str() {
                 "interface" | "Interface" => {
@@ -33,10 +29,7 @@ impl ImplementationHandler {
 
         if let Some(implementations) = state.index.get_trait_implementations(trait_full_name) {
             for impl_info in implementations {
-                locations.push(LocationRange {
-                    uri: impl_info.uri.clone().into(),
-                    range: impl_info.range,
-                });
+                locations.push(LocationRange { uri: impl_info.uri.clone().into(), range: impl_info.range });
             }
         }
 
@@ -53,10 +46,7 @@ impl ImplementationHandler {
                     let name = &child_full_name[pos + 2..];
                     if let Some(ns_map) = state.index.symbols.get(ns) {
                         if let Some(symbol) = ns_map.get(name) {
-                            locations.push(LocationRange {
-                                uri: symbol.uri.clone().into(),
-                                range: symbol.range.clone(),
-                            });
+                            locations.push(LocationRange { uri: symbol.uri.clone().into(), range: symbol.range.clone() });
                         }
                     }
                 }
@@ -72,7 +62,8 @@ impl ImplementationHandler {
         let method_suffix = if method_name.contains("::") {
             let pos = method_name.rfind("::").unwrap();
             &method_name[pos + 2..]
-        } else {
+        }
+        else {
             method_name
         };
 
@@ -80,10 +71,7 @@ impl ImplementationHandler {
             for symbol in ns_map.iter() {
                 if symbol.kind == oak_lsp::types::SymbolKind::Method {
                     if symbol.name.ends_with(&format!("::{}", method_suffix)) {
-                        locations.push(LocationRange {
-                            uri: symbol.uri.clone().into(),
-                            range: symbol.range.clone(),
-                        });
+                        locations.push(LocationRange { uri: symbol.uri.clone().into(), range: symbol.range.clone() });
                     }
                 }
             }

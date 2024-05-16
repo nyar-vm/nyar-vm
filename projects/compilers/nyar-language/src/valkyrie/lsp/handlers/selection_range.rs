@@ -91,12 +91,7 @@ impl SelectionRangeHandler {
         }
     }
 
-    fn collect_selection_ranges_in_stmt(
-        stmt: &Statement,
-        offset: usize,
-        doc: &DocumentState,
-        ranges: &mut Vec<SelectionRange>,
-    ) {
+    fn collect_selection_ranges_in_stmt(stmt: &Statement, offset: usize, doc: &DocumentState, ranges: &mut Vec<SelectionRange>) {
         let span = match stmt {
             Statement::Let { span, .. } => span.clone(),
             Statement::ExprStmt { span, .. } => span.clone(),

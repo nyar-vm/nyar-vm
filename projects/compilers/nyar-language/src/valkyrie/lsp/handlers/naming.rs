@@ -2,8 +2,8 @@
 
 use std::ops::Range;
 
-use oak_awsl::{AbiIssue, AbiIssueKind, AbiSeverity};
 use crate::valkyrie::frontend::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, NamingViolation};
+use oak_awsl::{AbiIssue, AbiIssueKind, AbiSeverity};
 
 use crate::types::{SourceID, SourceSpan, ValkyrieError};
 
@@ -11,22 +11,22 @@ use crate::types::{SourceID, SourceSpan, ValkyrieError};
 pub fn violation_to_diagnostic(violation: NamingViolation, source: SourceID, offset: usize) -> ValkyrieError {
     let start = offset + violation.name_span.start;
     let end = offset + violation.name_span.end;
-    ValkyrieError::naming_violation(
-        violation.code,
-        &violation.name,
-        SourceSpan::new(source, start as u32, end as u32),
-    )
+    ValkyrieError::naming_violation(violation.code, &violation.name, SourceSpan::new(source, start as u32, end as u32))
 }
 
 /// Convert AWSL ABI issues, mapping naming-related kinds to dedicated codes.
 pub fn abi_issue_to_diagnostic(issue: &AbiIssue, source: SourceID, offset: usize) -> ValkyrieError {
     if issue.kind == AbiIssueKind::NotSnakeCase {
         let name = extract_name_from_abi_message(&issue.message).unwrap_or_else(|| issue.message.clone());
-        let span = issue.span.as_ref().map(|span| {
-            let start = offset + span.start;
-            let end = offset + span.end;
-            SourceSpan::new(source, start as u32, end as u32)
-        }).unwrap_or_else(|| SourceSpan::new(source, 0, 0));
+        let span = issue
+            .span
+            .as_ref()
+            .map(|span| {
+                let start = offset + span.start;
+                let end = offset + span.end;
+                SourceSpan::new(source, start as u32, end as u32)
+            })
+            .unwrap_or_else(|| SourceSpan::new(source, 0, 0));
         let mut diag = ValkyrieError::naming_violation(DIAG_ABI_BINDING_NOT_SNAKE_CASE, &name, span);
         if let Some(label) = diag.labels.first_mut() {
             label.key = Some("AWSL ABI lint".into());
@@ -75,21 +75,14 @@ fn extract_name_from_abi_message(message: &str) -> Option<String> {
 }
 
 /// Collect naming diagnostics from parsed vx/v source.
-pub fn collect_naming_diagnostics(
-    source_text: &str,
-    _is_vx: bool,
-    source: SourceID,
-    offset: usize,
-) -> Vec<ValkyrieError> {
+pub fn collect_naming_diagnostics(source_text: &str, _is_vx: bool, source: SourceID, offset: usize) -> Vec<ValkyrieError> {
     use crate::valkyrie::frontend::{parse_source, validate_snake_case};
 
-    let Ok(root) = parse_source(source_text) else {
+    let Ok(root) = parse_source(source_text)
+    else {
         return Vec::new();
     };
-    validate_snake_case(&root)
-        .into_iter()
-        .map(|violation| violation_to_diagnostic(violation, source, offset))
-        .collect()
+    validate_snake_case(&root).into_iter().map(|violation| violation_to_diagnostic(violation, source, offset)).collect()
 }
 
 /// Shift all label spans in a diagnostic by `offset`.
@@ -102,11 +95,7 @@ pub fn shift_diagnostic_spans(diag: &mut ValkyrieError, offset: usize) {
 }
 
 /// Map a diagnostic whose spans refer to synthetic widget source back to the host file.
-pub fn map_synthetic_diagnostic_to_file(
-    script_start: usize,
-    prefix_len: usize,
-    mut diag: ValkyrieError,
-) -> ValkyrieError {
+pub fn map_synthetic_diagnostic_to_file(script_start: usize, prefix_len: usize, mut diag: ValkyrieError) -> ValkyrieError {
     for label in &mut diag.labels {
         let start = label.span.get_start() as usize;
         let end = label.span.get_end() as usize;

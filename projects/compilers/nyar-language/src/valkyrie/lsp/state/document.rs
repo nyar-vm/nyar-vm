@@ -1,7 +1,6 @@
-use crate::types::Position;
-use oak_valkyrie::ast::ValkyrieRoot;
-use crate::types::{hir::HirModule, SourceID, ValkyrieError};
+use crate::types::{Position, SourceID, ValkyrieError, hir::HirModule};
 use oak_awsl::AwslRoot;
+use oak_valkyrie::ast::ValkyrieRoot;
 
 /// 文档编译结果
 #[derive(Debug, Clone)]
@@ -30,7 +29,22 @@ impl DocumentState {
     pub fn new(uri: String, version: i32, text: String) -> Self {
         let line_offsets = Self::compute_line_offsets(&text);
         let hash = Self::compute_hash(&text);
-        Self { uri, version, text, hash, file_id: None, ast: None, awsl_root: None, awsl_script_base: None, awsl_synthetic_prefix: None, hir: None, diagnostics: Vec::new(), line_offsets, component_abi: None, abi_issues: Vec::new() }
+        Self {
+            uri,
+            version,
+            text,
+            hash,
+            file_id: None,
+            ast: None,
+            awsl_root: None,
+            awsl_script_base: None,
+            awsl_synthetic_prefix: None,
+            hir: None,
+            diagnostics: Vec::new(),
+            line_offsets,
+            component_abi: None,
+            abi_issues: Vec::new(),
+        }
     }
 
     pub fn compute_hash(text: &str) -> u64 {

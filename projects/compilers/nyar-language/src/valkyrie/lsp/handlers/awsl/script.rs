@@ -1,9 +1,7 @@
 //! AWSL `<script>` 块偏移映射与 **vx** 解析视图
 
-use super::document::script_offset_at;
-use super::vx::parse_awsl_script_vx;
-use crate::state::DocumentState;
-use crate::types::Position;
+use super::{document::script_offset_at, vx::parse_awsl_script_vx};
+use crate::{state::DocumentState, types::Position};
 use nyar_language::ValkyrieCompiler;
 use oak_valkyrie::ast::ValkyrieRoot;
 
@@ -34,9 +32,6 @@ pub fn resolve_script_view(doc: &DocumentState, position: Position) -> Option<Aw
 }
 
 /// 将 script 内字节 range 映射回 AWSL 源文件
-pub fn map_script_range_to_file(
-    file_range: &std::ops::Range<usize>,
-    script_range: std::ops::Range<usize>,
-) -> std::ops::Range<usize> {
+pub fn map_script_range_to_file(file_range: &std::ops::Range<usize>, script_range: std::ops::Range<usize>) -> std::ops::Range<usize> {
     file_range.start + script_range.start..file_range.start + script_range.end
 }

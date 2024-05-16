@@ -1,7 +1,6 @@
 //! AWSL Hover 支持
 
-use crate::handlers::HoverHandler;
-use crate::{state::ServerState, types::Position};
+use crate::{handlers::HoverHandler, state::ServerState, types::Position};
 use oak_lsp::types::Hover;
 
 const DIRECTIVE_DOCS: &[(&str, &str)] = &[
@@ -25,37 +24,27 @@ impl AwslHoverHandler {
 
         for (directive, doc_text) in DIRECTIVE_DOCS {
             if context.contains(directive) {
-                return Some(Hover {
-                    contents: format!("**{directive}**\n\n{doc_text}"),
-                    range: Some(offset..offset + directive.len()),
-                });
+                return Some(Hover { contents: format!("**{directive}**\n\n{doc_text}"), range: Some(offset..offset + directive.len()) });
             }
         }
 
         if context.contains("import:") || context.contains("from=") {
             return Some(Hover {
-                contents: "**AWSL Import**\n\n导入 AWSL 组件：`<import:Name from=\"path.awsl\"/>`".to_string(),
-                range: None,
+                contents: "**AWSL Import**\n\n导入 AWSL 组件：`<import:Name from=\"path.awsl\"/>`".to_string(), range: None
             });
         }
 
         if let Some(root) = &doc.awsl_root {
             if let Some(widget_name) = &root.widget_name {
                 if context.contains('<') {
-                    return Some(Hover {
-                        contents: format!("**Widget `{widget_name}`**\n\nAWSL 组件定义根节点"),
-                        range: None,
-                    });
+                    return Some(Hover { contents: format!("**Widget `{widget_name}`**\n\nAWSL 组件定义根节点"), range: None });
                 }
             }
         }
 
         // script 块内委托 Valkyrie 符号查询（偏移映射回源文件）
         if let Some(symbol) = state.query_awsl_script_symbol_at_position(uri, position).await {
-            return Some(Hover {
-                contents: HoverHandler::format_symbol_hover(&symbol),
-                range: Some(symbol.location.range),
-            });
+            return Some(Hover { contents: HoverHandler::format_symbol_hover(&symbol), range: Some(symbol.location.range) });
         }
 
         None

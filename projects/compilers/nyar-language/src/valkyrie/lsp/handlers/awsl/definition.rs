@@ -1,12 +1,11 @@
 //! AWSL 定义跳转
 
 use crate::{state::ServerState, types::Position};
+use oak_awsl::{
+    AbiSymbolKind, TemplateBindingKind, abi_declaration_span, awsl_stem_from_component_tag, classify_abi_cursor, find_template_binding_at,
+};
 use oak_lsp::types::LocationRange;
 use std::path::{Path, PathBuf};
-use oak_awsl::{
-    abi_declaration_span, awsl_stem_from_component_tag, classify_abi_cursor, find_template_binding_at, AbiSymbolKind,
-    TemplateBindingKind,
-};
 use url::Url;
 
 pub struct AwslDefinitionHandler;
@@ -48,10 +47,7 @@ impl AwslDefinitionHandler {
             if let Some((kind, name, _)) = classify_abi_cursor(abi, &root, offset) {
                 if let Some(span) = abi_declaration_span(abi, kind, &name) {
                     if let Some(base) = doc.awsl_script_base {
-                        return vec![LocationRange {
-                            uri: uri.to_string().into(),
-                            range: span.start + base..span.end + base,
-                        }];
+                        return vec![LocationRange { uri: uri.to_string().into(), range: span.start + base..span.end + base }];
                     }
                 }
             }
@@ -62,10 +58,7 @@ impl AwslDefinitionHandler {
             if import.span.contains(&offset) || text_at.contains(&import.from) {
                 if let Some(target) = resolve_import_path(uri, &import.from) {
                     if let Ok(target_uri) = Url::from_file_path(&target) {
-                        return vec![LocationRange {
-                            uri: target_uri.to_string().into(),
-                            range: 0..1,
-                        }];
+                        return vec![LocationRange { uri: target_uri.to_string().into(), range: 0..1 }];
                     }
                 }
             }
@@ -79,10 +72,7 @@ impl AwslDefinitionHandler {
                 }
                 if let Some(target) = find_component_file(uri, &tag) {
                     if let Ok(target_uri) = Url::from_file_path(&target) {
-                        return vec![LocationRange {
-                            uri: target_uri.to_string().into(),
-                            range: 0..1,
-                        }];
+                        return vec![LocationRange { uri: target_uri.to_string().into(), range: 0..1 }];
                     }
                 }
             }
@@ -103,12 +93,7 @@ fn resolve_import_path(base_uri: &str, import_path: &str) -> Option<PathBuf> {
     let base_dir = base_path.parent()?;
     let clean = import_path.trim_matches('"').trim_matches('\'');
     let resolved = base_dir.join(clean);
-    if resolved.exists() {
-        Some(resolved)
-    }
-    else {
-        None
-    }
+    if resolved.exists() { Some(resolved) } else { None }
 }
 
 fn find_component_file(base_uri: &str, component_name: &str) -> Option<PathBuf> {
@@ -127,8 +112,7 @@ fn find_component_file(base_uri: &str, component_name: &str) -> Option<PathBuf> 
             return Some(kebab_path);
         }
     }
-    find_awsl_in_dir(base_dir, component_name)
-        .or_else(|| find_valkyrie_widget_file(base_dir, component_name))
+    find_awsl_in_dir(base_dir, component_name).or_else(|| find_valkyrie_widget_file(base_dir, component_name))
 }
 
 fn find_valkyrie_widget_file(dir: &Path, component_name: &str) -> Option<PathBuf> {
@@ -151,22 +135,15 @@ fn find_valkyrie_widget_file(dir: &Path, component_name: &str) -> Option<PathBuf
 }
 
 fn text_contains_widget(source: &str, name: &str) -> bool {
-    source.contains(&format!("widget {name}"))
-        || source.contains(&format!("widget {name} {{"))
-        || source.contains(&format!("widget {name}("))
+    source.contains(&format!("widget {name}")) || source.contains(&format!("widget {name} {{")) || source.contains(&format!("widget {name}("))
 }
 
 fn find_widget_in_workspace(state: &ServerState, component_name: &str) -> Option<LocationRange> {
     use oak_lsp::types::SymbolKind;
     for ns_entry in state.index.symbols.iter() {
         for sym in ns_entry.value().iter() {
-            if matches!(sym.kind, SymbolKind::Class | SymbolKind::Struct)
-                && sym.name.eq_ignore_ascii_case(component_name)
-            {
-                return Some(LocationRange {
-                    uri: sym.uri.clone().into(),
-                    range: sym.range.clone(),
-                });
+            if matches!(sym.kind, SymbolKind::Class | SymbolKind::Struct) && sym.name.eq_ignore_ascii_case(component_name) {
+                return Some(LocationRange { uri: sym.uri.clone().into(), range: sym.range.clone() });
             }
         }
     }
