@@ -53,14 +53,3 @@ impl PowerShellScript {
         Ok(Self { statements: Parser::parse(source)? })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_fixture_line() {
-        let script = PowerShellScript::parse(r#"Write-Output "legend powershell fixture""#).expect("parse");
-        assert_eq!(script.statements.len(), 1);
-    }
-}

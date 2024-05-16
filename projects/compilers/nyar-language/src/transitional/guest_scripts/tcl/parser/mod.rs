@@ -6,6 +6,7 @@ use super::{
     lexer::{TclToken, split_tcl_list, tokenize_words},
 };
 
+/// Tcl 命令解析器。
 pub struct Parser;
 
 impl Parser {
@@ -94,27 +95,5 @@ fn parse_command(words: Vec<TclToken>) -> Result<TclCommand, TclError> {
             let args = words.into_iter().skip(1).map(TclToken::into_word).collect();
             Ok(TclCommand::Call { name, args })
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::transitional::guest_scripts::tcl::TclScript;
-
-    #[test]
-    fn parse_if_while() {
-        let script = TclScript::parse("set x 1\nif {$x > 0} { puts ok }").expect("parse");
-        assert_eq!(script.commands.len(), 2);
-    }
-
-    #[test]
-    fn parse_for_foreach_proc() {
-        let script =
-            TclScript::parse("proc add {a b} { expr {$a + $b} }\nfor {set i 0} {$i < 2} {incr i} { puts $i }\nforeach x {a b} { puts $x }")
-                .expect("parse");
-        assert!(matches!(script.commands[0], TclCommand::Proc { .. }));
-        assert!(matches!(script.commands[1], TclCommand::For { .. }));
-        assert!(matches!(script.commands[2], TclCommand::Foreach { .. }));
     }
 }

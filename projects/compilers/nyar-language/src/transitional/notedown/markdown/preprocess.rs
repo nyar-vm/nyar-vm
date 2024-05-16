@@ -28,18 +28,3 @@ fn convert_highlight(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Op
     }
     Some(format!("=={inner}"))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn converts_highlight_markers() {
-        assert_eq!(preprocess_markdown("==foo=="), "[.highlight]foo[/]");
-    }
-
-    #[test]
-    fn leaves_unclosed_highlight() {
-        assert_eq!(preprocess_markdown("==foo"), "==foo");
-    }
-}

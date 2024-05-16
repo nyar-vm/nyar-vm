@@ -3,13 +3,13 @@
 mod inline;
 
 use super::{
-    lexer::{AtxHeaderData, NotedownLexer, NotedownToken, NotedownTokenKind, OrderedListItemData, TaskListItemData, TokenData, parse_attr},
+    lexer::{AtxHeaderData, NotedownLexer, NotedownToken, NotedownTokenKind, TaskListItemData, TokenData, parse_attr},
     syntax::{
         Attr, Caption, DefinitionItem, ListAttributes, Meta, MetaValue, NotedownBlock, NotedownDocument, NotedownInline, TableBody, TableFoot,
         TableHead, TableRow,
     },
 };
-use inline::parse_inlines;
+pub use inline::parse_inlines;
 
 /// 解析 Notedown 文本为文档 AST。
 pub fn parse(source: &str) -> NotedownDocument {
@@ -394,35 +394,5 @@ fn parse_yaml_line(line: &str, values: &mut std::collections::BTreeMap<String, M
     }
     else {
         values.insert(key, MetaValue::String(value_str.to_string()));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_heading_and_paragraph() {
-        let doc = parse("# Hello\n\nWorld");
-        assert!(matches!(doc.blocks[0], NotedownBlock::Header { level: 1, .. }));
-        assert!(matches!(doc.blocks[1], NotedownBlock::Para { .. }));
-    }
-
-    #[test]
-    fn parse_code_fence_with_language() {
-        let doc = parse("```rust\nlet x = 1;\n```");
-        if let NotedownBlock::CodeBlock { attr, text } = &doc.blocks[0] {
-            assert_eq!(attr.language(), "rust");
-            assert!(text.contains("let x"));
-        }
-        else {
-            panic!("expected code block");
-        }
-    }
-
-    #[test]
-    fn parse_gfm_table() {
-        let doc = parse("| A | B |\n|---|---|\n| 1 | 2 |");
-        assert!(matches!(doc.blocks[0], NotedownBlock::Table { .. }));
     }
 }

@@ -76,14 +76,3 @@ fn collect(path: &Path, out: &mut Vec<PathBuf>) -> Result<(), std::io::Error> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn flags_star_import() {
-        let issues = lint_python_source("from os import *\n", &PythonLintOptions::default());
-        assert_eq!(issues.len(), 1);
-    }
-}

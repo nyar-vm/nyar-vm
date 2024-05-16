@@ -8,8 +8,8 @@ mod syntax;
 pub mod formatter;
 
 pub use error::NotedownError;
-pub use lexer::{NotedownLexer, NotedownToken, NotedownTokenKind};
-pub use parser::parse;
+pub use lexer::{NotedownLexer, NotedownToken, NotedownTokenKind, parse_attr};
+pub use parser::{parse, parse_inlines};
 pub use syntax::*;
 
 impl NotedownDocument {

@@ -155,16 +155,3 @@ fn is_js_like(path: &Path) -> bool {
         Some("js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts")
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fixes_loose_equality() {
-        let (out, issues) = lint_javascript_source("if (a == b) {\n}\n", &JavascriptLintOptions { fix: true });
-        assert!(out.contains("==="));
-        assert_eq!(issues.len(), 1);
-        assert!(issues[0].fixed);
-    }
-}

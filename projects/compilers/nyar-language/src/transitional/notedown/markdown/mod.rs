@@ -6,7 +6,7 @@ mod preprocess;
 pub use bridge::{from_notedown, to_notedown};
 pub use preprocess::preprocess_markdown;
 
-use super::notedown::{NotedownDocument, formatter};
+use super::notedown::NotedownDocument;
 
 /// Markdown 文档（统一使用 Notedown IR）。
 pub type MarkdownDocument = NotedownDocument;
@@ -22,23 +22,4 @@ pub fn parse(source: &str) -> MarkdownDocument {
 /// 将 Markdown 文档格式化为 Markdown 文本。
 pub fn format(document: &MarkdownDocument) -> String {
     from_notedown(document)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_highlight_extension() {
-        let doc = parse("==highlighted==");
-        assert!(!doc.blocks.is_empty());
-    }
-
-    #[test]
-    fn round_trip_heading() {
-        let source = "# Title\n\nBody";
-        let doc = parse(source);
-        let formatted = format(&doc);
-        assert!(formatted.contains("# Title"));
-    }
 }

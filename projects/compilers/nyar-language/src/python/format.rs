@@ -57,13 +57,3 @@ pub fn normalize_python(source: &str) -> String {
     }
     text
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn normalizes_blanks() {
-        assert_eq!(normalize_python("a = 1  \n\n\n\nb = 2\n"), "a = 1\n\n\nb = 2\n");
-    }
-}

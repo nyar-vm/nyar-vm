@@ -1,6 +1,7 @@
 //! Notedown 块级词法分析器。
 
 use super::syntax::Attr;
+/// Notedown 块级词法记号种类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotedownTokenKind {
     /// 空行。
@@ -457,26 +458,4 @@ pub fn parse_attr(attr_str: &str) -> Attr {
         }
     }
     Attr { id, classes, key_values }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tokenize_atx_header_and_code_fence() {
-        let tokens = NotedownLexer::new("# Title\n\n```rust\nfn main() {}\n```").tokenize();
-        assert!(tokens.iter().any(|t| matches!(t.kind, NotedownTokenKind::AtxHeader)));
-        assert!(tokens.iter().any(|t| matches!(t.kind, NotedownTokenKind::CodeFenceStart)));
-        assert!(tokens.iter().any(|t| matches!(t.kind, NotedownTokenKind::CodeFenceEnd)));
-    }
-
-    #[test]
-    fn parse_attr_extracts_id_and_class() {
-        let attr = parse_attr("#intro .warning .rust");
-        assert_eq!(attr.id, "intro");
-        assert!(attr.classes.contains(&"warning".to_string()));
-        assert!(attr.classes.contains(&"rust".to_string()));
-        assert_eq!(attr.language(), "warning");
-    }
 }

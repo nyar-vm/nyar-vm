@@ -1,7 +1,4 @@
-//! `tgrammar` 过渡解析器（自 `vcc-data` 迁入，仅供单元测试与迁移对照）。
-//!
-//! 生产 Compiler 不得调用本模块；`<% match arch %>` 必须由 Resolver 或 Oak 模板前端
-//! 在源码进入 `frontend::parse_source` 之前展开。
+#![doc = include_str!("readme.md")]
 
 mod ast;
 mod lexer;
@@ -9,7 +6,7 @@ mod parser;
 
 pub use ast::{TgIf, TgIfArm, TgKeyword, TgLoop, TgMatch, TgMatchArm, TgNode, TgRoot, TgTextPart};
 pub use lexer::{Lexer, Token, TokenKind};
-pub use parser::{TgParseError, parse_tgrammar_fragment, parse_tgrammar_template};
+pub use parser::{TgParseError, classify_directive, parse_tgrammar_fragment, parse_tgrammar_template};
 
 /// 按目标架构展开源码中的 `tgrammar` 模板片段。
 pub fn preprocess_target_templates(source: &str, arch: &str) -> String {

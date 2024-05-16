@@ -5,7 +5,8 @@ Concrete PowerShell guest over `std-data::text::powershell`.
 ## Duties
 
 - Reuse `PowerShellScript` / `PsStmt` / `PsExpr` from `std-data` (parse only there).
-- `PowerShellModule` / `PowerShellSemanticBridge` are concrete types (`language_id` / `source_path` / `exported_symbols`); no shared `HostScript*` layer.
+- `PowerShellModule` / `PowerShellSemanticBridge` are concrete types (`language_id` / `source_path` /
+  `exported_symbols`); no shared `HostScript*` layer.
 - Provide `interpret` + thin `legacy-vm` adapter (bash pattern).
 
 ## Demo subset

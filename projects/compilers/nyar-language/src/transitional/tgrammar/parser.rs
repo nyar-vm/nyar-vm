@@ -10,7 +10,9 @@ use super::{
 /// T-Grammar 解析错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TgParseError {
+    /// 人类可读错误说明。
     pub message: String,
+    /// 错误位置的字节范围。
     pub span: Range<usize>,
 }
 
@@ -327,7 +329,8 @@ fn parse_braced_expression(source: &str, brace_start: usize) -> Option<(String, 
     None
 }
 
-fn classify_directive(inner: &str) -> (Option<TgKeyword>, String) {
+/// 将 `<% ... %>` 片段正文分类为指令关键字与其余载荷。
+pub fn classify_directive(inner: &str) -> (Option<TgKeyword>, String) {
     let trimmed = inner.trim();
     // `end` 后可跟可选标签（如 `end match` / `end if`），与 `<% end %>` 等价。
     if trimmed == "end" || trimmed.starts_with("end ") {
@@ -352,35 +355,4 @@ fn classify_directive(inner: &str) -> (Option<TgKeyword>, String) {
         return (Some(TgKeyword::Case), rest.trim().to_string());
     }
     (None, trimmed.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn end_directive_accepts_optional_label_suffix() {
-        assert_eq!(classify_directive("end"), (Some(TgKeyword::End), String::new()));
-        assert_eq!(classify_directive("end match"), (Some(TgKeyword::End), String::new()));
-        assert_eq!(classify_directive("end if"), (Some(TgKeyword::End), String::new()));
-        assert_eq!(classify_directive("end loop"), (Some(TgKeyword::End), String::new()));
-    }
-
-    #[test]
-    fn parse_match_block_closed_by_end_match() {
-        let source = r#"<% match arch %>
-<% case "clr" %>
-clr_only()
-<% else %>
-other()
-<% end match %>"#;
-        let root = parse_tgrammar_fragment(source).expect("parse").0;
-        assert_eq!(root.len(), 1);
-        let TgNode::Match(match_node) = &root[0]
-        else {
-            panic!("expected match node");
-        };
-        assert_eq!(match_node.scrutinee, "arch");
-        assert_eq!(match_node.arms.len(), 2);
-    }
 }
