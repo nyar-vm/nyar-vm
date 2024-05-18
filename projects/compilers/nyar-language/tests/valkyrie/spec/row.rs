@@ -169,7 +169,7 @@ fn row_rejects_associated_types() {
         RowRequirementItem::Method(method_sig("next", vec![], ValkyrieType::Named(Identifier::new("Option")))),
         RowRequirementItem::AssociatedType(Identifier::new("Item")),
     ])
-    .unwrap_err();
+        .unwrap_err();
 
     assert_eq!(error, RowRequirementError::UnsupportedAssociatedType { name: Identifier::new("Item") });
 }
@@ -203,8 +203,8 @@ fn method_sig(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) 
 }
 
 fn struct_with_field(name: &str, field_name: &str, field_type: ValkyrieType) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     struct_with_field_with_visibility(name, field_name, field_type, HirVisibility::public(), true)
 }
 
@@ -239,20 +239,20 @@ fn struct_with_field_with_visibility(
 }
 
 fn struct_with_methods(name: &str, methods: Vec<HirFunction>) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     struct_with_members(name, vec![], methods, vec![])
 }
 
 fn struct_with_methods_and_visibility(name: &str, methods: Vec<HirFunction>) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     struct_with_members(name, vec![], methods, vec![])
 }
 
 fn struct_with_properties(name: &str, properties: Vec<HirProperty>) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     struct_with_members(name, vec![], vec![], properties)
 }
 
@@ -281,8 +281,8 @@ fn struct_with_members(name: &str, fields: Vec<HirField>, methods: Vec<HirFuncti
 }
 
 fn method(name: &str, params: Vec<ValkyrieType>, return_type: ValkyrieType) -> HirFunction {
-        declaration: None,
-        instance: None,
+    declaration: None,
+    instance: None,
     method_with_visibility(name, params, return_type, HirVisibility::public())
 }
 

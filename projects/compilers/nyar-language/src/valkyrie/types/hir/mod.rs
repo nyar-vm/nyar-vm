@@ -13,6 +13,7 @@ pub mod statement;
 pub mod r#struct;
 pub mod r#trait;
 pub mod type_family;
+/// HIR 核心类型与表达式模型。
 pub mod types;
 pub mod visibility;
 pub mod widget;
@@ -25,8 +26,7 @@ pub use export_spec::{
     HirExportSpec, parse_export_spec_from_annotations, parse_workload_phase_from_annotations, resolve_attribute_id, snake_case_to_camel_case,
 };
 pub use expr::{
-    CaptureMode, CaptureStorage, HirCallArgument, HirCallKind, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirResolvedCall,
-    hir_call_arg_values,
+    CaptureMode, CaptureStorage, HirCallArgument, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirResolvedCall, hir_call_arg_values,
 };
 pub use function::HirFunction;
 pub use identifier::HirIdentifier;

@@ -436,14 +436,14 @@ fn trait_with_assoc_type(name: &str, methods: Vec<HirFunction>, associated_types
 }
 
 fn struct_with_methods(name: &str, methods: Vec<HirFunction>) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     struct_with_fields_and_methods(name, vec![], methods)
 }
 
 fn struct_with_fields(name: &str, fields: Vec<HirField>) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     struct_with_fields_and_methods(name, fields, vec![])
 }
 

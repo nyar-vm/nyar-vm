@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod assembly;
 pub(crate) mod backend_contract;

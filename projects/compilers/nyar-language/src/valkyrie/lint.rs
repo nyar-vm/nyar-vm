@@ -11,14 +11,3 @@ pub fn lint_valkyrie_source(compiler: &ValkyrieCompiler, source: &str) -> Result
 pub fn lint_valkyrie_vx_source(compiler: &ValkyrieCompiler, source: &str) -> Result<(), ParseError> {
     compiler.compile_vx_source(source).map(|_| ())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lint_accepts_minimal_function_without_entering_artifact_pipeline() {
-        lint_valkyrie_source(&ValkyrieCompiler::default(), "micro identity(value: i32) -> i32 { return value }")
-            .expect("HIR lint must not require resolver source groups");
-    }
-}

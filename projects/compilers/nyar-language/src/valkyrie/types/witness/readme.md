@@ -4,15 +4,16 @@ Core witness-table data structures for Valkyrie dynamic dispatch.
 
 ## Terminology
 
-| Term | Scope | Notes |
-| :--- | :--- | :--- |
-| **witness table** | This module / `trait` · `imply` | Valkyrie dynamic dispatch; fat pointer `(data, witness_table)` |
-| **COM vtable** | Windows FFI | `[com]` interop only; not part of this module |
-| **classic OOP vtable** | External comparison | Documentation contrast only; not Valkyrie's model |
+| Term                   | Scope                           | Notes                                                          |
+|:-----------------------|:--------------------------------|:---------------------------------------------------------------|
+| **witness table**      | This module / `trait` · `imply` | Valkyrie dynamic dispatch; fat pointer `(data, witness_table)` |
+| **COM vtable**         | Windows FFI                     | `[com]` interop only; not part of this module                  |
+| **classic OOP vtable** | External comparison             | Documentation contrast only; not Valkyrie's model              |
 
 ## Overview
 
-A witness table is the runtime representation of a trait implementation used for dynamic method dispatch. Each `impl Trait for Type` generates a witness table.
+A witness table is the runtime representation of a trait implementation used for dynamic method dispatch. Each
+`impl Trait for Type` generates a witness table.
 
 ## Data shape
 

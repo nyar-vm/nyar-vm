@@ -2,6 +2,7 @@
 
 use super::model::WatDocument;
 
+/// 将 WAT 文档格式化为文本。
 pub fn format_wat_document(document: &WatDocument) -> String {
     let mut result = String::from("(module");
     if let Some(module_name) = &document.module_name {

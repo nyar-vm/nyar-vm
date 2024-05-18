@@ -1,6 +1,5 @@
 #![doc = include_str!("readme.md")]
-#![warn(missing_docs)]
-#![allow(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod advanced;
 pub mod hir;
@@ -14,13 +13,18 @@ pub use nyar_types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ReportKind {
     #[default]
+    /// 错误级别。
     Error,
+    /// 警告级别。
     Warning,
+    /// 附注级别。
     Note,
+    /// 帮助提示级别。
     Help,
 }
 
 impl ReportKind {
+    /// 转换为 miette 严重级别。
     pub fn as_miette_severity(&self) -> Severity {
         match self {
             ReportKind::Error => Severity::Error,
@@ -35,9 +39,13 @@ impl ReportKind {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LabeledSpan {
+    /// 源码跨度。
     pub span: SourceSpan,
+    /// 是否为主标签。
     pub primary: bool,
+    /// 标签键（可选）。
     pub key: Option<String>,
+    /// 附加键值数据。
     pub data: Vec<(String, String)>,
 }
 
@@ -45,7 +53,9 @@ pub struct LabeledSpan {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HelpMessage {
+    /// 帮助文本键。
     pub key: String,
+    /// 附加键值数据。
     pub data: Vec<(String, String)>,
 }
 
@@ -54,21 +64,55 @@ pub struct HelpMessage {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ValkyrieErrorKind {
     /// I/O error (file not found, permission denied, etc.)
-    IoError { message: String, path: Option<String> },
+    IoError {
+        /// 错误消息。
+        message: String,
+        /// 相关文件路径（若有）。
+        path: Option<String>,
+    },
     /// Parse error (failed to parse source code)
-    ParseError { message: String },
+    ParseError {
+        /// 错误消息。
+        message: String,
+    },
     /// Syntax error (invalid syntax)
-    SyntaxError { message: String },
+    SyntaxError {
+        /// 错误消息。
+        message: String,
+    },
     /// Type error (type mismatch)
-    TypeError { expected: String, found: String },
+    TypeError {
+        /// 期望类型描述。
+        expected: String,
+        /// 实际类型描述。
+        found: String,
+    },
     /// Runtime error (general runtime failure)
-    RuntimeError { message: String },
+    RuntimeError {
+        /// 错误消息。
+        message: String,
+    },
     /// VM error (stack underflow, index out of bounds, etc.)
-    VmError { code: u32, key: String, message: String },
+    VmError {
+        /// 错误码。
+        code: u32,
+        /// 错误键。
+        key: String,
+        /// 错误消息。
+        message: String,
+    },
     /// Compile error (AOT compilation failure)
-    CompileError { message: String },
+    CompileError {
+        /// 错误消息。
+        message: String,
+    },
     /// Naming convention violation (e.g. identifier must be snake_case).
-    NamingViolation { code: u32, message: String },
+    NamingViolation {
+        /// lint 错误码。
+        code: u32,
+        /// 错误消息。
+        message: String,
+    },
     /// Unknown error
     Unknown,
 }
@@ -113,6 +157,7 @@ impl std::fmt::Display for ValkyrieErrorKind {
 }
 
 impl ValkyrieErrorKind {
+    /// 返回机器可读错误键。
     pub fn key(&self) -> String {
         match self {
             ValkyrieErrorKind::IoError { .. } => "io_error".to_string(),
@@ -127,6 +172,7 @@ impl ValkyrieErrorKind {
         }
     }
 
+    /// 返回数值错误码。
     pub fn code(&self) -> u32 {
         match self {
             ValkyrieErrorKind::IoError { .. } => 0x0001,
@@ -141,6 +187,7 @@ impl ValkyrieErrorKind {
         }
     }
 
+    /// 返回面向用户的错误类别。
     pub fn category(&self) -> &'static str {
         match self {
             ValkyrieErrorKind::IoError { .. } => "I/O 错误",
@@ -155,10 +202,12 @@ impl ValkyrieErrorKind {
         }
     }
 
+    /// 返回格式化的 `E####` 错误码字符串。
     pub fn formatted_code(&self) -> String {
         format!("E{:04X}", self.code())
     }
 
+    /// 返回结构化附加数据键值对。
     pub fn data(&self) -> Vec<(String, String)> {
         match self {
             ValkyrieErrorKind::IoError { message, path } => {
@@ -198,41 +247,53 @@ impl ValkyrieErrorKind {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ValkyrieError {
+    /// 诊断严重级别。
     pub level: ReportKind,
+    /// 错误种类。
     pub kind: ValkyrieErrorKind,
+    /// 源码标签列表。
     pub labels: Vec<LabeledSpan>,
+    /// 可选帮助信息。
     pub help: Option<HelpMessage>,
 }
 
 impl ValkyrieError {
+    /// 构造运行时错误。
     pub fn runtime_error(message: String) -> Self {
         Self { level: ReportKind::Error, kind: ValkyrieErrorKind::RuntimeError { message }, labels: Vec::new(), help: None }
     }
 
+    /// 构造解析错误。
     pub fn parse_error(message: String) -> Self {
         Self { level: ReportKind::Error, kind: ValkyrieErrorKind::ParseError { message }, labels: Vec::new(), help: None }
     }
 
+    /// 构造语法错误。
     pub fn syntax_error(message: impl Into<String>, _source: &str) -> Self {
         Self { level: ReportKind::Error, kind: ValkyrieErrorKind::SyntaxError { message: message.into() }, labels: Vec::new(), help: None }
     }
 
+    /// 构造类型错误。
     pub fn type_error(expected: String, found: String) -> Self {
         Self { level: ReportKind::Error, kind: ValkyrieErrorKind::TypeError { expected, found }, labels: Vec::new(), help: None }
     }
 
+    /// 构造 I/O 错误。
     pub fn io_error(message: String, path: Option<String>) -> Self {
         Self { level: ReportKind::Error, kind: ValkyrieErrorKind::IoError { message, path }, labels: Vec::new(), help: None }
     }
 
+    /// 构造虚拟机错误。
     pub fn vm_error(code: u32, key: String, message: String) -> Self {
         Self { level: ReportKind::Error, kind: ValkyrieErrorKind::VmError { code, key, message }, labels: Vec::new(), help: None }
     }
 
+    /// 构造编译错误。
     pub fn compile_error(message: String) -> Self {
         Self { level: ReportKind::Error, kind: ValkyrieErrorKind::CompileError { message }, labels: Vec::new(), help: None }
     }
 
+    /// 构造命名 lint 警告。
     pub fn naming_violation(code: u32, name: &str, span: SourceSpan) -> Self {
         let message = format!("Name '{name}' should be snake_case");
         Self {
@@ -243,6 +304,7 @@ impl ValkyrieError {
         }
     }
 
+    /// 返回错误码。
     pub fn code(&self) -> u32 {
         self.kind.code()
     }

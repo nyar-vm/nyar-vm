@@ -2,6 +2,7 @@
 
 use super::model::WitPackage;
 
+/// 将 WIT 包格式化为文本。
 pub fn format_wit_package(package: &WitPackage) -> String {
     let mut result = format!("package {};\n", package.package_name);
     for interface in &package.interfaces {

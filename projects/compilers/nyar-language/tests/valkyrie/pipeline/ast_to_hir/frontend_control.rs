@@ -259,7 +259,7 @@ fn compiler_facade_lowers_statement_match_fallthrough_into_jump_chain() {
 
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     match value {
         case Flag():
             fallthrough
@@ -519,9 +519,7 @@ fn lowers_catch_guard_into_mir_arm_branch() {
     let body_block =
         mir.functions[0].blocks.iter().find(|block| block.label == "catch_arm_0_body").expect("expected guarded catch arm body block");
 
-    assert!(
-        guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, nyar_language::MirOperation::PatternMatch { .. }))
-    );
+    assert!(guard_block.instructions.iter().any(|instruction| matches!(instruction.kind, nyar_language::MirOperation::PatternMatch { .. })));
 
     assert!(matches!(
         &guard_block.terminator,
@@ -571,7 +569,7 @@ fn preserves_raise_effect_into_lir() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 106 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     raise problem
     return
 }"#,
@@ -592,7 +590,7 @@ fn preserves_catch_pattern_match_into_lir() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 108 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     let value = catch raise task {
         case Yielded(next_value) if false:
             resume next_value
@@ -606,12 +604,7 @@ fn preserves_catch_pattern_match_into_lir() {
 
     let guard_block = lir.functions[0].blocks.iter().find(|block| block.label == "catch_arm_0").expect("expected first catch arm block");
 
-    assert!(
-        guard_block
-            .operations
-            .iter()
-            .any(|operation| matches!(operation.kind, nyar_language::lir::LirOperationKind::PatternMatch { .. }))
-    );
+    assert!(guard_block.operations.iter().any(|operation| matches!(operation.kind, nyar_language::lir::LirOperationKind::PatternMatch { .. })));
 }
 
 #[test]

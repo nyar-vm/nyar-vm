@@ -1,9 +1,8 @@
 //! Tests for sealed class optimization module.
 
 use nyar_language::{
-    ExhaustivenessResult, SealedClassJumpTable, SealedClassMemoryLayout, SealedExhaustivenessChecker, TagType,
+    ExhaustivenessResult, SealedClassJumpTable, SealedClassMemoryLayout, SealedExhaustivenessChecker, TagType, types::Identifier,
 };
-use nyar_language::types::Identifier;
 
 fn create_identifier(name: &str) -> Identifier {
     Identifier::new(name)
@@ -53,11 +52,7 @@ fn test_jump_table_missing_variants() {
     let mut table = SealedClassJumpTable::new(create_identifier("Result"));
     table.add_variant(create_identifier("Ok"), "ok_label".to_string());
 
-    let all_variants = vec![
-        create_identifier("Ok"),
-        create_identifier("Err"),
-        create_identifier("Timeout"),
-    ];
+    let all_variants = vec![create_identifier("Ok"), create_identifier("Err"), create_identifier("Timeout")];
 
     let missing = table.missing_variants(&all_variants);
     assert_eq!(missing.len(), 2);
@@ -141,8 +136,7 @@ fn test_memory_layout_creation() {
 
 #[test]
 fn test_memory_layout_with_tag_type() {
-    let layout =
-        SealedClassMemoryLayout::new(create_identifier("LargeEnum")).with_tag_type(TagType::U16);
+    let layout = SealedClassMemoryLayout::new(create_identifier("LargeEnum")).with_tag_type(TagType::U16);
     assert_eq!(layout.tag_type, TagType::U16);
     assert_eq!(layout.tag_size, 2);
 }
@@ -169,10 +163,7 @@ fn test_exhaustiveness_checker_creation() {
 #[test]
 fn test_exhaustiveness_checker_register() {
     let mut checker = SealedExhaustivenessChecker::new();
-    checker.register(
-        create_identifier("Option"),
-        vec![create_identifier("Some"), create_identifier("None")],
-    );
+    checker.register(create_identifier("Option"), vec![create_identifier("Some"), create_identifier("None")]);
 
     assert!(!checker.is_empty());
     assert_eq!(checker.len(), 1);
@@ -182,10 +173,7 @@ fn test_exhaustiveness_checker_register() {
 #[test]
 fn test_exhaustiveness_checker_get_variants() {
     let mut checker = SealedExhaustivenessChecker::new();
-    checker.register(
-        create_identifier("Option"),
-        vec![create_identifier("Some"), create_identifier("None")],
-    );
+    checker.register(create_identifier("Option"), vec![create_identifier("Some"), create_identifier("None")]);
 
     let variants = checker.get_variants(&create_identifier("Option"));
     assert!(variants.is_some());
@@ -196,15 +184,9 @@ fn test_exhaustiveness_checker_get_variants() {
 #[test]
 fn test_exhaustiveness_checker_exhaustive() {
     let mut checker = SealedExhaustivenessChecker::new();
-    checker.register(
-        create_identifier("Option"),
-        vec![create_identifier("Some"), create_identifier("None")],
-    );
+    checker.register(create_identifier("Option"), vec![create_identifier("Some"), create_identifier("None")]);
 
-    let result = checker.check_exhaustiveness(
-        &create_identifier("Option"),
-        &[create_identifier("Some"), create_identifier("None")],
-    );
+    let result = checker.check_exhaustiveness(&create_identifier("Option"), &[create_identifier("Some"), create_identifier("None")]);
 
     assert!(result.is_exhaustive());
     assert_eq!(result, ExhaustivenessResult::Exhaustive);
@@ -213,13 +195,9 @@ fn test_exhaustiveness_checker_exhaustive() {
 #[test]
 fn test_exhaustiveness_checker_missing_variants() {
     let mut checker = SealedExhaustivenessChecker::new();
-    checker.register(
-        create_identifier("Option"),
-        vec![create_identifier("Some"), create_identifier("None")],
-    );
+    checker.register(create_identifier("Option"), vec![create_identifier("Some"), create_identifier("None")]);
 
-    let result =
-        checker.check_exhaustiveness(&create_identifier("Option"), &[create_identifier("Some")]);
+    let result = checker.check_exhaustiveness(&create_identifier("Option"), &[create_identifier("Some")]);
 
     assert!(result.has_missing());
     let missing = result.missing().unwrap();
@@ -231,8 +209,7 @@ fn test_exhaustiveness_checker_missing_variants() {
 fn test_exhaustiveness_checker_not_sealed() {
     let checker = SealedExhaustivenessChecker::new();
 
-    let result =
-        checker.check_exhaustiveness(&create_identifier("NotSealed"), &[create_identifier("A")]);
+    let result = checker.check_exhaustiveness(&create_identifier("NotSealed"), &[create_identifier("A")]);
 
     assert_eq!(result, ExhaustivenessResult::NotSealed);
 }
@@ -240,10 +217,7 @@ fn test_exhaustiveness_checker_not_sealed() {
 #[test]
 fn test_exhaustiveness_checker_wildcard() {
     let mut checker = SealedExhaustivenessChecker::new();
-    checker.register(
-        create_identifier("Option"),
-        vec![create_identifier("Some"), create_identifier("None")],
-    );
+    checker.register(create_identifier("Option"), vec![create_identifier("Some"), create_identifier("None")]);
 
     assert!(checker.is_wildcard_exhaustive(&create_identifier("Option"), true));
     assert!(!checker.is_wildcard_exhaustive(&create_identifier("Option"), false));
@@ -253,10 +227,7 @@ fn test_exhaustiveness_checker_wildcard() {
 #[test]
 fn test_exhaustiveness_checker_clear() {
     let mut checker = SealedExhaustivenessChecker::new();
-    checker.register(
-        create_identifier("Option"),
-        vec![create_identifier("Some"), create_identifier("None")],
-    );
+    checker.register(create_identifier("Option"), vec![create_identifier("Some"), create_identifier("None")]);
 
     assert_eq!(checker.len(), 1);
     checker.clear();
@@ -266,17 +237,11 @@ fn test_exhaustiveness_checker_clear() {
 #[test]
 fn test_exhaustiveness_checker_generate_jump_table() {
     let mut checker = SealedExhaustivenessChecker::new();
-    checker.register(
-        create_identifier("Option"),
-        vec![create_identifier("Some"), create_identifier("None")],
-    );
+    checker.register(create_identifier("Option"), vec![create_identifier("Some"), create_identifier("None")]);
 
     let table = checker.generate_jump_table(
         &create_identifier("Option"),
-        &[
-            (create_identifier("Some"), "some_label".to_string()),
-            (create_identifier("None"), "none_label".to_string()),
-        ],
+        &[(create_identifier("Some"), "some_label".to_string()), (create_identifier("None"), "none_label".to_string())],
         false,
     );
 
@@ -289,11 +254,7 @@ fn test_exhaustiveness_checker_generate_jump_table() {
 fn test_exhaustiveness_checker_generate_jump_table_not_sealed() {
     let checker = SealedExhaustivenessChecker::new();
 
-    let table = checker.generate_jump_table(
-        &create_identifier("NotSealed"),
-        &[(create_identifier("A"), "a_label".to_string())],
-        false,
-    );
+    let table = checker.generate_jump_table(&create_identifier("NotSealed"), &[(create_identifier("A"), "a_label".to_string())], false);
 
     assert!(table.is_none());
 }

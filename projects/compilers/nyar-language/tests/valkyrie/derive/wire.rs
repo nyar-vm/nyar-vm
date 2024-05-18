@@ -1,5 +1,5 @@
 use nyar_language::{
-    derive::{WireInjector, WIREABLE_TRAIT, apply_hir_injections},
+    derive::{WIREABLE_TRAIT, WireInjector, apply_hir_injections},
     types::{
         Identifier, NamePath,
         hir::{
@@ -115,8 +115,8 @@ fn test_wire_injector_skips_manual_impl() {
         target: ValkyrieType::Named(Identifier::new("OrderSystem")),
         trait_path: Some(NamePath::new(vec![Identifier::new(WIREABLE_TRAIT)])),
         methods: vec![HirFunction {
-        declaration: None,
-        instance: None,
+            declaration: None,
+            instance: None,
             where_constraints: Vec::new(),
             name: Identifier::new("apply_wire"),
             doc: HirDocumentation::default(),
@@ -133,7 +133,7 @@ fn test_wire_injector_skips_manual_impl() {
             visibility: HirVisibility::public(),
             is_abstract: false,
             is_final: false,
-        export_spec: None,
+            export_spec: None,
         }],
         associated_type_impls: vec![],
         associated_const_impls: vec![],

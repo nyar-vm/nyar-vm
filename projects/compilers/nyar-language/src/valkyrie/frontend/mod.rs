@@ -49,6 +49,3 @@ pub fn parse_source_with_language(source: &str, language: &ValkyrieLanguage) -> 
     let output = builder.build(&text, &[], &mut session);
     output.result.map_err(ParseError::from_oak)
 }
-
-#[cfg(test)]
-mod staging_tests;

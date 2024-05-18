@@ -161,10 +161,13 @@ impl HirVisibility {
     }
 }
 
+/// 泛型形参种类（类型或函数种类）。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirKind {
+    /// 类型形参。
     Type,
+    /// 函数种类 `domain -> codomain`。
     Function(Box<HirKind>, Box<HirKind>),
 }
 
@@ -226,31 +229,43 @@ pub struct TraitObject {
     pub type_arguments: Vec<ValkyrieType>,
 }
 
+/// 结构类型（row）中的方法签名。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RowMethodType {
+    /// 方法名。
     pub name: Identifier,
+    /// 参数类型列表。
     pub params: Vec<ValkyrieType>,
+    /// 返回类型。
     pub return_type: ValkyrieType,
 }
 
+/// 结构类型（row）的方法集合。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RowType {
+    /// 方法签名列表。
     pub methods: Vec<RowMethodType>,
 }
 
+/// 函数类型签名。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FunctionType {
+    /// 参数类型列表。
     pub params: Vec<ValkyrieType>,
+    /// 返回类型。
     pub return_type: ValkyrieType,
 }
 
+/// 类型 lambda（`micro(T) -> U`）的内部表示。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TypeLambda {
+    /// 绑定的泛型形参。
     pub params: Vec<GenericType>,
+    /// lambda 体类型。
     pub body: ValkyrieType,
 }
 
@@ -264,19 +279,29 @@ pub enum ValkyrieType {
     Unit,
     /// `bool`
     Boolean,
+    /// 8 位整数。
     Integer8 {
+        /// 是否为有符号整数。
         signed: bool,
     },
+    /// 16 位整数。
     Integer16 {
+        /// 是否为有符号整数。
         signed: bool,
     },
+    /// 32 位整数。
     Integer32 {
+        /// 是否为有符号整数。
         signed: bool,
     },
+    /// 64 位整数。
     Integer64 {
+        /// 是否为有符号整数。
         signed: bool,
     },
+    /// 128 位整数。
     Integer128 {
+        /// 是否为有符号整数。
         signed: bool,
     },
     /// `f32`
@@ -285,32 +310,44 @@ pub enum ValkyrieType {
     Float64,
     /// `char`, the Unicode character
     Character,
+    /// UTF-8 字符串类型。
     Utf8,
+    /// UTF-16 字符串类型。
     Utf16,
     /// 未绑定声明的表面名（泛型形参、尚未解析符号）。不得单独充当名义身份。
     Named(Identifier),
     /// 已绑定 `ItemId` 的名义类型；`arguments` 为完成代入的类型实参。
     /// Resolver/HIR 成功路径必须使用本变体，禁止把短名改写成限定名再塞回 [`Self::Named`]。
     Nominal {
+        /// 名义声明身份。
         declaration: nyar_types::ItemId,
+        /// 类型实参列表。
         arguments: Vec<ValkyrieType>,
     },
+    /// 类型应用 `F<A, B, ...>`。
     Apply(Box<ValkyrieType>, Vec<ValkyrieType>),
     /// `T<X>`
     Generic(GenericType),
+    /// 函数类型。
     Function(Box<FunctionType>),
+    /// 元组类型。
     Tuple(Vec<ValkyrieType>),
+    /// 结构 row 类型。
     Row(RowType),
     /// `[T]` 堆数组。
     Array(Box<ValkyrieType>),
     /// `[T; N]` 定长数组。
     FixedArray {
+        /// 元素类型。
         element: Box<ValkyrieType>,
+        /// 固定长度。
         length: usize,
     },
     /// `micro(T) -> U`
     TypeLambda(Box<TypeLambda>),
+    /// trait 对象类型。
     TraitObject(TraitObject),
+    /// 关联类型投影。
     Associated(Box<AssociatedType>),
     /// `auto`, automatic infer type
     AutoType,
@@ -361,13 +398,17 @@ pub struct GenericBinderId {
     pub ordinal: u32,
 }
 
+/// 泛型形参表面表示。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GenericType {
     /// 泛型声明的身份；仅解析中的表面节点可以为空。
     pub binder: Option<GenericBinderId>,
+    /// 形参名。
     pub name: Identifier,
+    /// 形参种类。
     pub kind: HirKind,
+    /// trait 约束列表。
     pub bounds: Vec<Identifier>,
 }
 
@@ -455,6 +496,7 @@ pub enum HirParameterBindingKind {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirVariadicKind {
     #[default]
+    /// 非可变参数。
     None,
     /// `..name` ? absorbs extra positional arguments.
     PositionalRest,
@@ -462,16 +504,22 @@ pub enum HirVariadicKind {
     KeywordRest,
 }
 
+/// 函数或方法形参。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HirParam {
+    /// 参数标识符。
     pub name: HirIdentifier,
+    /// 参数类型。
     pub ty: ValkyrieType,
+    /// 调用点绑定模式。
     pub binding_kind: HirParameterBindingKind,
     /// Whether the parameter uses `mut` (including `mut self`).
     #[cfg_attr(feature = "serde", serde(default))]
     pub is_mutable: bool,
+    /// 默认值表达式（若有）。
     pub default: Option<HirExpr>,
+    /// 可变参数种类。
     pub variadic: HirVariadicKind,
 }
 
@@ -492,24 +540,37 @@ impl Default for HirParam {
     }
 }
 
+/// 提取器模式（构造器或数组切片）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirExtractorPattern {
+    /// 构造器提取器。
     Constructor {
+        /// 构造器路径。
         name: crate::NamePath,
+        /// 规范化被调路径。
         canonical_callee: crate::NamePath,
+        /// 字段子模式。
         fields: Vec<HirPattern>,
+        /// 解析后的调用信息。
         resolved: Option<HirResolvedCall>,
     },
+    /// 数组切片提取器。
     Array {
+        /// 规范化被调路径。
         canonical_callee: crate::NamePath,
+        /// 前缀元素模式。
         prefix: Vec<HirPattern>,
+        /// 剩余绑定（若有）。
         rest: Option<HirIdentifier>,
+        /// 后缀元素模式。
         suffix: Vec<HirPattern>,
+        /// 解析后的调用信息。
         resolved: Option<HirResolvedCall>,
     },
 }
 
+/// 模式静态可反驳性分类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PatternRefutability {
@@ -522,52 +583,79 @@ pub enum PatternRefutability {
 }
 
 impl PatternRefutability {
+    /// 判断模式是否可能匹配失败。
     pub fn is_refutable(self) -> bool {
         matches!(self, PatternRefutability::Refutable | PatternRefutability::Unknown)
     }
 }
 
+/// HIR 模式匹配节点。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirPattern {
+    /// 通配符 `_`。
     Wildcard,
+    /// 变量绑定。
     Variable(HirIdentifier),
+    /// 元组模式。
     Tuple(Vec<HirPattern>),
+    /// 字面量模式。
     Literal(HirLiteral),
+    /// 范围模式。
     Range {
+        /// 起始字面量（可选）。
         start: Option<HirLiteral>,
+        /// 结束字面量（可选）。
         end: Option<HirLiteral>,
+        /// 结束边界是否包含。
         inclusive_end: bool,
     },
+    /// 提取器模式。
     Extractor(HirExtractorPattern),
+    /// 或模式 `a | b`。
     Or(Vec<HirPattern>),
+    /// 名称路径模式。
     Name(crate::NamePath),
+    /// 类型测试模式。
     Type(crate::NamePath),
+    /// 带类型注解的绑定。
     TypedBind {
+        /// 绑定标识符。
         identifier: HirIdentifier,
+        /// 类型路径。
         ty: crate::NamePath,
     },
+    /// 对象/结构体字段模式。
     Object {
+        /// 类型路径（可选）。
         name: Option<crate::NamePath>,
+        /// 命名字段子模式。
         fields: Vec<(Identifier, HirPattern)>,
+        /// 剩余字段绑定（若有）。
         rest: Option<HirIdentifier>,
     },
+    /// `else` 兜底分支。
     Else,
     /// `whole @ subpat` ? bind whole scrutinee slice and destructure sub-pattern.
     Bind {
+        /// 整体绑定标识符。
         identifier: HirIdentifier,
+        /// 子模式。
         pattern: Box<HirPattern>,
     },
     /// `mut pat` ? mutable reference binding.
     Mut(Box<HirPattern>),
     /// `pin [mut] pat` ? pinned mutable reference binding.
     Pin {
+        /// 是否为 `mut pin`。
         mutable: bool,
+        /// 子模式。
         pattern: Box<HirPattern>,
     },
 }
 
 impl HirPattern {
+    /// 静态推断模式的可反驳性。
     pub fn refutability(&self) -> PatternRefutability {
         use PatternRefutability::*;
         match self {
@@ -631,12 +719,18 @@ pub struct HirStringLiteral {
     pub segments: Vec<HirStringSegment>,
 }
 
+/// HIR 字面量值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HirLiteral {
+    /// 64 位整数。
     Integer64(i64),
+    /// 64 位浮点数。
     Float64(ordered_float::OrderedFloat<f64>),
+    /// 字符串字面量。
     String(HirStringLiteral),
+    /// 布尔值。
     Bool(bool),
+    /// 单元值 `()`。
     Unit,
 }

@@ -111,6 +111,9 @@ pub struct HirResolvedCall {
     pub declaration: Option<nyar_types::ItemId>,
     /// 所选声明的已实例化身份；未实例化的泛型调用不能进入成功 MIR。
     pub instance: Option<nyar_types::ItemInstanceId>,
+    /// 语言内建调用的结构化身份；只有内建候选持有，源码声明调用恒为 `None`。
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub intrinsic: Option<nyar_types::IntrinsicId>,
     /// Constructor owner declaration identity, when this is a sum variant.
     #[cfg_attr(feature = "serde", serde(default))]
     pub sum_owner: Option<nyar_types::ItemId>,
@@ -133,16 +136,6 @@ pub struct HirResolvedCall {
     pub extractor_payload_type: Option<ValkyrieType>,
 }
 
-/// AST 降低到 HIR 时固定的调用语法类别。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum HirCallKind {
-    /// 普通名称、成员或函数值调用。
-    Function,
-    /// 已绑定注册表身份的运算符语法调用。
-    Operator(nyar_types::OperatorId),
-}
-
 /// The kind of an expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -155,8 +148,6 @@ pub enum HirExprKind {
     Path(NamePath),
     /// A function call.
     Call {
-        /// 重载选择前固定的源调用形式。
-        call_kind: HirCallKind,
         /// The callee expression.
         callee: Box<HirExpr>,
         /// The arguments.

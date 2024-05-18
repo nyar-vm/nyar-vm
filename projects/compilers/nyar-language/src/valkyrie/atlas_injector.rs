@@ -7,7 +7,7 @@ use crate::types::{
     hir::{HirArgument, HirAttribute, HirExpr, HirFunction, HirModule, HirStruct},
 };
 
-use super::route_injector::{AtlasRouteEntry, RouteInjectionResult, collect_atlas_routes, inject_atlas_routes, generate_route_manifest_json};
+use super::route_injector::{AtlasRouteEntry, RouteInjectionResult, collect_atlas_routes, generate_route_manifest_json, inject_atlas_routes};
 
 /// Collected middleware binding from `@middleware("name")` on controller methods.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,19 +69,13 @@ pub fn inject_atlas_artifacts(module: &HirModule) -> AtlasInjectionArtifacts {
     let ws_v = generate_ws_dispatch_v(&ws);
     let config_v = generate_config_loader_v(&config_sections);
     let manifest_json = merge_manifest(&routes.routes, &ws, &health_checks, &config_sections);
-    AtlasInjectionArtifacts {
-        routes,
-        middleware_v,
-        ws_v,
-        config_v,
-        health_checks,
-        manifest_json,
-    }
+    AtlasInjectionArtifacts { routes, middleware_v, ws_v, config_v, health_checks, manifest_json }
 }
 
 /// Write generated Atlas artifacts when `VALKYRIE_ATLAS_OUT_DIR` is set.
 pub fn try_emit_atlas_artifacts(module: &HirModule) {
-    let Ok(out_dir) = env::var("VALKYRIE_ATLAS_OUT_DIR") else {
+    let Ok(out_dir) = env::var("VALKYRIE_ATLAS_OUT_DIR")
+    else {
         return;
     };
     let artifacts = inject_atlas_artifacts(module);
@@ -148,8 +142,7 @@ fn collect_health_checks(module: &HirModule) -> Vec<AtlasHealthCheckEntry> {
             return;
         }
         for method in &strukt.methods {
-            let name = attr_string_by_name(&method.annotations, HEALTH_ATTR)
-                .unwrap_or_else(|| method.name.as_str().to_string());
+            let name = attr_string_by_name(&method.annotations, HEALTH_ATTR).unwrap_or_else(|| method.name.as_str().to_string());
             if method.annotations.iter().any(|a| attr_last_name(a) == HEALTH_ATTR) {
                 out.push(AtlasHealthCheckEntry {
                     name,
@@ -168,11 +161,7 @@ fn collect_config_sections(module: &HirModule) -> Vec<AtlasConfigSection> {
     let mut visitor = |strukt: &HirStruct| {
         if let Some(section) = struct_attr_string(strukt, CONFIG_SECTION_ATTR) {
             let fields = strukt.fields.iter().map(|f| f.name.as_str().to_string()).collect();
-            out.push(AtlasConfigSection {
-                section,
-                struct_name: strukt.name.as_str().to_string(),
-                fields,
-            });
+            out.push(AtlasConfigSection { section, struct_name: strukt.name.as_str().to_string(), fields });
         }
     };
     visit_structs(module, &mut visitor);
@@ -229,7 +218,8 @@ fn camel_to_snake(name: &str) -> String {
                 out.push('_');
             }
             out.push(ch.to_ascii_lowercase());
-        } else {
+        }
+        else {
             out.push(ch);
         }
     }
@@ -333,12 +323,7 @@ pub fn generate_config_loader_v(sections: &[AtlasConfigSection]) -> String {
          using std.text;\n\n",
     );
     for section in sections {
-        writeln!(
-            out,
-            "class {} {{\n    section: utf8\n}}\n",
-            section.struct_name
-        )
-        .unwrap();
+        writeln!(out, "class {} {{\n    section: utf8\n}}\n", section.struct_name).unwrap();
         for field in &section.fields {
             writeln!(out, "# field: {}", field).unwrap();
         }
@@ -361,12 +346,7 @@ pub fn generate_config_loader_v(sections: &[AtlasConfigSection]) -> String {
     out
 }
 
-fn merge_manifest(
-    routes: &[AtlasRouteEntry],
-    ws: &[AtlasWsEntry],
-    health: &[AtlasHealthCheckEntry],
-    config: &[AtlasConfigSection],
-) -> String {
+fn merge_manifest(routes: &[AtlasRouteEntry], ws: &[AtlasWsEntry], health: &[AtlasHealthCheckEntry], config: &[AtlasConfigSection]) -> String {
     let mut out = generate_route_manifest_json(routes);
     out.push_str(",\n  \"ws_routes\": [\n");
     for (i, entry) in ws.iter().enumerate() {
@@ -393,60 +373,8 @@ fn merge_manifest(
     out.push_str("  \"config_sections\": [\n");
     for (i, section) in config.iter().enumerate() {
         let comma = if i + 1 < config.len() { "," } else { "" };
-        writeln!(
-            out,
-            "    {{\"section\": \"{}\", \"struct\": \"{}\"}}{comma}",
-            section.section, section.struct_name
-        )
-        .unwrap();
+        writeln!(out, "    {{\"section\": \"{}\", \"struct\": \"{}\"}}{comma}", section.section, section.struct_name).unwrap();
     }
     out.push_str("  ]\n}\n");
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::{
-        Identifier,
-        hir::{HirDocumentation, HirModule, HirStruct},
-    };
-
-    #[test]
-    fn parse_doc_config_section() {
-        let strukt = HirStruct {
-            name: Identifier::new("AtlasAppConfig"),
-            doc: HirDocumentation::from_lines(vec!["@config_section(\"atlas\")".to_string()]),
-            fields: vec![],
-            ..Default::default()
-        };
-        let section = struct_attr_string(&strukt, CONFIG_SECTION_ATTR);
-        assert_eq!(section.as_deref(), Some("atlas"));
-    }
-
-    #[test]
-    fn manifest_includes_ws_and_health() {
-        let routes = vec![AtlasRouteEntry {
-            controller: "HealthController".into(),
-            method_name: "get_live".into(),
-            http_method: "GET".into(),
-            path: "/health/live".into(),
-            handler_id: "health_live".into(),
-        }];
-        let ws = vec![AtlasWsEntry {
-            path: "/ws/echo".into(),
-            handler_id: "echo".into(),
-            controller: "EchoWsHandler".into(),
-            method_name: "on_event".into(),
-        }];
-        let health = vec![AtlasHealthCheckEntry {
-            name: "db".into(),
-            controller: "HealthController".into(),
-            method_name: "check_db".into(),
-        }];
-        let manifest = merge_manifest(&routes, &ws, &health, &[]);
-        assert!(manifest.contains("ws_routes"));
-        assert!(manifest.contains("health_checks"));
-        assert!(manifest.contains("/health/live"));
-    }
 }

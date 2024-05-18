@@ -307,8 +307,8 @@ fn class(name: &str) -> HirStruct {
 }
 
 fn subclass(name: &str, parent: &str) -> HirStruct {
-        constructor_declaration: None,
-        constructor_instance: None,
+    constructor_declaration: None,
+    constructor_instance: None,
     let mut class = class(name);
     class.parents = vec![nyar_language::types::hir::HirParent::new(NamePath::new(vec![Identifier::new(parent)]))];
     class

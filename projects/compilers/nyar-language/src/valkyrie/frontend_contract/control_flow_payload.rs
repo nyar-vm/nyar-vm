@@ -95,10 +95,7 @@ fn find_trait_impl<'a>(hir_module: &'a HirModule, trait_name: &str) -> Option<&'
     let trait_declaration = resolve_trait_declaration(hir_module, trait_name)?;
     let mut impls: Vec<&'a HirImpl> = Vec::new();
     collect_trait_impls(hir_module, &mut impls);
-    impls
-        .into_iter()
-        .filter(|item| item.trait_declaration == Some(trait_declaration))
-        .find(|item| impl_type_name(hir_module, item).is_some())
+    impls.into_iter().filter(|item| item.trait_declaration == Some(trait_declaration)).find(|item| impl_type_name(hir_module, item).is_some())
 }
 
 fn collect_trait_impls<'a>(module: &'a HirModule, out: &mut Vec<&'a HirImpl>) {
@@ -113,12 +110,7 @@ fn resolve_trait_declaration(hir_module: &HirModule, trait_name: &str) -> Option
     collect_trait_declarations(hir_module, trait_name, &mut matches);
     matches.sort_unstable();
     matches.dedup();
-    if matches.len() == 1 {
-        Some(matches[0])
-    }
-    else {
-        None
-    }
+    if matches.len() == 1 { Some(matches[0]) } else { None }
 }
 
 fn collect_trait_declarations(module: &HirModule, trait_name: &str, matches: &mut Vec<nyar_types::ItemId>) {
@@ -142,53 +134,13 @@ fn collect_trait_declarations(module: &HirModule, trait_name: &str, matches: &mu
         collect_trait_declarations(child, trait_name, matches);
     }
 }
-
-#[cfg(test)]
-mod witness_identity_tests {
-    use super::*;
-    use crate::ValkyrieCompiler;
-
-    fn module() -> HirModule {
-        ValkyrieCompiler::default()
-            .compile_source(
-                r#"
-class Task { }
-trait Future {
-    micro output(self): i64
-    micro poll(self): bool
-}
-imply Task: Future {
-    micro output(self) -> i64 { return 1 }
-    micro poll(self) -> bool { return true }
-}
-"#,
-            )
-            .expect("夹具方法来自当前源码")
-    }
-
-    #[test]
-    fn missing_witness_method_cannot_bind_the_first_impl_method() {
-        let hir = module();
-        assert!(resolved_witness_binding(&hir, "Future", "awake").is_none());
-        let mut diagnostics = Vec::new();
-        assert!(collect_witness_binding(&hir, "Future", "awake", None, &mut diagnostics).is_empty());
-        assert_eq!(diagnostics.len(), 1);
-    }
-
-    #[test]
-    fn witness_slot_comes_from_the_matched_method_not_a_default_index() {
-        let hir = module();
-        let binding = resolved_witness_binding(&hir, "Future", "poll").unwrap();
-        assert_eq!(binding.method_index, 1);
-        assert_eq!(binding.impl_symbol.as_deref(), Some("Task.poll"));
-    }
-}
-
 fn impl_type_name(hir_module: &HirModule, trait_impl: &HirImpl) -> Option<String> {
     match &trait_impl.target {
         ValkyrieType::Named(name) => Some(name.as_str().to_string()),
         ValkyrieType::Apply(base, _) => named_type_name(base).map(str::to_string),
-        ValkyrieType::Nominal { declaration, .. } => find_type_name_by_declaration(hir_module, *declaration).map(|name| name.as_str().to_string()),
+        ValkyrieType::Nominal { declaration, .. } => {
+            find_type_name_by_declaration(hir_module, *declaration).map(|name| name.as_str().to_string())
+        }
         _ => None,
     }
 }
@@ -256,9 +208,31 @@ fn named_type_name(ty: &ValkyrieType) -> Option<&str> {
 /// Future 协议校验产生的诊断。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtocolDiagnostic {
-    UnresolvedImpl { type_name: String, trait_name: String },
-    MissingMethod { type_name: String, trait_name: String, missing_method: String },
-    WitnessMethodUnresolved { type_name: Option<String>, trait_name: String, method_name: String },
+    /// 类型未实现所需 trait。
+    UnresolvedImpl {
+        /// 类型名。
+        type_name: String,
+        /// trait 名。
+        trait_name: String,
+    },
+    /// trait 实现缺少协议要求的方法。
+    MissingMethod {
+        /// 类型名。
+        type_name: String,
+        /// trait 名。
+        trait_name: String,
+        /// 缺失的方法名。
+        missing_method: String,
+    },
+    /// witness 表中无法解析协议方法。
+    WitnessMethodUnresolved {
+        /// 类型名（若已知）。
+        type_name: Option<String>,
+        /// trait 名。
+        trait_name: String,
+        /// 无法解析的方法名。
+        method_name: String,
+    },
 }
 
 /// 校验 payload 的静态类型是否满足正式 `Future` 协议。

@@ -8,7 +8,8 @@ pub(crate) fn stable_function_symbol(module_name: &NamePath, function_name: &Ide
 }
 
 /// 生成 `HIR` 顶层函数的稳定限定名。
-pub(crate) fn stable_hir_function_symbol(module_name: &NamePath, function: &HirFunction) -> String {
+#[doc(hidden)]
+pub fn stable_hir_function_symbol(module_name: &NamePath, function: &HirFunction) -> String {
     if !function.declaring_namespace.parts().is_empty() {
         let mut parts = function.declaring_namespace.parts().to_vec();
         parts.push(function.name.clone());
@@ -22,46 +23,11 @@ pub(crate) fn stable_hir_function_symbol(module_name: &NamePath, function: &HirF
 /// Free-function MIR symbols use `::` (`main::answer`). [`NamePath`] display
 /// joins with `.`, so module-level functions are stored as a single segment
 /// carrying the full stable symbol string.
-pub(crate) fn stable_hir_function_name_path(module_name: &NamePath, function: &HirFunction) -> NamePath {
+#[doc(hidden)]
+pub fn stable_hir_function_name_path(module_name: &NamePath, function: &HirFunction) -> NamePath {
     let symbol = stable_hir_function_symbol(module_name, function);
     NamePath::new(vec![Identifier::new(&symbol)])
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::{
-        SourceID, SourceSpan,
-        hir::{HirBlock, HirDocumentation, HirFunction, HirVisibility, ValkyrieType},
-    };
-
-    #[test]
-    fn stable_hir_function_name_path_does_not_recurse() {
-        let module = NamePath::new(vec![Identifier::new("main")]);
-        let function = HirFunction {
-            declaration: None,
-            instance: None,
-            name: Identifier::new("answer"),
-            where_constraints: Vec::new(),
-            declaring_namespace: NamePath::default(),
-            doc: HirDocumentation::default(),
-            annotations: Vec::new(),
-            generics: Vec::new(),
-            params: Vec::new(),
-            return_type: ValkyrieType::Unit,
-            body: HirBlock { statements: Vec::new(), expr: None, span: SourceSpan::new(SourceID::default(), 0, 0) },
-            span: SourceSpan::new(SourceID::default(), 0, 0),
-            visibility: HirVisibility::default(),
-            is_abstract: false,
-            is_final: false,
-            is_virtual: false,
-            is_override: false,
-        };
-        assert_eq!(stable_hir_function_symbol(&module, &function), "main::answer");
-        assert_eq!(stable_hir_function_name_path(&module, &function).to_string(), "main::answer");
-    }
-}
-
 /// 将稳定符号名转换为后端可发射的扁平名字。
 ///
 /// 这里保留 ASCII 字母、数字与下划线，其余字符编码为 `_xNN_` / `_uNNNN_`

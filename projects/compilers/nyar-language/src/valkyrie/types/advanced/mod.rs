@@ -53,8 +53,12 @@ impl AdvancedTypeSession {
 /// 高级类型检查错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdvancedTypeError {
+    /// HKT 检查错误。
     Hkt(HktError),
+    /// 依赖类型检查错误。
     Dependent(DependentTypeError),
+    /// 线性类型检查错误。
     Linear(LinearTypeError),
+    /// 所有权检查错误。
     Ownership(OwnershipError),
 }

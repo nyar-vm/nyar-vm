@@ -1,4 +1,4 @@
-﻿use nyar_language::ValkyrieCompiler;
+use nyar_language::ValkyrieCompiler;
 
 const SOURCE: &str = r#"
 namespace core::types;
@@ -15,7 +15,5 @@ imply char {
 
 #[test]
 fn debug_some_call_resolves_in_return_context() {
-    ValkyrieCompiler::default()
-        .compile_source(SOURCE)
-        .expect("Some(value) in Option<i64> return context must resolve without SMIR003");
+    ValkyrieCompiler::default().compile_source(SOURCE).expect("Some(value) in Option<i64> return context must resolve without SMIR003");
 }

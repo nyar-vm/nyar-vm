@@ -2,6 +2,7 @@ use crate::transitional::msil::{
     MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilModule, MsilTypeDef,
 };
 
+/// MSIL 文本格式写入器。
 pub struct MsilTextWriter {
     indent: usize,
     indent_text: String,
@@ -9,15 +10,18 @@ pub struct MsilTextWriter {
 }
 
 impl MsilTextWriter {
+    /// 创建默认缩进的写入器。
     pub fn new() -> Self {
         Self { indent: 0, indent_text: "    ".to_string(), output: String::new() }
     }
 
+    /// 设置每级缩进使用的文本。
     pub fn with_indent_text(mut self, indent_text: impl Into<String>) -> Self {
         self.indent_text = indent_text.into();
         self
     }
 
+    /// 将模块序列化为 MSIL 文本。
     pub fn write_module(mut self, module: &MsilModule) -> String {
         self.write_assembly(&module.assembly);
         self.writeln("");
@@ -37,6 +41,7 @@ impl MsilTextWriter {
         self.output
     }
 
+    /// 将模块序列化为 MSIL 文本，并写入 `.module` 文件名。
     pub fn write_module_with_file_name(mut self, module: &MsilModule, file_name: &str) -> String {
         self.write_assembly(&module.assembly);
         self.writeln(&format!(".module {}", file_name));

@@ -1,5 +1,5 @@
 fn main() {
-    use nyar_language::{MirConstant, MirLowerer, MirOperand, MirOperation, ValkyrieCompiler, types::SourceID};
+    use nyar_language::{MirLowerer, ValkyrieCompiler, types::SourceID};
     let hir = ValkyrieCompiler::new(SourceID { version_id: 99001 })
         .compile_source(
             r#"

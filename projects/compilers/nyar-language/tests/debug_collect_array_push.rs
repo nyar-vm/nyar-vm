@@ -1,5 +1,7 @@
-use nyar_language::ValkyrieCompiler;
-use nyar_language::types::hir::{HirExprKind, HirStatementKind};
+use nyar_language::{
+    ValkyrieCompiler,
+    types::hir::{HirExprKind, HirStatementKind},
+};
 
 fn compile(source: &str) -> Result<(), String> {
     ValkyrieCompiler::default().compile_source(source).map(|_| ()).map_err(|e| format!("{e:?}"))
@@ -38,10 +40,7 @@ fn walk_calls(expr: &nyar_language::types::hir::HirExpr, out: &mut Vec<String>) 
             };
             out.push(format!(
                 "{name} => {}",
-                resolved
-                    .as_ref()
-                    .map(|c| format!("resolved return={:?}", c.return_type))
-                    .unwrap_or_else(|| "unresolved".into())
+                resolved.as_ref().map(|c| format!("resolved return={:?}", c.return_type)).unwrap_or_else(|| "unresolved".into())
             ));
             if let HirExprKind::FieldAccess { object, .. } = &callee.kind {
                 walk_calls(object, out);
@@ -80,9 +79,7 @@ fn walk_calls(expr: &nyar_language::types::hir::HirExpr, out: &mut Vec<String>) 
 fn diagnose_collect_array_call_chain() {
     let compiler = ValkyrieCompiler::default();
     let root = nyar_language::valkyrie::frontend::parse_source(REAL_COLLECT).expect("parse");
-    let hir = compiler
-        .lower_root_with_semantic_exports_and_name(&root, &[], None)
-        .expect("lower");
+    let hir = compiler.lower_root_with_semantic_exports_and_name(&root, &[], None).expect("lower");
     let func = hir.functions.iter().find(|f| f.name.as_str() == "collect_array").expect("fn");
     eprintln!("stmts: {}", func.body.statements.len());
     for (i, stmt) in func.body.statements.iter().enumerate() {

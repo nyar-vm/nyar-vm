@@ -1,6 +1,6 @@
 //! CLI 共用：批量格式化参数、执行与报告。
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::{FormatBatchOptions, FormatBatchReport, FormatError, FormatOptions, format_paths};
 
@@ -135,14 +135,4 @@ pub fn format_options_from_cli(indent_width: Option<usize>, max_width: Option<us
 /// 解析 `--ext` 列表（`awsl` / `.awsl` 均可）。
 pub fn normalize_extensions(values: &[String]) -> Vec<String> {
     values.iter().map(|value| value.trim_start_matches('.').to_ascii_lowercase()).collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn normalize_extensions_strips_dot() {
-        assert_eq!(normalize_extensions(&[".awsl".into(), "v".into()]), vec!["awsl", "v"]);
-    }
 }

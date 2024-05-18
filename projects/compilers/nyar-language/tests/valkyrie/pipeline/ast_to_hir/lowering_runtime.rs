@@ -179,11 +179,11 @@ fn statically_unrolls_loop_in_tuple_pattern_for_literal_iterables() {
     );
     assert!(mir.functions[0].blocks[0].instructions.iter().any(|instruction| {
         matches!(
-            &instruction.kind,
-            MirOperation::Call {                callee: nyar_language::MirOperand::Symbol(path),
-                ..,
-} if path.to_string() == "infix +"
-        )
+                    &instruction.kind,
+                    MirOperation::Call {                callee: nyar_language::MirOperand::Symbol(path),
+                        ..,
+        } if path.to_string() == "infix +"
+                )
     }));
 }
 
@@ -245,7 +245,7 @@ fn preserves_break_expr_jump_arguments_into_lir() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 85 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() -> i64 {
+        r#"micro main() -> i64 {
     let value: i64 = loop {
         break 7
     }
@@ -298,7 +298,7 @@ fn preserves_continue_jump_arguments_into_lir() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 98 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     let seed: i64 = 0
     while true {
         let seed: i64 = 1
@@ -420,7 +420,7 @@ fn lowers_yield_from_statement_into_lir_perform_effect() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 87 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     yield from values
     return
 }
@@ -527,7 +527,7 @@ fn lowers_block_member_access_into_lir_perform_effect() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 90 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     future.block
     return
 }
@@ -549,7 +549,7 @@ fn lowers_awake_member_access_into_lir_perform_effect() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 91 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     future.awake
     return
 }
@@ -571,7 +571,7 @@ fn lowers_frame_layouts_into_clr_runtime_frames() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 190 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     let future: Future<bool> = ()
     let kept: bool = true
     future.await
@@ -597,7 +597,7 @@ fn lowers_catch_resume_into_clr_runtime_continuation() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 191 });
     let lir = compile_source_to_legacy_lir(
         &compiler,
-            r#"micro main() {
+        r#"micro main() {
     catch raise true {
         else:
             resume true

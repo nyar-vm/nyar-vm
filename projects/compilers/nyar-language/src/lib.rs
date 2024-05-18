@@ -1,5 +1,5 @@
-#![doc = include_str!("../readme.md")]
-#![warn(missing_docs)]
+#![doc = include_str!("readme.md")]
+#![deny(missing_docs)]
 
 pub mod transitional;
 
@@ -43,7 +43,6 @@ pub use valkyrie::{
     derive,
     frontend_contract::{ConcretizeError, concretize_mir_function_types, concretize_type},
     hir::{AstToHir, CaptureAnalyzer, CompilerSourceFile, CompilerSourceGroup, ValkyrieCompiler},
-    semantic_closure::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, GroupSemanticClosure, SemanticClosure, plan_semantic_closure},
     lint::{lint_valkyrie_source, lint_valkyrie_vx_source},
     mir,
     mir::{
@@ -52,7 +51,9 @@ pub use valkyrie::{
         MirValueOrigin, MirValueRef, SingletonInstancePlan, SumTypeLayout, SumVariantLayout, collect_singleton_instance_plans,
         compute_aggregate_layout_plan, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type, storage_kind_for_type,
     },
-    module, type_checker, types,
+    module,
+    semantic_closure::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, GroupSemanticClosure, SemanticClosure, plan_semantic_closure},
+    type_checker, types,
     types::{Identifier, NamePath, QualifiedName, SourceID, SourceSpan},
     typing, validation,
     validation::ControlFlowScheduler,
