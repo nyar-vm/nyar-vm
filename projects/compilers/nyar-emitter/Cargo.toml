@@ -5,7 +5,6 @@ edition.workspace = true
 
 authors.workspace = true
 license.workspace = true
-autotests = false
 
 [features]
 default = []
@@ -31,27 +30,3 @@ zip = { workspace = true }
 nyar-language = { workspace = true }
 ordered-float = { workspace = true }
 tempfile = { workspace = true }
-
-[[test]]
-name = "architecture_guards"
-path = "tests/architecture_guards.rs"
-
-[[test]]
-name = "backend_runtime_contracts"
-path = "tests/backend_runtime_contracts.rs"
-
-[[test]]
-name = "driver_compile_contracts"
-path = "tests/driver_compile_contracts.rs"
-
-[[test]]
-name = "jvm_host_runtime"
-path = "tests/jvm_host_runtime.rs"
-
-[[test]]
-name = "physical_contract_architecture_guards"
-path = "tests/physical_contract_architecture_guards.rs"
-
-[[test]]
-name = "semantic_mir_architecture_guards"
-path = "tests/semantic_mir_architecture_guards.rs"

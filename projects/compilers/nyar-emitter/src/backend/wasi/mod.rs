@@ -3,9 +3,10 @@
 //! 这里按 `wasm / wat / wit` 三个输出格式收口。
 //! `WASM` 二进制模型与编解码由 `acorn-wasm` 提供；组件 `WIT` 文本由本模块直接生成。
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
-mod component;
+#[doc(hidden)]
+pub mod component;
 mod witness_dispatch;
 
 use std::{collections::BTreeSet, path::PathBuf};
@@ -36,7 +37,8 @@ pub use witness_dispatch::{
 /// name. This boundary deliberately preserves the name verbatim: project or
 /// library names are not semantic evidence and must never select a special
 /// bootstrap path.
-fn canonical_wasm_artifact_stem(artifact_name: &str) -> String {
+#[doc(hidden)]
+pub fn canonical_wasm_artifact_stem(artifact_name: &str) -> String {
     artifact_name.to_string()
 }
 
@@ -243,16 +245,4 @@ fn wasi_core_import_name(import: &(String, String), preview: WasiPreview) -> (St
         return (module.to_string(), import.1.clone());
     }
     import.clone()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::canonical_wasm_artifact_stem;
-
-    #[test]
-    fn artifact_stem_preserves_configured_name_without_project_special_cases() {
-        for name in ["demo", "legion", "legion.tools", "legion_tools", "another.library"] {
-            assert_eq!(canonical_wasm_artifact_stem(name), name);
-        }
-    }
 }

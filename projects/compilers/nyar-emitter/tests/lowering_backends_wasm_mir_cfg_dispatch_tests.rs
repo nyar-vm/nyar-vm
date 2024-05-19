@@ -1,15 +1,15 @@
 //! CFG dispatcher contract tests.
 #![allow(deprecated)]
 
-use super::lower_fragment_mir_to_wasm_module;
-use crate::{
-    FragmentSubmission,
-    contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
-    backend_plan_views::MirFunctionMapProvider,
-};
-use nyar::{NyarType, QualifiedName};
-use std::{process::Command, sync::Arc};
 use acorn_wasm::{WasmBinaryModule, WasmOpcode};
+use nyar::{Identifier, NyarType, QualifiedName};
+use nyar_emitter::{
+    FragmentSubmission,
+    backend_plan_views::MirFunctionMapProvider,
+    contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
+    lowering::backends::wasm::mir::lower_fragment_mir_to_wasm_module,
+};
+use std::{collections::BTreeMap, process::Command, sync::Arc};
 
 fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
     ExecutableFunction {
@@ -22,7 +22,6 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
-        case_chains: Vec::new(),
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
@@ -34,15 +33,15 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
 fn lower_main(blocks: Vec<Block>) -> WasmBinaryModule {
     let mut submission = FragmentSubmission::default();
     submission.module_name = "cfg_exec".to_string();
-    submission.entry_operation = Some(QualifiedName::new(vec![nyar::Identifier::new("main")]));
-    let mut mir_map = std::collections::BTreeMap::new();
-    mir_map.insert(QualifiedName::new(vec![nyar::Identifier::new("main")]), leaf_i32_fn("main", blocks));
+    submission.entry_operation = Some(QualifiedName::new(vec![Identifier::new("main")]));
+    let mut mir_map = BTreeMap::new();
+    mir_map.insert(QualifiedName::new(vec![Identifier::new("main")]), leaf_i32_fn("main", blocks));
     submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
     lower_fragment_mir_to_wasm_module(&submission, "main").0
 }
 
 /// Instantiate with Node (Wasm GC capable) and read `exports.main()` as i32.
-/// Opcode presence is not enough for B4 -?execute the CFG.
+/// Opcode presence is not enough for B4 — execute the CFG.
 fn execute_main_i32(module: &WasmBinaryModule) -> i32 {
     let bytes = module.to_bytes().expect("encode wasm module");
     if let Ok(dump) = std::env::var("DUMP_CFG_WASM") {
@@ -100,7 +99,7 @@ process.stdout.write(String(value | 0));
     text.parse::<i32>().unwrap_or_else(|_| panic!("expected i32 stdout, got {text:?}"))
 }
 
-/// Both Branch arms reachable; true must take then→?2 and must not fall into else→? (B4).
+/// Both Branch arms reachable; true must take then→2 and must not fall into else→1 (B4).
 #[test]
 fn wasm_cfg_branch_true_returns_then_arm_not_else() {
     let module = lower_main(vec![
@@ -136,7 +135,7 @@ fn wasm_cfg_branch_true_returns_then_arm_not_else() {
     assert_eq!(execute_main_i32(&module), 42, "true branch must return 42, not fall into else/Fail arm");
 }
 
-/// Inverse: false must take else→? (Result Fail-arm shape), not then→?2.
+/// Inverse: false must take else→1 (Result Fail-arm shape), not then→2.
 #[test]
 fn wasm_cfg_branch_false_returns_else_arm_not_then() {
     let module = lower_main(vec![
@@ -172,15 +171,12 @@ fn wasm_cfg_branch_false_returns_else_arm_not_then() {
 /// Result-match shape: tag==Fine(0) must not enter Fail arm that would return 99.
 #[test]
 fn wasm_cfg_result_tag_fine_does_not_enter_fail_arm() {
-    // Mimic match Fine/Fail: compare tag to 0 (Fine), then branch.
-    // true →?Fine arm (42); false →?Fail arm (99).
     let module = lower_main(vec![
         Block {
             id: BlockRef(0),
             label: "entry".to_string(),
             parameters: Vec::new(),
             instructions: Vec::new(),
-            // tag Fine == 0 →?condition (tag == 0) is true via Bool(true) stand-in
             terminator: Terminator::Branch {
                 condition: Operand::Constant(Constant::Bool(true)),
                 then_target: BlockRef(1),

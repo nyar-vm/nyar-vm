@@ -4,7 +4,8 @@
 //! 正式入口只能消费 Compiler 的函数体；宿主包装只属于产物层，
 //! 不得由调用摘要生成可执行语义。`suspend` 保留显式参数驱动的底层控制流编码。
 
-mod cabi;
+#[doc(hidden)]
+pub mod cabi;
 mod gc;
 pub(crate) mod mir;
 mod sections;
@@ -103,7 +104,8 @@ pub(crate) fn lower_fragment_to_wasm_module_for(
 /// only.  Keep UTF-16 out of both paths until each has its own declared ABI
 /// projection; an i32 handle, JS string, or canonical ABI string is not proof
 /// of the language encoding it represents.
-fn validate_text_encoding_projection(submission: &FragmentSubmission, host_boundary: HostProjectionBoundary) -> Result<()> {
+#[doc(hidden)]
+pub fn validate_text_encoding_projection(submission: &FragmentSubmission, host_boundary: HostProjectionBoundary) -> Result<()> {
     let executable = &submission.backend_plan;
     for operation in executable.instances() {
         let Some(view) = executable.get_function(&operation)
@@ -181,59 +183,4 @@ fn prepend_nyar_custom_sections(module: &mut WasmBinaryModule, submission: &Frag
     let mut prepended = customs.into_iter().map(|(name, bytes)| WasmSection { id: 0, name: Some(name), bytes }).collect::<Vec<_>>();
     prepended.append(&mut module.sections);
     module.sections = prepended;
-}
-
-#[cfg(test)]
-mod text_encoding_tests {
-    use std::{collections::BTreeMap, sync::Arc};
-
-    use crate::{
-        FragmentSubmission,
-        contracts::{Block, BlockRef, ExecutableFunction, Terminator},
-    };
-    use nyar::{Identifier, NyarType, QualifiedName};
-
-    use super::{HostProjectionBoundary, validate_text_encoding_projection};
-
-    fn utf16_submission() -> FragmentSubmission {
-        let operation = QualifiedName::new(vec![Identifier::new("entry")]);
-        let function = ExecutableFunction {
-            return_layout: None,
-            value_layouts: BTreeMap::new(),
-            symbol: "entry".to_string(),
-            return_type: NyarType::Unit,
-            param_types: vec![NyarType::Utf16],
-            value_types: BTreeMap::new(),
-            entry: BlockRef(0),
-            values: Vec::new(),
-            suspend_points: Vec::new(),
-            frame_layouts: Vec::new(),
-            continuations: Vec::new(),
-            case_chains: Vec::new(),
-            #[allow(deprecated)]
-            state_machine: None,
-            suspend_plan: None,
-            blocks: vec![Block {
-                id: BlockRef(0),
-                label: "entry".to_string(),
-                parameters: Vec::new(),
-                instructions: Vec::new(),
-                terminator: Terminator::Return { value: None },
-            }],
-            diagnostics: Vec::new(),
-        };
-        let mut submission = FragmentSubmission::default();
-        submission.backend_plan = Arc::new(crate::BackendPrivatePlan::from_functions(BTreeMap::from([(operation, function)])));
-        submission
-    }
-
-    #[test]
-    fn rejects_utf16_without_a_declared_wasm_carrier_on_every_managed_boundary() {
-        for boundary in [HostProjectionBoundary::WasmJsGlue, HostProjectionBoundary::WasiComponent] {
-            let error = validate_text_encoding_projection(&utf16_submission(), boundary).expect_err("UTF-16 requires a declared carrier");
-            let message = error.to_string();
-            assert!(message.contains("WASM pre-emission verifier"), "{message}");
-            assert!(message.contains("explicit UTF-16 ABI contract"), "{message}");
-        }
-    }
 }

@@ -12,7 +12,6 @@ use super::{
     representation::{is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue},
 };
 use crate::lowering::backends::wasm::gc::{wasm_gc_array_type, wasm_gc_struct_type};
-use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_I32};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// 扫描 MIR：登记 wasm-gc structtype 所需的 layout_id。

@@ -3,7 +3,7 @@
 //! 这里按 `class / jar` 两个输出边界收口，
 //! 相关格式模型经 [`crate::transitional`] 过渡，待迁入 `acorn-jvm`。
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 use std::path::PathBuf;
 

@@ -26,8 +26,7 @@ impl<'a> WasmMirLowerer<'a> {
         let ty = self.require_value_type(value);
         if type_is_wasm_gc_heap_reference(ty) {
             StorageKind::Reference
-        }
-        else {
+        } else {
             self.storage_for_type(ty)
         }
     }

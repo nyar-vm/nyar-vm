@@ -4,7 +4,8 @@ use nyar::{BackendCandidate, BackendSelector, PartitionBackendRequirement};
 use crate::{DriverCompileReport, DriverCompileRequest};
 
 #[cfg(feature = "nyar-vm-lane")]
-mod nyar_vm;
+#[doc(hidden)]
+pub mod nyar_vm;
 mod wasm;
 
 trait BundledBackendCompiler: Sync {
@@ -42,6 +43,12 @@ static DRIVER_COMPILERS: [DriverCompilerRegistration; 2] = [
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 1] =
     [DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER }];
 
+/// 返回 bundled driver 编译器注册名（集成测试专用）。
+#[doc(hidden)]
+pub fn driver_compiler_names() -> Vec<&'static str> {
+    DRIVER_COMPILERS.iter().map(|registration| registration.name).collect()
+}
+
 pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompileReport> {
     let mut selector = BackendSelector::default();
     let mut matched_compilers = Vec::new();
@@ -61,41 +68,4 @@ pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompile
         return Err(miette!("选中的 backend `{}` 没有关联 driver compiler", selected.name));
     };
     compiler.compile(request)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nyar::{HostProjectionBoundary, TargetBackendFamily};
-
-    #[test]
-    fn frozen_families_have_neither_capability_nor_lowering() {
-        for (family, boundary) in [
-            (TargetBackendFamily::Clr, HostProjectionBoundary::Clr),
-            (TargetBackendFamily::Jvm, HostProjectionBoundary::Jvm),
-            (TargetBackendFamily::Native, HostProjectionBoundary::Native),
-        ] {
-            assert!(crate::bundled_backend_capability_descriptor(family).is_none());
-            let result = crate::lowering::lower_fragment_to_driver_input(
-                &crate::FragmentSubmission::default(),
-                family,
-                boundary,
-                std::path::PathBuf::new(),
-                "",
-                crate::nyar_backend_wasi::WasmPackageKind::Binary,
-            );
-            let error = match result {
-                Ok(_) => panic!("冻结目标不得存在正式 lowering"),
-                Err(error) => error,
-            };
-            assert!(error.to_string().contains("拒绝切换目标或补造产物"), "{error}");
-        }
-        assert!(DRIVER_COMPILERS.iter().all(|registration| matches!(registration.name, "wasm-binary" | "nyar-vm")));
-    }
-
-    #[cfg(not(feature = "nyar-vm-lane"))]
-    #[test]
-    fn disabled_vm_does_not_advertise_capability() {
-        assert!(crate::bundled_backend_capability_descriptor(TargetBackendFamily::NyarVm).is_none());
-    }
 }

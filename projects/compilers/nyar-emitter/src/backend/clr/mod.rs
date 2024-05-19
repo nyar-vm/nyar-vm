@@ -3,7 +3,7 @@
 //! 直接写入 `PE/COFF` 二进制，不依赖 `ilasm`，保证跨平台可用。
 //! `MSIL / PE / COFF` 格式模型经 [`crate::transitional`] 过渡，待迁入 Acorn。
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod hosting;
 mod msil_text_writer;

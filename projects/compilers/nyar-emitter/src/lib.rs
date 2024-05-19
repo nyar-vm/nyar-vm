@@ -1,16 +1,18 @@
 #![doc = include_str!("readme.md")]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod transitional;
 
 mod artifacts;
 mod assembly;
-mod backend;
+#[doc(hidden)]
+pub mod backend;
 pub mod backend_plan_views;
 mod backend_private_plan;
 pub mod contracts;
 mod driver;
-mod lowering;
+#[doc(hidden)]
+pub mod lowering;
 mod nullable_profiles;
 
 use std::{
@@ -26,7 +28,8 @@ pub use backend::{
     clr as nyar_backend_clr, jvm as nyar_backend_jvm, native as nyar_backend_native, vm as nyar_backend_vm, wasi as nyar_backend_wasi,
     wasm_js_glue as nyar_backend_wasm_js_glue,
 };
-pub(crate) use backend_private_plan::BackendPrivatePlan;
+#[doc(hidden)]
+pub use backend_private_plan::BackendPrivatePlan;
 use miette::{Result, miette};
 use nyar::{
     BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag, ClrSuspendStrategy,
@@ -34,6 +37,8 @@ use nyar::{
     QualifiedName, ReferenceManagement, TargetBackendFamily, TargetFamily, TargetLane, TargetProfile, TheoryBundle,
     backends::CompilationOptions, packaging::ArtifactSet,
 };
+#[doc(hidden)]
+pub use nyar_types::CompiledProgram;
 use nyar_types::{AggregateLayoutPlan, FlagsLayout, SingletonInstancePlan};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -57,7 +62,7 @@ pub mod testing {
     use nyar::{PartitionBackendRequirement, backends::CompilationOptions};
 
     use super::{
-        DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, compile_with_bundled_backends,
+        BackendPrivatePlan, DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, compile_with_bundled_backends,
         nyar_backend_wasi::WasmBinaryModule,
     };
     #[cfg(feature = "nyar-vm-lane")]
@@ -147,7 +152,24 @@ pub mod testing {
 
     /// Empty submission for integration tests and pending contract migrations.
     pub fn empty_fragment_submission() -> FragmentSubmission {
-        FragmentSubmission { backend_plan: std::sync::Arc::new(super::BackendPrivatePlan::default()) }
+        FragmentSubmission::from_backend_plan(BackendPrivatePlan::default())
+    }
+
+    /// Build a fragment submission from a completed backend-private plan.
+    pub fn fragment_submission_from_plan(plan: BackendPrivatePlan) -> FragmentSubmission {
+        FragmentSubmission::from_backend_plan(plan)
+    }
+
+    /// Stable Node utf8 host import count used by wasm MIR contract tests.
+    pub const NODE_UTF8_IMPORT_COUNT: u8 = 12;
+
+    /// Re-export Nyar VM entry resolution for driver-family contract tests.
+    #[cfg(feature = "nyar-vm-lane")]
+    pub fn resolve_nyar_entry_symbols(
+        module: &nyar_bytecode::NyarModuleData,
+        library_public_exports: &[String],
+    ) -> miette::Result<Vec<String>> {
+        super::driver::families::nyar_vm::resolve_entry_symbols(module, library_public_exports)
     }
 
     /// Compile a previously lowered backend input with bundled backends.
@@ -422,7 +444,8 @@ pub trait FrontendBuildBundle {
 #[derive(Clone)]
 pub struct FragmentSubmission {
     /// 已完成语义闭包与表示合同的目标私有计划。
-    pub(crate) backend_plan: Arc<BackendPrivatePlan>,
+    #[doc(hidden)]
+    pub backend_plan: Arc<BackendPrivatePlan>,
 }
 
 impl std::fmt::Debug for FragmentSubmission {
@@ -431,10 +454,17 @@ impl std::fmt::Debug for FragmentSubmission {
     }
 }
 
-#[cfg(test)]
 impl Default for FragmentSubmission {
     fn default() -> Self {
-        Self { backend_plan: Arc::new(BackendPrivatePlan::default()) }
+        Self::from_backend_plan(BackendPrivatePlan::default())
+    }
+}
+
+impl FragmentSubmission {
+    /// 从目标私有计划构造片段提交。
+    #[doc(hidden)]
+    pub fn from_backend_plan(plan: BackendPrivatePlan) -> Self {
+        Self { backend_plan: Arc::new(plan) }
     }
 }
 
@@ -716,3 +746,24 @@ fn entry_artifact_name(entry_operation: &QualifiedName) -> Option<String> {
     let sanitized = name.chars().map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '_' }).collect::<String>();
     (!sanitized.is_empty()).then_some(sanitized)
 }
+
+// ---------------------------------------------------------------------------
+// Integration-test-only re-exports. Not part of the public API contract.
+// ---------------------------------------------------------------------------
+
+#[doc(hidden)]
+pub use backend::wasi::component::{
+    build_component_wit_document, build_component_wit_document_for, build_dependency_documents, build_dependency_documents_for,
+    wasi_adapt_import_for_preview, wasi_versioned_import_module_for,
+};
+#[doc(hidden)]
+pub use backend::wasi::{WasiPreview, canonical_wasm_artifact_stem as wasm_physical_artifact_name};
+#[doc(hidden)]
+pub use backend::wasm_js_glue::{build_node_launcher, collect_import_bindings};
+#[doc(hidden)]
+pub use driver::families::driver_compiler_names;
+#[cfg(feature = "nyar-vm-lane")]
+#[doc(hidden)]
+pub use driver::families::nyar_vm::resolve_entry_symbols;
+#[doc(hidden)]
+pub use lowering::features::semantic_mir_contract::{observation, validate_function, validate_submission};
