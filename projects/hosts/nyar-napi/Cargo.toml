@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Nyar VM — Node-API native bindings for Nyar host CLIs"
+description = "Nyar VM — Node-API native bindings (orthogonal host surface, no CLI)"
 
 [lib]
 name = "nyar_napi"
@@ -13,4 +13,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 nyar-runner = { workspace = true }
-miette = { workspace = true, features = ["fancy"] }
+napi.workspace = true
+napi-derive.workspace = true
+
+[build-dependencies]
+napi-build = "2"
