@@ -4,7 +4,9 @@ WebAssembly **cdylib/rlib** binding layer for the Nyar runtime.
 
 ## Overview
 
-`nyar-wasm` builds the Wasm GC-facing artifact consumed by `@nyar/nyar` platform packages (`nyar-unknown-wasm32`). It re-exports `nyar-runner` for shared host dispatch. There is **no** `[[bin]]` or `main` in this crate—the user-facing CLI lives under `projects/packages/`.
+`nyar-wasm` builds the Wasm GC-facing artifact consumed by `@nyar/nyar` platform packages (`nyar-unknown-wasm32`). It
+re-exports `nyar-runner` for shared host dispatch. There is **no** `[[bin]]` or `main` in this crate—the user-facing CLI
+lives under `projects/packages/`.
 
 ## Build
 
@@ -15,7 +17,8 @@ pnpm build:wasm   # from projects/packages — collects into platform npm packag
 
 ## API surface
 
-Currently exposes a placeholder (`wasm_placeholder`) while Wasm export wiring is expanded. Actual lowering and module bytes are produced by the Nyar compile pipeline, not hand-written in this crate.
+Currently exposes a placeholder (`wasm_placeholder`) while Wasm export wiring is expanded. Actual lowering and module
+bytes are produced by the Nyar compile pipeline, not hand-written in this crate.
 
 ## Boundaries
 

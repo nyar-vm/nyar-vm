@@ -1,7 +1,7 @@
 //! Wasm GC 绑定层：把 Nyar 运行时编译为 `nyar.wasm` 等产物，
 //! 由构建管线写入 `packages/nyar-unknown-wasm32`。
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub use nyar_runner;
 
