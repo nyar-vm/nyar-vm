@@ -12,7 +12,7 @@ impl Debug for WasiType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Option { inner } => write!(f, "Option<{:?}>", inner),
-            Self::Result { success: _, failure: _ } => write!(f, "Result<?, ?>"),
+            Self::Result { fine: _, fail: _ } => write!(f, "Result<?, ?>"),
             Self::Resource(v) => Debug::fmt(v, f),
             Self::Record(v) => Debug::fmt(v, f),
             Self::Variant(v) => Debug::fmt(v, f),
@@ -36,7 +36,7 @@ impl Display for WasiType {
             Self::Float32 => f.write_str("f32"),
             Self::Float64 => f.write_str("f64"),
             Self::Option { inner } => write!(f, "{}?", inner),
-            Self::Result { success: _, failure: _ } => write!(f, "Result<?, ?>"),
+            Self::Result { fine: _, fail: _ } => write!(f, "Result<?, ?>"),
             Self::Resource(v) => write!(f, "Resource({})", v.symbol),
             Self::Record(v) => Display::fmt(v, f),
             Self::Variant(v) => Display::fmt(v, f),
@@ -189,7 +189,7 @@ impl TypeReference for WasiType {
             Self::Option { .. } => {
                 todo!()
             }
-            Self::Result { success, failure } => {
+            Self::Result { fine: success, fail: failure } => {
                 w.write_str("(result ")?;
                 if let Some(s) = success {
                     s.upper_type(w)?

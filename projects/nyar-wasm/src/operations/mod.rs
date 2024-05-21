@@ -4,7 +4,7 @@ use crate::{
     operations::branch::EnumerationTable,
     Identifier, JumpBranch, JumpTable, WasiType, WasiValue,
 };
-use std::fmt::Write;
+use std::{fmt::Write, sync::Arc};
 
 pub mod branch;
 
@@ -33,8 +33,19 @@ pub enum WasiInstruction {
         /// The target type after transmute
         into: WasiType,
     },
-    GetField,
-    SetField,
+    GetField {
+        name: Arc<str>,
+    },
+    SetField {
+        name: Arc<str>,
+    },
+    CallMethod {},
+    GetOffset {
+        offset: usize,
+    },
+    SetOffset {
+        offset: usize,
+    },
     CallFunction {
         symbol: Identifier,
     },
@@ -114,10 +125,31 @@ impl Emit for WasiInstruction {
                     }
                 }
             }
-            Self::GetField => {
+            Self::GetField { name } => {
+                let last = w.stack.pop();
+                match last {
+                    // struct.get $Type $field $data
+                    Some(WasiType::Record(r)) => {
+                        write!(w, "struct.get {} ${}", r.symbol.wasi_id(), name)?;
+                    }
+                    Some(other) => {
+                        panic!("Expected record, got {:?}", other)
+                    }
+                    None => {
+                        panic!("no item on stack!")
+                    }
+                }
+            }
+            Self::SetField { name } => {
                 todo!()
             }
-            Self::SetField => {
+            Self::CallMethod { .. } => {
+                todo!()
+            }
+            Self::GetOffset { offset } => {
+                todo!()
+            }
+            Self::SetOffset { offset } => {
                 todo!()
             }
             Self::CallFunction { symbol } => match w.source.get_function(symbol) {
