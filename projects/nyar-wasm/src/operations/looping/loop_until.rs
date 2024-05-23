@@ -6,6 +6,6 @@ impl Emit for LoopUntilBody {
 }
 impl LoopUntilBody {
     pub fn make_loop(&self) -> LoopRepeat {
-        LoopRepeat { label: self.label.clone() }
+        LoopRepeat { label: self.label.clone(), body: vec![] }
     }
 }
