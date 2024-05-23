@@ -1,12 +1,16 @@
 use crate::{
     encoder::WastEncoder,
     helpers::{EmitConstant, EmitDefault, ToWasiType},
-    operations::branch::EnumerationTable,
+    operations::{
+        branch::EnumerationTable,
+        looping::{LoopEach, LoopRepeat, LoopUntilBody, LoopWhileBody},
+    },
     Identifier, JumpBranch, JumpTable, WasiType, WasiValue,
 };
 use std::{fmt::Write, sync::Arc};
 
 pub mod branch;
+pub mod looping;
 
 pub(crate) trait Emit {
     fn emit<W: Write>(&self, w: &mut WastEncoder<W>) -> std::fmt::Result;
@@ -33,21 +37,21 @@ pub enum WasiInstruction {
         /// The target type after transmute
         into: WasiType,
     },
+    CallFunction {
+        symbol: Identifier,
+    },
+    CallMethod {},
     GetField {
         name: Arc<str>,
     },
     SetField {
         name: Arc<str>,
     },
-    CallMethod {},
     GetOffset {
         offset: usize,
     },
     SetOffset {
         offset: usize,
-    },
-    CallFunction {
-        symbol: Identifier,
     },
     NativeSum {
         terms: Vec<WasiInstruction>,
@@ -66,6 +70,10 @@ pub enum WasiInstruction {
     Drop {
         objects: usize,
     },
+    Loop(LoopRepeat),
+    LoopEach(LoopEach),
+    LoopWhile(LoopWhileBody),
+    LoopUntil(LoopUntilBody),
 }
 
 impl WasiInstruction {
@@ -128,7 +136,7 @@ impl Emit for WasiInstruction {
             Self::GetField { name } => {
                 let last = w.stack.pop();
                 match last {
-                    // struct.get $Type $field $data
+                    // (struct.get $Type $field $data)
                     Some(WasiType::Record(r)) => {
                         write!(w, "struct.get {} ${}", r.symbol.wasi_id(), name)?;
                     }
@@ -141,16 +149,54 @@ impl Emit for WasiInstruction {
                 }
             }
             Self::SetField { name } => {
-                todo!()
+                let last = w.stack.pop();
+                match last {
+                    // (struct.set $Type $field $data)
+                    Some(WasiType::Record(r)) => {
+                        write!(w, "(struct.set {} ${}", r.symbol.wasi_id(), name)?;
+                    }
+                    Some(other) => {
+                        panic!("Expected record, got {:?}", other)
+                    }
+                    None => {
+                        panic!("no item on stack!")
+                    }
+                }
             }
             Self::CallMethod { .. } => {
                 todo!()
             }
             Self::GetOffset { offset } => {
-                todo!()
+                let last = w.stack.pop();
+                match last {
+                    // (array.get $Type $array $index)
+                    Some(WasiType::Array(r)) => {
+                        write!(w, "array.get {} ${}", r.symbol.wasi_id(), offset)?;
+                        w.stack.push(r.r#type)
+                    }
+                    Some(other) => {
+                        panic!("Expected record, got {:?}", other)
+                    }
+                    None => {
+                        panic!("no item on stack!")
+                    }
+                }
             }
             Self::SetOffset { offset } => {
-                todo!()
+                let last = w.stack.pop();
+                match last {
+                    // (array.set $Type $array $index)
+                    Some(WasiType::Array(r)) => {
+                        write!(w, "array.set {} ${}", r.symbol.wasi_id(), offset)?;
+                        w.stack.push(r.r#type)
+                    }
+                    Some(other) => {
+                        panic!("Expected record, got {:?}", other)
+                    }
+                    None => {
+                        panic!("no item on stack!")
+                    }
+                }
             }
             Self::CallFunction { symbol } => match w.source.get_function(symbol) {
                 Some(s) => {
@@ -175,8 +221,6 @@ impl Emit for WasiInstruction {
                     panic!("Missing function")
                 }
             },
-            // (drop drop ...)
-            Self::Drop { objects } => write!(w, "({})", "drop ".repeat(*objects).trim_end())?,
             Self::Goto { .. } => {
                 todo!()
             }
@@ -196,6 +240,12 @@ impl Emit for WasiInstruction {
             Self::JumpEnumeration(_) => {
                 todo!()
             }
+            // (drop drop ...)
+            Self::Drop { objects } => write!(w, "({})", "drop ".repeat(*objects).trim_end())?,
+            Self::Loop(body) => body.emit(w)?,
+            Self::LoopEach(body) => body.emit(w)?,
+            Self::LoopWhile(body) => body.emit(w)?,
+            Self::LoopUntil(body) => body.emit(w)?,
         }
         Ok(())
     }
