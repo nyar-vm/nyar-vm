@@ -5,9 +5,9 @@
  * product language packs —only tiny English fallbacks for `commander.*` chrome/err ids.
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import path from 'node:path';
-import type { LocaleCatalog, LocalizePlugin } from './types.ts';
+import type {LocaleCatalog, LocalizePlugin} from './types.ts';
 
 export type LocalesManifest = {
     defaultLocale: string;
@@ -188,7 +188,12 @@ export function createLocalizeFromLocales(opts: CreateLocalizeFromLocalesOptions
     const env = opts.env ?? process.env;
     const argv = opts.argv ?? [];
     const manifest = loadLocalesManifest(opts.root);
-    const locale = typeof opts.locale === 'string' && opts.locale ? opts.locale : resolveLocale({ argv, env, manifest, envKeys: opts.envKeys });
+    const locale = typeof opts.locale === 'string' && opts.locale ? opts.locale : resolveLocale({
+        argv,
+        env,
+        manifest,
+        envKeys: opts.envKeys
+    });
     const catalog = opts.catalog ?? loadCatalog(locale, opts.root);
     return {
         resolveLocale: () => locale,

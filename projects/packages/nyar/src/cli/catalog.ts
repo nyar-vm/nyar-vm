@@ -1,4 +1,4 @@
-import type { LocaleCatalog } from '@nyar/commander';
+import type {LocaleCatalog} from '@nyar/commander';
 
 /** Nyar CLI 英文 catalog（产品层；`commander.*` 由框架 fallback 提供）。 */
 export const NYAR_CLI_CATALOG: LocaleCatalog = {

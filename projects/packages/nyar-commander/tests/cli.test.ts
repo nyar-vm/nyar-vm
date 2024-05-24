@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import {describe, it} from 'node:test';
 
-import { assertCatalogCoverage, createCli, parseOptions, parseOptionDef } from '../src/index.ts';
+import {assertCatalogCoverage, createCli, parseOptionDef, parseOptions} from '../src/index.ts';
 
 describe('@nyar/commander', () => {
     it('parseOptions maps flags and positionals', () => {

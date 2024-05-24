@@ -1,7 +1,7 @@
-import { describe, it } from 'node:test';
+import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runCli } from '../src/cli/cli.ts';
+import {runCli} from '../src/cli/cli.ts';
 
 describe('nyar CLI host', () => {
     it('runCli routes argv through @nyar/commander (unknown command exits 1)', async () => {

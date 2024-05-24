@@ -1,10 +1,10 @@
-import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
+import {createRequire} from 'node:module';
+import {existsSync} from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
 
-import { hostPlatformKey } from './platform.ts';
-import { nativeBinaryName, platformShort, platformTriple } from './platform-triple.ts';
+import {hostPlatformKey} from './platform.ts';
+import {nativeBinaryName, platformShort, platformTriple} from './platform-triple.ts';
 
 /** Node 宿主协议 id（与 nyar-napi `HOST_PROTOCOL` 对齐）。 */
 export const HOST_PROTOCOL = 'nyar-host/0';
@@ -74,8 +74,8 @@ export function resolveNativePath(): string {
 
     throw new Error(
         `nyar native addon not found for ${packageName}. Run: node scripts/build.mjs napi\n` +
-            `Looked in:\n${candidates.map((c) => `  - ${c}`).join('\n')}\n` +
-            `(host ${hostPlatformKey()})`,
+        `Looked in:\n${candidates.map((c) => `  - ${c}`).join('\n')}\n` +
+        `(host ${hostPlatformKey()})`,
     );
 }
 

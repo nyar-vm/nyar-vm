@@ -1,6 +1,6 @@
-import { createRequire } from 'node:module';
-import { arch, platform } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import {createRequire} from 'node:module';
+import {arch, platform} from 'node:os';
+import {fileURLToPath} from 'node:url';
 
 const HOST_KEY = `${platform()}-${arch()}`;
 
@@ -49,7 +49,7 @@ export function resolveCollect(): NyarCollect {
         const req = requireOptional(nativePackage);
         if (req) {
             const entry = req.resolve('./index.mjs');
-            return { kind: 'native', packageName: nativePackage, entry };
+            return {kind: 'native', packageName: nativePackage, entry};
         }
     }
 

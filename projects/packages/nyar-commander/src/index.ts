@@ -6,7 +6,7 @@
  * `commander.*` with tiny English fallbacks —no product language packs here.
  */
 
-export type { CatalogLoader, LocaleCatalog, LocalizePlugin } from './types.ts';
+export type {CatalogLoader, LocaleCatalog, LocalizePlugin} from './types.ts';
 
 export {
     COMMANDER_FALLBACK_EN_US,
@@ -19,10 +19,10 @@ export {
     translate,
     translateWithFallback,
 } from './locales.ts';
-export type { CreateLocalizeFromLocalesOptions, LocalesManifest } from './locales.ts';
+export type {CreateLocalizeFromLocalesOptions, LocalesManifest} from './locales.ts';
 
-import type { CatalogLoader, LocaleCatalog, LocalizePlugin } from './types.ts';
-import { COMMANDER_FALLBACK_EN_US, createLocalizeFromLocales, translate, translateWithFallback } from './locales.ts';
+import type {CatalogLoader, LocaleCatalog, LocalizePlugin} from './types.ts';
+import {COMMANDER_FALLBACK_EN_US, createLocalizeFromLocales, translate, translateWithFallback} from './locales.ts';
 
 /** Options bag passed to actions (`_` = positionals). */
 export type ParsedOptions = Record<string, string | boolean | string[]> & { _: string[] };
@@ -61,32 +61,42 @@ export type CommandDef = {
 
 export interface Command {
     option(rawName: string, helpId: string): this;
+
     action(handler: ActionHandler): this;
+
     command(rawName: string, helpId: string): Command;
+
     /** Leave remaining argv unparsed (for nested domain CLIs). */
     passthrough(): this;
 }
 
 export interface Cli {
     use(plugin: LocalizePlugin): this;
+
     catalog(loader: CatalogLoader): this;
+
     /**
      * Load catalogs from a locales directory (`locales.json` + `<locale>/*.json`).
      * Later `.use` overrides. Rebuilds at `parse` so `--locale` / env apply.
      */
     locales(root: string, opts?: { envKeys?: string[] }): this;
+
     /** Global option (parsed before the command; merged into action options). */
     option(rawName: string, helpId: string): this;
+
     /**
      * Optional short intro line(s) before derived command/option lists.
      * Do **not** paste full usage here —help is derived from the command tree.
      */
     intro(introId: string): this;
+
     /**
      * @deprecated Use {@link intro}. Kept as alias so older call sites compile.
      */
     help(helpId: string): this;
+
     command(rawName: string, helpId: string): Command;
+
     parse(argv?: string[]): Promise<number>;
 }
 
@@ -177,7 +187,7 @@ class CliBuilder implements Cli {
             this.rootOptions.push(parseOptionDef('--locale <id>', 'commander.opt.locale'));
         }
         // Eager plugin so missing-manifest fails early; parse rebuilds with argv.
-        this.localize = wrapWithCommanderFallback(createLocalizeFromLocales({ root, envKeys: opts.envKeys }));
+        this.localize = wrapWithCommanderFallback(createLocalizeFromLocales({root, envKeys: opts.envKeys}));
         return this;
     }
 
@@ -219,7 +229,7 @@ class CliBuilder implements Cli {
 
     async parse(argvInput: string[] = process.argv): Promise<number> {
         const argv0 = normalizeArgv(argvInput);
-        const { options: globalOpts, rest: argv } = peelKnownOptions(argv0, this.rootOptions);
+        const {options: globalOpts, rest: argv} = peelKnownOptions(argv0, this.rootOptions);
 
         let localize = this.localize;
         if (this.localesRoot) {
@@ -247,7 +257,7 @@ class CliBuilder implements Cli {
         const cmdToken = argv[0]!;
         const matched = this.roots.find((c) => c.def.names.includes(cmdToken));
         if (!matched) {
-            console.error(t('commander.err.unknown_command', { cmd: cmdToken }));
+            console.error(t('commander.err.unknown_command', {cmd: cmdToken}));
             console.log(this.formatRootHelp(t));
             return 1;
         }
@@ -261,7 +271,7 @@ class CliBuilder implements Cli {
         if (this.introId) {
             lines.push(t(this.introId), '');
         }
-        lines.push(t('commander.ui.usage', { name: this.name }), '', t('commander.ui.commands'));
+        lines.push(t('commander.ui.usage', {name: this.name}), '', t('commander.ui.commands'));
         for (const c of this.roots) {
             lines.push(`  ${c.def.rawName.padEnd(28)} ${t(c.def.helpId)}`);
         }
@@ -297,7 +307,7 @@ class CliBuilder implements Cli {
                 return await this.dispatch(child, rest.slice(1), t, [...path, childTok], globalOpts);
             }
             if (!def.action) {
-                console.error(t('commander.err.unknown_command', { cmd: [...path, childTok].join(' ') }));
+                console.error(t('commander.err.unknown_command', {cmd: [...path, childTok].join(' ')}));
                 console.log(formatCommandHelp(this.name, def, t, path, this.rootOptions));
                 return 1;
             }
@@ -310,11 +320,11 @@ class CliBuilder implements Cli {
 
         let options: ParsedOptions;
         try {
-            options = def.passthrough ? { _: rest.slice() } : parseOptions(rest, def.options);
+            options = def.passthrough ? {_: rest.slice()} : parseOptions(rest, def.options);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             if (msg.startsWith('unknown_option:')) {
-                console.error(t('commander.err.unknown_option', { option: msg.slice('unknown_option:'.length) }));
+                console.error(t('commander.err.unknown_option', {option: msg.slice('unknown_option:'.length)}));
             } else if (msg.startsWith('missing_value:')) {
                 console.error(
                     t('commander.err.missing_option_value', {
@@ -425,7 +435,7 @@ export function peelKnownOptions(argv: string[], optionDefs: OptionDef[]): { opt
     for (const def of optionDefs) {
         for (const a of def.aliases) byAlias.set(a, def);
     }
-    const options: ParsedOptions = { _: [] };
+    const options: ParsedOptions = {_: []};
     const rest: string[] = [];
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
@@ -484,7 +494,7 @@ export function peelKnownOptions(argv: string[], optionDefs: OptionDef[]): { opt
         }
         rest.push(a);
     }
-    return { options, rest };
+    return {options, rest};
 }
 
 /** Strip `node` + script when callers pass full `process.argv`. */
@@ -546,7 +556,7 @@ export function parseOptionDef(rawName: string, helpId: string): OptionDef {
         throw new Error(`@nyar/commander: invalid option rawName ${JSON.stringify(rawName)}`);
     }
     const key = aliases.find((a) => a.length > 1) ?? aliases[0]!;
-    return { rawName, helpId, key, aliases, takesValue, optionalValue, repeatable };
+    return {rawName, helpId, key, aliases, takesValue, optionalValue, repeatable};
 }
 
 /**
@@ -557,7 +567,7 @@ export function parseOptions(argv: string[], optionDefs: OptionDef[]): ParsedOpt
     for (const def of optionDefs) {
         for (const a of def.aliases) byAlias.set(a, def);
     }
-    const out: ParsedOptions = { _: [] };
+    const out: ParsedOptions = {_: []};
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]!;
         if (a === '--') {

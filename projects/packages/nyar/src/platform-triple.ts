@@ -1,4 +1,4 @@
-import { arch, platform } from 'node:os';
+import {arch, platform} from 'node:os';
 
 /** npm platform short id (`win32-x64`, …) from host OS. */
 export function platformShort(triple?: string): string {
@@ -12,7 +12,7 @@ export function platformShort(triple?: string): string {
 
 /** Host triple used for platform-named native binaries (`nyar.<triple>.node`). */
 export function platformTriple(): string {
-    const { platform: os, arch: cpu } = { platform: platform(), arch: arch() };
+    const {platform: os, arch: cpu} = {platform: platform(), arch: arch()};
     if (os === 'win32' && cpu === 'x64') return 'win32-x64-msvc';
     if (os === 'linux' && cpu === 'x64') return 'linux-x64-gnu';
     if (os === 'darwin' && cpu === 'arm64') return 'darwin-arm64';

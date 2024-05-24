@@ -1,15 +1,14 @@
-import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-import type { Cli, Command, ParsedOptions } from '@nyar/commander';
-import { createCli } from '@nyar/commander';
+import type {Cli, Command, ParsedOptions} from '@nyar/commander';
+import {createCli} from '@nyar/commander';
 
-import { NYAR_CLI_CATALOG } from './catalog.ts';
-import { getHostInfo, listRuntimeFamilies, prepareRuntimeCommand, runPreparedCommand } from '../native.ts';
-import { hostPlatformKey, resolveCollect } from '../platform.ts';
+import {NYAR_CLI_CATALOG} from './catalog.ts';
+import {getHostInfo, listRuntimeFamilies, prepareRuntimeCommand, runPreparedCommand} from '../native.ts';
+import {hostPlatformKey, resolveCollect} from '../platform.ts';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -123,7 +122,7 @@ function forwardWasm(rest: string[]): number {
         console.error(`nyar: missing wasm collect at ${collect.entry}`);
         return 1;
     }
-    const result = spawnSync('wasmtime', [collect.entry, ...rest], { stdio: 'inherit', shell: false });
+    const result = spawnSync('wasmtime', [collect.entry, ...rest], {stdio: 'inherit', shell: false});
     return result.status ?? 1;
 }
 
