@@ -1,8 +1,8 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
-use oak_prolog::{PrologBuilder, PrologLanguage, PrologRoot};
 use oak_core::{Builder, SourceText};
+use oak_prolog::{PrologBuilder, PrologLanguage, PrologRoot};
 
 pub struct RustyPrologFrontend {
     language: PrologLanguage,
@@ -10,9 +10,7 @@ pub struct RustyPrologFrontend {
 
 impl RustyPrologFrontend {
     pub fn new() -> Self {
-        Self {
-            language: PrologLanguage::default(),
-        }
+        Self { language: PrologLanguage::default() }
     }
 }
 
@@ -31,9 +29,7 @@ impl NyarFrontend<(), PrologRoot> for RustyPrologFrontend {
         let mut session = oak_core::parser::ParseSession::<PrologLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &PrologRoot, _ctx: &mut NyarContext<'_, V>) -> Id {

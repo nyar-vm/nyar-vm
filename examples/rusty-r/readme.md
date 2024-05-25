@@ -4,16 +4,17 @@ An R language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-r` brings R, the standard language for statistical computing, to the Nyar VM, enabling data science workflows to enjoy Nyar JIT and memory management while preserving R syntax and data structures.
+`rusty-r` brings R, the standard language for statistical computing, to the Nyar VM, enabling data science workflows to
+enjoy Nyar JIT and memory management while preserving R syntax and data structures.
 
 ## Features
 
 - **Statistical computing**: oriented toward R's core statistical and graphics capabilities.
 - **Vectorized operations**: vector arithmetic and functional patterns mapped to optimized Gaia IR.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: optimization of hot computation loops and data processing pipelines.
-  - **`nyar-gc`**: precise memory management for large datasets and complex objects.
-  - **`nyar-aot`**: E-Graph ahead-of-time optimization for R scripts.
+    - **`nyar-jit`**: optimization of hot computation loops and data processing pipelines.
+    - **`nyar-gc`**: precise memory management for large datasets and complex objects.
+    - **`nyar-aot`**: E-Graph ahead-of-time optimization for R scripts.
 - **Modern performance**: brings R ecosystem benefits to an interpreter + JIT multi-tier VM.
 
 ## Supported constructs

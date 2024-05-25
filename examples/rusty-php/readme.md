@@ -4,15 +4,16 @@ A PHP language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-php` brings PHP, the web ecosystem workhorse, to the Nyar VM, running PHP applications on a modern JIT runtime with algebraic effects for request handling and GC for long-lived processes.
+`rusty-php` brings PHP, the web ecosystem workhorse, to the Nyar VM, running PHP applications on a modern JIT runtime
+with algebraic effects for request handling and GC for long-lived processes.
 
 ## Features
 
 - **Web performance**: optimized for typical PHP request–response cycles.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: multi-tier optimization from interpreter to Extreme for hot functions and scripts.
-  - **`nyar-gc`**: high-performance mark-and-sweep for PHP objects and arrays.
-  - **Algebraic effects**: exceptions, generators, and future async patterns.
+    - **`nyar-jit`**: multi-tier optimization from interpreter to Extreme for hot functions and scripts.
+    - **`nyar-gc`**: high-performance mark-and-sweep for PHP objects and arrays.
+    - **Algebraic effects**: exceptions, generators, and future async patterns.
 - **Modern runtime**: brings PHP ecosystem benefits to a multi-language VM.
 
 ## Supported constructs

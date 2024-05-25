@@ -4,7 +4,8 @@ A Groovy language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-groovy` brings Groovy to the Nyar VM, providing a runtime for dynamic, flexible Groovy applications by mapping Groovy features to the Nyar native execution engine.
+`rusty-groovy` brings Groovy to the Nyar VM, providing a runtime for dynamic, flexible Groovy applications by mapping
+Groovy features to the Nyar native execution engine.
 
 ## Features
 

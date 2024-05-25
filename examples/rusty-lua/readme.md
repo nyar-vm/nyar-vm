@@ -4,7 +4,8 @@ A Lua language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-lua` provides full lexical and syntactic analysis, compiling Lua source into Gaia IR. Lua scripts benefit from algebraic effects and multi-tier JIT.
+`rusty-lua` provides full lexical and syntactic analysis, compiling Lua source into Gaia IR. Lua scripts benefit from
+algebraic effects and multi-tier JIT.
 
 ## Features
 

@@ -1,9 +1,8 @@
-use chomsky_uir::{EGraph, IKun, Id};
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
+use chomsky_uir::{EGraph, IKun, Id};
 use nyar_types::NyarError;
-use nyar_vm::vm::NyarVM;
-use nyar_vm::vm::traits::RuntimeProvider;
+use nyar_vm::vm::{traits::RuntimeProvider, NyarVM};
 
 #[derive(Debug)]
 pub struct RustyLuaRuntime {
@@ -12,9 +11,7 @@ pub struct RustyLuaRuntime {
 
 impl RustyLuaRuntime {
     pub fn new() -> Self {
-        Self {
-            vm: NyarVM::new(),
-        }
+        Self { vm: NyarVM::new() }
     }
 
     pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), NyarError> {
@@ -43,7 +40,8 @@ impl RustyLuaRuntime {
                 .find(|e| e.symbol == "main".into())
                 .or(module_ref.exports.first())
                 .map(|e| (e.chunk_idx as usize, e.symbol.clone()))
-        } else {
+        }
+        else {
             None
         };
 
@@ -58,7 +56,8 @@ impl RustyLuaRuntime {
                     Err(e)
                 }
             }
-        } else {
+        }
+        else {
             Err(NyarError::RuntimeError("No entry point found in module".to_string()))
         }
     }

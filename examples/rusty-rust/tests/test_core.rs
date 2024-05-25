@@ -25,9 +25,7 @@ pub fn test_lexer() -> Result<(), String> {
         return Err(format!("词法分析有错误: {:?}", result.diagnostics));
     }
 
-    let tokens = result
-        .result
-        .map_err(|e| format!("词法分析失败: {:?}", e))?;
+    let tokens = result.result.map_err(|e| format!("词法分析失败: {:?}", e))?;
 
     println!("成功解析词法分析");
 
@@ -97,14 +95,10 @@ pub fn test_parser() -> Result<(), String> {
         return Err(format!("词法分析有错误: {:?}", result.diagnostics));
     }
 
-    let tokens = result
-        .result
-        .map_err(|e| format!("词法分析失败: {:?}", e))?;
+    let tokens = result.result.map_err(|e| format!("词法分析失败: {:?}", e))?;
 
     let mut parser = Parser::new(tokens);
-    let program = parser
-        .parse_program()
-        .map_err(|e| format!("语法分析失败: {:?}", e))?;
+    let program = parser.parse_program().map_err(|e| format!("语法分析失败: {:?}", e))?;
 
     // 验证程序结构
     if program.functions.len() != 1 {
@@ -117,17 +111,12 @@ pub fn test_parser() -> Result<(), String> {
     }
 
     if main_func.body.statements.len() != 2 {
-        return Err(format!(
-            "期望 2 个语句，实际 {}",
-            main_func.body.statements.len()
-        ));
+        return Err(format!("期望 2 个语句，实际 {}", main_func.body.statements.len()));
     }
 
     // 验证第一个语句是变量声明
     match &main_func.body.statements[0] {
-        Statement::VariableDeclaration {
-            name, initializer, ..
-        } => {
+        Statement::VariableDeclaration { name, initializer, .. } => {
             if name != "x" {
                 return Err(format!("期望变量名为 'x'，实际 '{}'", name));
             }
@@ -136,7 +125,8 @@ pub fn test_parser() -> Result<(), String> {
                     Expression::Literal(Literal::Integer(42)) => {}
                     _ => return Err("期望变量值为整数 42".to_string()),
                 }
-            } else {
+            }
+            else {
                 return Err("期望变量有初始值".to_string());
             }
         }
@@ -173,14 +163,10 @@ pub fn test_complex_expression() -> Result<(), String> {
         return Err(format!("词法分析有错误: {:?}", result.diagnostics));
     }
 
-    let tokens = result
-        .result
-        .map_err(|e| format!("词法分析失败: {:?}", e))?;
+    let tokens = result.result.map_err(|e| format!("词法分析失败: {:?}", e))?;
 
     let mut parser = Parser::new(tokens);
-    let program = parser
-        .parse_program()
-        .map_err(|e| format!("语法分析失败: {:?}", e))?;
+    let program = parser.parse_program().map_err(|e| format!("语法分析失败: {:?}", e))?;
 
     let func = &program.functions[0];
     match &func.body.statements[0] {
@@ -188,15 +174,13 @@ pub fn test_complex_expression() -> Result<(), String> {
             // 验证表达式结构 10 + 5
             if let Some(init_expr) = initializer {
                 match init_expr {
-                    Expression::BinaryOperation {
-                        operator: BinaryOperator::Add,
-                        ..
-                    } => {
+                    Expression::BinaryOperation { operator: BinaryOperator::Add, .. } => {
                         println!("✓ 正确解析了二元表达式");
                     }
                     _ => return Err("期望二元表达式".to_string()),
                 }
-            } else {
+            }
+            else {
                 return Err("期望初始化表达式".to_string());
             }
         }

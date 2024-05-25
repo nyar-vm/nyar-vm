@@ -1,9 +1,10 @@
 use chomsky_types::Loc;
-use chomsky_uir::egraph::Id;
-use chomsky_uir::intent::IKun;
+use chomsky_uir::{egraph::Id, intent::IKun};
 use nyar_types::NyarError;
-use oak_r::ast::{Expr, RRoot, Statement};
-use oak_r::kind::RSyntaxKind;
+use oak_r::{
+    ast::{Expr, RRoot, Statement},
+    kind::RSyntaxKind,
+};
 
 pub struct TranslatorContext<'a, A: chomsky_uir::Analysis<IKun>> {
     pub builder: chomsky_uir::builder::IntentBuilder<'a, A>,
@@ -27,11 +28,7 @@ impl NyarTranslator {
         Loc::new(0, span.start as u32, span.end as u32)
     }
 
-    pub fn translate_root<A: chomsky_uir::Analysis<IKun>>(
-        &self,
-        root: &RRoot,
-        ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<Id, NyarError> {
+    pub fn translate_root<A: chomsky_uir::Analysis<IKun>>(&self, root: &RRoot, ctx: &mut TranslatorContext<'_, A>) -> Result<Id, NyarError> {
         let mut items = Vec::new();
         for stmt in &root.statements {
             items.push(self.translate_statement(stmt, ctx)?);
@@ -50,12 +47,7 @@ impl NyarTranslator {
                 Ok(ctx.builder.assign(&name.name, val_id, self.to_loc(span)))
             }
             Statement::ExprStmt { expr, .. } => self.translate_expr(expr, ctx),
-            Statement::FunctionDef {
-                name,
-                params,
-                body,
-                span,
-            } => {
+            Statement::FunctionDef { name, params, body, span } => {
                 let mut body_ids = Vec::new();
                 for s in body {
                     body_ids.push(self.translate_statement(s, ctx)?);
@@ -68,29 +60,23 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_expr<A: chomsky_uir::Analysis<IKun>>(
-        &self,
-        expr: &Expr,
-        ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<Id, NyarError> {
+    fn translate_expr<A: chomsky_uir::Analysis<IKun>>(&self, expr: &Expr, ctx: &mut TranslatorContext<'_, A>) -> Result<Id, NyarError> {
         match expr {
             Expr::Ident(id) => Ok(ctx.builder.symbol(&id.name, self.to_loc(&id.span))),
             Expr::Literal { value, span } => {
                 if let Ok(i) = value.parse::<i64>() {
                     Ok(ctx.builder.constant(i, self.to_loc(span)))
-                } else if let Ok(f) = value.parse::<f64>() {
+                }
+                else if let Ok(f) = value.parse::<f64>() {
                     Ok(ctx.builder.float(f, self.to_loc(span)))
-                } else {
+                }
+                else {
                     Ok(ctx.builder.string(value, self.to_loc(span)))
                 }
             }
             Expr::Bool { value, span } => Ok(ctx.builder.bool(*value, self.to_loc(span))),
             Expr::Null { span } => Ok(ctx.builder.symbol("null", self.to_loc(span))),
-            Expr::Call {
-                callee,
-                args,
-                span,
-            } => {
+            Expr::Call { callee, args, span } => {
                 let callee_id = self.translate_expr(callee, ctx)?;
                 let mut arg_ids = Vec::new();
                 for arg in args {
@@ -100,25 +86,14 @@ impl NyarTranslator {
                 if let Expr::Ident(id) = callee.as_ref() {
                     match id.name.as_str() {
                         "print" => {
-                            return Ok(ctx.builder.cross_lang_call(
-                                "nyar",
-                                "std",
-                                "print",
-                                arg_ids,
-                                self.to_loc(span),
-                            ));
+                            return Ok(ctx.builder.cross_lang_call("nyar", "std", "print", arg_ids, self.to_loc(span)));
                         }
                         _ => {}
                     }
                 }
                 Ok(ctx.builder.call(callee_id, arg_ids, self.to_loc(span)))
             }
-            Expr::Binary {
-                left,
-                op,
-                right,
-                span,
-            } => {
+            Expr::Binary { left, op, right, span } => {
                 let l_id = self.translate_expr(left, ctx)?;
                 let r_id = self.translate_expr(right, ctx)?;
                 let op_name = match op {
@@ -144,9 +119,7 @@ impl NyarTranslator {
                     RSyntaxKind::Not => "not",
                     _ => "unknown",
                 };
-                Ok(ctx
-                    .builder
-                    .extension(op_name, vec![expr_id], self.to_loc(span)))
+                Ok(ctx.builder.extension(op_name, vec![expr_id], self.to_loc(span)))
             }
         }
     }

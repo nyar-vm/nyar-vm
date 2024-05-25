@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 //! Mini Rust 语言实现
 #![feature(new_range_api)]
 
@@ -8,7 +8,7 @@ pub mod runtime;
 
 pub use crate::runtime::RustyRustRuntime;
 
-use chomsky_uir::{Analysis, IKun, egraph::HasDebugInfo};
+use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_rust::{RustBuilder, RustLanguage, RustRoot};
@@ -22,14 +22,13 @@ pub struct MiniRustFrontend {
 impl MiniRustFrontend {
     /// 创建一个新的 Mini Rust 前端
     pub fn new() -> Self {
-        Self {
-            language: RustLanguage::default(),
-        }
+        Self { language: RustLanguage::default() }
     }
 }
 
-impl<A: Analysis<IKun> + 'static> NyarFrontend<A, RustRoot> for MiniRustFrontend 
-where A::Data: HasDebugInfo
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A, RustRoot> for MiniRustFrontend
+where
+    A::Data: HasDebugInfo,
 {
     type Language = RustLanguage;
 
@@ -39,9 +38,7 @@ where A::Data: HasDebugInfo
         let mut session = oak_core::parser::ParseSession::<RustLanguage>::default();
 
         let output = oak_core::Builder::build(&builder, &source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &RustRoot, ctx: &mut NyarContext<'_, V, A>) -> Id {

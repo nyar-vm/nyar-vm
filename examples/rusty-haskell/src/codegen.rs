@@ -2,7 +2,7 @@
 
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
-use nyar_types::{NyarError};
+use nyar_types::NyarError;
 use oak_haskell::ast::*;
 
 /// Haskell 翻译器上下文
@@ -12,9 +12,7 @@ pub struct TranslatorContext<'a, A: chomsky_uir::Analysis<IKun> = ()> {
 
 impl<'a, A: chomsky_uir::Analysis<IKun>> TranslatorContext<'a, A> {
     pub fn new(egraph: &'a mut EGraph<IKun, A>) -> Self {
-        Self {
-            builder: IntentBuilder::new(egraph),
-        }
+        Self { builder: IntentBuilder::new(egraph) }
     }
 
     pub fn new_with_builder(builder: IntentBuilder<'a, A>) -> Self {
@@ -42,8 +40,7 @@ impl NyarTranslator {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
-        let extractor =
-            chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
+        let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
 
         Ok(extractor.extract(root_id))
     }
@@ -62,7 +59,8 @@ impl NyarTranslator {
         let loc = Loc::default();
         if let Some(name) = &root.module_name {
             Ok(ctx.builder.module(&name.name, items, loc))
-        } else {
+        }
+        else {
             Ok(ctx.builder.seq(items, loc))
         }
     }
@@ -103,7 +101,8 @@ impl NyarTranslator {
                 }
             }
             Ok(ctx.builder.function(&f.name.name, params, vec![body], loc))
-        } else {
+        }
+        else {
             // Multiple equations - simplified as a sequence of anonymous functions for now
             let seq = ctx.builder.seq(equations, loc);
             Ok(ctx.builder.assign(&f.name.name, seq, loc))

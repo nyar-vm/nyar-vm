@@ -1,9 +1,11 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 use chomsky_uir::IKun;
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
-use oak_cmd::ast::{CmdRoot, Element};
-use oak_cmd::{Builder as CmdBuilder, Language as CmdLanguage};
+use oak_cmd::{
+    ast::{CmdRoot, Element},
+    Builder as CmdBuilder, Language as CmdLanguage,
+};
 use oak_core::{Builder, SourceText};
 use oak_vfs::Vfs;
 
@@ -13,9 +15,7 @@ pub struct RustyCmdFrontend {
 
 impl RustyCmdFrontend {
     pub fn new() -> Self {
-        Self {
-            language: CmdLanguage::default(),
-        }
+        Self { language: CmdLanguage::default() }
     }
 
     fn lower_element<V: Vfs>(&self, element: &Element, _ctx: &mut NyarContext<V>) -> Id {
@@ -48,9 +48,7 @@ impl NyarFrontend for RustyCmdFrontend {
         let mut session = oak_core::parser::ParseSession::<CmdLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &CmdRoot, ctx: &mut NyarContext<V>) -> Id {

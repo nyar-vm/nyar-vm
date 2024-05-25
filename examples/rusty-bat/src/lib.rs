@@ -1,9 +1,11 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 use chomsky_uir::IKun;
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
-use oak_bat::ast::{BatRoot, Element};
-use oak_bat::{Builder as BatBuilder, Language as BatLanguage};
+use oak_bat::{
+    ast::{BatRoot, Element},
+    Builder as BatBuilder, Language as BatLanguage,
+};
 use oak_core::{Builder, SourceText};
 use oak_vfs::Vfs;
 
@@ -13,9 +15,7 @@ pub struct RustyBatFrontend {
 
 impl RustyBatFrontend {
     pub fn new() -> Self {
-        Self {
-            language: BatLanguage::default(),
-        }
+        Self { language: BatLanguage::default() }
     }
 
     fn lower_element<V: Vfs>(&self, element: &Element, _ctx: &mut NyarContext<V>) -> Id {
@@ -48,9 +48,7 @@ impl NyarFrontend for RustyBatFrontend {
         let mut session = oak_core::parser::ParseSession::<BatLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &BatRoot, ctx: &mut NyarContext<V>) -> Id {

@@ -1,10 +1,9 @@
 //! Dart 代码生成实现
 
-use nyar_types::{NyarContext, Loc};
+use chomsky_uir::{IKun, Id};
+use nyar_types::{Loc, NyarContext};
+use oak_dart::{ast::Item, DartRoot};
 use oak_vfs::Vfs;
-use chomsky_uir::{Id, IKun};
-use oak_dart::DartRoot;
-use oak_dart::ast::Item;
 
 pub struct UirConverter<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<IKun> = ()> {
     ctx: &'a mut NyarContext<'b, V, A>,

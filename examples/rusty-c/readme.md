@@ -4,7 +4,8 @@ A C language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-c` runs C source on the Nyar VM, bridging procedural C with a managed runtime (GC + JIT) instead of a raw native-only process model.
+`rusty-c` runs C source on the Nyar VM, bridging procedural C with a managed runtime (GC + JIT) instead of a raw
+native-only process model.
 
 ## Features
 

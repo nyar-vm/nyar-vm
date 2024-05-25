@@ -1,6 +1,6 @@
-use rusty_fortran::RustyFortranFrontend;
 use nyar_types::NyarFrontend;
 use oak_vfs::MemoryVfs;
+use rusty_fortran::RustyFortranFrontend;
 
 #[test]
 fn test_parse_hello() {

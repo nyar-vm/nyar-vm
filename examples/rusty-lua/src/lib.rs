@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 //! Rusty Lua 语言前端
 
 pub mod codegen;
@@ -6,10 +6,10 @@ pub mod runtime;
 
 pub use crate::runtime::RustyLuaRuntime;
 
+use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_lua::{ast::LuaRoot, LuaBuilder, LuaLanguage};
-use chomsky_uir::{Analysis, IKun, egraph::HasDebugInfo};
 
 /// Rusty Lua 前端
 pub struct RustyLuaFrontend {
@@ -25,14 +25,13 @@ impl Default for RustyLuaFrontend {
 impl RustyLuaFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: LuaLanguage {},
-        }
+        Self { language: LuaLanguage {} }
     }
 }
 
-impl<A: Analysis<IKun> + 'static> NyarFrontend<A, LuaRoot> for RustyLuaFrontend 
-where A::Data: HasDebugInfo
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A, LuaRoot> for RustyLuaFrontend
+where
+    A::Data: HasDebugInfo,
 {
     type Language = LuaLanguage;
 
@@ -42,9 +41,7 @@ where A::Data: HasDebugInfo
         let mut session = oak_core::parser::ParseSession::<LuaLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &LuaRoot, ctx: &mut NyarContext<'_, V, A>) -> Id {

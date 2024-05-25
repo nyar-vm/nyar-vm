@@ -7,8 +7,10 @@ use std::collections::HashMap;
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id};
 use nyar_types::NyarError;
-use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, ImportInfo, NyarModule};
-use nyar_vm::bytecode::opcode::{I32Ext, Opcode};
+use nyar_vm::bytecode::{
+    format::{Chunk, Constant, ExportInfo, ImportInfo, NyarModule},
+    opcode::{I32Ext, Opcode},
+};
 
 /// Nyar 翻译器，将 UIR 转换为 Nyar 字节码
 pub struct NyarTranslator {
@@ -31,10 +33,7 @@ pub struct NyarTranslator {
 }
 
 /// 辅助函数：在 EGraph 中递归查找 Lambda 节点
-fn find_lambda(
-    egraph: &EGraph<IKun, ConstraintAnalysis>,
-    class_id: Id,
-) -> Option<(Vec<String>, Id)> {
+fn find_lambda(egraph: &EGraph<IKun, ConstraintAnalysis>, class_id: Id) -> Option<(Vec<String>, Id)> {
     let class = egraph.get_class(class_id);
     for node in &class.nodes {
         match node {
@@ -92,16 +91,11 @@ impl NyarTranslator {
 
     /// 记录重定位
     fn emit_jump(&mut self, label: &str, is_conditional: bool) {
-        let op = if is_conditional {
-            Opcode::JumpIfFalse
-        } else {
-            Opcode::Jump
-        };
+        let op = if is_conditional { Opcode::JumpIfFalse } else { Opcode::Jump };
         self.emit_u8(op as u8);
         let offset = self.code.len();
         self.emit_i16(0); // 占位符
-        self.relocations
-            .push((offset, label.to_string(), is_conditional));
+        self.relocations.push((offset, label.to_string(), is_conditional));
     }
 
     /// 修补所有跳转偏移
@@ -134,11 +128,7 @@ impl NyarTranslator {
     }
 
     /// 生成 NyarModule
-    pub fn generate(
-        &mut self,
-        egraph: &EGraph<IKun, ConstraintAnalysis>,
-        root: Id,
-    ) -> Result<NyarModule, NyarError> {
+    pub fn generate(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, root: Id) -> Result<NyarModule, NyarError> {
         let mut functions_info = Vec::new();
         let mut imports_info = Vec::new();
         let mut exports_info = Vec::new();
@@ -163,10 +153,7 @@ impl NyarTranslator {
 
         for &item in items {
             let node_class = egraph.get_class(item);
-            println!(
-                "Translate: processing item {:?}: {:?}",
-                item, node_class.nodes
-            );
+            println!("Translate: processing item {:?}: {:?}", item, node_class.nodes);
             for entry in egraph.classes.iter() {
                 println!("  Class {:?}: {:?}", entry.key(), entry.value().nodes);
             }
@@ -211,8 +198,7 @@ impl NyarTranslator {
                                                 for &symbol_id in &args[1..] {
                                                     let symbol_class = egraph.get_class(symbol_id);
                                                     for sym_node in &symbol_class.nodes {
-                                                        if let IKun::Symbol(symbol_name) = sym_node
-                                                        {
+                                                        if let IKun::Symbol(symbol_name) = sym_node {
                                                             imports_info.push(ImportInfo {
                                                                 provider: source.clone(),
                                                                 symbol: symbol_name.clone().into(),
@@ -221,11 +207,9 @@ impl NyarTranslator {
                                                         }
                                                     }
                                                 }
-                                            } else {
-                                                imports_info.push(ImportInfo {
-                                                    provider: source.clone(),
-                                                    symbol: "*".to_string().into(),
-                                                });
+                                            }
+                                            else {
+                                                imports_info.push(ImportInfo { provider: source.clone(), symbol: "*".to_string().into() });
                                             }
                                             break;
                                         }
@@ -241,17 +225,11 @@ impl NyarTranslator {
                                         match exported_item {
                                             IKun::StateUpdate(target, value) => {
                                                 let mut is_function = false;
-                                                if let Some((params, body)) =
-                                                    find_lambda(egraph, *value)
-                                                {
+                                                if let Some((params, body)) = find_lambda(egraph, *value) {
                                                     let target_class = egraph.get_class(*target);
                                                     for t_node in &target_class.nodes {
                                                         if let IKun::Symbol(name) = t_node {
-                                                            functions.push((
-                                                                name.clone(),
-                                                                params.clone(),
-                                                                body,
-                                                            ));
+                                                            functions.push((name.clone(), params.clone(), body));
                                                             exports_info.push(ExportInfo {
                                                                 symbol: name.clone().into(),
                                                                 chunk_idx: (functions.len()) as u16,
@@ -305,10 +283,7 @@ impl NyarTranslator {
         Ok(NyarModule {
             version: 1,
             flags: 0,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
             constants: std::mem::take(&mut self.constants),
             effects: Vec::new(),
             chunks: std::mem::take(&mut self.chunks),
@@ -320,11 +295,7 @@ impl NyarTranslator {
         })
     }
 
-    fn generate_main_chunk(
-        &mut self,
-        egraph: &EGraph<IKun, ConstraintAnalysis>,
-        statements: &[Id],
-    ) -> Result<(), NyarError> {
+    fn generate_main_chunk(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, statements: &[Id]) -> Result<(), NyarError> {
         self.reset_for_function();
 
         for &stmt in statements {
@@ -396,12 +367,7 @@ impl NyarTranslator {
         Ok(())
     }
 
-    fn generate_node(
-        &mut self,
-        egraph: &EGraph<IKun, ConstraintAnalysis>,
-        id: Id,
-        is_statement: bool,
-    ) -> Result<(), NyarError> {
+    fn generate_node(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, id: Id, is_statement: bool) -> Result<(), NyarError> {
         let node_class = egraph.get_class(id);
 
         // Try to find a node we can handle
@@ -431,7 +397,8 @@ impl NyarTranslator {
                     if let Some(&index) = self.locals.get(name.as_str()) {
                         self.emit_u8(Opcode::LoadLocal as u8);
                         self.emit_u8(index);
-                    } else {
+                    }
+                    else {
                         // Try global or builtin
                         let idx = self.constants.len() as u16;
                         self.constants.push(Constant::String(name.clone()));
@@ -452,7 +419,8 @@ impl NyarTranslator {
                         if let IKun::Symbol(name) = target_node {
                             let index = if let Some(&idx) = self.locals.get(name.as_str()) {
                                 idx
-                            } else {
+                            }
+                            else {
                                 let idx = self.local_index;
                                 self.locals.insert(name.clone(), idx);
                                 self.local_index += 1;
@@ -477,11 +445,7 @@ impl NyarTranslator {
                     let len = items.len();
                     for (i, &item) in items.iter().enumerate() {
                         let is_last = i == len - 1;
-                        self.generate_node(
-                            egraph,
-                            item,
-                            if is_last { is_statement } else { true },
-                        )?;
+                        self.generate_node(egraph, item, if is_last { is_statement } else { true })?;
                     }
                     handled = true;
                 }
@@ -500,7 +464,8 @@ impl NyarTranslator {
 
                     if !is_statement {
                         self.emit_jump(&end_label, false);
-                    } else {
+                    }
+                    else {
                         // If it's a statement, we don't need to jump to end if we already returned or something,
                         // but for simplicity we always jump to end to skip the else branch.
                         self.emit_jump(&end_label, false);
@@ -552,7 +517,8 @@ impl NyarTranslator {
                         "return" => {
                             if !args.is_empty() {
                                 self.generate_node(egraph, args[0], false)?;
-                            } else {
+                            }
+                            else {
                                 self.emit_u8(Opcode::I32Ext as u8);
                                 self.emit_u8(I32Ext::Const as u8);
                                 self.emit_i32(0);
@@ -687,10 +653,7 @@ impl NyarTranslator {
         }
 
         if !handled {
-            println!(
-                "Codegen: Unhandled node class {:?}: {:?}",
-                id, node_class.nodes
-            );
+            println!("Codegen: Unhandled node class {:?}: {:?}", id, node_class.nodes);
         }
 
         Ok(())

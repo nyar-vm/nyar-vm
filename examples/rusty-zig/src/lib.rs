@@ -2,13 +2,13 @@
 //!
 //! 这个库提供了 Rusty Zig 语言的词法分析、语法分析和 Gaia 翻译功能。
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod codegen;
 
+use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_zig::ZigLanguage;
-use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Zig 前端
 pub struct RustyZigFrontend {
@@ -24,9 +24,7 @@ impl Default for RustyZigFrontend {
 impl RustyZigFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: ZigLanguage::default(),
-        }
+        Self { language: ZigLanguage::default() }
     }
 }
 

@@ -1,17 +1,13 @@
-use mini_csharp::tagless::{expr, Neg, SetContext, SoundContext};
-use mini_csharp::visitor::{sound, Cat, Dog, Fish};
+use mini_csharp::{
+    tagless::{expr, Neg, SetContext, SoundContext},
+    visitor::{sound, Cat, Dog, Fish},
+};
 
 #[test]
 fn test_visitor() {
-    let dog = Dog {
-        name: "nana".to_string(),
-    };
-    let cat = Cat {
-        name: "nvnv".to_string(),
-    };
-    let fish = Fish {
-        name: "fish".to_string(),
-    };
+    let dog = Dog { name: "nana".to_string() };
+    let cat = Cat { name: "nvnv".to_string() };
+    let fish = Fish { name: "fish".to_string() };
     sound(&dog);
     sound(&cat);
     sound(&fish);

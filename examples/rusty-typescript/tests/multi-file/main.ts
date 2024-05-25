@@ -1,4 +1,4 @@
-import { add, greet } from './lib';
+import {add, greet} from './lib';
 
 function main() {
     const sum = add(10, 20);

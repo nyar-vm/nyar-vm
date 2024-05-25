@@ -34,13 +34,16 @@ impl GaiaTranslator {
                 for (i, name) in s.names.iter().enumerate() {
                     let val = if let Some(expr) = s.values.get(i) {
                         self.translate_expression(expr, builder)?
-                    } else if !s.values.is_empty() && i >= s.values.len() {
+                    }
+                    else if !s.values.is_empty() && i >= s.values.len() {
                         // Lua multiple assignment: if more targets than values, fill with nil
                         // But if values is empty, it's just local declarations without initialization
                         builder.symbol("nil", loc)
-                    } else if s.values.is_empty() {
+                    }
+                    else if s.values.is_empty() {
                         builder.symbol("nil", loc)
-                    } else {
+                    }
+                    else {
                         builder.symbol("nil", loc)
                     };
                     ids.push(builder.assign(name, val, loc));
@@ -51,11 +54,8 @@ impl GaiaTranslator {
             LuaStatement::Assignment(s) => {
                 let mut ids = Vec::new();
                 for (i, target) in s.targets.iter().enumerate() {
-                    let val = if let Some(expr) = s.values.get(i) {
-                        self.translate_expression(expr, builder)?
-                    } else {
-                        builder.symbol("nil", loc)
-                    };
+                    let val =
+                        if let Some(expr) = s.values.get(i) { self.translate_expression(expr, builder)? } else { builder.symbol("nil", loc) };
                     match target {
                         LuaExpression::Identifier(name) => {
                             ids.push(builder.assign(name, val, loc));
@@ -82,7 +82,8 @@ impl GaiaTranslator {
                 let then_id = self.translate_statements(&s.then_block, builder)?;
                 let mut else_id = if let Some(else_block) = &s.else_block {
                     self.translate_statements(else_block, builder)?
-                } else {
+                }
+                else {
                     builder.block(vec![], loc)
                 };
 
@@ -154,12 +155,14 @@ impl GaiaTranslator {
                     let method_obj = builder.get_index(obj, key, loc);
                     let key = builder.string(receiver, loc);
                     Ok(builder.set_index(method_obj, key, func_id, loc))
-                } else {
+                }
+                else {
                     let mut name_parts = s.name.clone();
                     let last_name = name_parts.pop().unwrap();
                     if name_parts.is_empty() {
                         Ok(builder.assign(&last_name, func_id, loc))
-                    } else {
+                    }
+                    else {
                         let mut obj = builder.symbol(&name_parts[0], loc);
                         for part in &name_parts[1..] {
                             let key = builder.string(part, loc);
@@ -177,7 +180,8 @@ impl GaiaTranslator {
                 }
                 if vals.len() == 1 {
                     Ok(builder.return_(vals[0], loc))
-                } else {
+                }
+                else {
                     let tuple = builder.extension("tuple", vals, loc);
                     Ok(builder.return_(tuple, loc))
                 }
@@ -266,9 +270,7 @@ impl GaiaTranslator {
                 }
                 Ok(builder.extension("table", pairs, loc))
             }
-            LuaExpression::Function(func) => {
-                self.translate_function_body(&func.parameters, func.is_vararg, &func.block, builder)
-            }
+            LuaExpression::Function(func) => self.translate_function_body(&func.parameters, func.is_vararg, &func.block, builder),
             LuaExpression::Index(idx) => {
                 let obj = self.translate_expression(&idx.table, builder)?;
                 let key = self.translate_expression(&idx.index, builder)?;
@@ -294,7 +296,13 @@ impl GaiaTranslator {
         Ok(builder.block(ids, loc))
     }
 
-    fn translate_function_body<A: Analysis<IKun>>(&self, params: &[String], is_vararg: bool, block: &[LuaStatement], builder: &mut IntentBuilder<A>) -> Result<Id, NyarError> {
+    fn translate_function_body<A: Analysis<IKun>>(
+        &self,
+        params: &[String],
+        is_vararg: bool,
+        block: &[LuaStatement],
+        builder: &mut IntentBuilder<A>,
+    ) -> Result<Id, NyarError> {
         let loc = Loc::default();
         let mut param_names = Vec::new();
         for p in params {

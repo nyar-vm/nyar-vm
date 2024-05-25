@@ -1,15 +1,14 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 //! Rusty Python 语言前端
 
 pub mod runtime;
 
 pub use crate::runtime::RustyPythonRuntime;
 
+use chomsky_types::Loc;
+use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
-use chomsky_uir::{Analysis, IKun};
-use chomsky_types::Loc;
-use chomsky_uir::egraph::HasDebugInfo;
 
 /// Rusty Python 前端
 #[derive(Default)]
@@ -22,8 +21,9 @@ impl RustyPythonFrontend {
     }
 }
 
-impl<A: Analysis<IKun> + 'static> NyarFrontend<A, PythonRoot> for RustyPythonFrontend 
-where A::Data: HasDebugInfo
+impl<A: Analysis<IKun> + 'static> NyarFrontend<A, PythonRoot> for RustyPythonFrontend
+where
+    A::Data: HasDebugInfo,
 {
     type Language = oak_python::PythonLanguage;
 
@@ -31,19 +31,14 @@ where A::Data: HasDebugInfo
         use oak_core::Parser;
         let config = oak_python::PythonLanguage {};
         let parser = oak_python::PythonParser::new(&config);
-        let mut cache =
-            oak_core::parser::ParseSession::<oak_python::PythonLanguage>::default();
+        let mut cache = oak_core::parser::ParseSession::<oak_python::PythonLanguage>::default();
         let parse_result = parser.parse(source, &[], &mut cache);
 
-        let green_node = parse_result
-            .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+        let green_node = parse_result.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
 
         let builder = oak_python::PythonBuilder::new(&config);
         let source_text = oak_core::source::SourceText::new(source.to_string());
-        let ast = builder
-            .build_root(green_node, &source_text)
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+        let ast = builder.build_root(green_node, &source_text).map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
         Ok(ast)
     }
 
@@ -78,9 +73,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
             Statement::Assignment { target, value } => {
                 let val = self.convert_expression(value);
                 match target {
-                    Expression::Name(name) => {
-                        Some(self.ctx.builder().assign(name, val, loc))
-                    }
+                    Expression::Name(name) => Some(self.ctx.builder().assign(name, val, loc)),
                     Expression::Attribute { value: obj, attr } => {
                         let obj_node = self.convert_expression(obj);
                         let attr_id = self.ctx.builder().symbol(attr, loc.clone());
@@ -92,11 +85,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     }
                 }
             }
-            Statement::AugmentedAssignment {
-                target,
-                operator,
-                value,
-            } => {
+            Statement::AugmentedAssignment { target, operator, value } => {
                 let target_node = self.convert_expression(target);
                 let value_node = self.convert_expression(value);
                 let op_name = match operator {
@@ -117,97 +106,66 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 Some(self.ctx.builder().assign_to_id(target_node, result_node, loc))
             }
             Statement::Expression(expr) => Some(self.convert_expression(expr)),
-        Statement::FunctionDef {
-            decorators: _,
-            name,
-            parameters,
-            body,
-            ..
-        } => {
-            let actual_name = if name == "__init__" { "initiate" } else { name };
-            
-            let mut params = Vec::new();
-            let mut defaults = Vec::new();
-            let mut vararg = None;
-            let mut kwarg = None;
+            Statement::FunctionDef { decorators: _, name, parameters, body, .. } => {
+                let actual_name = if name == "__init__" { "initiate" } else { name };
 
-            for p in parameters {
-                params.push(p.name.clone());
-                if let Some(default) = &p.default {
-                    defaults.push(self.convert_expression(default));
-                }
-                if p.is_vararg {
-                    vararg = Some(self.ctx.builder().string(&p.name, loc.clone()));
-                }
-                if p.is_kwarg {
-                    kwarg = Some(self.ctx.builder().string(&p.name, loc.clone()));
-                }
-            }
+                let mut params = Vec::new();
+                let mut defaults = Vec::new();
+                let mut vararg = None;
+                let mut kwarg = None;
 
-            let mut body_items = Vec::new();
-            for s in body {
-                if let Some(node) = self.convert_statement(s) {
-                    body_items.push(node);
+                for p in parameters {
+                    params.push(p.name.clone());
+                    if let Some(default) = &p.default {
+                        defaults.push(self.convert_expression(default));
+                    }
+                    if p.is_vararg {
+                        vararg = Some(self.ctx.builder().string(&p.name, loc.clone()));
+                    }
+                    if p.is_kwarg {
+                        kwarg = Some(self.ctx.builder().string(&p.name, loc.clone()));
+                    }
                 }
-            }
-            let body_id = self.ctx.builder().block(body_items, loc.clone());
-            let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
-            
-            let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
-            let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
-            let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
-            let name_node = self.ctx.builder().string(actual_name, loc.clone());
-            let func_node = self.ctx.builder().extension(
-                "python_function",
-                vec![
-                    name_node,
-                    lam,
-                    defaults_id,
-                    vararg_id,
-                    kwarg_id,
-                ],
-                loc.clone(),
-            );
-            Some(self.ctx.builder().assign(actual_name, func_node, loc))
-        }
-        Statement::AsyncFunctionDef {
-            decorators: _,
-            name,
-            parameters,
-            body,
-            ..
-        } => {
-            let mut params = Vec::new();
-            for p in parameters {
-                params.push(p.name.clone());
-            }
-
-            let mut body_items = Vec::new();
-            for s in body {
-                if let Some(node) = self.convert_statement(s) {
-                    body_items.push(node);
+                let mut body_items = Vec::new();
+                for s in body {
+                    if let Some(node) = self.convert_statement(s) {
+                        body_items.push(node);
+                    }
                 }
+                let body_id = self.ctx.builder().block(body_items, loc.clone());
+                let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
+
+                let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
+                let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
+                let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
+
+                let name_node = self.ctx.builder().string(actual_name, loc.clone());
+                let func_node =
+                    self.ctx.builder().extension("python_function", vec![name_node, lam, defaults_id, vararg_id, kwarg_id], loc.clone());
+                Some(self.ctx.builder().assign(actual_name, func_node, loc))
             }
-            let body_id = self.ctx.builder().block(body_items, loc.clone());
-            let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
-            
-            let name_node = self.ctx.builder().string(name, loc.clone());
-            let func_node = self.ctx.builder().extension(
-                "python_async_function",
-                vec![
-                    name_node,
-                    lam,
-                ],
-                loc.clone(),
-            );
-            Some(self.ctx.builder().assign(name, func_node, loc))
-        }
+            Statement::AsyncFunctionDef { decorators: _, name, parameters, body, .. } => {
+                let mut params = Vec::new();
+                for p in parameters {
+                    params.push(p.name.clone());
+                }
+
+                let mut body_items = Vec::new();
+                for s in body {
+                    if let Some(node) = self.convert_statement(s) {
+                        body_items.push(node);
+                    }
+                }
+                let body_id = self.ctx.builder().block(body_items, loc.clone());
+                let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
+
+                let name_node = self.ctx.builder().string(name, loc.clone());
+                let func_node = self.ctx.builder().extension("python_async_function", vec![name_node, lam], loc.clone());
+                Some(self.ctx.builder().assign(name, func_node, loc))
+            }
             Statement::Return(expr) => {
-                let val = expr
-                    .as_ref()
-                    .map(|e| self.convert_expression(e))
-                    .unwrap_or(self.ctx.builder().constant(0, loc.clone()));
+                let val = expr.as_ref().map(|e| self.convert_expression(e)).unwrap_or(self.ctx.builder().constant(0, loc.clone()));
                 Some(self.ctx.builder().return_(val, loc))
             }
             Statement::If { test, body, orelse } => {
@@ -239,7 +197,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
-                
+
                 let mut else_items = Vec::new();
                 for s in orelse {
                     if let Some(node) = self.convert_statement(s) {
@@ -247,15 +205,10 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     }
                 }
                 let else_id = self.ctx.builder().block(else_items, loc.clone());
-                
+
                 Some(self.ctx.builder().extension("while_else", vec![cond, body_id, else_id], loc))
             }
-            Statement::For {
-                target,
-                iter,
-                body,
-                orelse,
-            } => {
+            Statement::For { target, iter, body, orelse } => {
                 let target_node = self.convert_expression(target);
                 let iter_node = self.convert_expression(iter);
                 let mut body_items = Vec::new();
@@ -265,7 +218,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
-                
+
                 let mut else_items = Vec::new();
                 for s in orelse {
                     if let Some(node) = self.convert_statement(s) {
@@ -273,15 +226,10 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     }
                 }
                 let else_id = self.ctx.builder().block(else_items, loc.clone());
-                
+
                 Some(self.ctx.builder().extension("foreach_else", vec![target_node, iter_node, body_id, else_id], loc))
             }
-            Statement::AsyncFor {
-                target,
-                iter,
-                body,
-                orelse,
-            } => {
+            Statement::AsyncFor { target, iter, body, orelse } => {
                 let target_node = self.convert_expression(target);
                 let iter_node = self.convert_expression(iter);
                 let mut body_items = Vec::new();
@@ -291,7 +239,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
-                
+
                 let mut else_items = Vec::new();
                 for s in orelse {
                     if let Some(node) = self.convert_statement(s) {
@@ -299,37 +247,24 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     }
                 }
                 let else_id = self.ctx.builder().block(else_items, loc.clone());
-                
+
                 Some(self.ctx.builder().extension("async_foreach_else", vec![target_node, iter_node, body_id, else_id], loc))
             }
             Statement::Pass => Some(self.ctx.builder().constant(0, loc)),
             Statement::Break => Some(self.ctx.builder().extension("break", vec![], loc)),
             Statement::Continue => Some(self.ctx.builder().extension("continue", vec![], loc)),
             Statement::Raise { exc, cause } => {
-                let exc_node = exc
-                    .as_ref()
-                    .map(|e| self.convert_expression(e))
-                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
-                let cause_node = cause
-                    .as_ref()
-                    .map(|e| self.convert_expression(e))
-                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let exc_node = exc.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let cause_node =
+                    cause.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
                 Some(self.ctx.builder().extension("raise", vec![exc_node, cause_node], loc))
             }
             Statement::Assert { test, msg } => {
                 let test_node = self.convert_expression(test);
-                let msg_node = msg
-                    .as_ref()
-                    .map(|e| self.convert_expression(e))
-                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let msg_node = msg.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
                 Some(self.ctx.builder().extension("assert", vec![test_node, msg_node], loc))
             }
-            Statement::Try {
-                body,
-                handlers,
-                orelse,
-                finalbody,
-            } => {
+            Statement::Try { body, handlers, orelse, finalbody } => {
                 let body_items = body.iter().filter_map(|s| self.convert_statement(s)).collect::<Vec<_>>();
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
 
@@ -337,7 +272,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 for handler in handlers {
                     let name_node = if let Some(name) = &handler.name {
                         self.ctx.builder().symbol(name, loc.clone())
-                    } else {
+                    }
+                    else {
                         self.ctx.builder().constant(0, loc.clone())
                     };
 
@@ -369,10 +305,12 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     let var_node = if let Some(v) = &item.optional_vars {
                         if let Expression::Name(name) = v {
                             self.ctx.builder().symbol(name, loc.clone())
-                        } else {
+                        }
+                        else {
                             self.convert_expression(v)
                         }
-                    } else {
+                    }
+                    else {
                         self.ctx.builder().constant(0, loc.clone())
                     };
                     item_nodes.push(self.ctx.builder().extension("with_item", vec![ctx_expr, var_node], loc.clone()));
@@ -391,10 +329,12 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     let var_node = if let Some(v) = &item.optional_vars {
                         if let Expression::Name(name) = v {
                             self.ctx.builder().symbol(name, loc.clone())
-                        } else {
+                        }
+                        else {
                             self.convert_expression(v)
                         }
-                    } else {
+                    }
+                    else {
                         self.ctx.builder().constant(0, loc.clone())
                     };
                     item_nodes.push(self.ctx.builder().extension("with_item", vec![ctx_expr, var_node], loc.clone()));
@@ -411,18 +351,11 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 let mut case_nodes = Vec::new();
                 for case in cases {
                     let pattern_node = self.convert_pattern(&case.pattern);
-                    let guard_node = case
-                        .guard
-                        .as_ref()
-                        .map(|g| self.convert_expression(g))
-                        .unwrap_or_else(|| self.ctx.builder().constant(1, loc.clone()));
+                    let guard_node =
+                        case.guard.as_ref().map(|g| self.convert_expression(g)).unwrap_or_else(|| self.ctx.builder().constant(1, loc.clone()));
                     let body_items = case.body.iter().filter_map(|s| self.convert_statement(s)).collect::<Vec<_>>();
                     let body_id = self.ctx.builder().block(body_items, loc.clone());
-                    case_nodes.push(self.ctx.builder().extension(
-                        "match_case",
-                        vec![pattern_node, guard_node, body_id],
-                        loc.clone(),
-                    ));
+                    case_nodes.push(self.ctx.builder().extension("match_case", vec![pattern_node, guard_node, body_id], loc.clone()));
                 }
                 let cases_id = self.ctx.builder().block(case_nodes, loc.clone());
                 Some(self.ctx.builder().extension("match", vec![subject_node, cases_id], loc))
@@ -449,12 +382,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 }
                 last
             }
-            Statement::Global { .. } => {
-                Some(self.ctx.builder().extension("none", vec![], loc))
-            }
-            Statement::Nonlocal { .. } => {
-                Some(self.ctx.builder().extension("none", vec![], loc))
-            }
+            Statement::Global { .. } => Some(self.ctx.builder().extension("none", vec![], loc)),
+            Statement::Nonlocal { .. } => Some(self.ctx.builder().extension("none", vec![], loc)),
             Statement::ClassDef { decorators, name, bases, body } => {
                 let base_nodes = bases.iter().map(|b| self.convert_expression(b)).collect::<Vec<_>>();
 
@@ -496,14 +425,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 Literal::Boolean(b) => self.ctx.builder().bool(*b, loc),
                 Literal::None => self.ctx.builder().extension("none", vec![], loc),
             },
-            Expression::Name(name) => {
-                self.ctx.builder().symbol(name, loc)
-            }
-            Expression::BinaryOp {
-                left,
-                operator,
-                right,
-            } => {
+            Expression::Name(name) => self.ctx.builder().symbol(name, loc),
+            Expression::BinaryOp { left, operator, right } => {
                 let left_node = self.convert_expression(left);
                 let right_node = self.convert_expression(right);
                 let op_name = match operator {
@@ -555,7 +478,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                         let k_node = self.convert_expression(key);
                         let v_node = self.convert_expression(v);
                         nodes.push(self.ctx.builder().extension("dict_item", vec![k_node, v_node], loc.clone()));
-                    } else {
+                    }
+                    else {
                         // **kwargs expansion
                         let v_node = self.convert_expression(v);
                         nodes.push(self.ctx.builder().extension("dict_unpack", vec![v_node], loc.clone()));
@@ -601,18 +525,12 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 self.ctx.builder().extension("generator_exp", nodes, loc)
             }
             Expression::Slice { lower, upper, step } => {
-                let lower_node = lower
-                    .as_ref()
-                    .map(|e| self.convert_expression(e))
-                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
-                let upper_node = upper
-                    .as_ref()
-                    .map(|e| self.convert_expression(e))
-                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
-                let step_node = step
-                    .as_ref()
-                    .map(|e| self.convert_expression(e))
-                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let lower_node =
+                    lower.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let upper_node =
+                    upper.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let step_node =
+                    step.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
                 self.ctx.builder().extension("slice", vec![lower_node, upper_node, step_node], loc)
             }
             Expression::JoinedStr { values } => {
@@ -623,11 +541,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 let val_node = self.convert_expression(value);
                 self.ctx.builder().extension("formatted_value", vec![val_node], loc)
             }
-            Expression::Compare {
-                left,
-                ops,
-                comparators,
-            } => {
+            Expression::Compare { left, ops, comparators } => {
                 let mut current_left = self.convert_expression(left);
                 let mut comparisons = Vec::new();
                 for (op, right) in ops.iter().zip(comparators.iter()) {
@@ -650,7 +564,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
 
                 if comparisons.len() == 1 {
                     comparisons.remove(0)
-                } else {
+                }
+                else {
                     self.ctx.builder().extension("and", comparisons, loc)
                 }
             }
@@ -666,7 +581,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
 
                 for kw in keywords {
                     has_complex = true;
-                    if kw.arg.is_none() { // **kwargs
+                    if kw.arg.is_none() {
+                        // **kwargs
                         break;
                     }
                 }
@@ -687,7 +603,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     let val = self.convert_expression(&kw.value);
                     let arg = if let Some(arg) = &kw.arg {
                         self.ctx.builder().string(arg, loc.clone())
-                    } else {
+                    }
+                    else {
                         self.ctx.builder().extension("none", vec![], loc.clone())
                     };
                     arguments.push(self.ctx.builder().extension("keyword_arg", vec![arg, val], loc.clone()));
@@ -697,7 +614,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 if has_complex {
                     let args_seq = self.ctx.builder().extension("list", arguments, loc.clone());
                     self.ctx.builder().extension("python_call", vec![f, args_seq], loc)
-                } else {
+                }
+                else {
                     self.ctx.builder().call(f, arguments, loc)
                 }
             }
@@ -711,11 +629,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 self.ctx.builder().extension("await", vec![node], loc)
             }
             Expression::Yield(expr) => {
-                let node = if let Some(e) = expr {
-                    self.convert_expression(e)
-                } else {
-                    self.ctx.builder().constant(0, loc.clone())
-                };
+                let node = if let Some(e) = expr { self.convert_expression(e) } else { self.ctx.builder().constant(0, loc.clone()) };
                 self.ctx.builder().extension("yield", vec![node], loc)
             }
             Expression::YieldFrom(expr) => {
@@ -748,25 +662,15 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
 
                 let body_node = self.convert_expression(body);
                 let body_id = self.ctx.builder().block(vec![body_node], loc.clone());
-                
+
                 let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
-                
+
                 let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
                 let name_node = self.ctx.builder().string("lambda", loc.clone());
-                self.ctx.builder().extension(
-                    "python_function",
-                    vec![
-                        name_node,
-                        lam,
-                        defaults_id,
-                        vararg_id,
-                        kwarg_id,
-                    ],
-                    loc,
-                )
+                self.ctx.builder().extension("python_function", vec![name_node, lam, defaults_id, vararg_id, kwarg_id], loc)
             }
             Expression::IfExp { test, body, orelse } => {
                 let cond = self.convert_expression(test);
@@ -809,7 +713,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
             oak_python::ast::Pattern::As { pattern, name } => {
                 let inner = if let Some(p) = pattern {
                     self.convert_pattern(p)
-                } else {
+                }
+                else {
                     self.ctx.builder().extension("pattern_wildcard", vec![], loc.clone())
                 };
                 let name_node = self.ctx.builder().symbol(name, loc.clone());

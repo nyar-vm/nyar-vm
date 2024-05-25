@@ -1,6 +1,6 @@
-use rusty_python::RustyPythonFrontend;
 use nyar_types::NyarFrontend;
 use oak_vfs::MemoryVfs;
+use rusty_python::RustyPythonFrontend;
 
 #[test]
 fn test_containers_and_comprehensions() {
@@ -19,7 +19,7 @@ gen_exp = (x for x in range(3))
     let ast = frontend.parse(source).expect("Failed to parse container expressions");
     let vfs = MemoryVfs::new();
     let tree = frontend.lower(&ast, &vfs).expect("Failed to lower AST to UIR");
-    
+
     let tree_str = format!("{:?}", tree);
     println!("IKunTree: {}", tree_str);
     assert!(tree_str.contains("dict"));
@@ -51,7 +51,7 @@ slice_obj = my_list[1:5:2]
     let ast = frontend.parse(source).expect("Failed to parse string and slice expressions");
     let vfs = MemoryVfs::new();
     let tree = frontend.lower(&ast, &vfs).expect("Failed to lower AST to UIR");
-    
+
     let tree_str = format!("{:?}", tree);
     assert!(tree_str.contains("fstring"));
     assert!(tree_str.contains("formatted_value"));

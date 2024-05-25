@@ -1,20 +1,20 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![feature(new_range_api)]
 //! Clojure 语言前端
 
 pub mod codegen;
 pub mod errors;
 pub mod row_type;
+pub mod runtime;
 pub mod tagless;
 pub mod visitor;
-pub mod runtime;
 
 pub use crate::runtime::RustyClojureRuntime;
 
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_clojure::{ClojureLanguage, ClojureParser};
 use chomsky_uir::ConstraintAnalysis;
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_clojure::{ClojureLanguage, ClojureParser};
+use oak_core::source::SourceText;
 
 /// Rusty Clojure 前端
 pub struct RustyClojureFrontend {
@@ -47,10 +47,7 @@ impl NyarFrontend<ConstraintAnalysis, ()> for RustyClojureFrontend {
         if output.result.is_ok() {
             println!("Parsed Clojure source");
         }
-        output
-            .result
-            .map(|_| ())
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map(|_| ()).map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &(), _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

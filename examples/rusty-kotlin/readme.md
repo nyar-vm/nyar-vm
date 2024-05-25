@@ -4,7 +4,8 @@ A Kotlin language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-kotlin` brings Kotlin to the Nyar VM, mapping null safety, coroutines, and other features to the Nyar execution engine and algebraic effects.
+`rusty-kotlin` brings Kotlin to the Nyar VM, mapping null safety, coroutines, and other features to the Nyar execution
+engine and algebraic effects.
 
 ## Features
 

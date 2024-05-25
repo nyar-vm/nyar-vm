@@ -1,5 +1,4 @@
-use chomsky::cost::DefaultCostModel;
-use chomsky::extract::IKunExtractor;
+use chomsky::{cost::DefaultCostModel, extract::IKunExtractor};
 use chomsky_uir::{EGraph, IKun, Id};
 use nyar_types::NyarError;
 use nyar_vm::vm::NyarVM;
@@ -22,10 +21,7 @@ impl nyar_vm::vm::traits::RuntimeProvider for RustyCRuntime {
 
 impl RustyCRuntime {
     pub fn new() -> Self {
-        Self {
-            vm: NyarVM::new(),
-            _switch_counter: Mutex::new(0),
-        }
+        Self { vm: NyarVM::new(), _switch_counter: Mutex::new(0) }
     }
 
     pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), NyarError> {
@@ -53,7 +49,8 @@ impl RustyCRuntime {
                 .find(|e| e.symbol == "main".into())
                 .or(module_ref.exports.first())
                 .map(|e| (e.chunk_idx as usize, e.symbol.clone()))
-        } else {
+        }
+        else {
             None
         };
 
@@ -68,7 +65,8 @@ impl RustyCRuntime {
                     Err(e)
                 }
             }
-        } else {
+        }
+        else {
             Err(NyarError::RuntimeError("No entry point found in module".to_string()))
         }
     }

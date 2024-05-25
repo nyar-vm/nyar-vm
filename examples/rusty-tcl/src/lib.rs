@@ -1,9 +1,11 @@
-use chomsky_uir::intent::CrossLanguageCall;
-use chomsky_uir::{IKun, Id};
+#![deny(missing_docs)]
+use chomsky_uir::{intent::CrossLanguageCall, IKun, Id};
 use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_core::{Builder, SourceText};
-use oak_tcl::ast::{TclCommand, TclItem, TclRoot, TclWord};
-use oak_tcl::{TclBuilder, TclLanguage};
+use oak_tcl::{
+    ast::{TclCommand, TclItem, TclRoot, TclWord},
+    TclBuilder, TclLanguage,
+};
 use oak_vfs::Vfs;
 
 pub struct RustyTclFrontend {
@@ -12,9 +14,7 @@ pub struct RustyTclFrontend {
 
 impl RustyTclFrontend {
     pub fn new() -> Self {
-        Self {
-            language: TclLanguage::default(),
-        }
+        Self { language: TclLanguage::default() }
     }
 
     fn lower_item<V: Vfs>(&self, item: &TclItem, ctx: &mut NyarContext<V>) -> Id {
@@ -40,7 +40,7 @@ impl RustyTclFrontend {
             if name.is_empty() {
                 return ctx.egraph.add(IKun::Seq(vec![]));
             }
-            
+
             if name == "set" && cmd.words.len() == 3 {
                 // Tcl: set varName value
                 // In IKun, StateUpdate expects target to be a symbol.
@@ -65,7 +65,7 @@ impl RustyTclFrontend {
 
         let mut words_iter = words.into_iter();
         let callee = words_iter.next().unwrap();
-        
+
         // If the callee is an empty symbol, it's likely a parsing artifact or trailing whitespace command
         let callee_node = ctx.egraph.get_class(callee).nodes.first().cloned();
         if let Some(IKun::Symbol(ref s)) = callee_node {
@@ -85,7 +85,8 @@ impl RustyTclFrontend {
                 // For now, let's treat them as symbols if they don't look like numbers
                 if let Ok(i) = s.parse::<i64>() {
                     ctx.egraph.add(IKun::Constant(i))
-                } else {
+                }
+                else {
                     ctx.egraph.add(IKun::Symbol(s.clone()))
                 }
             }
@@ -117,10 +118,13 @@ impl NyarFrontend for RustyTclFrontend {
     fn lower_unified<V: Vfs>(&self, ast: &TclRoot, ctx: &mut NyarContext<V>) -> Id {
         let items: Vec<Id> = ast.items.iter().map(|item| self.lower_item(item, ctx)).collect();
         // Remove empty/no-op items that might result in empty symbols or unwanted applies
-        let items: Vec<Id> = items.into_iter().filter(|&id| {
-            let node = ctx.egraph.get_class(id).nodes.first().cloned();
-            !matches!(node, Some(IKun::Seq(ref v)) if v.is_empty())
-        }).collect();
+        let items: Vec<Id> = items
+            .into_iter()
+            .filter(|&id| {
+                let node = ctx.egraph.get_class(id).nodes.first().cloned();
+                !matches!(node, Some(IKun::Seq(ref v)) if v.is_empty())
+            })
+            .collect();
         ctx.egraph.add(IKun::Module("main".to_string(), items))
     }
 }

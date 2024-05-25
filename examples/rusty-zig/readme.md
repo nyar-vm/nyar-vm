@@ -4,16 +4,17 @@ A Zig language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-zig` brings Zig, focused on robustness, optimality, and maintainability, to the Nyar VM, combining `comptime`, explicit error handling, and Nyar JIT/algebraic effects in a managed environment.
+`rusty-zig` brings Zig, focused on robustness, optimality, and maintainability, to the Nyar VM, combining `comptime`,
+explicit error handling, and Nyar JIT/algebraic effects in a managed environment.
 
 ## Features
 
 - **Robust and optimal**: "no hidden control flow" philosophy mapped to explicit Gaia IR.
 - **Managed performance**: multi-tier JIT optimization while preserving Zig's code-generation orientation.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: hot functions and loops compiled to native instructions.
-  - **`nyar-gc`**: optional automatic memory management for managed Zig objects.
-  - **Algebraic effects**: explicit error handling and future concurrency patterns.
+    - **`nyar-jit`**: hot functions and loops compiled to native instructions.
+    - **`nyar-gc`**: optional automatic memory management for managed Zig objects.
+    - **Algebraic effects**: explicit error handling and future concurrency patterns.
 - **Modern toolchain**: unified CLI and diagnostic experience.
 
 ## Supported constructs

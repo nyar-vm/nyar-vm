@@ -1,10 +1,10 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 //! Rusty Nim 语言前端
 
+use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_nim::{NimBuilder, NimLanguage, NimRoot};
-use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Nim 前端
 pub struct RustyNimFrontend {
@@ -14,9 +14,7 @@ pub struct RustyNimFrontend {
 impl RustyNimFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: NimLanguage::default(),
-        }
+        Self { language: NimLanguage::default() }
     }
 }
 
@@ -35,9 +33,7 @@ impl NyarFrontend<ConstraintAnalysis, NimRoot> for RustyNimFrontend {
         let mut session = oak_core::parser::ParseSession::<NimLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &NimRoot, _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

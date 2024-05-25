@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 //! Rusty Dart 语言前端
 
 pub mod codegen;
@@ -28,9 +28,7 @@ impl NyarFrontend<(), DartRoot> for RustyDartFrontend {
         let mut session = oak_core::parser::ParseSession::<DartLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &DartRoot, _ctx: &mut NyarContext<'_, V>) -> Id {

@@ -4,16 +4,17 @@ A Ruby language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-ruby` brings Ruby's expressiveness and programmer-friendly philosophy to a modern JIT runtime, with algebraic effects, multi-tier execution, and precise GC.
+`rusty-ruby` brings Ruby's expressiveness and programmer-friendly philosophy to a modern JIT runtime, with algebraic
+effects, multi-tier execution, and precise GC.
 
 ## Features
 
 - **Programmer experience**: Ruby expressiveness and dynamic object model.
 - **Pure object-oriented**: "everything is an object" mapped to the Nyar object system and virtual dispatch.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: hot methods and blocks compiled to native code.
-  - **`nyar-gc`**: high-performance precise collection for Ruby objects.
-  - **Algebraic effects**: control flow for blocks, procs, and exceptions.
+    - **`nyar-jit`**: hot methods and blocks compiled to native code.
+    - **`nyar-gc`**: high-performance precise collection for Ruby objects.
+    - **Algebraic effects**: control flow for blocks, procs, and exceptions.
 - **Dynamic metaprogramming**: Ruby dynamic features via Nyar metaprogramming primitives.
 
 ## Supported constructs

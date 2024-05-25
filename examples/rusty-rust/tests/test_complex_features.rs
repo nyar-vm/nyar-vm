@@ -31,11 +31,7 @@ fn main() {
             println!("解析成功！");
 
             // 验证生成的指令
-            let main_fn = program
-                .functions
-                .iter()
-                .find(|f| f.name == "main")
-                .expect("找不到 main 函数");
+            let main_fn = program.functions.iter().find(|f| f.name == "main").expect("找不到 main 函数");
 
             // 打印所有指令用于调试
             for (i, inst) in main_fn.instructions.iter().enumerate() {

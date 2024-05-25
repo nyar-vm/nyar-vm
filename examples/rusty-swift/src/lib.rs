@@ -1,13 +1,15 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 //! Rusty Swift 语言前端
 
 pub mod codegen;
 
+use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
-use oak_swift::ast::{Expression, Literal, Statement, SwiftRoot};
-use oak_swift::{SwiftBuilder, SwiftLanguage};
-use chomsky_uir::ConstraintAnalysis;
+use oak_swift::{
+    ast::{Expression, Literal, Statement, SwiftRoot},
+    SwiftBuilder, SwiftLanguage,
+};
 
 /// Rusty Swift 前端
 pub struct RustySwiftFrontend {
@@ -23,9 +25,7 @@ impl Default for RustySwiftFrontend {
 impl RustySwiftFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: SwiftLanguage::default(),
-        }
+        Self { language: SwiftLanguage::default() }
     }
 }
 
@@ -70,27 +70,22 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
         let loc = Loc::default();
         match stmt {
             Statement::VariableDecl { name, value, .. } => {
-                let val = if let Some(v) = value {
-                    self.convert_expression(v)
-                } else {
-                    self.ctx.builder().extension("nil", vec![], loc.clone())
-                };
+                let val =
+                    if let Some(v) = value { self.convert_expression(v) } else { self.ctx.builder().extension("nil", vec![], loc.clone()) };
                 let name_id = self.ctx.scopes.declare_variable(name);
                 Some(self.ctx.builder().assign(&name_id, val, loc))
             }
             Statement::Expression(expr) => Some(self.convert_expression(expr)),
             Statement::Return(expr) => {
-                let val = if let Some(v) = expr {
-                    self.convert_expression(v)
-                } else {
-                    self.ctx.builder().extension("nil", vec![], loc.clone())
-                };
+                let val =
+                    if let Some(v) = expr { self.convert_expression(v) } else { self.ctx.builder().extension("nil", vec![], loc.clone()) };
                 Some(self.ctx.builder().return_(val, loc))
             }
             Statement::If { test, body, orelse } => {
                 let cond = self.convert_expression(test);
                 let then_body = self.convert_statements(body);
-                let else_body = orelse.as_ref().map(|b| self.convert_statements(b)).unwrap_or_else(|| self.ctx.builder().block(vec![], loc.clone()));
+                let else_body =
+                    orelse.as_ref().map(|b| self.convert_statements(b)).unwrap_or_else(|| self.ctx.builder().block(vec![], loc.clone()));
                 Some(self.ctx.builder().branch(cond, then_body, else_body, loc))
             }
             Statement::While { test, body } => {
@@ -98,12 +93,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let loop_body = self.convert_statements(body);
                 Some(self.ctx.builder().while_loop(cond, loop_body, loc))
             }
-            Statement::FunctionDef {
-                name,
-                parameters,
-                body,
-                ..
-            } => {
+            Statement::FunctionDef { name, parameters, body, .. } => {
                 self.ctx.scopes.push_scope();
                 let params = parameters.iter().map(|p| self.ctx.scopes.declare_variable(&p.name)).collect();
                 let func_body = body.iter().filter_map(|s| self.convert_statement(s)).collect();
@@ -111,11 +101,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 Some(self.ctx.builder().function(name, params, func_body, Loc::default()))
             }
             Statement::Block(stmts) => Some(self.convert_statements(stmts)),
-            Statement::For {
-                variable,
-                iterable,
-                body,
-            } => {
+            Statement::For { variable, iterable, body } => {
                 let iter = self.convert_expression(iterable);
                 let loop_body = self.convert_statements(body);
                 let var_id = self.ctx.builder().symbol(variable, loc.clone());

@@ -57,15 +57,13 @@ impl ScriptType {
             ScriptType::Reference(ref_ty) => {
                 if let Some(ty) = substitution.get(&ref_ty.name) {
                     ty.clone()
-                } else {
+                }
+                else {
                     let mut new_args = Vec::new();
                     for arg in &ref_ty.args {
                         new_args.push(arg.substitute(substitution));
                     }
-                    ScriptType::Reference(TypeReference {
-                        name: ref_ty.name.clone(),
-                        args: new_args,
-                    })
+                    ScriptType::Reference(TypeReference { name: ref_ty.name.clone(), args: new_args })
                 }
             }
             ScriptType::Array(inner) => ScriptType::Array(Box::new(inner.substitute(substitution))),
@@ -94,19 +92,12 @@ impl ScriptType {
                         value_type: idx.value_type.substitute(substitution),
                     });
                 }
-                ScriptType::Object(ObjectType {
-                    properties: new_props,
-                    index_signatures: new_indices,
-                })
+                ScriptType::Object(ObjectType { properties: new_props, index_signatures: new_indices })
             }
             ScriptType::Function(func) => {
                 let mut new_params = Vec::new();
                 for p in &func.params {
-                    new_params.push(Parameter {
-                        name: p.name.clone(),
-                        ty: p.ty.substitute(substitution),
-                        optional: p.optional,
-                    });
+                    new_params.push(Parameter { name: p.name.clone(), ty: p.ty.substitute(substitution), optional: p.optional });
                 }
                 ScriptType::Function(FunctionType {
                     params: new_params,
@@ -129,30 +120,19 @@ impl ScriptType {
                 ScriptType::Intersection(new_variants)
             }
             ScriptType::Operator(op) => match op {
-                TypeOperator::KeyOf(inner) => {
-                    ScriptType::Operator(TypeOperator::KeyOf(Box::new(inner.substitute(substitution))))
+                TypeOperator::KeyOf(inner) => ScriptType::Operator(TypeOperator::KeyOf(Box::new(inner.substitute(substitution)))),
+                TypeOperator::ReadOnly(inner) => ScriptType::Operator(TypeOperator::ReadOnly(Box::new(inner.substitute(substitution)))),
+                TypeOperator::Partial(inner) => ScriptType::Operator(TypeOperator::Partial(Box::new(inner.substitute(substitution)))),
+                TypeOperator::Required(inner) => ScriptType::Operator(TypeOperator::Required(Box::new(inner.substitute(substitution)))),
+                TypeOperator::Pick(inner, keys) => {
+                    ScriptType::Operator(TypeOperator::Pick(Box::new(inner.substitute(substitution)), keys.clone()))
                 }
-                TypeOperator::ReadOnly(inner) => {
-                    ScriptType::Operator(TypeOperator::ReadOnly(Box::new(inner.substitute(substitution))))
+                TypeOperator::Omit(inner, keys) => {
+                    ScriptType::Operator(TypeOperator::Omit(Box::new(inner.substitute(substitution)), keys.clone()))
                 }
-                TypeOperator::Partial(inner) => {
-                    ScriptType::Operator(TypeOperator::Partial(Box::new(inner.substitute(substitution))))
+                TypeOperator::Record(k, v) => {
+                    ScriptType::Operator(TypeOperator::Record(Box::new(k.substitute(substitution)), Box::new(v.substitute(substitution))))
                 }
-                TypeOperator::Required(inner) => {
-                    ScriptType::Operator(TypeOperator::Required(Box::new(inner.substitute(substitution))))
-                }
-                TypeOperator::Pick(inner, keys) => ScriptType::Operator(TypeOperator::Pick(
-                    Box::new(inner.substitute(substitution)),
-                    keys.clone(),
-                )),
-                TypeOperator::Omit(inner, keys) => ScriptType::Operator(TypeOperator::Omit(
-                    Box::new(inner.substitute(substitution)),
-                    keys.clone(),
-                )),
-                TypeOperator::Record(k, v) => ScriptType::Operator(TypeOperator::Record(
-                    Box::new(k.substitute(substitution)),
-                    Box::new(v.substitute(substitution)),
-                )),
                 _ => self.clone(),
             },
             ScriptType::Mapped(mapped) => ScriptType::Mapped(MappedType {
@@ -205,7 +185,8 @@ impl ScriptType {
                                     substitution.insert(tp.name.clone(), arg.clone());
                                 }
                                 ScriptType::Object(obj).substitute(&substitution).resolve(registry)
-                            } else {
+                            }
+                            else {
                                 ScriptType::Object(obj)
                             }
                         }
@@ -217,12 +198,14 @@ impl ScriptType {
                                 .collect::<Vec<_>>();
                             if variants.is_empty() {
                                 ScriptType::Atom(AtomType::Number)
-                            } else {
+                            }
+                            else {
                                 ScriptType::Union(variants)
                             }
                         }
                     }
-                } else {
+                }
+                else {
                     self.clone()
                 }
             }
@@ -234,7 +217,8 @@ impl ScriptType {
                             prop.optional = true;
                         }
                         ScriptType::Object(obj)
-                    } else {
+                    }
+                    else {
                         resolved
                     }
                 }
@@ -245,7 +229,8 @@ impl ScriptType {
                             prop.optional = false;
                         }
                         ScriptType::Object(obj)
-                    } else {
+                    }
+                    else {
                         resolved
                     }
                 }
@@ -256,7 +241,8 @@ impl ScriptType {
                             prop.readonly = true;
                         }
                         ScriptType::Object(obj)
-                    } else {
+                    }
+                    else {
                         resolved
                     }
                 }
@@ -265,7 +251,8 @@ impl ScriptType {
                     if let ScriptType::Object(mut obj) = resolved {
                         obj.properties.retain(|p| keys.contains(&p.name));
                         ScriptType::Object(obj)
-                    } else {
+                    }
+                    else {
                         resolved
                     }
                 }
@@ -274,7 +261,8 @@ impl ScriptType {
                     if let ScriptType::Object(mut obj) = resolved {
                         obj.properties.retain(|p| !keys.contains(&p.name));
                         ScriptType::Object(obj)
-                    } else {
+                    }
+                    else {
                         resolved
                     }
                 }
@@ -284,23 +272,13 @@ impl ScriptType {
                     if let ScriptType::Union(variants) = key_res {
                         for v in variants {
                             if let ScriptType::Literal(LiteralType::String(name)) = v {
-                                props.push(Property {
-                                    name,
-                                    ty: *value_type.clone(),
-                                    optional: false,
-                                    readonly: false,
-                                });
+                                props.push(Property { name, ty: *value_type.clone(), optional: false, readonly: false });
                             }
                         }
-                        ScriptType::Object(ObjectType {
-                            properties: props,
-                            index_signatures: Vec::new(),
-                        })
-                    } else {
-                        let mut obj = ObjectType {
-                            properties: Vec::new(),
-                            index_signatures: Vec::new(),
-                        };
+                        ScriptType::Object(ObjectType { properties: props, index_signatures: Vec::new() })
+                    }
+                    else {
+                        let mut obj = ObjectType { properties: Vec::new(), index_signatures: Vec::new() };
                         let key_atom = match key_type.resolve(registry) {
                             ScriptType::Atom(a) => a,
                             _ => AtomType::String,
@@ -317,11 +295,7 @@ impl ScriptType {
                     let resolved = inner.resolve(registry);
                     match resolved {
                         ScriptType::Object(obj) => {
-                            let variants = obj
-                                .properties
-                                .iter()
-                                .map(|p| ScriptType::Literal(LiteralType::String(p.name.clone())))
-                                .collect();
+                            let variants = obj.properties.iter().map(|p| ScriptType::Literal(LiteralType::String(p.name.clone()))).collect();
                             ScriptType::Union(variants)
                         }
                         ScriptType::Array(_) | ScriptType::Tuple(_) => {
@@ -361,18 +335,17 @@ impl ScriptType {
                             });
                         }
                     }
-                    ScriptType::Object(ObjectType {
-                        properties: props,
-                        index_signatures: Vec::new(),
-                    })
-                } else {
+                    ScriptType::Object(ObjectType { properties: props, index_signatures: Vec::new() })
+                }
+                else {
                     self.clone()
                 }
             }
             ScriptType::Conditional(cond) => {
                 if cond.check_type.is_assignable_to(&cond.extends_type, registry) {
                     cond.true_type.resolve(registry)
-                } else {
+                }
+                else {
                     cond.false_type.resolve(registry)
                 }
             }
@@ -416,9 +389,7 @@ impl ScriptType {
             (ScriptType::Literal(a), ScriptType::Literal(b)) => a == b,
 
             // Array covariance (simplified)
-            (ScriptType::Array(inner_a), ScriptType::Array(inner_b)) => {
-                inner_a.is_assignable_to(inner_b, registry)
-            }
+            (ScriptType::Array(inner_a), ScriptType::Array(inner_b)) => inner_a.is_assignable_to(inner_b, registry),
 
             // Tuple types
             (ScriptType::Tuple(elems_a), ScriptType::Tuple(elems_b)) => {
@@ -454,22 +425,14 @@ impl ScriptType {
             }
 
             // Union types: T can be assigned to A | B if T is assignable to A or T is assignable to B
-            (t, ScriptType::Union(variants)) => {
-                variants.iter().any(|v| t.is_assignable_to(v, registry))
-            }
+            (t, ScriptType::Union(variants)) => variants.iter().any(|v| t.is_assignable_to(v, registry)),
             // A | B can be assigned to T if both A and B are assignable to T
-            (ScriptType::Union(variants), t) => {
-                variants.iter().all(|v| v.is_assignable_to(t, registry))
-            }
+            (ScriptType::Union(variants), t) => variants.iter().all(|v| v.is_assignable_to(t, registry)),
 
             // Intersection types: T can be assigned to A & B if T is assignable to A and T is assignable to B
-            (t, ScriptType::Intersection(variants)) => {
-                variants.iter().all(|v| t.is_assignable_to(v, registry))
-            }
+            (t, ScriptType::Intersection(variants)) => variants.iter().all(|v| t.is_assignable_to(v, registry)),
             // A & B can be assigned to T if A is assignable to T or B is assignable to T
-            (ScriptType::Intersection(variants), t) => {
-                variants.iter().any(|v| v.is_assignable_to(t, registry))
-            }
+            (ScriptType::Intersection(variants), t) => variants.iter().any(|v| v.is_assignable_to(t, registry)),
 
             // Object types (structural typing)
             (ScriptType::Object(obj_a), ScriptType::Object(obj_b)) => {
@@ -486,21 +449,21 @@ impl ScriptType {
                             // If not found in properties, check index signatures
                             let mut compatible_index = false;
                             for idx in &obj_a.index_signatures {
-                                 // For now assume key name matches if it's a string index
-                                 if idx.key_type == AtomType::String {
-                                     if obj_a.get_property_type(&prop_b.name).map_or(false, |ty| ty.is_assignable_to(&prop_b.ty, registry)) {
-                                         compatible_index = true;
-                                         break;
-                                     }
-                                 }
-                             }
+                                // For now assume key name matches if it's a string index
+                                if idx.key_type == AtomType::String {
+                                    if obj_a.get_property_type(&prop_b.name).map_or(false, |ty| ty.is_assignable_to(&prop_b.ty, registry)) {
+                                        compatible_index = true;
+                                        break;
+                                    }
+                                }
+                            }
                             if !compatible_index && !prop_b.optional {
                                 return false;
                             }
                         }
                     }
                 }
-                
+
                 // Check index signatures in B are compatible with index signatures in A
                 for idx_b in &obj_b.index_signatures {
                     let mut compatible = false;
@@ -514,7 +477,7 @@ impl ScriptType {
                         return false;
                     }
                 }
-                
+
                 true
             }
 
@@ -535,7 +498,8 @@ impl ScriptType {
         let resolved = self.resolve(registry);
         if let ScriptType::Object(obj) = resolved {
             obj.get_property_type(name)
-        } else {
+        }
+        else {
             None
         }
     }
@@ -667,7 +631,7 @@ impl TypeRegistry {
         // Register built-in utility types as aliases or special markers
         // In a real implementation, these would be handled by the type checker
         // as they are often generic and mapped types.
-        
+
         // Example: type Partial<T> = { [P in keyof T]?: T[P] };
         // Here we just ensure the registry is aware of them if needed.
     }
@@ -702,14 +666,12 @@ impl TypeRegistry {
             Some(TypeDefinition::Alias(alias)) => Some(alias.ty.clone()),
             Some(TypeDefinition::Interface(interface)) => Some(ScriptType::Object(interface.body.clone())),
             Some(TypeDefinition::Enum(enum_def)) => {
-                let variants = enum_def
-                    .members
-                    .iter()
-                    .filter_map(|m| m.value.as_ref().map(|v| ScriptType::Literal(v.clone())))
-                    .collect::<Vec<_>>();
+                let variants =
+                    enum_def.members.iter().filter_map(|m| m.value.as_ref().map(|v| ScriptType::Literal(v.clone()))).collect::<Vec<_>>();
                 if variants.is_empty() {
                     Some(ScriptType::Atom(AtomType::Number))
-                } else {
+                }
+                else {
                     Some(ScriptType::Union(variants))
                 }
             }

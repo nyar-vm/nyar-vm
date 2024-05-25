@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![feature(new_range_api)]
 //! Mini Scala 语言前端
 
@@ -8,10 +8,10 @@ pub mod row_type;
 pub mod tagless;
 pub mod visitor;
 
-use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
+use chomsky_uir::ConstraintAnalysis;
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_scala::{ScalaBuilder, ScalaLanguage, ScalaRoot};
-use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Scala 前端
 pub struct RustyScalaFrontend {
@@ -30,10 +30,7 @@ impl RustyScalaFrontend {
     pub fn new() -> Self {
         let language = Box::leak(Box::new(ScalaLanguage::default()));
         let builder = ScalaBuilder::new(language);
-        Self {
-            language: language.clone(),
-            builder,
-        }
+        Self { language: language.clone(), builder }
     }
 }
 
@@ -47,9 +44,7 @@ impl NyarFrontend<ConstraintAnalysis, ScalaRoot> for RustyScalaFrontend {
         if let Ok(_root) = &output.result {
             println!("Parsed Scala root");
         }
-        output
-            .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &ScalaRoot, _ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

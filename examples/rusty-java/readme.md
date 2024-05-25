@@ -4,7 +4,8 @@ A Java language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-java` (Mini Java) runs Java source on the Nyar VM, mapping JVM-style OOP onto Nyar's object system and managed runtime.
+`rusty-java` (Mini Java) runs Java source on the Nyar VM, mapping JVM-style OOP onto Nyar's object system and managed
+runtime.
 
 ## Features
 

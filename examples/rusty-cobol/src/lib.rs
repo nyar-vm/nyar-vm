@@ -1,5 +1,6 @@
-use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs, Loc};
-use oak_cobol::{CobolLanguage, CobolBuilder, ast::CobolRoot};
+#![deny(missing_docs)]
+use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_cobol::{ast::CobolRoot, CobolBuilder, CobolLanguage};
 use oak_core::{Builder, SourceText};
 
 pub struct RustyCobolFrontend {
@@ -8,9 +9,7 @@ pub struct RustyCobolFrontend {
 
 impl RustyCobolFrontend {
     pub fn new() -> Self {
-        Self {
-            language: CobolLanguage::default(),
-        }
+        Self { language: CobolLanguage::default() }
     }
 }
 
@@ -29,9 +28,7 @@ impl NyarFrontend<(), CobolRoot> for RustyCobolFrontend {
         let mut session = oak_core::parser::ParseSession::<CobolLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &CobolRoot, _ctx: &mut NyarContext<'_, V>) -> Id {
@@ -52,18 +49,18 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> CobolLowerer<'
 
     fn lower_root(&mut self, root: &CobolRoot) -> Id {
         let mut items = Vec::new();
-        
+
         if let Some(proc_div) = &root.program.procedure_division {
             self.lower_procedure_division(proc_div, &mut items);
         }
-        
+
         let mut builder = self.ctx.builder();
         builder.module("rusty-cobol-program", items, Loc::default())
     }
 
     fn lower_procedure_division(&mut self, proc_div: &oak_cobol::ast::ProcedureDivision, items: &mut Vec<Id>) {
         let mut stmts = Vec::new();
-        
+
         for stmt in &proc_div.statements {
             let mut builder = self.ctx.builder();
             match stmt {
@@ -90,7 +87,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> CobolLowerer<'
                 _ => {}
             }
         }
-        
+
         let mut builder = self.ctx.builder();
         let body = builder.block(stmts, Loc::default());
         let main_func = builder.lambda(Vec::new(), body, Loc::default());

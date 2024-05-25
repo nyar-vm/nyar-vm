@@ -53,33 +53,17 @@ pub enum Statement {
     /// 表达式语句
     Expression(Expression),
     /// 变量声明
-    VariableDeclaration {
-        name: String,
-        var_type: Option<Type>,
-        initializer: Option<Expression>,
-        is_mutable: bool,
-    },
+    VariableDeclaration { name: String, var_type: Option<Type>, initializer: Option<Expression>, is_mutable: bool },
     /// 返回语句
     Return(Option<Expression>),
     /// 条件语句
-    If {
-        condition: Expression,
-        then_branch: Block,
-        else_branch: Option<Block>,
-    },
+    If { condition: Expression, then_branch: Block, else_branch: Option<Block> },
     /// 循环语句
     While { condition: Expression, body: Block },
     /// For 循环语句
-    For {
-        var_name: String,
-        iterable: Expression,
-        body: Block,
-    },
+    For { var_name: String, iterable: Expression, body: Block },
     /// 赋值语句
-    Assignment {
-        target: Expression,
-        value: Expression,
-    },
+    Assignment { target: Expression, value: Expression },
 }
 
 /// 表达式
@@ -90,54 +74,25 @@ pub enum Expression {
     /// 标识符
     Identifier(String),
     /// 范围表达式: start..end
-    Range {
-        start: Box<Expression>,
-        end: Box<Expression>,
-    },
+    Range { start: Box<Expression>, end: Box<Expression> },
     /// 结构体实例化
-    StructInstantiation {
-        name: String,
-        fields: Vec<(String, Expression)>,
-    },
+    StructInstantiation { name: String, fields: Vec<(String, Expression)> },
     /// 字段访问: obj.field
-    FieldAccess {
-        object: Box<Expression>,
-        field: String,
-    },
+    FieldAccess { object: Box<Expression>, field: String },
     /// 数组字面量: [1, 2, 3]
     ArrayLiteral(Vec<Expression>),
     /// 索引访问: arr[index]
-    IndexAccess {
-        object: Box<Expression>,
-        index: Box<Expression>,
-    },
+    IndexAccess { object: Box<Expression>, index: Box<Expression> },
     /// 函数调用
-    FunctionCall {
-        name: String,
-        arguments: Vec<Expression>,
-    },
+    FunctionCall { name: String, arguments: Vec<Expression> },
     /// 宏调用（如 println!）
-    MacroCall {
-        name: String,
-        arguments: Vec<Expression>,
-    },
+    MacroCall { name: String, arguments: Vec<Expression> },
     /// 方法调用 (如 console.log)
-    MethodCall {
-        object: Box<Expression>,
-        method: String,
-        arguments: Vec<Expression>,
-    },
+    MethodCall { object: Box<Expression>, method: String, arguments: Vec<Expression> },
     /// 二元运算
-    BinaryOperation {
-        left: Box<Expression>,
-        operator: BinaryOperator,
-        right: Box<Expression>,
-    },
+    BinaryOperation { left: Box<Expression>, operator: BinaryOperator, right: Box<Expression> },
     /// 一元运算
-    UnaryOperation {
-        operator: UnaryOperator,
-        operand: Box<Expression>,
-    },
+    UnaryOperation { operator: UnaryOperator, operand: Box<Expression> },
 }
 
 /// 字面量

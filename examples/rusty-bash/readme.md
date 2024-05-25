@@ -4,7 +4,8 @@ Experimental Bash shell frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-bash` implements `nyar_types::NyarFrontend` using `oak-bash` for parsing. It is a **workspace example** for wiring Oak guest languages into `NyarContext`; lowering of commands and expansions is still largely stubbed.
+`rusty-bash` implements `nyar_types::NyarFrontend` using `oak-bash` for parsing. It is a **workspace example** for
+wiring Oak guest languages into `NyarContext`; lowering of commands and expansions is still largely stubbed.
 
 ## Current coverage
 

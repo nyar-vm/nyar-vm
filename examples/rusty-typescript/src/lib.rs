@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! Rusty TypeScript 语言前端
 //!
 //! 这个库提供了 Rusty TypeScript 语言的解析和 Nyar 翻译功能。
@@ -8,8 +9,8 @@
 pub mod codegen;
 pub mod errors;
 pub mod project;
-pub mod type_system;
 pub mod runtime;
+pub mod type_system;
 
 pub use crate::runtime::RustyTypeScriptRuntime;
 
@@ -17,7 +18,7 @@ use chomsky_cost;
 use chomsky_emit::GaiaEmitter;
 use chomsky_extract::{Backend, IKunExtractor};
 use chomsky_types::Loc;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree, Analysis};
+use chomsky_uir::{Analysis, ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
 use nyar_aot::{NyarContext, NyarFrontend};
 use nyar_types::NyarError;
 use nyar_vm::bytecode::format::NyarcModule;
@@ -51,13 +52,15 @@ impl Guest for Compiler {
     fn compile(source: String) -> Result<Vec<u8>, String> {
         let frontend = RustyTypescriptFrontend::new();
         let artifacts = frontend.compile_to_wasm(&source)?;
-        
+
         // Return main.wasm or the first artifact
         if let Some(wasm) = artifacts.get("main.wasm") {
             Ok(wasm.clone())
-        } else if let Some((_, bytes)) = artifacts.iter().next() {
+        }
+        else if let Some((_, bytes)) = artifacts.iter().next() {
             Ok(bytes.clone())
-        } else {
+        }
+        else {
             Err("No output files generated".to_string())
         }
     }
@@ -91,8 +94,7 @@ impl RustyTypescriptFrontend {
 
         // 使用 AOT 编译器进行优化和生成
         // 由于 GaiaEmitter 实现了 Backend 接口，可以直接调用 generate
-        let artifact = emitter.generate(&tree)
-            .map_err(|e| format!("AOT error: {:?}", e))?;
+        let artifact = emitter.generate(&tree).map_err(|e| format!("AOT error: {:?}", e))?;
 
         match artifact {
             chomsky_extract::BackendArtifact::Binary(bytes) => {
@@ -106,12 +108,9 @@ impl RustyTypescriptFrontend {
     }
 
     fn lower_to_tree(&self, source: &str) -> Result<IKunTree, String> {
-        let ast = self
-            .parse(source)
-            .map_err(|e| format!("Parse error: {:?}", e))?;
+        let ast = self.parse(source).map_err(|e| format!("Parse error: {:?}", e))?;
         let vfs = oak_vfs::MemoryVfs::new();
-        self.lower(&ast, &vfs)
-            .map_err(|e| format!("Lowering error: {:?}", e))
+        self.lower(&ast, &vfs).map_err(|e| format!("Lowering error: {:?}", e))
     }
 
     /// 编译源码为 Nyar 模块
@@ -122,9 +121,7 @@ impl RustyTypescriptFrontend {
         let root_id = tree.to_egraph(&mut egraph);
 
         let mut translator = codegen::NyarTranslator::new();
-        translator
-            .generate(&egraph, root_id)
-            .map_err(|e| format!("Codegen error: {:?}", e))
+        translator.generate(&egraph, root_id).map_err(|e| format!("Codegen error: {:?}", e))
     }
 }
 
@@ -137,9 +134,7 @@ impl NyarFrontend<()> for RustyTypescriptFrontend {
         let source_text = SourceText::new(source);
         let output = oak_core::Builder::build(&builder, &source_text, &[], &mut session);
 
-        output
-            .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &TypeScriptRoot, ctx: &mut NyarContext<V, ()>) -> Id {
@@ -191,11 +186,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     return self.builder.constant(0, self.to_loc(var.span));
                 }
                 let loc = self.to_loc(var.span);
-                let value = if let Some(expr) = var.value {
-                    self.convert_expression(expr)
-                } else {
-                    self.builder.constant(0, loc.clone())
-                };
+                let value = if let Some(expr) = var.value { self.convert_expression(expr) } else { self.builder.constant(0, loc.clone()) };
                 let ty = var.ty.map(|t| self.convert_type_annotation(t, loc.clone()));
                 let mut args = vec![self.builder.symbol(&var.name, loc.clone()), value];
                 if let Some(ty_id) = ty {
@@ -214,10 +205,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     body_ids.push(self.convert_statement(s));
                 }
 
-                let type_param_ids = func.type_params
-                    .into_iter()
-                    .map(|tp| self.convert_type_parameter(tp, loc.clone()))
-                    .collect::<Vec<_>>();
+                let type_param_ids = func.type_params.into_iter().map(|tp| self.convert_type_parameter(tp, loc.clone())).collect::<Vec<_>>();
                 let type_params_seq = self.builder.seq(type_param_ids, loc.clone());
 
                 let param_ids: Vec<_> = func
@@ -228,7 +216,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                         let mut p_args = vec![self.builder.symbol(&p.name, p_loc.clone())];
                         if let Some(ty) = p.ty {
                             p_args.push(self.convert_type_annotation(ty, p_loc.clone()));
-                        } else {
+                        }
+                        else {
                             p_args.push(self.builder.constant(0, p_loc.clone()));
                         }
                         p_args.push(self.builder.bool(p.optional, p_loc.clone()));
@@ -244,12 +233,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     .collect();
                 let params_seq = self.builder.seq(param_ids, loc.clone());
 
-                let mut lambda_args = vec![
-                    self.builder.string(&func.name, loc.clone()),
-                    type_params_seq,
-                    params_seq,
-                    self.builder.block(body_ids, loc.clone()),
-                ];
+                let mut lambda_args =
+                    vec![self.builder.string(&func.name, loc.clone()), type_params_seq, params_seq, self.builder.block(body_ids, loc.clone())];
 
                 if let Some(ret) = func.return_type {
                     lambda_args.push(self.convert_type_annotation(ret, loc.clone()));
@@ -291,17 +276,14 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 if let Some(decl) = export.declaration {
                     let inner = self.convert_statement(*decl);
                     self.builder.extension("export", vec![inner], loc)
-                } else {
+                }
+                else {
                     self.builder.constant(0, loc)
                 }
             }
             ast::Statement::ReturnStatement(stmt) => {
                 let loc = self.to_loc(stmt.span);
-                let val = if let Some(expr) = stmt.argument {
-                    self.convert_expression(expr)
-                } else {
-                    self.builder.constant(0, loc.clone())
-                };
+                let val = if let Some(expr) = stmt.argument { self.convert_expression(expr) } else { self.builder.constant(0, loc.clone()) };
                 self.builder.return_(val, loc)
             }
             ast::Statement::ClassDeclaration(class) => {
@@ -312,26 +294,19 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
 
                 // Type parameters
-                let type_param_ids: Vec<_> = class
-                    .type_params
-                    .into_iter()
-                    .map(|tp| self.convert_type_parameter(tp, loc.clone()))
-                    .collect();
+                let type_param_ids: Vec<_> = class.type_params.into_iter().map(|tp| self.convert_type_parameter(tp, loc.clone())).collect();
                 args.push(self.builder.seq(type_param_ids, loc.clone()));
 
                 if let Some(ext) = class.extends {
                     args.push(self.convert_type_annotation(ext, loc.clone()));
-                } else {
+                }
+                else {
                     args.push(self.builder.constant(0, loc.clone())); // No base class
                 }
 
                 // Add abstract and implements
                 args.push(self.builder.bool(class.is_abstract, loc.clone()));
-                let implements_ids: Vec<_> = class
-                    .implements
-                    .into_iter()
-                    .map(|imp| self.convert_type_annotation(imp, loc.clone()))
-                    .collect();
+                let implements_ids: Vec<_> = class.implements.into_iter().map(|imp| self.convert_type_annotation(imp, loc.clone())).collect();
                 args.push(self.builder.seq(implements_ids, loc.clone()));
 
                 for member in class.body {
@@ -403,16 +378,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
 
                 let ty = self.convert_type_annotation(alias.ty, loc.clone());
                 let is_declare = self.builder.bool(alias.is_declare, loc.clone());
-                self.builder.extension(
-                    "type_alias",
-                    vec![
-                        name,
-                        type_params,
-                        ty,
-                        is_declare,
-                    ],
-                    loc,
-                )
+                self.builder.extension("type_alias", vec![name, type_params, ty, is_declare], loc)
             }
             ast::Statement::Enum(enum_decl) => {
                 if enum_decl.is_declare {
@@ -434,11 +400,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let loc = self.to_loc(stmt.span);
                 let cond = self.convert_expression(stmt.test);
                 let then_branch = self.convert_statement(*stmt.consequent);
-                let else_branch = if let Some(alt) = stmt.alternate {
-                    self.convert_statement(*alt)
-                } else {
-                    self.builder.constant(0, loc.clone())
-                };
+                let else_branch =
+                    if let Some(alt) = stmt.alternate { self.convert_statement(*alt) } else { self.builder.constant(0, loc.clone()) };
                 self.builder.branch(cond, then_branch, else_branch, loc)
             }
             ast::Statement::WhileStatement(stmt) => {
@@ -476,24 +439,13 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
             }
             ast::Statement::ForStatement(stmt) => {
                 let loc = self.to_loc(stmt.span);
-                let init = if let Some(init) = stmt.initializer {
-                    self.convert_statement(*init)
-                } else {
-                    self.builder.constant(0, loc.clone())
-                };
-                let test = if let Some(test) = stmt.test {
-                    self.convert_expression(test)
-                } else {
-                    self.builder.bool(true, loc.clone())
-                };
-                let update = if let Some(update) = stmt.incrementor {
-                    self.convert_expression(update)
-                } else {
-                    self.builder.constant(0, loc.clone())
-                };
+                let init =
+                    if let Some(init) = stmt.initializer { self.convert_statement(*init) } else { self.builder.constant(0, loc.clone()) };
+                let test = if let Some(test) = stmt.test { self.convert_expression(test) } else { self.builder.bool(true, loc.clone()) };
+                let update =
+                    if let Some(update) = stmt.incrementor { self.convert_expression(update) } else { self.builder.constant(0, loc.clone()) };
                 let body = self.convert_statement(*stmt.body);
-                self.builder
-                    .extension("for_loop", vec![init, test, update, body], loc)
+                self.builder.extension("for_loop", vec![init, test, update, body], loc)
             }
             ast::Statement::ForInStatement(stmt) => {
                 let loc = self.to_loc(stmt.span);
@@ -517,7 +469,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     let case_loc = self.to_loc(case.span);
                     let test = if let Some(test) = case.test {
                         self.convert_expression(test)
-                    } else {
+                    }
+                    else {
                         self.builder.symbol("default", case_loc.clone())
                     };
                     let mut body = Vec::new();
@@ -590,11 +543,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let s = self.builder.string(&val, loc.clone());
                 self.builder.extension("template", vec![s], loc)
             }
-            ast::ExpressionKind::BinaryExpression {
-                left,
-                operator,
-                right,
-            } => {
+            ast::ExpressionKind::BinaryExpression { left, operator, right } => {
                 let l = self.convert_expression(*left);
                 let r = self.convert_expression(*right);
                 self.builder.binary_op(&operator, l, r, loc)
@@ -603,18 +552,10 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let func_loc = self.to_loc(func.span.clone());
 
                 // Detect console.log and map to std::io::println
-                if let ast::ExpressionKind::MemberExpression {
-                    object,
-                    property,
-                    computed,
-                    ..
-                } = &*func.kind
-                {
+                if let ast::ExpressionKind::MemberExpression { object, property, computed, .. } = &*func.kind {
                     if !*computed {
-                        if let (
-                            ast::ExpressionKind::Identifier(obj_name),
-                            ast::ExpressionKind::Identifier(prop_name),
-                        ) = (&*object.kind, &*property.kind)
+                        if let (ast::ExpressionKind::Identifier(obj_name), ast::ExpressionKind::Identifier(prop_name)) =
+                            (&*object.kind, &*property.kind)
                         {
                             if obj_name == "console" {
                                 let mut arg_ids = Vec::new();
@@ -622,21 +563,10 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                                     arg_ids.push(self.convert_expression(arg.clone()));
                                 }
                                 if prop_name == "log" || prop_name == "println" {
-                                    return self.builder.cross_lang_call(
-                                        "nyar",
-                                        "std::io",
-                                        "println",
-                                        arg_ids,
-                                        func_loc,
-                                    );
-                                } else if prop_name == "print" {
-                                    return self.builder.cross_lang_call(
-                                        "nyar",
-                                        "std::io",
-                                        "print",
-                                        arg_ids,
-                                        func_loc,
-                                    );
+                                    return self.builder.cross_lang_call("nyar", "std::io", "println", arg_ids, func_loc);
+                                }
+                                else if prop_name == "print" {
+                                    return self.builder.cross_lang_call("nyar", "std::io", "print", arg_ids, func_loc);
                                 }
                             }
                         }
@@ -654,27 +584,19 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let arg = self.convert_expression(*argument);
                 self.builder.extension(&operator, vec![arg], loc)
             }
-            ast::ExpressionKind::MemberExpression {
-                object,
-                property,
-                computed,
-                optional,
-            } => {
+            ast::ExpressionKind::MemberExpression { object, property, computed, optional } => {
                 let obj = self.convert_expression(*object);
                 let prop = self.convert_expression(*property);
                 let mut args = vec![obj, prop];
                 args.push(self.builder.bool(optional, loc.clone()));
                 if computed {
                     self.builder.extension("index", args, loc)
-                } else {
+                }
+                else {
                     self.builder.extension("gc.get_field", args, loc)
                 }
             }
-            ast::ExpressionKind::ConditionalExpression {
-                test,
-                consequent,
-                alternate,
-            } => {
+            ast::ExpressionKind::ConditionalExpression { test, consequent, alternate } => {
                 let t = self.convert_expression(*test);
                 let c = self.convert_expression(*consequent);
                 let a = self.convert_expression(*alternate);
@@ -688,31 +610,22 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 }
                 self.builder.extension("gc.new", arg_ids, loc)
             }
-            ast::ExpressionKind::AssignmentExpression {
-                left,
-                operator,
-                right,
-            } => {
+            ast::ExpressionKind::AssignmentExpression { left, operator, right } => {
                 let r = self.convert_expression(*right);
                 if operator == "=" {
                     match &*left.kind {
-                        ast::ExpressionKind::MemberExpression {
-                            object, property, ..
-                        } => {
+                        ast::ExpressionKind::MemberExpression { object, property, .. } => {
                             let obj = self.convert_expression(*object.clone());
                             let prop = self.convert_expression(*property.clone());
-                            self.builder.extension(
-                                "gc.set_field",
-                                vec![obj, prop, r],
-                                loc,
-                            )
+                            self.builder.extension("gc.set_field", vec![obj, prop, r], loc)
                         }
                         _ => {
                             let l = self.convert_expression(*left);
                             self.builder.assign_to_id(l, r, loc)
                         }
                     }
-                } else {
+                }
+                else {
                     let l = self.convert_expression(*left.clone());
                     // Compound assignment like +=
                     let op = operator.trim_end_matches('=');
@@ -721,27 +634,16 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     self.builder.assign_to_id(target, value, loc)
                 }
             }
-            ast::ExpressionKind::AsExpression {
-                expression,
-                type_annotation,
-            } => {
+            ast::ExpressionKind::AsExpression { expression, type_annotation } => {
                 let expr = self.convert_expression(*expression);
                 let ty = self.convert_type_annotation(type_annotation, loc.clone());
                 self.builder.extension("as", vec![expr, ty], loc)
             }
-            ast::ExpressionKind::ImportExpression {
-                module_specifier,
-            } => {
+            ast::ExpressionKind::ImportExpression { module_specifier } => {
                 let spec = self.convert_expression(*module_specifier);
                 self.builder.extension("import", vec![spec], loc)
             }
-            ast::ExpressionKind::ArrowFunction {
-                type_params,
-                params,
-                return_type,
-                body,
-                async_,
-            } => {
+            ast::ExpressionKind::ArrowFunction { type_params, params, return_type, body, async_ } => {
                 let body_id = self.convert_statement(*body);
                 let mut type_param_ids = Vec::new();
                 for tp in type_params {
@@ -767,7 +669,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 }
                 if async_ {
                     self.builder.extension("async_lambda", args, loc)
-                } else {
+                }
+                else {
                     self.builder.extension("lambda", args, loc)
                 }
             }
@@ -815,9 +718,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
             }
             ast::ExpressionKind::JsxElement(elem) => self.convert_jsx_element(*elem, loc),
             ast::ExpressionKind::JsxFragment(fragment) => self.convert_jsx_fragment(*fragment, loc),
-            ast::ExpressionKind::JsxSelfClosingElement(element) => {
-                self.convert_jsx_self_closing_element(*element, loc)
-            }
+            ast::ExpressionKind::JsxSelfClosingElement(element) => self.convert_jsx_self_closing_element(*element, loc),
             _ => self.builder.constant(0, loc),
         }
     }
@@ -833,22 +734,15 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     let name = self.builder.string(&attr.name, attr_loc.clone());
                     let value = if let Some(val) = attr.value {
                         self.convert_jsx_attribute_value(val)
-                    } else {
+                    }
+                    else {
                         self.builder.bool(true, attr_loc.clone())
                     };
-                    attr_ids.push(self.builder.extension(
-                        "jsx_attr",
-                        vec![name, value],
-                        attr_loc,
-                    ));
+                    attr_ids.push(self.builder.extension("jsx_attr", vec![name, value], attr_loc));
                 }
                 ast::JsxAttributeOrSpread::Spread(expr) => {
                     let spread_id = self.convert_expression(expr);
-                    attr_ids.push(self.builder.extension(
-                        "jsx_spread_attr",
-                        vec![spread_id],
-                        Loc::default(),
-                    ));
+                    attr_ids.push(self.builder.extension("jsx_spread_attr", vec![spread_id], Loc::default()));
                 }
             }
         }
@@ -872,11 +766,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
         self.builder.extension("jsx_fragment", vec![seq], Loc::default())
     }
 
-    fn convert_jsx_self_closing_element(
-        &mut self,
-        elem: ast::JsxSelfClosingElement,
-        loc: Loc,
-    ) -> Id {
+    fn convert_jsx_self_closing_element(&mut self, elem: ast::JsxSelfClosingElement, loc: Loc) -> Id {
         let mut args = vec![self.convert_jsx_tag_name(elem.name, loc.clone())];
 
         let mut attr_ids = Vec::new();
@@ -887,22 +777,15 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     let name = self.builder.string(&attr.name, attr_loc.clone());
                     let value = if let Some(val) = attr.value {
                         self.convert_jsx_attribute_value(val)
-                    } else {
+                    }
+                    else {
                         self.builder.bool(true, attr_loc.clone())
                     };
-                    attr_ids.push(self.builder.extension(
-                        "jsx_attr",
-                        vec![name, value],
-                        attr_loc,
-                    ));
+                    attr_ids.push(self.builder.extension("jsx_attr", vec![name, value], attr_loc));
                 }
                 ast::JsxAttributeOrSpread::Spread(expr) => {
                     let spread_id = self.convert_expression(expr);
-                    attr_ids.push(self.builder.extension(
-                        "jsx_spread_attr",
-                        vec![spread_id],
-                        Loc::default(),
-                    ));
+                    attr_ids.push(self.builder.extension("jsx_spread_attr", vec![spread_id], Loc::default()));
                 }
             }
         }
@@ -929,7 +812,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
             ast::JsxAttributeValue::ExpressionContainer(expr) => {
                 if let Some(e) = expr {
                     self.convert_expression(e)
-                } else {
+                }
+                else {
                     self.builder.constant(0, Loc::default())
                 }
             }
@@ -950,7 +834,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
             ast::JsxChild::JsxExpressionContainer(expr) => {
                 if let Some(e) = expr {
                     self.convert_expression(e)
-                } else {
+                }
+                else {
                     self.builder.constant(0, Loc::default())
                 }
             }
@@ -1014,51 +899,45 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let seq = self.builder.seq(type_ids, loc.clone());
                 self.builder.extension("intersection_type", vec![seq], loc)
             }
-            ast::TypeAnnotation::Reference { name, args } => {
-                match name.as_str() {
-                    "Partial" if args.len() == 1 => {
-                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
-                        self.builder.extension("partial_type", vec![inner], loc)
-                    }
-                    "Required" if args.len() == 1 => {
-                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
-                        self.builder.extension("required_type", vec![inner], loc)
-                    }
-                    "Readonly" if args.len() == 1 => {
-                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
-                        self.builder.extension("readonly_type", vec![inner], loc)
-                    }
-                    "Pick" if args.len() == 2 => {
-                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
-                        let keys = self.convert_type_annotation(args[1].clone(), loc.clone());
-                        self.builder.extension("pick_type", vec![inner, keys], loc)
-                    }
-                    "Omit" if args.len() == 2 => {
-                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
-                        let keys = self.convert_type_annotation(args[1].clone(), loc.clone());
-                        self.builder.extension("omit_type", vec![inner, keys], loc)
-                    }
-                    "Record" if args.len() == 2 => {
-                        let key = self.convert_type_annotation(args[0].clone(), loc.clone());
-                        let value = self.convert_type_annotation(args[1].clone(), loc.clone());
-                        self.builder.extension("record_type", vec![key, value], loc)
-                    }
-                    _ => {
-                        let name_id = self.builder.symbol(&name, loc.clone());
-                        let mut arg_ids = Vec::new();
-                        for a in args {
-                            arg_ids.push(self.convert_type_annotation(a, loc.clone()));
-                        }
-                        let seq = self.builder.seq(arg_ids, loc.clone());
-                        self.builder.extension("type_ref", vec![name_id, seq], loc)
-                    }
+            ast::TypeAnnotation::Reference { name, args } => match name.as_str() {
+                "Partial" if args.len() == 1 => {
+                    let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                    self.builder.extension("partial_type", vec![inner], loc)
                 }
-            }
-            ast::TypeAnnotation::Function {
-                params: _,
-                args,
-                return_type,
-            } => {
+                "Required" if args.len() == 1 => {
+                    let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                    self.builder.extension("required_type", vec![inner], loc)
+                }
+                "Readonly" if args.len() == 1 => {
+                    let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                    self.builder.extension("readonly_type", vec![inner], loc)
+                }
+                "Pick" if args.len() == 2 => {
+                    let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                    let keys = self.convert_type_annotation(args[1].clone(), loc.clone());
+                    self.builder.extension("pick_type", vec![inner, keys], loc)
+                }
+                "Omit" if args.len() == 2 => {
+                    let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                    let keys = self.convert_type_annotation(args[1].clone(), loc.clone());
+                    self.builder.extension("omit_type", vec![inner, keys], loc)
+                }
+                "Record" if args.len() == 2 => {
+                    let key = self.convert_type_annotation(args[0].clone(), loc.clone());
+                    let value = self.convert_type_annotation(args[1].clone(), loc.clone());
+                    self.builder.extension("record_type", vec![key, value], loc)
+                }
+                _ => {
+                    let name_id = self.builder.symbol(&name, loc.clone());
+                    let mut arg_ids = Vec::new();
+                    for a in args {
+                        arg_ids.push(self.convert_type_annotation(a, loc.clone()));
+                    }
+                    let seq = self.builder.seq(arg_ids, loc.clone());
+                    self.builder.extension("type_ref", vec![name_id, seq], loc)
+                }
+            },
+            ast::TypeAnnotation::Function { params: _, args, return_type } => {
                 let mut param_ids = Vec::new();
                 for p in args {
                     let mut p_args = vec![self.builder.symbol(&p.name, loc.clone())];
@@ -1088,29 +967,14 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let inner_id = self.convert_type_annotation(*inner, loc.clone());
                 self.builder.extension("keyof", vec![inner_id], loc)
             }
-            ast::TypeAnnotation::Conditional {
-                check_type,
-                extends_type,
-                true_type,
-                false_type,
-            } => {
+            ast::TypeAnnotation::Conditional { check_type, extends_type, true_type, false_type } => {
                 let check_id = self.convert_type_annotation(*check_type, loc.clone());
                 let extends_id = self.convert_type_annotation(*extends_type, loc.clone());
                 let true_id = self.convert_type_annotation(*true_type, loc.clone());
                 let false_id = self.convert_type_annotation(*false_type, loc.clone());
-                self.builder.extension(
-                    "conditional_type",
-                    vec![check_id, extends_id, true_id, false_id],
-                    loc,
-                )
+                self.builder.extension("conditional_type", vec![check_id, extends_id, true_id, false_id], loc)
             }
-            ast::TypeAnnotation::Mapped {
-                key_name,
-                key_type,
-                value_type,
-                readonly,
-                optional,
-            } => {
+            ast::TypeAnnotation::Mapped { key_name, key_type, value_type, readonly, optional } => {
                 let name_id = self.builder.symbol(&key_name, loc.clone());
                 let key_id = self.convert_type_annotation(*key_type, loc.clone());
                 let val_id = self.convert_type_annotation(*value_type, loc.clone());
@@ -1159,12 +1023,14 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
         let mut args = vec![self.builder.symbol(&tp.name, loc.clone())];
         if let Some(constraint) = tp.constraint {
             args.push(self.convert_type_annotation(constraint, loc.clone()));
-        } else {
+        }
+        else {
             args.push(self.builder.constant(0, loc.clone()));
         }
         if let Some(default) = tp.default {
             args.push(self.convert_type_annotation(default, loc.clone()));
-        } else {
+        }
+        else {
             args.push(self.builder.constant(0, loc.clone()));
         }
         self.builder.extension("type_param", args, loc)
@@ -1187,12 +1053,14 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let mut args = vec![self.builder.symbol(&name, loc.clone())];
                 if let Some(ty) = ty {
                     args.push(self.convert_type_annotation(ty, loc.clone()));
-                } else {
+                }
+                else {
                     args.push(self.builder.constant(0, loc.clone()));
                 }
                 if let Some(val) = initializer {
                     args.push(self.convert_expression(val));
-                } else {
+                }
+                else {
                     args.push(self.builder.constant(0, loc.clone()));
                 }
                 args.push(self.builder.bool(is_static, loc.clone()));
@@ -1237,7 +1105,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     let mut p_args = vec![self.builder.symbol(&p.name, p_loc.clone())];
                     if let Some(ty) = p.ty {
                         p_args.push(self.convert_type_annotation(ty, p_loc.clone()));
-                    } else {
+                    }
+                    else {
                         p_args.push(self.builder.constant(0, p_loc.clone()));
                     }
                     p_args.push(self.builder.bool(p.optional, p_loc.clone()));
@@ -1260,7 +1129,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
 
                 if let Some(ret) = return_type {
                     args.push(self.convert_type_annotation(ret, loc.clone()));
-                } else {
+                }
+                else {
                     args.push(self.builder.constant(0, loc.clone()));
                 }
 

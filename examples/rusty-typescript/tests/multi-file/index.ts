@@ -1,4 +1,4 @@
-import { add, multiply } from './math';
+import {add, multiply} from './math';
 
 export function main() {
     let x = 10;

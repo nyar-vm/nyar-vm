@@ -4,16 +4,18 @@ A Fortran language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-fortran` brings Fortran, the classic language for scientific computing, to the Nyar VM, enabling science and engineering applications to use E-Graph optimization, multi-tier JIT, and advanced GC while maintaining compatibility with standard Fortran constructs.
+`rusty-fortran` brings Fortran, the classic language for scientific computing, to the Nyar VM, enabling science and
+engineering applications to use E-Graph optimization, multi-tier JIT, and advanced GC while maintaining compatibility
+with standard Fortran constructs.
 
 ## Features
 
 - **Standard Fortran**: oriented toward F90/F95/F2003 and other standards common in scientific computing.
 - **High-performance math**: array operations and built-in math functions mapped to optimized Gaia IR.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: hot computation loops compiled to native code.
-  - **`nyar-gc`**: automatic memory management for complex data structures.
-  - **Algebraic effects**: scientific data flows and advanced error handling.
+    - **`nyar-jit`**: hot computation loops compiled to native code.
+    - **`nyar-gc`**: automatic memory management for complex data structures.
+    - **Algebraic effects**: scientific data flows and advanced error handling.
 - **Modern optimization**: E-Graph saturation optimization of numerical kernels via `nyar-aot`.
 
 ## Supported constructs

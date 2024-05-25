@@ -1,7 +1,7 @@
 //! Java 到 Nyar UIR 的转换器
 
 use chomsky_types::Loc;
-use chomsky_uir::{Analysis, IKun, IntentBuilder, Id};
+use chomsky_uir::{Analysis, IKun, Id, IntentBuilder};
 use nyar_aot::NyarContext;
 use nyar_types::NyarError;
 use oak_java::ast::*;
@@ -63,7 +63,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         if items.is_empty() {
             let loc = self.loc();
             Ok(self.builder().seq(vec![], loc))
-        } else {
+        }
+        else {
             let loc = self.loc();
             Ok(self.builder().seq(items, loc))
         }
@@ -100,7 +101,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         let extends_id = if let Some(ext) = &class.extends {
             let loc = self.loc();
             self.builder().string(ext, loc)
-        } else {
+        }
+        else {
             let loc = self.loc();
             self.builder().constant(0, loc) // Use 0 or null as placeholder
         };
@@ -114,11 +116,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         let implements_id = self.builder().seq(implements, loc);
 
         let loc = self.loc();
-        Ok(self.builder().extension(
-            "class",
-            vec![name_id, modifiers_id, extends_id, implements_id, members_id],
-            loc,
-        ))
+        Ok(self.builder().extension("class", vec![name_id, modifiers_id, extends_id, implements_id, members_id], loc))
     }
 
     fn convert_interface(&mut self, interface: &InterfaceDeclaration) -> Result<Id, NyarError> {
@@ -158,11 +156,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         let extends_id = self.builder().seq(extends, loc);
 
         let loc = self.loc();
-        Ok(self.builder().extension(
-            "interface",
-            vec![name_id, modifiers_id, extends_id, members_id],
-            loc,
-        ))
+        Ok(self.builder().extension("interface", vec![name_id, modifiers_id, extends_id, members_id], loc))
     }
 
     fn convert_field(&mut self, field: &FieldDeclaration) -> Result<Id, NyarError> {
@@ -204,11 +198,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
         let modifiers_id = self.builder().seq(modifiers, loc);
 
         let loc = self.loc();
-        Ok(self.builder().extension(
-            "constructor",
-            vec![name_id, modifiers_id, params_id, body_id],
-            loc,
-        ))
+        Ok(self.builder().extension("constructor", vec![name_id, modifiers_id, params_id, body_id], loc))
     }
 
     fn convert_method(&mut self, method: &MethodDeclaration) -> Result<Id, NyarError> {
@@ -235,11 +225,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
 
         // 规范化 method 扩展：[name, modifiers, params, return_type, body]
         let loc = self.loc();
-        Ok(self.builder().extension(
-            "method",
-            vec![name_id, modifiers_id, params_id, ret_id, body_id],
-            loc,
-        ))
+        Ok(self.builder().extension("method", vec![name_id, modifiers_id, params_id, ret_id, body_id], loc))
     }
 
     fn convert_parameter(&mut self, param: &Parameter) -> Result<Id, NyarError> {
@@ -275,38 +261,28 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                 Ok(self.builder().return_(null_id, loc))
             }
             Statement::Block(stmts) => self.convert_block(stmts),
-            Statement::LocalVariable {
-                r#type,
-                name,
-                initializer,
-            } => {
+            Statement::LocalVariable { r#type, name, initializer } => {
                 let loc = self.loc();
                 let name_id = self.builder().string(name, loc);
                 let loc = self.loc();
                 let type_id = self.builder().string(r#type, loc);
                 let init_id = if let Some(init) = initializer {
                     self.convert_expr(init)?
-                } else {
+                }
+                else {
                     let loc = self.loc();
                     self.builder().constant(0, loc)
                 };
                 let loc = self.loc();
-                Ok(self.builder().extension(
-                    "local_variable",
-                    vec![name_id, type_id, init_id],
-                    loc,
-                ))
+                Ok(self.builder().extension("local_variable", vec![name_id, type_id, init_id], loc))
             }
-            Statement::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
+            Statement::If { condition, then_branch, else_branch } => {
                 let cond_id = self.convert_expr(condition)?;
                 let then_id = self.convert_stmt(then_branch)?;
                 let else_id = if let Some(eb) = else_branch {
                     self.convert_stmt(eb)?
-                } else {
+                }
+                else {
                     let loc = self.loc();
                     self.builder().seq(vec![], loc)
                 };
@@ -325,27 +301,25 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                 let loc = self.loc();
                 Ok(self.builder().extension("do_while", vec![cond_id, body_id], loc))
             }
-            Statement::For {
-                init,
-                condition,
-                update,
-                body,
-            } => {
+            Statement::For { init, condition, update, body } => {
                 let init_id = if let Some(i) = init {
                     self.convert_stmt(i)?
-                } else {
+                }
+                else {
                     let loc = self.loc();
                     self.builder().seq(vec![], loc)
                 };
                 let cond_id = if let Some(c) = condition {
                     self.convert_expr(c)?
-                } else {
+                }
+                else {
                     let loc = self.loc();
                     self.builder().bool(true, loc)
                 };
                 let update_id = if let Some(u) = update {
                     self.convert_expr(u)?
-                } else {
+                }
+                else {
                     let loc = self.loc();
                     self.builder().seq(vec![], loc)
                 };
@@ -353,12 +327,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                 let loc = self.loc();
                 Ok(self.builder().extension("for", vec![init_id, cond_id, update_id, body_id], loc))
             }
-            Statement::ForEach {
-                item_type,
-                item_name,
-                iterable,
-                body,
-            } => {
+            Statement::ForEach { item_type, item_name, iterable, body } => {
                 let loc = self.loc();
                 let type_id = self.builder().string(item_type, loc);
                 let loc = self.loc();
@@ -368,11 +337,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                 let loc = self.loc();
                 Ok(self.builder().extension("foreach", vec![type_id, name_id, iterable_id, body_id], loc))
             }
-            Statement::Switch {
-                selector,
-                cases,
-                default,
-            } => {
+            Statement::Switch { selector, cases, default } => {
                 let selector_id = self.convert_expr(selector)?;
                 let mut case_ids = Vec::new();
                 for case in cases {
@@ -385,7 +350,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                 let cases_id = self.builder().seq(case_ids, loc);
                 let default_id = if let Some(d) = default {
                     self.convert_block(d)?
-                } else {
+                }
+                else {
                     let loc = self.loc();
                     self.builder().seq(vec![], loc)
                 };
@@ -413,7 +379,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                 let catches_id = self.builder().seq(catch_ids, loc);
                 let finally_id = if let Some(f) = &try_stmt.finally {
                     self.convert_block(f)?
-                } else {
+                }
+                else {
                     let loc = self.loc();
                     self.builder().seq(vec![], loc)
                 };
@@ -545,7 +512,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
             Expression::Update { expression, op, is_prefix } => {
                 let name = if let Expression::Identifier(name) = &**expression {
                     name.clone()
-                } else {
+                }
+                else {
                     return Err(NyarError::Compile("Increment/decrement only supported for identifiers".to_string()));
                 };
 
@@ -570,7 +538,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                     let name_id = self.builder().symbol(&name, loc);
                     let loc = self.loc();
                     Ok(self.builder().seq(vec![assign, name_id], loc))
-                } else {
+                }
+                else {
                     // x++: (old = x, x = x + 1, old)
                     let temp_name = format!("_tmp_{}", name);
                     let loc = self.loc();
@@ -595,7 +564,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                             let loc = self.loc();
                             if call.name == "println" {
                                 return Ok(self.builder().cross_lang_call("nyar", "std::io", "println", arg_ids, loc));
-                            } else if call.name == "print" {
+                            }
+                            else if call.name == "print" {
                                 return Ok(self.builder().cross_lang_call("nyar", "std::io", "print", arg_ids, loc));
                             }
                         }
@@ -605,7 +575,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                                     let loc = self.loc();
                                     if call.name == "println" {
                                         return Ok(self.builder().cross_lang_call("nyar", "std::io", "println", arg_ids, loc));
-                                    } else if call.name == "print" {
+                                    }
+                                    else if call.name == "print" {
                                         return Ok(self.builder().cross_lang_call("nyar", "std::io", "print", arg_ids, loc));
                                     }
                                 }
@@ -642,12 +613,9 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                 if let Some(target) = &call.target {
                     let target_id = self.convert_expr(target)?;
                     let loc = self.loc();
-                    Ok(self.builder().extension(
-                        "call",
-                        vec![target_id, name_id, args_id],
-                        loc,
-                    ))
-                } else {
+                    Ok(self.builder().extension("call", vec![target_id, name_id, args_id], loc))
+                }
+                else {
                     let loc = self.loc();
                     Ok(self.builder().extension("call", vec![name_id, args_id], loc))
                 }

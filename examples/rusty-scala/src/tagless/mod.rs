@@ -48,8 +48,5 @@ impl<I: AnyObject> AnyObject for Neg<I> {
 }
 
 pub fn expr<I: AnyObject>() -> I::Repr<i32> {
-    I::downcast_add(
-        I::downcast_lit(42),
-        I::downcast_add(I::downcast_lit(1), I::downcast_lit(2)),
-    )
+    I::downcast_add(I::downcast_lit(42), I::downcast_add(I::downcast_lit(1), I::downcast_lit(2)))
 }

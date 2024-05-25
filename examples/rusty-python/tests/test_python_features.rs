@@ -1,5 +1,5 @@
-use rusty_python::RustyPythonFrontend;
 use nyar_types::NyarFrontend;
+use rusty_python::RustyPythonFrontend;
 
 #[test]
 fn test_exception_handling_lowering() {
@@ -15,13 +15,13 @@ finally:
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let mut egraph = chomsky_uir::EGraph::new();
     let vfs = oak_vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
-    
+
     let root_id = frontend.lower_unified(&ast, &mut ctx);
-    
+
     assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered AST with try-except-finally-raise");
 }
@@ -34,13 +34,13 @@ assert y == 10
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let mut egraph = chomsky_uir::EGraph::new();
     let vfs = oak_vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
-    
+
     let root_id = frontend.lower_unified(&ast, &mut ctx);
-    
+
     assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered AST with assert");
 }
@@ -56,13 +56,13 @@ with a() as x, b() as y:
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let mut egraph = chomsky_uir::EGraph::new();
     let vfs = oak_vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
-    
+
     let root_id = frontend.lower_unified(&ast, &mut ctx);
-    
+
     assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered AST with with-statement");
 }
@@ -81,15 +81,15 @@ finally:
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let vfs = oak_vfs::MemoryVfs::new();
     let ikun = frontend.lower(&ast, &vfs).expect("Failed to lower to IKunTree");
-    
+
     use nyar_vm::bytecode::compiler::NyarBackend;
     let mut backend = NyarBackend::new();
     let _code = backend.lower_tree(&ikun).expect("Failed to lower to bytecode");
     let module = backend.finish();
-    
+
     assert!(!module.chunks.is_empty());
     println!("Successfully lowered to Nyar bytecode ({} chunks)", module.chunks.len());
 }

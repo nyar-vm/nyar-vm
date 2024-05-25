@@ -1,10 +1,10 @@
-use rusty_python::RustyPythonFrontend;
-use nyar_types::NyarFrontend;
-use nyar_vm::bytecode::compiler::NyarBackend;
-use nyar_vm::vm::NyarVM;
-use nyar_vm::vm::value::Value;
 use chomsky_extract::Backend;
-use nyar_types::QualifiedName;
+use nyar_types::{NyarFrontend, QualifiedName};
+use nyar_vm::{
+    bytecode::compiler::NyarBackend,
+    vm::{value::Value, NyarVM},
+};
+use rusty_python::RustyPythonFrontend;
 
 #[test]
 fn test_python_oop_execution() {
@@ -19,20 +19,20 @@ res = p.say()
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let vfs = oak_vfs::MemoryVfs::new();
     let tree = frontend.lower(&ast, &vfs).expect("Failed to lower AST to tree");
-    
+
     let mut backend = NyarBackend::new();
     let artifact = backend.generate(&tree).expect("Failed to generate artifact");
-    
+
     let binary = match artifact {
         chomsky_extract::BackendArtifact::Binary(b) => b,
         _ => panic!("Expected binary artifact"),
     };
-    
+
     let module = nyar_vm::bytecode::format::NyarcModule::parse(&binary).expect("Failed to decode module");
-    
+
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
 

@@ -4,7 +4,8 @@ Experimental Windows `cmd.exe` script frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-cmd` wires `oak-cmd` into the Nyar frontend trait surface. Like `rusty-bash` / `rusty-bat`, it proves Oak → `NyarFrontend` integration while semantic lowering is still incomplete.
+`rusty-cmd` wires `oak-cmd` into the Nyar frontend trait surface. Like `rusty-bash` / `rusty-bat`, it proves Oak →
+`NyarFrontend` integration while semantic lowering is still incomplete.
 
 ## Current coverage
 

@@ -17,10 +17,7 @@ pub struct ProjectLoader<V: Vfs> {
 
 impl<V: Vfs> ProjectLoader<V> {
     pub fn new(vfs: V) -> Self {
-        Self {
-            frontend: RustyTypescriptFrontend::new(),
-            vfs,
-        }
+        Self { frontend: RustyTypescriptFrontend::new(), vfs }
     }
 
     pub fn frontend(&self) -> &RustyTypescriptFrontend {
@@ -33,33 +30,31 @@ impl<V: Vfs> ProjectLoader<V> {
         let mut loaded_files = HashMap::new();
 
         let entry_point = if self.vfs.is_dir(start_uri) {
-            let pkg_json_uri = if start_uri.ends_with('/') {
-                format!("{}package.json", start_uri)
-            } else {
-                format!("{}/package.json", start_uri)
-            };
+            let pkg_json_uri =
+                if start_uri.ends_with('/') { format!("{}package.json", start_uri) } else { format!("{}/package.json", start_uri) };
 
             if self.vfs.exists(&pkg_json_uri) {
-                let source = self
-                    .vfs
-                    .get_source(&pkg_json_uri)
-                    .ok_or_else(|| format!("Failed to read {}", pkg_json_uri))?;
+                let source = self.vfs.get_source(&pkg_json_uri).ok_or_else(|| format!("Failed to read {}", pkg_json_uri))?;
                 let content = source.get_text_from(0);
                 let pkg: PackageJson = serde_json::from_str(&content).map_err(|e| e.to_string())?;
                 let main_file = pkg.main.unwrap_or_else(|| "index.ts".to_string());
                 if start_uri.ends_with('/') {
                     format!("{}{}", start_uri, main_file)
-                } else {
+                }
+                else {
                     format!("{}/{}", start_uri, main_file)
                 }
-            } else {
+            }
+            else {
                 if start_uri.ends_with('/') {
                     format!("{}index.ts", start_uri)
-                } else {
+                }
+                else {
                     format!("{}/index.ts", start_uri)
                 }
             }
-        } else {
+        }
+        else {
             start_uri.to_string()
         };
 
@@ -79,17 +74,11 @@ impl<V: Vfs> ProjectLoader<V> {
             return Ok(idx);
         }
 
-        let source = self
-            .vfs
-            .get_source(uri)
-            .ok_or_else(|| format!("Failed to read {}", uri))?;
+        let source = self.vfs.get_source(uri).ok_or_else(|| format!("Failed to read {}", uri))?;
         let content = source.get_text_from(0);
 
         // Compile current file
-        let module = self
-            .frontend
-            .compile_to_nyar(&content)
-            .map_err(|e| format!("Compile error in {}: {:?}", uri, e))?;
+        let module = self.frontend.compile_to_nyar(&content).map_err(|e| format!("Compile error in {}: {:?}", uri, e))?;
 
         let module_idx = modules.len();
         modules.push(module);
@@ -100,21 +89,13 @@ impl<V: Vfs> ProjectLoader<V> {
         println!("Loaded file {}, found {} imports", uri, imports.len());
 
         // Simple relative path resolution for URIs
-        let parent_uri = if let Some(last_slash) = uri.rfind('/') {
-            &uri[..last_slash]
-        } else {
-            ""
-        };
+        let parent_uri = if let Some(last_slash) = uri.rfind('/') { &uri[..last_slash] } else { "" };
 
         for import in imports {
             println!("  Import provider: {}", import.provider);
             if import.provider.starts_with(".") {
                 // Relative import
-                let dep_uri = if parent_uri.is_empty() {
-                    import.provider.clone()
-                } else {
-                    format!("{}/{}", parent_uri, import.provider)
-                };
+                let dep_uri = if parent_uri.is_empty() { import.provider.clone() } else { format!("{}/{}", parent_uri, import.provider) };
 
                 let mut final_uri = dep_uri.clone();
                 if !self.vfs.exists(&final_uri) {

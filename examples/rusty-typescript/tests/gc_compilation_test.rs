@@ -28,9 +28,7 @@ fn test_typescript_class_to_wasm_gc_asm() {
 
     // 2. Use GaiaEmitter to generate assembly
     let emitter = GaiaEmitter::new("wasm-gc");
-    let artifact = emitter
-        .generate(&tree)
-        .expect("Failed to generate Gaia assembly");
+    let artifact = emitter.generate(&tree).expect("Failed to generate Gaia assembly");
 
     let asm = match artifact {
         chomsky_extract::BackendArtifact::Source(s) => s,
@@ -40,15 +38,9 @@ fn test_typescript_class_to_wasm_gc_asm() {
     println!("Generated Gaia Assembly:\n{}", asm);
 
     // 3. Verify GC-specific instructions are present
-    assert!(
-        asm.contains(".type struct Point"),
-        "Should contain struct definition"
-    );
+    assert!(asm.contains(".type struct Point"), "Should contain struct definition");
     assert!(asm.contains(".field x"), "Should contain field x");
     assert!(asm.contains(".field y"), "Should contain field y");
-    assert!(
-        asm.contains("struct.new Point"),
-        "Should contain struct.new Point"
-    );
+    assert!(asm.contains("struct.new Point"), "Should contain struct.new Point");
     assert!(asm.contains("struct.get x"), "Should contain struct.get x");
 }

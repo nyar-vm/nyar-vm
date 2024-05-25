@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![feature(new_range_api)]
 //! Rusty CSharp 语言前端
 
@@ -9,9 +9,9 @@ use oak_csharp::{ast::CSharpRoot, CSharpBuilder, CSharpLanguage};
 pub mod codegen;
 pub mod errors;
 pub mod row_type;
+pub mod runtime;
 pub mod tagless;
 pub mod visitor;
-pub mod runtime;
 
 pub use crate::runtime::RustyCSharpRuntime;
 
@@ -24,9 +24,7 @@ pub struct RustyCSharpFrontend {
 impl RustyCSharpFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: CSharpLanguage::new(),
-        }
+        Self { language: CSharpLanguage::new() }
     }
 }
 
@@ -39,16 +37,10 @@ impl NyarFrontend<(), CSharpRoot> for RustyCSharpFrontend {
         let source_text = SourceText::new(source);
         let builder = CSharpBuilder::new(&self.language);
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(
-        &self,
-        _ast: &CSharpRoot,
-        _ctx: &mut NyarContext<'_, V, ()>,
-    ) -> Id {
+    fn lower_unified<V: Vfs>(&self, _ast: &CSharpRoot, _ctx: &mut NyarContext<'_, V, ()>) -> Id {
         // let translator = crate::codegen::NyarTranslator::new();
         // let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
         // translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))

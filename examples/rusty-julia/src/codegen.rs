@@ -1,8 +1,8 @@
 //! Julia 代码生成实现
 
-use nyar_types::{Id, Loc, NyarContext, Vfs};
-use oak_julia::ast::{JuliaExpression, JuliaStatement, JuliaRoot};
 use chomsky_uir::ConstraintAnalysis;
+use nyar_types::{Id, Loc, NyarContext, Vfs};
+use oak_julia::ast::{JuliaExpression, JuliaRoot, JuliaStatement};
 
 /// Julia 到 UIR 的转换器
 pub struct UirConverter<'a, 'b, V: Vfs> {
@@ -67,13 +67,12 @@ impl<'a, 'b, V: Vfs> UirConverter<'a, 'b, V> {
     pub fn convert_expression(&mut self, expr: &JuliaExpression) -> Id {
         let loc = Loc::default();
         match expr {
-            JuliaExpression::Identifier(name) => {
-                self.ctx.builder().symbol(name, loc)
-            }
+            JuliaExpression::Identifier(name) => self.ctx.builder().symbol(name, loc),
             JuliaExpression::Literal(val) => {
                 let unquoted = if (val.starts_with('"') && val.ends_with('"')) || (val.starts_with('\'') && val.ends_with('\'')) {
                     &val[1..val.len() - 1]
-                } else {
+                }
+                else {
                     val
                 };
                 self.ctx.builder().string(unquoted, loc)

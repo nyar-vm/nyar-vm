@@ -1,6 +1,6 @@
+use chomsky_uir::ConstraintAnalysis;
 use nyar_types::{Id, Loc, NyarContext, Vfs};
 use oak_mojo::ast::{MojoExpression, MojoLiteral, MojoStatement};
-use chomsky_uir::ConstraintAnalysis;
 
 /// Mojo 代码生成器
 pub struct MojoCodegen<'a, 'b, V: Vfs> {
@@ -42,7 +42,8 @@ impl<'a, 'b, V: Vfs> MojoCodegen<'a, 'b, V> {
             MojoStatement::Variable { name, value, .. } => {
                 let val_id = if let Some(v) = value {
                     self.lower_expression(v)
-                } else {
+                }
+                else {
                     let mut b = self.ctx.builder();
                     b.extension("nil", vec![], loc)
                 };
@@ -73,16 +74,13 @@ impl<'a, 'b, V: Vfs> MojoCodegen<'a, 'b, V> {
                 Some(b.extension("for_loop", vec![var_id, iter_id, body_id], loc))
             }
             MojoStatement::Return(expr) => {
-                let val_id = expr.as_ref().map(|e| self.lower_expression(e))
-                    .unwrap_or_else(|| {
-                        let mut b = self.ctx.builder();
-                        b.extension("nil", vec![], loc)
-                    });
+                let val_id = expr.as_ref().map(|e| self.lower_expression(e)).unwrap_or_else(|| {
+                    let mut b = self.ctx.builder();
+                    b.extension("nil", vec![], loc)
+                });
                 Some(self.ctx.builder().return_(val_id, loc))
             }
-            MojoStatement::Expression(expr) => {
-                Some(self.lower_expression(expr))
-            }
+            MojoStatement::Expression(expr) => Some(self.lower_expression(expr)),
         }
     }
 
@@ -100,9 +98,7 @@ impl<'a, 'b, V: Vfs> MojoCodegen<'a, 'b, V> {
                     MojoLiteral::None => b.extension("nil", vec![], loc),
                 }
             }
-            MojoExpression::Identifier(name) => {
-                self.ctx.builder().symbol(name, loc)
-            }
+            MojoExpression::Identifier(name) => self.ctx.builder().symbol(name, loc),
             MojoExpression::Binary { left, op, right } => {
                 let lhs = self.lower_expression(left);
                 let rhs = self.lower_expression(right);

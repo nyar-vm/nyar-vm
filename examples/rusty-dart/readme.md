@@ -4,16 +4,17 @@ A Dart language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-dart` brings Dart to the Nyar VM for mobile and server-side scenarios, providing a high-performance runtime with JIT, GC, and algebraic effects.
+`rusty-dart` brings Dart to the Nyar VM for mobile and server-side scenarios, providing a high-performance runtime with
+JIT, GC, and algebraic effects.
 
 ## Features
 
 - **Modern Dart**: modern specifications including null safety and sound typing.
 - **Efficient object system**: classes, mixins, and extensions mapped to the Nyar object system.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: multi-tier optimization from Baseline to Extreme.
-  - **`nyar-gc`**: precise GC for Dart objects.
-  - **Algebraic effects**: `async`/`await`, `Future`, and `Stream` mapped to Nyar effects and continuations.
+    - **`nyar-jit`**: multi-tier optimization from Baseline to Extreme.
+    - **`nyar-gc`**: precise GC for Dart objects.
+    - **Algebraic effects**: `async`/`await`, `Future`, and `Stream` mapped to Nyar effects and continuations.
 - **Hot reload**: design space reserved for hot reload within the Nyar development environment.
 
 ## Supported constructs

@@ -4,7 +4,8 @@ A Python language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-python` parses Python 3 source (via `oak-python`) into an AST, then lowers to unified IR for optimized execution on Nyar.
+`rusty-python` parses Python 3 source (via `oak-python`) into an AST, then lowers to unified IR for optimized execution
+on Nyar.
 
 ## Features
 

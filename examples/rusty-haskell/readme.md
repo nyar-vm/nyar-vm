@@ -4,16 +4,17 @@ A Haskell language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-haskell` brings pure functional Haskell to the Nyar VM for writing concise, correct, and high-performance code with algebraic effects and multi-tier JIT.
+`rusty-haskell` brings pure functional Haskell to the Nyar VM for writing concise, correct, and high-performance code
+with algebraic effects and multi-tier JIT.
 
 ## Features
 
 - **Purely functional**: lazy evaluation, first-class functions, pattern matching.
 - **Algebraic effects**: monads and effect systems mapped to Nyar algebraic effects and delimited continuations.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: high-performance execution of hot functional paths.
-  - **`nyar-gc`**: precise memory management for closures and complex structures.
-  - **`nyar-aot`**: E-Graph optimization for pure function transformations.
+    - **`nyar-jit`**: high-performance execution of hot functional paths.
+    - **`nyar-gc`**: precise memory management for closures and complex structures.
+    - **`nyar-aot`**: E-Graph optimization for pure function transformations.
 - **Strong typing**: advanced type features such as HKT and type classes mapped to Nyar internal representation.
 
 ## Supported constructs

@@ -4,7 +4,8 @@ A Clojure language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-clojure` brings Clojure to the Nyar VM, providing a runtime for functional and concurrent Clojure programs by mapping Lisp-style features to the Nyar execution engine and algebraic effects.
+`rusty-clojure` brings Clojure to the Nyar VM, providing a runtime for functional and concurrent Clojure programs by
+mapping Lisp-style features to the Nyar execution engine and algebraic effects.
 
 ## Features
 

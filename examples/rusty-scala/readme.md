@@ -4,7 +4,8 @@ A Scala language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-scala` brings Scala to the Nyar VM, mapping implicit parameters, algebraic data types, and other Scala features to the Nyar execution engine and algebraic effects.
+`rusty-scala` brings Scala to the Nyar VM, mapping implicit parameters, algebraic data types, and other Scala features
+to the Nyar execution engine and algebraic effects.
 
 ## Features
 

@@ -4,16 +4,18 @@ An F# language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-fsharp` brings the functional-first F# to the Nyar VM for writing concise, correct, and high-performance code with algebraic effects and multi-tier JIT.
+`rusty-fsharp` brings the functional-first F# to the Nyar VM for writing concise, correct, and high-performance code
+with algebraic effects and multi-tier JIT.
 
 ## Features
 
 - **Functional-first**: immutability, first-class functions, pattern matching.
-- **Algebraic effects**: computation expressions (e.g. `async { ... }`, `seq { ... }`) mapped to Nyar effects and delimited continuations.
+- **Algebraic effects**: computation expressions (e.g. `async { ... }`, `seq { ... }`) mapped to Nyar effects and
+  delimited continuations.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: high-performance execution of hot functional paths.
-  - **`nyar-gc`**: precise memory management for closures and complex structures.
-  - **`nyar-aot`**: E-Graph optimization for pure function transformations.
+    - **`nyar-jit`**: high-performance execution of hot functional paths.
+    - **`nyar-gc`**: precise memory management for closures and complex structures.
+    - **`nyar-aot`**: E-Graph optimization for pure function transformations.
 - **Type safety**: F#'s strong type system mapped to Nyar internal type representation.
 
 ## Supported constructs

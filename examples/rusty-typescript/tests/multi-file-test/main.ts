@@ -1,4 +1,4 @@
-import { add, sub } from './math';
+import {add, sub} from './math';
 
 const x = 10;
 const y = 5;

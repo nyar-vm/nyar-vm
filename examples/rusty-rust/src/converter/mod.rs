@@ -3,8 +3,7 @@
 use chomsky_types::Loc;
 use chomsky_uir::{Analysis, IKun, Id, IntentBuilder};
 use core::range::Range;
-use oak_rust::ast as oak_ast;
-use oak_rust::lexer::RustTokenType;
+use oak_rust::{ast as oak_ast, lexer::RustTokenType};
 
 // Helper to convert Range<usize> to Loc
 fn span_to_loc(span: Range<usize>) -> Loc {
@@ -32,10 +31,7 @@ fn stmt_span(stmt: &oak_ast::Statement) -> Range<usize> {
 }
 
 /// 将 Oak Rust AST 根节点转换为 Chomsky UIR
-pub fn convert_root<A: Analysis<IKun>>(
-    root: &oak_ast::RustRoot,
-    builder: &mut IntentBuilder<A>,
-) -> Id {
+pub fn convert_root<A: Analysis<IKun>>(root: &oak_ast::RustRoot, builder: &mut IntentBuilder<A>) -> Id {
     let mut items = Vec::new();
     for item in &root.items {
         items.push(convert_item(item, builder));
@@ -81,34 +77,19 @@ fn convert_struct<A: Analysis<IKun>>(s: &oak_ast::Struct, builder: &mut IntentBu
 
 fn convert_block<A: Analysis<IKun>>(block: &oak_ast::Block, builder: &mut IntentBuilder<A>) -> Id {
     let loc = span_to_loc(block.span.clone());
-    let stmts = block
-        .statements
-        .iter()
-        .map(|s| convert_statement(s, builder))
-        .collect();
+    let stmts = block.statements.iter().map(|s| convert_statement(s, builder)).collect();
     builder.seq(stmts, loc)
 }
 
-fn convert_statement<A: Analysis<IKun>>(
-    stmt: &oak_ast::Statement,
-    builder: &mut IntentBuilder<A>,
-) -> Id {
+fn convert_statement<A: Analysis<IKun>>(stmt: &oak_ast::Statement, builder: &mut IntentBuilder<A>) -> Id {
     let loc = span_to_loc(stmt_span(stmt));
     match stmt {
         oak_ast::Statement::Let { name, expr, .. } => {
-            let value = if let Some(e) = expr {
-                convert_expr(e, builder)
-            } else {
-                builder.seq(vec![], loc)
-            };
+            let value = if let Some(e) = expr { convert_expr(e, builder) } else { builder.seq(vec![], loc) };
             builder.assign(&name.name, value, loc)
         }
         oak_ast::Statement::Return { expr, .. } => {
-            let value = if let Some(e) = expr {
-                convert_expr(e, builder)
-            } else {
-                builder.seq(vec![], loc)
-            };
+            let value = if let Some(e) = expr { convert_expr(e, builder) } else { builder.seq(vec![], loc) };
             builder.extension("return", vec![value], loc)
         }
         oak_ast::Statement::ExprStmt { expr, .. } => convert_expr(expr, builder),
@@ -121,9 +102,7 @@ fn convert_statement<A: Analysis<IKun>>(
 fn extract_name(expr: &oak_ast::Expr) -> Option<String> {
     match expr {
         oak_ast::Expr::Ident(id) => Some(id.name.clone()),
-        oak_ast::Expr::Field {
-            receiver, field, ..
-        } => {
+        oak_ast::Expr::Field { receiver, field, .. } => {
             let r = extract_name(receiver)?;
             Some(format!("{}.{}", r, field.name))
         }
@@ -143,19 +122,16 @@ fn convert_expr<A: Analysis<IKun>>(expr: &oak_ast::Expr, builder: &mut IntentBui
             // Basic parsing of literal string to type?
             if let Ok(i) = value.parse::<i64>() {
                 builder.constant(i, span_to_loc(span.clone()))
-            } else if value.starts_with('"') {
+            }
+            else if value.starts_with('"') {
                 builder.string(value, span_to_loc(span.clone()))
-            } else {
+            }
+            else {
                 builder.string(value, span_to_loc(span.clone()))
             }
         }
         oak_ast::Expr::Bool { value, span } => builder.bool(*value, span_to_loc(span.clone())),
-        oak_ast::Expr::Binary {
-            left,
-            op,
-            right,
-            span,
-        } => {
+        oak_ast::Expr::Binary { left, op, right, span } => {
             let loc = span_to_loc(span.clone());
             let op_name = match op {
                 RustTokenType::Plus => "Add",
@@ -182,70 +158,46 @@ fn convert_expr<A: Analysis<IKun>>(expr: &oak_ast::Expr, builder: &mut IntentBui
                 let arg_ids: Vec<Id> = args.iter().map(|a| convert_expr(a, builder)).collect();
                 if name == "println" || name == "println!" {
                     return builder.cross_lang_call("nyar", "std::io", "println", arg_ids, loc);
-                } else if name == "print" || name == "print!" {
+                }
+                else if name == "print" || name == "print!" {
                     return builder.cross_lang_call("nyar", "std::io", "print", arg_ids, loc);
                 }
                 let func_id = builder.symbol(&name, loc);
                 builder.call(func_id, arg_ids, loc)
-            } else {
+            }
+            else {
                 let func_id = builder.symbol("anonymous_call", loc);
                 let arg_ids = args.iter().map(|a| convert_expr(a, builder)).collect();
                 builder.call(func_id, arg_ids, loc)
             }
         }
-        oak_ast::Expr::If {
-            condition,
-            then_block,
-            else_block,
-            span,
-        } => {
+        oak_ast::Expr::If { condition, then_block, else_block, span } => {
             let loc = span_to_loc(span.clone());
             let cond = convert_expr(condition, builder);
             let t = convert_block(then_block, builder);
-            let f = if let Some(eb) = else_block {
-                convert_block(eb, builder)
-            } else {
-                builder.constant(0, loc)
-            };
+            let f = if let Some(eb) = else_block { convert_block(eb, builder) } else { builder.constant(0, loc) };
             builder.branch(cond, t, f, loc)
         }
-        oak_ast::Expr::While {
-            condition,
-            body,
-            span,
-        } => {
+        oak_ast::Expr::While { condition, body, span } => {
             let loc = span_to_loc(span.clone());
             let cond = convert_expr(condition, builder);
             let b = convert_block(body, builder);
             builder.while_loop(cond, b, loc)
         }
-        oak_ast::Expr::For {
-            var,
-            iter,
-            body,
-            span,
-        } => {
+        oak_ast::Expr::For { var, iter, body, span } => {
             let loc = span_to_loc(span.clone());
             let var_id = builder.symbol(&var.name, span_to_loc(var.span.clone()));
             let iter_id = convert_expr(iter, builder);
             let body_id = convert_block(body, builder);
             builder.extension("for", vec![var_id, iter_id, body_id], loc)
         }
-        oak_ast::Expr::Field {
-            receiver,
-            field,
-            span,
-        } => {
+        oak_ast::Expr::Field { receiver, field, span } => {
             let loc = span_to_loc(span.clone());
             let r = convert_expr(receiver, builder);
             let f = builder.symbol(&field.name, span_to_loc(field.span.clone()));
             builder.extension("field_access", vec![r, f], loc)
         }
-        oak_ast::Expr::Index {
-            receiver,
-            index,
-            span,
-        } => {
+        oak_ast::Expr::Index { receiver, index, span } => {
             let loc = span_to_loc(span.clone());
             let r = convert_expr(receiver, builder);
             let i = convert_expr(index, builder);

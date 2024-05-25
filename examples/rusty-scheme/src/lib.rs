@@ -1,8 +1,8 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
-use oak_scheme::{SchemeBuilder, SchemeLanguage};
 use oak_core::{Builder, SourceText};
+use oak_scheme::{SchemeBuilder, SchemeLanguage};
 
 pub struct RustySchemeFrontend {
     language: SchemeLanguage,
@@ -10,9 +10,7 @@ pub struct RustySchemeFrontend {
 
 impl RustySchemeFrontend {
     pub fn new() -> Self {
-        Self {
-            language: SchemeLanguage::default(),
-        }
+        Self { language: SchemeLanguage::default() }
     }
 }
 
@@ -31,9 +29,7 @@ impl NyarFrontend<(), ()> for RustySchemeFrontend {
         let mut session = oak_core::parser::ParseSession::<SchemeLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &(), _ctx: &mut NyarContext<'_, V>) -> Id {

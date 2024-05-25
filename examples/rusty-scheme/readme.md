@@ -4,16 +4,18 @@ A Scheme language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-scheme` brings the minimalism of classic Lisp dialect Scheme to the Nyar VM, mapping first-class continuations, proper tail calls, and hygienic macros to the Nyar native runtime.
+`rusty-scheme` brings the minimalism of classic Lisp dialect Scheme to the Nyar VM, mapping first-class continuations,
+proper tail calls, and hygienic macros to the Nyar native runtime.
 
 ## Features
 
 - **Minimal Lisp**: oriented toward R5RS/R6RS/R7RS core specifications.
-- **First-class continuations**: `call-with-current-continuation` via Nyar algebraic effects and delimited continuations.
+- **First-class continuations**: `call-with-current-continuation` via Nyar algebraic effects and delimited
+  continuations.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: optimization of hot recursion and function transformations.
-  - **`nyar-gc`**: lifecycle management for pairs, closures, and symbols.
-  - **Proper tail calls**: tail-call optimization guaranteed by the Nyar VM core.
+    - **`nyar-jit`**: optimization of hot recursion and function transformations.
+    - **`nyar-gc`**: lifecycle management for pairs, closures, and symbols.
+    - **Proper tail calls**: tail-call optimization guaranteed by the Nyar VM core.
 - **Hygienic macros**: integrated with the Nyar macro system.
 
 ## Supported constructs

@@ -1,5 +1,5 @@
-use rusty_typescript::RustyTypescriptFrontend;
 use nyar_types::NyarFrontend;
+use rusty_typescript::RustyTypescriptFrontend;
 
 #[test]
 fn test_namespace_compilation() {

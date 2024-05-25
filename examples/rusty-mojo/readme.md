@@ -4,7 +4,8 @@ An experimental Mojo language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-mojo` is an experimental frontend for Mojo, aiming to combine AI- and systems-programming-oriented Mojo with Nyar multi-tier JIT and runtime optimization.
+`rusty-mojo` is an experimental frontend for Mojo, aiming to combine AI- and systems-programming-oriented Mojo with Nyar
+multi-tier JIT and runtime optimization.
 
 ## Features
 

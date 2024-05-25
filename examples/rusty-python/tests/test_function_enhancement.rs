@@ -1,5 +1,5 @@
-use rusty_python::RustyPythonFrontend;
 use nyar_types::NyarFrontend;
+use rusty_python::RustyPythonFrontend;
 
 #[test]
 fn test_function_def_with_defaults_lowering() {
@@ -9,13 +9,13 @@ def foo(a, b=1, c=2):
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let mut egraph = chomsky_uir::EGraph::new();
     let vfs = oak_vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
-    
+
     let root_id = frontend.lower_unified(&ast, &mut ctx);
-    
+
     assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered function definition with defaults");
 }
@@ -28,13 +28,13 @@ def bar(a, *args, **kwargs):
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let mut egraph = chomsky_uir::EGraph::new();
     let vfs = oak_vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
-    
+
     let root_id = frontend.lower_unified(&ast, &mut ctx);
-    
+
     assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered function definition with *args and **kwargs");
 }
@@ -46,13 +46,13 @@ foo(1, b=2, c=3)
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let mut egraph = chomsky_uir::EGraph::new();
     let vfs = oak_vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
-    
+
     let root_id = frontend.lower_unified(&ast, &mut ctx);
-    
+
     assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered function call with keywords");
 }
@@ -64,13 +64,13 @@ foo(*[1, 2], **{'c': 3})
 "#;
     let frontend = RustyPythonFrontend::new();
     let ast = frontend.parse(source).expect("Failed to parse source");
-    
+
     let mut egraph = chomsky_uir::EGraph::new();
     let vfs = oak_vfs::MemoryVfs::new();
     let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 1);
-    
+
     let root_id = frontend.lower_unified(&ast, &mut ctx);
-    
+
     assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered function call with *args and **kwargs");
 }

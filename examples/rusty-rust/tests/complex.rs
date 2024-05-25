@@ -2,7 +2,8 @@ fn main() {
     let x = 10;
     if x > 5 {
         print("x is greater than 5");
-    } else {
+    }
+    else {
         print("x is not greater than 5");
     }
 

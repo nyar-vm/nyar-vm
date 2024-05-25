@@ -1,18 +1,18 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![feature(new_range_api)]
 //! Mini Java 语言前端
 
+use chomsky_types::Loc;
+use chomsky_uir::{egraph::HasDebugInfo, Analysis, IKun};
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
 use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
-use chomsky_types::Loc;
-use chomsky_uir::{Analysis, IKun, egraph::HasDebugInfo};
 
 pub mod codegen;
 pub mod row_type;
+pub mod runtime;
 pub mod tagless;
 pub mod visitor;
-pub mod runtime;
 
 pub use crate::runtime::MiniJavaRuntime;
 
@@ -33,15 +33,13 @@ impl<'a> Default for MiniJavaFrontend<'a> {
 impl<'a> MiniJavaFrontend<'a> {
     /// 创建新的前端实例
     pub fn new(language: &'a JavaLanguage) -> Self {
-        Self {
-            _language: language,
-            builder: JavaBuilder::new(language),
-        }
+        Self { _language: language, builder: JavaBuilder::new(language) }
     }
 }
 
-impl<'a, A: Analysis<IKun> + 'static> NyarFrontend<A, JavaRoot> for MiniJavaFrontend<'a> 
-where A::Data: HasDebugInfo
+impl<'a, A: Analysis<IKun> + 'static> NyarFrontend<A, JavaRoot> for MiniJavaFrontend<'a>
+where
+    A::Data: HasDebugInfo,
 {
     type Language = JavaLanguage;
 
@@ -50,9 +48,7 @@ where A::Data: HasDebugInfo
         let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     /// 统一的接入接口，支持 EGraph 优化流

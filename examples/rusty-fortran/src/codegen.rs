@@ -13,9 +13,7 @@ pub struct TranslatorContext<'a, A: chomsky_uir::Analysis<IKun> = ()> {
 
 impl<'a, A: chomsky_uir::Analysis<IKun>> TranslatorContext<'a, A> {
     pub fn new(egraph: &'a mut EGraph<IKun, A>) -> Self {
-        Self {
-            builder: IntentBuilder::new(egraph),
-        }
+        Self { builder: IntentBuilder::new(egraph) }
     }
 
     pub fn new_with_builder(builder: IntentBuilder<'a, A>) -> Self {
@@ -43,8 +41,7 @@ impl NyarTranslator {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
-        let extractor =
-            chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DefaultCostModel::default());
+        let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DefaultCostModel::default());
 
         Ok(extractor.extract(root_id))
     }
@@ -123,7 +120,8 @@ impl NyarTranslator {
                 }
                 if decls.is_empty() {
                     Ok(None)
-                } else {
+                }
+                else {
                     Ok(Some(ctx.builder.seq(decls, loc)))
                 }
             }
@@ -155,21 +153,13 @@ impl NyarTranslator {
                 Ok(ctx.builder.extension("assign", vec![var, expr], loc))
             }
             ExecutableStmt::Call(node) => {
-                let args = node.arguments.iter()
-                    .map(|arg| self.translate_expr(arg, ctx))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let args = node.arguments.iter().map(|arg| self.translate_expr(arg, ctx)).collect::<Result<Vec<_>, _>>()?;
                 let callee = ctx.builder.symbol(&node.procedure_name, loc);
                 Ok(ctx.builder.call(callee, args, loc))
             }
-            ExecutableStmt::Stop(_) => {
-                Ok(ctx.builder.extension("stop", vec![], loc))
-            }
-            ExecutableStmt::Return(_) => {
-                Ok(ctx.builder.extension("return", vec![], loc))
-            }
-            ExecutableStmt::Continue => {
-                Ok(ctx.builder.seq(vec![], loc))
-            }
+            ExecutableStmt::Stop(_) => Ok(ctx.builder.extension("stop", vec![], loc)),
+            ExecutableStmt::Return(_) => Ok(ctx.builder.extension("return", vec![], loc)),
+            ExecutableStmt::Continue => Ok(ctx.builder.seq(vec![], loc)),
             ExecutableStmt::Cycle(label) => {
                 let args = label.as_ref().map(|l| vec![ctx.builder.string(l, loc)]).unwrap_or_default();
                 Ok(ctx.builder.extension("continue", args, loc))
@@ -179,32 +169,25 @@ impl NyarTranslator {
                 Ok(ctx.builder.extension("break", args, loc))
             }
             ExecutableStmt::Print(node) => {
-                let args = node.output_items.iter()
-                    .map(|arg| self.translate_expr(arg, ctx))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let args = node.output_items.iter().map(|arg| self.translate_expr(arg, ctx)).collect::<Result<Vec<_>, _>>()?;
                 Ok(ctx.builder.cross_lang_call("nyar", "io", "println", args, loc))
             }
             ExecutableStmt::IfConstruct(node) => {
                 let cond = self.translate_expr(&node.condition, ctx)?;
-                let then_body = node.then_part.iter()
-                    .map(|s| self.translate_executable_stmt(s, ctx))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let then_body = node.then_part.iter().map(|s| self.translate_executable_stmt(s, ctx)).collect::<Result<Vec<_>, _>>()?;
                 let then_id = ctx.builder.seq(then_body, loc);
-                
+
                 let mut current_else = if let Some(else_part) = &node.else_part {
-                    let else_body = else_part.iter()
-                        .map(|s| self.translate_executable_stmt(s, ctx))
-                        .collect::<Result<Vec<_>, _>>()?;
+                    let else_body = else_part.iter().map(|s| self.translate_executable_stmt(s, ctx)).collect::<Result<Vec<_>, _>>()?;
                     ctx.builder.seq(else_body, loc)
-                } else {
+                }
+                else {
                     ctx.builder.seq(vec![], loc)
                 };
 
                 for (else_cond, else_body) in node.else_if_parts.iter().rev() {
                     let cond_id = self.translate_expr(else_cond, ctx)?;
-                    let body_ids = else_body.iter()
-                        .map(|s| self.translate_executable_stmt(s, ctx))
-                        .collect::<Result<Vec<_>, _>>()?;
+                    let body_ids = else_body.iter().map(|s| self.translate_executable_stmt(s, ctx)).collect::<Result<Vec<_>, _>>()?;
                     let body_id = ctx.builder.seq(body_ids, loc);
                     current_else = ctx.builder.branch(cond_id, body_id, current_else, loc);
                 }
@@ -212,25 +195,16 @@ impl NyarTranslator {
                 Ok(ctx.builder.branch(cond, then_id, current_else, loc))
             }
             ExecutableStmt::DoConstruct(node) => {
-                let body = node.body.iter()
-                    .map(|s| self.translate_executable_stmt(s, ctx))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let body = node.body.iter().map(|s| self.translate_executable_stmt(s, ctx)).collect::<Result<Vec<_>, _>>()?;
                 let body_id = ctx.builder.seq(body, loc);
 
                 match &node.control {
                     Some(DoControl::Iterative { variable, start, end, step }) => {
                         let start_id = self.translate_expr(start, ctx)?;
                         let end_id = self.translate_expr(end, ctx)?;
-                        let step_id = if let Some(s) = step {
-                            self.translate_expr(s, ctx)?
-                        } else {
-                            ctx.builder.int(1, loc)
-                        };
+                        let step_id = if let Some(s) = step { self.translate_expr(s, ctx)? } else { ctx.builder.int(1, loc) };
                         let var_id = ctx.builder.symbol(variable, loc);
-                        Ok(ctx.builder.extension("do_loop", vec![
-                            var_id,
-                            start_id, end_id, step_id, body_id
-                        ], loc))
+                        Ok(ctx.builder.extension("do_loop", vec![var_id, start_id, end_id, step_id, body_id], loc))
                     }
                     Some(DoControl::While(cond)) => {
                         let cond_id = self.translate_expr(cond, ctx)?;
@@ -245,13 +219,11 @@ impl NyarTranslator {
             ExecutableStmt::SelectCase(node) => {
                 let expr_id = self.translate_expr(&node.expression, ctx)?;
                 let mut current_node = ctx.builder.seq(vec![], loc);
-                
+
                 for case in node.cases.iter().rev() {
-                    let body = case.body.iter()
-                        .map(|s| self.translate_executable_stmt(s, ctx))
-                        .collect::<Result<Vec<_>, _>>()?;
+                    let body = case.body.iter().map(|s| self.translate_executable_stmt(s, ctx)).collect::<Result<Vec<_>, _>>()?;
                     let body_id = ctx.builder.seq(body, loc);
-                    
+
                     match &case.selector {
                         CaseSelector::Case(values) => {
                             for val in values {
@@ -271,11 +243,8 @@ impl NyarTranslator {
                                             let h_id = self.translate_expr(h, ctx)?;
                                             conds.push(ctx.builder.binary_op("le", expr_id, h_id, loc));
                                         }
-                                        let cond = if conds.len() == 2 {
-                                            ctx.builder.binary_op("and", conds[0], conds[1], loc)
-                                        } else {
-                                            conds[0]
-                                        };
+                                        let cond =
+                                            if conds.len() == 2 { ctx.builder.binary_op("and", conds[0], conds[1], loc) } else { conds[0] };
                                         current_node = ctx.builder.branch(cond, body_id, current_node, loc);
                                     }
                                 }
@@ -361,9 +330,7 @@ impl NyarTranslator {
                 Ok(ctx.builder.extension(op_str, vec![l, r], loc))
             }
             ExprNode::Call(name, args) => {
-                let arg_ids = args.iter()
-                    .map(|arg| self.translate_expr(arg, ctx))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let arg_ids = args.iter().map(|arg| self.translate_expr(arg, ctx)).collect::<Result<Vec<_>, _>>()?;
                 let callee = ctx.builder.symbol(name, loc);
                 Ok(ctx.builder.call(callee, arg_ids, loc))
             }

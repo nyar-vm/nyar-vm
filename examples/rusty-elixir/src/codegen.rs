@@ -1,7 +1,7 @@
 //! Elixir 代码生成实现
 
 use nyar_types::{Id, Loc, NyarContext, Vfs};
-use oak_elixir::ast::{ElixirRoot, Item, Expr, Statement, Module, Function, Block};
+use oak_elixir::ast::{Block, ElixirRoot, Expr, Function, Item, Module, Statement};
 // use chomsky_uir::IKun;
 
 /// 将 Elixir AST 根节点转换为 Nyar IR
@@ -35,7 +35,7 @@ fn lower_function<V: Vfs>(f: &Function, ctx: &mut NyarContext<V>) -> Id {
     let params: Vec<String> = f.params.iter().map(|p| p.name.name.clone()).collect();
     let body = lower_block(&f.body, ctx);
     let loc = range_to_loc(f.span.clone(), ctx.source_id);
-    
+
     // 在 Nyar IR 中，函数可以表示为 Lambda 之后导出，或者直接作为一个定义
     let lambda = ctx.builder().lambda(params, body, loc);
     ctx.builder().export(&f.name.name, lambda, loc)
@@ -57,9 +57,7 @@ fn lower_statement<V: Vfs>(stmt: &Statement, ctx: &mut NyarContext<V>) -> Id {
             let loc = range_to_loc(span.clone(), ctx.source_id);
             ctx.builder().assign(&name.name, val, loc)
         }
-        Statement::ExprStmt { expr, .. } => {
-            lower_expr(expr, ctx)
-        }
+        Statement::ExprStmt { expr, .. } => lower_expr(expr, ctx),
     }
 }
 
@@ -78,9 +76,11 @@ fn lower_expr<V: Vfs>(expr: &Expr, ctx: &mut NyarContext<V>) -> Id {
             let loc = range_to_loc(span.clone(), ctx.source_id);
             if let Ok(i) = value.parse::<i64>() {
                 ctx.builder().int(i, loc)
-            } else if let Ok(f) = value.parse::<f64>() {
+            }
+            else if let Ok(f) = value.parse::<f64>() {
                 ctx.builder().float(f, loc)
-            } else {
+            }
+            else {
                 ctx.builder().int(0, loc)
             }
         }
@@ -119,7 +119,8 @@ fn lower_expr<V: Vfs>(expr: &Expr, ctx: &mut NyarContext<V>) -> Id {
             // Here we treat it as an assign if left is Ident
             if let Expr::Ident(id) = &**left {
                 ctx.builder().assign(&id.name, r, loc)
-            } else {
+            }
+            else {
                 ctx.builder().extension("match", vec![l, r], loc)
             }
         }

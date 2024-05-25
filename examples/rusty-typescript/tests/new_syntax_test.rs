@@ -1,6 +1,6 @@
-use rusty_typescript::RustyTypescriptFrontend;
 use nyar_types::NyarFrontend;
 use nyar_vm::vm::interpreter::NyarVM;
+use rusty_typescript::RustyTypescriptFrontend;
 
 #[test]
 fn test_if_statement() {
@@ -66,7 +66,7 @@ fn test_class_modifiers() {
     ";
 
     let module = frontend.compile_to_nyar(source).expect("Compilation failed");
-    // Since we don't have full GC/Class implementation in VM yet, 
+    // Since we don't have full GC/Class implementation in VM yet,
     // we just verify it compiles to UIR/Nyar module without errors.
 }
 

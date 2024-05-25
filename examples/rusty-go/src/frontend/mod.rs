@@ -1,8 +1,8 @@
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
-use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
-use oak_core::source::SourceText;
-use chomsky_uir::{IKun, Analysis};
 use chomsky_types::Loc;
+use chomsky_uir::{Analysis, IKun};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_core::source::SourceText;
+use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
 use std::ops::Range;
 
 /// Rusty Go 前端实现
@@ -14,9 +14,7 @@ pub struct RustyGoFrontend {
 impl RustyGoFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: GoLanguage::default(),
-        }
+        Self { language: GoLanguage::default() }
     }
 }
 
@@ -95,7 +93,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
         let name_node = self.ctx.builder().symbol(&var.name, loc.clone());
         let val = if let Some(v) = &var.value {
             self.convert_expression(v)
-        } else {
+        }
+        else {
             self.ctx.builder().extension("default_value", vec![], loc.clone())
         };
         self.ctx.builder().extension("let", vec![name_node, val], loc)
@@ -133,15 +132,16 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 for v in values {
                     val_ids.push(self.convert_expression(v));
                 }
-                
+
                 let mut target_ids = Vec::new();
                 for t in targets {
                     target_ids.push(self.ctx.builder().symbol(t, loc.clone()));
                 }
-                
+
                 if target_ids.len() == 1 && val_ids.len() == 1 {
                     self.ctx.builder().assign_to_id(target_ids[0], val_ids[0], loc)
-                } else {
+                }
+                else {
                     let targets_tuple = self.ctx.builder().extension("tuple", target_ids, loc.clone());
                     let values_tuple = self.ctx.builder().extension("tuple", val_ids, loc.clone());
                     self.ctx.builder().extension("multi_assign", vec![targets_tuple, values_tuple], loc)
@@ -150,9 +150,11 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
             ast::Statement::Return { values, .. } => {
                 let val = if values.is_empty() {
                     self.ctx.builder().constant(0, loc.clone())
-                } else if values.len() == 1 {
+                }
+                else if values.len() == 1 {
                     self.convert_expression(&values[0])
-                } else {
+                }
+                else {
                     let mut ids = Vec::new();
                     for v in values {
                         ids.push(self.convert_expression(v));
@@ -161,37 +163,18 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 };
                 self.ctx.builder().return_(val, loc)
             }
-            ast::Statement::If {
-                condition,
-                then_block,
-                else_block,
-                ..
-            } => {
+            ast::Statement::If { condition, then_block, else_block, .. } => {
                 let cond = self.convert_expression(condition);
                 let then_id = self.convert_block(then_block);
-                let else_id = if let Some(eb) = else_block {
-                    self.convert_block(eb)
-                } else {
-                    self.ctx.builder().constant(0, loc.clone())
-                };
+                let else_id = if let Some(eb) = else_block { self.convert_block(eb) } else { self.ctx.builder().constant(0, loc.clone()) };
                 self.ctx.builder().branch(cond, then_id, else_id, loc)
             }
-            ast::Statement::For {
-                init,
-                condition,
-                post,
-                body,
-                ..
-            } => {
+            ast::Statement::For { init, condition, post, body, .. } => {
                 let mut init_id = self.ctx.builder().constant(0, loc.clone());
                 if let Some(i) = init {
                     init_id = self.convert_statement(i);
                 }
-                let cond = if let Some(c) = condition {
-                    self.convert_expression(c)
-                } else {
-                    self.ctx.builder().constant(1, loc.clone())
-                };
+                let cond = if let Some(c) = condition { self.convert_expression(c) } else { self.ctx.builder().constant(1, loc.clone()) };
                 let mut post_id = self.ctx.builder().constant(0, loc.clone());
                 if let Some(p) = post {
                     post_id = self.convert_statement(p);
@@ -215,22 +198,25 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
         let span = self.get_expr_span(expr);
         let loc = self.to_loc(span);
         match expr {
-            ast::Expression::Identifier { name, .. } => {
-                self.ctx.builder().symbol(name, loc)
-            }
+            ast::Expression::Identifier { name, .. } => self.ctx.builder().symbol(name, loc),
             ast::Expression::Literal { value, .. } => {
                 if (value.starts_with('"') && value.ends_with('"')) || (value.starts_with('`') && value.ends_with('`')) {
                     let content = &value[1..value.len() - 1];
                     self.ctx.builder().string(content, loc)
-                } else if value == "true" {
+                }
+                else if value == "true" {
                     self.ctx.builder().constant(1, loc)
-                } else if value == "false" {
+                }
+                else if value == "false" {
                     self.ctx.builder().constant(0, loc)
-                } else if let Ok(n) = value.parse::<i64>() {
+                }
+                else if let Ok(n) = value.parse::<i64>() {
                     self.ctx.builder().constant(n, loc)
-                } else if let Ok(f) = value.parse::<f64>() {
+                }
+                else if let Ok(f) = value.parse::<f64>() {
                     self.ctx.builder().float(f, loc)
-                } else {
+                }
+                else {
                     self.ctx.builder().constant(0, loc)
                 }
             }

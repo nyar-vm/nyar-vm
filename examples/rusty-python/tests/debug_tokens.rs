@@ -9,7 +9,8 @@ fn main() {
         for token in token_stream.tokens.get_ref() {
             println!("{:?}", token);
         }
-    } else {
+    }
+    else {
         println!("Lexer failed: {:?}", result.diagnostics);
     }
 
@@ -20,7 +21,8 @@ fn main() {
         for token in token_stream.tokens.get_ref() {
             println!("{:?}", token);
         }
-    } else {
+    }
+    else {
         println!("Lexer failed: {:?}", result.diagnostics);
     }
 
@@ -35,7 +37,8 @@ def hello():
         for token in token_stream.tokens.get_ref() {
             println!("{:?}", token);
         }
-    } else {
+    }
+    else {
         println!("Lexer failed: {:?}", result.diagnostics);
     }
 }

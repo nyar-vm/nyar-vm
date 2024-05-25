@@ -1,6 +1,7 @@
-use std::error::Error;
-use std::fmt::Display;
-use std::fmt::{Debug, Formatter};
+use std::{
+    error::Error,
+    fmt::{Debug, Display, Formatter},
+};
 
 mod convert;
 mod display;

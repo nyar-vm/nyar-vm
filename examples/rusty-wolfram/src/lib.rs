@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::tree::TypedNode;
 use oak_core::{Builder, Source, SourceText};

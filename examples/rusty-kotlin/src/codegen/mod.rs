@@ -3,10 +3,8 @@
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
-use nyar_types::{NyarError, Loc};
-use oak_kotlin::ast::*;
-use oak_kotlin::kind::KotlinSyntaxKind;
-use oak_kotlin::language::KotlinLanguage;
+use nyar_types::{Loc, NyarError};
+use oak_kotlin::{ast::*, kind::KotlinSyntaxKind, language::KotlinLanguage};
 
 pub struct NyarTranslator;
 
@@ -23,11 +21,7 @@ impl NyarTranslator {
         Ok(extractor.extract(root_id))
     }
 
-    pub fn translate_to_id(
-        &self,
-        root: &KotlinRoot,
-        builder: &mut IntentBuilder<ConstraintAnalysis>,
-    ) -> Result<Id, NyarError> {
+    pub fn translate_to_id(&self, root: &KotlinRoot, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
         let mut members = Vec::new();
 
         for decl in &root.declarations {
@@ -38,11 +32,7 @@ impl NyarTranslator {
         Ok(root_id)
     }
 
-    fn translate_declaration(
-        &self,
-        decl: &Declaration,
-        builder: &mut IntentBuilder<ConstraintAnalysis>,
-    ) -> Result<Id, NyarError> {
+    fn translate_declaration(&self, decl: &Declaration, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
         let loc = Loc::default();
         match decl {
             Declaration::Class { name, members, .. } => {
@@ -54,9 +44,7 @@ impl NyarTranslator {
                 let members_seq = builder.seq(class_members, loc);
                 Ok(builder.extension("class", vec![name_id, members_seq], loc))
             }
-            Declaration::Function {
-                name, params, body, ..
-            } => {
+            Declaration::Function { name, params, body, .. } => {
                 let mut param_ids = Vec::new();
                 for param in params {
                     let p_name = builder.string(&param.name, loc);
@@ -83,17 +71,14 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_statement(
-        &self,
-        stmt: &Statement,
-        builder: &mut IntentBuilder<ConstraintAnalysis>,
-    ) -> Result<Id, NyarError> {
+    fn translate_statement(&self, stmt: &Statement, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
         let loc = Loc::default();
         match stmt {
             Statement::Return(expr) => {
                 let expr_id = if let Some(e) = expr {
                     builder.string(e, loc) // TODO: parse expression
-                } else {
+                }
+                else {
                     builder.seq(vec![], loc)
                 };
                 Ok(builder.extension("return", vec![expr_id], loc))

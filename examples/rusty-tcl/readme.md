@@ -4,16 +4,18 @@ A Tcl language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-tcl` brings Tcl (Tool Command Language), simple and extensible, to the Nyar VM for everything from simple scripts to complex system orchestration, running on a JIT-optimized high-performance runtime.
+`rusty-tcl` brings Tcl (Tool Command Language), simple and extensible, to the Nyar VM for everything from simple scripts
+to complex system orchestration, running on a JIT-optimized high-performance runtime.
 
 ## Features
 
-- **Everything is a string**: preserves Tcl's core philosophy while efficiently mapping to Nyar internal representation (including NaN-boxing).
+- **Everything is a string**: preserves Tcl's core philosophy while efficiently mapping to Nyar internal representation
+  (including NaN-boxing).
 - **Command-centric design**: Tcl command evaluation model implemented via Nyar virtual dispatch and effect system.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: optimization of hot command sequences and script loops.
-  - **`nyar-gc`**: automatic management of Tcl variables and dynamic strings.
-  - **Algebraic effects**: Tcl control-flow commands and error-handling patterns.
+    - **`nyar-jit`**: optimization of hot command sequences and script loops.
+    - **`nyar-gc`**: automatic management of Tcl variables and dynamic strings.
+    - **Algebraic effects**: Tcl control-flow commands and error-handling patterns.
 - **Extensible architecture**: new Tcl commands via Nyar FFI or bridges to other languages.
 
 ## Supported constructs

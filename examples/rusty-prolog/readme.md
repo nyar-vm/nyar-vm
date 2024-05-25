@@ -4,16 +4,17 @@ A Prolog language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-prolog` brings logic programming to the Nyar VM, mapping unification, backtracking, and logic variables to Nyar algebraic effects and a high-performance runtime for integrating logical reasoning into modern applications.
+`rusty-prolog` brings logic programming to the Nyar VM, mapping unification, backtracking, and logic variables to Nyar
+algebraic effects and a high-performance runtime for integrating logical reasoning into modern applications.
 
 ## Features
 
 - **Logical reasoning**: Horn clauses, unification, and depth-first search.
 - **Algebraic effects**: backtracking and nondeterministic execution via delimited continuations and effect handlers.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: optimization of hot unification paths and recursive predicates.
-  - **`nyar-gc`**: lifecycle management for logic variables and choice points.
-  - **`nyar-aot`**: E-Graph optimization of logic goals.
+    - **`nyar-jit`**: optimization of hot unification paths and recursive predicates.
+    - **`nyar-gc`**: lifecycle management for logic variables and choice points.
+    - **`nyar-aot`**: E-Graph optimization of logic goals.
 - **Interop**: Prolog predicates callable from other Nyar languages such as Python and Rust.
 
 ## Supported constructs

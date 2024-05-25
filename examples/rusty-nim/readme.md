@@ -4,16 +4,17 @@ A Nim language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-nim` brings Nim, focused on efficiency, expressiveness, and elegant syntax, to the Nyar VM, combining systems-level performance with modern VM safety in a managed JIT environment.
+`rusty-nim` brings Nim, focused on efficiency, expressiveness, and elegant syntax, to the Nyar VM, combining
+systems-level performance with modern VM safety in a managed JIT environment.
 
 ## Features
 
 - **Systems performance + managed safety**: Nim code-generation patterns mapped to optimized Gaia IR.
 - **Expressive syntax**: indentation-based syntax and functional features.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: multi-tier optimization of hot procedures and loops.
-  - **`nyar-gc`**: precise GC automatic memory management.
-  - **`nyar-aot`**: E-Graph saturation optimization for static Nim modules.
+    - **`nyar-jit`**: multi-tier optimization of hot procedures and loops.
+    - **`nyar-gc`**: precise GC automatic memory management.
+    - **`nyar-aot`**: E-Graph saturation optimization for static Nim modules.
 - **Metaprogramming**: Nim compile-time code generation integrated with the Nyar macro system.
 
 ## Supported constructs

@@ -4,7 +4,8 @@ A Rust language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-rust` (Mini Rust) executes a subset of Rust on the Nyar VM. The parse and lowering pipeline transforms Rust source into unified IR, benefiting from Nyar runtime optimizations (JIT, AOT, GC).
+`rusty-rust` (Mini Rust) executes a subset of Rust on the Nyar VM. The parse and lowering pipeline transforms Rust
+source into unified IR, benefiting from Nyar runtime optimizations (JIT, AOT, GC).
 
 ## Features
 

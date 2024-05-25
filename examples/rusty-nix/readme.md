@@ -4,16 +4,17 @@ A Nix expression language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-nix` brings the Nix expression language to the Nyar VM for evaluation in a high-performance managed environment, with algebraic effects for sandboxing and lazy evaluation.
+`rusty-nix` brings the Nix expression language to the Nyar VM for evaluation in a high-performance managed environment,
+with algebraic effects for sandboxing and lazy evaluation.
 
 ## Features
 
 - **Lazy evaluation**: mapped to Nyar thunks and on-demand execution.
 - **Purely functional**: immutable data structures and side-effect-free evaluation.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: optimization of hot evaluation paths and function transformations.
-  - **`nyar-gc`**: efficient collection of many short-lived small objects in Nix evaluation.
-  - **Algebraic effects**: sandboxing and resource management.
+    - **`nyar-jit`**: optimization of hot evaluation paths and function transformations.
+    - **`nyar-gc`**: efficient collection of many short-lived small objects in Nix evaluation.
+    - **Algebraic effects**: sandboxing and resource management.
 - **Reproducible evaluation**: preserves Nix reproducibility guarantees within the Nyar runtime.
 
 ## Supported constructs

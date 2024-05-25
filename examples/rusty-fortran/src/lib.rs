@@ -1,11 +1,11 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 //! Rusty Fortran 语言前端
 
 pub mod codegen;
 
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend, Vfs};
 use oak_core::source::SourceText;
-use oak_fortran::{FortranBuilder, FortranLanguage, ast::FortranRoot};
+use oak_fortran::{ast::FortranRoot, FortranBuilder, FortranLanguage};
 
 /// Rusty Fortran 前端
 #[derive(Default)]
@@ -16,9 +16,7 @@ pub struct RustyFortranFrontend {
 impl RustyFortranFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: FortranLanguage::new(),
-        }
+        Self { language: FortranLanguage::new() }
     }
 }
 
@@ -30,9 +28,7 @@ impl NyarFrontend<(), FortranRoot> for RustyFortranFrontend {
         let source_text = SourceText::new(source);
         let builder = FortranBuilder::new(&self.language);
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &FortranRoot, _ctx: &mut NyarContext<'_, V>) -> Id {

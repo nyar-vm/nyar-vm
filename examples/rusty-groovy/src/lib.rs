@@ -1,4 +1,4 @@
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![feature(new_range_api)]
 //! Groovy 语言前端
 //!
@@ -10,12 +10,10 @@ pub mod row_type;
 pub mod tagless;
 pub mod visitor;
 
-use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
-use oak_groovy::language::GroovyLanguage;
-use oak_groovy::parser::GroovyParser;
-use oak_core::parser::Parser;
 use chomsky_uir::ConstraintAnalysis;
+use nyar_types::{Id, Loc, NyarContext, NyarError, NyarFrontend, Vfs};
+use oak_core::{parser::Parser, source::SourceText};
+use oak_groovy::{language::GroovyLanguage, parser::GroovyParser};
 
 /// Rusty Groovy 前端
 pub struct RustyGroovyFrontend {
@@ -47,10 +45,7 @@ impl NyarFrontend<ConstraintAnalysis, ()> for RustyGroovyFrontend {
         if output.result.is_ok() {
             println!("Parsed Groovy source");
         }
-        output
-            .result
-            .map(|_| ())
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map(|_| ()).map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &(), ctx: &mut NyarContext<'_, V, ConstraintAnalysis>) -> Id {

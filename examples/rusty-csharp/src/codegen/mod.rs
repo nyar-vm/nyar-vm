@@ -14,9 +14,7 @@ pub struct TranslatorContext<'a, A: chomsky_uir::Analysis<IKun> = ()> {
 
 impl<'a, A: chomsky_uir::Analysis<IKun>> TranslatorContext<'a, A> {
     pub fn new(egraph: &'a mut EGraph<IKun, A>) -> Self {
-        Self {
-            builder: IntentBuilder::new(egraph),
-        }
+        Self { builder: IntentBuilder::new(egraph) }
     }
 
     pub fn new_with_builder(builder: IntentBuilder<'a, A>) -> Self {
@@ -24,15 +22,19 @@ impl<'a, A: chomsky_uir::Analysis<IKun>> TranslatorContext<'a, A> {
     }
 
     /// 解析内置函数映射
-    pub fn resolve_builtin(&mut self, target: &str, method: &str, args: Vec<chomsky_uir::egraph::Id>, loc: Loc) -> Option<chomsky_uir::egraph::Id> {
+    pub fn resolve_builtin(
+        &mut self,
+        target: &str,
+        method: &str,
+        args: Vec<chomsky_uir::egraph::Id>,
+        loc: Loc,
+    ) -> Option<chomsky_uir::egraph::Id> {
         match (target, method) {
             // System.Console
             ("System.Console", "WriteLine") | ("Console", "WriteLine") => {
                 Some(self.builder.cross_lang_call("nyar", "std::io", "println", args, loc))
             }
-            ("System.Console", "Write") | ("Console", "Write") => {
-                Some(self.builder.cross_lang_call("nyar", "std::io", "print", args, loc))
-            }
+            ("System.Console", "Write") | ("Console", "Write") => Some(self.builder.cross_lang_call("nyar", "std::io", "print", args, loc)),
             ("System.Console", "ReadLine") | ("Console", "ReadLine") => {
                 Some(self.builder.cross_lang_call("nyar", "std::io", "read_line", args, loc))
             }
@@ -51,14 +53,26 @@ impl<'a, A: chomsky_uir::Analysis<IKun>> TranslatorContext<'a, A> {
             ("System.Math", "Min") | ("Math", "Min") => Some(self.builder.cross_lang_call("nyar", "std::math", "min", args, loc)),
             ("System.Math", "Max") | ("Math", "Max") => Some(self.builder.cross_lang_call("nyar", "std::math", "max", args, loc)),
             // System.String
-            ("System.String", "Concat") | ("String", "Concat") => Some(self.builder.cross_lang_call("nyar", "std::string", "concat", args, loc)),
-            ("System.String", "IsNullOrEmpty") | ("String", "IsNullOrEmpty") => Some(self.builder.cross_lang_call("nyar", "std::string", "is_null_or_empty", args, loc)),
+            ("System.String", "Concat") | ("String", "Concat") => {
+                Some(self.builder.cross_lang_call("nyar", "std::string", "concat", args, loc))
+            }
+            ("System.String", "IsNullOrEmpty") | ("String", "IsNullOrEmpty") => {
+                Some(self.builder.cross_lang_call("nyar", "std::string", "is_null_or_empty", args, loc))
+            }
             // System.Convert
-            ("System.Convert", "ToInt32") | ("Convert", "ToInt32") => Some(self.builder.cross_lang_call("nyar", "std::convert", "to_int", args, loc)),
-            ("System.Convert", "ToDouble") | ("Convert", "ToDouble") => Some(self.builder.cross_lang_call("nyar", "std::convert", "to_float", args, loc)),
-            ("System.Convert", "ToString") | ("Convert", "ToString") => Some(self.builder.cross_lang_call("nyar", "std::convert", "to_string", args, loc)),
+            ("System.Convert", "ToInt32") | ("Convert", "ToInt32") => {
+                Some(self.builder.cross_lang_call("nyar", "std::convert", "to_int", args, loc))
+            }
+            ("System.Convert", "ToDouble") | ("Convert", "ToDouble") => {
+                Some(self.builder.cross_lang_call("nyar", "std::convert", "to_float", args, loc))
+            }
+            ("System.Convert", "ToString") | ("Convert", "ToString") => {
+                Some(self.builder.cross_lang_call("nyar", "std::convert", "to_string", args, loc))
+            }
             // System.Environment
-            ("System.Environment", "Exit") | ("Environment", "Exit") => Some(self.builder.cross_lang_call("nyar", "std::os", "exit", args, loc)),
+            ("System.Environment", "Exit") | ("Environment", "Exit") => {
+                Some(self.builder.cross_lang_call("nyar", "std::os", "exit", args, loc))
+            }
             _ => None,
         }
     }
@@ -84,8 +98,7 @@ impl NyarTranslator {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
-        let extractor =
-            chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DefaultCostModel::default());
+        let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DefaultCostModel::default());
 
         Ok(extractor.extract(root_id))
     }
@@ -120,7 +133,8 @@ impl NyarTranslator {
                 }
                 if using.is_static {
                     Ok(Some(ctx.builder.extension("import_static", args, loc)))
-                } else {
+                }
+                else {
                     Ok(Some(ctx.builder.extension("import", args, loc)))
                 }
             }
@@ -157,7 +171,7 @@ impl NyarTranslator {
         ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut members = Vec::new();
-        
+
         // 处理特性的翻译
         for attr in &class.attributes {
             members.push(self.translate_attribute(attr, ctx)?);
@@ -185,7 +199,7 @@ impl NyarTranslator {
                 }
             }
         }
-        
+
         let loc = Loc::unknown();
         let mut class_id = ctx.builder.module(&class.name, members, loc);
 
@@ -349,20 +363,12 @@ impl NyarTranslator {
         let loc = Loc::unknown();
         let mut accessors = Vec::new();
         if let Some(get) = &prop.get_accessor {
-            let body_id = if let Some(body) = &get.body {
-                self.translate_block(body, ctx)?
-            } else {
-                ctx.builder.seq(vec![], loc)
-            };
+            let body_id = if let Some(body) = &get.body { self.translate_block(body, ctx)? } else { ctx.builder.seq(vec![], loc) };
             let get_id = ctx.builder.lambda(vec![], body_id, loc);
             accessors.push(ctx.builder.export(&format!("get_{}", prop.name), get_id, loc));
         }
         if let Some(set) = &prop.set_accessor {
-            let body_id = if let Some(body) = &set.body {
-                self.translate_block(body, ctx)?
-            } else {
-                ctx.builder.seq(vec![], loc)
-            };
+            let body_id = if let Some(body) = &set.body { self.translate_block(body, ctx)? } else { ctx.builder.seq(vec![], loc) };
             let set_id = ctx.builder.lambda(vec!["value".to_string()], body_id, loc);
             accessors.push(ctx.builder.export(&format!("set_{}", prop.name), set_id, loc));
         }
@@ -382,20 +388,12 @@ impl NyarTranslator {
         }
 
         if let Some(get) = &indexer.get_accessor {
-            let body_id = if let Some(body) = &get.body {
-                self.translate_block(body, ctx)?
-            } else {
-                ctx.builder.seq(vec![], loc)
-            };
+            let body_id = if let Some(body) = &get.body { self.translate_block(body, ctx)? } else { ctx.builder.seq(vec![], loc) };
             let get_id = ctx.builder.lambda(params.clone(), body_id, loc);
             accessors.push(ctx.builder.export("get_Item", get_id, loc));
         }
         if let Some(set) = &indexer.set_accessor {
-            let body_id = if let Some(body) = &set.body {
-                self.translate_block(body, ctx)?
-            } else {
-                ctx.builder.seq(vec![], loc)
-            };
+            let body_id = if let Some(body) = &set.body { self.translate_block(body, ctx)? } else { ctx.builder.seq(vec![], loc) };
             let mut set_params = params.clone();
             set_params.push("value".to_string());
             let set_id = ctx.builder.lambda(set_params, body_id, loc);
@@ -427,11 +425,7 @@ impl NyarTranslator {
             stmts.push(self.translate_attribute(attr, ctx)?);
         }
 
-        let body_id = if let Some(body) = &method.body {
-            self.translate_block(body, ctx)?
-        } else {
-            ctx.builder.seq(vec![], loc)
-        };
+        let body_id = if let Some(body) = &method.body { self.translate_block(body, ctx)? } else { ctx.builder.seq(vec![], loc) };
 
         let mut params = Vec::new();
         for param in &method.parameters {
@@ -486,26 +480,14 @@ impl NyarTranslator {
         match stmt {
             Statement::Expression(expr) => self.translate_expr(expr, ctx),
             Statement::Return(expr) => {
-                let expr_id = if let Some(e) = expr {
-                    self.translate_expr(e, ctx)?
-                } else {
-                    ctx.builder.constant(0, loc)
-                };
+                let expr_id = if let Some(e) = expr { self.translate_expr(e, ctx)? } else { ctx.builder.constant(0, loc) };
                 Ok(ctx.builder.extension("return", vec![expr_id], loc))
             }
             Statement::Block(stmts) => self.translate_block(stmts, ctx),
-            Statement::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
+            Statement::If { condition, then_branch, else_branch } => {
                 let cond_id = self.translate_expr(condition, ctx)?;
                 let then_id = self.translate_stmt(then_branch, ctx)?;
-                let else_id = if let Some(eb) = else_branch {
-                    self.translate_stmt(eb, ctx)?
-                } else {
-                    ctx.builder.seq(vec![], loc)
-                };
+                let else_id = if let Some(eb) = else_branch { self.translate_stmt(eb, ctx)? } else { ctx.builder.seq(vec![], loc) };
                 Ok(ctx.builder.extension("if", vec![cond_id, then_id, else_id], loc))
             }
             Statement::While { condition, body } => {
@@ -513,52 +495,31 @@ impl NyarTranslator {
                 let body_id = self.translate_stmt(body, ctx)?;
                 Ok(ctx.builder.extension("while", vec![cond_id, body_id], loc))
             }
-            Statement::For {
-                init,
-                condition,
-                update,
-                body,
-            } => {
+            Statement::For { init, condition, update, body } => {
                 let mut stmts = Vec::new();
                 if let Some(i) = init {
                     stmts.push(self.translate_stmt(i, ctx)?);
                 }
                 let cond_id = if let Some(c) = condition {
                     self.translate_expr(c, ctx)?
-                } else {
+                }
+                else {
                     ctx.builder.constant(1, loc) // true
                 };
                 let body_id = self.translate_stmt(body, ctx)?;
-                let update_id = if let Some(u) = update {
-                    self.translate_expr(u, ctx)?
-                } else {
-                    ctx.builder.seq(vec![], loc)
-                };
+                let update_id = if let Some(u) = update { self.translate_expr(u, ctx)? } else { ctx.builder.seq(vec![], loc) };
                 let loop_id = ctx.builder.extension("for", vec![cond_id, body_id, update_id], loc);
                 stmts.push(loop_id);
                 Ok(ctx.builder.seq(stmts, loc))
             }
-            Statement::Foreach {
-                item_type: _,
-                item_name,
-                iterable,
-                body,
-            } => {
+            Statement::Foreach { item_type: _, item_name, iterable, body } => {
                 let iter_id = self.translate_expr(iterable, ctx)?;
                 let item_id = ctx.builder.symbol(item_name, loc);
                 let body_id = self.translate_stmt(body, ctx)?;
                 Ok(ctx.builder.extension("foreach", vec![iter_id, item_id, body_id], loc))
             }
-            Statement::LocalVariable {
-                r#type: _,
-                name,
-                initializer,
-            } => {
-                let init_id = if let Some(init) = initializer {
-                    self.translate_expr(init, ctx)?
-                } else {
-                    ctx.builder.constant(0, loc)
-                };
+            Statement::LocalVariable { r#type: _, name, initializer } => {
+                let init_id = if let Some(init) = initializer { self.translate_expr(init, ctx)? } else { ctx.builder.constant(0, loc) };
                 Ok(ctx.builder.export(name, init_id, loc))
             }
             Statement::Break => Ok(ctx.builder.extension("break", vec![], loc)),
@@ -593,7 +554,8 @@ impl NyarTranslator {
                     }
                     let target_id = self.translate_expr(target, ctx)?;
                     Ok(ctx.builder.call(target_id, args, loc))
-                } else {
+                }
+                else {
                     let name_id = ctx.builder.symbol(&call.name, loc);
                     Ok(ctx.builder.call(name_id, args, loc))
                 }
@@ -660,18 +622,10 @@ impl NyarTranslator {
             match clause {
                 QueryClause::Where(expr) => {
                     let body_id = self.translate_expr(expr, ctx)?;
-                    let lambda_id = ctx.builder.lambda(
-                        vec![query.from_clause.identifier.clone()],
-                        body_id,
-                        loc,
-                    );
+                    let lambda_id = ctx.builder.lambda(vec![query.from_clause.identifier.clone()], body_id, loc);
                     let name_id = ctx.builder.symbol("Where", loc);
                     let member_id = ctx.builder.extension("get_member", vec![current_id, name_id], loc);
-                    current_id = ctx.builder.call(
-                        member_id,
-                        vec![lambda_id],
-                        loc,
-                    );
+                    current_id = ctx.builder.call(member_id, vec![lambda_id], loc);
                 }
                 _ => {
                     // TODO: 其他 LINQ 子句
@@ -683,23 +637,12 @@ impl NyarTranslator {
         match &query.body.select_or_group {
             SelectOrGroupClause::Select(expr) => {
                 let body_id = self.translate_expr(expr, ctx)?;
-                let lambda_id = ctx.builder.lambda(
-                    vec![query.from_clause.identifier.clone()],
-                    body_id,
-                    loc,
-                );
+                let lambda_id = ctx.builder.lambda(vec![query.from_clause.identifier.clone()], body_id, loc);
                 let name_id = ctx.builder.symbol("Select", loc);
                 let member_id = ctx.builder.extension("get_member", vec![current_id, name_id], loc);
-                current_id = ctx.builder.call(
-                    member_id,
-                    vec![lambda_id],
-                    loc,
-                );
+                current_id = ctx.builder.call(member_id, vec![lambda_id], loc);
             }
-            SelectOrGroupClause::Group {
-                expression: _,
-                by_expression: _,
-            } => {
+            SelectOrGroupClause::Group { expression: _, by_expression: _ } => {
                 // TODO: GroupBy
             }
         }

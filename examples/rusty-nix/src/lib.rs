@@ -1,8 +1,9 @@
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
-use oak_nix::{NixBuilder, NixLanguage};
-use oak_core::{Builder, SourceText};
-use oak_vfs::Vfs;
+#![deny(missing_docs)]
 use chomsky_uir::Id;
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use oak_core::{Builder, SourceText};
+use oak_nix::{NixBuilder, NixLanguage};
+use oak_vfs::Vfs;
 
 pub struct RustyNixFrontend {
     language: NixLanguage,
@@ -10,9 +11,7 @@ pub struct RustyNixFrontend {
 
 impl RustyNixFrontend {
     pub fn new() -> Self {
-        Self {
-            language: NixLanguage::default(),
-        }
+        Self { language: NixLanguage::default() }
     }
 }
 
@@ -31,9 +30,7 @@ impl NyarFrontend for RustyNixFrontend {
         let mut session = oak_core::parser::ParseSession::<NixLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower_unified<V: Vfs>(&self, _ast: &(), ctx: &mut NyarContext<V>) -> Id {

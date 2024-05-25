@@ -4,16 +4,17 @@ A Julia language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-julia` brings Julia, combining high-level ease of use with low-level performance, to the Nyar VM for scientific computing and data analysis, mapping multiple dispatch and dynamic typing to the Nyar advanced runtime.
+`rusty-julia` brings Julia, combining high-level ease of use with low-level performance, to the Nyar VM for scientific
+computing and data analysis, mapping multiple dispatch and dynamic typing to the Nyar advanced runtime.
 
 ## Features
 
 - **Multiple dispatch**: mapped to Nyar virtual dispatch and dynamic dispatch.
 - **JIT specialization**: `nyar-jit` type-specialized compilation of hot paths, similar to Julia's LLVM JIT.
 - **Nyar ecosystem integration**:
-  - **`nyar-jit`**: multi-tier optimization of numerical kernels.
-  - **`nyar-gc`**: high-performance mark-and-sweep for complex object graphs and arrays.
-  - **`nyar-aot`**: E-Graph ahead-of-time optimization for static Julia modules.
+    - **`nyar-jit`**: multi-tier optimization of numerical kernels.
+    - **`nyar-gc`**: high-performance mark-and-sweep for complex object graphs and arrays.
+    - **`nyar-aot`**: E-Graph ahead-of-time optimization for static Julia modules.
 - **Metaprogramming**: macros and expression manipulation integrated with Nyar metaprogramming primitives.
 
 ## Supported constructs

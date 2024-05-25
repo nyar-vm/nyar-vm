@@ -4,7 +4,8 @@ Experimental Windows Batch (`.bat`) frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-bat` implements `nyar_types::NyarFrontend` on top of `oak-bat`. Parsing is functional; IR lowering remains a scaffold (commands and literals map to placeholder nodes).
+`rusty-bat` implements `nyar_types::NyarFrontend` on top of `oak-bat`. Parsing is functional; IR lowering remains a
+scaffold (commands and literals map to placeholder nodes).
 
 ## Current coverage
 
