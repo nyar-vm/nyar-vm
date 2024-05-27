@@ -38,11 +38,6 @@ const WASM_COLLECT = {
     artifact: 'nyar_wasm.wasm',
 };
 
-const COMMANDER_PACKAGE = {
-    dir: path.join(PACKAGES_ROOT, 'nyar-commander'),
-    name: '@nyar/commander',
-};
-
 const MAIN_PACKAGE = {
     dir: path.join(PACKAGES_ROOT, 'nyar'),
     name: '@nyar/nyar',
@@ -359,10 +354,6 @@ for (const plat of NATIVE_PLATFORMS) {
 
 const wasmOutcome = publishCollect(WASM_COLLECT, version, wasmArtifactsRoot);
 if (wasmOutcome === 'published') published += 1;
-else skipped += 1;
-
-const commanderOutcome = publishJsPackage(COMMANDER_PACKAGE, version);
-if (commanderOutcome === 'published') published += 1;
 else skipped += 1;
 
 const mainOutcome = publishMain(version, nativeArtifactsRoot);

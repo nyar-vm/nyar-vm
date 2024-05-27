@@ -18,10 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
       - name: Install
-        run: pnpm install --frozen-lockfile
-      - name: Biome check
-        run: pnpm exec biome check projects/packages/nyar projects/packages/nyar-commander documentation/package.json package.json
+        run: pnpm install
+      - name: Test npm packages
+        run: pnpm --filter "./projects/packages/**" test
       - name: Prepare npm package readmes
         run: node scripts/prepare-npm-publish.mjs

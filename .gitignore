@@ -15,9 +15,12 @@ Cargo.lock
 
 # Node
 node_modules/
-dist/K
 .env.placeholder.local
 package-lock.json
 pnpm-lock.yaml
 *.node
 *.wasm
+
+# Python
+__pycache__/
+*.py

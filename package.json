@@ -22,9 +22,11 @@
         "p": "cargo workspaces publish --no-git-commit --allow-dirty --yes",
         "u": "cargo upgrade --incompatible"
     },
+    "dependencies": {
+    },
     "devDependencies": {
-        "@doki-land/nifty": "^0.0.12",
-        "typescript": "^7.0.2"
+        "typescript": "^7.0.2",
+        "@doki-land/nifty": "^0.1.3"
     },
     "packageManager": "pnpm@9.15.4"
 }

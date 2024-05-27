@@ -1,5 +1,5 @@
 {
-    "js": ["@nyar/commander", "@nyar/nyar"],
+    "js": ["@nyar/nyar"],
     "native": [
         "@nyar/nyar-win32-x64",
         "@nyar/nyar-linux-x64",

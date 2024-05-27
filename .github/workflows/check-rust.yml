@@ -26,5 +26,24 @@ jobs:
           tool: wasm-tools,wasmtime
       - name: Build
         run: cargo build --workspace
+
+  test:
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - name: Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+      - name: Install Wasm tooling
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-tools,wasmtime
       - name: Tests
         run: cargo test --workspace
