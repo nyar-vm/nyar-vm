@@ -38,6 +38,11 @@ const WASM_COLLECT = {
     artifact: 'nyar_wasm.wasm',
 };
 
+const COMMANDER_PACKAGE = {
+    dir: path.join(PACKAGES_ROOT, 'nyar-commander'),
+    name: '@nyar/commander',
+};
+
 const MAIN_PACKAGE = {
     dir: path.join(PACKAGES_ROOT, 'nyar'),
     name: '@nyar/nyar',
@@ -232,17 +237,13 @@ function publishCollect(spec, version, artifactsRoot) {
     fail(`publish failed for ${name}`);
 }
 
-function publishMain(version, artifactsRoot) {
-    const abs = MAIN_PACKAGE.dir;
+function stageJsPackage(spec, version) {
+    const abs = spec.dir;
     const raw = readJson(path.join(abs, 'package.json'));
-    const name = MAIN_PACKAGE.name;
+    const name = spec.name ?? raw.name;
+    if (!name) fail(`no name in ${path.relative(ROOT, abs)}/package.json`);
 
-    if (versionExists(name, version)) {
-        console.log(` ✓ ${name}@${version} already on registry — skip`);
-        return 'exists';
-    }
-
-    const stage = path.join(os.tmpdir(), `nyar-pub-main-${version}`);
+    const stage = path.join(os.tmpdir(), `nyar-pub-js-${name.replace('@', '').replace('/', '-')}-${version}`);
     fs.rmSync(stage, { recursive: true, force: true });
     fs.mkdirSync(stage, { recursive: true });
 
@@ -256,7 +257,6 @@ function publishMain(version, artifactsRoot) {
             fs.copyFileSync(from, to);
         }
     }
-    copyIfExists(path.join(abs, 'package.json'), path.join(stage, 'package.json'));
     for (const doc of ['readme.md', 'README.md']) {
         copyIfExists(path.join(abs, doc), path.join(stage, doc));
     }
@@ -275,6 +275,44 @@ function publishMain(version, artifactsRoot) {
         if (Object.keys(pkg.scripts).length === 0) delete pkg.scripts;
     }
     delete pkg.devDependencies;
+    writeJson(path.join(stage, 'package.json'), pkg);
+    return { stage, name, pkg };
+}
+
+function finalizeJsPublish(stage, name, version) {
+    const outcome = npmPublish(stage, name, version);
+    if (outcome === 'published') return 'published';
+    if (outcome === 'exists') {
+        console.log(` ✓ ${name}@${version} already on registry — skip`);
+        return 'exists';
+    }
+    if (outcome === 'auth') {
+        fail(`OIDC/auth failed for ${name}. Add Trusted Publisher: file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm.rs`);
+    }
+    if (outcome === 'missing') {
+        fail(`${name} missing on registry — run pnpm placeholder:publish, then pnpm placeholder:trust -- --only ${name}`);
+    }
+    fail(`publish failed for ${name}`);
+}
+
+function publishJsPackage(spec, version) {
+    const name = spec.name;
+    if (versionExists(name, version)) {
+        console.log(` ✓ ${name}@${version} already on registry — skip`);
+        return 'exists';
+    }
+    const { stage } = stageJsPackage(spec, version);
+    return finalizeJsPublish(stage, name, version);
+}
+
+function publishMain(version, artifactsRoot) {
+    const name = MAIN_PACKAGE.name;
+    if (versionExists(name, version)) {
+        console.log(` ✓ ${name}@${version} already on registry — skip`);
+        return 'exists';
+    }
+
+    const { stage, pkg } = stageJsPackage(MAIN_PACKAGE, version);
 
     /** @type {Record<string, string>} */
     const optionalNatives = {};
@@ -294,22 +332,9 @@ function publishMain(version, artifactsRoot) {
     }
     pkg.dependencies = rewriteWorkspaceDeps(pkg.dependencies ?? {}, version);
     pkg.optionalDependencies = { ...rewriteWorkspaceDeps(pkg.optionalDependencies ?? {}, version), ...optionalNatives };
-
     writeJson(path.join(stage, 'package.json'), pkg);
 
-    const outcome = npmPublish(stage, name, version);
-    if (outcome === 'published') return 'published';
-    if (outcome === 'exists') {
-        console.log(` ✓ ${name}@${version} already on registry — skip`);
-        return 'exists';
-    }
-    if (outcome === 'auth') {
-        fail(`OIDC/auth failed for ${name}. Add Trusted Publisher: file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm.rs`);
-    }
-    if (outcome === 'missing') {
-        fail(`${name} missing on registry — run pnpm placeholder:publish, then pnpm placeholder:trust -- --only ${name}`);
-    }
-    fail(`publish failed for ${name}`);
+    return finalizeJsPublish(stage, name, version);
 }
 
 const version = resolveVersion();
@@ -334,6 +359,10 @@ for (const plat of NATIVE_PLATFORMS) {
 
 const wasmOutcome = publishCollect(WASM_COLLECT, version, wasmArtifactsRoot);
 if (wasmOutcome === 'published') published += 1;
+else skipped += 1;
+
+const commanderOutcome = publishJsPackage(COMMANDER_PACKAGE, version);
+if (commanderOutcome === 'published') published += 1;
 else skipped += 1;
 
 const mainOutcome = publishMain(version, nativeArtifactsRoot);
