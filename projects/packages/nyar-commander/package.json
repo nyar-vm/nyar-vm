@@ -1,6 +1,6 @@
 {
     "name": "@nyar/commander",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "type": "module",
     "description": "i18n-first TypeScript CLI framework for Nyar host tools",
     "license": "MIT",

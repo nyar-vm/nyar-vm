@@ -16,7 +16,7 @@
         "fmt": "nifty format",
         "fmt:check": "nifty format --check",
         "format": "nifty format",
-        "lint": "biome check --apply .",
+        "lint": "pnpm fmt:check",
         "check": "cargo cry",
         "check:doc": "cargo-cry doc",
         "p": "cargo workspaces publish --no-git-commit --allow-dirty --yes",
