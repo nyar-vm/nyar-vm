@@ -110,12 +110,14 @@ impl PublisherKey {
         Err(RegistryError::message("publisher key JSON is missing private_key / public_key"))
     }
 
+    /// Construct a signing-capable key from a 32-byte Ed25519 seed.
     pub fn from_seed(seed: [u8; 32]) -> Result<Self, RegistryError> {
         let signing = SigningKey::from_bytes(&seed);
         let public_key = signing.verifying_key().to_bytes();
         Ok(Self { fingerprint: fingerprint_of(&public_key), public_key, seed: Some(seed) })
     }
 
+    /// Construct a verify-only identity from a 32-byte Ed25519 public key.
     pub fn from_public(public_key: [u8; 32]) -> Result<Self, RegistryError> {
         // Validate curve point.
         VerifyingKey::from_bytes(&public_key).map_err(|error| RegistryError::message(error.to_string()))?;
@@ -127,10 +129,12 @@ impl PublisherKey {
         &self.fingerprint
     }
 
+    /// Raw 32-byte Ed25519 public key bytes.
     pub fn public_key(&self) -> &[u8; 32] {
         &self.public_key
     }
 
+    /// Whether private seed material is available for signing.
     pub fn can_sign(&self) -> bool {
         self.seed.is_some()
     }

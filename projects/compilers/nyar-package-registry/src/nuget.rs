@@ -15,12 +15,15 @@ pub struct NugetRegistry {
 }
 
 impl NugetRegistry {
+    /// Default NuGet v3 service index URL.
     pub const DEFAULT_ENDPOINT: &'static str = "https://api.nuget.org/v3";
 
+    /// Connect to a NuGet-compatible registry at `endpoint`.
     pub fn new(endpoint: impl Into<String>) -> Result<Self, RegistryError> {
         Ok(Self { endpoint: endpoint.into().trim_end_matches('/').to_string(), http: HttpClient::new(RetryConfig::default())? })
     }
 
+    /// Connect to the public NuGet.org registry.
     pub fn default_registry() -> Result<Self, RegistryError> {
         Self::new(Self::DEFAULT_ENDPOINT)
     }

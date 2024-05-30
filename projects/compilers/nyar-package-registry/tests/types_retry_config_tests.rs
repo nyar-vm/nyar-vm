@@ -1,4 +1,4 @@
-use nyar_package_registry::types::RetryConfig;
+use nyar_package_registry::RetryConfig;
 
 #[test]
 fn npm_upload_timeout_is_generous() {

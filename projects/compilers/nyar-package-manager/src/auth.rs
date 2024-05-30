@@ -26,14 +26,17 @@ impl Default for VendorAuthStore {
 }
 
 impl VendorAuthStore {
+    /// 从指定路径打开或创建 `auth.von` 凭据存储。
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_token_envs(path, &[])
     }
 
+    /// 使用产品 [`ProjectLayout`] 中的 auth 路径与环境变量列表打开存储。
     pub fn open_with_layout(layout: ProjectLayout) -> Result<Self> {
         Self::open_with_token_envs(layout.auth_store_path(), layout.token_env_vars)
     }
 
+    /// 打开存储并注册额外的 token 环境变量名（在 `{REGISTRY}_TOKEN` 之后查询）。
     pub fn open_with_token_envs(path: impl AsRef<Path>, token_env_vars: &'static [&'static str]) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         if path.is_file() {
@@ -48,10 +51,12 @@ impl VendorAuthStore {
         }
     }
 
+    /// 返回给定布局下 auth 存储文件的路径。
     pub fn path_for(layout: ProjectLayout) -> PathBuf {
         layout.auth_store_path()
     }
 
+    /// 读取注册表 token（不含 endpoint / 项目目录上下文）。
     pub fn get_token(&self, registry: &str) -> Option<String> {
         self.get_token_for(registry, None, None)
     }
@@ -63,6 +68,7 @@ impl VendorAuthStore {
         self.discover_credential(registry, endpoint, project_dir).map(|item| item.token)
     }
 
+    /// 按优先级发现凭据：`auth.von` → 环境变量 → 注册表官方 CLI 配置。
     pub fn discover_credential(&self, registry: &str, endpoint: Option<&str>, project_dir: Option<&Path>) -> Option<DiscoveredCredential> {
         if !credentials::is_external_registry(registry) {
             if let Some(token) = self.tokens.get(registry).cloned().filter(|token| !token.trim().is_empty()) {
@@ -86,11 +92,13 @@ impl VendorAuthStore {
         credentials::discover_token(registry, endpoint, project_dir)
     }
 
+    /// 写入注册表 token 并持久化到 `auth.von`。
     pub fn set_token(&mut self, registry: impl Into<String>, token: impl Into<String>) -> Result<()> {
         self.tokens.insert(registry.into(), token.into());
         self.save()
     }
 
+    /// 删除注册表 token；若存在并已删除则返回 `true`。
     pub fn remove_token(&mut self, registry: &str) -> Result<bool> {
         let removed = self.tokens.remove(registry).is_some();
         if removed {
@@ -99,6 +107,7 @@ impl VendorAuthStore {
         Ok(removed)
     }
 
+    /// 列出 `auth.von` 中已存储 token 的注册表名称。
     pub fn list(&self) -> Vec<String> {
         self.tokens.keys().cloned().collect()
     }
@@ -116,19 +125,25 @@ impl VendorAuthStore {
 /// Result of product CLI login.
 #[derive(Debug, Clone)]
 pub struct LoginResult {
+    /// 注册表 token 校验结果。
     pub verify: TokenVerifyResult,
+    /// 凭据来源描述（如 `auth.von`、`env:…`、官方 CLI 路径）。
     pub credential_source: String,
+    /// 手动 token 同步到官方 CLI 配置后的目标路径。
     pub synced_to: Option<String>,
+    /// 是否已写入 `auth.von`。
     pub stored_in_auth_von: bool,
 }
 
 /// Vendor / registry auth operations.
 #[derive(Debug, Clone)]
 pub struct VendorManager {
+    /// 底层 vendor 凭据存储。
     pub auth: VendorAuthStore,
 }
 
 impl VendorManager {
+    /// 使用产品布局打开 vendor 管理器。
     pub fn open_with_layout(layout: ProjectLayout) -> Result<Self> {
         Ok(Self { auth: VendorAuthStore::open_with_layout(layout)? })
     }
@@ -197,10 +212,12 @@ impl VendorManager {
         Ok(LoginResult { verify: result, credential_source: source, synced_to, stored_in_auth_von })
     }
 
+    /// 从 `auth.von` 移除指定注册表的 token。
     pub fn logout(&mut self, registry_name: &str) -> Result<bool> {
         self.auth.remove_token(registry_name)
     }
 
+    /// 用当前发现的凭据调用注册表校验，并在用户名后附带来源说明。
     pub fn whoami(&self, registry: &dyn Registry) -> Result<TokenVerifyResult> {
         let Some(credential) = self.auth.discover_credential(registry.name(), Some(registry.endpoint()), None)
         else {
@@ -219,10 +236,12 @@ impl VendorManager {
         Ok(result)
     }
 
+    /// 列出 `auth.von` 中已保存 token 的注册表名称。
     pub fn list(&self) -> Vec<String> {
         self.auth.list()
     }
 
+    /// 读取注册表 token；未找到时返回带登录提示的错误。
     pub fn require_token(&self, registry_name: &str) -> Result<String> {
         self.auth
             .get_token(registry_name)

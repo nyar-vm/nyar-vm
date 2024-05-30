@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ProjectLayout, Result};
 
-/// Content-addressable package cache under the product layout cache dir.
+/// 基于内容寻址的本地包缓存，根目录由产品 [`ProjectLayout`] 决定。
 #[derive(Debug, Clone)]
 pub struct PackageCache {
     root: PathBuf,
@@ -20,6 +20,7 @@ struct CacheIndex {
 }
 
 impl PackageCache {
+    /// 打开或初始化 `root` 下的缓存目录，并加载 `cache-index.von` 索引。
     pub fn open(root: impl AsRef<Path>) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
         std::fs::create_dir_all(&root)?;
@@ -34,15 +35,17 @@ impl PackageCache {
         Ok(Self { root, index })
     }
 
-    /// Default cache root for the given product layout.
+    /// 返回给定产品布局下的默认缓存根目录。
     pub fn root_for(layout: ProjectLayout) -> PathBuf {
         layout.cache_dir()
     }
 
+    /// 判断 `name@version` 是否已写入缓存索引。
     pub fn has_package(&self, name: &str, version: &str) -> bool {
         self.index.packages.contains_key(&format!("{name}@{version}"))
     }
 
+    /// 将本地包目录复制进缓存并更新索引。
     pub fn add_package(&mut self, name: &str, version: &str, package_path: impl AsRef<Path>) -> Result<()> {
         let key = format!("{name}@{version}");
         let target = self.root.join(&key);
@@ -54,10 +57,12 @@ impl PackageCache {
         self.save_index()
     }
 
+    /// 返回已缓存包的解压目录路径。
     pub fn package_path(&self, name: &str, version: &str) -> Option<PathBuf> {
         self.index.packages.get(&format!("{name}@{version}")).map(PathBuf::from)
     }
 
+    /// 清空缓存目录并重置索引文件。
     pub fn clear(&mut self) -> Result<()> {
         if self.root.exists() {
             std::fs::remove_dir_all(&self.root)?;

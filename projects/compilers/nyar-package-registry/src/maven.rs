@@ -13,12 +13,15 @@ pub struct MavenRegistry {
 }
 
 impl MavenRegistry {
+    /// Default Maven Central search API base URL.
     pub const DEFAULT_ENDPOINT: &'static str = "https://search.maven.org";
 
+    /// Connect to a Maven-compatible registry at `endpoint`.
     pub fn new(endpoint: impl Into<String>) -> Result<Self, RegistryError> {
         Ok(Self { endpoint: endpoint.into().trim_end_matches('/').to_string(), http: HttpClient::new(RetryConfig::default())? })
     }
 
+    /// Connect to the public Maven Central search API.
     pub fn default_registry() -> Result<Self, RegistryError> {
         Self::new(Self::DEFAULT_ENDPOINT)
     }

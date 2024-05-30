@@ -4,11 +4,14 @@ use nyar_language::CanonicalTarget;
 
 use crate::{PackageManagerError, Result};
 
-/// Resolved publish artifact location under `dist/{canonical}`.
+/// 将 `publish[].target` 解析为规范三元组及 `dist/{canonical}` 产物目录。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedPublishArtifact {
+    /// 解析后的规范编译目标。
     pub canonical_target: CanonicalTarget,
+    /// 用于 `dist/` 子目录名的规范标签。
     pub canonical_label: String,
+    /// 已构建产物所在的绝对目录。
     pub artifact_dir: PathBuf,
 }
 

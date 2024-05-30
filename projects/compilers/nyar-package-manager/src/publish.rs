@@ -14,10 +14,12 @@ pub struct PackagePublisher {
 }
 
 impl PackagePublisher {
+    /// 绑定注册表适配器表与产品布局，供后续发布流水线使用。
     pub fn new(registries: HashMap<String, Arc<dyn Registry>>, layout: ProjectLayout) -> Self {
         Self { registries, layout }
     }
 
+    /// 执行完整发布：版本递增 → Git 检查 → 打包 → 上传 → 可选打 tag。
     pub fn publish(&self, mut options: PublishOptions) -> Result<PublishResult> {
         if options.package_name.trim().is_empty() {
             return Err(PackageManagerError::message("包名不能为空"));
@@ -117,6 +119,7 @@ impl PackagePublisher {
         Ok(result)
     }
 
+    /// 仅打包不上传，用于本地验证 tarball 布局与摘要。
     pub fn pack_only(&self, package_path: &Path, meta: &PackMeta) -> Result<PackResult> {
         pack::pack(package_path, meta, self.layout)
     }

@@ -1,12 +1,6 @@
 use nyar_package_manager::*;
 
 #[test]
-fn bin_name_from_logical_entry() {
-    assert_eq!(bin_name_from_logical("demo::cli"), "cli");
-    assert_eq!(bin_name_from_logical("demo::main"), "main");
-}
-
-#[test]
 fn resolves_unicode_scope_entry_to_mjs() {
     let dir = tempfile::tempdir().expect("temp");
     let artifact = dir.path().join("dist");
@@ -38,19 +32,11 @@ fn resolves_unicode_scope_entry_to_mjs() {
 
     let unpack_dir = dir.path().join("unpacked");
     std::fs::create_dir_all(&unpack_dir).expect("unpack dir");
-    let count = nyar_package_manager::pack::unpack(&packed.tarball_data, &unpack_dir).expect("unpack");
+    let count = unpack(&packed.tarball_data, &unpack_dir).expect("unpack");
     assert!(count >= 3);
     let package_json = std::fs::read_to_string(unpack_dir.join("package.json")).expect("package.json");
     assert!(package_json.contains("demo_cli.mjs"));
     assert!(package_json.contains("\"cli\""));
-}
-
-#[test]
-fn glob_match_supports_star_and_double_star() {
-    assert!(glob_match("README.md", "README.md"));
-    assert!(glob_match("docs/*.md", "docs/guide.md"));
-    assert!(glob_match("dist/**/*.mjs", "dist/wasm32-node-unknown-wasm/demo.mjs"));
-    assert!(!glob_match("docs/*.md", "docs/sub/guide.md"));
 }
 
 #[test]
@@ -86,9 +72,23 @@ fn packs_manifest_files_and_jsr_flat_layout() {
 
     let unpack_dir = dir.path().join("unpacked-jsr");
     std::fs::create_dir_all(&unpack_dir).expect("unpack dir");
-    nyar_package_manager::pack::unpack(&packed.tarball_data, &unpack_dir).expect("unpack");
+    unpack(&packed.tarball_data, &unpack_dir).expect("unpack");
     assert!(unpack_dir.join("docs/extra.md").is_file());
     assert!(unpack_dir.join("NOTICE").is_file());
     assert!(unpack_dir.join("jsr.json").is_file());
     assert!(!unpack_dir.join("package").is_dir());
+}
+
+#[test]
+fn bin_name_from_logical_entry() {
+    assert_eq!(bin_name_from_logical("demo::cli"), "cli");
+    assert_eq!(bin_name_from_logical("demo::main"), "main");
+}
+
+#[test]
+fn glob_match_supports_star_and_double_star() {
+    assert!(glob_match("README.md", "README.md"));
+    assert!(glob_match("docs/*.md", "docs/guide.md"));
+    assert!(glob_match("dist/**/*.mjs", "dist/wasm32-node-unknown-wasm/demo.mjs"));
+    assert!(!glob_match("docs/*.md", "docs/sub/guide.md"));
 }

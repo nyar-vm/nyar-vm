@@ -15,7 +15,9 @@ type Result<T> = std::result::Result<T, RegistryError>;
 /// Token discovered from an official tooling store.
 #[derive(Debug, Clone)]
 pub struct DiscoveredCredential {
+    /// Bearer or API token value.
     pub token: String,
+    /// Human-readable origin (for example `.npmrc` or an environment variable).
     pub source: String,
 }
 
@@ -48,7 +50,9 @@ pub fn sync_token_to_official_store(registry: &str, endpoint: Option<&str>, toke
     }
 }
 
-fn discover_jsr_token() -> Option<DiscoveredCredential> {
+/// 从 Deno 配置与 `JSR_TOKEN` 环境发现 JSR 令牌（供集成测试）。
+#[doc(hidden)]
+pub fn discover_jsr_token() -> Option<DiscoveredCredential> {
     if let Some(path) = deno_config_path() {
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Some(token) = parse_deno_config_jsr_token(&content) {
@@ -100,8 +104,9 @@ fn parse_deno_config_jsr_token(content: &str) -> Option<String> {
     extract_json_string_value(content, r#""net.jsr""#).or_else(|| extract_json_string_value(content, r#""https://jsr.io""#))
 }
 
-/// Read `"key": "value"` string from a loosely-formatted JSON file.
-fn extract_json_string_value(content: &str, key: &str) -> Option<String> {
+/// 从松散格式的 JSON 文件中读取 `"key": "value"` 字符串值（供集成测试）。
+#[doc(hidden)]
+pub fn extract_json_string_value(content: &str, key: &str) -> Option<String> {
     let start = content.find(key)?;
     let after_key = &content[start + key.len()..];
     let colon = after_key.find(':')?;
@@ -139,7 +144,9 @@ fn discover_npm_token(endpoint: Option<&str>, project_dir: Option<&Path>) -> Opt
     None
 }
 
-fn discover_nuget_token() -> Option<DiscoveredCredential> {
+/// 从 `NuGet.Config` 与 `NUGET_API_KEY` 环境发现 NuGet 令牌（供集成测试）。
+#[doc(hidden)]
+pub fn discover_nuget_token() -> Option<DiscoveredCredential> {
     if let Some(path) = nuget_config_path() {
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Some((token, detail)) = parse_nuget_config_token(&content) {
@@ -158,7 +165,9 @@ fn discover_nuget_token() -> Option<DiscoveredCredential> {
     None
 }
 
-fn discover_maven_token() -> Option<DiscoveredCredential> {
+/// 从 `~/.m2/settings.xml` 与环境变量发现 Maven 令牌（供集成测试）。
+#[doc(hidden)]
+pub fn discover_maven_token() -> Option<DiscoveredCredential> {
     let path = user_home_dir()?.join(".m2").join("settings.xml");
     if path.is_file() {
         if let Ok(content) = std::fs::read_to_string(&path) {
@@ -186,7 +195,9 @@ fn discover_maven_token() -> Option<DiscoveredCredential> {
     None
 }
 
-fn discover_conda_token() -> Option<DiscoveredCredential> {
+/// 从 Anaconda Nucleus 令牌文件发现 Conda 令牌（供集成测试）。
+#[doc(hidden)]
+pub fn discover_conda_token() -> Option<DiscoveredCredential> {
     if let Some((path, token, username)) = find_conda_nucleus_token() {
         let source = if let Some(user) = username {
             format!("Anaconda Nucleus 令牌 ({user}, {})", path.display())
@@ -365,8 +376,9 @@ fn npm_registry_prefixes(endpoint: Option<&str>) -> Vec<String> {
     prefixes
 }
 
-/// Convert `https://registry.npmjs.org` → `//registry.npmjs.org/`.
-fn registry_auth_prefix(endpoint: &str) -> Option<String> {
+/// 把 `https://registry.npmjs.org` 归一为 `//registry.npmjs.org/`（供集成测试）。
+#[doc(hidden)]
+pub fn registry_auth_prefix(endpoint: &str) -> Option<String> {
     let trimmed = endpoint.trim().trim_end_matches('/');
     let without_scheme = trimmed.strip_prefix("https://").or_else(|| trimmed.strip_prefix("http://")).unwrap_or(trimmed);
     if without_scheme.is_empty() {
@@ -413,7 +425,9 @@ fn read_npmrc_token(path: &Path, prefixes: &[String]) -> Option<String> {
     None
 }
 
-fn parse_npmrc_token(content: &str, registry_prefix: &str) -> Option<String> {
+/// 从 `.npmrc` 文本里按注册表前缀解析 `:_authToken` / `:_auth` 令牌（供集成测试）。
+#[doc(hidden)]
+pub fn parse_npmrc_token(content: &str, registry_prefix: &str) -> Option<String> {
     let auth_token_key = format!("{registry_prefix}:_authToken");
     let auth_key = format!("{registry_prefix}:_auth");
     for line in content.lines() {
@@ -475,8 +489,9 @@ fn expand_npmrc_env(content: &str) -> String {
         .join("\n")
 }
 
-/// Expand `${VAR}` / `$VAR` in npmrc values (common CI pattern).
-fn expand_npmrc_value(value: &str) -> String {
+/// 展开 npmrc 值里的 `${VAR}` / `$VAR`（CI 常见写法；供集成测试）。
+#[doc(hidden)]
+pub fn expand_npmrc_value(value: &str) -> String {
     let value = value.trim().trim_matches('"').trim_matches('\'');
     if let Some(name) = value.strip_prefix("${").and_then(|value| value.strip_suffix('}')) {
         return std::env::var(name).unwrap_or_default();

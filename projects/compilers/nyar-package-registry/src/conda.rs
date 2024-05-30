@@ -15,12 +15,15 @@ pub struct CondaRegistry {
 }
 
 impl CondaRegistry {
+    /// Default Anaconda.org API base URL.
     pub const DEFAULT_ENDPOINT: &'static str = "https://api.anaconda.org";
 
+    /// Connect to a Conda-compatible registry at `endpoint`.
     pub fn new(endpoint: impl Into<String>) -> Result<Self, RegistryError> {
         Ok(Self { endpoint: endpoint.into().trim_end_matches('/').to_string(), http: HttpClient::new(RetryConfig::default())? })
     }
 
+    /// Connect to the public Anaconda.org registry.
     pub fn default_registry() -> Result<Self, RegistryError> {
         Self::new(Self::DEFAULT_ENDPOINT)
     }

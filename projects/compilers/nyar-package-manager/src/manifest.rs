@@ -14,8 +14,10 @@ pub struct PublishConfig {
     /// Registry id; empty means inherit from CLI / workspace defaults.
     #[serde(default)]
     pub registry: String,
+    /// npm 风格访问级别（`public` / `restricted`）。
     #[serde(default = "default_access")]
     pub access: String,
+    /// 发布 dist-tag（默认 `latest`）。
     #[serde(default = "default_tag")]
     pub tag: String,
 }
@@ -67,27 +69,39 @@ impl PublishTarget {
 /// once loaded (VON today via `parse` / `save`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackageManifest {
+    /// 包名。
     pub name: String,
+    /// 语义版本或 workspace 继承版本。
     #[serde(default = "default_version")]
     pub version: String,
+    /// 简短描述。
     #[serde(default)]
     pub description: Option<String>,
+    /// 项目主页。
     #[serde(default)]
     pub homepage: Option<String>,
+    /// 作者或维护者。
     #[serde(default)]
     pub author: Option<String>,
+    /// SPDX 许可证标识。
     #[serde(default)]
     pub license: Option<String>,
+    /// 运行时依赖。
     #[serde(default)]
     pub dependencies: BTreeMap<String, DependencySpec>,
+    /// 开发依赖。
     #[serde(default)]
     pub dev_dependencies: BTreeMap<String, DependencySpec>,
+    /// 同级包需满足的 peer 依赖。
     #[serde(rename = "peerDependencies", default)]
     pub peer_dependencies: BTreeMap<String, DependencySpec>,
+    /// 生命周期脚本（如 `prePublish`）。
     #[serde(default)]
     pub scripts: BTreeMap<String, String>,
+    /// 钩子命令（与 `scripts` 并列的遗留字段）。
     #[serde(default)]
     pub hooks: BTreeMap<String, String>,
+    /// 默认发布注册表与 dist-tag 配置。
     #[serde(rename = "publishConfig", default)]
     pub publish_config: PublishConfig,
     /// Registry / channel publish targets (`publish: [...]`).
@@ -107,14 +121,26 @@ fn default_version() -> String {
     "0.1.0".to_string()
 }
 
+/// 依赖声明：workspace 协议、版本约束或带 path/registry 的对象形式。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencySpec {
+    /// 使用 workspace 成员版本（`workspace:*`）。
     Workspace,
+    /// 纯版本范围字符串（`^1.0`、`1.2.3` 等）。
     Version(String),
-    Detailed { version: Option<String>, path: Option<String>, registry: Option<String> },
+    /// 结构化依赖，可指定 path、registry 与 version。
+    Detailed {
+        /// 版本范围或精确版本。
+        version: Option<String>,
+        /// 本地 path 依赖路径。
+        path: Option<String>,
+        /// 覆盖默认注册表 id。
+        registry: Option<String>,
+    },
 }
 
 impl DependencySpec {
+    /// 返回用于解析的版本约束字符串。
     pub fn version_constraint(&self) -> Option<&str> {
         match self {
             Self::Workspace => Some("workspace:*"),
@@ -123,6 +149,7 @@ impl DependencySpec {
         }
     }
 
+    /// 是否为 workspace 协议依赖。
     pub fn is_workspace(&self) -> bool {
         matches!(self, Self::Workspace) || matches!(self, Self::Version(value) if value.starts_with("workspace:"))
     }
@@ -186,20 +213,24 @@ pub enum DependencyBucket {
 }
 
 impl PackageManifest {
+    /// 返回 `directory` 下包清单文件路径。
     pub fn path_in(directory: impl AsRef<Path>, layout: ProjectLayout) -> PathBuf {
         layout.package_manifest_path(directory)
     }
 
+    /// 从磁盘加载并解析包清单。
     pub fn load(directory: impl AsRef<Path>, layout: ProjectLayout) -> Result<Self> {
         let path = Self::path_in(directory, layout);
         let source = std::fs::read_to_string(&path)?;
         Self::parse(&source)
     }
 
+    /// 从 VON 源码字符串解析包清单。
     pub fn parse(source: &str) -> Result<Self> {
         Ok(from_str(source)?)
     }
 
+    /// 判断包清单文件是否存在于 `directory`。
     pub fn exists(directory: impl AsRef<Path>, layout: ProjectLayout) -> bool {
         Self::path_in(directory, layout).is_file()
     }
@@ -264,6 +295,7 @@ impl PackageManifest {
         self.set_dependency(name, version, bucket);
     }
 
+    /// 从 runtime / dev 任一依赖表移除 `name`。
     pub fn remove_dependency(&mut self, name: &str) -> bool {
         self.dependencies.remove(name).is_some() || self.dev_dependencies.remove(name).is_some()
     }

@@ -13,46 +13,64 @@ const OSV_ENDPOINT: &str = "https://api.osv.dev/v1/query";
 /// Vulnerability report for a locked package.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VulnerabilityReport {
+    /// 受影响的包名。
     pub package_name: String,
+    /// 受影响的版本。
     pub version: String,
+    /// OSV / CVE 等漏洞编号。
     pub vulnerability_id: Option<String>,
+    /// 漏洞摘要标题。
     pub title: String,
+    /// 严重级别（来自 OSV `database_specific` 或 `unknown`）。
     pub severity: String,
+    /// 建议升级到的修复版本。
     pub fixed_version: Option<String>,
+    /// 参考链接（公告、 advisory 等）。
     pub url: Option<String>,
 }
 
 /// License audit entry.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LicenseInfo {
+    /// 被审计的包名。
     pub package_name: String,
+    /// 被审计的版本。
     pub version: String,
+    /// 声明的 SPDX 许可证字符串。
     pub license: String,
+    /// 是否在允许列表（MIT、Apache-2.0 等）内。
     pub is_compatible: bool,
+    /// 是否属于 copyleft / 商业限制许可证。
     pub is_restricted: bool,
 }
 
 /// Combined security audit result.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SecurityAuditResult {
+    /// OSV 查询得到的漏洞条目。
     pub vulnerabilities: Vec<VulnerabilityReport>,
+    /// 许可证合规检查结果。
     pub licenses: Vec<LicenseInfo>,
 }
 
 impl SecurityAuditResult {
+    /// 是否发现至少一条漏洞报告。
     pub fn has_vulnerabilities(&self) -> bool {
         !self.vulnerabilities.is_empty()
     }
 
+    /// 是否存在不兼容或受限许可证。
     pub fn has_license_issues(&self) -> bool {
         self.licenses.iter().any(|license| !license.is_compatible || license.is_restricted)
     }
 
+    /// 合并另一份审计结果（用于批量依赖扫描）。
     pub fn merge(&mut self, other: SecurityAuditResult) {
         self.vulnerabilities.extend(other.vulnerabilities);
         self.licenses.extend(other.licenses);
     }
 
+    /// 按 `name@version` 汇总建议升级到的最高修复版本。
     pub fn fix_suggestions(&self) -> BTreeMap<String, String> {
         let mut suggestions = BTreeMap::new();
         for report in &self.vulnerabilities {
@@ -94,6 +112,7 @@ impl SecurityAudit {
         Self::open_with_layout(crate::ProjectLayout::neutral())
     }
 
+    /// 使用自定义 OSV 查询结果缓存文件路径。
     pub fn with_cache_path(cache_path: impl AsRef<Path>) -> Result<Self> {
         let cache_path = cache_path.as_ref().to_path_buf();
         if let Some(parent) = cache_path.parent() {
@@ -109,10 +128,12 @@ impl SecurityAudit {
         self
     }
 
+    /// 对单个包执行 OSV 漏洞扫描与许可证策略检查。
     pub fn audit_package(&mut self, package: &Package, registry: &str) -> Result<SecurityAuditResult> {
         Ok(SecurityAuditResult { vulnerabilities: self.scan_vulnerabilities(package, registry)?, licenses: vec![check_license(package)] })
     }
 
+    /// 批量审计多个 `(Package, registry)` 并合并结果。
     pub fn audit_dependencies(&mut self, packages: &[(Package, String)]) -> Result<SecurityAuditResult> {
         let mut result = SecurityAuditResult::default();
         for (package, registry) in packages {
@@ -121,10 +142,12 @@ impl SecurityAudit {
         Ok(result)
     }
 
+    /// 判断许可证是否在项目允许列表内。
     pub fn is_license_compatible(license: &str) -> bool {
         is_license_compatible(license)
     }
 
+    /// 判断许可证是否属于 GPL/AGPL 等受限类别。
     pub fn is_license_restricted(license: &str) -> bool {
         is_license_restricted(license)
     }
@@ -169,7 +192,9 @@ fn ecosystem_for_registry(registry: &str) -> Option<&'static str> {
     }
 }
 
-fn check_license(package: &Package) -> LicenseInfo {
+/// 计算包的许可证兼容 / 受限信息（供集成测试）。
+#[doc(hidden)]
+pub fn check_license(package: &Package) -> LicenseInfo {
     let license = if package.license.trim().is_empty() { "unknown".to_string() } else { package.license.clone() };
     let restricted = is_license_restricted(&license);
     let compatible = is_license_compatible(&license) && !restricted;

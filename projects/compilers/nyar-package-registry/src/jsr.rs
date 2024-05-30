@@ -16,9 +16,12 @@ pub struct JsrRegistry {
 }
 
 impl JsrRegistry {
+    /// Public JSR package index base URL.
     pub const DEFAULT_ENDPOINT: &'static str = "https://jsr.io";
+    /// JSR management API base URL used for publish and auth.
     pub const DEFAULT_MANAGEMENT_ENDPOINT: &'static str = "https://api.jsr.io";
 
+    /// Connect to a JSR-compatible registry at `endpoint`.
     pub fn new(endpoint: impl Into<String>) -> Result<Self, RegistryError> {
         Ok(Self {
             endpoint: endpoint.into().trim_end_matches('/').to_string(),
@@ -27,6 +30,7 @@ impl JsrRegistry {
         })
     }
 
+    /// Connect to the public JSR registry.
     pub fn default_registry() -> Result<Self, RegistryError> {
         Self::new(Self::DEFAULT_ENDPOINT)
     }

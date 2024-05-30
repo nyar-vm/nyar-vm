@@ -68,6 +68,7 @@ pub struct MockRegistry {
 }
 
 impl MockRegistry {
+    /// Create an empty in-memory registry bound to `name` and `endpoint`.
     pub fn new(name: impl Into<String>, endpoint: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -78,15 +79,18 @@ impl MockRegistry {
         }
     }
 
+    /// Seed package metadata for later lookup.
     pub fn insert_package(&self, package: Package) {
         let key = format!("{}@{}", package.name, package.version);
         self.packages.lock().expect("packages lock").insert(key, package);
     }
 
+    /// Register a token that [`Registry::verify_token`] should accept.
     pub fn insert_token(&self, token: impl Into<String>, username: impl Into<String>) {
         self.tokens.lock().expect("tokens lock").insert(token.into(), username.into());
     }
 
+    /// Return publish records captured by [`Registry::publish_package`].
     pub fn published(&self) -> Vec<(String, String, Vec<u8>)> {
         self.published.lock().expect("published lock").clone()
     }

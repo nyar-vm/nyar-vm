@@ -1,10 +1,69 @@
 use std::sync::{Mutex, OnceLock};
 
-use nyar_package_registry::*;
+use nyar_package_registry::{
+    credentials::{
+        discover_conda_token, discover_jsr_token, discover_maven_token, discover_nuget_token, expand_npmrc_value, extract_json_string_value,
+        parse_npmrc_token, registry_auth_prefix,
+    },
+    *,
+};
 
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[test]
+fn sync_npm_token_writes_user_npmrc() {
+    let _guard = env_lock().lock().expect("lock");
+    let home = tempfile::tempdir().expect("temp home");
+    let previous_home = std::env::var_os("HOME");
+    let previous_profile = std::env::var_os("USERPROFILE");
+    unsafe {
+        std::env::set_var("HOME", home.path());
+        std::env::set_var("USERPROFILE", home.path());
+    }
+
+    let path = sync_token_to_official_store("npm", Some("https://registry.npmjs.org"), "npm-sync-token").expect("sync").expect("path");
+    let content = std::fs::read_to_string(&path).expect("read npmrc");
+    assert!(content.contains("npm-sync-token"));
+
+    unsafe {
+        match previous_home {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+        match previous_profile {
+            Some(value) => std::env::set_var("USERPROFILE", value),
+            None => std::env::remove_var("USERPROFILE"),
+        }
+    }
+}
+
+#[test]
+fn sync_nuget_token_writes_config() {
+    let _guard = env_lock().lock().expect("lock");
+    let home = tempfile::tempdir().expect("temp home");
+    let previous = std::env::var_os("APPDATA");
+    unsafe {
+        std::env::set_var("APPDATA", home.path());
+    }
+    let path = sync_token_to_official_store("nuget", Some("https://api.nuget.org/v3"), "nuget-sync-token").expect("sync").expect("path");
+    let content = std::fs::read_to_string(path).expect("read config");
+    assert!(content.contains("nuget-sync-token"));
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("APPDATA", value),
+            None => std::env::remove_var("APPDATA"),
+        }
+    }
+}
+
+#[test]
+fn uses_external_credential_store_classifies_third_party_registries() {
+    assert!(uses_external_credential_store("npm"));
+    assert!(uses_external_credential_store("nuget"));
+    assert!(!uses_external_credential_store("valhalla"));
 }
 
 #[test]
@@ -84,33 +143,6 @@ fn extracts_deno_config_token_value() {
     assert_eq!(extract_json_string_value(content, r#""net.jsr""#).as_deref(), Some("token-from-deno-config"));
     let alt = r#"{ "https://jsr.io": "alt-token" }"#;
     assert_eq!(extract_json_string_value(alt, r#""https://jsr.io""#).as_deref(), Some("alt-token"));
-}
-
-#[test]
-fn sync_npm_token_writes_user_npmrc() {
-    let _guard = env_lock().lock().expect("lock");
-    let home = tempfile::tempdir().expect("temp home");
-    let previous_home = std::env::var_os("HOME");
-    let previous_profile = std::env::var_os("USERPROFILE");
-    unsafe {
-        std::env::set_var("HOME", home.path());
-        std::env::set_var("USERPROFILE", home.path());
-    }
-
-    let path = sync_token_to_official_store("npm", Some("https://registry.npmjs.org"), "npm-sync-token").expect("sync").expect("path");
-    let content = std::fs::read_to_string(&path).expect("read npmrc");
-    assert!(content.contains("npm-sync-token"));
-
-    unsafe {
-        match previous_home {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
-        match previous_profile {
-            Some(value) => std::env::set_var("USERPROFILE", value),
-            None => std::env::remove_var("USERPROFILE"),
-        }
-    }
 }
 
 #[test]
@@ -210,30 +242,4 @@ fn discovers_conda_token_from_nucleus() {
             None => std::env::remove_var("USERPROFILE"),
         }
     }
-}
-
-#[test]
-fn sync_nuget_token_writes_config() {
-    let _guard = env_lock().lock().expect("lock");
-    let home = tempfile::tempdir().expect("temp home");
-    let previous = std::env::var_os("APPDATA");
-    unsafe {
-        std::env::set_var("APPDATA", home.path());
-    }
-    let path = sync_token_to_official_store("nuget", Some("https://api.nuget.org/v3"), "nuget-sync-token").expect("sync").expect("path");
-    let content = std::fs::read_to_string(path).expect("read config");
-    assert!(content.contains("nuget-sync-token"));
-    unsafe {
-        match previous {
-            Some(value) => std::env::set_var("APPDATA", value),
-            None => std::env::remove_var("APPDATA"),
-        }
-    }
-}
-
-#[test]
-fn uses_external_credential_store_classifies_third_party_registries() {
-    assert!(uses_external_credential_store("npm"));
-    assert!(uses_external_credential_store("nuget"));
-    assert!(!uses_external_credential_store("valhalla"));
 }

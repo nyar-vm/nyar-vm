@@ -30,14 +30,17 @@ pub use layout::{EntryAliasFn, ProjectLayout};
 pub use lock::{LockEntry, LockFile};
 pub use manager::{PackageInfo, PackageManager};
 pub use manifest::{DependencyBucket, DependencySpec, PackageManifest, PublishConfig, PublishTarget, is_registry_publish_type};
-pub use pack::{PackMeta, PackResult, PackageIgnore, RegistryBinEntry, RegistryPackOptions, pack, pack_registry_artifact, unpack};
+pub use pack::{
+    PackMeta, PackResult, PackageIgnore, RegistryBinEntry, RegistryPackOptions, bin_name_from_logical, glob_match, pack,
+    pack_registry_artifact, unpack,
+};
 pub use publish::PackagePublisher;
 pub use publish_target::{ResolvedPublishArtifact, resolve_publish_artifact};
 pub use registry_sources::RegistrySourceManager;
 pub use resolve::{DependencyNode, DependencyResolver};
 pub use scripts::{ScriptResult, ScriptRunner};
-pub use security::{LicenseInfo, SecurityAudit, SecurityAuditResult, VulnerabilityReport};
-pub use version::{SemanticVersion, YearlyVersion};
+pub use security::{LicenseInfo, SecurityAudit, SecurityAuditResult, VulnerabilityReport, check_license};
+pub use version::{SemanticVersion, YearlyVersion, satisfies_version_constraint};
 pub use workspace::{ProjectMode, WorkspaceManifest};
 
 pub use nyar_package_registry::{

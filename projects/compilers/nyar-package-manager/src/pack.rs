@@ -16,27 +16,39 @@ use crate::Result;
 /// Packed package artifact.
 #[derive(Debug, Clone)]
 pub struct PackResult {
+    /// gzip 压缩后的 tarball 字节。
     pub tarball_data: Vec<u8>,
+    /// tarball 的 SHA-256 十六进制摘要。
     pub sha256: String,
+    /// 压缩后字节长度。
     pub size: usize,
+    /// tarball 内包含的文件数。
     pub file_count: usize,
 }
 
 /// Metadata written into registry manifests (`package.json` / `jsr.json`).
 #[derive(Debug, Clone)]
 pub struct PackMeta {
+    /// 写入注册表 manifest 的包名。
     pub name: String,
+    /// 发布版本。
     pub version: String,
+    /// 包描述。
     pub description: String,
+    /// 可选许可证字段。
     pub license: Option<String>,
 }
 
 /// Options for packing a built registry artifact directory.
 #[derive(Debug, Clone)]
 pub struct RegistryPackOptions {
+    /// `dist/{target}` 构建产物目录。
     pub artifact_dir: PathBuf,
+    /// 包项目根目录（含 manifest 与额外 `files`）。
     pub package_root: PathBuf,
+    /// 目标注册表 id（决定 tarball 布局规则）。
     pub registry: String,
+    /// 写入侧车 manifest 的元数据。
     pub meta: PackMeta,
     /// Glob patterns from the package manifest `files` field (merged with run-contract artifacts).
     pub include_files: Vec<String>,
@@ -49,7 +61,9 @@ pub struct RegistryPackOptions {
 /// One publishable CLI entry derived from run contracts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegistryBinEntry {
+    /// CLI 入口名称（注册表 `bin` 字段键）。
     pub bin_name: String,
+    /// 相对 tarball 根的入口文件路径。
     pub relative_path: String,
 }
 
@@ -60,6 +74,7 @@ pub struct PackageIgnore {
 }
 
 impl PackageIgnore {
+    /// 读取 `.packageignore` 并与内置忽略规则合并。
     pub fn load(package_path: &Path, layout: crate::ProjectLayout) -> Self {
         let path = layout.ignore_file_path(package_path);
         let mut patterns = default_ignore_patterns(layout.lockfile);
@@ -75,6 +90,7 @@ impl PackageIgnore {
         Self { patterns }
     }
 
+    /// 判断相对路径是否应排除在 tarball 之外。
     pub fn is_ignored(&self, relative: &str) -> bool {
         let relative = relative.replace('\\', "/");
         self.patterns.iter().any(|pattern| match_pattern(pattern, &relative))
@@ -272,7 +288,9 @@ fn collect_manifest_include_paths(
     Ok(packed)
 }
 
-fn glob_match(pattern: &str, path: &str) -> bool {
+/// 判断 `path` 是否匹配 `pattern`（支持 `*` 单段与 `**` 跨段通配；供集成测试）。
+#[doc(hidden)]
+pub fn glob_match(pattern: &str, path: &str) -> bool {
     let pattern_parts: Vec<&str> = pattern.split('/').collect();
     let path_parts: Vec<&str> = path.split('/').collect();
     glob_match_parts(&pattern_parts, &path_parts)
@@ -423,7 +441,9 @@ fn fallback_bin_entries_from_mjs(files: &[PathBuf], artifact_dir: &Path) -> Vec<
         .collect()
 }
 
-fn bin_name_from_logical(logical_entry: &str) -> String {
+/// 从 `logical_entry` 提取 bin 短名（取 `::` 分隔后的最后一段；供集成测试）。
+#[doc(hidden)]
+pub fn bin_name_from_logical(logical_entry: &str) -> String {
     let normalized = logical_entry.replace('\u{2237}', "::");
     normalized.rsplit("::").next().unwrap_or(&normalized).trim().to_string()
 }

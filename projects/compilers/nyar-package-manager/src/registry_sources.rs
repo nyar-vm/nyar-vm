@@ -36,6 +36,7 @@ impl RegistrySourceManager {
         Self::open_with_layout(ProjectLayout::neutral())
     }
 
+    /// 打开 `registry-sources.von`；文件缺失时使用内置默认 endpoint 表。
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let mut manager = Self { sources: default_sources()?, path };
@@ -43,26 +44,32 @@ impl RegistrySourceManager {
         Ok(manager)
     }
 
+    /// 返回产品布局下的注册表 endpoint 配置文件路径。
     pub fn path_for(layout: ProjectLayout) -> PathBuf {
         layout.registry_sources_path()
     }
 
+    /// 当前打开的 `registry-sources.von` 路径。
     pub fn path(&self) -> &Path {
         &self.path
     }
 
+    /// 注册表名称到 endpoint URL 的只读映射。
     pub fn sources(&self) -> &BTreeMap<String, String> {
         &self.sources
     }
 
+    /// 查询单个注册表的 endpoint；名称不区分大小写。
     pub fn get_endpoint(&self, registry_name: &str) -> Option<&str> {
         self.sources.get(&registry_name.to_ascii_lowercase()).map(String::as_str)
     }
 
+    /// 列出所有 `(registry, endpoint)` 配置对。
     pub fn list(&self) -> Vec<(String, String)> {
         self.sources.iter().map(|(name, endpoint)| (name.clone(), endpoint.clone())).collect()
     }
 
+    /// 新增或覆盖注册表 endpoint 并持久化。
     pub fn add(&mut self, registry_name: &str, endpoint: &str) -> Result<()> {
         let name = registry_name.to_ascii_lowercase();
         if name.trim().is_empty() {
@@ -76,6 +83,7 @@ impl RegistrySourceManager {
         self.save()
     }
 
+    /// 删除自定义 endpoint；内置注册表会恢复为默认值。
     pub fn remove(&mut self, registry_name: &str) -> Result<bool> {
         let name = registry_name.to_ascii_lowercase();
         let defaults = default_sources()?;
@@ -93,6 +101,7 @@ impl RegistrySourceManager {
         Ok(removed)
     }
 
+    /// 返回 `(名称, endpoint, 是否为内置默认值)`。
     pub fn info(&self, registry_name: &str) -> Result<(String, String, bool)> {
         let name = registry_name.to_ascii_lowercase();
         let endpoint = self.get_endpoint(&name).ok_or_else(|| PackageManagerError::message(format!("注册表 {name} 未配置")))?.to_string();
@@ -100,6 +109,7 @@ impl RegistrySourceManager {
         Ok((name, endpoint, is_default))
     }
 
+    /// 根据当前 endpoint 表实例化所有注册表适配器。
     pub fn build_registries(&self) -> Result<HashMap<String, Arc<dyn Registry>>> {
         registries_with_endpoints(&self.sources).map_err(PackageManagerError::from)
     }
@@ -124,6 +134,7 @@ impl RegistrySourceManager {
         Ok(())
     }
 
+    /// 将 endpoint 表写回 `registry-sources.von`。
     pub fn save(&self) -> Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;

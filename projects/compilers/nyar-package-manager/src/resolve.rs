@@ -7,27 +7,34 @@ use nyar_package_registry::{Package, Registry};
 
 use crate::{DependencySpec, PackageManagerError, Result};
 
-/// Resolved dependency node.
+/// 依赖解析树中的一个节点，包含注册表元数据与子依赖。
 #[derive(Debug, Clone)]
 pub struct DependencyNode {
+    /// 包名。
     pub name: String,
+    /// 解析得到的版本。
     pub version: String,
+    /// 提供该包的注册表名称。
     pub registry: String,
+    /// 注册表返回的完整 [`Package`] 元数据。
     pub package: Package,
+    /// 递归解析的直接依赖。
     pub children: Vec<DependencyNode>,
 }
 
-/// Recursive dependency resolver (depth-limited, no full SAT).
+/// 递归依赖解析器（有深度上限，不做完整 SAT）。
 pub struct DependencyResolver {
     registries: HashMap<String, Arc<dyn Registry>>,
     max_depth: usize,
 }
 
 impl DependencyResolver {
+    /// 绑定可用注册表适配器；默认最大递归深度为 32。
     pub fn new(registries: HashMap<String, Arc<dyn Registry>>) -> Self {
         Self { registries, max_depth: 32 }
     }
 
+    /// 解析 manifest 中的全部非 workspace 依赖，返回森林根节点列表。
     pub fn resolve_all(&self, dependencies: &BTreeMap<String, DependencySpec>, default_registry: &str) -> Result<Vec<DependencyNode>> {
         let mut visiting = BTreeSet::new();
         let mut resolved = BTreeMap::new();
@@ -46,6 +53,7 @@ impl DependencyResolver {
         Ok(out)
     }
 
+    /// 解析单个包及其传递依赖，检测环与深度溢出。
     pub fn resolve_one(
         &self,
         name: &str,

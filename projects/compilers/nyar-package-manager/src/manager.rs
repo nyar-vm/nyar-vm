@@ -15,14 +15,20 @@ use crate::{
 /// Installed / queried package summary.
 #[derive(Debug, Clone)]
 pub struct PackageInfo {
+    /// 包名。
     pub name: String,
+    /// 已安装或查询到的版本。
     pub version: String,
+    /// 注册表元数据中的描述。
     pub description: String,
+    /// 来源注册表名称。
     pub registry: String,
+    /// 相对 `vendors/` 的安装路径（未落地时为 `None`）。
     pub install_path: Option<String>,
 }
 
 impl PackageInfo {
+    /// 由注册表 [`Package`] 元数据构造摘要。
     pub fn from_package(package: &Package, registry: &str, install_path: Option<String>) -> Self {
         Self {
             name: package.name.clone(),
@@ -36,6 +42,7 @@ impl PackageInfo {
 
 /// Package manager facade (install / publish / auth).
 pub struct PackageManager {
+    /// 当前项目模式（workspace / 单包 / standalone）。
     pub mode: ProjectMode,
     /// Product-supplied on-disk layout (manifest / ignore filenames).
     pub layout: ProjectLayout,
@@ -45,7 +52,9 @@ pub struct PackageManager {
     publisher: PackagePublisher,
     vendor: VendorManager,
     source_manager: RegistrySourceManager,
+    /// 为 true 时禁止锁文件外的新解析（`--frozen-lockfile`）。
     pub frozen_lockfile: bool,
+    /// 为 true 时仅从本地缓存安装，不访问注册表网络。
     pub offline: bool,
 }
 
@@ -62,6 +71,7 @@ impl PackageManager {
         Ok(Self { mode, layout, registries, lock_file, cache, publisher, vendor, source_manager, frozen_lockfile: false, offline: false })
     }
 
+    /// 打开项目并注入自定义注册表表（测试或嵌入式场景）。
     pub fn open_with_registries(
         directory: impl AsRef<Path>,
         registries: HashMap<String, Arc<dyn Registry>>,
@@ -105,6 +115,7 @@ impl PackageManager {
         Ok(Self { mode, layout, registries, lock_file, cache, publisher, vendor, source_manager, frozen_lockfile: false, offline: false })
     }
 
+    /// 运行时注册额外适配器并刷新发布器。
     pub fn register_registry(&mut self, registry: Arc<dyn Registry>) {
         self.registries.insert(registry.name().to_string(), registry.clone());
         self.publisher = PackagePublisher::new(self.registries.clone(), self.layout);
@@ -116,18 +127,22 @@ impl PackageManager {
         Ok(())
     }
 
+    /// 项目根目录。
     pub fn base_directory(&self) -> &Path {
         self.mode.root()
     }
 
+    /// 已安装第三方包的 `vendors/` 目录。
     pub fn vendors_directory(&self) -> PathBuf {
         self.mode.root().join("vendors")
     }
 
+    /// 当前是否为 workspace 根项目。
     pub fn is_workspace(&self) -> bool {
         matches!(self.mode, ProjectMode::Workspace { .. })
     }
 
+    /// 当前模式是否携带可读的包清单。
     pub fn has_manifest(&self) -> bool {
         self.mode.package_manifest().is_some()
     }
@@ -136,17 +151,20 @@ impl PackageManager {
         self.registries.get(name).ok_or_else(|| PackageManagerError::message(format!("注册器 {name} 未找到")))
     }
 
+    /// 在指定注册表搜索包名关键词。
     pub fn search(&self, query: &str, registry_name: &str) -> Result<Vec<PackageInfo>> {
         let registry = self.registry(registry_name)?;
         Ok(registry.search_packages(query)?.into_iter().map(|package| PackageInfo::from_package(&package, registry_name, None)).collect())
     }
 
+    /// 查询注册表上 `latest` 版本的包元数据。
     pub fn get_package_info(&self, package_name: &str, registry_name: &str) -> Result<PackageInfo> {
         let registry = self.registry(registry_name)?;
         let package = registry.get_package(package_name, "latest")?;
         Ok(PackageInfo::from_package(&package, registry_name, None))
     }
 
+    /// 安装单个包：下载、写入 `vendors/`、更新锁文件与可选 manifest。
     pub fn install_one(&mut self, package_name: &str, version: &str, registry_name: &str, write_manifest: bool) -> Result<PackageInfo> {
         if version.starts_with("workspace:") || version == "workspace" {
             return self.install_workspace_package(package_name);
@@ -187,6 +205,7 @@ impl PackageManager {
         Ok(PackageInfo::from_package(&package, registry_name, Some(package_path.display().to_string())))
     }
 
+    /// 解析并安装 manifest 中的全部依赖（含传递依赖）。
     pub fn install_dependencies(&mut self, include_dev: bool, default_registry: &str) -> Result<Vec<PackageInfo>> {
         match &self.mode {
             ProjectMode::Workspace { workspace, root, .. } => {
@@ -299,6 +318,7 @@ impl PackageManager {
         })
     }
 
+    /// 向当前包 manifest 添加运行时依赖并可选写盘。
     pub fn add_dependency(&mut self, package_name: &str, version: &str, registry_name: &str) -> Result<PackageInfo> {
         self.install_one(package_name, version, registry_name, true)
     }
@@ -310,6 +330,7 @@ impl PackageManager {
         Ok(info)
     }
 
+    /// 从 manifest 移除依赖并可选写盘。
     pub fn remove_dependency(&mut self, package_name: &str) -> Result<PackageInfo> {
         self.remove_dependency_with_manifest(package_name, true)
     }
@@ -342,6 +363,7 @@ impl PackageManager {
         Ok(PackageInfo { name: package_name.to_string(), version, description: String::new(), registry: String::new(), install_path: None })
     }
 
+    /// 将单个依赖升级到注册表上的最新兼容版本。
     pub fn update_one(&mut self, package_name: &str, version: &str, registry_name: &str) -> Result<PackageInfo> {
         self.update_one_with_manifest(package_name, version, registry_name, true)
     }
@@ -377,6 +399,7 @@ impl PackageManager {
         Ok(info)
     }
 
+    /// 批量升级 manifest 中所有非 workspace 依赖。
     pub fn update_all(&mut self, default_registry: &str) -> Result<Vec<PackageInfo>> {
         self.update_all_with_manifest(default_registry, true)
     }
@@ -399,6 +422,7 @@ impl PackageManager {
         Ok(updated)
     }
 
+    /// 根据 manifest `publish` 目标解析产物并调用注册表发布。
     pub fn publish(&mut self, options: PublishOptions, workspace: bool) -> Result<PublishResult> {
         let jobs = self.expand_publish_jobs(&options, workspace)?;
         let mut last_success = None;
@@ -575,17 +599,20 @@ impl PackageManager {
         }
     }
 
+    /// 登录注册表：校验 token 并按策略写入 `auth.von` 或官方 CLI 存储。
     pub fn login(&mut self, registry_name: Option<&str>, token: Option<&str>) -> Result<crate::LoginResult> {
         let registry_name = self.resolve_login_registry(registry_name);
         let registry = self.registry(&registry_name)?.clone();
         self.vendor.login(registry.as_ref(), token, Some(self.mode.root()), true)
     }
 
+    /// 登出注册表（清除 `auth.von` 中对应条目）。
     pub fn logout(&mut self, registry_name: Option<&str>) -> Result<bool> {
         let registry_name = self.resolve_login_registry(registry_name);
         self.vendor.logout(&registry_name)
     }
 
+    /// 显示当前注册表凭据对应的身份信息。
     pub fn whoami(&self, registry_name: Option<&str>) -> Result<TokenVerifyResult> {
         let registry_name = self.resolve_login_registry(registry_name);
         let registry = self.registry(&registry_name)?;
@@ -597,20 +624,24 @@ impl PackageManager {
         self.resolve_login_registry(registry_name)
     }
 
+    /// 产品 vendor 登录（不经过注册表适配器表）。
     pub fn vendor_login(&mut self, registry_name: &str, token: Option<&str>) -> Result<crate::LoginResult> {
         let registry = self.registry(registry_name)?.clone();
         self.vendor.login(registry.as_ref(), token, Some(self.mode.root()), true)
     }
 
+    /// 从 `auth.von` 移除 vendor token。
     pub fn vendor_logout(&mut self, registry_name: &str) -> Result<bool> {
         self.vendor.logout(registry_name)
     }
 
+    /// 校验 `auth.von` 中保存的 vendor 凭据。
     pub fn vendor_whoami(&self, registry_name: &str) -> Result<TokenVerifyResult> {
         let registry = self.registry(registry_name)?;
         self.vendor.whoami(registry.as_ref())
     }
 
+    /// 列出 `auth.von` 中已存储 token 的注册表 id。
     pub fn vendor_list(&self) -> Vec<String> {
         self.vendor.list()
     }
@@ -635,15 +666,18 @@ impl PackageManager {
         audit.audit_dependencies(&packages)
     }
 
+    /// 列出已配置的注册表 endpoint。
     pub fn registry_list(&self) -> Vec<(String, String)> {
         self.source_manager.list()
     }
 
+    /// 添加或覆盖注册表 endpoint 配置。
     pub fn registry_add(&mut self, name: &str, endpoint: &str) -> Result<()> {
         self.source_manager.add(name, endpoint)?;
         self.rebuild_registries()
     }
 
+    /// 删除自定义 endpoint；内置注册表恢复默认值。
     pub fn registry_remove(&mut self, name: &str) -> Result<bool> {
         let removed = self.source_manager.remove(name)?;
         if removed {
@@ -652,14 +686,17 @@ impl PackageManager {
         Ok(removed)
     }
 
+    /// 查询单个注册表的 endpoint 与是否为内置默认。
     pub fn registry_info(&self, name: &str) -> Result<(String, String, bool)> {
         self.source_manager.info(name)
     }
 
+    /// 返回 `registry-sources.von` 配置文件路径。
     pub fn registry_sources_path(&self) -> &Path {
         self.source_manager.path()
     }
 
+    /// 在当前包目录执行 manifest 中的命名脚本。
     pub fn run_script(&self, script_name: &str) -> Result<ScriptResult> {
         let manifest = self.mode.expect_package_manifest()?;
         let command = manifest.scripts.get(script_name).ok_or_else(|| PackageManagerError::message(format!("脚本 `{script_name}` 不存在")))?;
@@ -699,6 +736,7 @@ impl PackageManager {
         Ok(())
     }
 
+    /// 清空本地包缓存目录与索引。
     pub fn clear_cache(&mut self) -> Result<()> {
         self.cache.clear()
     }

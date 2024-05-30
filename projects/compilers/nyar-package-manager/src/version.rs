@@ -5,18 +5,26 @@ use crate::{PackageManagerError, Result};
 /// Semantic version (`major.minor.patch` with optional pre-release suffix).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticVersion {
+    /// 主版本号。
     pub major: u64,
+    /// 次版本号。
     pub minor: u64,
+    /// 修订号。
     pub patch: u64,
+    /// 预发布标识（如 `alpha.1`），稳定版为 `None`。
     pub pre: Option<String>,
 }
 
 /// Yearly version (`yearly.major.minor.patch`) used by packages such as `std`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct YearlyVersion {
+    /// 年份段（通常 ≥ 1000，如 `2026`）。
     pub yearly: u64,
+    /// 该年份线下的主版本。
     pub major: u64,
+    /// 次版本。
     pub minor: u64,
+    /// 修订号。
     pub patch: u64,
 }
 
@@ -27,6 +35,7 @@ enum ParsedVersion {
 }
 
 impl SemanticVersion {
+    /// 解析 `major.minor.patch[-pre]` 语义版本字符串。
     pub fn parse(value: &str) -> Result<Self> {
         let value = value.trim().trim_start_matches('v');
         let (core, pre) = split_version_core(value)?;
@@ -41,6 +50,7 @@ impl SemanticVersion {
         Ok(Self { major, minor, patch, pre })
     }
 
+    /// 按 patch / minor / major 规则递增版本并清除预发布后缀。
     pub fn bump(&self, bump: VersionBump) -> Self {
         match bump {
             VersionBump::Patch => Self { major: self.major, minor: self.minor, patch: self.patch + 1, pre: None },
@@ -51,6 +61,7 @@ impl SemanticVersion {
 }
 
 impl YearlyVersion {
+    /// 解析四段式年份版本 `yearly.major.minor.patch`。
     pub fn parse(value: &str) -> Result<Self> {
         let value = value.trim().trim_start_matches('v');
         let (core, pre) = split_version_core(value)?;

@@ -8,26 +8,32 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PackageManagerError, PackageManifest, ProjectLayout, Result};
 
-/// Workspace manifest (members list). Filename comes from [`ProjectLayout`].
+/// Workspace 清单（成员列表）；磁盘文件名由 [`ProjectLayout`] 指定。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct WorkspaceManifest {
+    /// Workspace 名称。
     #[serde(default)]
     pub name: String,
+    /// Workspace 统一版本（成员可继承）。
     #[serde(default)]
     pub version: String,
+    /// 成员目录相对路径列表。
     #[serde(default)]
     pub members: Vec<String>,
 }
 
 impl WorkspaceManifest {
+    /// 返回 `directory` 下 workspace 清单文件路径。
     pub fn path_in(directory: impl AsRef<Path>, layout: ProjectLayout) -> PathBuf {
         layout.workspace_manifest_path(directory)
     }
 
+    /// 判断 workspace 清单是否存在于 `directory`。
     pub fn exists(directory: impl AsRef<Path>, layout: ProjectLayout) -> bool {
         Self::path_in(directory, layout).is_file()
     }
 
+    /// 从磁盘加载 workspace 清单。
     pub fn load(directory: impl AsRef<Path>, layout: ProjectLayout) -> Result<Self> {
         let source = std::fs::read_to_string(Self::path_in(directory, layout))?;
         Ok(from_str(&source)?)
@@ -74,15 +80,34 @@ impl WorkspaceManifest {
     }
 }
 
-/// Discover package-manager project mode from a directory.
+/// 从目录结构发现包管理器项目模式。
 #[derive(Debug, Clone)]
 pub enum ProjectMode {
-    Workspace { root: PathBuf, workspace: WorkspaceManifest, manifest: Option<PackageManifest> },
-    Package { root: PathBuf, manifest: PackageManifest },
-    Standalone { root: PathBuf },
+    /// 根目录含 workspace 清单；`manifest` 为根包清单（若存在）。
+    Workspace {
+        /// 项目根目录。
+        root: PathBuf,
+        /// 已加载的 workspace 清单。
+        workspace: WorkspaceManifest,
+        /// 根目录上的可选包清单。
+        manifest: Option<PackageManifest>,
+    },
+    /// 单包项目：根目录仅有包清单。
+    Package {
+        /// 项目根目录。
+        root: PathBuf,
+        /// 包清单。
+        manifest: PackageManifest,
+    },
+    /// 无 workspace / 包清单的裸目录。
+    Standalone {
+        /// 目录路径。
+        root: PathBuf,
+    },
 }
 
 impl ProjectMode {
+    /// 探测 `directory` 是 workspace、单包还是 standalone。
     pub fn discover(directory: impl AsRef<Path>, layout: ProjectLayout) -> Result<Self> {
         let root = directory.as_ref().to_path_buf();
         if WorkspaceManifest::exists(&root, layout) {
@@ -96,12 +121,14 @@ impl ProjectMode {
         Ok(Self::Standalone { root })
     }
 
+    /// 项目根目录路径。
     pub fn root(&self) -> &Path {
         match self {
             Self::Workspace { root, .. } | Self::Package { root, .. } | Self::Standalone { root } => root,
         }
     }
 
+    /// 当前模式下的包清单；standalone 返回 `None`。
     pub fn package_manifest(&self) -> Option<&PackageManifest> {
         match self {
             Self::Workspace { manifest, .. } => manifest.as_ref(),
@@ -110,6 +137,7 @@ impl ProjectMode {
         }
     }
 
+    /// 要求存在包清单，否则返回错误。
     pub fn expect_package_manifest(&self) -> Result<&PackageManifest> {
         self.package_manifest().ok_or_else(|| PackageManagerError::message("当前目录不是包（缺少包清单）"))
     }

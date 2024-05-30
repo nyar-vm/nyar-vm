@@ -17,12 +17,15 @@ pub struct ValhallaRegistry {
 }
 
 impl ValhallaRegistry {
+    /// Default Valhalla registry base URL.
     pub const DEFAULT_ENDPOINT: &'static str = "https://valhalla.nyar.dev";
 
+    /// Connect to a Valhalla-compatible registry at `endpoint`.
     pub fn new(endpoint: impl Into<String>) -> Result<Self, RegistryError> {
         Ok(Self { endpoint: endpoint.into().trim_end_matches('/').to_string(), http: HttpClient::new(RetryConfig::default())? })
     }
 
+    /// Connect to the public Valhalla registry.
     pub fn default_registry() -> Result<Self, RegistryError> {
         Self::new(Self::DEFAULT_ENDPOINT)
     }
