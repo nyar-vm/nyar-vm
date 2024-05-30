@@ -1,9 +1,18 @@
-use nyar_emitter::*;
+use miette::Result;
+use nyar::{NamePath, QualifiedName};
+use nyar_emitter::{
+    BackendPrivatePlan, CompiledProgram, FragmentSubmission,
+    contracts::{InstructionKind, Operand},
+};
+use nyar_types::{
+    CanonicalCallee, CanonicalOperation, ItemInstanceId,
+    layout_choice::{InvokeLowering, ValueRepresentation},
+};
 
 fn source_program() -> CompiledProgram {
     source_program_from(
         "micro identity(value: i32) -> i32 { return value } \
-             micro entry(value: i32) -> i32 { return identity(value) }",
+         micro entry(value: i32) -> i32 { return identity(value) }",
     )
 }
 
@@ -80,8 +89,8 @@ fn operator_and_builtin_spellings_cannot_bypass_call_identity_validation() {
                 _ => None,
             })
             .expect("源码包含调用");
-        *call = Operand::Symbol(nyar::NamePath::new(parts.iter().map(|part| nyar::Identifier::new(part)).collect()));
-        let submission = nyar_emitter::FragmentSubmission::from_backend_plan(plan);
+        *call = Operand::Symbol(NamePath::new(parts.iter().map(|part| nyar::Identifier::new(part)).collect()));
+        let submission = FragmentSubmission::from_backend_plan(plan);
         let error = nyar_emitter::lowering::features::semantic_mir_contract::validate_submission(&submission)
             .expect_err("拼写属于 builtin 或 operator 也不能替代实例合同");
         assert_eq!(error.code, "SMIR003");
@@ -92,7 +101,7 @@ fn operator_and_builtin_spellings_cannot_bypass_call_identity_validation() {
 fn duplicate_abi_labels_preserve_wasm_export_and_call_targets() {
     let source = source_program_from(
         "micro identity(value: i32) -> i32 { return value } \
-             micro entry(value: i32) -> i32 { return identity(17) }",
+         micro entry(value: i32) -> i32 { return identity(17) }",
     );
     let mut canonical = source.canonical().clone();
     let exports = canonical.linked.callable_names.clone();
@@ -103,7 +112,7 @@ fn duplicate_abi_labels_preserve_wasm_export_and_call_targets() {
     let mut plan = prepare(&program).expect("独立实例必须可准备");
     *plan.testing_wasm_export_names_mut() =
         exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
-    let submission = nyar_emitter::FragmentSubmission::from_backend_plan(plan);
+    let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, _) =
         nyar_emitter::lowering::backends::wasm::lower_fragment_to_wasm_module(&submission, nyar::HostProjectionBoundary::WasmJsGlue)
             .expect("Wasm 调用和导出只能沿实例编码");
@@ -123,7 +132,7 @@ fn scalar_library_exports_do_not_require_collection_name_or_layout_glue() {
     let mut plan = prepare(&program).expect("标量导出有完整实例合同");
     *plan.testing_wasm_export_names_mut() =
         exports.iter().map(|(instance, name)| (*instance, name.parts().last().expect("测试声明名称").as_str().to_owned())).collect();
-    let submission = nyar_emitter::FragmentSubmission::from_backend_plan(plan);
+    let submission = FragmentSubmission::from_backend_plan(plan);
     let (module, _) = nyar_emitter::lowering::backends::wasm::lower_fragment_to_wasm_module_for(
         &submission,
         nyar::HostProjectionBoundary::WasmJsGlue,
@@ -150,10 +159,10 @@ fn duplicate_abi_labels_do_not_redirect_nyar_calls_or_exports() {
     }
     let program = CompiledProgram::new(canonical, source.representation().clone()).expect("诊断名不能改变实例身份");
     let mut plan = prepare(&program).expect("相同标签的函数必须保留独立实例");
-    plan.exported_operations = instances.clone();
+    *plan.testing_exported_operations_mut() = instances.clone();
     *plan.testing_wasm_export_names_mut() =
         instances.iter().enumerate().map(|(index, instance)| (*instance, format!("export_{index}"))).collect();
-    let submission = nyar_emitter::FragmentSubmission::from_backend_plan(plan);
+    let submission = FragmentSubmission::from_backend_plan(plan);
     let module = nyar_emitter::lowering::backends::nyar_vm::lower_fragment_to_nyar_module(&submission).expect("只允许沿已绑定实例发射");
     assert_eq!(module.functions.len(), 2);
     assert_eq!(module.exports.len(), 2);

@@ -96,6 +96,12 @@ impl BackendPrivatePlan {
         &mut self.wasm_export_names
     }
 
+    /// 返回可写导出实例表（集成测试专用）。
+    #[doc(hidden)]
+    pub fn testing_exported_operations_mut(&mut self) -> &mut Vec<ItemInstanceId> {
+        &mut self.exported_operations
+    }
+
     /// 设置模块名（集成测试专用）。
     #[doc(hidden)]
     pub fn testing_module_name(&mut self, name: impl Into<String>) -> &mut Self {

@@ -15,8 +15,9 @@ use crate::{
 };
 
 /// Managed physical target selected before backend preparation.
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PhysicalBackend {
+pub enum PhysicalBackend {
     Jvm,
     Clr,
     WasmCore,
@@ -25,8 +26,9 @@ pub(crate) enum PhysicalBackend {
 }
 
 /// A verifier category, not a source-language type.
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PhysicalValueCategory {
+pub enum PhysicalValueCategory {
     Void,
     I32,
     I64,
@@ -35,8 +37,10 @@ pub(crate) enum PhysicalValueCategory {
     Reference,
 }
 
+/// 单个调用的物理参数合同（集成测试专用）。
+#[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PhysicalCallContract {
+pub struct PhysicalCallContract {
     pub callee: ItemInstanceId,
     pub parameters: Vec<PhysicalValueCategory>,
 }
@@ -44,13 +48,16 @@ pub(crate) struct PhysicalCallContract {
 /// 后端私有文本投影占位。
 ///
 /// Semantic MIR 不再携带 TextConvert / TextEncoding God 字段。
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PhysicalTextProjection {
+pub struct PhysicalTextProjection {
     pub authorized: bool,
 }
 
+/// 单个函数的物理类别计划（集成测试专用）。
+#[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PhysicalFunctionPlan {
+pub struct PhysicalFunctionPlan {
     pub symbol: String,
     pub parameters: Vec<PhysicalValueCategory>,
     pub result: PhysicalValueCategory,
@@ -59,8 +66,10 @@ pub(crate) struct PhysicalFunctionPlan {
     pub text_projections: BTreeMap<ExecutableValueRef, PhysicalTextProjection>,
 }
 
+/// 物理合同拒绝的错误定位（集成测试专用）。
+#[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PhysicalPlanError {
+pub struct PhysicalPlanError {
     pub code: &'static str,
     pub function: String,
     pub location: String,
@@ -103,10 +112,9 @@ fn observation_site(location: &str) -> &'static str {
 
 /// Build a backend-private physical plan without consulting backend artifacts,
 /// descriptors, local slots, or host carriers.
-pub(crate) fn build_physical_plan(
-    submission: &FragmentSubmission,
-    _backend: PhysicalBackend,
-) -> Result<Vec<PhysicalFunctionPlan>, PhysicalPlanError> {
+/// 为给定片段与目标生成逐函数物理类别计划（集成测试专用）。
+#[doc(hidden)]
+pub fn build_physical_plan(submission: &FragmentSubmission, _backend: PhysicalBackend) -> Result<Vec<PhysicalFunctionPlan>, PhysicalPlanError> {
     let executable = &submission.backend_plan;
     executable
         .instances()
@@ -184,7 +192,7 @@ fn build_function_plan(
             let location = format!("block {} instruction {instruction_index}", block.id.0);
             let callee = match callee {
                 ExecutableOperand::Item(instance) => *instance,
-                ExecutableOperand::Symbol(path) if is_language_operator_symbol(path) || is_language_builtin_symbol(path) => {
+                ExecutableOperand::Symbol(path) if is_language_builtin_symbol(path) => {
                     continue;
                 }
                 ExecutableOperand::Symbol(_) => {
@@ -261,12 +269,6 @@ fn constant_nyar_type(constant: &crate::contracts::Constant) -> NyarType {
         crate::contracts::Constant::Utf16(_) => NyarType::Utf16,
         crate::contracts::Constant::Unit => NyarType::Unit,
     }
-}
-
-/// Keep aligned with `semantic_mir_contract::is_language_operator_symbol`.
-fn is_language_operator_symbol(path: &NamePath) -> bool {
-    let name = path.parts().last().map(|part| part.as_str()).unwrap_or("");
-    nyar_types::builtin_operator::lookup_display_name(name).is_some()
 }
 
 /// Keep aligned with `semantic_mir_contract::is_language_builtin_symbol`.

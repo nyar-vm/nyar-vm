@@ -14,6 +14,7 @@ use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldId, FieldLayout, Lay
 use crate::{
     FragmentSubmission,
     backend_plan_views::{ExecutableBlockRef, ExecutableFunction, ExecutableStorageKind, ExecutableTerminator},
+    contracts::InstructionKind,
 };
 
 /// Cross-backend lowering context attached to a fragment submission.
@@ -54,37 +55,11 @@ impl<'a> ExecutableLoweringContext<'a> {
         self.layout_by_id(layout_id).and_then(|layout| layout.fields.iter().find(|item| item.name == field))
     }
 
-    /// 已登记 layout 的存储类；禁止读 `value_type_names` 旁路表。
-    fn registered_layout_storage(&self, name: &str) -> Option<ExecutableStorageKind> {
-        if let Some(&id) = self.layouts.type_name_to_layout.get(name) {
-            return self.layout_by_id(id).map(|layout| layout.storage);
-        }
-        let mut matched = None;
-        for layout in &self.layouts.layouts {
-            let hits = if layout.namespace.is_empty() {
-                layout.name == name
-            }
-            else if layout.name == name {
-                true
-            }
-            else {
-                let mut qualified = String::with_capacity(layout.namespace.len() + 1 + layout.name.len());
-                qualified.push_str(&layout.namespace);
-                qualified.push('.');
-                qualified.push_str(&layout.name);
-                qualified == name
-            };
-            if !hits {
-                continue;
-            }
-            if matched.is_some() {
-                return None;
-            }
-            matched = Some(layout.storage);
-        }
-        matched
-    }
-
+    /// 类型的存储类；每一条分支都来自类型自身的结构形状或已绑定身份。
+    ///
+    /// 这里既不做 layout 名称回查，也没有 `Reference` 默认值：`Named` 残差
+    /// 不携带 declaration / `TypeId`，不存在可按身份解析的名义 layout。
+    /// [`validate_storage_identities`] 已在 lowering 前拒绝该形状。
     pub fn storage_for_type(&self, ty: &NyarType) -> ExecutableStorageKind {
         match ty {
             NyarType::Bottom
@@ -101,10 +76,89 @@ impl<'a> ExecutableLoweringContext<'a> {
             | NyarType::Utf8
             | NyarType::Utf16 => ExecutableStorageKind::Value,
             NyarType::Tuple(_) | NyarType::FixedArray { .. } => ExecutableStorageKind::Value,
-            // Named 残差只认已登记 layout.storage；未命中不得靠 value_type_names 认亲为 Value。
-            NyarType::Named(name) => self.registered_layout_storage(name.as_str()).unwrap_or(ExecutableStorageKind::Reference),
-            _ => ExecutableStorageKind::Reference,
+            NyarType::Array(_)
+            | NyarType::TraitObject(_)
+            | NyarType::Union(_)
+            | NyarType::Nullable(_)
+            | NyarType::Apply(..)
+            | NyarType::Function(_) => ExecutableStorageKind::Reference,
+            NyarType::Named(name) => panic!(
+                "executable lowering contract violation: `Named({name})` 无 declaration / `TypeId` 身份，\
+禁止按短名解析名义 layout 或回落 `Reference`（预编码校验见 `validate_storage_identities`）"
+            ),
         }
+    }
+}
+
+/// 可执行合同里无法按身份解析存储类的名义类型残差。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnresolvedStorageIdentity {
+    /// 出现该残差的函数符号；layout 字段来源时为空。
+    pub function: String,
+    /// 出现位置（参数 / 返回值 / SSA 值 / 指令 / layout 字段）。
+    pub site: String,
+    /// 残差类型。
+    pub ty: NyarType,
+}
+
+/// 预编码校验：可执行合同不得携带无身份的名义类型残差。
+///
+/// `NyarType::Named` 只有短名，没有 declaration / `TypeId`。一旦它进入可执行合同，
+/// 存储类、参数 ABI 与 GC 字段字节都只能靠名称回查或默认值猜实现；
+/// 该形状必须在生成任何字节之前结构化失败，而不是由 backend 认亲。
+pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<(), UnresolvedStorageIdentity> {
+    let plan = &submission.backend_plan;
+    for instance in plan.instances() {
+        let Some(view) = plan.get_function(&instance)
+        else {
+            continue;
+        };
+        let function = &view.function;
+        let mut sites = vec![("return type".to_string(), &function.return_type)];
+        sites.extend(function.param_types.iter().enumerate().map(|(index, ty)| (format!("parameter {index}"), ty)));
+        sites.extend(function.value_types.iter().map(|(value, ty)| (format!("SSA value {}", value.0), ty)));
+        for block in &function.blocks {
+            for (index, instruction) in block.instructions.iter().enumerate() {
+                let location = format!("block {} instruction {index}", block.id.0);
+                match &instruction.kind {
+                    InstructionKind::LoadConstant { ty: Some(ty), .. } => sites.push((format!("{location} LoadConstant"), ty)),
+                    InstructionKind::StoreVar { ty: Some(ty), .. } => sites.push((format!("{location} StoreVar"), ty)),
+                    InstructionKind::ArrayNew { array_type, .. } => sites.push((format!("{location} ArrayNew"), array_type)),
+                    InstructionKind::ArrayFromElements { array_type, .. } => sites.push((format!("{location} ArrayFromElements"), array_type)),
+                    _ => {}
+                }
+            }
+        }
+        for (site, ty) in sites {
+            if let Some(ty) = named_residual(ty) {
+                return Err(UnresolvedStorageIdentity { function: function.symbol.clone(), site, ty });
+            }
+        }
+    }
+    for layout in plan.aggregate_layouts().layouts.iter() {
+        for field in &layout.fields {
+            if let Some(ty) = named_residual(&field.ty) {
+                return Err(UnresolvedStorageIdentity {
+                    function: String::new(),
+                    site: format!("aggregate layout `{}::{}` field `{}`", layout.namespace, layout.name, field.name),
+                    ty,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 递归查找无身份的名义短名残差（`NyarType::Named`）。
+fn named_residual(ty: &NyarType) -> Option<NyarType> {
+    match ty {
+        NyarType::Named(_) => Some(ty.clone()),
+        NyarType::Apply(base, arguments) => named_residual(base).or_else(|| arguments.iter().find_map(named_residual)),
+        NyarType::Function(function) => named_residual(&function.return_type).or_else(|| function.params.iter().find_map(named_residual)),
+        NyarType::Tuple(elements) | NyarType::Union(elements) => elements.iter().find_map(named_residual),
+        NyarType::Array(element) | NyarType::FixedArray { element, .. } | NyarType::Nullable(element) => named_residual(element),
+        NyarType::TraitObject(object) => object.type_arguments.iter().find_map(named_residual),
+        _ => None,
     }
 }
 

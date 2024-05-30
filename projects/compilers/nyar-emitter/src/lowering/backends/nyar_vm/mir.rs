@@ -677,14 +677,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             MirConstant::Float64(value) => {
                 let index = self.emitter.constants.len() as i32 + self.emitter.constants_base;
                 self.emitter.constants.push(NyarConstant::Float64(value.into_inner()));
-                self.emitter.emit_imm1(NyarHeadCode::Const, index);
+                self.emitter.emit_imm1(NyarHeadCode::Constant, index);
             }
             MirConstant::Bool(value) => {
                 self.emitter.emit_const_bool(*value);
             }
             MirConstant::Utf8(text) => {
                 let index = self.emitter.intern_string(text);
-                self.emitter.emit_imm1(NyarHeadCode::Const, index);
+                self.emitter.emit_imm1(NyarHeadCode::Constant, index);
             }
             MirConstant::Utf16(_) => panic!("nyar-vm lowering has no explicit UTF-16 text ABI"),
             MirConstant::Unit => {
@@ -737,7 +737,7 @@ impl BytecodeEmitter<'_> {
     fn emit_const_i32(&mut self, value: i32) {
         let index = self.constants.len() as i32 + self.constants_base;
         self.constants.push(NyarConstant::Integer32(value));
-        self.emit_imm1(NyarHeadCode::Const, index);
+        self.emit_imm1(NyarHeadCode::Constant, index);
     }
 
     fn emit_const_i64(&mut self, value: i64) {
@@ -748,7 +748,7 @@ impl BytecodeEmitter<'_> {
         }
         let index = self.constants.len() as i32 + self.constants_base;
         self.constants.push(NyarConstant::Integer32(value as i32));
-        self.emit_imm1(NyarHeadCode::Const, index);
+        self.emit_imm1(NyarHeadCode::Constant, index);
         self.emit_call_import("i32_to_i64", 1);
         let _ = index;
     }
@@ -756,6 +756,6 @@ impl BytecodeEmitter<'_> {
     fn emit_const_bool(&mut self, value: bool) {
         let index = self.constants.len() as i32 + self.constants_base;
         self.constants.push(NyarConstant::Boolean(value));
-        self.emit_imm1(NyarHeadCode::Const, index);
+        self.emit_imm1(NyarHeadCode::Constant, index);
     }
 }

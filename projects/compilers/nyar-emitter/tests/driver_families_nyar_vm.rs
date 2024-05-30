@@ -1,8 +1,16 @@
-use nyar_bytecode::{NyarExport, NyarFunction};
+//! `nyar-vm` 家族入口合同测试。
+//!
+//! `resolve_entry_symbols` 只在 `nyar-vm-lane` 构建中存在（`lib.rs` 的重导出与
+//! `driver::families::nyar_vm` 模块同为该 feature 门控），因此本目标只在启用该
+//! feature 时可编译；断言与生产代码不变。
+#![cfg(feature = "nyar-vm-lane")]
+
+use nyar_bytecode::{NYAR_VERSION, NyarExport, NyarExportKind, NyarFunction, NyarModuleData};
+use nyar_emitter::resolve_entry_symbols;
 
 fn module() -> NyarModuleData {
     NyarModuleData {
-        version: 2,
+        version: NYAR_VERSION,
         name: "test".to_owned(),
         constants: Vec::new(),
         functions: vec![NyarFunction { name: "owner::main".to_owned(), arity: 0, local_count: 0, code_offset: 0, code_length: 1 }],

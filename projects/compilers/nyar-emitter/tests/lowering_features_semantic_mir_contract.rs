@@ -1,22 +1,23 @@
+use std::collections::BTreeMap;
+
 use nyar::{Identifier, NamePath};
 use nyar_emitter::{
-    contracts::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
-    *,
+    contracts::{Block, BlockRef, Constant, ExecutableFunction, Instruction, InstructionKind, Operand, Terminator, ValueRef},
+    observation, validate_function,
 };
 use nyar_types::NyarType;
-use std::collections::BTreeMap;
 
 /// 从 terminator 推断 `return_type`，避免 `Return { Some(...) }` 与 Unit 返回类型触发 SMIR007。
 fn function(instructions: Vec<Instruction>, terminator: Terminator, value_types: BTreeMap<ValueRef, NyarType>) -> ExecutableFunction {
     let return_type = match &terminator {
         Terminator::Return { value: Some(Operand::Value(v)) } => value_types.get(v).cloned().unwrap_or(NyarType::Unit),
         Terminator::Return { value: Some(Operand::Constant(c)) } => match c {
-            nyar_emitter::contracts::Constant::Bool(_) => NyarType::Boolean,
-            nyar_emitter::contracts::Constant::Int(_) => NyarType::Integer64 { signed: true },
-            nyar_emitter::contracts::Constant::Float64(_) => NyarType::Float64,
-            nyar_emitter::contracts::Constant::Utf8(_) => NyarType::Utf8,
-            nyar_emitter::contracts::Constant::Utf16(_) => NyarType::Utf16,
-            nyar_emitter::contracts::Constant::Unit => NyarType::Unit,
+            Constant::Bool(_) => NyarType::Boolean,
+            Constant::Int(_) => NyarType::Integer64 { signed: true },
+            Constant::Float64(_) => NyarType::Float64,
+            Constant::Utf8(_) => NyarType::Utf8,
+            Constant::Utf16(_) => NyarType::Utf16,
+            Constant::Unit => NyarType::Unit,
         },
         _ => NyarType::Unit,
     };
@@ -76,7 +77,7 @@ fn accepts_exact_structured_nullable_return() {
 #[test]
 fn rejects_instruction_output_without_semantic_type() {
     let result = validate_function(&function(
-        vec![instr(InstructionKind::Copy { source: Operand::Constant(nyar_emitter::contracts::Constant::Unit) }, vec![ValueRef(7)])],
+        vec![instr(InstructionKind::Copy { source: Operand::Constant(Constant::Unit) }, vec![ValueRef(7)])],
         Terminator::Return { value: None },
         BTreeMap::new(),
     ));
@@ -87,10 +88,7 @@ fn rejects_instruction_output_without_semantic_type() {
 fn rejects_residual_pattern_match() {
     let result = validate_function(&function(
         vec![instr(
-            InstructionKind::PatternMatch {
-                value: Operand::Constant(nyar_emitter::contracts::Constant::Unit),
-                pattern_debug: "fixture".to_string(),
-            },
+            InstructionKind::PatternMatch { value: Operand::Constant(Constant::Unit), pattern_debug: "fixture".to_string() },
             Vec::new(),
         )],
         Terminator::Return { value: None },
@@ -111,7 +109,7 @@ fn observation_is_stable_and_does_not_include_backend_names() {
     assert_eq!(observation("valid_minimal", result.as_ref().map(|_| ()).map_err(|error| error)), "valid_minimal|accept||");
 
     let result = validate_function(&function(
-        vec![instr(InstructionKind::Copy { source: Operand::Constant(nyar_emitter::contracts::Constant::Unit) }, vec![ValueRef(7)])],
+        vec![instr(InstructionKind::Copy { source: Operand::Constant(Constant::Unit) }, vec![ValueRef(7)])],
         Terminator::Return { value: None },
         BTreeMap::new(),
     ));

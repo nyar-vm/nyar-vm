@@ -221,12 +221,55 @@ fn const_utf8_import_index(imports: &[(String, String)]) -> Option<u32> {
     imports.iter().position(|(module, field)| module == "env" && field == "const_utf8").map(|index| index as u32)
 }
 
+/// 预编码校验：每个 `utf8` 字面量都必须有宿主载体（WASI 线性内存偏移或 Node `const_utf8` 索引）。
+///
+/// 缺载体时不得在编码阶段伪造 `i32 0` 句柄：那是把「没有值」变成「地址/句柄 0」。
+/// 该形状在生成任何字节之前结构化失败；库模式与未登记 `const_utf8` 的宿主装配
+/// 必须补齐字面量收集与 import 身份。
+fn validate_string_literal_payloads(
+    submission: &FragmentSubmission,
+    operations: &[nyar_types::ItemInstanceId],
+    string_literal_index: &BTreeMap<String, u32>,
+    string_literal_offset: &BTreeMap<String, u32>,
+    const_utf8_import: Option<u32>,
+    wasi_mode: bool,
+) -> miette::Result<()> {
+    for operation in operations {
+        let Some(view) = submission.backend_plan.get_function(operation)
+        else {
+            continue;
+        };
+        for block in &view.function.blocks {
+            for (index, instruction) in block.instructions.iter().enumerate() {
+                let MirInstructionKind::LoadConstant { constant: MirConstant::Utf8(text), .. } = &instruction.kind
+                else {
+                    continue;
+                };
+                let registered = if wasi_mode {
+                    string_literal_offset.contains_key(text)
+                }
+                else {
+                    const_utf8_import.is_some() && string_literal_index.contains_key(text)
+                };
+                if !registered {
+                    return Err(miette!(
+                        "WASM pre-emission verifier: `{}` block {} instruction {index} 的 utf8 字面量缺少宿主载体（wasi={wasi_mode}, const_utf8={const_utf8_import:?}）；不得回落 `i32 0` 句柄",
+                        view.function.symbol,
+                        block.id.0
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn build_string_literal_index(literals: &[String]) -> BTreeMap<String, u32> {
     literals.iter().enumerate().map(|(index, text)| (text.clone(), index as u32)).collect()
 }
 
-fn wasm_import_type_for_field(field: &str) -> Vec<u8> {
-    match field {
+fn wasm_import_type_for_field(field: &str) -> Option<Vec<u8>> {
+    let signature = match field {
         "cli_get_verbose" => wasm_function_type(&[], &[VALTYPE_I32]),
         // Node's JS boundary uses opaque i32 handles. JavaScript values cannot cross
         // a WebAssembly `anyref` boundary, and using handles keeps the FFI limited to
@@ -249,18 +292,19 @@ fn wasm_import_type_for_field(field: &str) -> Vec<u8> {
         "utf8_slice" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
         "emit_byte" => wasm_function_type(&[VALTYPE_I32], &[]),
         "System.Console" | "System.Diagnostics.Process" => wasm_function_type(&[VALTYPE_I32], &[]),
-        _ if field.starts_with("utf8_") => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
-        _ => wasm_function_type(&[], &[VALTYPE_I32]),
-    }
+        // 未登记字段不得回落到 `utf8_` 前缀或空默认签名：占位 ABI 会静默成功。
+        _ => return None,
+    };
+    Some(signature)
 }
 
-/// WASI 模式下的 import 类型签名?
+/// WASI 模式下的 import 类型签名。
 ///
 /// Align known Preview2 imports with Canonical ABI lowered shapes used by
-/// `wasm-tools component new` / wasmtime. Remaining imports stay `(i32)->i32`
-/// placeholders until their cabi lift is implemented.
-fn wasi_import_type_for_field(_module: &str, field: &str) -> Vec<u8> {
-    match field {
+/// `wasm-tools component new` / wasmtime. 未登记 import 必须结构化失败，
+/// 不再回落到 `(i32)->i32` 占位签名。
+fn wasi_import_type_for_field(_module: &str, field: &str) -> Option<Vec<u8>> {
+    let signature = match field {
         // get-arguments: func() -> list<string>  ? guest import (param i32) // out-pointer
         "get-arguments" | "get-environment" => wasm_function_type(&[VALTYPE_I32], &[]),
         // exit: func(status: u32)  ? (param i32)
@@ -294,8 +338,15 @@ fn wasi_import_type_for_field(_module: &str, field: &str) -> Vec<u8> {
         "read-via-stream" if _module.contains("wasi:cli/stdin") => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
         // p2 wasi:io/streams#blocking-write-and-flush / blocking-read-and-skip
         "blocking-write-and-flush" | "blocking-read-and-skip" => wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32]),
-        _ => wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32]),
-    }
+        _ => return None,
+    };
+    Some(signature)
+}
+
+/// 已登记的 import ABI 签名；未登记项结构化失败，禁止占位默认签名。
+fn wasm_import_type_bytes(wasi_mode: bool, module: &str, field: &str) -> miette::Result<Vec<u8>> {
+    let resolved = if wasi_mode { wasi_import_type_for_field(module, field) } else { wasm_import_type_for_field(field) };
+    resolved.ok_or_else(|| miette!("host import `{module}::{field}` has no frozen ABI signature"))
 }
 
 fn wasi_core_import_name<'a>(module: &'a str, field: &'a str, preview: crate::nyar_backend_wasi::WasiPreview) -> (&'a str, &'a str) {
@@ -494,6 +545,12 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     wasi_preview: crate::nyar_backend_wasi::WasiPreview,
     wasm_package_kind: crate::nyar_backend_wasi::WasmPackageKind,
 ) -> miette::Result<(WasmBinaryModule, Vec<(String, String)>)> {
+    // 存储类选择的唯一闸门：编码前拒绝无身份的名义类型残差。
+    // 形态判断发生在 `storage_for_type` / `wasm_param_value_type` / GC 字段字节之前。
+    crate::lowering::shared::executable::validate_storage_identities(submission).map_err(|error| {
+        let owner = if error.function.is_empty() { error.site.clone() } else { format!("{} at {}", error.function, error.site) };
+        miette!("WASM pre-emission verifier: {owner} 携带无身份名义类型 `{}`；declaration / `TypeId` 缺失时不得按短名解析存储类", error.ty)
+    })?;
     let wasi_mode = export_name == "_start";
     let operations = submission.backend_plan.instances();
     let string_literals = if export_name == "main" || wasi_mode { collect_mir_string_literals(submission, &operations) } else { Vec::new() };
@@ -527,7 +584,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut import_type_entries = Vec::new();
     for (module, field) in &host_imports {
         let import_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
-        let type_bytes = if wasi_mode { wasi_import_type_for_field(module, field) } else { wasm_import_type_for_field(field) };
+        let type_bytes = wasm_import_type_bytes(wasi_mode, module, field)?;
         type_indices.push(type_bytes);
         import_type_entries.push(import_type_index);
     }
@@ -566,6 +623,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // WASI 轨：构建字符串字面量到线性内存偏移量的映射，存入 data 段?
     let string_literal_offset = if wasi_mode { build_wasi_string_literal_offsets(&string_literals) } else { BTreeMap::new() };
     let const_utf8_import = const_utf8_import_index(&host_imports);
+    validate_string_literal_payloads(submission, &operations, &string_literal_index, &string_literal_offset, const_utf8_import, wasi_mode)?;
     // 仅对确有 MIR 体的 operation 分配稠密函数下标，避免「operations 枚举下标」与
     // `code_bodies.len()` 错位：错位时 call 会打到别人的 (param i64) 却按本函?anyref 签名?ref.null?
     let mir_operations: Vec<(nyar_types::ItemInstanceId, _)> = operations
@@ -593,18 +651,18 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let return_types_by_instance = build_return_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref);
     let import_param_types: Vec<Vec<u8>> = host_imports
         .iter()
-        .map(|(module, field)| {
-            let type_bytes = if wasi_mode { wasi_import_type_for_field(module, field) } else { wasm_import_type_for_field(field) };
-            wasm_function_type_param_bytes(&type_bytes)
+        .map(|(module, field)| -> miette::Result<Vec<u8>> {
+            let type_bytes = wasm_import_type_bytes(wasi_mode, module, field)?;
+            Ok(wasm_function_type_param_bytes(&type_bytes))
         })
-        .collect();
+        .collect::<miette::Result<Vec<_>>>()?;
     let import_return_types: Vec<Option<u8>> = host_imports
         .iter()
-        .map(|(module, field)| {
-            let type_bytes = if wasi_mode { wasi_import_type_for_field(module, field) } else { wasm_import_type_for_field(field) };
-            wasm_function_type_result_byte(&type_bytes)
+        .map(|(module, field)| -> miette::Result<Option<u8>> {
+            let type_bytes = wasm_import_type_bytes(wasi_mode, module, field)?;
+            Ok(wasm_function_type_result_byte(&type_bytes))
         })
-        .collect();
+        .collect::<miette::Result<Vec<_>>>()?;
     let mut mir_wasm_functions: Vec<(u32, String)> = Vec::new();
 
     for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
@@ -2293,17 +2351,21 @@ impl<'a> WasmMirLowerer<'a> {
                         self.emit_i32_const(offset as i32);
                         return;
                     }
-                    self.emit_i32_const(0);
-                    return;
                 }
-                if let Some(import_index) = self.const_utf8_import {
+                else if let Some(import_index) = self.const_utf8_import {
                     if let Some(&literal_index) = self.string_literal_index.get(text) {
                         self.emit_i32_const(literal_index as i32);
                         self.emit_call(import_index);
                         return;
                     }
                 }
-                self.emit_i32_const(0);
+                // 未登记宿主载体的字面量不得伪造 `i32 0` 句柄；
+                // 预编码校验 `validate_string_literal_payloads` 已拒绝该形状。
+                eprintln!(
+                    "[wasm::mir] missing host carrier for utf8 literal at `{}` (wasi={}, const_utf8={:?})",
+                    self.mir_fn.symbol, self.wasi_mode, self.const_utf8_import
+                );
+                encode_unreachable(&mut self.code);
             }
             MirConstant::Utf16(_) => {
                 panic!("WASM lowering requires an explicit UTF-16 ABI contract")

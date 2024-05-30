@@ -11,8 +11,10 @@ use crate::{
 use nyar::QualifiedName;
 use nyar_types::{Constant, NyarType, ValueOrigin};
 
+/// Semantic MIR 合同拒绝的错误定位（集成测试专用）。
+#[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SemanticMirContractError {
+pub struct SemanticMirContractError {
     pub code: &'static str,
     pub function: String,
     pub location: String,

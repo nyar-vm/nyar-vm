@@ -122,8 +122,9 @@ pub fn collect_import_bindings(imports: &[(String, String)]) -> Vec<(String, Str
     bindings
 }
 
-/// 将导入绑定渲染为 `JS` 对象字面量字符串。
-fn render_import_object_literal(imports: &[(String, String)]) -> String {
+/// 将导入绑定渲染为 `JS` 对象字面量字符串（集成测试专用）。
+#[doc(hidden)]
+pub fn render_import_object_literal(imports: &[(String, String)]) -> String {
     let bindings = collect_import_bindings(imports);
     let mut by_module: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     for (module, field) in bindings {

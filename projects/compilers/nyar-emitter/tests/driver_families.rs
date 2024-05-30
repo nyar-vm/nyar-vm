@@ -1,5 +1,10 @@
+use std::path::PathBuf;
+
 use nyar::{HostProjectionBoundary, TargetBackendFamily};
-use nyar_emitter::*;
+use nyar_emitter::{
+    FragmentSubmission, bundled_backend_capability_descriptor, driver_compiler_names, lowering::lower_fragment_to_driver_input,
+    nyar_backend_wasi::WasmPackageKind,
+};
 
 #[test]
 fn frozen_families_have_neither_capability_nor_lowering() {
@@ -8,15 +13,9 @@ fn frozen_families_have_neither_capability_nor_lowering() {
         (TargetBackendFamily::Jvm, HostProjectionBoundary::Jvm),
         (TargetBackendFamily::Native, HostProjectionBoundary::Native),
     ] {
-        assert!(nyar_emitter::bundled_backend_capability_descriptor(family).is_none());
-        let result = nyar_emitter::lowering::lower_fragment_to_driver_input(
-            &nyar_emitter::FragmentSubmission::default(),
-            family,
-            boundary,
-            std::path::PathBuf::new(),
-            "",
-            nyar_emitter::nyar_backend_wasi::WasmPackageKind::Binary,
-        );
+        assert!(bundled_backend_capability_descriptor(family).is_none());
+        let result =
+            lower_fragment_to_driver_input(&FragmentSubmission::default(), family, boundary, PathBuf::new(), "", WasmPackageKind::Binary);
         let error = match result {
             Ok(_) => panic!("冻结目标不得存在正式 lowering"),
             Err(error) => error,
@@ -29,5 +28,5 @@ fn frozen_families_have_neither_capability_nor_lowering() {
 #[cfg(not(feature = "nyar-vm-lane"))]
 #[test]
 fn disabled_vm_does_not_advertise_capability() {
-    assert!(nyar_emitter::bundled_backend_capability_descriptor(TargetBackendFamily::NyarVm).is_none());
+    assert!(bundled_backend_capability_descriptor(TargetBackendFamily::NyarVm).is_none());
 }

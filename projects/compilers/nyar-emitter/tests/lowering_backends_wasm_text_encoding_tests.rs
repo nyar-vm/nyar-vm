@@ -1,16 +1,14 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
-use nyar::{Identifier, NyarType};
+use nyar::{HostProjectionBoundary, NyarType, QualifiedName};
 use nyar_emitter::{
     BackendPrivatePlan, FragmentSubmission,
     contracts::{Block, BlockRef, ExecutableFunction, Terminator},
+    lowering::backends::wasm::validate_text_encoding_projection,
 };
 
-use nyar::{HostProjectionBoundary, QualifiedName};
-use nyar_emitter::lowering::backends::wasm::validate_text_encoding_projection;
-
 fn utf16_submission() -> FragmentSubmission {
-    let operation = QualifiedName::new(vec![Identifier::new("entry")]);
+    let operation = QualifiedName::new(vec![nyar::Identifier::new("entry")]);
     let function = ExecutableFunction {
         return_layout: None,
         value_layouts: BTreeMap::new(),

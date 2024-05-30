@@ -5,9 +5,11 @@ pub(crate) use crate::lowering::{
 };
 
 #[cfg(feature = "nyar-vm-lane")]
-pub(crate) mod nyar_vm;
+#[doc(hidden)]
+pub mod nyar_vm;
 #[cfg(feature = "nyar-vm-lane")]
 #[path = "nyar_vm/mir.rs"]
 pub(crate) mod nyar_vm_mir;
 
-pub(crate) mod wasm;
+#[doc(hidden)]
+pub mod wasm;

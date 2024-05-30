@@ -39,7 +39,6 @@ fn counter_submission_with_lifecycle(lazy: bool, with_ctor: bool, with_finalizer
                     align: 8,
                 }],
             }],
-            value_type_names: Default::default(),
             type_name_to_layout: Default::default(),
             declaration_to_layout: Default::default(),
             value_type_declarations: Default::default(),

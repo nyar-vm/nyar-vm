@@ -479,9 +479,10 @@ pub struct NyarVmBackendInput {
     pub output_dir: PathBuf,
 }
 
-/// 驱动层接收的目标专用输入。
+/// 驱动层接收的目标专用输入（集成测试专用）。
+#[doc(hidden)]
 #[derive(Debug, Clone)]
-pub(crate) enum DriverBackendInput {
+pub enum DriverBackendInput {
     /// `CLR` 二进制输入。
     Clr(ClrBinaryBackendInput),
     /// `JVM` 二进制输入。

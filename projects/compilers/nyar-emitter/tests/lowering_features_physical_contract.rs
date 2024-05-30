@@ -1,12 +1,11 @@
-use std::sync::Arc;
-
-use nyar::{Identifier, QualifiedName};
-use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
 use std::collections::BTreeMap;
 
-use nyar_emitter::lowering::features::physical_contract::{
-    PhysicalBackend, PhysicalValueCategory, build_physical_plan, validate_physical_submission,
+use nyar::{Identifier, QualifiedName};
+use nyar_emitter::{
+    BackendPrivatePlan, FragmentSubmission,
+    lowering::features::physical_contract::{PhysicalBackend, PhysicalValueCategory, build_physical_plan},
 };
+use nyar_types::{Block, BlockRef, ExecutableFunction, Instruction, InstructionKind, ItemInstanceId, NyarType, Operand, Terminator, ValueRef};
 
 fn function(symbol: &str, return_type: NyarType, parameters: Vec<NyarType>) -> ExecutableFunction {
     let values = parameters.iter().enumerate().map(|(index, ty)| (ValueRef(index as u32), ty.clone())).collect();
@@ -43,7 +42,7 @@ fn instr(kind: InstructionKind, results: Vec<ValueRef>) -> Instruction {
     instruction
 }
 
-fn submission(functions: Vec<(QualifiedName, ExecutableFunction)>) -> nyar_emitter::FragmentSubmission {
+fn submission(functions: Vec<(QualifiedName, ExecutableFunction)>) -> FragmentSubmission {
     let mut functions = functions.into_iter().collect::<BTreeMap<_, _>>();
     let identities = functions
         .keys()
@@ -68,7 +67,7 @@ fn submission(functions: Vec<(QualifiedName, ExecutableFunction)>) -> nyar_emitt
             }
         }
     }
-    nyar_emitter::FragmentSubmission::from_backend_plan(nyar_emitter::BackendPrivatePlan::from_functions(functions))
+    FragmentSubmission::from_backend_plan(BackendPrivatePlan::from_functions(functions))
 }
 
 #[test]
@@ -153,6 +152,7 @@ fn scalar_call_has_exact_backend_independent_categories() {
 fn exact_helper_and_operator_calls_plan_without_suffix_resolution() {
     let main_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("main")]);
     let answer_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("answer")]);
+    let operator_op = QualifiedName::new(vec![Identifier::new("main"), Identifier::new("infix !=")]);
     let mut caller = function("main::main", NyarType::Integer64 { signed: true }, vec![]);
     let value = ValueRef(0);
     caller.value_types.insert(value, NyarType::Integer64 { signed: true });
@@ -165,17 +165,29 @@ fn exact_helper_and_operator_calls_plan_without_suffix_resolution() {
     ));
     caller.blocks[0].instructions.push(instr(
         InstructionKind::Call {
-            callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("infix !=")])),
+            // 运算符按**精确身份**解析；不得再用裸拼写靠后缀猜测。
+            callee: Operand::Symbol(nyar::NamePath::new(vec![Identifier::new("main"), Identifier::new("infix !=")])),
             arguments: vec![Operand::Value(value), Operand::Value(ValueRef(2))],
         },
         vec![ValueRef(1)],
     ));
     caller.value_types.insert(ValueRef(2), NyarType::Integer64 { signed: true });
     caller.value_types.insert(ValueRef(1), NyarType::Boolean);
-    let submission = submission(vec![(answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])), (main_op, caller)]);
+    let submission = submission(vec![
+        (answer_op, function("main::answer", NyarType::Integer64 { signed: true }, vec![])),
+        (
+            operator_op,
+            function(
+                "main::infix !=",
+                NyarType::Boolean,
+                vec![NyarType::Integer64 { signed: true }, NyarType::Integer64 { signed: true }],
+            ),
+        ),
+        (main_op, caller),
+    ]);
     let plans = build_physical_plan(&submission, PhysicalBackend::WasmJsGlue).expect("operators must not require registry entries");
     let caller_plan = plans.iter().find(|plan| plan.symbol == "main::main").expect("caller plan");
-    assert_eq!(caller_plan.calls.len(), 1);
+    assert_eq!(caller_plan.calls.len(), 2);
 }
 
 #[test]

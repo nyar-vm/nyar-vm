@@ -200,20 +200,15 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_local_get(tmp);
     }
 
-    /// 栈顶 anyref（i64 box）→ i64；null → 0。
+    /// 栈顶 anyref（i64 box）→ i64。
+    ///
+    /// 载荷是 null 时不得回落 `i64 0`：缺值不是有效值。取消 null 分支后，
+    /// `ref.cast (ref $i64_box)` 在 null 上执行即 trap，
+    /// 由上游 boxing / `ArrayNew` default 合同保证载荷已初始化。
     pub(super) fn emit_unbox_i64_payload(&mut self) {
         let box_ty = self.gc_i64_box_type_index;
-        let tmp = self.alloc_anyref_local();
-        self.emit_local_tee(tmp);
-        WasmOpcode::RefIsNull.encode(&mut self.code);
-        WasmOpcode::If.encode(&mut self.code);
-        self.code.push(VALTYPE_I64);
-        self.emit_i64_const(0);
-        WasmOpcode::Else.encode(&mut self.code);
-        self.emit_local_get(tmp);
         self.emit_ref_cast_struct(box_ty);
         self.emit_struct_get(box_ty, 0);
-        WasmOpcode::End.encode(&mut self.code);
     }
 
     /// p3 `write-via-stream`：utf8 线性句?→?`stream.new` / write / drop →?宿主?

@@ -31,18 +31,24 @@ use crate::{
 use miette::{Result, miette};
 use nyar::{HostProjectionBoundary, NyarType};
 
+/// 将片段降低为指定宿主边界的 wasm 模块（默认 WASI Preview2 打包链，集成测试专用）。
+///
 /// Lower a fragment for a wasm host boundary (default WASI Preview2 package train).
-pub(crate) fn lower_fragment_to_wasm_module(
+#[doc(hidden)]
+pub fn lower_fragment_to_wasm_module(
     submission: &FragmentSubmission,
     host_boundary: HostProjectionBoundary,
 ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
     lower_fragment_to_wasm_module_for(submission, host_boundary, WasiPreview::Preview2, WasmPackageKind::Binary)
 }
 
+/// 将片段降低为显式 WASI 打包链的 wasm 模块（集成测试专用）。
+///
 /// Lower a fragment for a wasm host boundary with an explicit WASI package train.
 ///
 /// 只编码 Compiler 提交的 executable；调用边摘要与宿主包装不得替代函数体。
-pub(crate) fn lower_fragment_to_wasm_module_for(
+#[doc(hidden)]
+pub fn lower_fragment_to_wasm_module_for(
     submission: &FragmentSubmission,
     host_boundary: HostProjectionBoundary,
     wasi_preview: WasiPreview,

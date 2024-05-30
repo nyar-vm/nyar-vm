@@ -10,8 +10,10 @@ use nyar_bytecode::NyarModuleData;
 use crate::NyarVmBackendInput;
 use crate::{DriverBackendInput, FragmentSubmission};
 
-pub(crate) mod backends;
-pub(crate) mod features;
+#[doc(hidden)]
+pub mod backends;
+#[doc(hidden)]
+pub mod features;
 mod shared;
 pub(crate) use self::features::pattern_matching_contract;
 
@@ -58,7 +60,9 @@ pub(crate) fn testing_singleton_metadata_line(plan: &nyar_types::SingletonInstan
     features::singleton::singleton_metadata_line(plan)
 }
 
-pub(crate) fn lower_fragment_to_driver_input(
+/// 将已完成语义装配的片段降低为驱动层目标输入（集成测试专用）。
+#[doc(hidden)]
+pub fn lower_fragment_to_driver_input(
     submission: &FragmentSubmission,
     backend_family: TargetBackendFamily,
     host_boundary: HostProjectionBoundary,

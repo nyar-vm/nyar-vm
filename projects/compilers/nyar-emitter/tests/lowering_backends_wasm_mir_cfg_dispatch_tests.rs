@@ -4,12 +4,11 @@
 use acorn_wasm::{WasmBinaryModule, WasmOpcode};
 use nyar::{Identifier, NyarType, QualifiedName};
 use nyar_emitter::{
-    FragmentSubmission,
-    backend_plan_views::MirFunctionMapProvider,
+    BackendPrivatePlan, FragmentSubmission,
     contracts::{Block, BlockRef, Constant, ExecutableFunction, Operand, Terminator},
-    lowering::backends::wasm::mir::lower_fragment_mir_to_wasm_module,
+    testing::lower_fragment_to_wasm_mir_module,
 };
-use std::{collections::BTreeMap, process::Command, sync::Arc};
+use std::{collections::BTreeMap, process::Command};
 
 fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
     ExecutableFunction {
@@ -17,11 +16,14 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
         return_type: NyarType::Integer32 { signed: true },
         param_types: Vec::new(),
         value_types: Default::default(),
+        value_layouts: BTreeMap::new(),
+        return_layout: None,
         entry: BlockRef(0),
         values: Vec::new(),
         suspend_points: Vec::new(),
         frame_layouts: Vec::new(),
         continuations: Vec::new(),
+        case_chains: Vec::new(),
         #[allow(deprecated)]
         state_machine: None,
         suspend_plan: None,
@@ -31,13 +33,11 @@ fn leaf_i32_fn(symbol: &str, blocks: Vec<Block>) -> ExecutableFunction {
 }
 
 fn lower_main(blocks: Vec<Block>) -> WasmBinaryModule {
-    let mut submission = FragmentSubmission::default();
-    submission.module_name = "cfg_exec".to_string();
-    submission.entry_operation = Some(QualifiedName::new(vec![Identifier::new("main")]));
-    let mut mir_map = BTreeMap::new();
-    mir_map.insert(QualifiedName::new(vec![Identifier::new("main")]), leaf_i32_fn("main", blocks));
-    submission.backend_plan = Some(Arc::new(MirFunctionMapProvider::new(mir_map)));
-    lower_fragment_mir_to_wasm_module(&submission, "main").0
+    let main = QualifiedName::new(vec![Identifier::new("main")]);
+    let mut plan = BackendPrivatePlan::from_functions(BTreeMap::from([(main.clone(), leaf_i32_fn("main", blocks))]));
+    plan.testing_module_name("cfg_exec").testing_entry_operation(main);
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    lower_fragment_to_wasm_mir_module(&submission, "main")
 }
 
 /// Instantiate with Node (Wasm GC capable) and read `exports.main()` as i32.

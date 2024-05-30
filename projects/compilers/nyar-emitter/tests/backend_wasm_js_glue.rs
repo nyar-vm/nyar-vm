@@ -123,7 +123,7 @@ fn build_node_launcher_no_imports_uses_empty_import_object() {
 #[test]
 fn render_import_object_literal_excludes_synthetic_imports() {
     let imports = vec![("env".to_string(), "emit_byte".to_string())];
-    let literal = render_import_object_literal(&imports);
+    let literal = nyar_emitter::backend::wasm_js_glue::render_import_object_literal(&imports);
     assert!(literal.contains("emit_byte"), "应渲染声明的 emit_byte 字段");
     assert!(!literal.contains(BANNED_HOST_COMPILE_FROM_PLAN_RUST), "不应追加伪导入字段");
     assert!(!literal.contains(BANNED_HOST_COMPILE_FROM_PLAN_JS), "不应追加伪导入字段的 JS 实现");
