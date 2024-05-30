@@ -27,9 +27,9 @@ fn evidence_cannot_skip_a_gate() {
 #[test]
 fn evidence_requires_complete_lineage() {
     let package = EvidencePackage {
-        schema_version: "1".into(),
+        schema_version: "0".into(),
         interface: SemanticPackageInterface {
-            schema_version: "1".into(),
+            schema_version: "0".into(),
             package: "p".into(),
             source_hash: "s".into(),
             resolution_hash: "r".into(),
@@ -52,7 +52,7 @@ fn evidence_requires_complete_lineage() {
 #[test]
 fn canonical_interface_hash_is_stable() {
     let interface = SemanticPackageInterface {
-        schema_version: "1".into(),
+        schema_version: "0".into(),
         package: "p".into(),
         source_hash: "s".into(),
         resolution_hash: "r".into(),
@@ -62,7 +62,7 @@ fn canonical_interface_hash_is_stable() {
     };
     assert_eq!(
         interface.canonical_json(),
-        "{\"core_surface_version\":\"c\",\"definition_registry_version\":\"d\",\"observations\":[],\"package\":\"p\",\"resolution_hash\":\"r\",\"schema_version\":\"1\",\"source_hash\":\"s\"}"
+        "{\"core_surface_version\":\"c\",\"definition_registry_version\":\"d\",\"observations\":[],\"package\":\"p\",\"resolution_hash\":\"r\",\"schema_version\":\"0\",\"source_hash\":\"s\"}"
     );
     assert_eq!(interface.canonical_hash().len(), 64);
 }

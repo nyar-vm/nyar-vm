@@ -88,15 +88,12 @@ fn ends_with_symbol_heuristics_do_not_grow() {
 #[test]
 fn frozen_identity_types_are_public() {
     use nyar_types::{
-        AttributeId, AttributeRegistration, ImportCapability, ImportIndex, IntrinsicId, ItemId, OperatorFixity, OperatorId, TypeInstanceId,
-        builtin_attribute,
+        AttributeId, AttributeRegistration, ImportCapability, ImportIndex, IntrinsicId, ItemId, TypeInstanceId, builtin_attribute,
     };
     assert!(ItemId::from_index(0).is_some());
     assert!(TypeInstanceId::from_index(0).is_some());
     assert!(ImportIndex::from_index(0).is_some());
-    assert!(OperatorId::from_index(0).is_some());
     assert!(AttributeId::from_index(0).is_some());
-    assert_eq!(OperatorFixity::Infix, OperatorFixity::Infix);
     assert_eq!(IntrinsicId::ArrayLen.diagnostic_path(), "builtin.array.length");
     assert_eq!(builtin_attribute::main().index(), 1);
     assert_eq!(AttributeRegistration { id: builtin_attribute::export(), name: "export".into() }.name, "export");

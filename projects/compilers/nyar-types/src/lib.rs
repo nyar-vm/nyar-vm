@@ -23,21 +23,18 @@ pub use self::{
     layout::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR,
         SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan,
-        StorageKind, SumTypeLayout, SumVariantLayout, layout_key_for_nyar_type, nyar_type_layout_key_component,
+        StorageKind, SumTypeLayout, SumVariantLayout,
     },
     neutral_contract::{
         ArtifactContract, BootstrapStage, EvidencePackage, EvidenceStatus, PrimitiveDefinition, PrimitiveRegistry, Provenance,
         SemanticObservation, SemanticPackageInterface,
     },
     nullable::{FragmentNullableBoolProfile, FragmentNullableIntrinsicKind, FragmentNullableIntrinsicUse, FragmentNullableTryCall},
-    registries::{
-        AttributeRegistry, AttributeRegistryError, OperatorRegistry, OperatorRegistryError, builtin_operator, parse_operator_display_name,
-    },
+    registries::{AttributeRegistry, AttributeRegistryError},
     semantic_ids::{
         AttributeId, AttributeRegistration, EffectEdgeId, EffectSiteId, EvidenceId, FieldId, GenericFunctionId, IdKind, ImportCapability,
-        ImportIndex, InstructionId, IntrinsicId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, OperatorFixity,
-        OperatorId, OperatorRegistration, ProvenanceId, SemanticId, SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId,
-        builtin_attribute, layout_choice,
+        ImportIndex, InstructionId, IntrinsicId, ItemId, ItemInstanceId, MirValueDefinition, MirValueId, NominalInstanceId, ProvenanceId,
+        SemanticId, SubstitutionId, TypeId, TypeInstanceId, ValueIdentity, VariantId, builtin_attribute, layout_choice,
     },
     source::{Location, Position, SourceID, SourceSpan},
     symbols::{Identifier, NamePath, QualifiedName, SymbolIdentity},

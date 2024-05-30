@@ -10,13 +10,3 @@ fn attribute_registry_interns_custom_names() {
     assert_eq!(registry.intern("my_attr"), custom);
     assert!(matches!(registry.intern_unique("export"), Err(AttributeRegistryError::DuplicateName { .. })));
 }
-
-#[test]
-fn operator_registry_seeds_and_rejects_duplicates() {
-    let mut registry = OperatorRegistry::with_builtins();
-    assert_eq!(registry.lookup_display_name("infix =="), Some(builtin_operator::infix_eq()));
-    assert_eq!(registry.lookup_display_name("prefix !"), Some(builtin_operator::prefix_not()));
-    assert!(matches!(registry.intern_unique(OperatorFixity::Infix, "==", 4, None), Err(OperatorRegistryError::DuplicateKey { .. })));
-    let custom = registry.intern_unique(OperatorFixity::Infix, "+*", 7, None).expect("user op");
-    assert_eq!(registry.lookup(OperatorFixity::Infix, "+*"), Some(custom));
-}

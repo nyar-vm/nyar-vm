@@ -157,19 +157,6 @@ impl IdKind for NominalInstanceIdKind {
 /// 具体的名义 ADT 实例（`NominalType × Substitution`）。
 pub type NominalInstanceId = SemanticId<NominalInstanceIdKind>;
 
-/// [`OperatorId`] 的类型标记。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct OperatorIdKind;
-impl IdKind for OperatorIdKind {
-    const NAME: &'static str = "OperatorId";
-}
-/// 由可扩展运算符注册表分配的运算符身份。
-///
-/// **不是封闭 enum。** 内置与用户定义运算符在解析/链接时从注册表获得稳定 id。
-/// 结合性、优先级与词素只存旁表（[`OperatorRegistration`]）；MIR 只存
-/// `OperatorId`，从不存 `"infix =="` 这类显示字符串。
-pub type OperatorId = SemanticId<OperatorIdKind>;
-
 /// [`ImportIndex`] 的类型标记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImportIndexKind;
@@ -233,37 +220,6 @@ impl IdKind for ProvenanceIdKind {
 }
 /// 源码 / 合成 provenance 身份。
 pub type ProvenanceId = SemanticId<ProvenanceIdKind>;
-
-/// 运算符结合性（仅句法分类 —— 不是运算符身份）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum OperatorFixity {
-    /// 前缀运算符（`!x`、`-x`）。
-    Prefix,
-    /// 中缀运算符（`a + b`）。
-    Infix,
-    /// 后缀运算符（`x!`）。
-    Postfix,
-}
-
-/// 运算符注册表旁表中的一行（解析 / 链接阶段）。
-///
-/// 将可扩展 [`OperatorId`] 映射到词素 + 结合性 + 优先级 + 已解析 callee。
-/// 重复的 `(fixity, lexeme)` 或重复的 `OperatorId` 分配必须失败关闭。
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct OperatorRegistration {
-    /// MIR / 重载所引用的稳定运算符身份。
-    pub id: OperatorId,
-    /// 仅用于诊断的源词素（`+`、`==`、`>>=`）。解析后不是分派键。
-    pub lexeme: String,
-    /// 前缀 / 中缀 / 后缀。
-    pub fixity: OperatorFixity,
-    /// 结合强度（数值越大绑得越紧；具体刻度由语言前端拥有）。
-    pub precedence: u16,
-    /// 重载 / type-class 选择后的已解析实现（若链接时已知）。
-    pub callee: Option<ItemInstanceId>,
-}
 
 /// 语言与 emitter 共享的有限内置 / intrinsic 操作。
 ///

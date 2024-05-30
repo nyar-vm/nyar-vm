@@ -56,21 +56,6 @@ fn branded_ids_are_distinct_types() {
 }
 
 #[test]
-fn operator_registry_uses_extensible_opaque_ids() {
-    let op = OperatorId::from_index(7).expect("operator");
-    assert_eq!(op.index(), 7);
-    let reg = OperatorRegistration {
-        id: op,
-        lexeme: "+".to_string(),
-        fixity: OperatorFixity::Infix,
-        precedence: 6,
-        callee: ItemInstanceId::from_index(0),
-    };
-    assert_eq!(reg.lexeme, "+");
-    assert_eq!(reg.fixity, OperatorFixity::Infix);
-}
-
-#[test]
 fn intrinsic_and_attribute_ids_are_extensible() {
     assert_eq!(IntrinsicId::ArrayPush.diagnostic_path(), "builtin.array.push");
     assert_eq!(IntrinsicId::ArrayPush.bytecode_index(), 0);

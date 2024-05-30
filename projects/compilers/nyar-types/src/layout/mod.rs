@@ -74,9 +74,7 @@ pub struct AggregateLayout {
 pub struct AggregateLayoutPlan {
     /// Registered layouts.
     pub layouts: Vec<AggregateLayout>,
-    /// 遗留名称视图（测试夹具可填；生产路径不得读取，存储分类走 `value_type_declarations` / `layout.storage`）。
-    pub value_type_names: BTreeSet<String>,
-    /// Map from layout key / type name to layout id.
+    /// 合成 tuple / fixedarray 布局键到布局 id 的映射；名义类型不得写入或按名称回查。
     pub type_name_to_layout: BTreeMap<String, LayoutId>,
     /// 结构声明到布局的稳定绑定；语义消费者不得从名称反查布局。
     pub declaration_to_layout: BTreeMap<crate::ItemId, LayoutId>,
@@ -187,48 +185,7 @@ impl SingletonInstancePlan {
     }
 }
 
-/// Layout key for a platform [`NyarType`].
-pub fn layout_key_for_nyar_type(ty: &NyarType) -> Option<String> {
-    match ty {
-        NyarType::Named(name) => Some(name.to_string()),
-        NyarType::Tuple(types) => Some(format!("__tuple_{}", types.iter().map(nyar_type_layout_key_component).collect::<Vec<_>>().join("_"))),
-        NyarType::FixedArray { element, length } => Some(format!("__fixedarray_{length}_{}", nyar_type_layout_key_component(element))),
-        _ => None,
-    }
-}
-
-/// Stable component string used inside synthetic layout keys.
-pub fn nyar_type_layout_key_component(ty: &NyarType) -> String {
-    match ty {
-        NyarType::Named(name) => name.to_string(),
-        NyarType::Boolean => "bool".to_string(),
-        NyarType::Character => "char".to_string(),
-        NyarType::Integer8 { signed } => format!("i8_{signed}"),
-        NyarType::Integer16 { signed } => format!("i16_{signed}"),
-        NyarType::Integer32 { signed } => format!("i32_{signed}"),
-        NyarType::Integer64 { signed } => format!("i64_{signed}"),
-        NyarType::Integer128 { signed } => format!("i128_{signed}"),
-        NyarType::Float32 => "f32".to_string(),
-        NyarType::Float64 => "f64".to_string(),
-        NyarType::Utf8 => "utf8".to_string(),
-        NyarType::Utf16 => "utf16".to_string(),
-        NyarType::Tuple(types) => format!("tuple_{}", types.iter().map(nyar_type_layout_key_component).collect::<Vec<_>>().join("_")),
-        NyarType::FixedArray { element, length } => {
-            format!("arr{length}_{}", nyar_type_layout_key_component(element))
-        }
-        NyarType::Array(inner) => format!("heaparr_{}", nyar_type_layout_key_component(inner)),
-        NyarType::Apply(base, args) => {
-            if args.is_empty() {
-                nyar_type_layout_key_component(base)
-            }
-            else {
-                format!(
-                    "{}<{}>",
-                    nyar_type_layout_key_component(base),
-                    args.iter().map(nyar_type_layout_key_component).collect::<Vec<_>>().join(",")
-                )
-            }
-        }
-        _ => "ref".to_string(),
-    }
-}
+// 已删除 `layout_key_for_nyar_type` / `nyar_type_layout_key_component`：
+// 它们把 `NyarType::Named` 短名直接当成 layout 键，是「按名称回查布局」的来源。
+// 名义类型只能经已冻结声明身份解析；合成 tuple / fixedarray 键由前端
+// `layout_key_for_type`（`ValkyrieType` 形状）生产。
