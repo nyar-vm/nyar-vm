@@ -1,14 +1,13 @@
-//! JavaScript / TypeScript analysis frontend (format + lint).
+//! JavaScript / TypeScript analysis frontend (lint + module analysis).
 //!
-//! Lives in `nyar-language` so product CLIs (`noodle`) call the analysis framework
-//! instead of shelling out to external formatters/linters.
+//! Source **formatting** for these languages belongs to Oak (`oak-typescript::formatter`);
+//! the local whitespace-normalizing formatter was deleted rather than kept as a second
+//! formatting engine.
 
 #![doc = include_str!("readme.md")]
 
-pub mod format;
 pub mod lint;
 pub mod module;
 
-pub use format::{JavascriptFormatter, format_javascript_source, javascript_language_ids};
 pub use lint::{JavascriptLintIssue, JavascriptLintOptions, collect_javascript_files, lint_javascript_source};
 pub use module::JavascriptModule;
