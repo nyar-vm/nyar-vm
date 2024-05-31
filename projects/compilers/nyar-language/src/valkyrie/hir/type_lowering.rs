@@ -86,7 +86,8 @@ impl Drop for ModuleTypeAliasScope {
 }
 
 /// 校验 Oak `AST` 类型表达式是否满足当前 `HIR` lowering 前提。
-pub(crate) fn validate_type_expression(ty: &TypeExpression) -> Result<(), ParseError> {
+#[doc(hidden)]
+pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), ParseError> {
     match ty {
         TypeExpression::Namepath(path) => {
             if let Some(part) = path.parts.last() {
@@ -316,7 +317,9 @@ fn legacy_builtin_type_alias(name: &str) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
+/// 将内建类型名映射到 `HIR` 类型；未知名字返回 `None`。
+#[doc(hidden)]
+pub fn canonical_builtin_type(name: &str) -> Option<ValkyrieType> {
     match name {
         "i8" => Some(ValkyrieType::Integer8 { signed: true }),
         "i16" => Some(ValkyrieType::Integer16 { signed: true }),

@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 //! Valkyrie 类型检查器 facade。
 //!
 //! 每个 checker 只读取 HIR 与类型事实，不在检查过程中写入新的语义 identity

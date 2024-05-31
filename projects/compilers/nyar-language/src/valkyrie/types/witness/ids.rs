@@ -5,7 +5,7 @@ use crate::Identifier;
 /// Witness 二进制格式魔数。
 pub const WITNESS_MAGIC: &[u8; 4] = b"VWIT";
 /// Witness 二进制格式版本号。
-pub const WITNESS_VERSION: u16 = 0x0002;
+pub const WITNESS_VERSION: u16 = 0x0000;
 
 /// Unique identifier for a module in the compilation system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

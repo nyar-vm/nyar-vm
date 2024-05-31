@@ -64,7 +64,8 @@ pub(crate) fn validate_interop_surface(module: &HirModule) -> Result<(), ParseEr
 }
 
 /// 从函数声明杝坖语言中性的外部导入链接。
-pub(crate) fn function_interop_contract(function: &HirFunction) -> Option<ExternalImportLink> {
+#[doc(hidden)]
+pub fn function_interop_contract(function: &HirFunction) -> Option<ExternalImportLink> {
     function.annotations.iter().find_map(attribute_to_interop_contract).or_else(|| {
         function.annotations.iter().find_map(|attribute| {
             (attribute_name(attribute).as_deref() == Some("host_contract")).then(|| ExternalImportLink::host(None, Vec::new()))

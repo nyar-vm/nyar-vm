@@ -49,7 +49,7 @@ pub use valkyrie::{
         AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirBlock, MirBlockRef, MirConstant, MirDiagnostic,
         MirEffectKind, MirFunction, MirInstruction, MirLowerer, MirModule, MirOperand, MirOperation, MirStorageKind, MirTerminator, MirValue,
         MirValueOrigin, MirValueRef, SingletonInstancePlan, SumTypeLayout, SumVariantLayout, collect_singleton_instance_plans,
-        compute_aggregate_layout_plan, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type, storage_kind_for_type,
+        compute_aggregate_layout_plan, layout_id_for_type, layout_key_for_type, storage_kind_for_type,
     },
     module,
     semantic_closure::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, GroupSemanticClosure, SemanticClosure, plan_semantic_closure},

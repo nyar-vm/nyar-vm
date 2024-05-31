@@ -1,6 +1,6 @@
 use oak_von::language::value::{VonField, VonObject};
 
-use nyar_language::valkyrie::frontend::parse_source;
+use nyar_language::{formatter::ToDocument, valkyrie::frontend::parse_source};
 
 use nyar_language::{
     valkyrie::{

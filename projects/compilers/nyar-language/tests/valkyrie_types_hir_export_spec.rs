@@ -6,6 +6,7 @@ use nyar_language::{
     },
     *,
 };
+use nyar_types::builtin_attribute;
 
 #[test]
 fn snake_case_to_camel_case_examples() {

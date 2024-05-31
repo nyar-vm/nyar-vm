@@ -1,4 +1,6 @@
-use nyar_analyzer::highlight::{AnalysisContext, HighlighterKind, merge_spans};
+use nyar_analyzer::highlight::{
+    AnalysisContext, HighlightKind, HighlightRequest, HighlightSpan, Highlighter, HighlighterKind, HighlighterProvider, merge_spans,
+};
 use nyar_language::{
     valkyrie::highlight::{CoreTypeSymbolTable, ValkyrieHighlighterProvider, ValkyrieLexicalHighlighter, ValkyrieSemanticHighlighter},
     *,

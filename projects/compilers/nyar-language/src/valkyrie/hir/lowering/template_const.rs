@@ -5,10 +5,10 @@ use oak_core::{Token, TokenType};
 use oak_valkyrie::lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum ConstValue {
-    String(String),
-    Int(i64),
-    Bool(bool),
+pub(super) enum ConstantValue {
+    Utf8(String),
+    Integer64(i64),
+    Boolean(bool),
 }
 
 #[doc(hidden)]
@@ -17,13 +17,13 @@ pub fn eval_const_condition(source: &str, tokens: &[Token<ValkyrieTokenType>], a
         return Ok(true);
     }
     match eval_const_expr(source, tokens, arch)? {
-        ConstValue::Bool(value) => Ok(value),
-        ConstValue::Int(value) => Ok(value != 0),
-        ConstValue::String(value) => Ok(!value.is_empty()),
+        ConstantValue::Boolean(value) => Ok(value),
+        ConstantValue::Integer64(value) => Ok(value != 0),
+        ConstantValue::Utf8(value) => Ok(!value.is_empty()),
     }
 }
 
-pub(super) fn eval_const_expr(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<ConstValue, ParseError> {
+pub(super) fn eval_const_expr(source: &str, tokens: &[Token<ValkyrieTokenType>], arch: &str) -> Result<ConstantValue, ParseError> {
     let meaningful = meaningful_tokens(tokens);
     if meaningful.is_empty() {
         return Err(ParseError::invalid("TGrammar 元表达式为空"));
@@ -36,11 +36,11 @@ pub(super) fn eval_const_expr(source: &str, tokens: &[Token<ValkyrieTokenType>],
     Ok(value)
 }
 
-pub(super) fn const_value_to_source(value: &ConstValue) -> String {
+pub(super) fn const_value_to_source(value: &ConstantValue) -> String {
     match value {
-        ConstValue::String(text) => format!("\"{}\"", escape_string(text)),
-        ConstValue::Int(value) => value.to_string(),
-        ConstValue::Bool(value) => {
+        ConstantValue::Utf8(text) => format!("\"{}\"", escape_string(text)),
+        ConstantValue::Integer64(value) => value.to_string(),
+        ConstantValue::Boolean(value) => {
             if *value {
                 "true".to_string()
             }
@@ -150,45 +150,45 @@ struct ConstExprParser<'a> {
 }
 
 impl ConstExprParser<'_> {
-    fn parse_or(&mut self) -> Result<ConstValue, ParseError> {
+    fn parse_or(&mut self) -> Result<ConstantValue, ParseError> {
         let mut value = self.parse_and()?;
         while self.match_kind(ValkyrieTokenType::OrOr) {
             let rhs = self.parse_and()?;
-            value = ConstValue::Bool(value.as_bool()? || rhs.as_bool()?);
+            value = ConstantValue::Boolean(value.as_bool()? || rhs.as_bool()?);
         }
         Ok(value)
     }
 
-    fn parse_and(&mut self) -> Result<ConstValue, ParseError> {
+    fn parse_and(&mut self) -> Result<ConstantValue, ParseError> {
         let mut value = self.parse_equality()?;
         while self.match_kind(ValkyrieTokenType::AndAnd) {
             let rhs = self.parse_equality()?;
-            value = ConstValue::Bool(value.as_bool()? && rhs.as_bool()?);
+            value = ConstantValue::Boolean(value.as_bool()? && rhs.as_bool()?);
         }
         Ok(value)
     }
 
-    fn parse_equality(&mut self) -> Result<ConstValue, ParseError> {
+    fn parse_equality(&mut self) -> Result<ConstantValue, ParseError> {
         let left = self.parse_unary()?;
         if self.match_kind(ValkyrieTokenType::EqEq) {
             let right = self.parse_unary()?;
-            return Ok(ConstValue::Bool(values_equal(&left, &right)?));
+            return Ok(ConstantValue::Boolean(values_equal(&left, &right)?));
         }
         if self.match_kind(ValkyrieTokenType::NotEq) {
             let right = self.parse_unary()?;
-            return Ok(ConstValue::Bool(!values_equal(&left, &right)?));
+            return Ok(ConstantValue::Boolean(!values_equal(&left, &right)?));
         }
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<ConstValue, ParseError> {
+    fn parse_unary(&mut self) -> Result<ConstantValue, ParseError> {
         if self.match_kind(ValkyrieTokenType::Bang) {
-            return Ok(ConstValue::Bool(!self.parse_unary()?.as_bool()?));
+            return Ok(ConstantValue::Boolean(!self.parse_unary()?.as_bool()?));
         }
         self.parse_primary()
     }
 
-    fn parse_primary(&mut self) -> Result<ConstValue, ParseError> {
+    fn parse_primary(&mut self) -> Result<ConstantValue, ParseError> {
         if self.match_kind(ValkyrieTokenType::ParenthesisL) {
             let value = self.parse_or()?;
             if !self.match_kind(ValkyrieTokenType::ParenthesisR) {
@@ -200,13 +200,13 @@ impl ConstExprParser<'_> {
         let token = self.current().ok_or_else(|| ParseError::invalid("TGrammar 元表达式不完整"))?;
         self.index += 1;
         match token.kind {
-            ValkyrieTokenType::BoolLiteral => Ok(ConstValue::Bool(token_text(self.source, &token) == "true")),
-            ValkyrieTokenType::StringLiteral => Ok(ConstValue::String(decode_quoted(&token_text(self.source, &token)))),
+            ValkyrieTokenType::BoolLiteral => Ok(ConstantValue::Boolean(token_text(self.source, &token) == "true")),
+            ValkyrieTokenType::StringLiteral => Ok(ConstantValue::Utf8(decode_quoted(&token_text(self.source, &token)))),
             ValkyrieTokenType::IntegerLiteral => token_text(self.source, &token)
                 .parse::<i64>()
-                .map(ConstValue::Int)
+                .map(ConstantValue::Integer64)
                 .map_err(|_| ParseError::invalid("TGrammar 整数字面量无法解析")),
-            ValkyrieTokenType::Identifier if token_text(self.source, &token) == "arch" => Ok(ConstValue::String(self.arch.to_string())),
+            ValkyrieTokenType::Identifier if token_text(self.source, &token) == "arch" => Ok(ConstantValue::Utf8(self.arch.to_string())),
             _ => Err(ParseError::invalid("TGrammar 元表达式含有无法求值的 token")),
         }
     }
@@ -226,23 +226,25 @@ impl ConstExprParser<'_> {
     }
 }
 
-impl ConstValue {
+impl ConstantValue {
     fn as_bool(&self) -> Result<bool, ParseError> {
         match self {
-            Self::Bool(value) => Ok(*value),
-            Self::Int(value) => Ok(*value != 0),
-            Self::String(value) => Ok(!value.is_empty()),
+            Self::Boolean(value) => Ok(*value),
+            Self::Integer64(value) => Ok(*value != 0),
+            Self::Utf8(value) => Ok(!value.is_empty()),
         }
     }
 }
 
-fn values_equal(left: &ConstValue, right: &ConstValue) -> Result<bool, ParseError> {
+fn values_equal(left: &ConstantValue, right: &ConstantValue) -> Result<bool, ParseError> {
     match (left, right) {
-        (ConstValue::Bool(lhs), ConstValue::Bool(rhs)) => Ok(lhs == rhs),
-        (ConstValue::Int(lhs), ConstValue::Int(rhs)) => Ok(lhs == rhs),
-        (ConstValue::String(lhs), ConstValue::String(rhs)) => Ok(lhs == rhs),
-        (ConstValue::Int(lhs), ConstValue::String(rhs)) | (ConstValue::String(rhs), ConstValue::Int(lhs)) => Ok(lhs.to_string() == *rhs),
-        (ConstValue::Bool(lhs), ConstValue::Int(rhs)) | (ConstValue::Int(rhs), ConstValue::Bool(lhs)) => {
+        (ConstantValue::Boolean(lhs), ConstantValue::Boolean(rhs)) => Ok(lhs == rhs),
+        (ConstantValue::Integer64(lhs), ConstantValue::Integer64(rhs)) => Ok(lhs == rhs),
+        (ConstantValue::Utf8(lhs), ConstantValue::Utf8(rhs)) => Ok(lhs == rhs),
+        (ConstantValue::Integer64(lhs), ConstantValue::Utf8(rhs)) | (ConstantValue::Utf8(rhs), ConstantValue::Integer64(lhs)) => {
+            Ok(lhs.to_string() == *rhs)
+        }
+        (ConstantValue::Boolean(lhs), ConstantValue::Integer64(rhs)) | (ConstantValue::Integer64(rhs), ConstantValue::Boolean(lhs)) => {
             Ok((*lhs && *rhs != 0) || (!*lhs && *rhs == 0))
         }
         _ => Err(ParseError::invalid("TGrammar 比较两侧类型不兼容")),

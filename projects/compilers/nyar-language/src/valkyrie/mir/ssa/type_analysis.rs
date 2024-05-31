@@ -36,7 +36,9 @@ pub(crate) fn type_contains_non_monomorphic_signature_reference(ty: &ValkyrieTyp
     type_contains_placeholder(ty, false)
 }
 
-pub(crate) fn type_identity_table(
+/// 为模块函数、外部导入、结构体与 sum 声明建立类型事实表；外部测试入口。
+#[doc(hidden)]
+pub fn type_identity_table(
     functions: &[MirFunction],
     external_calls: &[MirExternalCallContract],
     structs: &[MirStruct],

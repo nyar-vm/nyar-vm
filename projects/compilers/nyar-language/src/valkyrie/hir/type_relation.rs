@@ -6,8 +6,6 @@
 //! - named trait satisfaction
 //! - anonymous row requirement satisfaction
 
-#![allow(missing_docs)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
@@ -22,25 +20,68 @@ use crate::{
     },
 };
 
+/// 类型关系判定失败时携带的诊断种子。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeRelationDiagnosticSeed {
-    IncompatibleTypes { actual: ValkyrieType, expected: ValkyrieType },
-    UnsupportedActualType { actual: ValkyrieType },
-    UnsupportedExpectedType { expected: ValkyrieType },
-    Nominal { error: NominalModuleError },
-    Trait { error: TraitModuleError },
-    Row { errors: Vec<RowRequirementError> },
+    /// 两侧类型互不相容。
+    IncompatibleTypes {
+        /// 实参类型。
+        actual: ValkyrieType,
+        /// 期望类型。
+        expected: ValkyrieType,
+    },
+    /// 实参类型形态不受支持。
+    UnsupportedActualType {
+        /// 不受支持的实参类型。
+        actual: ValkyrieType,
+    },
+    /// 期望类型形态不受支持。
+    UnsupportedExpectedType {
+        /// 不受支持的期望类型。
+        expected: ValkyrieType,
+    },
+    /// 名义类型判定失败。
+    Nominal {
+        /// 名义模块层错误。
+        error: NominalModuleError,
+    },
+    /// 具名 trait 判定失败。
+    Trait {
+        /// trait 模块层错误。
+        error: TraitModuleError,
+    },
+    /// 匿名 row 判定失败。
+    Row {
+        /// 全部 row 校验失败原因。
+        errors: Vec<RowRequirementError>,
+    },
 }
 
+/// 单个形参的匹配结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParameterMatchResult {
+    /// 名义类型完全一致。
     NominalExact,
-    NominalSubtype { distance: usize },
-    Trait { witness: NamedTraitWitness },
+    /// 名义子类型，距离越小越接近。
+    NominalSubtype {
+        /// 继承距离。
+        distance: usize,
+    },
+    /// 通过具名 trait 满足，携带 witness。
+    Trait {
+        /// 生成的 trait witness。
+        witness: NamedTraitWitness,
+    },
+    /// 通过匿名 row 形状满足。
     Row,
-    NoMatch { diagnostic_seed: TypeRelationDiagnosticSeed },
+    /// 不匹配，携带诊断种子。
+    NoMatch {
+        /// 失败诊断种子。
+        diagnostic_seed: TypeRelationDiagnosticSeed,
+    },
 }
 
+/// 类型关系判定上下文：模块的名义、trait 与可调用约束视图。
 #[derive(Debug, Clone)]
 pub struct TypeRelationContext {
     nominal: NominalModuleView,
@@ -53,6 +94,7 @@ pub struct TypeRelationContext {
 }
 
 impl TypeRelationContext {
+    /// 由模块（含子模块与导入语义导出）构建判定上下文。
     pub fn from_module(module: &HirModule) -> Self {
         let mut structs = BTreeMap::new();
         let mut structs_by_declaration = BTreeMap::new();
@@ -90,16 +132,19 @@ impl TypeRelationContext {
         }
     }
 
+    /// 派生一份带可调用声明级 where 约束的上下文副本。
     pub fn with_callable_constraints(&self, constraints: &[HirWhereConstraint]) -> Self {
         let mut context = self.clone();
         context.callable_constraints = constraints.to_vec();
         context
     }
 
+    /// 当前上下文携带的可调用 where 约束。
     pub fn callable_constraints(&self) -> &[HirWhereConstraint] {
         &self.callable_constraints
     }
 
+    /// 统一形参匹配入口：按 nominal、trait、row 的既定优先级返回结果。
     pub fn match_parameter(&self, actual: &ValkyrieType, expected: &ValkyrieType) -> ParameterMatchResult {
         if trivially_compatible(actual, expected) {
             return ParameterMatchResult::NominalExact;
@@ -209,6 +254,7 @@ impl TypeRelationContext {
         }
     }
 
+    /// 按名义继承关系匹配两个类型短名。
     pub fn match_nominal_parameter(&self, actual_name: &Identifier, expected_name: &Identifier) -> ParameterMatchResult {
         match self.nominal.nominal_match_distance(actual_name, expected_name) {
             Ok(Some(0)) => ParameterMatchResult::NominalExact,
@@ -223,6 +269,7 @@ impl TypeRelationContext {
         }
     }
 
+    /// 按具名 trait 满足关系匹配；trait 未知时返回 `None`。
     pub fn match_named_trait_parameter(&self, actual_name: &Identifier, trait_name: &Identifier) -> Option<ParameterMatchResult> {
         match self.traits.satisfy_named_trait(actual_name, trait_name) {
             Ok(witness) => Some(ParameterMatchResult::Trait { witness }),
@@ -258,6 +305,7 @@ impl TypeRelationContext {
         })
     }
 
+    /// 校验具名类型是否满足匿名 row 的方法要求。
     pub fn match_row_requirement(&self, actual_name: &Identifier, requirement: &RowRequirement) -> ParameterMatchResult {
         let Some(candidate) = self.structs.get(actual_name)
         else {

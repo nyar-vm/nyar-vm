@@ -31,6 +31,7 @@ use crate::{
             },
         },
         mir::{SINGLETON_CONSTRUCTOR_NAME, SINGLETON_FINALIZER_NAME},
+        semantic_closure::{GroupSemanticClosure, retain_demanded_declarations, source_group_closure},
     },
 };
 mod trait_binding;
@@ -256,15 +257,19 @@ mod template_expand;
 mod vx;
 
 pub use super::CaptureAnalyzer;
-use expr_lowering::{extract_name_path, lower_block, lower_term_expression};
+use expr_lowering::{extract_name_path, lower_block};
 use macro_expand::expand_macros_in_root;
-use template_expand::expand_templates_in_root;
+#[doc(hidden)]
+pub use template_expand::expand_templates_in_root;
 
+#[doc(hidden)]
+pub use expr_lowering::lower_term_expression;
 #[doc(hidden)]
 pub use template_const::{eval_const_condition, parse_const_loop_range, parse_const_range_text};
 #[doc(hidden)]
 pub use template_expand::DEFAULT_COMPILE_ARCH;
-use vx::enhance_vx_widgets;
+#[doc(hidden)]
+pub use vx::enhance_vx_widgets;
 
 /// Minimal compiler facade that lowers parser output into HIR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -284,12 +289,6 @@ pub struct CompilerSourceGroup {
     pub sources: Vec<CompilerSourceFile>,
     /// 只允许引用已完成链接的直接依赖身份。
     pub direct_dependencies: Vec<String>,
-    /// 限定进入 Oak parse 与 HIR body lowering 的仓相对路径；`None` 表示组内全部 `sources`。
-    pub body_lowering_source_paths: Option<std::collections::BTreeSet<String>>,
-    /// 入口语义闭包稳定摘要；同一快照内各组相同。
-    pub closure_digest: Option<String>,
-    /// 本组 body lowering 覆盖的声明身份（`DeclarationKey::encoded()`）；`None` 表示 Resolver 未提交计划。
-    pub body_lowering_declaration_keys: Option<std::collections::BTreeSet<String>>,
 }
 
 impl CompilerSourceGroup {
@@ -298,20 +297,14 @@ impl CompilerSourceGroup {
         Self::from_source_files(dependency_key, name, vec![CompilerSourceFile { path: format!("{name}.v"), source: source.into() }], Vec::new())
     }
 
-    /// 多文件生产组；未携带语义计划时由 Resolver 决定 body lowering 边界。
+    /// 多文件输入组；语义选择由 Compiler 生产，调用方不得注入裁剪或摘要。
     pub fn from_source_files(dependency_key: &str, name: &str, sources: Vec<CompilerSourceFile>, direct_dependencies: Vec<String>) -> Self {
-        Self {
-            dependency_key: dependency_key.into(),
-            name: name.into(),
-            sources,
-            direct_dependencies,
-            body_lowering_source_paths: None,
-            closure_digest: None,
-            body_lowering_declaration_keys: None,
-        }
+        Self { dependency_key: dependency_key.into(), name: name.into(), sources, direct_dependencies }
     }
 
-    pub(crate) fn with_direct_dependencies(mut self, direct_dependencies: Vec<String>) -> Self {
+    /// 覆盖直接依赖身份集合：仅供依赖顺序已固定的源码组夹具使用。
+    #[doc(hidden)]
+    pub fn with_direct_dependencies(mut self, direct_dependencies: Vec<String>) -> Self {
         self.direct_dependencies = direct_dependencies;
         self
     }
@@ -324,6 +317,35 @@ pub struct CompilerSourceFile {
     pub path: String,
     /// 文件原文。
     pub source: String,
+}
+
+/// 在任何解析/裁剪前验证不可变输入身份，避免 map 覆盖制造第二份事实。
+fn validate_source_groups(groups: &[CompilerSourceGroup]) -> Result<(), ParseError> {
+    let mut completed = std::collections::BTreeSet::new();
+    if groups.is_empty() {
+        return Err(ParseError::invalid("Compiler 源码快照缺少入口组"));
+    }
+    for group in groups {
+        if group.dependency_key.is_empty() || completed.contains(&group.dependency_key) {
+            return Err(ParseError::invalid("Compiler 源码组身份为空或重复"));
+        }
+        for dependency in &group.direct_dependencies {
+            if !completed.contains(dependency) {
+                return Err(ParseError::invalid(format!("依赖 `{dependency}` 未在 `{}` 之前提供", group.dependency_key)));
+            }
+        }
+        let mut paths = std::collections::BTreeSet::new();
+        for file in &group.sources {
+            if file.path.is_empty() || !paths.insert(&file.path) {
+                return Err(ParseError::invalid(format!("源码组 `{}` 的文件身份为空或重复", group.dependency_key)));
+            }
+        }
+        completed.insert(group.dependency_key.clone());
+    }
+    if groups.last().is_some_and(|group| group.sources.is_empty()) {
+        return Err(ParseError::invalid("Compiler 入口组缺少源码文件"));
+    }
+    Ok(())
 }
 
 /// 集成测试夹具：从 HIR 构造阶段载荷，不作为生产源码闭包入口。
@@ -550,7 +572,8 @@ impl ValkyrieCompiler {
     ///
     /// 调用解析必须等完整源码闭包进入 Compiler 后统一进行；该入口不产生
     /// 可执行产物，也不允许被装配层直接使用。
-    pub(crate) fn parse_source_group_without_call_resolution(
+    #[doc(hidden)]
+    pub fn parse_source_group_without_call_resolution(
         &self,
         source: &str,
         imported_semantic_exports: &[HirDependencySemanticExport],
@@ -593,12 +616,14 @@ impl ValkyrieCompiler {
     ///
     /// Resolver 只提供源码和依赖身份；导出合同、依赖 MIR 与可达链接全部
     /// 在 Compiler 内完成，调用方不得自行拼接 HIR 或 MIR。
-    pub(crate) fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, ParseError> {
+    #[doc(hidden)]
+    pub fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<nyar_types::CompiledProgram, ParseError> {
         self.compile_source_groups_to_program_with_host_bindings(groups, &[], DEFAULT_COMPILE_ARCH)
     }
 
     /// 从完整依赖顺序的源码快照构建语义闭包，并应用 Resolver 选定的 host provider 绑定。
-    pub(crate) fn compile_source_groups_to_program_with_host_bindings(
+    #[doc(hidden)]
+    pub fn compile_source_groups_to_program_with_host_bindings(
         &self,
         groups: &[CompilerSourceGroup],
         host_bindings: &[crate::valkyrie::compile_pipeline::CompilerHostProviderBinding],
@@ -639,11 +664,13 @@ impl ValkyrieCompiler {
 
     #[doc(hidden)]
     pub fn resolve_source_groups(&self, groups: &[CompilerSourceGroup], arch: &str) -> Result<Vec<HirModule>, ParseError> {
+        validate_source_groups(groups)?;
+        let closure = source_group_closure(groups);
         let mut exports = std::collections::BTreeMap::<String, HirDependencySemanticExport>::new();
         let mut hir_groups = Vec::with_capacity(groups.len());
         let mut next_declaration = 0u32;
         let mut next_instance = 0u32;
-        for group in groups {
+        for (group, selection) in groups.iter().zip(&closure.groups) {
             let dependency_exports = group
                 .direct_dependencies
                 .iter()
@@ -656,6 +683,7 @@ impl ValkyrieCompiler {
                 .collect::<Result<Vec<_>, _>>()?;
             let mut hir_module = self.parse_source_files_without_call_resolution(
                 group,
+                selection,
                 &dependency_exports,
                 Some(NamePath::new(vec![Identifier::new(&group.name)])),
                 arch,
@@ -689,26 +717,27 @@ impl ValkyrieCompiler {
     fn parse_source_files_without_call_resolution(
         &self,
         group: &CompilerSourceGroup,
+        selection: &GroupSemanticClosure,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
         arch: &str,
     ) -> Result<HirModule, ParseError> {
-        if group.sources.is_empty() {
-            return Err(ParseError::invalid(format!(
-                "semantic source group `{}` has no source files; Resolver must submit per-file sources",
-                group.dependency_key
-            )));
+        if selection.body_lowering_source_paths.is_empty() && selection.body_lowering_declarations.is_empty() {
+            // 空需求是闭包的正常结果；空模块仍保留依赖导出和模块身份。
+            return AstToHir::new(self.source_id).lower_root_without_call_resolution(
+                &ValkyrieRoot { items: Vec::new() },
+                imported_semantic_exports,
+                module_name,
+            );
         }
         let mut merged: Option<HirModule> = None;
         let mut lowered_file_count = 0usize;
         for file in &group.sources {
-            if let Some(allowed) = &group.body_lowering_source_paths {
-                if !allowed.contains(&file.path) {
-                    continue;
-                }
+            if !selection.body_lowering_source_paths.contains(&file.path) {
+                continue;
             }
             // 计划内的文件属于入口语义闭包；语法或语义错误必须结构化失败，不得吞错后编译残缺程序。
-            let module = self.parse_and_lower_source_file(group, file, imported_semantic_exports, module_name.clone(), arch)?;
+            let module = self.parse_and_lower_source_file(group, selection, file, imported_semantic_exports, module_name.clone(), arch)?;
             lowered_file_count += 1;
             if let Some(target) = &mut merged {
                 target.imports.extend(module.imports);
@@ -743,6 +772,7 @@ impl ValkyrieCompiler {
     fn parse_and_lower_source_file(
         &self,
         group: &CompilerSourceGroup,
+        selection: &GroupSemanticClosure,
         file: &CompilerSourceFile,
         imported_semantic_exports: &[HirDependencySemanticExport],
         module_name: Option<NamePath>,
@@ -754,6 +784,9 @@ impl ValkyrieCompiler {
             }
             other => other,
         })?;
+        // 声明级物化边界：进入 HIR 的声明身份必须与闭包规划一致。
+        // 非被需求声明不得在此后参与调用解析、合同校验、MIR 与 layout。
+        retain_demanded_declarations(&mut root.items, &group.dependency_key, &file.path, &selection.body_lowering_declarations);
         expand_macros_in_root(&mut root);
         expand_templates_in_root(&mut root, &file.source, arch)?;
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1809,7 +1842,7 @@ impl AstToHir {
             root.items
                 .iter()
                 .find_map(|item| match item {
-                    StatementNode::Namespace(namespace) if namespace.items.is_empty() => Some(lower_name_path(&namespace.name)),
+                    StatementNode::Namespace(namespace) if !namespace.has_body() => Some(lower_name_path(&namespace.name)),
                     _ => None,
                 })
                 .unwrap_or_else(default_module_name)
@@ -1841,13 +1874,13 @@ impl AstToHir {
         for item in &root.items {
             match item {
                 StatementNode::Namespace(namespace) => {
-                    if namespace.items.is_empty() {
+                    if !namespace.has_body() {
                         current_namespace = lower_name_path(&namespace.name);
                     }
-                    else {
+                    else if let Some(body) = &namespace.body {
                         let namespace_path = lower_name_path(&namespace.name);
                         self.lower_items(
-                            &namespace.items,
+                            &body.items,
                             &namespace_path,
                             &mut functions,
                             &mut type_functions,

@@ -4,8 +4,6 @@
 //! classes use nominal exact-or-subtype matching, and `unite` lowers to
 //! an abstract sealed base with a closed family of nominal variants.
 
-#![allow(missing_docs)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::types::{
@@ -16,39 +14,81 @@ use crate::types::{
     },
 };
 
+/// `unite` 枚举 lowering 后的布局形态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UniteLayout {
+    /// 带判别标签的布局。
     Tagged,
+    /// 不带判别标签的布局。
     Untagged,
 }
 
+/// `unite` 定义 lowering 的结果：抽象基类加封闭变体家族。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoweredUnite {
+    /// 抽象且 sealed 的基类 struct。
     pub base: HirStruct,
+    /// 各变体 lowering 出的 final struct。
     pub variants: Vec<HirStruct>,
+    /// 使用的布局形态。
     pub layout: UniteLayout,
 }
 
+/// `unite` 覆盖性检查失败的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UniteCoverageError {
-    MissingVariants { names: Vec<Identifier> },
-    UnknownVariants { names: Vec<Identifier> },
-    DuplicateVariants { names: Vec<Identifier> },
+    /// 有变体未被覆盖。
+    MissingVariants {
+        /// 未被覆盖的变体名。
+        names: Vec<Identifier>,
+    },
+    /// 覆盖列表出现了未声明的变体。
+    UnknownVariants {
+        /// 未知的变体名。
+        names: Vec<Identifier>,
+    },
+    /// 覆盖列表重复列出同一变体。
+    DuplicateVariants {
+        /// 重复的变体名。
+        names: Vec<Identifier>,
+    },
 }
 
+/// `unite` 定义自身非法时的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UniteDefinitionError {
+    /// 变体列表为空。
     EmptyVariants,
-    DuplicateVariants { names: Vec<Identifier> },
-    InvalidVariantResultType { variant: Identifier },
+    /// 存在重名变体。
+    DuplicateVariants {
+        /// 重复的变体名。
+        names: Vec<Identifier>,
+    },
+    /// 变体的 result 类型不是本枚举的合法应用形态。
+    InvalidVariantResultType {
+        /// 非法的变体名。
+        variant: Identifier,
+    },
 }
 
+/// 名义模块视图层面的错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NominalModuleError {
-    UnknownType { name: Identifier },
-    InvalidUnite { name: Identifier, error: UniteDefinitionError },
+    /// 查不到该名义类型。
+    UnknownType {
+        /// 未知类型名。
+        name: Identifier,
+    },
+    /// 该 `unite` 定义非法。
+    InvalidUnite {
+        /// 非法的 `unite` 名。
+        name: Identifier,
+        /// 具体的定义错误。
+        error: UniteDefinitionError,
+    },
 }
 
+/// 模块内名义类型与 `unite` 定义的只读视图。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NominalModuleView {
     named_types: BTreeMap<Identifier, HirStruct>,
@@ -57,15 +97,18 @@ pub struct NominalModuleView {
 }
 
 impl LoweredUnite {
+    /// 全部已声明变体的名字列表。
     pub fn variant_names(&self) -> Vec<Identifier> {
         self.variants.iter().map(|variant| variant.name.clone()).collect()
     }
 
+    /// 给定覆盖列表是否恰好覆盖全部变体。
     pub fn is_exhaustive_over(&self, covered_variants: &[Identifier]) -> bool {
         let covered: BTreeSet<_> = covered_variants.iter().cloned().collect();
         self.variant_names().into_iter().all(|name| covered.contains(&name))
     }
 
+    /// 校验覆盖列表：重复、未知与遗漏分别报错。
     pub fn check_exhaustiveness(&self, covered_variants: &[Identifier]) -> Result<(), UniteCoverageError> {
         let declared = self.variant_names().into_iter().collect::<BTreeSet<_>>();
         let duplicates = duplicate_names(covered_variants.iter().cloned()).into_iter().collect::<Vec<_>>();
@@ -90,6 +133,7 @@ impl LoweredUnite {
 }
 
 impl NominalModuleView {
+    /// 从模块（含子模块与导入语义导出）收集名义类型与 `unite` 定义。
     pub fn from_module(module: &HirModule) -> Self {
         let mut named_types = module.structs.iter().map(|item| (item.name.clone(), item.clone())).collect::<BTreeMap<_, _>>();
         let mut unite_defs = BTreeMap::new();
@@ -122,6 +166,7 @@ impl NominalModuleView {
         Self { named_types, unite_defs, invalid_unites }
     }
 
+    /// 校验指定 `unite` 定义是否合法。
     pub fn validate_unite(&self, name: &Identifier) -> Result<(), NominalModuleError> {
         if let Some(error) = self.invalid_unites.get(name) {
             return Err(NominalModuleError::InvalidUnite { name: name.clone(), error: error.clone() });
@@ -134,12 +179,14 @@ impl NominalModuleView {
         Err(NominalModuleError::UnknownType { name: name.clone() })
     }
 
+    /// 按指定布局 lowering 指定 `unite` 定义。
     pub fn lower_unite(&self, name: &Identifier, layout: UniteLayout) -> Result<LoweredUnite, NominalModuleError> {
         self.validate_unite(name)?;
         let enum_def = self.unite_defs.get(name).ok_or_else(|| NominalModuleError::UnknownType { name: name.clone() })?;
         Ok(lower_unite(enum_def, layout))
     }
 
+    /// 判断候选名义类型能否匹配期望的名义参数。
     pub fn matches_nominal_parameter(&self, candidate: &Identifier, expected: &Identifier) -> Result<bool, NominalModuleError> {
         let candidate_struct = self.lookup_named_type(candidate)?;
         let expected_struct = self.lookup_named_type(expected)?;
@@ -147,6 +194,7 @@ impl NominalModuleView {
         Ok(matches_nominal_parameter(candidate_struct, expected_struct, &declared_types))
     }
 
+    /// 候选到期望名义参数的继承距离；不匹配时为 `None`。
     pub fn nominal_match_distance(&self, candidate: &Identifier, expected: &Identifier) -> Result<Option<usize>, NominalModuleError> {
         let candidate_struct = self.lookup_named_type(candidate)?;
         let expected_struct = self.lookup_named_type(expected)?;
@@ -167,6 +215,7 @@ impl NominalModuleView {
     }
 }
 
+/// 候选名义类型是否等于期望类型或经继承链归结到期望类型。
 pub fn matches_nominal_parameter(candidate: &HirStruct, expected: &HirStruct, declared_types: &[HirStruct]) -> bool {
     if candidate.name == expected.name {
         return true;
@@ -177,6 +226,7 @@ pub fn matches_nominal_parameter(candidate: &HirStruct, expected: &HirStruct, de
     inherits_from(candidate, &expected.name, &index, &mut BTreeSet::new())
 }
 
+/// 候选到期望名义参数的继承距离；不匹配时为 `None`。
 pub fn nominal_parameter_distance(candidate: &HirStruct, expected: &HirStruct, declared_types: &[HirStruct]) -> Option<usize> {
     if candidate.name == expected.name {
         return Some(0);
@@ -186,6 +236,7 @@ pub fn nominal_parameter_distance(candidate: &HirStruct, expected: &HirStruct, d
     inheritance_distance(candidate, &expected.name, &index, &mut BTreeSet::new())
 }
 
+/// 校验 `unite` 定义：变体非空、无重名、result 类型只引用已声明泛型。
 pub fn validate_unite_definition(enum_def: &HirEnum) -> Result<(), UniteDefinitionError> {
     if enum_def.variants.is_empty() {
         return Err(UniteDefinitionError::EmptyVariants);
@@ -208,6 +259,7 @@ pub fn validate_unite_definition(enum_def: &HirEnum) -> Result<(), UniteDefiniti
     Ok(())
 }
 
+/// 把 `unite` 枚举 lowering 为抽象基类与封闭变体 struct 家族。
 pub fn lower_unite(enum_def: &HirEnum, layout: UniteLayout) -> LoweredUnite {
     validate_unite_definition(enum_def).expect("invalid unite definition");
     let base_name = enum_def.name.clone();

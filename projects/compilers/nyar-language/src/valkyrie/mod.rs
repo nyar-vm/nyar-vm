@@ -36,6 +36,13 @@ pub mod typing;
 /// 跨 HIR 与 Semantic MIR 的编译器一致性校验入口。
 pub mod validation;
 
+/// 供外部集成测试引用的内部符号工具（不稳定，勿在正式代码中使用）。
+#[doc(hidden)]
+pub use backend_contract::interop::function_interop_contract;
+/// 供外部集成测试引用的内部符号工具（不稳定，勿在正式代码中使用）。
+#[doc(hidden)]
+pub use symbols::{stable_hir_function_name_path, stable_hir_function_symbol};
+
 pub(crate) use assembly::{AssembledFragment, assemble_fragment, build_output_surface_counts, plan_artifacts_from_compiled_program};
 pub use frontend_contract::{ConcretizeError, concretize_mir_function_types, concretize_type};
 pub use hir::{CaptureAnalyzer, function_body_contains_yield, *};

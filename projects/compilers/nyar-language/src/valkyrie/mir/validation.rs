@@ -21,4 +21,4 @@ mod type_inference;
 
 pub use module_validation::validate_module;
 pub use semantic_contract::{SemanticMirContractError, semantic_observation, validate_semantic_module};
-pub use symbols::{is_language_builtin_symbol, is_language_operator_name, is_language_operator_symbol};
+pub use symbols::is_language_builtin_symbol;

@@ -97,8 +97,6 @@ pub enum HirCallableDomain {
     Function,
     /// 普通构造调用。
     Constructor,
-    /// 运算符语法糖降级后的可调用项。
-    Operator,
     /// extractor 语法糖降级后的可调用项。
     Extractor,
 }

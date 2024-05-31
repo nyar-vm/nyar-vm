@@ -26,7 +26,8 @@ pub struct CompilerArtifactReport {
 }
 
 /// Compiler 已完成语义分析、表示规划和分区装配的目标输入 bundle。
-struct CompilerBuildBundle {
+#[doc(hidden)]
+pub struct CompilerBuildBundle {
     compiled_program: nyar_types::CompiledProgram,
     artifact_plan: ArtifactPartitionPlan,
     wasm_package_kind: nyar_emitter::nyar_backend_wasi::WasmPackageKind,
@@ -34,13 +35,15 @@ struct CompilerBuildBundle {
 
 impl CompilerBuildBundle {
     /// 返回已由 Canonical 成功载荷确认的导出和入口数量。
-    fn surface_counts(&self) -> (usize, usize) {
+    #[doc(hidden)]
+    pub fn surface_counts(&self) -> (usize, usize) {
         build_output_surface_counts(&self.compiled_program)
     }
 }
 
-/// 从 Resolver 提供的源码组生产唯一目标 bundle。
-fn compile_source_groups_to_backend_bundle(
+/// 从 Resolver 提供的源码组生产唯一目标 bundle；外部测试入口。
+#[doc(hidden)]
+pub fn compile_source_groups_to_backend_bundle(
     compiler: &ValkyrieCompiler,
     groups: &[CompilerSourceGroup],
     context: &CompilerBuildContext,

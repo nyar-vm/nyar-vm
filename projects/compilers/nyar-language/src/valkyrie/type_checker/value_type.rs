@@ -10,20 +10,38 @@ use std::{
     fmt,
 };
 
+/// 值类型语义违规的类别。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueTypeErrorKind {
-    ValueTypeInheritance { class_name: Identifier, parent: Identifier },
-    ValueTypeFieldMutation { class_name: Identifier, field: Identifier },
+    /// 值类型继承了非值类型。
+    ValueTypeInheritance {
+        /// 涉事值类型类名。
+        class_name: Identifier,
+        /// 被继承的父类名。
+        parent: Identifier,
+    },
+    /// 对值类型字段执行了原地修改。
+    ValueTypeFieldMutation {
+        /// 字段所属值类型名。
+        class_name: Identifier,
+        /// 被修改的字段名。
+        field: Identifier,
+    },
 }
 
+/// 单条值类型违规：类别、渲染后的消息与源码位置。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValueTypeError {
+    /// 违规类别。
     pub kind: ValueTypeErrorKind,
+    /// 人类可读的错误信息。
     pub message: String,
+    /// 产生该违规的源码位置；不可定位时为 None。
     pub span: Option<SourceSpan>,
 }
 
 impl ValueTypeError {
+    /// 构造「值类型继承非值类型」错误。
     pub fn value_type_inheritance(class_name: Identifier, parent: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: ValueTypeErrorKind::ValueTypeInheritance { class_name: class_name.clone(), parent: parent.clone() },
@@ -32,6 +50,7 @@ impl ValueTypeError {
         }
     }
 
+    /// 构造「值类型字段被原地修改」错误。
     pub fn value_type_field_mutation(class_name: Identifier, field: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: ValueTypeErrorKind::ValueTypeFieldMutation { class_name: class_name.clone(), field: field.clone() },
@@ -49,6 +68,7 @@ impl fmt::Display for ValueTypeError {
 
 impl std::error::Error for ValueTypeError {}
 
+/// 收集模块内值类型并扫描其方法与 impl 中字段写入的检查器。
 #[derive(Debug, Default)]
 pub struct ValueTypeChecker {
     value_types: BTreeSet<Identifier>,
@@ -56,10 +76,12 @@ pub struct ValueTypeChecker {
 }
 
 impl ValueTypeChecker {
+    /// 创建空的值类型检查器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 检查模块内值类型的继承关系与字段写入并返回违规列表。
     pub fn check_module(&mut self, module: &HirModule) -> Vec<ValueTypeError> {
         self.clear();
         for class in &module.structs {
@@ -361,6 +383,7 @@ impl ValueTypeChecker {
         }
     }
 
+    /// 判断给定类型是否属于值语义类型（已登记值类型、元组、定长数组）。
     pub fn is_value_type(&self, ty: &HirType) -> bool {
         match ty {
             HirType::Named(name) => self.value_types.contains(name),
@@ -369,18 +392,22 @@ impl ValueTypeChecker {
         }
     }
 
+    /// 返回已登记的全部值类型名。
     pub fn get_value_type_names(&self) -> Vec<Identifier> {
         self.value_types.iter().cloned().collect()
     }
 
+    /// 返回已登记值类型的集合。
     pub fn value_types(&self) -> &BTreeSet<Identifier> {
         &self.value_types
     }
 
+    /// 返回已收集的违规列表。
     pub fn errors(&self) -> &[ValueTypeError] {
         &self.errors
     }
 
+    /// 清空已登记值类型与违规列表。
     pub fn clear(&mut self) {
         self.value_types.clear();
         self.errors.clear();

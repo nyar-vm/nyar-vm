@@ -12,25 +12,63 @@ const CONSTRUCTOR_NAME: &str = "init";
 /// Singleton finalizer method name recognized by semantic analysis.
 const FINALIZER_NAME: &str = "finalize";
 
+/// singleton 语义违规的类别。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SingletonErrorKind {
-    ConstructorForbidden { singleton: Identifier },
-    ReadonlyFieldWrite { singleton: Identifier, field: Identifier },
-    GenericsForbidden { singleton: Identifier },
-    DuplicateLifecycleMethod { singleton: Identifier, method: Identifier },
-    ConstructorSignatureInvalid { singleton: Identifier },
-    FinalizerSignatureInvalid { singleton: Identifier },
-    FinalizerOnEagerSingleton { singleton: Identifier },
+    /// 尝试构造 singleton 实例。
+    ConstructorForbidden {
+        /// 涉事 singleton 名。
+        singleton: Identifier,
+    },
+    /// 写入 singleton 的只读字段。
+    ReadonlyFieldWrite {
+        /// 涉事 singleton 名。
+        singleton: Identifier,
+        /// 被写入的字段名。
+        field: Identifier,
+    },
+    /// singleton 声明了泛型参数。
+    GenericsForbidden {
+        /// 涉事 singleton 名。
+        singleton: Identifier,
+    },
+    /// 重复定义同一生命周期方法。
+    DuplicateLifecycleMethod {
+        /// 涉事 singleton 名。
+        singleton: Identifier,
+        /// 重复定义的方法名。
+        method: Identifier,
+    },
+    /// 构造器签名不符合 `init(self)` 约定。
+    ConstructorSignatureInvalid {
+        /// 涉事 singleton 名。
+        singleton: Identifier,
+    },
+    /// 终结器签名不符合 `finalize(self)` 约定。
+    FinalizerSignatureInvalid {
+        /// 涉事 singleton 名。
+        singleton: Identifier,
+    },
+    /// 非 lazy singleton 定义了终结器。
+    FinalizerOnEagerSingleton {
+        /// 涉事 singleton 名。
+        singleton: Identifier,
+    },
 }
 
+/// 单条 singleton 违规：类别、渲染后的消息与源码位置。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SingletonError {
+    /// 违规类别。
     pub kind: SingletonErrorKind,
+    /// 人类可读的错误信息。
     pub message: String,
+    /// 产生该违规的源码位置；不可定位时为 None。
     pub span: Option<SourceSpan>,
 }
 
 impl SingletonError {
+    /// 构造「禁止构造 singleton」错误。
     pub fn constructor_forbidden(singleton: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: SingletonErrorKind::ConstructorForbidden { singleton: singleton.clone() },
@@ -39,6 +77,7 @@ impl SingletonError {
         }
     }
 
+    /// 构造「写入只读字段」错误。
     pub fn readonly_field_write(singleton: Identifier, field: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: SingletonErrorKind::ReadonlyFieldWrite { singleton: singleton.clone(), field: field.clone() },
@@ -47,6 +86,7 @@ impl SingletonError {
         }
     }
 
+    /// 构造「singleton 不允许泛型」错误。
     pub fn generics_forbidden(singleton: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: SingletonErrorKind::GenericsForbidden { singleton: singleton.clone() },
@@ -57,6 +97,7 @@ impl SingletonError {
         }
     }
 
+    /// 构造「生命周期方法重复定义」错误。
     pub fn duplicate_lifecycle_method(singleton: Identifier, method: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: SingletonErrorKind::DuplicateLifecycleMethod { singleton: singleton.clone(), method: method.clone() },
@@ -65,6 +106,7 @@ impl SingletonError {
         }
     }
 
+    /// 构造「构造器签名非法」错误。
     pub fn constructor_signature_invalid(singleton: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: SingletonErrorKind::ConstructorSignatureInvalid { singleton: singleton.clone() },
@@ -73,6 +115,7 @@ impl SingletonError {
         }
     }
 
+    /// 构造「终结器签名非法」错误。
     pub fn finalizer_signature_invalid(singleton: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: SingletonErrorKind::FinalizerSignatureInvalid { singleton: singleton.clone() },
@@ -81,6 +124,7 @@ impl SingletonError {
         }
     }
 
+    /// 构造「eager singleton 带终结器」错误。
     pub fn finalizer_on_eager_singleton(singleton: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: SingletonErrorKind::FinalizerOnEagerSingleton { singleton: singleton.clone() },
@@ -98,6 +142,7 @@ impl std::fmt::Display for SingletonError {
 
 impl std::error::Error for SingletonError {}
 
+/// 收集 singleton 定义并校验其构造、生命周期与字段写入的检查器。
 #[derive(Debug, Default)]
 pub struct SingletonChecker {
     singletons: BTreeMap<Identifier, HirSingleton>,
@@ -107,10 +152,12 @@ pub struct SingletonChecker {
 }
 
 impl SingletonChecker {
+    /// 创建空的 singleton 检查器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 检查模块内所有 singleton 的定义与使用并返回违规列表。
     pub fn check_module(&mut self, module: &HirModule) -> Vec<SingletonError> {
         self.errors.clear();
         self.singletons.clear();
@@ -192,6 +239,7 @@ impl SingletonChecker {
         }
     }
 
+    /// 返回已收集的违规列表。
     pub fn errors(&self) -> &[SingletonError] {
         &self.errors
     }

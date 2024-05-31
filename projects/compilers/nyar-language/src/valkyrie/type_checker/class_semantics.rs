@@ -10,21 +10,49 @@ use crate::types::{
 
 use super::last_name;
 
+/// final 类与 final 成员重写违规的类别。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FinalClassErrorKind {
-    FinalClassInheritance { class_name: Identifier, parent: Identifier },
-    FinalMethodOverride { class_name: Identifier, method: Identifier, parent: Identifier },
-    FinalPropertyOverride { class_name: Identifier, property: Identifier, parent: Identifier },
+    /// 继承了 final 类。
+    FinalClassInheritance {
+        /// 子类名。
+        class_name: Identifier,
+        /// 被继承的 final 父类名。
+        parent: Identifier,
+    },
+    /// 重写了父类的 final 方法。
+    FinalMethodOverride {
+        /// 子类名。
+        class_name: Identifier,
+        /// 被重写的方法名。
+        method: Identifier,
+        /// 声明该 final 方法的父类名。
+        parent: Identifier,
+    },
+    /// 重写了父类的 final 属性。
+    FinalPropertyOverride {
+        /// 子类名。
+        class_name: Identifier,
+        /// 被重写的属性名。
+        property: Identifier,
+        /// 声明该 final 属性的父类名。
+        parent: Identifier,
+    },
 }
 
+/// 单条 final 类违规：类别、渲染后的消息与源码位置。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FinalClassError {
+    /// 违规类别。
     pub kind: FinalClassErrorKind,
+    /// 人类可读的错误信息。
     pub message: String,
+    /// 产生该违规的源码位置；不可定位时为 None。
     pub span: Option<SourceSpan>,
 }
 
 impl FinalClassError {
+    /// 构造「继承 final 类」错误。
     pub fn final_class_inheritance(class_name: Identifier, parent: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: FinalClassErrorKind::FinalClassInheritance { class_name: class_name.clone(), parent: parent.clone() },
@@ -33,6 +61,7 @@ impl FinalClassError {
         }
     }
 
+    /// 构造「重写 final 方法」错误。
     pub fn final_method_override(class_name: Identifier, method: Identifier, parent: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: FinalClassErrorKind::FinalMethodOverride { class_name: class_name.clone(), method: method.clone(), parent: parent.clone() },
@@ -41,6 +70,7 @@ impl FinalClassError {
         }
     }
 
+    /// 构造「重写 final 属性」错误。
     pub fn final_property_override(class_name: Identifier, property: Identifier, parent: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: FinalClassErrorKind::FinalPropertyOverride {
@@ -62,6 +92,7 @@ impl fmt::Display for FinalClassError {
 
 impl std::error::Error for FinalClassError {}
 
+/// 依据类继承关系校验 final 类与 final 成员重写的检查器。
 #[derive(Debug, Default)]
 pub struct FinalClassChecker {
     class_map: BTreeMap<Identifier, HirStruct>,
@@ -73,10 +104,12 @@ pub struct FinalClassChecker {
 }
 
 impl FinalClassChecker {
+    /// 创建空的 final 类检查器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 检查模块内 final 类继承与 final 成员重写并返回违规列表。
     pub fn check_module(&mut self, module: &HirModule) -> Vec<FinalClassError> {
         self.clear();
         for class in &module.structs {
@@ -147,34 +180,42 @@ impl FinalClassChecker {
         }
     }
 
+    /// 判断给定类名是否为 final 类。
     pub fn is_final_class(&self, name: &Identifier) -> bool {
         self.final_class_names.contains(name)
     }
 
+    /// 返回全部 final 类名。
     pub fn get_final_class_names(&self) -> Vec<Identifier> {
         self.final_class_names.iter().cloned().collect()
     }
 
+    /// 返回给定类声明的 final 方法名集合。
     pub fn get_final_methods(&self, name: &Identifier) -> Option<&BTreeSet<Identifier>> {
         self.final_methods.get(name)
     }
 
+    /// 返回给定类声明的 final 属性名集合。
     pub fn get_final_properties(&self, name: &Identifier) -> Option<&BTreeSet<Identifier>> {
         self.final_properties.get(name)
     }
 
+    /// 返回按类名索引的类定义表。
     pub fn class_map(&self) -> &BTreeMap<Identifier, HirStruct> {
         &self.class_map
     }
 
+    /// 返回「类名 → 直接父类名」的继承关系表。
     pub fn inheritance_map(&self) -> &BTreeMap<Identifier, Vec<Identifier>> {
         &self.inheritance_map
     }
 
+    /// 返回已收集的违规列表。
     pub fn errors(&self) -> &[FinalClassError] {
         &self.errors
     }
 
+    /// 清空已收集的类信息与违规列表。
     pub fn clear(&mut self) {
         self.class_map.clear();
         self.inheritance_map.clear();
@@ -185,21 +226,45 @@ impl FinalClassChecker {
     }
 }
 
+/// 抽象类语义违规的类别。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AbstractClassErrorKind {
-    AbstractClassInstantiation { class_name: Identifier },
-    AbstractMethodNotImplemented { class_name: Identifier, method: Identifier, parent: Identifier },
-    AbstractMethodWithBody { class_name: Identifier, method: Identifier },
+    /// 实例化了抽象类。
+    AbstractClassInstantiation {
+        /// 被实例化的抽象类名。
+        class_name: Identifier,
+    },
+    /// 具体子类未实现继承来的抽象方法。
+    AbstractMethodNotImplemented {
+        /// 子类名。
+        class_name: Identifier,
+        /// 未实现的抽象方法名。
+        method: Identifier,
+        /// 声明该抽象方法的父类名。
+        parent: Identifier,
+    },
+    /// 抽象方法带了方法体。
+    AbstractMethodWithBody {
+        /// 方法所属类名。
+        class_name: Identifier,
+        /// 带方法体的抽象方法名。
+        method: Identifier,
+    },
 }
 
+/// 单条抽象类违规：类别、渲染后的消息与源码位置。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbstractClassError {
+    /// 违规类别。
     pub kind: AbstractClassErrorKind,
+    /// 人类可读的错误信息。
     pub message: String,
+    /// 产生该违规的源码位置；不可定位时为 None。
     pub span: Option<SourceSpan>,
 }
 
 impl AbstractClassError {
+    /// 构造「实例化抽象类」错误。
     pub fn abstract_class_instantiation(class_name: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: AbstractClassErrorKind::AbstractClassInstantiation { class_name: class_name.clone() },
@@ -208,6 +273,7 @@ impl AbstractClassError {
         }
     }
 
+    /// 构造「抽象方法未实现」错误。
     pub fn abstract_method_not_implemented(class_name: Identifier, method: Identifier, parent: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: AbstractClassErrorKind::AbstractMethodNotImplemented {
@@ -220,6 +286,7 @@ impl AbstractClassError {
         }
     }
 
+    /// 构造「抽象方法带方法体」错误。
     pub fn abstract_method_with_body(class_name: Identifier, method: Identifier, span: Option<SourceSpan>) -> Self {
         Self {
             kind: AbstractClassErrorKind::AbstractMethodWithBody { class_name: class_name.clone(), method: method.clone() },
@@ -237,6 +304,7 @@ impl fmt::Display for AbstractClassError {
 
 impl std::error::Error for AbstractClassError {}
 
+/// 依据继承关系校验抽象类实例化与抽象方法实现的检查器。
 #[derive(Debug, Default)]
 pub struct AbstractClassChecker {
     abstract_classes: BTreeSet<Identifier>,
@@ -247,10 +315,12 @@ pub struct AbstractClassChecker {
 }
 
 impl AbstractClassChecker {
+    /// 创建空的抽象类检查器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 检查模块内抽象类与抽象方法实现并返回违规列表。
     pub fn check_module(&mut self, module: &HirModule) -> Vec<AbstractClassError> {
         self.clear();
         let class_map = module.structs.iter().map(|class| (class.name.clone(), class)).collect::<BTreeMap<_, _>>();
@@ -317,34 +387,42 @@ impl AbstractClassChecker {
         }
     }
 
+    /// 判断给定类名是否为抽象类。
     pub fn is_abstract_class(&self, name: &Identifier) -> bool {
         self.abstract_classes.contains(name)
     }
 
+    /// 返回全部抽象类名。
     pub fn get_abstract_class_names(&self) -> Vec<Identifier> {
         self.abstract_classes.iter().cloned().collect()
     }
 
+    /// 返回给定类声明的抽象方法名集合。
     pub fn get_abstract_methods(&self, name: &Identifier) -> Option<&BTreeSet<Identifier>> {
         self.abstract_methods.get(name)
     }
 
+    /// 返回已登记的抽象类集合。
     pub fn abstract_classes(&self) -> &BTreeSet<Identifier> {
         &self.abstract_classes
     }
 
+    /// 返回「类名 → 直接父类名」的继承关系表。
     pub fn inheritance_map(&self) -> &BTreeMap<Identifier, Vec<Identifier>> {
         &self.inheritance_map
     }
 
+    /// 返回「类名 → 方法名集合」的方法表。
     pub fn class_methods(&self) -> &BTreeMap<Identifier, BTreeSet<Identifier>> {
         &self.class_methods
     }
 
+    /// 返回已收集的违规列表。
     pub fn errors(&self) -> &[AbstractClassError] {
         &self.errors
     }
 
+    /// 清空已收集的类信息与违规列表。
     pub fn clear(&mut self) {
         self.abstract_classes.clear();
         self.inheritance_map.clear();

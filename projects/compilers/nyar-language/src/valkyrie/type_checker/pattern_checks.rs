@@ -3,6 +3,7 @@ use crate::{
     valkyrie::{frontend::ParseError, hir::PatternRefutability},
 };
 
+/// 校验模块内所有 `let` 绑定的 pattern 均不可是 refutable；命中则返回解析错误。
 pub fn check_pattern_refutability(module: &HirModule) -> Result<(), ParseError> {
     for function in &module.functions {
         let mut checker = PatternRefutabilityChecker::new();

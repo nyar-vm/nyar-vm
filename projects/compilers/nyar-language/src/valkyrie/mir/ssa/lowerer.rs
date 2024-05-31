@@ -17,6 +17,7 @@ use super::{
 };
 use crate::types::hir::HirModule;
 
+/// Semantic MIR lowering 阶段入口：把 `HirModule` 编排为 `MirModule`。
 pub struct MirLowerer;
 
 impl MirLowerer {

@@ -10,30 +10,143 @@ use crate::types::{
 
 use super::{TypeInference, display_path, last_name};
 
+/// imply/trait 实现校验违规的类别。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImplyErrorKind {
-    UnknownTrait { trait_name: NamePath },
-    DuplicateImpl { target: HirType, trait_name: Option<NamePath> },
-    OverlappingImpl { target: HirType, trait_name: Option<NamePath> },
-    MissingSuperTraitImpl { trait_name: NamePath, super_trait: NamePath, target: HirType },
-    MissingMethod { trait_name: NamePath, method: Identifier },
-    DuplicateMethod { trait_name: NamePath, method: Identifier },
-    ExtraMethod { trait_name: NamePath, method: Identifier },
-    MethodSignatureMismatch { trait_name: NamePath, method: Identifier, expected: String, found: String },
-    MissingAssociatedType { trait_name: NamePath, name: Identifier },
-    DuplicateAssociatedType { trait_name: NamePath, name: Identifier },
-    UnknownAssociatedType { trait_name: NamePath, name: Identifier },
-    MissingAssociatedConst { trait_name: NamePath, name: Identifier },
-    DuplicateAssociatedConst { trait_name: NamePath, name: Identifier },
-    UnknownAssociatedConst { trait_name: NamePath, name: Identifier },
-    AssociatedConstTypeMismatch { trait_name: NamePath, name: Identifier, expected: HirType, found: HirType },
-    AssociatedConstValueTypeMismatch { trait_name: NamePath, name: Identifier, expected: HirType, found: HirType },
+    /// 引用了未知 trait。
+    UnknownTrait {
+        /// 未能解析的 trait 路径。
+        trait_name: NamePath,
+    },
+    /// 同一 (target, trait) 组合重复实现。
+    DuplicateImpl {
+        /// 实现的 target 类型。
+        target: HirType,
+        /// 被实现的 trait 路径；inherent impl 为 None。
+        trait_name: Option<NamePath>,
+    },
+    /// 两个实现的 where 约束互不包含，无法判定特异度。
+    OverlappingImpl {
+        /// 冲突实现的 target 类型。
+        target: HirType,
+        /// 冲突实现的 trait 路径；inherent impl 为 None。
+        trait_name: Option<NamePath>,
+    },
+    /// 实现了 trait 却缺少其 super trait 的显式实现。
+    MissingSuperTraitImpl {
+        /// 被实现的 trait 路径。
+        trait_name: NamePath,
+        /// 缺失实现的 super trait 路径。
+        super_trait: NamePath,
+        /// 实现所在的 target 类型。
+        target: HirType,
+    },
+    /// 实现中缺少 trait 声明的必需方法。
+    MissingMethod {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 缺失的方法名。
+        method: Identifier,
+    },
+    /// 实现中重复定义同名方法。
+    DuplicateMethod {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 重复定义的方法名。
+        method: Identifier,
+    },
+    /// 实现中带有 trait 未声明的方法。
+    ExtraMethod {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 多出的方法名。
+        method: Identifier,
+    },
+    /// 实现方法的签名与 trait 声明不一致。
+    MethodSignatureMismatch {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 签名不一致的方法名。
+        method: Identifier,
+        /// trait 声明的签名渲染文本。
+        expected: String,
+        /// 实现侧的方法签名渲染文本。
+        found: String,
+    },
+    /// 实现缺少 trait 要求的关联类型。
+    MissingAssociatedType {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 缺失的关联类型名。
+        name: Identifier,
+    },
+    /// 同一关联类型被重复绑定。
+    DuplicateAssociatedType {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 重复绑定的关联类型名。
+        name: Identifier,
+    },
+    /// 为 trait 未声明的关联类型提供了绑定。
+    UnknownAssociatedType {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 未声明的关联类型名。
+        name: Identifier,
+    },
+    /// 实现缺少 trait 要求的关联常量。
+    MissingAssociatedConst {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 缺失的关联常量名。
+        name: Identifier,
+    },
+    /// 同一关联常量被重复绑定。
+    DuplicateAssociatedConst {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 重复绑定的关联常量名。
+        name: Identifier,
+    },
+    /// 为 trait 未声明的关联常量提供了绑定。
+    UnknownAssociatedConst {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 未声明的关联常量名。
+        name: Identifier,
+    },
+    /// 关联常量声明类型与 trait 声明不符。
+    AssociatedConstTypeMismatch {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 关联常量名。
+        name: Identifier,
+        /// trait 声明的常量类型。
+        expected: HirType,
+        /// 实现侧声明的常量类型。
+        found: HirType,
+    },
+    /// 关联常量取值表达式的类型与 trait 声明不符。
+    AssociatedConstValueTypeMismatch {
+        /// trait 路径。
+        trait_name: NamePath,
+        /// 关联常量名。
+        name: Identifier,
+        /// trait 声明的常量类型。
+        expected: HirType,
+        /// 由取值表达式推断出的类型。
+        found: HirType,
+    },
 }
 
+/// 单条 imply 违规：类别、渲染后的消息与源码位置。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImplyError {
+    /// 违规类别。
     pub kind: ImplyErrorKind,
+    /// 人类可读的错误信息。
     pub message: String,
+    /// 产生该违规的源码位置；不可定位时为 None。
     pub span: Option<SourceSpan>,
 }
 
@@ -45,6 +158,7 @@ impl fmt::Display for ImplyError {
 
 impl std::error::Error for ImplyError {}
 
+/// 校验 trait 实现完整性、重复/重叠与关联项绑定的检查器。
 #[derive(Debug, Default)]
 pub struct ImplyChecker {
     traits: BTreeMap<Identifier, HirTrait>,
@@ -52,14 +166,17 @@ pub struct ImplyChecker {
 }
 
 impl ImplyChecker {
+    /// 创建空的 imply 检查器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 返回已收集的违规列表。
     pub fn errors(&self) -> &[ImplyError] {
         &self.errors
     }
 
+    /// 检查模块内全部 impl 块并返回违规列表。
     pub fn check_module(&mut self, module: &crate::types::hir::HirModule) -> Vec<ImplyError> {
         self.clear();
         for trait_def in &module.traits {
@@ -72,6 +189,7 @@ impl ImplyChecker {
         self.errors.clone()
     }
 
+    /// 清空已登记的 trait 与违规列表。
     pub fn clear(&mut self) {
         self.traits.clear();
         self.errors.clear();

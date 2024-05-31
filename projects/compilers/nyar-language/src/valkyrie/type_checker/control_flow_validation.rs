@@ -15,16 +15,30 @@ fn bool_type() -> HirType {
     HirType::Boolean
 }
 
+/// 类型推断中的新鲜类型变量标识（按创建顺序编号）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InferenceTypeVar(pub usize);
 
+/// 类型推断失败的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeError {
-    UnboundVariable { name: Identifier },
-    Mismatch { expected: HirType, found: HirType },
+    /// 引用了未绑定的变量。
+    UnboundVariable {
+        /// 未绑定的变量名。
+        name: Identifier,
+    },
+    /// 期望类型与实际类型不一致。
+    Mismatch {
+        /// 期望的类型。
+        expected: HirType,
+        /// 实际得到的类型。
+        found: HirType,
+    },
+    /// 该表达式形态不支持类型推断。
     UnsupportedExpression,
 }
 
+/// 轻量局部类型推断：维护变量名到类型的绑定并提供 unify。
 #[derive(Debug, Default)]
 pub struct TypeInference {
     next_var: usize,
@@ -32,24 +46,29 @@ pub struct TypeInference {
 }
 
 impl TypeInference {
+    /// 创建空的类型推断实例。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 分配一个新的新鲜类型变量并递增计数器。
     pub fn fresh_var(&mut self) -> InferenceTypeVar {
         let current = self.next_var;
         self.next_var += 1;
         InferenceTypeVar(current)
     }
 
+    /// 将变量名绑定到给定类型。
     pub fn bind_variable(&mut self, name: Identifier, ty: HirType) {
         self.variables.insert(name, ty);
     }
 
+    /// 返回变量名当前绑定的类型。
     pub fn get_variable_type(&self, name: &Identifier) -> Option<&HirType> {
         self.variables.get(name)
     }
 
+    /// 推断表达式类型；无法处理的形态返回 `UnsupportedExpression`。
     pub fn infer(&mut self, expr: &HirExpr) -> Result<HirType, TypeError> {
         match &expr.kind {
             HirExprKind::Literal(HirLiteral::Integer64(_)) => Ok(signed_int64_type()),
@@ -89,6 +108,7 @@ impl TypeInference {
         resolved.map(|call| call.return_type.clone()).ok_or(TypeError::UnsupportedExpression)
     }
 
+    /// 统一左右两侧类型：数组、函数、元组逐项递归，其余按相等判定。
     pub fn unify(&mut self, left: &HirType, right: &HirType) -> Result<(), TypeError> {
         if left == &HirType::AutoType || right == &HirType::AutoType {
             return Ok(());
@@ -120,18 +140,22 @@ impl TypeInference {
         }
     }
 
+    /// 应用当前替换表到给定类型并返回结果。
     pub fn apply_subst(&self, ty: &HirType) -> HirType {
         ty.clone()
     }
 
+    /// 判断类型是否为数值类型（整型或浮点）。
     pub fn is_numeric(&self, ty: &HirType) -> bool {
         matches!(ty, HirType::Integer32 { signed: _ } | HirType::Integer64 { signed: _ } | HirType::Float32 | HirType::Float64)
     }
 
+    /// 判断类型是否为整型。
     pub fn is_integer(&self, ty: &HirType) -> bool {
         matches!(ty, HirType::Integer32 { signed: _ } | HirType::Integer64 { signed: _ })
     }
 
+    /// 清空类型变量计数与全部变量绑定。
     pub fn clear(&mut self) {
         self.next_var = 0;
         self.variables.clear();

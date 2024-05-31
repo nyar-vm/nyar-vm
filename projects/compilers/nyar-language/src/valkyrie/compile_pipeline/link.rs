@@ -14,7 +14,8 @@ use nyar_types::{
 };
 
 /// 合并已由 Compiler 统一注册的依赖实例闭包。
-pub(crate) fn link_reachable_dependency_mir(
+#[doc(hidden)]
+pub fn link_reachable_dependency_mir(
     consumer: &mut MirModule,
     dependency_mirs: &[MirModule],
 ) -> Result<(), crate::valkyrie::frontend::ParseError> {
@@ -128,7 +129,9 @@ pub(crate) fn link_reachable_dependency_mir(
     Ok(())
 }
 
-fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> Result<AggregateLayoutPlan, ParseError> {
+/// 按 declaration identity 合并依赖的聚合布局；外部测试入口。
+#[doc(hidden)]
+pub fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> Result<AggregateLayoutPlan, ParseError> {
     let mut merged = consumer.aggregate_layouts.clone();
     for module in dependencies {
         for layout in &module.aggregate_layouts.layouts {
@@ -161,7 +164,7 @@ fn merge_aggregate_layouts(consumer: &MirModule, dependencies: &[MirModule]) -> 
             }
             else if is_synthetic_layout_key(&qualified) {
                 // 仅合成 tuple/fixedarray 保留名称键；名义布局不得进 type_name_to_layout。
-                // 存储类以 layout.storage 为准，不写 value_type_names。
+                // 存储类以 layout.storage 为准；旧的名称视图表已删除。
                 if merged.type_name_to_layout.insert(qualified.clone(), new_id).is_some() {
                     return Err(ParseError::invalid(format!("布局键 `{qualified}` 重复")));
                 }

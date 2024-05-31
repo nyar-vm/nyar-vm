@@ -9,8 +9,8 @@ use crate::types::{
 };
 
 use super::{
-    AggregateLayoutPlan, MirBlock, MirBuilder, MirConstant, MirFunction, MirInstruction, MirModule, MirOperand, MirSuspendPoint, MirValue,
-    MirValueRef, lower_function_semantic, lower_literal,
+    AggregateLayoutPlan, MirBlock, MirBuilder, MirConstant, MirDiagnostic, MirFunction, MirInstruction, MirModule, MirOperand, MirSuspendPoint,
+    MirValue, MirValueRef, lower_function_semantic, lower_literal,
 };
 
 /// `MIR` 集成测试使用的只读构建器包装。
@@ -55,6 +55,16 @@ impl TestMirBuilder {
     /// 降低单条语句，便于测试类型回灌与局部绑定。
     pub fn lower_statement(&mut self, statement: &HirStatement) {
         self.inner.lower_statement(statement);
+    }
+
+    /// 降低整数/常量相等比较谓词，便于测试未绑定 callable 的失败形状。
+    pub fn lower_eq_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
+        self.inner.lower_eq_constant_operand(lhs, rhs, ty)
+    }
+
+    /// 读取 lowering 阶段累计的诊断。
+    pub fn diagnostics(&self) -> &[MirDiagnostic] {
+        &self.inner.diagnostics
     }
 
     /// 读取当前已累计的指令缓冲。

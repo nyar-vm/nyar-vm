@@ -71,8 +71,10 @@ fn walk_statement_node(node: &StatementNode, violations: &mut Vec<NamingViolatio
 }
 
 fn walk_namespace(namespace: &NamespaceDeclaration, violations: &mut Vec<NamingViolation>) {
-    for item in &namespace.items {
-        walk_statement_node(item, violations);
+    if let Some(body) = &namespace.body {
+        for item in &body.items {
+            walk_statement_node(item, violations);
+        }
     }
 }
 

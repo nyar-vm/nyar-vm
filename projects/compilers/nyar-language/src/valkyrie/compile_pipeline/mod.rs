@@ -21,15 +21,17 @@ mod host_bindings;
 mod link;
 mod representation;
 
-pub use backend_bundle::{CompilerArtifactReport, compile_source_groups_to_artifacts};
+pub use backend_bundle::{
+    CompilerArtifactReport, CompilerBuildBundle, compile_source_groups_to_artifacts, compile_source_groups_to_backend_bundle,
+};
 pub use canonical::canonical_program_from_semantic_mir;
 pub use context::{CompilerBuildContext, CompilerHostProviderBinding};
 pub use diagnostics::{diagnostic, fail_stage};
-pub(crate) use driver::compile_linked_semantic_mir;
+pub use driver::compile_linked_semantic_mir;
 pub use envelope_checks::{check_function_envelopes, check_instruction_envelope, expected_result_count};
 pub use evidence::{CompilerCompileEvidence, host_provider_binding_hash_for_bindings, semantic_closure_hash_for_groups};
-pub(crate) use host_bindings::apply_host_provider_bindings;
-pub(crate) use link::link_reachable_dependency_mir;
+pub use host_bindings::apply_host_provider_bindings;
+pub use link::{link_reachable_dependency_mir, merge_aggregate_layouts};
 pub use representation::CanonicalRepresentationPlanner;
 
 use nyar_types::CompileStage;

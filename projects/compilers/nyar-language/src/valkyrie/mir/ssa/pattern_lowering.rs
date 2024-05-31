@@ -783,7 +783,7 @@ impl MirBuilder {
 
     pub(super) fn lower_eq_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
         let _ = (lhs, rhs, ty);
-        self.reject_unbound_operator(nyar_types::builtin_operator::infix_eq())
+        self.reject_unbound_member_call("infix ==")
     }
 
     pub(super) fn lower_lt_constant_operand(&mut self, lhs: MirOperand, rhs: MirConstant, ty: &ValkyrieType) -> MirOperand {
@@ -792,11 +792,14 @@ impl MirBuilder {
 
     pub(super) fn lower_lt_operands(&mut self, lhs: MirOperand, rhs: MirOperand, ty: &ValkyrieType) -> MirOperand {
         let _ = (lhs, rhs, ty);
-        self.reject_unbound_operator(nyar_types::builtin_operator::infix_lt())
+        self.reject_unbound_member_call("infix <")
     }
 
-    fn reject_unbound_operator(&mut self, operator: nyar_types::OperatorId) -> MirOperand {
-        self.diagnostics.push(MirDiagnostic::UnresolvedOperatorCallable { operator });
+    /// 模式比较所需的成员 callable 未绑定：按普通 callable 身份缺失失败关闭。
+    ///
+    /// 比较只是接收者的普通成员调用，不存在运算符专用身份或专用诊断。
+    fn reject_unbound_member_call(&mut self, member: &str) -> MirOperand {
+        self.diagnostics.push(MirDiagnostic::UnresolvedCallableIdentity { symbol: member.to_string() });
         MirOperand::Constant(MirConstant::Unit)
     }
 

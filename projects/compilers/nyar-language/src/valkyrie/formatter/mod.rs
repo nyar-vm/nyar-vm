@@ -4,7 +4,9 @@
 //!（见 `oak-typescript::formatter`）。Valkyrie / VON / AWSL 已转发至对应 Oak formatter；
 //! 不得在此新增 CST token-gap 排版规则。
 //!
-//! 与 [`crate::printer`]（AST pretty print）严格分离，对齐 Oak 的 `formatter/` vs `printer/`。
+//! 与 [`crate::printer`]（AST pretty print）严格分离，对齐 Oak 的 `formatter/` vs `printer/`；
+//! 早期把 printer API 与 deprecated `FormatBuffer` 从本模块重导出的混合接口已删除，
+//! 消费者必须直接使用 `crate::printer`。
 //!
 //! - **SourceFormatter**：源码 → CST token-gap → 文本（保留 trivia）
 //! - **配置**：默认从各文件路径的 `.editorconfig` 解析（[`FormatBatchOptions::use_editorconfig`]）
@@ -18,11 +20,6 @@ use std::{
     sync::OnceLock,
 };
 
-#[deprecated(note = "use `nyar_language::printer` — AST pretty print is not part of the CST formatter")]
-pub use crate::printer::{print_document, print_msil_module, print_von, print_wat, print_wit_package, printer_registry};
-#[cfg(feature = "serde")]
-#[deprecated(note = "use `nyar_language::printer`")]
-pub use crate::printer::{to_string, to_string_indented};
 pub use crate::text::{FormatSyntax, ToDocument};
 pub use batch::{FormatBatchOptions, FormatBatchReport, format_paths};
 pub use cli::{
@@ -37,9 +34,6 @@ pub use surface::{
     AWSL_EXTENSIONS, V_EXTENSIONS, VON_EXTENSIONS, VX_EXTENSIONS, is_valkyrie_family_extension, source_kind_from_extension,
     valkyrie_family_extensions,
 };
-
-#[deprecated(note = "use CST + Document via SourceFormatter")]
-pub use nyar_analyzer::format::FormatBuffer;
 
 /// 可格式化的源码种类（语言侧便利枚举）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,10 +125,9 @@ fn source_registry() -> &'static SourceFormatterRegistry {
         reg.register(&["vx"], Box::new(ValkyrieFormatter { vx: true }));
         reg.register(&["von"], Box::new(VonSourceFormatter));
         reg.register(&["awsl"], Box::new(AwslSourceFormatter));
-        reg.register(&["javascript", "js", "jsx", "mjs", "cjs"], Box::new(crate::javascript::JavascriptFormatter::new("javascript")));
-        reg.register(&["typescript", "ts", "tsx", "mts", "cts"], Box::new(crate::javascript::JavascriptFormatter::new("typescript")));
-        reg.register(&["json"], Box::new(crate::javascript::JavascriptFormatter::new("json")));
-        reg.register(&["python", "py"], Box::new(crate::python::PythonFormatter));
+        // JS/TS/JSON 与 Python 的源码排版归各自 Oak formatter（`oak-typescript::formatter` 等）；
+        // 本 crate 不得再注册「只裁剪空白行」的第二套本地 formatter 冒充格式化。
+        // 在这些 Oak formatter 接入前，相应扩展名按 unsupported 失败。
         reg
     })
 }

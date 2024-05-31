@@ -1,17 +1,4 @@
-#![allow(missing_docs)]
-
-//! Semantic MIR lowering 的阶段编排：`HirModule` → `MirModule`。
-//!
-//! 子模块职责：
-//!
-//! - `model`：`MirModule` 与全部 MIR 结构、诊断。
-//! - `lowerer` / `function_lowering` / `builder`：阶段编排、函数体 lowering 状态。
-//! - `contracts`：模块级外部调用、导出、入口合同与语义片段。
-//! - `hir_identity` / `struct_facts` / `callable_types` / `type_analysis`：声明身份与类型事实。
-//! - `method_lowering`：singleton 与 impl 方法 lowering。
-//! - 其余既有子模块继续拥有各自的 lowering 域。
-//!
-//! 根模块只声明子模块并重导出公共项，不承载 lowering 实现。
+#![doc = include_str!("readme.md")]
 
 mod builder;
 pub(crate) mod builtin_helpers;
@@ -43,9 +30,16 @@ mod value_semantics;
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
 pub use value_semantics::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, MirStorageKind, SumTypeLayout, SumVariantLayout,
-    compute_aggregate_layout_plan, ensure_layout_for_type, layout_id_for_type, layout_key_for_nyar_type, layout_key_for_type,
-    storage_kind_for_type,
+    compute_aggregate_layout_plan, ensure_layout_for_type, layout_id_for_type, layout_key_for_type, storage_kind_for_type,
 };
+
+// 集成测试入口：仅暴露被迁移的 `tests/` 目标所需的最小内部 item。
+#[doc(hidden)]
+pub use builtin_helpers::resolve_intrinsic_id;
+#[doc(hidden)]
+pub use match_lowering::arm_contributes_to_match_merge;
+#[doc(hidden)]
+pub use value_semantics::{FieldSpec, build_aggregate_layout, ensure_unite_tagged_layout};
 
 pub use lowerer::MirLowerer;
 pub use model::*;
@@ -54,7 +48,8 @@ use builder::MirBuilder;
 use callable_types::CallableReturnTypes;
 use function_lowering::lower_function_semantic;
 use struct_facts::resolve_self_type_with_owner;
-pub(crate) use type_analysis::{type_contains_non_monomorphic_signature_reference, type_identity_table};
+pub(crate) use type_analysis::type_contains_non_monomorphic_signature_reference;
+pub use type_analysis::type_identity_table;
 
 // 以下导入同时是子模块通过 `super::` 或 `use super::*;` 依赖的名称，
 // 因此必须保留在本模块命名空间中。

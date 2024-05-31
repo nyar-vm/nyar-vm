@@ -165,24 +165,12 @@ impl MirBuilder {
             }
         }
         if let MirOperand::Symbol(path) = callee {
-            let symbol = path.to_string();
-            if let Some(return_type) = self.callable_returns.by_symbol.get(&symbol) {
+            // 只按限定符号取签名；末段短名不是身份，不得回落认亲。
+            if let Some(return_type) = self.callable_returns.by_symbol.get(&path.to_string()) {
                 return Some(return_type.clone());
             }
-            if let Some(simple) = path.parts().last() {
-                if let Some(return_type) = self.callable_returns.by_symbol.get(simple.as_str()) {
-                    return Some(return_type.clone());
-                }
-            }
         }
-        resolved.and_then(|call| {
-            let symbol = call.symbol.to_string();
-            self.callable_returns
-                .by_symbol
-                .get(&symbol)
-                .or_else(|| call.symbol.parts().last().and_then(|simple| self.callable_returns.by_symbol.get(simple.as_str())))
-                .cloned()
-        })
+        resolved.and_then(|call| self.callable_returns.by_symbol.get(&call.symbol.to_string()).cloned())
     }
 
     pub(super) fn return_type_for_resolved_call(&self, callee: &MirOperand, resolved: &crate::types::hir::HirResolvedCall) -> ValkyrieType {

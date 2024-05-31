@@ -1,6 +1,6 @@
 use nyar::{NyarFunctionType, NyarType};
 use nyar_language::{
-    frontend_contract::concretize_type,
+    concretize_type,
     types::{
         Identifier,
         hir::{FunctionType, GenericType, HirKind, ValkyrieType},

@@ -1,7 +1,7 @@
 use nyar_language::{
     Identifier, NamePath, ValkyrieCompiler,
     types::hir::{HirExprKind, ValkyrieType},
-    valkyrie::mir::ssa::{MirBuilder, MirDiagnostic, MirLowerer, MirOperand, MirOperation},
+    valkyrie::mir::ssa::{MirDiagnostic, MirLowerer, MirOperand, MirOperation, test_support::TestMirBuilder},
 };
 
 #[test]
@@ -106,11 +106,11 @@ micro apply(left: Number, right: Number) -> bool { left + right }
     let operator = &hir.impls[0].methods[0];
     let instance = operator.instance.expect("operator 声明实例身份");
     let apply = hir.functions.iter().find(|function| function.name.as_str() == "apply").expect("apply");
-    let HirExprKind::Call { call_kind, resolved: Some(resolved), .. } = &apply.body.expr.as_ref().expect("调用表达式").kind
+    let HirExprKind::Call { resolved: Some(resolved), .. } = &apply.body.expr.as_ref().expect("调用表达式").kind
     else {
         panic!("运算符调用必须绑定声明");
     };
-    assert_eq!(*call_kind, nyar_language::types::hir::HirCallKind::Operator(nyar_types::builtin_operator::infix_add()));
+    assert_eq!(resolved.symbol.to_string(), "Number.infix +", "运算符语法糖只保留 owner 限定的普通成员名");
     assert_eq!(resolved.instance, Some(instance));
     assert!(resolved.has_receiver, "receiver 由声明中的 self 参数决定");
     assert_eq!(resolved.return_type, ValkyrieType::Boolean);
@@ -158,11 +158,11 @@ micro range_match(value: i64) -> i64 {
         .diagnostics
         .iter()
         .filter_map(|diagnostic| match diagnostic {
-            MirDiagnostic::UnresolvedOperatorCallable { operator } => Some(*operator),
+            MirDiagnostic::UnresolvedCallableIdentity { symbol } => Some(symbol.clone()),
             _ => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(unresolved, vec![nyar_types::builtin_operator::infix_lt(); 2]);
+    assert_eq!(unresolved, vec!["infix <".to_string(); 2]);
     assert!(nyar_language::valkyrie::mir::validation::validate_module(&mir).is_err());
 }
 
@@ -228,17 +228,7 @@ fn some_short_name_without_sum_identity_fails_closed() {
 
 #[test]
 fn integer_literal_equality_does_not_fabricate_a_false_result() {
-    let mut builder = MirBuilder::new(
-        Default::default(),
-        Default::default(),
-        Default::default(),
-        Default::default(),
-        Default::default(),
-        Default::default(),
-        Default::default(),
-        nyar_language::valkyrie::mir::ssa::CallableReturnTypes { by_symbol: Default::default(), by_instance: Default::default() },
-        None,
-    );
+    let mut builder = TestMirBuilder::new();
     let result = builder.lower_eq_constant_operand(
         MirOperand::Constant(nyar_language::valkyrie::mir::MirConstant::Int(1)),
         nyar_language::valkyrie::mir::MirConstant::Int(1),
@@ -246,8 +236,7 @@ fn integer_literal_equality_does_not_fabricate_a_false_result() {
     );
     assert_eq!(result, MirOperand::Constant(nyar_language::valkyrie::mir::MirConstant::Unit));
     assert!(matches!(
-        builder.diagnostics.as_slice(),
-        [MirDiagnostic::UnresolvedOperatorCallable { operator }]
-            if *operator == nyar_types::builtin_operator::infix_eq()
+        builder.diagnostics(),
+        [MirDiagnostic::UnresolvedCallableIdentity { symbol }] if symbol == "infix =="
     ));
 }

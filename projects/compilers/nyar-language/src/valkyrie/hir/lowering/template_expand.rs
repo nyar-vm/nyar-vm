@@ -19,7 +19,8 @@ pub const DEFAULT_COMPILE_ARCH: &str = "native";
 
 /// 展开根节点与声明体中的 TGrammar 模板。
 
-pub(crate) fn expand_templates_in_root(root: &mut ValkyrieRoot, source: &str, arch: &str) -> Result<(), ParseError> {
+#[doc(hidden)]
+pub fn expand_templates_in_root(root: &mut ValkyrieRoot, source: &str, arch: &str) -> Result<(), ParseError> {
     expand_statement_nodes(&mut root.items, source, arch)?;
 
     expand_declaration_bodies(&mut root.items, source, arch)?;
@@ -48,8 +49,10 @@ fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &s
                 }
             }
 
-            StatementNode::Namespace(namespace) if !namespace.items.is_empty() => {
-                expand_declaration_bodies(&mut namespace.items, source, arch)?;
+            StatementNode::Namespace(namespace) => {
+                if let Some(body) = &mut namespace.body {
+                    expand_declaration_bodies(&mut body.items, source, arch)?;
+                }
             }
 
             _ => {}
@@ -113,8 +116,8 @@ fn expand_statement_nodes(items: &mut Vec<StatementNode>, source: &str, arch: &s
             index += expanded_len;
         }
         else if let StatementNode::Namespace(namespace) = &mut items[index] {
-            if !namespace.items.is_empty() {
-                expand_statement_nodes(&mut namespace.items, source, arch)?;
+            if let Some(body) = &mut namespace.body {
+                expand_statement_nodes(&mut body.items, source, arch)?;
             }
 
             index += 1;

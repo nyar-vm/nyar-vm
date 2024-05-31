@@ -6,24 +6,34 @@ use crate::types::{
 };
 use std::collections::BTreeSet;
 
+/// 赋值时采用的语义：按值拷贝还是按引用共享。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignmentSemantics {
+    /// 按值拷贝。
     Copy,
+    /// 按引用共享。
     Reference,
 }
 
+/// 传参时采用的语义：按值拷贝还是按引用共享。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParameterSemantics {
+    /// 按值拷贝。
     Copy,
+    /// 按引用共享。
     Reference,
 }
 
+/// 返回时采用的语义：按值拷贝还是按引用共享。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReturnSemantics {
+    /// 按值拷贝。
     Copy,
+    /// 按引用共享。
     Reference,
 }
 
+/// 依据已注册值类型判定赋值/传参/返回复制语义的校验器。
 #[derive(Debug, Default)]
 pub struct CopySemanticsValidator {
     value_types: BTreeSet<Identifier>,
@@ -59,10 +69,12 @@ pub(super) fn is_copy_compatible_primitive_alias(name: &str) -> bool {
 }
 
 impl CopySemanticsValidator {
+    /// 创建空的复制语义校验器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 登记一个值类型 struct，并记录其构造器 declaration 身份。
     pub fn register_value_type(&mut self, class: &HirStruct) {
         if class.is_value_type {
             self.value_types.insert(class.name.clone());
@@ -81,14 +93,17 @@ impl CopySemanticsValidator {
         }
     }
 
+    /// 判定赋值该类型时使用拷贝还是引用语义。
     pub fn validate_assignment(&self, ty: &HirType) -> AssignmentSemantics {
         if self.is_value(ty) { AssignmentSemantics::Copy } else { AssignmentSemantics::Reference }
     }
 
+    /// 判定按该类型传参时使用拷贝还是引用语义。
     pub fn validate_parameter_passing(&self, ty: &HirType) -> ParameterSemantics {
         if self.is_value(ty) { ParameterSemantics::Copy } else { ParameterSemantics::Reference }
     }
 
+    /// 判定按该类型返回时使用拷贝还是引用语义。
     pub fn validate_return(&self, ty: &HirType) -> ReturnSemantics {
         if self.is_value(ty) { ReturnSemantics::Copy } else { ReturnSemantics::Reference }
     }

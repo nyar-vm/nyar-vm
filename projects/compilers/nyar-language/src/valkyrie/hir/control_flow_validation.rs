@@ -2054,8 +2054,9 @@ fn lookup_local_type(state: &HirValidationState, name: &str) -> Option<ValkyrieT
     state.local_scopes.iter().rev().find_map(|scope| scope.get(name).cloned())
 }
 
-// 控制流校验消费已绑定类型，不能按名字补 builtin、泛型或 Self。
-fn control_flow_value_type_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
+/// 判断控制流校验中期望类型与实参类型是否兼容（不按名字回退 builtin / 泛型 / Self）。
+#[doc(hidden)]
+pub fn control_flow_value_type_compatible(expected: &ValkyrieType, actual: &ValkyrieType) -> bool {
     expected == actual
         || matches!(expected, ValkyrieType::AutoType)
         || matches!(actual, ValkyrieType::AutoType)

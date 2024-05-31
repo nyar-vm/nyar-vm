@@ -1,7 +1,7 @@
 //! Semantic MIR 合同校验：stable-ID、聚合字段、名义结构与静态调用。
 
 use super::{
-    symbols::{is_language_builtin_symbol, is_language_operator_symbol},
+    symbols::is_language_builtin_symbol,
     type_inference::{
         bare_named_matches_generic_apply_return, call_site_type_compatible, infer_operand_static_type, mir_return_operand_type_compatible,
     },
@@ -414,29 +414,15 @@ pub(super) fn validate_semantic_function(module: &MirModule, function: &MirFunct
                                 .map(|target| (&target.parameter_types, &target.return_type))
                         }),
                     MirOperand::Symbol(symbol) => {
+                        // 已通过 `validate_static_call_resolution` 的 Symbol 只能是内建 intrinsic
+                        // 或携带冻结身份的外部导入合同；本地函数按名字提供签名属于名称认亲，不得作为签名来源。
                         let target_symbol = symbol.to_string();
-                        let candidates: Vec<_> = module.functions.iter().filter(|candidate| candidate.symbol == target_symbol).collect();
-                        if candidates.len() > 1 {
-                            return Err(error("SMIR003", location.clone(), "local callable identity is ambiguous".to_owned()));
-                        }
                         let external: Vec<_> =
                             module.external_calls.iter().filter(|candidate| candidate.symbol.to_string() == target_symbol).collect();
                         if external.len() > 1 {
                             return Err(error("SMIR003", location.clone(), "callable identity has multiple contracts".to_owned()));
                         }
-                        if let (Some(definition), Some(declaration)) = (candidates.first(), external.first()) {
-                            if definition.param_types != declaration.parameter_types || definition.return_type != declaration.return_type {
-                                return Err(error(
-                                    "SMIR007",
-                                    location.clone(),
-                                    "linked definition disagrees with external declaration signature".to_owned(),
-                                ));
-                            }
-                        }
-                        candidates
-                            .first()
-                            .map(|target| (&target.param_types, &target.return_type))
-                            .or_else(|| external.first().map(|target| (&target.parameter_types, &target.return_type)))
+                        external.first().map(|target| (&target.parameter_types, &target.return_type))
                     }
                     _ => None,
                 };
@@ -563,22 +549,24 @@ pub(super) fn validate_static_call_resolution(
             detail: "static call requires a frozen callable identity".to_string(),
         });
     };
-    if is_language_operator_symbol(symbol) || is_language_builtin_symbol(symbol) {
+    if is_language_builtin_symbol(symbol) {
         return Ok(());
     }
-    let exact_local = module.functions.iter().any(|candidate| candidate.symbol == symbol.to_string());
-    let exact_external = module.external_calls.iter().any(|candidate| candidate.symbol == *symbol);
-    if exact_local || exact_external {
-        Ok(())
+    // 外部导入合同是装配层冻结的 ABI 声明；只有携带已冻结声明/实例身份时才算身份命中，
+    // 本地函数名与裸名字符串都不是身份。
+    if module
+        .external_calls
+        .iter()
+        .any(|candidate| candidate.symbol == *symbol && (candidate.declaration.is_some() || candidate.instance.is_some()))
+    {
+        return Ok(());
     }
-    else {
-        Err(SemanticMirContractError {
-            code: "SMIR003",
-            function: function.symbol.clone(),
-            location,
-            detail: format!("static callee `{symbol}` is absent from the exact local and dependency-export registries"),
-        })
-    }
+    Err(SemanticMirContractError {
+        code: "SMIR003",
+        function: function.symbol.clone(),
+        location,
+        detail: format!("static callee `{symbol}` carries no frozen callable identity and no dependency-export contract"),
+    })
 }
 
 pub(super) fn text_constant_type(constant: &MirConstant) -> Option<ValkyrieType> {

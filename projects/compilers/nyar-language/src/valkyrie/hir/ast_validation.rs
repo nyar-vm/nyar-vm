@@ -20,12 +20,14 @@ fn validate_duplicate_type_names(items: &[StatementNode], namespace_prefix: &str
     let mut current_namespace = namespace_prefix.to_string();
     for item in items {
         match item {
-            StatementNode::Namespace(namespace) if namespace.items.is_empty() => {
+            StatementNode::Namespace(namespace) if !namespace.has_body() => {
                 current_namespace = name_path_text(&namespace.name);
             }
             StatementNode::Namespace(namespace) => {
-                let nested = qualify_name(&current_namespace, &name_path_text(&namespace.name));
-                validate_duplicate_type_names(&namespace.items, &nested)?;
+                if let Some(body) = &namespace.body {
+                    let nested = qualify_name(&current_namespace, &name_path_text(&namespace.name));
+                    validate_duplicate_type_names(&body.items, &nested)?;
+                }
             }
             other => {
                 if let Some((name, kind)) = type_declaration_identity(other) {

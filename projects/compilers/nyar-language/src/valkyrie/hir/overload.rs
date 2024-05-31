@@ -3,8 +3,6 @@
 //! These helpers model only the settled precedence:
 //! nominal exact > nominal subtype > trait > row.
 
-#![allow(missing_docs)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
@@ -33,33 +31,52 @@ use crate::{
 };
 use nyar_types::IntrinsicId;
 
+/// 候选所属的重载域。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverloadDomain {
+    /// 普通函数调用。
     Function,
+    /// 构造调用。
     Constructor,
+    /// 模式提取器调用。
     Extractor,
 }
 
+/// 候选的调用签名：形参类型列表与返回类型。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverloadSignature {
+    /// 形参类型列表。
     pub params: Vec<ValkyrieType>,
+    /// 返回类型。
     pub return_type: ValkyrieType,
 }
 
+/// 一个重载候选：稳定的声明身份、调用签名与匹配类别。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverloadCandidate {
+    /// 候选的声明身份；未冻结时为 `None`。
     pub declaration: Option<nyar_types::ItemId>,
+    /// 候选的实例身份；未冻结时为 `None`。
     pub instance: Option<nyar_types::ItemInstanceId>,
+    /// 所属 unity 的声明身份。
     pub sum_owner: Option<nyar_types::ItemId>,
+    /// 所属 unity 变体的声明身份。
     pub sum_variant: Option<nyar_types::ItemId>,
     /// 语言 builtin 的结构化身份；只有语言内建候选持有，源码声明候选恒为 `None`。
     pub intrinsic: Option<IntrinsicId>,
+    /// 候选符号的限定路径。
     pub symbol: NamePath,
+    /// 拥有该候选的类型名（方法候选）。
     pub owner: Option<Identifier>,
+    /// 该候选所属 trait 的声明身份。
     pub trait_owner: Option<nyar_types::ItemId>,
+    /// 候选所属的重载域。
     pub domain: OverloadDomain,
+    /// 候选的调用签名。
     pub signature: OverloadSignature,
+    /// 该候选的匹配类别。
     pub match_kind: OverloadMatchKind,
+    /// 形参描述（含绑定方式与默认值）。
     pub param_specs: Vec<HirParam>,
     /// Formal type variables which must be bound from actual arguments.
     pub generic_binders: BTreeSet<GenericBinderId>,
@@ -68,6 +85,7 @@ pub struct OverloadCandidate {
 }
 
 impl OverloadCandidate {
+    /// 以符号、域、形参列表、返回类型与匹配类别构造候选。
     pub fn new(
         symbol: NamePath,
         domain: OverloadDomain,
@@ -93,11 +111,13 @@ impl OverloadCandidate {
         }
     }
 
+    /// 附加形参描述。
     pub fn with_param_specs(mut self, param_specs: Vec<HirParam>) -> Self {
         self.param_specs = param_specs;
         self
     }
 
+    /// 登记一个必须由实参绑定的形式类型变量。
     pub fn with_generic_binder(mut self, binder: GenericBinderId) -> Self {
         self.generic_binders.insert(binder);
         self
@@ -108,6 +128,7 @@ impl OverloadCandidate {
         self
     }
 
+    /// 构造带拥有者类型的方法候选。
     pub fn new_method(
         owner: Identifier,
         symbol: NamePath,
@@ -135,20 +156,35 @@ impl OverloadCandidate {
     }
 }
 
+/// 候选参数匹配的类别，决定重载优先级。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverloadMatchKind {
+    /// 名义类型完全一致。
     NominalExact,
-    NominalSubtype { distance: usize },
+    /// 名义子类型，距离越小越优先。
+    NominalSubtype {
+        /// 继承距离。
+        distance: usize,
+    },
+    /// 通过具名 trait 满足。
     Trait,
+    /// 通过匿名 row 形状满足。
     Row,
 }
 
+/// 重载解析失败的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverloadResolutionError {
+    /// 没有任何候选匹配。
     NoMatch,
-    Ambiguous { candidates: Vec<NamePath> },
+    /// 存在多个同优先级候选。
+    Ambiguous {
+        /// 并列候选的符号路径。
+        candidates: Vec<NamePath>,
+    },
 }
 
+/// 按匹配类别的既定优先级选出唯一候选；并列时报歧义。
 pub fn resolve_overload(candidates: &[OverloadCandidate]) -> Result<OverloadCandidate, OverloadResolutionError> {
     let best_rank = candidates.iter().map(|candidate| rank(&candidate.match_kind)).min().ok_or(OverloadResolutionError::NoMatch)?;
     let mut tied = Vec::new();
@@ -175,6 +211,7 @@ fn rank(match_kind: &OverloadMatchKind) -> (u8, usize) {
     }
 }
 
+/// 对模块内全部 HIR 调用执行重载解析与绑定。
 pub fn resolve_hir_calls(module: &mut HirModule) {
     let candidates = collect_module_candidates(module);
     let type_relations = TypeRelationContext::from_module(module);
@@ -229,7 +266,9 @@ fn resolve_submodule_calls(
     }
 }
 
-fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
+/// 收集模块内全部候选（语言内建候选加已声明候选）；外部测试入口。
+#[doc(hidden)]
+pub fn collect_module_candidates(module: &HirModule) -> Vec<OverloadCandidate> {
     let mut candidates = language_builtin_candidates();
     candidates.extend(collect_declared_candidates(module));
     candidates
@@ -1363,7 +1402,9 @@ fn resolve_pattern_calls(
     }
 }
 
-fn match_call_candidate(
+/// 以实参类型判定单个候选是否匹配；外部测试入口。
+#[doc(hidden)]
+pub fn match_call_candidate(
     candidate: &OverloadCandidate,
     args: &[HirCallArgument],
     explicit_generic_arguments: &[ValkyrieType],
@@ -1907,7 +1948,14 @@ fn try_resolve_instance_method(
     full_args.push(receiver_arg);
     full_args.extend_from_slice(args);
 
-    let receiver_type = infer_expr_type(receiver, locals).or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names));
+    // 成员解析必须由接收者类型事实驱动。接收者类型缺失时不得退化为「按方法名命中同名候选」：
+    // 名称认亲会把不相关的同名方法当成已解析调用。缺类型事实即视为未解析，
+    // 由调用方给出结构化诊断，而不是在此处过近似。
+    let Some(receiver_type) =
+        infer_expr_type(receiver, locals).or_else(|| infer_scrutinee_type(receiver, locals, struct_fields, singleton_names))
+    else {
+        return None;
+    };
     let mut filtered = Vec::new();
     for candidate in candidates
         .iter()
@@ -1915,18 +1963,18 @@ fn try_resolve_instance_method(
         .filter(|candidate| candidate_has_receiver_parameter(candidate))
         .filter(|candidate| candidate.symbol.parts().last().is_some_and(|name| name == method_name))
     {
-        if let Some(ValkyrieType::Generic(generic)) = &receiver_type {
+        if let ValkyrieType::Generic(generic) = &receiver_type {
             if generic.binder.is_none() {
                 continue;
             }
             for bound in type_relations
                 .callable_constraints()
                 .iter()
-                .filter(|constraint| Some(&constraint.target) == receiver_type.as_ref())
+                .filter(|constraint| Some(&constraint.target) == Some(&receiver_type))
                 .flat_map(|constraint| &constraint.bounds)
                 .filter(|bound| bound.declaration.is_some() && bound.declaration == candidate.trait_owner)
             {
-                let candidate = instantiate_trait_bound_candidate(candidate, receiver_type.as_ref().unwrap(), bound)?;
+                let candidate = instantiate_trait_bound_candidate(candidate, &receiver_type, bound)?;
                 if let Some(matched) = match_call_candidate(&candidate, &full_args, &[], type_relations, locals, struct_fields, singleton_names)
                 {
                     filtered.push(matched);
@@ -1954,7 +2002,7 @@ fn try_resolve_instance_method(
         has_receiver,
         extractor_payload_type: None,
     };
-    enrich_sum_variant_operation_facts(&mut call, receiver_type.as_ref(), candidates);
+    enrich_sum_variant_operation_facts(&mut call, Some(&receiver_type), candidates);
     Some(call)
 }
 
@@ -1993,7 +2041,9 @@ fn instantiate_trait_bound_candidate(
     Some(candidate)
 }
 
-fn substitute_associated_equations(
+/// 按关联类型等式替换 `Associated` 形状；外部测试入口。
+#[doc(hidden)]
+pub fn substitute_associated_equations(
     ty: &ValkyrieType,
     constrained_type: &ValkyrieType,
     equations: &BTreeMap<Identifier, ValkyrieType>,
@@ -2140,7 +2190,9 @@ fn substitute_trait_self(candidate: &OverloadCandidate, owner_type: &ValkyrieTyp
     candidate
 }
 
-fn substitute_type_self(ty: &ValkyrieType, replacement: &ValkyrieType) -> ValkyrieType {
+/// 把类型中的 `SelfType` 替换为给定主体；外部测试入口。
+#[doc(hidden)]
+pub fn substitute_type_self(ty: &ValkyrieType, replacement: &ValkyrieType) -> ValkyrieType {
     match ty {
         ValkyrieType::SelfType => replacement.clone(),
         ValkyrieType::Nominal { declaration, arguments } => ValkyrieType::Nominal {
@@ -2217,7 +2269,9 @@ fn try_resolve_singleton_method(
     })
 }
 
-fn match_singleton_method_candidate(
+/// 以 singleton 方法规则匹配候选；外部测试入口。
+#[doc(hidden)]
+pub fn match_singleton_method_candidate(
     candidate: &OverloadCandidate,
     call_args: &[HirCallArgument],
     type_relations: &TypeRelationContext,
@@ -2362,7 +2416,9 @@ fn sum_declaration_of_type(ty: &ValkyrieType) -> Option<nyar_types::ItemId> {
     }
 }
 
-fn try_resolve_nullary_constructor(
+/// 依据返回类型上下文解析无参变体构造；外部测试入口。
+#[doc(hidden)]
+pub fn try_resolve_nullary_constructor(
     name: &Identifier,
     contextual_type: Option<&ValkyrieType>,
     candidates: &[OverloadCandidate],
@@ -2605,7 +2661,9 @@ fn try_resolve_try_propagate_ok_variant(operand_type: &ValkyrieType, candidates:
     })
 }
 
-fn enrich_sum_variant_operation_facts(call: &mut HirResolvedCall, receiver_type: Option<&ValkyrieType>, candidates: &[OverloadCandidate]) {
+/// 为 sum 变体操作补写 `sum_owner`/`sum_variant` 事实；外部测试入口。
+#[doc(hidden)]
+pub fn enrich_sum_variant_operation_facts(call: &mut HirResolvedCall, receiver_type: Option<&ValkyrieType>, candidates: &[OverloadCandidate]) {
     if call.sum_owner.is_some() && call.sum_variant.is_some() {
         return;
     }
@@ -2645,7 +2703,9 @@ fn instantiate_constructor_candidate_for_context(candidate: &OverloadCandidate, 
     Some(candidate)
 }
 
-fn try_resolve_constructor(
+/// 解析构造调用并返回带声明身份的调用合同；外部测试入口。
+#[doc(hidden)]
+pub fn try_resolve_constructor(
     path: &NamePath,
     args: &[HirExpr],
     candidates: &[OverloadCandidate],
@@ -2885,7 +2945,9 @@ fn infer_catch_scrutinee_type(expr: &HirExpr, locals: &BTreeMap<String, Valkyrie
     }
 }
 
-fn extract_callable_name(callee: &HirExpr) -> Option<Identifier> {
+/// 从被调表达式提取可调用名称；外部测试入口。
+#[doc(hidden)]
+pub fn extract_callable_name(callee: &HirExpr) -> Option<Identifier> {
     match &callee.kind {
         HirExprKind::Variable(identifier) => Some(identifier.name.clone()),
         HirExprKind::Path(path) => path.parts().last().cloned(),
@@ -2952,7 +3014,9 @@ fn canonical_extractor_callee(name: &NamePath) -> NamePath {
     NamePath::new(parts)
 }
 
-fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> Option<ValkyrieType> {
+/// 依据已解析调用合同推断表达式类型；外部测试入口。
+#[doc(hidden)]
+pub fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> Option<ValkyrieType> {
     match &expr.kind {
         HirExprKind::Literal(literal) => Some(match literal {
             // Unsuffixed integer literals default to signed i32 when they fit;
@@ -3011,7 +3075,9 @@ fn infer_expr_type(expr: &HirExpr, locals: &BTreeMap<String, ValkyrieType>) -> O
     }
 }
 
-fn infer_scrutinee_type(
+/// 推断 `match` 被检表达式的类型；外部测试入口。
+#[doc(hidden)]
+pub fn infer_scrutinee_type(
     expr: &HirExpr,
     locals: &BTreeMap<String, ValkyrieType>,
     struct_fields: &AggregateFieldIndex,

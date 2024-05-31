@@ -1,7 +1,4 @@
-use nyar_language::valkyrie::frontend::{
-    naming::{DIAG_IDENTIFIER_NOT_SNAKE_CASE, *},
-    parse_source, validate_snake_case,
-};
+use nyar_language::valkyrie::frontend::{DIAG_IDENTIFIER_NOT_SNAKE_CASE, parse_source, validate_snake_case};
 
 #[test]
 fn rejects_camel_case_let_micro_and_param() {

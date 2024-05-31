@@ -9,7 +9,7 @@ use crate::types::{
     hir::{HirPattern, ValkyrieType},
 };
 use nyar::SemanticFragment;
-use nyar_types::{ItemInstanceId, OperatorId, VariantId};
+use nyar_types::{ItemInstanceId, VariantId};
 use std::collections::BTreeMap;
 
 /// `MIR` lowering 阶段产生的编译期诊断。
@@ -29,8 +29,11 @@ pub enum MirDiagnostic {
         /// 诊断原因描述。
         reason: String,
     },
+    /// 表达式在当前 lowering 中不受支持。
     UnsupportedExpression {
+        /// 触发诊断的源码区间。
         span: crate::SourceSpan,
+        /// 不受支持的表达式种类描述。
         kind: String,
     },
     /// 操作数的类型事实缺失，不能用 `Unit` 或其他默认类型继续 lowering。
@@ -60,17 +63,14 @@ pub enum MirDiagnostic {
         /// 上游解析保留的限定名称，仅用于诊断。
         symbol: String,
     },
-    /// 已识别运算符缺少可调用身份，不能用常量结果替代。
-    UnresolvedOperatorCallable {
-        /// 运算符注册表身份。
-        operator: OperatorId,
-    },
 }
 
 /// `SSA` 形式的 `MIR` 模块。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirModule {
+    /// 模块名。
     pub name: String,
+    /// 模块内 lowering 得到的全部函数。
     pub functions: Vec<MirFunction>,
     /// 结构体定义，保留字段类型供后端继续推导 `TypeDef` / `Field` 信息。
     pub structs: Vec<MirStruct>,
@@ -115,6 +115,7 @@ pub struct MirModule {
 pub struct MirExternalCallContract {
     /// HIR 导出的原始声明身份；导入实例不得按导入顺序重新生成声明。
     pub declaration: Option<nyar_types::ItemId>,
+    /// 实例化后的 callable 身份；声明存在但实例缺失即为合同错误。
     pub instance: Option<nyar_types::ItemInstanceId>,
     /// HIR 选择的精确源码身份。
     pub symbol: NamePath,
@@ -161,6 +162,7 @@ pub struct MirStruct {
     pub name: String,
     /// 结构体命名空间（点分路径，例如 `core.text`），用于稳定符号与布局查找。
     pub namespace: String,
+    /// 声明的泛型形参列表；非空表示开放泛型，不生成平台布局。
     pub generics: Vec<crate::types::hir::GenericType>,
     /// 字段列表。
     pub fields: Vec<MirField>,
@@ -170,6 +172,7 @@ pub struct MirStruct {
 }
 
 impl MirStruct {
+    /// 返回 `namespace.name` 形式的限定名；`namespace` 为空时仅返回名称。
     pub fn qualified_name(&self) -> String {
         if self.namespace.is_empty() { self.name.clone() } else { format!("{}.{}", self.namespace, self.name) }
     }
@@ -180,6 +183,7 @@ impl MirStruct {
         if matches.len() == 1 { Some(matches[0]) } else { None }
     }
 
+    /// 按 `owner` 的泛型实参代入后返回字段类型；`owner` 或字段不匹配时返回 `None`。
     pub fn instantiate_field(&self, owner: &ValkyrieType, field: &str) -> Option<ValkyrieType> {
         let (declaration, arguments) = match owner {
             ValkyrieType::Nominal { declaration, arguments } => (*declaration, arguments.as_slice()),
@@ -221,6 +225,7 @@ pub struct MirField {
 /// `SSA` 形式的 `MIR` 函数定义。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirFunction {
+    /// 函数的限定符号名。
     pub symbol: String,
     /// HIR 声明对应的 Compiler ItemId；MIR 不再按符号重新铸造实例身份。
     pub declaration: Option<nyar_types::ItemId>,
@@ -232,25 +237,35 @@ pub struct MirFunction {
     pub param_types: Vec<ValkyrieType>,
     /// `SSA` 值的静态类型表，供调度校验与后续 lowering 使用。
     pub value_types: BTreeMap<MirValueRef, ValkyrieType>,
+    /// 函数入口基本块引用。
     pub entry: MirBlockRef,
+    /// 函数内全部 SSA 值。
     pub values: Vec<MirValue>,
+    /// 函数内全部基本块。
     pub blocks: Vec<MirBlock>,
 }
 
 /// `MIR` 基本块。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirBlock {
+    /// 基本块引用。
     pub id: MirBlockRef,
+    /// 调试用块标签。
     pub label: String,
+    /// 块入口的 SSA 参数。
     pub parameters: Vec<MirValueRef>,
+    /// 块内顺序执行的指令。
     pub instructions: Vec<MirInstruction>,
+    /// 块终结符，决定后继控制流。
     pub terminator: MirTerminator,
 }
 
 /// `MIR` SSA 值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MirValue {
+    /// 值引用。
     pub id: MirValueRef,
+    /// 值的来源。
     pub origin: MirValueOrigin,
 }
 
@@ -374,35 +389,51 @@ pub struct MirBlockRef(pub u32);
 /// `MIR` 值的来源。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MirValueOrigin {
+    /// 函数形参。
     Parameter {
+        /// 形参序号。
         index: usize,
+        /// 形参名。
         name: String,
     },
+    /// 基本块的 SSA 参数。
     BlockParameter {
+        /// 声明该参数的块。
         block: MirBlockRef,
+        /// 参数名。
         name: String,
     },
+    /// `let` 绑定引入的局部值。
     LetBinding {
+        /// 绑定名。
         name: String,
     },
     /// Pattern `mut pat`：可变借用绑定（类似 Rust `ref mut`）。
     MutRefBinding {
+        /// 绑定名。
         name: String,
     },
     /// Pattern `pin mut pat`：固定的可变借用绑定。
     PinMutRefBinding {
+        /// 绑定名。
         name: String,
     },
+    /// 字面量产生的临时值。
     Literal,
+    /// 路径引用产生的值。
     Path,
+    /// 调用结果产生的值。
     CallResult,
+    /// 编译器合成的临时值。
     Temporary,
 }
 
 /// `MIR` 操作数。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MirOperand {
+    /// 引用一个 SSA 值。
     Value(MirValueRef),
+    /// 内联常量。
     Constant(MirConstant),
     /// Compiler 在依赖闭包冻结后分配的 callable identity。
     Callable(ItemInstanceId),
@@ -413,14 +444,18 @@ pub enum MirOperand {
 /// `MIR` 常量。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MirConstant {
+    /// 有符号 64 位整型字面量。
     Int(i64),
+    /// 64 位浮点字面量。
     Float64(ordered_float::OrderedFloat<f64>),
+    /// 布尔字面量。
     Bool(bool),
     /// UTF-8 text literal. The language has no encoding-neutral string type.
     Utf8(String),
     /// UTF-16 text literal. This is a language-level encoding tag, not a
     /// request to use any backend's default string representation.
     Utf16(String),
+    /// 单元类型常量。
     Unit,
 }
 
@@ -489,19 +524,28 @@ impl MirInstruction {
 /// `MIR` 指令种类。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MirOperation {
+    /// 载入常量（可附静态类型）。
     LoadConstant {
+        /// 常量值。
         constant: MirConstant,
+        /// 可选静态类型；缺失时由操作数推断。
         ty: Option<ValkyrieType>,
     },
+    /// 载入符号路径。
     LoadSymbol {
+        /// 符号路径。
         path: NamePath,
     },
+    /// 值拷贝。
     Copy {
+        /// 拷贝来源。
         source: MirOperand,
     },
     /// 语言层类型转换（`expr as T`）。结果 SSA 类型必须是 `ty`，不得伪装成 [`Self::Copy`]。
     Cast {
+        /// 待转换的操作数。
         source: MirOperand,
+        /// 目标类型。
         ty: ValkyrieType,
     },
     /// 将值写入具名局部变量（`let` 绑定）。
@@ -510,11 +554,14 @@ pub enum MirOperation {
     /// `ty` 为可选静态类型，供后端槽位分配与调试信息使用；
     /// 若缺失，后端可回退到操作数已推断类型或 `header` 中的类型线索。
     StoreVar {
+        /// 变量名。
         name: String,
+        /// 待写入的操作数。
         value: MirOperand,
         /// 可选静态类型；来自 `let` 注解时优先使用该 `ty`。
         ty: Option<ValkyrieType>,
     },
+    /// 调用指令，统一语义为 `Invoke(callee, arguments)`。
     Call {
         /// 可调用操作数。过渡期日后成为 `Invoke.callee`（`Item` | `Value`）。
         /// 不得携带 dispatch / witness / intrinsic / generic 旁路。
@@ -524,52 +571,77 @@ pub enum MirOperation {
     },
     /// 构造名义聚合。物理 StorageKind/LayoutId 属于 RepresentationPlan。
     StructNew {
+        /// 目标名义实例身份。
         nominal: nyar_types::NominalInstanceId,
+        /// 按字段身份给出的初始化值。
         fields: Vec<(nyar_types::FieldId, MirOperand)>,
     },
+    /// 构造元组值。
     TupleNew {
+        /// 元组元素值。
         fields: Vec<MirOperand>,
     },
+    /// 聚合值整体拷贝。
     AggregateCopy {
+        /// 拷贝来源。
         source: MirOperand,
+        /// 拷贝目标。
         dest: MirOperand,
     },
+    /// 读取聚合字段值。
     FieldGet {
+        /// 目标对象。
         object: MirOperand,
+        /// 字段身份。
         field: nyar_types::FieldId,
     },
+    /// 写入聚合字段值。
     FieldSet {
+        /// 目标对象。
         object: MirOperand,
+        /// 字段身份。
         field: nyar_types::FieldId,
+        /// 待写入的值。
         value: MirOperand,
     },
     /// Construct a value of an explicitly declared nominal sum variant.
     SumNew {
+        /// 目标名义实例身份。
         nominal: nyar_types::NominalInstanceId,
         /// 完成代入后的实参，供 Semantic MIR 校验 payload 合同。
         type_args: Vec<ValkyrieType>,
+        /// 目标 variant 身份。
         variant: VariantId,
+        /// 可选 payload 静态类型。
         payload_type: Option<ValkyrieType>,
+        /// 可选 payload 操作数。
         payload: Option<MirOperand>,
     },
     /// Extract a payload from an explicitly identified nominal sum variant.
     /// This must not be represented as a field named `value`, `error`, or
     /// `payload`: those spellings carry no language semantics by themselves.
     SumPayloadGet {
+        /// 目标名义实例身份。
         nominal: nyar_types::NominalInstanceId,
         /// 完成代入后的实参，供 Semantic MIR 校验 payload 合同。
         type_args: Vec<ValkyrieType>,
+        /// 目标 variant 身份。
         variant: VariantId,
+        /// payload 的静态类型。
         payload_type: ValkyrieType,
+        /// 被解包的 sum 值。
         object: MirOperand,
     },
     /// Test whether a sum value is the given declared variant (`case Variant:`).
     /// Carries the same NominalInstanceKey as [`Self::SumNew`] / [`Self::SumPayloadGet`].
     SumVariantIs {
+        /// 目标名义实例身份。
         nominal: nyar_types::NominalInstanceId,
         /// 完成代入后的实参，供 Semantic MIR 校验实例类型。
         type_args: Vec<ValkyrieType>,
+        /// 待判定的 variant 身份。
         variant: VariantId,
+        /// 被检查的 sum 值。
         object: MirOperand,
     },
     /// 模式探测指令，用于 handler/case dispatch 的匹配检查。
@@ -587,7 +659,9 @@ pub enum MirOperation {
     ArrayNew {
         /// 完整数组类型（`Array<T>` / `FixedArray<T,N>` …），非仅元素类型。
         array_type: ValkyrieType,
+        /// 运行时长度操作数。
         length: MirOperand,
+        /// 槽位初始化方式。
         initialization: ArrayInitialization,
     },
     /// 由完整元素序列构造语言数组。
@@ -598,31 +672,45 @@ pub enum MirOperation {
     ArrayFromElements {
         /// 完整数组类型；元素类型与定长来自类型表。
         array_type: ValkyrieType,
+        /// 源元素序列。
         elements: Vec<MirOperand>,
     },
+    /// 读取数组元素。
     ArrayGet {
+        /// 目标数组。
         array: MirOperand,
+        /// 下标操作数。
         index: MirOperand,
     },
+    /// 写入数组元素。
     ArraySet {
+        /// 目标数组。
         array: MirOperand,
+        /// 下标操作数。
         index: MirOperand,
+        /// 待写入的值。
         value: MirOperand,
     },
+    /// 读取数组长度。
     ArrayLength {
+        /// 目标数组。
         array: MirOperand,
     },
     /// 向可增长数组末尾追加元素；返回数组引用（语言 `push` intrinsic）。
     ArrayPush {
+        /// 目标数组。
         array: MirOperand,
+        /// 追加的元素值。
         value: MirOperand,
     },
     /// 检测可空值为 null（`builtin.null.is_null`）。
     NullIsNull {
+        /// 待检测的可空值。
         value: MirOperand,
     },
     /// 解包非 null 可空载荷（`builtin.null.unwrap`）。
     NullUnwrap {
+        /// 待解包的可空值。
         value: MirOperand,
     },
 }
@@ -639,34 +727,54 @@ pub enum ArrayInitialization {
 /// `MIR` 基本块终结符。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MirTerminator {
+    /// 从函数返回，可携带返回值。
     Return {
+        /// 可选返回值操作数。
         value: Option<MirOperand>,
     },
+    /// 无条件跳转到目标块，并传递块参数。
     Jump {
+        /// 目标块引用。
         target: MirBlockRef,
+        /// 传给目标块参数的实参。
         arguments: Vec<MirOperand>,
     },
+    /// 按条件在 then / else 目标间分支。
     Branch {
+        /// 条件操作数。
         condition: MirOperand,
+        /// 条件为真时的目标块。
         then_target: MirBlockRef,
+        /// 条件为假时的目标块。
         else_target: MirBlockRef,
     },
+    /// 执行一次 effect 并按 resume 目标继续。
     PerformEffect {
+        /// effect 类别。
         effect: MirEffectKind,
+        /// 可选 payload 操作数。
         payload: Option<MirOperand>,
+        /// 恢复时跳转的目标块。
         resume_target: MirBlockRef,
     },
     /// 状态机分发：按 `switch state` 跳转到 resume / entry 目标。
     StateDispatch {
+        /// 当前状态值。
         state: MirValueRef,
+        /// 状态号到目标块的映射。
         cases: Vec<(u32, MirBlockRef)>,
+        /// 无匹配状态时的默认目标块。
         default_target: MirBlockRef,
     },
     /// 将控制权交还 runtime，并携带 `resume_state` 供后续 dispatch 恢复。
     YieldToRuntime {
+        /// effect 类别。
         effect: MirEffectKind,
+        /// 可选 payload 操作数。
         payload: Option<MirOperand>,
+        /// 恢复用的状态号。
         resume_state: u32,
     },
+    /// 不可达终结符。
     Unreachable,
 }

@@ -4,8 +4,6 @@
 //! named traits are protocols with identity, satisfaction yields a named witness,
 //! and explicit impl blocks outrank structural entry.
 
-#![allow(missing_docs)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
@@ -17,28 +15,41 @@ use crate::{
     },
 };
 
+/// trait witness 的来源。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TraitWitnessSource {
+    /// 来自显式 impl 块。
     ExplicitImpl,
+    /// 来自结构化入口匹配。
     Structural,
 }
 
+/// trait 方法绑定的来源。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TraitMethodBindingSource {
+    /// 来自显式 impl 块。
     ExplicitImpl,
+    /// 来自 trait 默认方法。
     DefaultMethod,
+    /// 来自结构化入口匹配。
     Structural,
 }
 
+/// trait 方法到实现容器的绑定。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitMethodBinding {
+    /// 方法名。
     pub name: Identifier,
+    /// 绑定来源。
     pub source: TraitMethodBindingSource,
+    /// 承载实现的容器（struct 或 trait）名。
     pub implementation_container: Identifier,
+    /// 是否落在 trait 默认方法上。
     pub is_default: bool,
 }
 
 impl TraitMethodBinding {
+    /// 转换为 witness 表中的方法条目。
     pub fn to_method_entry(&self, method_id: MethodId, module_id: ModuleId, module: Vec<Identifier>, implementing_type: TypeId) -> MethodEntry {
         MethodEntry::new(
             method_id,
@@ -50,35 +61,102 @@ impl TraitMethodBinding {
     }
 }
 
+/// 具名 trait 满足后形成的 witness。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamedTraitWitness {
+    /// trait 的限定路径。
     pub trait_path: NamePath,
+    /// 被满足的目标类型。
     pub target: HirType,
+    /// witness 的来源。
     pub source: TraitWitnessSource,
+    /// 解析出的方法绑定。
     pub method_bindings: Vec<TraitMethodBinding>,
+    /// 解析出的关联类型绑定。
     pub associated_types: BTreeMap<Identifier, HirType>,
 }
 
+/// 具名 trait 满足失败的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TraitSatisfactionError {
-    AmbiguousExplicitImpls { trait_path: NamePath, target: HirType },
-    MissingExplicitImplForSuperTraits { trait_path: NamePath },
-    MissingExplicitImplForAssociatedTypes { trait_path: NamePath },
-    MissingMethodBinding { trait_path: NamePath, name: Identifier },
-    AmbiguousMethodBinding { trait_path: NamePath, name: Identifier },
-    MissingAssociatedTypeBinding { trait_path: NamePath, name: Identifier },
-    AmbiguousAssociatedTypeBinding { trait_path: NamePath, name: Identifier },
-    StructuralMismatch { errors: Vec<RowRequirementError> },
-    StructuralAmbiguity { errors: Vec<RowRequirementError> },
+    /// 存在多个同等具体的显式实现，无法唯一确定 witness。
+    AmbiguousExplicitImpls {
+        /// trait 的限定路径。
+        trait_path: NamePath,
+        /// 被满足的目标类型。
+        target: HirType,
+    },
+    /// 父 trait 缺少显式实现。
+    MissingExplicitImplForSuperTraits {
+        /// trait 的限定路径。
+        trait_path: NamePath,
+    },
+    /// 含关联类型的 trait 缺少显式实现。
+    MissingExplicitImplForAssociatedTypes {
+        /// trait 的限定路径。
+        trait_path: NamePath,
+    },
+    /// 缺少必需的方法绑定。
+    MissingMethodBinding {
+        /// trait 的限定路径。
+        trait_path: NamePath,
+        /// 缺失的方法名。
+        name: Identifier,
+    },
+    /// 方法绑定不唯一。
+    AmbiguousMethodBinding {
+        /// trait 的限定路径。
+        trait_path: NamePath,
+        /// 有歧义的方法名。
+        name: Identifier,
+    },
+    /// 缺少必需的关联类型绑定。
+    MissingAssociatedTypeBinding {
+        /// trait 的限定路径。
+        trait_path: NamePath,
+        /// 缺失的关联类型名。
+        name: Identifier,
+    },
+    /// 关联类型绑定不唯一。
+    AmbiguousAssociatedTypeBinding {
+        /// trait 的限定路径。
+        trait_path: NamePath,
+        /// 有歧义的关联类型名。
+        name: Identifier,
+    },
+    /// 结构入口检查失败。
+    StructuralMismatch {
+        /// 全部结构化校验失败原因。
+        errors: Vec<RowRequirementError>,
+    },
+    /// 结构入口存在歧义。
+    StructuralAmbiguity {
+        /// 导致歧义的结构化校验失败原因。
+        errors: Vec<RowRequirementError>,
+    },
 }
 
+/// trait 模块视图层面的错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TraitModuleError {
-    UnknownTrait { name: Identifier },
-    UnknownStruct { name: Identifier },
-    Satisfaction { error: TraitSatisfactionError },
+    /// 查不到该 trait 声明。
+    UnknownTrait {
+        /// 未知的 trait 名。
+        name: Identifier,
+    },
+    /// 查不到该 struct 声明。
+    UnknownStruct {
+        /// 未知的 struct 名。
+        name: Identifier,
+    },
+    /// trait 满足失败。
+    Satisfaction {
+        /// 具体的满足失败原因。
+        error: TraitSatisfactionError,
+    },
 }
 
+/// 模块内 trait、struct 与 impl 的只读视图。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TraitModuleView {
     traits: BTreeMap<Identifier, HirTrait>,
@@ -88,6 +166,7 @@ pub struct TraitModuleView {
 }
 
 impl TraitModuleView {
+    /// 从模块（含子模块与导入语义导出）收集 trait、struct 与 impl。
     pub fn from_module(module: &HirModule) -> Self {
         let mut view = Self {
             traits: module.traits.iter().map(|item| (item.name.clone(), item.clone())).collect(),
@@ -126,6 +205,7 @@ impl TraitModuleView {
         view
     }
 
+    /// 按名字检查 struct 是否满足具名 trait，并生成 witness。
     pub fn satisfy_named_trait(&self, candidate_name: &Identifier, trait_name: &Identifier) -> Result<NamedTraitWitness, TraitModuleError> {
         let candidate = self.structs.get(candidate_name).ok_or_else(|| TraitModuleError::UnknownStruct { name: candidate_name.clone() })?;
         let trait_def = self.traits.get(trait_name).ok_or_else(|| TraitModuleError::UnknownTrait { name: trait_name.clone() })?;
@@ -213,6 +293,7 @@ impl TraitModuleView {
     }
 }
 
+/// 检查 struct 是否满足具名 trait；显式 impl 优先于结构化入口。
 pub fn satisfy_named_trait(
     candidate: &HirStruct,
     trait_def: &HirTrait,
@@ -312,6 +393,7 @@ fn ensure_explicit_super_trait_chain_inner(
     Ok(())
 }
 
+/// 把 witness 中的方法绑定展开为带序号的 witness 表条目。
 pub fn build_witness_method_entries(
     witness: &NamedTraitWitness,
     module_id: ModuleId,
@@ -326,6 +408,7 @@ pub fn build_witness_method_entries(
         .collect()
 }
 
+/// 由 witness 构造完整 witness 表（方法条目与关联类型）。
 pub fn build_witness_table(
     witness: &NamedTraitWitness,
     trait_id: TraitId,
@@ -348,6 +431,7 @@ pub fn build_witness_table(
     builder.build().expect("witness table builder must succeed when type metadata is provided")
 }
 
+/// 在显式 impl 中解析具名 trait 的关联类型具体值。
 pub fn resolve_associated_type(
     candidate: &HirStruct,
     trait_def: &HirTrait,
@@ -542,15 +626,23 @@ fn trait_type_to_path(ty: &HirType) -> Option<NamePath> {
     }
 }
 
+/// 显式 impl 之间的具体度比较结果。
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ImplSpecificity {
+pub enum ImplSpecificity {
+    /// 两侧约束集合等价。
     Equivalent,
+    /// 左侧比右侧更具体。
     MoreSpecific,
+    /// 左侧比右侧更宽泛。
     LessSpecific,
+    /// 两侧约束不可比较。
     Incomparable,
 }
 
-fn compare_impl_specificity(left: &HirImpl, right: &HirImpl) -> ImplSpecificity {
+/// 比较两个显式 impl 的 where 约束具体度。
+#[doc(hidden)]
+pub fn compare_impl_specificity(left: &HirImpl, right: &HirImpl) -> ImplSpecificity {
     let left_pairs = impl_where_constraint_pairs(left);
     let right_pairs = impl_where_constraint_pairs(right);
 

@@ -1,6 +1,7 @@
 use nyar_language::{valkyrie::compile_pipeline::CanonicalRepresentationPlanner, *};
 use nyar_types::{
     CanonicalProgram, CanonicalSemanticMir, CanonicalTypeKind, NominalValueSemantics, ValueIdentity, layout_choice::ValueRepresentation,
+    pipeline::RepresentationPlanStage,
 };
 use std::collections::BTreeSet;
 

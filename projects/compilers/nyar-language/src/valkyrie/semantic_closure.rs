@@ -4,8 +4,9 @@
 //!
 //! - 种子是入口组的声明；依赖组只在自身声明被需求时进入 body lowering；
 //! - 自由名引用按「限定路径 → 当前 namespace → 父 namespace」解析；
-//! - 成员名引用先按同一 namespace 链解析，再回退到全库成员名索引
-//!   （调用解析是接收者类型驱动的，索引阶段没有类型，回退是显式的过近似）；
+//! - 单段名字只允许两条结构化路径：namespace 链命中声明，或变体名命中其拥有者
+//!   sum/unite 声明。方法/imply 成员名不再有全库回退索引；成员调用按接收者类型
+//!   解析的事实须由带类型信息的层提供，此处不得用名字过近似；
 //! - 摘要绑定规划版本、依赖身份、被编译声明身份与这些声明的源文件内容。
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -15,7 +16,7 @@ use nyar_types::combined_content_hash;
 use crate::valkyrie::frontend::{ast, parse_source};
 
 /// 闭包规划版本；规划语义变化必须递增，旧摘要不得跨版本复用。
-const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v2";
+const CLOSURE_PLANNER_VERSION: &str = "semantic-closure-v0";
 
 /// 预 HIR 声明种类；与后续 `ItemId` 分配一一对应，不依赖短名认亲。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -142,12 +143,30 @@ pub struct SemanticClosure {
     pub digest: String,
 }
 
+/// 从不可变源码输入计算 Compiler 内部选择。依赖顺序末项是唯一入口组，
+/// 与完整编译入口消费最后一个 HIR 模块的合同一致；装配层不能提交语义计划。
+pub(crate) fn source_group_closure(groups: &[crate::CompilerSourceGroup]) -> SemanticClosure {
+    let owned = groups
+        .iter()
+        .map(|group| group.sources.iter().map(|file| (file.path.clone(), file.source.clone())).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let input = groups
+        .iter()
+        .zip(&owned)
+        .enumerate()
+        .map(|(index, (group, files))| (group.dependency_key.as_str(), index + 1 == groups.len(), files.as_slice()))
+        .collect::<Vec<_>>();
+    plan_semantic_closure(&input)
+}
+
 /// 从入口组与其依赖 inventory 规划完整语义闭包。
 pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> SemanticClosure {
     let mut indexed_files = BTreeMap::<(String, String), IndexedFile>::new();
     let mut declaration_index = BTreeMap::<DeclarationKey, DeclarationIndexEntry>::new();
     let mut names = BTreeMap::<(Vec<String>, String), BTreeSet<DeclarationKey>>::new();
-    let mut members = BTreeMap::<String, BTreeSet<DeclarationKey>>::new();
+    // 变体名 → 拥有它的 sum/unite 声明身份。变体是声明内部的结构事实，
+    // 不是「全库同名成员」索引：方法/imply 成员不得登记或回查。
+    let mut variant_owners = BTreeMap::<String, BTreeSet<DeclarationKey>>::new();
     let mut unindexed_source_files = BTreeMap::<String, String>::new();
 
     for (dependency_key, _, files) in groups.iter() {
@@ -156,13 +175,10 @@ pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> Se
                 Ok(indexed) => {
                     for entry in &indexed.declarations {
                         names.entry((entry.key.namespace.clone(), entry.key.name.clone())).or_default().insert(entry.key.clone());
-                        if matches!(entry.key.kind, DeclarationKind::Method | DeclarationKind::ImplyMethod) {
-                            members.entry(entry.key.name.clone()).or_default().insert(entry.key.clone());
-                        }
                         declaration_index.insert(entry.key.clone(), entry.clone());
                     }
                     for (variant, owner) in &indexed.variant_members {
-                        members.entry(variant.clone()).or_default().insert(owner.clone());
+                        variant_owners.entry(variant.clone()).or_default().insert(owner.clone());
                     }
                     indexed_files.insert((dependency_key.to_string(), path.clone()), indexed);
                 }
@@ -193,8 +209,8 @@ pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> Se
             // 文件级 `using`/顶层语句与声明外壳的引用必须与声明引用一起展开，
             // 否则只含模块级语句的入口文件、以及随文件物化的类型/impl 外壳都会缺依赖。
             if touched_files.insert(file_id.clone()) {
-                push_scoped_references(&indexed.module_references, &names, &members, &mut queue);
-                push_scoped_references(&indexed.shell_references, &names, &members, &mut queue);
+                push_scoped_references(&indexed.module_references, &names, &variant_owners, &mut queue);
+                push_scoped_references(&indexed.shell_references, &names, &variant_owners, &mut queue);
             }
         }
     }
@@ -208,18 +224,18 @@ pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> Se
         };
         if touched_files.insert((key.dependency_key.clone(), key.source_path.clone())) {
             if let Some(file) = indexed_files.get(&(key.dependency_key.clone(), key.source_path.clone())) {
-                push_scoped_references(&file.module_references, &names, &members, &mut queue);
-                push_scoped_references(&file.shell_references, &names, &members, &mut queue);
+                push_scoped_references(&file.module_references, &names, &variant_owners, &mut queue);
+                push_scoped_references(&file.shell_references, &names, &variant_owners, &mut queue);
             }
         }
         // 成员方法被需求时，其拥有者聚合的声明外壳同样必须进入闭包。
         if let Some(owner) = &key.owner {
-            for resolved in resolve_reference(&[owner.clone()], &key.namespace, &names, &members) {
+            for resolved in resolve_reference(&[owner.clone()], &key.namespace, &names, &variant_owners) {
                 queue.push_back(resolved);
             }
         }
         for reference in &entry.references {
-            for resolved in resolve_reference(reference, &key.namespace, &names, &members) {
+            for resolved in resolve_reference(reference, &key.namespace, &names, &variant_owners) {
                 queue.push_back(resolved);
             }
         }
@@ -256,11 +272,11 @@ pub fn plan_semantic_closure(groups: &[(&str, bool, &[(String, String)])]) -> Se
 fn push_scoped_references(
     references: &BTreeSet<ScopedReference>,
     names: &BTreeMap<(Vec<String>, String), BTreeSet<DeclarationKey>>,
-    members: &BTreeMap<String, BTreeSet<DeclarationKey>>,
+    variant_owners: &BTreeMap<String, BTreeSet<DeclarationKey>>,
     queue: &mut VecDeque<DeclarationKey>,
 ) {
     for (namespace, reference) in references {
-        for resolved in resolve_reference(reference, namespace, names, members) {
+        for resolved in resolve_reference(reference, namespace, names, variant_owners) {
             queue.push_back(resolved);
         }
     }
@@ -269,12 +285,17 @@ fn push_scoped_references(
 /// 解析单个名字路径引用，返回命中的声明身份集合。
 ///
 /// 命中规则与 `path-resolution.md` 一致：限定路径先按绝对路径，再按当前 namespace 逐级前缀；
-/// 单段名字先沿 namespace 链向外查找，链上没有命中时回退到成员名索引（显式过近似）。
+/// 单段名字沿 namespace 链向外查找。
+///
+/// namespace 链上没有命中时，只允许变体名命中其拥有者 sum/unite 声明这一条结构化路径；
+/// **不再回退到全库成员名索引**：成员调用的接收者类型在声明索引阶段不可知，
+/// 按名字把全库同名方法无差别拉进 body lowering 是名称认亲，不是闭包精度。
+/// 未命中的引用保持未解析，由后续按身份解析的层失败，而不是在此处过近似。
 fn resolve_reference(
     reference: &[String],
     namespace: &[String],
     names: &BTreeMap<(Vec<String>, String), BTreeSet<DeclarationKey>>,
-    members: &BTreeMap<String, BTreeSet<DeclarationKey>>,
+    variant_owners: &BTreeMap<String, BTreeSet<DeclarationKey>>,
 ) -> BTreeSet<DeclarationKey> {
     let name = match reference.last() {
         Some(name) => name,
@@ -302,7 +323,7 @@ fn resolve_reference(
             }
         }
     }
-    members.get(name).cloned().unwrap_or_default()
+    variant_owners.get(name).cloned().unwrap_or_default()
 }
 
 fn compute_closure_digest(groups: &[GroupSemanticClosure], files: &BTreeMap<(String, String), IndexedFile>) -> String {
@@ -418,18 +439,120 @@ fn name_path_segments(path: &ast::NamePath) -> Vec<String> {
     path.parts.iter().map(|part| part.name.clone()).collect()
 }
 
+/// 按被需求声明身份裁剪 AST：非被需求声明不得进入 HIR 物化。
+///
+/// 与 `collect_item` 共用同一套「AST 条目 → [`DeclarationKey`]」映射；声明级物化边界
+/// 必须与闭包规划使用同一身份，不得用文件名或短名近似。文件级语句（`using`、
+/// 顶层 `let`/表达式）与无 body 的 `namespace` 条目不是声明，保留。
+pub fn retain_demanded_declarations(
+    items: &mut Vec<ast::StatementNode>,
+    dependency_key: &str,
+    source_path: &str,
+    demanded: &BTreeSet<DeclarationKey>,
+) {
+    let key_of = |namespace: &[String], kind: DeclarationKind, name: &str, owner: Option<&str>| DeclarationKey {
+        dependency_key: dependency_key.to_string(),
+        source_path: source_path.to_string(),
+        namespace: namespace.to_vec(),
+        kind,
+        owner: owner.map(str::to_string),
+        name: name.to_string(),
+    };
+    retain_items(items, &[], demanded, &key_of);
+}
+
+fn retain_items(
+    items: &mut Vec<ast::StatementNode>,
+    namespace: &[String],
+    demanded: &BTreeSet<DeclarationKey>,
+    key_of: &impl Fn(&[String], DeclarationKind, &str, Option<&str>) -> DeclarationKey,
+) {
+    // 与 `collect_items` 保持同一套 namespace 语义：分号式 `namespace X;` 切换后续条目的
+    // namespace，因此这里必须顺序推进作用域，不能对每个条目都用同一个起始 namespace，
+    // 否则分号式 namespace 下的声明会按空 namespace 查身份并被误裁掉。
+    let mut current = namespace.to_vec();
+    items.retain_mut(|item| {
+        if let ast::StatementNode::Namespace(declaration) = item {
+            if !declaration.has_body() {
+                current = name_path_segments(&declaration.name);
+                return true;
+            }
+        }
+        keep_declaration(item, &current, demanded, key_of)
+    });
+}
+
+/// 条目保留规则：声明条目按身份保留；作用域与语句条目保留并递归裁剪其声明子项。
+fn keep_declaration(
+    item: &mut ast::StatementNode,
+    namespace: &[String],
+    demanded: &BTreeSet<DeclarationKey>,
+    key_of: &impl Fn(&[String], DeclarationKind, &str, Option<&str>) -> DeclarationKey,
+) -> bool {
+    match item {
+        // `namespace` 是作用域语句：带 body 时其条目以声明路径为 namespace 递归裁剪。
+        ast::StatementNode::Namespace(decl) => {
+            if let Some(body) = &mut decl.body {
+                let declared = name_path_segments(&decl.name);
+                retain_items(&mut body.items, &declared, demanded, key_of);
+            }
+            true
+        }
+        ast::StatementNode::Class(class) => {
+            retain_members(&mut class.body.methods, namespace, &class.name.name, demanded, key_of);
+            demanded.contains(&key_of(namespace, DeclarationKind::Class, &class.name.name, None)) || !class.body.methods.is_empty()
+        }
+        ast::StatementNode::Structure(structure) => {
+            retain_members(&mut structure.body.methods, namespace, &structure.name.name, demanded, key_of);
+            demanded.contains(&key_of(namespace, DeclarationKind::Structure, &structure.name.name, None)) || !structure.body.methods.is_empty()
+        }
+        ast::StatementNode::Trait(trait_decl) => {
+            retain_members(&mut trait_decl.body.methods, namespace, &trait_decl.name.name, demanded, key_of);
+            demanded.contains(&key_of(namespace, DeclarationKind::Trait, &trait_decl.name.name, None)) || !trait_decl.body.methods.is_empty()
+        }
+        ast::StatementNode::Union(union_def) => demanded.contains(&key_of(namespace, DeclarationKind::Union, &union_def.name.name, None)),
+        ast::StatementNode::Flags(flags) => demanded.contains(&key_of(namespace, DeclarationKind::Flags, &flags.name.name, None)),
+        ast::StatementNode::Enums(enums) => demanded.contains(&key_of(namespace, DeclarationKind::Enum, &enums.name.name, None)),
+        ast::StatementNode::Micro(micro) => demanded.contains(&key_of(namespace, DeclarationKind::Micro, &micro.name.name, None)),
+        ast::StatementNode::TypeAlias(alias) => demanded.contains(&key_of(namespace, DeclarationKind::TypeAlias, &alias.name.name, None)),
+        ast::StatementNode::TypeFunction(type_function) => {
+            demanded.contains(&key_of(namespace, DeclarationKind::TypeFunction, &type_function.name.name, None))
+        }
+        // imply 块的每个 witness 方法各自是一份被需求声明；目标类型/trait 引用随方法进入闭包。
+        ast::StatementNode::Imply(imply) => {
+            imply.methods.retain(|method| demanded.contains(&key_of(namespace, DeclarationKind::ImplyMethod, &method.name.name, None)));
+            !imply.methods.is_empty()
+        }
+        // 包装语句按其内部条目的身份保留或丢弃，包装节点本身不是声明。
+        ast::StatementNode::Statement(inner) => keep_declaration(inner.as_mut(), namespace, demanded, key_of),
+        // 文件级 `using` / `let` / 顶层表达式不是声明；`singleton` / `widget` / `property`
+        // 目前不在声明索引里，只能整条保留（缺口见账本）。
+        _ => true,
+    }
+}
+
+fn retain_members(
+    methods: &mut Vec<ast::MethodDeclaration>,
+    namespace: &[String],
+    owner: &str,
+    demanded: &BTreeSet<DeclarationKey>,
+    key_of: &impl Fn(&[String], DeclarationKind, &str, Option<&str>) -> DeclarationKey,
+) {
+    methods.retain(|method| demanded.contains(&key_of(namespace, DeclarationKind::Method, &method.name.name, Some(owner))));
+}
+
 fn collect_items(builder: &mut FileBuilder, current_namespace: &[String], items: &[ast::StatementNode]) {
     let mut namespace = current_namespace.to_vec();
     for item in items {
         match item {
             ast::StatementNode::Namespace(namespace_decl) => {
                 let declared = name_path_segments(&namespace_decl.name);
-                if namespace_decl.items.is_empty() {
+                if !namespace_decl.has_body() {
                     namespace = declared;
                 }
-                else {
+                else if let Some(body) = &namespace_decl.body {
                     // 带 body 的 `namespace` 以自身路径作为条目 namespace（与 HIR lowering 一致）。
-                    collect_items(builder, &declared, &namespace_decl.items);
+                    collect_items(builder, &declared, &body.items);
                 }
             }
             other => collect_item(builder, &namespace, other),
@@ -789,10 +912,23 @@ fn collect_name_path(path: &ast::NamePath, references: &mut References) {
     if segments.is_empty() {
         return;
     }
-    if segments.len() == 1 && is_builtin_symbol(&segments[0]) {
+    // 无声明身份的内建标量/上下文名不产生引用；内建 unity 变体名（`Some` / `None` /
+    // `Fine` / `Fail`）必须保留，`resolve_reference` 只靠变体名索引命中其拥有者
+    // sum/unite 声明；在此处丢弃会让依赖组的变体声明无法进入闭包。
+    if segments.len() == 1 && is_reference_free_builtin_name(&segments[0]) {
         return;
     }
     references.paths.insert(segments);
+}
+
+/// 没有声明身份、因此不产生闭包引用的内建名。
+fn is_reference_free_builtin_name(name: &str) -> bool {
+    is_builtin_symbol(name) && !is_builtin_variant_name(name)
+}
+
+/// 内建 unity 变体名；解析只允许命中其拥有者声明，不建立全库同名成员索引。
+fn is_builtin_variant_name(name: &str) -> bool {
+    matches!(name, "Some" | "None" | "Fine" | "Fail")
 }
 
 fn is_builtin_symbol(name: &str) -> bool {

@@ -29,16 +29,19 @@ pub fn fill_sealed_class_registry(module: &HirModule) -> SealedClassRegistry {
     registry
 }
 
+/// 遍历 match/case 分支，判定 sealed class 与 enum/sum 维度的穷尽性。
 #[derive(Debug, Default)]
 pub struct SealedMatchChecker {
     errors: Vec<SealedClassError>,
 }
 
 impl SealedMatchChecker {
+    /// 创建空的 sealed/enum 穷尽性检查器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 检查模块内所有 match/case 的 sealed/enum 穷尽性并返回违规列表。
     pub fn check_module(&mut self, module: &HirModule) -> Vec<SealedClassError> {
         self.errors.clear();
         let registry = fill_sealed_class_registry(module);
@@ -67,6 +70,7 @@ impl SealedMatchChecker {
         self.errors.clone()
     }
 
+    /// 返回已收集的违规列表。
     pub fn errors(&self) -> &[SealedClassError] {
         &self.errors
     }
@@ -366,10 +370,12 @@ pub struct VisibilityChecker {
 }
 
 impl VisibilityChecker {
+    /// 创建空的可见性检查器。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 收集类、继承关系与成员可见性，并检查模块内全部成员访问。
     pub fn check_module(&mut self, module: &HirModule) -> Vec<AccessControlError> {
         self.errors.clear();
         self.classes.clear();
@@ -426,6 +432,7 @@ impl VisibilityChecker {
         self.errors.clone()
     }
 
+    /// 按成员的访问级别与所属命名空间判定本次访问是否合法。
     pub fn check_member_access(
         &mut self,
         owner: &Identifier,
@@ -471,6 +478,7 @@ impl VisibilityChecker {
         }
     }
 
+    /// 返回已收集的可见性违规列表。
     pub fn errors(&self) -> &[AccessControlError] {
         &self.errors
     }

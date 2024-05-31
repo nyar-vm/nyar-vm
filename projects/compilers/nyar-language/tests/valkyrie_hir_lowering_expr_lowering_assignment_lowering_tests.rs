@@ -5,7 +5,7 @@ use nyar_language::{
     },
     valkyrie::{
         frontend::{self, ast::Statement},
-        hir::lowering::expr_lowering::lower_term_expression,
+        hir::lowering::lower_term_expression,
     },
 };
 
@@ -40,37 +40,48 @@ fn iteration_source_is_not_a_boolean_condition() {
     ));
 }
 
+/// 成员调用的 callee 名字（HIR 只保留接收者成员名，不保留运算符语义类别）。
+fn callee_member(callee: &HirExpr) -> String {
+    let HirExprKind::Path(path) = &callee.kind
+    else {
+        panic!("成员调用的 callee 必须是名字路径")
+    };
+    path.to_string()
+}
+
 #[test]
-fn bitwise_or_is_an_operator_call_not_a_pipeline() {
-    for (source, lexeme) in [
-        ("micro bits() { left | right }", "|"),
-        ("micro bits() { left & right }", "&"),
-        ("micro bits() { left << right }", "<<"),
-        ("micro bits() { left >> right }", ">>"),
+fn bitwise_sugar_lowers_to_plain_member_calls() {
+    for (source, member) in [
+        ("micro bits() { left | right }", "infix |"),
+        ("micro bits() { left & right }", "infix &"),
+        ("micro bits() { left << right }", "infix <<"),
+        ("micro bits() { left >> right }", "infix >>"),
     ] {
-        let HirExprKind::Call { call_kind: HirCallKind::Operator(operator), args, .. } = lower(source).kind
+        let HirExprKind::Call { callee, args, resolved } = lower(source).kind
         else {
-            panic!("按位表达式缺少运算符身份")
+            panic!("按位表达式必须降低为普通成员调用")
         };
-        assert_eq!(operator, registered_operator(OperatorFixity::Infix, lexeme));
+        assert!(resolved.is_none(), "语法糖展开阶段不得伪造已解析 callable 身份");
+        assert_eq!(callee_member(&callee), member);
         assert_eq!(args.len(), 2);
     }
 }
 
 #[test]
-fn ordinal_and_cardinal_access_bind_distinct_operators() {
-    for (source, lexeme, arity) in [
-        ("micro read() { values[1] }", "[]", 2),
-        ("micro read() { values⁅0⁆ }", "⁅⁆", 2),
-        ("micro read() { values::[0] }", "⁅⁆", 2),
-        ("micro write() { values[1] = 7 }", "[]=", 3),
-        ("micro write() { values⁅0⁆ = 7 }", "⁅⁆=", 3),
+fn subscript_sugar_lowers_to_plain_member_calls() {
+    for (source, member, arity) in [
+        ("micro read() { values[1] }", "suffix []", 2),
+        ("micro read() { values⁅0⁆ }", "suffix ⁅⁆", 2),
+        ("micro read() { values::[0] }", "suffix ⁅⁆", 2),
+        ("micro write() { values[1] = 7 }", "suffix []=", 3),
+        ("micro write() { values⁅0⁆ = 7 }", "suffix ⁅⁆=", 3),
     ] {
-        let HirExprKind::Call { call_kind: HirCallKind::Operator(operator), args, .. } = lower(source).kind
+        let HirExprKind::Call { callee, args, resolved } = lower(source).kind
         else {
-            panic!("下标缺少运算符合同")
+            panic!("下标表达式必须降低为普通成员调用")
         };
-        assert_eq!(operator, registered_operator(OperatorFixity::Postfix, lexeme));
+        assert!(resolved.is_none(), "语法糖展开阶段不得伪造已解析 callable 身份");
+        assert_eq!(callee_member(&callee), member);
         assert_eq!(args.len(), arity);
     }
 }

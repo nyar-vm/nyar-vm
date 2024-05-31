@@ -1,26 +1,47 @@
 //! Minimal semantic diagnostic helpers.
 
-#![allow(missing_docs)]
-
 use crate::{
     hir::{row::RowRequirementError, trait_system::TraitSatisfactionError},
     types::{Identifier, NamePath},
 };
 
+/// 语义层失败的分类，供统一诊断生成使用。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SemanticFailure {
-    NominalMismatch { expected: Identifier, found: Identifier },
-    Row { error: RowRequirementError },
-    Trait { error: TraitSatisfactionError },
-    Effect { effect_name: NamePath },
+    /// 名义类型不匹配。
+    NominalMismatch {
+        /// 期望的名义类型名。
+        expected: Identifier,
+        /// 实际得到的名义类型名。
+        found: Identifier,
+    },
+    /// 匿名 row 要求不满足。
+    Row {
+        /// 具体的 row 校验失败。
+        error: RowRequirementError,
+    },
+    /// 具名 trait 满足失败。
+    Trait {
+        /// 具体的 trait 满足失败。
+        error: TraitSatisfactionError,
+    },
+    /// 开放 effect 缺少可用 handler 证据。
+    Effect {
+        /// 缺失 handler 的 effect 名称。
+        effect_name: NamePath,
+    },
 }
 
+/// 单条语义诊断：稳定错误码加人类可读消息。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticDiagnostic {
+    /// 稳定的诊断错误码。
     pub code: &'static str,
+    /// 人类可读的诊断消息。
     pub message: String,
 }
 
+/// 将语义失败分类转换为可报告的诊断。
 pub fn diagnose_failure(failure: &SemanticFailure) -> SemanticDiagnostic {
     match failure {
         SemanticFailure::NominalMismatch { expected, found } => SemanticDiagnostic {

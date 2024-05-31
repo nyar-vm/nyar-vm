@@ -15,15 +15,16 @@ use crate::{
     types::hir::{HirModule, HirStruct, ValkyrieType},
 };
 
-pub use nyar_types::{
-    AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SumTypeLayout, SumVariantLayout, layout_key_for_nyar_type,
-};
+pub use nyar_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, SumTypeLayout, SumVariantLayout};
 
 /// Physical storage class for aggregate values at lowering time.
 ///
 /// Type alias to the platform [`StorageKind`] so MIR and backends share one enum.
 pub type MirStorageKind = StorageKind;
 
+/// 判定类型的物理存储类别：值语义或引用语义。
+///
+/// 仅已冻结的 `Nominal` declaration 可判为值类型；短名不认亲。
 pub fn storage_kind_for_type(ty: &ValkyrieType, value_type_declarations: &BTreeSet<nyar_types::ItemId>) -> MirStorageKind {
     match ty {
         ValkyrieType::Tuple(_) | ValkyrieType::FixedArray { .. } => MirStorageKind::Value,
@@ -34,6 +35,7 @@ pub fn storage_kind_for_type(ty: &ValkyrieType, value_type_declarations: &BTreeS
     }
 }
 
+/// 为合成 tuple / fixed array 类型生成布局键；名义类型返回 `None`。
 pub fn layout_key_for_type(ty: &ValkyrieType) -> Option<String> {
     // 仅合成 tuple / fixedarray 键；名义类型必须走 declaration_to_layout，禁止 Named 短名键。
     match ty {
@@ -43,6 +45,7 @@ pub fn layout_key_for_type(ty: &ValkyrieType) -> Option<String> {
     }
 }
 
+/// 查询类型在计划中登记的布局 id：优先名义 declaration，其次合成键。
 pub fn layout_id_for_type(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> Option<LayoutId> {
     // The HIR normalizer may represent a nominal aggregate as a one-element
     // tuple. Preserve the nominal layout identity when it is registered; using
@@ -86,6 +89,7 @@ pub fn layout_id_for_type(ty: &ValkyrieType, plan: &AggregateLayoutPlan) -> Opti
     plan.type_name_to_layout.get(&key).copied()
 }
 
+/// 从 HIR 收集聚合布局计划：结构体、导入结构体与 singleton 载体。
 pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan {
     let mut plan = AggregateLayoutPlan::default();
     let mut structs = Vec::new();
@@ -136,6 +140,7 @@ fn collect_module_structs<'a>(module: &'a HirModule, output: &mut Vec<&'a HirStr
     }
 }
 
+/// 确保类型已在计划中有布局：缺失时为 tuple / fixed array 合成并登记新布局。
 pub fn ensure_layout_for_type(plan: &mut AggregateLayoutPlan, ty: &ValkyrieType) -> Option<LayoutId> {
     if let Some(id) = layout_id_for_type(ty, plan) {
         return Some(id);
@@ -242,7 +247,7 @@ fn register_declared_layout(plan: &mut AggregateLayoutPlan, declaration: &HirStr
         plan.value_type_declarations.insert(item);
     }
     // 禁止把名义结构体写入 type_name_to_layout；该表仅服务合成 tuple/fixedarray 键。
-    // 禁止再写入 value_type_names；后端须读 layout.storage / value_type_declarations。
+    // 后端须读 layout.storage / value_type_declarations；按名称的存储视图表已删除。
     plan.layouts.push(layout);
 }
 
@@ -252,7 +257,7 @@ fn register_layout(plan: &mut AggregateLayoutPlan, layout: AggregateLayout) {
     if plan.type_name_to_layout.contains_key(&qualified) {
         return;
     }
-    // 合成键只进 type_name_to_layout；存储类以 layout.storage 为准，不写 value_type_names。
+    // 合成键只进 type_name_to_layout；存储类以 layout.storage 为准，不按名称建档。
     plan.type_name_to_layout.insert(qualified, layout.id);
     plan.layouts.push(layout);
 }
@@ -261,11 +266,17 @@ fn next_layout_id(plan: &AggregateLayoutPlan) -> LayoutId {
     plan.layouts.iter().map(|layout| layout.id).max().unwrap_or(0) + 1
 }
 
-struct FieldSpec {
-    name: String,
-    ty: ValkyrieType,
-    size: u32,
-    align: u32,
+/// 聚合布局字段的规格描述：未 concretize 前的字段名 / 类型 / 字节大小 / 字节对齐。
+#[doc(hidden)]
+pub struct FieldSpec {
+    /// 字段名；tuple / fixed array 用序号字符串。
+    pub name: String,
+    /// 未 concretize 的字段类型。
+    pub ty: ValkyrieType,
+    /// 字段字节大小。
+    pub size: u32,
+    /// 字段字节对齐。
+    pub align: u32,
 }
 
 fn element_fields(element_types: &[ValkyrieType], plan: &AggregateLayoutPlan) -> Vec<FieldSpec> {
@@ -279,7 +290,9 @@ fn element_fields(element_types: &[ValkyrieType], plan: &AggregateLayoutPlan) ->
         .collect()
 }
 
-fn build_aggregate_layout(id: LayoutId, name: &str, namespace: String, storage: MirStorageKind, specs: Vec<FieldSpec>) -> AggregateLayout {
+/// 按字段规格计算偏移与对齐并构造聚合布局；字段类型必须严格 concretize。
+#[doc(hidden)]
+pub fn build_aggregate_layout(id: LayoutId, name: &str, namespace: String, storage: MirStorageKind, specs: Vec<FieldSpec>) -> AggregateLayout {
     let mut offset = 0u32;
     let mut max_align = 1u32;
     let mut fields = Vec::with_capacity(specs.len());

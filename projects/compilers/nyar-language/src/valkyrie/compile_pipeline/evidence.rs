@@ -40,30 +40,14 @@ pub fn host_provider_binding_hash_for_bindings(host_bindings: &[CompilerHostProv
 }
 
 fn semantic_closure_hash(groups: &[CompilerSourceGroup]) -> String {
-    if let Some(first) = groups.first() {
-        if let Some(digest) = &first.closure_digest {
-            if groups.iter().all(|group| group.closure_digest.as_ref() == Some(digest)) {
-                return digest.clone();
-            }
-        }
-    }
-    let mut parts = Vec::new();
+    // 闭包和摘要使用同一 Compiler 生产者，不能信任调用方提交的摘要。
+    let closure = crate::valkyrie::semantic_closure::source_group_closure(groups);
+    let mut parts = vec![closure.digest];
     for group in groups {
         parts.push(group.dependency_key.clone());
-        for file in &group.sources {
-            parts.push(combined_content_hash(&[file.path.as_str(), file.source.as_str()]));
-        }
+        parts.push(group.name.clone());
         for dependency in &group.direct_dependencies {
             parts.push(dependency.clone());
-        }
-        match &group.body_lowering_source_paths {
-            None => parts.push("body-lowering:all".into()),
-            Some(paths) => {
-                parts.push("body-lowering:subset".into());
-                for path in paths {
-                    parts.push(path.clone());
-                }
-            }
         }
     }
     let borrowed = parts.iter().map(String::as_str).collect::<Vec<_>>();

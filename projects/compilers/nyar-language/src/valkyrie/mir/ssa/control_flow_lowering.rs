@@ -3,8 +3,6 @@ use crate::types::{
     hir::{HirBlock, HirExpr, HirExprKind, HirLiteral, HirPattern, ValkyrieType},
 };
 
-use nyar_types::builtin_operator;
-
 use super::{
     MirBuilder, MirConstant, MirOperand, MirOperation, MirTerminator, MirValueOrigin, control_flow_context::MirLoopContext,
     infer_builder_operand_type,
@@ -12,6 +10,9 @@ use super::{
 
 impl MirBuilder {
     /// `loop pat in coll` 的索引 lowering 必须先获得比较与自增的 callable 合同。
+    ///
+    /// 比较与自增都是普通接收者成员调用（`infix <` / `infix +`），
+    /// 不存在运算符专用身份；缺少已绑定 callable 时按普通 callable 失败关闭。
     pub(super) fn lower_for_in_as_indexed_while(
         &mut self,
         _label: &Option<crate::types::Identifier>,
@@ -20,8 +21,8 @@ impl MirBuilder {
         _condition: &Option<Box<HirExpr>>,
         _body: &HirBlock,
     ) -> MirOperand {
-        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable { operator: builtin_operator::infix_lt() });
-        self.diagnostics.push(super::MirDiagnostic::UnresolvedOperatorCallable { operator: builtin_operator::infix_add() });
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: "infix <".to_string() });
+        self.diagnostics.push(super::MirDiagnostic::UnresolvedCallableIdentity { symbol: "infix +".to_string() });
         return MirOperand::Constant(MirConstant::Unit);
     }
 

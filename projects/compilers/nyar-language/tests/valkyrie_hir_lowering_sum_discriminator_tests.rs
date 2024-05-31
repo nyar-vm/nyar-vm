@@ -4,7 +4,7 @@ use nyar_language::{
     valkyrie::{
         hir::lowering::{DEFAULT_COMPILE_ARCH, validate_enum_discriminators, validate_expr_call_contracts},
         mir::MirLowerer,
-        types::hir::{HirCallKind, HirDependencySemanticExport, HirEnum, HirExpr, HirExprKind, HirLiteral, HirStatementKind, HirVariant},
+        types::hir::{HirDependencySemanticExport, HirEnum, HirExpr, HirExprKind, HirLiteral, HirStatementKind, HirVariant},
     },
 };
 
@@ -44,7 +44,6 @@ fn familiar_sum_names_preserve_the_declared_variants() {
 fn unresolved_call_contract_is_rejected_before_mir() {
     let expression = HirExpr {
         kind: HirExprKind::Call {
-            call_kind: HirCallKind::Function,
             callee: Box::new(HirExpr { kind: HirExprKind::Path(NamePath::new(vec![Identifier::new("missing")])), span: test_span() }),
             args: Vec::new(),
             resolved: None,
@@ -281,18 +280,15 @@ enums Status {
                 .into(),
             }],
             direct_dependencies: Vec::new(),
-            body_lowering_source_paths: None,
-            closure_digest: None,
-            body_lowering_declaration_keys: None,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
-            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro main() { return }".into() }],
+            sources: vec![CompilerSourceFile {
+                path: "app.v".into(),
+                source: "micro main(current: Status) -> i32 { return 0 }".into(),
+            }],
             direct_dependencies: vec!["dep".into()],
-            body_lowering_source_paths: None,
-            closure_digest: None,
-            body_lowering_declaration_keys: None,
         },
     ];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("consumer with imported enums");
@@ -364,18 +360,15 @@ unite Choice {
                 .into(),
             }],
             direct_dependencies: Vec::new(),
-            body_lowering_source_paths: None,
-            closure_digest: None,
-            body_lowering_declaration_keys: None,
         },
         CompilerSourceGroup {
             dependency_key: "app".into(),
             name: "app".into(),
-            sources: vec![CompilerSourceFile { path: "app.v".into(), source: "micro main() { return }".into() }],
+            sources: vec![CompilerSourceFile {
+                path: "app.v".into(),
+                source: "micro main(choice: Choice) -> i32 { return 0 }".into(),
+            }],
             direct_dependencies: vec!["dep".into()],
-            body_lowering_source_paths: None,
-            closure_digest: None,
-            body_lowering_declaration_keys: None,
         },
     ];
     let modules = ValkyrieCompiler::default().resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH).expect("consumer with imported unite");

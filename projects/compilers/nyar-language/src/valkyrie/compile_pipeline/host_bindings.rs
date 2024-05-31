@@ -15,7 +15,8 @@ use crate::valkyrie::{
 use super::context::CompilerHostProviderBinding;
 
 /// 将 Resolver 选定的 host provider 绑定应用到已链接的 Semantic MIR。
-pub(crate) fn apply_host_provider_bindings(
+#[doc(hidden)]
+pub fn apply_host_provider_bindings(
     module: &mut MirModule,
     dependency_mirs: &[MirModule],
     bindings: &[CompilerHostProviderBinding],

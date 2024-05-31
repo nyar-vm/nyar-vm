@@ -50,7 +50,9 @@ fn collect_future_poll_and_output_bindings(
     bindings
 }
 
-fn collect_witness_binding(
+/// 解析单个 witness 方法绑定；解析失败时记录诊断并返回空集合。
+#[doc(hidden)]
+pub fn collect_witness_binding(
     hir_module: &HirModule,
     trait_name: &str,
     method_name: &str,
@@ -76,7 +78,9 @@ fn collect_witness_binding(
     Vec::new()
 }
 
-fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method_name: &str) -> Option<SuspendWitnessBinding> {
+/// 从模块 impl 中解析指定 trait 方法对应的 witness 槽位。
+#[doc(hidden)]
+pub fn resolved_witness_binding(hir_module: &HirModule, trait_name: &str, method_name: &str) -> Option<SuspendWitnessBinding> {
     let trait_impl = find_trait_impl(hir_module, trait_name)?;
     let type_name = impl_type_name(hir_module, trait_impl)?;
     let (index, method) = trait_impl.methods.iter().enumerate().find(|(_, method)| method.name.as_str() == method_name)?;
