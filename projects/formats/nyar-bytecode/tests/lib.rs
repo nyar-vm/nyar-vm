@@ -13,7 +13,8 @@ fn structural_opcodes_are_imm1() {
 #[test]
 fn bytecode_format_version_tracks_nyar_version() {
     assert_eq!(BYTECODE_FORMAT_VERSION, NYAR_VERSION);
-    assert_eq!(BYTECODE_FORMAT_VERSION, 2);
+    // 未正式发布前格式基线统一为 v0；递增格式必须同时抬 `NYAR_VERSION`。
+    assert_eq!(BYTECODE_FORMAT_VERSION, 0);
 }
 
 #[test]
@@ -27,13 +28,13 @@ fn obsolete_call_native_is_not_a_live_head_code() {
 fn emit_helpers_round_trip_with_decode_at() {
     let mut code = Vec::new();
     emit_plain(&mut code, NyarHeadCode::Return);
-    emit_imm1(&mut code, NyarHeadCode::Const, 7);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 7);
     emit_imm2(&mut code, NyarHeadCode::CallImport, 1, 2);
     let ret = decode_at(&code, 0);
     assert_eq!(ret.code, NyarHeadCode::Return);
     assert_eq!(ret.size, 1);
     let c = decode_at(&code, 1);
-    assert_eq!(c.code, NyarHeadCode::Const);
+    assert_eq!(c.code, NyarHeadCode::Constant);
     assert_eq!(c.operand1, 7);
     assert_eq!(c.size, 5);
     let call = decode_at(&code, 6);

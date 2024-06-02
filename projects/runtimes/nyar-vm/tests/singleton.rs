@@ -130,7 +130,7 @@ fn singleton_field_read_write_roundtrip() {
     // set_total: LoadGlobal; Const(42); FieldSet(0); Pop; Return
     let set_total_offset = code.len() as i32;
     emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     emit_imm1(&mut code, NyarHeadCode::FieldSet, 0);
     code.push(NyarHeadCode::Pop as u8);
     code.push(NyarHeadCode::Return as u8);
@@ -147,7 +147,7 @@ fn singleton_field_read_write_roundtrip() {
     let increment_offset = code.len() as i32;
     emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
     emit_imm1(&mut code, NyarHeadCode::FieldGet, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 1);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 1);
     code.push(NyarHeadCode::I32Add as u8);
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
     emit_imm1(&mut code, NyarHeadCode::LoadGlobal, 0);
@@ -249,10 +249,10 @@ fn lazy_singleton_field_write_persists_across_calls() {
     code[jump_to_hit_pc + 1..jump_to_hit_pc + 5].copy_from_slice(&to_hit_jump.to_le_bytes());
     let accessor_length = code.len() as i32 - accessor_offset;
 
-    // set_field: Call(accessor); Const(100); FieldSet(0); Pop; Return
+    // set_field: Call(accessor); (100); FieldSet(0); Pop; Return
     let set_field_offset = code.len() as i32;
     emit_imm1(&mut code, NyarHeadCode::Call, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     emit_imm1(&mut code, NyarHeadCode::FieldSet, 0);
     code.push(NyarHeadCode::Pop as u8);
     code.push(NyarHeadCode::Return as u8);

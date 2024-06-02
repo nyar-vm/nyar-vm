@@ -1,6 +1,6 @@
 //! Node-API 原生绑定：导出正交、粗粒度的宿主能力（协议、运行时家族、命令准备/执行）。
 //!
-//! CLI 编排与 argv 解析在 `@nyar/nyar`（TypeScript + `@nyar/commander`），不在此 crate。
+//! CLI 编排与 argv 解析在 `@nyar/nyar`（TypeScript + `@vmz/commander`），不在此 crate。
 
 #![deny(missing_docs)]
 

@@ -7,7 +7,9 @@
 pub const NYAR_MAGIC: u32 = 0x4E59_4152;
 
 /// Current `.legion` / `.nyar` format version.
-pub const NYAR_VERSION: u32 = 2;
+///
+/// 未正式发布前统一为 `0`（v0 基线）；旧版本的模块一律拒绝，不做兼容读取。
+pub const NYAR_VERSION: u32 = 0;
 
 /// Bytecode format contract version（S-W6 provenance / cache 键）。
 /// 与 [`NYAR_VERSION`] 同步；格式破坏时两者一并递增。
@@ -49,7 +51,7 @@ pub enum NyarHeadCode {
     /// 若 `Effectful::Resume = !`，resume 路径不可达，VM 在尝试 resume 时报错。
     PerformEffect = 0x0D,
     /// 加载常量（operand1 = 常量池索引）。
-    Const = 0x10,
+    Constant = 0x10,
     /// 弹出栈顶值。
     Pop = 0x11,
     /// 复制栈顶值。
@@ -118,7 +120,7 @@ impl NyarHeadCode {
             0x0B => Some(Self::Resume),
             0x0D => Some(Self::PerformEffect),
             0x0F => Some(Self::CallStatic),
-            0x10 => Some(Self::Const),
+            0x10 => Some(Self::Constant),
             0x11 => Some(Self::Pop),
             0x12 => Some(Self::Dup),
             0x20 => Some(Self::LoadLocal),
@@ -171,7 +173,7 @@ impl NyarHeadCode {
             | Self::JumpIfFalse
             | Self::Call
             | Self::CallStatic
-            | Self::Const
+            | Self::Constant
             | Self::Yield
             | Self::PerformEffect
             | Self::LoadLocal

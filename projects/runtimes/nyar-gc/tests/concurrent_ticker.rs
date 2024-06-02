@@ -1,4 +1,5 @@
 use nyar_gc::*;
+use std::{thread, time::Duration};
 
 #[test]
 fn ticker_increments_while_running() {

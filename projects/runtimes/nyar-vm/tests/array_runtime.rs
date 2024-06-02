@@ -1,4 +1,8 @@
-use nyar_vm::*;
+use nyar_gc::{ObjectHeap, ObjectPayload, Value};
+use nyar_vm::{
+    array_runtime::{array_get, array_len, array_push, array_set, build_fixed_array},
+    error::NyarRuntimeError,
+};
 
 #[test]
 fn array_push_grows_layout_slots() {

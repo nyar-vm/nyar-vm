@@ -12,28 +12,47 @@ pub const HOST_IMPORT_MODULE: &str = "nyar.host";
 /// `nyar.host` 上已冻结的宿主操作（稠密枚举，非字符串合同）。
 ///
 /// 结构分配与字段访问不在此枚举：由 `ObjectNew` / `FieldGet` / `FieldSet` 闭合。
-#[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostOp {
+    /// 打印一个 `String` 值。
     Print,
+    /// 拼接两个 `String` 值。
     StringConcat,
+    /// 输出一行控制台日志。
     ConsoleLog,
+    /// 有符号 32 位转 64 位。
     I32ToI64,
+    /// 有符号 32 位整除。
     I32Div,
+    /// 64 位有符号加法。
     I64Add,
+    /// 64 位有符号减法。
     I64Sub,
+    /// 64 位有符号乘法。
     I64Mul,
+    /// 64 位有符号整除。
     I64Div,
+    /// 64 位有符号取余。
     I64Rem,
+    /// 64 位有符号取负。
     I64Neg,
+    /// 64 位有符号相等比较。
     I64Eq,
+    /// 64 位有符号不等比较。
     I64Ne,
+    /// 64 位有符号小于比较。
     I64Lt,
+    /// 64 位有符号小于等于比较。
     I64Le,
+    /// 64 位有符号大于比较。
     I64Gt,
+    /// 64 位有符号大于等于比较。
     I64Ge,
+    /// 布尔取反。
     BoolNot,
+    /// 布尔与。
     BoolAnd,
+    /// 布尔或。
     BoolOr,
     /// 进入业务阶段（参数：阶段名 `String`，可选 `i32` 暂停预算毫秒）。
     BeginPhase,

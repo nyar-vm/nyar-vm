@@ -1,5 +1,8 @@
-use nyar_gc::ObjectHeap;
-use nyar_vm::*;
+use nyar_gc::{ObjectHeap, Value};
+use nyar_vm::{
+    error::NyarRuntimeError,
+    json_bridge::{materialize_value_from_json, parse_call_args_json, value_from_json, value_to_json_with_heap},
+};
 
 #[test]
 fn parse_args_json_scalars() {

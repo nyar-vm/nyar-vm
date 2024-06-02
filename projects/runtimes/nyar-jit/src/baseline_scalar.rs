@@ -110,7 +110,7 @@ fn match_discard_pop_void_return(code: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     match first.code {
-        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::Const => {}
+        NyarHeadCode::LoadLocal | NyarHeadCode::LoadArg | NyarHeadCode::Constant => {}
         _ => return None,
     }
     pc += first.size as usize;
@@ -160,12 +160,12 @@ fn match_binop_pop_void_return(code: &[u8]) -> Option<Vec<u8>> {
 fn match_const_const_op_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
     let mut pc = 0usize;
     let a_ins = decode_at(code, pc);
-    if a_ins.size == 0 || a_ins.code != NyarHeadCode::Const || a_ins.operand1 < 0 {
+    if a_ins.size == 0 || a_ins.code != NyarHeadCode::Constant || a_ins.operand1 < 0 {
         return None;
     }
     pc += a_ins.size as usize;
     let b_ins = decode_at(code, pc);
-    if b_ins.size == 0 || b_ins.code != NyarHeadCode::Const || b_ins.operand1 < 0 {
+    if b_ins.size == 0 || b_ins.code != NyarHeadCode::Constant || b_ins.operand1 < 0 {
         return None;
     }
     pc += b_ins.size as usize;
@@ -194,12 +194,12 @@ fn match_const_const_op_return(code: &[u8], constant_i32: &[Option<i32>]) -> Opt
 fn match_const_const_op_pop_void(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
     let mut pc = 0usize;
     let a_ins = decode_at(code, pc);
-    if a_ins.size == 0 || a_ins.code != NyarHeadCode::Const || a_ins.operand1 < 0 {
+    if a_ins.size == 0 || a_ins.code != NyarHeadCode::Constant || a_ins.operand1 < 0 {
         return None;
     }
     pc += a_ins.size as usize;
     let b_ins = decode_at(code, pc);
-    if b_ins.size == 0 || b_ins.code != NyarHeadCode::Const || b_ins.operand1 < 0 {
+    if b_ins.size == 0 || b_ins.code != NyarHeadCode::Constant || b_ins.operand1 < 0 {
         return None;
     }
     pc += b_ins.size as usize;
@@ -327,14 +327,14 @@ fn match_const_load_op_pop_void(code: &[u8], constant_i32: &[Option<i32>]) -> Op
         return None;
     }
     match (first.code, second.code) {
-        (NyarHeadCode::Const, _) => {
+        (NyarHeadCode::Constant, _) => {
             if first.operand1 < 0 {
                 return None;
             }
             let _ = constant_i32.get(first.operand1 as usize).copied().flatten()?;
             let _ = load_slot(&second)?;
         }
-        (_, NyarHeadCode::Const) => {
+        (_, NyarHeadCode::Constant) => {
             if second.operand1 < 0 {
                 return None;
             }
@@ -380,7 +380,7 @@ fn match_const_load_op_return(code: &[u8], constant_i32: &[Option<i32>]) -> Opti
     }
 
     let (imm, local, imm_on_left) = match (first.code, second.code) {
-        (NyarHeadCode::Const, _) => {
+        (NyarHeadCode::Constant, _) => {
             if first.operand1 < 0 {
                 return None;
             }
@@ -388,7 +388,7 @@ fn match_const_load_op_return(code: &[u8], constant_i32: &[Option<i32>]) -> Opti
             let local = load_slot(&second)?;
             (imm, local, true)
         }
-        (_, NyarHeadCode::Const) => {
+        (_, NyarHeadCode::Constant) => {
             if second.operand1 < 0 {
                 return None;
             }
@@ -410,7 +410,7 @@ fn match_const_load_op_return(code: &[u8], constant_i32: &[Option<i32>]) -> Opti
 
 fn match_const_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<Vec<u8>> {
     let first = decode_at(code, 0);
-    if first.size == 0 || first.code != NyarHeadCode::Const {
+    if first.size == 0 || first.code != NyarHeadCode::Constant {
         return None;
     }
     let second = decode_at(code, first.size as usize);
@@ -578,7 +578,7 @@ fn match_select_cmp_return(code: &[u8], constant_i32: &[Option<i32>]) -> Option<
 }
 
 fn const_i32(ins: &nyar_bytecode::NyarInstruction, constant_i32: &[Option<i32>]) -> Option<i32> {
-    if ins.code != NyarHeadCode::Const || ins.operand1 < 0 {
+    if ins.code != NyarHeadCode::Constant || ins.operand1 < 0 {
         return None;
     }
     constant_i32.get(ins.operand1 as usize).copied().flatten()

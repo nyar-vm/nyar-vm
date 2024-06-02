@@ -19,7 +19,7 @@ fn build_yield_resume_module() -> NyarModuleData {
     //   Return              ; on resume: return resume_value (still on stack)
     let mut code = Vec::new();
     let gen_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Const, 0); // const index 0 -> 42
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // const index 0 -> 42
     emit_imm1(&mut code, NyarHeadCode::Yield, 0); // operand1 unused by VM, but encoded as Imm1
     emit_plain(&mut code, NyarHeadCode::Return);
 
@@ -34,7 +34,7 @@ fn build_yield_resume_module() -> NyarModuleData {
     emit_imm1(&mut code, NyarHeadCode::Call, 0);
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
     emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 1); // const index 1 -> 999
+    emit_imm1(&mut code, NyarHeadCode::Constant, 1); // const index 1 -> 999
     emit_plain(&mut code, NyarHeadCode::Resume);
     emit_plain(&mut code, NyarHeadCode::Return);
 
@@ -80,7 +80,7 @@ fn yield_without_call_returns_coroutine_at_top_level() {
     // When the top-level function itself yields, there is no parent frame to resume it.
     // The executor must return the captured coroutine value instead of looping forever.
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0); // 42
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 42
     emit_imm1(&mut code, NyarHeadCode::Yield, 0);
     // If resumed, the next instruction would be Return; but at top level we never get here.
     emit_plain(&mut code, NyarHeadCode::Return);
@@ -137,22 +137,22 @@ fn resuming_a_completed_coroutine_is_rejected() {
     //     Return                 ; unreachable on success path
     let mut code = Vec::new();
     let gen_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Const, 0); // 42
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 42
     emit_imm1(&mut code, NyarHeadCode::Yield, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 1); // 100
+    emit_imm1(&mut code, NyarHeadCode::Constant, 1); // 100
     emit_plain(&mut code, NyarHeadCode::Return);
 
     let main_offset = code.len() as i32;
     emit_imm1(&mut code, NyarHeadCode::Call, 0);
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
     emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 2); // 999
+    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
     emit_plain(&mut code, NyarHeadCode::Resume);
     // First resume succeeded; gen returned 100 (on stack). Drop it so the stack is clean
     // before the second resume attempt.
     emit_plain(&mut code, NyarHeadCode::Pop);
     emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0); // stale coroutine copy
-    emit_imm1(&mut code, NyarHeadCode::Const, 2); // 999
+    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
     emit_plain(&mut code, NyarHeadCode::Resume);
     emit_plain(&mut code, NyarHeadCode::Return);
 
@@ -214,8 +214,8 @@ fn yield_preserves_operand_values_above_stack_base() {
     //   Return               ; expect 107
     let mut code = Vec::new();
     let gen_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 1);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 1);
     emit_imm1(&mut code, NyarHeadCode::Yield, 0);
     emit_plain(&mut code, NyarHeadCode::I32Add);
     emit_plain(&mut code, NyarHeadCode::Return);
@@ -224,7 +224,7 @@ fn yield_preserves_operand_values_above_stack_base() {
     emit_imm1(&mut code, NyarHeadCode::Call, 0);
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
     emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 2);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 2);
     emit_plain(&mut code, NyarHeadCode::Resume);
     emit_plain(&mut code, NyarHeadCode::Return);
 
@@ -260,8 +260,8 @@ fn yield_preserves_operand_values_above_stack_base() {
 #[test]
 fn top_level_yield_captures_operand_stack_fragment() {
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0); // 7 — remains above stack_base
-    emit_imm1(&mut code, NyarHeadCode::Const, 1); // 42 — yielded
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 7 — remains above stack_base
+    emit_imm1(&mut code, NyarHeadCode::Constant, 1); // 42 — yielded
     emit_imm1(&mut code, NyarHeadCode::Yield, 0);
     emit_plain(&mut code, NyarHeadCode::Return);
 

@@ -1,4 +1,5 @@
-use nyar_bytecode::{NyarHeadCode, emit_imm1};
+use nyar_bytecode::{NyarFunction, NyarHeadCode, emit_imm1};
+use nyar_vm::executable::build_executable_function;
 
 #[test]
 fn resolves_jump_to_instruction_index() {
@@ -7,7 +8,7 @@ fn resolves_jump_to_instruction_index() {
     let jump_pc = 0usize;
     emit_imm1(&mut code, NyarHeadCode::Jump, 0);
     // unreachable Const
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let return_pc = code.len();
     code.push(NyarHeadCode::Return as u8);
     let offset = (return_pc as i32) - (jump_pc as i32);

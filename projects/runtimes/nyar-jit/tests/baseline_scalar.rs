@@ -1,4 +1,4 @@
-use nyar_bytecode::NyarHeadCode;
+use nyar_bytecode::{NYAR_VERSION, NyarHeadCode};
 use nyar_jit::*;
 
 fn request(code: Vec<u8>) -> JitCompileRequest {
@@ -7,7 +7,7 @@ fn request(code: Vec<u8>) -> JitCompileRequest {
 
 fn request_with_constants(code: Vec<u8>, constant_i32: Vec<Option<i32>>) -> JitCompileRequest {
     JitCompileRequest {
-        module_version: 1,
+        module_version: NYAR_VERSION,
         module_name: "t".into(),
         code_bytes: code.clone(),
         constant_i32,
@@ -19,7 +19,7 @@ fn request_with_constants(code: Vec<u8>, constant_i32: Vec<Option<i32>>) -> JitC
 #[test]
 fn compiles_const_i32_return() {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::Return as u8);
     let mut jit = BaselineScalarJit;
@@ -77,9 +77,9 @@ fn compiles_load_dup_binop() {
 #[test]
 fn folds_const_const_binop_to_ret_const() {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&1i32.to_le_bytes());
     code.push(NyarHeadCode::I32Mul as u8);
     code.push(NyarHeadCode::Return as u8);
@@ -92,9 +92,9 @@ fn folds_const_const_binop_to_ret_const() {
 #[test]
 fn folds_const_const_binop_pop_to_ret_void() {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&1i32.to_le_bytes());
     code.push(NyarHeadCode::I32Add as u8);
     code.push(NyarHeadCode::Pop as u8);
@@ -122,7 +122,7 @@ fn compiles_load_dup_op_pop_void() {
 #[test]
 fn compiles_const_local_binop_and_cmp() {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     emit_load(&mut code, 0);
     code.push(NyarHeadCode::I32Add as u8);
@@ -137,7 +137,7 @@ fn compiles_const_local_binop_and_cmp() {
 
     let mut code = Vec::new();
     emit_load(&mut code, 1);
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::I32LtS as u8);
     code.push(NyarHeadCode::Return as u8);
@@ -152,7 +152,7 @@ fn compiles_const_local_binop_and_cmp() {
 #[test]
 fn compiles_const_load_op_pop_void() {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     emit_load(&mut code, 0);
     code.push(NyarHeadCode::I32Add as u8);
@@ -174,13 +174,13 @@ fn compiles_i32_select_cmp_consts() {
     code.push(NyarHeadCode::JumpIfFalse as u8);
     let offset_pos = code.len();
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::Return as u8);
     let else_pc = code.len();
     let rel = (else_pc as i32) - (br_pc as i32);
     code[offset_pos..offset_pos + 4].copy_from_slice(&rel.to_le_bytes());
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&1i32.to_le_bytes());
     code.push(NyarHeadCode::Return as u8);
 
@@ -231,7 +231,7 @@ fn compiles_i32_select_cmp_mixed() {
     code.push(NyarHeadCode::JumpIfFalse as u8);
     let offset_pos = code.len();
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::Return as u8);
     let else_pc = code.len();
@@ -296,7 +296,7 @@ fn compiles_binop_pop_void_return() {
 #[test]
 fn compiles_const_pop_void_return() {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::Pop as u8);
     code.push(NyarHeadCode::Return as u8);
@@ -310,7 +310,7 @@ fn compiles_const_pop_void_return() {
 fn compiles_i32_neg_via_const0_sub() {
     // 发射器把 `-x` 降为 `Const(0); Load; I32Sub; Return`。
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     emit_load(&mut code, 0);
     code.push(NyarHeadCode::I32Sub as u8);

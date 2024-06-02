@@ -16,12 +16,12 @@ fn golden_const_add_return_roundtrip() {
         exports: vec![NyarExport { kind: NyarExportKind::Function, symbol_name: "main".to_string(), function_index: 0 }],
         witness_entries: Vec::new(),
         code_bytes: vec![
-            NyarHeadCode::Const as u8,
+            NyarHeadCode::Constant as u8,
             0x00,
             0x00,
             0x00,
             0x00,
-            NyarHeadCode::Const as u8,
+            NyarHeadCode::Constant as u8,
             0x01,
             0x00,
             0x00,
@@ -48,7 +48,7 @@ fn golden_object_new_field_get_set_roundtrip() {
     let mut code = Vec::new();
     code.push(NyarHeadCode::ObjectNew as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::FieldSet as u8);
     code.extend_from_slice(&0i32.to_le_bytes());

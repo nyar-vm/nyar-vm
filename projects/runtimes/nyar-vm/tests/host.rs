@@ -1,4 +1,9 @@
-use nyar_vm::*;
+use nyar_bytecode::NyarImport;
+use nyar_gc::ObjectHeap;
+use nyar_vm::{
+    host::{HostOp, ResolvedImport, execute_host_op, parse_host_op, resolve_import},
+    value::Value,
+};
 
 #[test]
 fn parses_all_seed_host_ops() {

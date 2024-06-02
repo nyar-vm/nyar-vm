@@ -29,9 +29,9 @@ fn build_effect_handler_module() -> NyarModuleData {
     //   Const 2 (999)           ; if resumed, push 999 and return it
     //   Return
     let raiser_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Const, 0); // 123
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 123
     emit_imm1(&mut code, NyarHeadCode::PerformEffect, 1); // constant pool[1] = "raise"
-    emit_imm1(&mut code, NyarHeadCode::Const, 2); // 999
+    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
     emit_plain(&mut code, NyarHeadCode::Return);
 
     // Function 1: handler
@@ -124,9 +124,9 @@ fn perform_effect_without_witness_entry_falls_back_to_suspend() {
     // When witness_entries is empty, PerformEffect must degrade to the old
     // Yield-alias behavior (Suspend) so existing modules keep working.
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0); // 42
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 42
     emit_imm1(&mut code, NyarHeadCode::PerformEffect, 1); // constant pool[1] = "raise"
-    emit_imm1(&mut code, NyarHeadCode::Const, 2); // 999
+    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
     emit_plain(&mut code, NyarHeadCode::Return);
 
     let module = NyarModuleData {
@@ -169,15 +169,15 @@ fn handler_unwind_when_not_resuming_continuation() {
     // function 2 "main": Call 0, Return
     let mut code = Vec::new();
     let raiser_offset = 0i32;
-    emit_imm1(&mut code, NyarHeadCode::Const, 0); // 123
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // 123
     emit_imm1(&mut code, NyarHeadCode::PerformEffect, 1); // "raise"
-    emit_imm1(&mut code, NyarHeadCode::Const, 2); // 999
+    emit_imm1(&mut code, NyarHeadCode::Constant, 2); // 999
     emit_plain(&mut code, NyarHeadCode::Return);
 
     let handler_offset = code.len() as i32;
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0); // local 0 = effect_value
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 1); // local 1 = continuation (unused)
-    emit_imm1(&mut code, NyarHeadCode::Const, 3); // 42
+    emit_imm1(&mut code, NyarHeadCode::Constant, 3); // 42
     emit_plain(&mut code, NyarHeadCode::Return);
 
     let main_offset = code.len() as i32;

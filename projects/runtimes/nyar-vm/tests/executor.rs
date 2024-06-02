@@ -1,16 +1,20 @@
 use nyar_bytecode::{NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, NyarFunction, NyarHeadCode, NyarModuleData, encode_module};
-use nyar_jit::StackMapEntry;
-use nyar_vm::{executor::Executor, module::LoadedModule, *};
+use nyar_vm::{
+    executor::{Executor, select_local_roots},
+    jit::StackMapEntry,
+    module::LoadedModule,
+    *,
+};
 
 #[test]
 fn runs_const_add_return_bytecode() {
     let code = vec![
-        NyarHeadCode::Const as u8,
+        NyarHeadCode::Constant as u8,
         0,
         0,
         0,
         0,
-        NyarHeadCode::Const as u8,
+        NyarHeadCode::Constant as u8,
         1,
         0,
         0,
@@ -57,14 +61,11 @@ fn select_local_roots_keeps_only_mapped_slots() {
 
 #[test]
 fn concurrent_collect_exposes_root_handshake_on_executor() {
-    use nyar_gc::{GcPolicy, ObjectPayload};
-
     let mut executor = Executor::new();
     *executor.heap_mut().policy_mut() = GcPolicy::concurrent_mark_reserved();
     let live = executor.heap_mut().alloc(ObjectPayload::LayoutObject { layout_id: 0, slots: vec![] });
     let stack = [Value::Object(live)];
-    let _ =
-        executor.gc.collect_for_policy(GcRoots { stack: &stack, frame_locals: &[], globals: &[], frame_coroutines: &[] }, &mut executor.heap);
+    let _ = executor.collect_for_policy(GcRoots { stack: &stack, frame_locals: &[], globals: &[], frame_coroutines: &[] });
     let hs = executor.last_root_handshake();
     assert_eq!(hs.stack_slots, 1);
     assert!(hs.gray_after_roots >= 1);

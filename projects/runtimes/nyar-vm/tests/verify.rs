@@ -1,5 +1,12 @@
-use nyar_bytecode::{NyarConstant, NyarFunction, NyarImportKind, NyarLayout, NyarModuleData, emit_imm1, emit_plain};
-use nyar_vm::{host::HOST_IMPORT_MODULE, *};
+use nyar_bytecode::{
+    NYAR_VERSION, NyarConstant, NyarFunction, NyarHeadCode, NyarImportKind, NyarLayout, NyarModuleData, OBSOLETE_CALL_NATIVE, emit_imm1,
+    emit_plain,
+};
+use nyar_vm::{
+    error::NyarRuntimeError,
+    host::HOST_IMPORT_MODULE,
+    verify::{MAX_FUNCTION_CODE_BYTES, MAX_OPERAND_STACK_HEIGHT, verify_module},
+};
 
 fn empty_module() -> NyarModuleData {
     NyarModuleData {
@@ -132,7 +139,7 @@ fn accepts_const_call_import_return() {
     });
     module.constants.push(NyarConstant::Integer32(1));
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     code.push(NyarHeadCode::CallImport as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.extend_from_slice(&1i32.to_le_bytes());
@@ -194,15 +201,15 @@ fn rejects_stack_height_mismatch_at_join() {
     let mut module = empty_module();
     module.constants.push(NyarConstant::Integer32(0));
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0); // condition
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0); // condition
     let jif_at = code.len();
     emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0); // -> path_b
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let jump_a_at = code.len();
     emit_imm1(&mut code, NyarHeadCode::Jump, 0);
     let path_b = code.len();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let jump_b_at = code.len();
     emit_imm1(&mut code, NyarHeadCode::Jump, 0);
     let join = code.len();
@@ -227,7 +234,7 @@ fn rejects_i32_binop_on_object_ref() {
     module.constants.push(NyarConstant::Integer32(1));
     module.layouts.push(NyarLayout { field_count: 0 });
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
     emit_plain(&mut code, NyarHeadCode::I32Add);
     emit_plain(&mut code, NyarHeadCode::Return);
@@ -244,7 +251,7 @@ fn rejects_operand_stack_deeper_than_limit() {
     let mut code = Vec::new();
     // 超过 MAX_OPERAND_STACK_HEIGHT 次 Const 压栈。
     for _ in 0..=(MAX_OPERAND_STACK_HEIGHT as usize) {
-        emit_imm1(&mut code, NyarHeadCode::Const, 0);
+        emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     }
     emit_plain(&mut code, NyarHeadCode::Return);
     module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
@@ -258,14 +265,14 @@ fn accepts_balanced_branch_join() {
     let mut module = empty_module();
     module.constants.push(NyarConstant::Integer32(0));
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let jif_at = code.len();
     emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let jump_a_at = code.len();
     emit_imm1(&mut code, NyarHeadCode::Jump, 0);
     let path_b = code.len();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let jump_b_at = code.len();
     emit_imm1(&mut code, NyarHeadCode::Jump, 0);
     let join = code.len();
@@ -289,9 +296,9 @@ fn accepts_store_local_i32_then_binop() {
     module.constants.push(NyarConstant::Integer32(1));
     module.constants.push(NyarConstant::Integer32(2));
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 1);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 1);
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 1);
     emit_imm1(&mut code, NyarHeadCode::LoadLocal, 0);
     emit_imm1(&mut code, NyarHeadCode::LoadLocal, 1);
@@ -310,7 +317,7 @@ fn rejects_store_ref_then_i32_into_same_local() {
     let mut code = Vec::new();
     emit_imm1(&mut code, NyarHeadCode::ObjectNew, 0);
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     emit_imm1(&mut code, NyarHeadCode::StoreLocal, 0);
     emit_plain(&mut code, NyarHeadCode::Return);
     module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 1, code_offset: 0, code_length: code.len() as i32 });
@@ -335,12 +342,12 @@ fn rejects_mixed_void_and_value_returns() {
     let mut module = empty_module();
     module.constants.push(NyarConstant::Integer32(1));
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let jif_at = code.len();
     emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
     emit_plain(&mut code, NyarHeadCode::Return); // void
     let value_ret = code.len();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     emit_plain(&mut code, NyarHeadCode::Return); // i32
     let to_value = (value_ret as i32) - (jif_at as i32);
     code[jif_at + 1..jif_at + 5].copy_from_slice(&to_value.to_le_bytes());
@@ -355,13 +362,13 @@ fn accepts_consistent_i32_returns() {
     let mut module = empty_module();
     module.constants.push(NyarConstant::Integer32(1));
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let jif_at = code.len();
     emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     emit_plain(&mut code, NyarHeadCode::Return);
     let other = code.len();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     emit_plain(&mut code, NyarHeadCode::Return);
     let to_other = (other as i32) - (jif_at as i32);
     code[jif_at + 1..jif_at + 5].copy_from_slice(&to_other.to_le_bytes());
@@ -439,8 +446,8 @@ fn rejects_return_with_extra_stack_slots() {
     module.constants.push(NyarConstant::Integer32(1));
     module.constants.push(NyarConstant::Integer32(2));
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
-    emit_imm1(&mut code, NyarHeadCode::Const, 1);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 1);
     emit_plain(&mut code, NyarHeadCode::Return);
     module.functions.push(NyarFunction { name: "main".into(), arity: 0, local_count: 0, code_offset: 0, code_length: code.len() as i32 });
     module.code_bytes = code;
@@ -456,7 +463,7 @@ fn accepts_boolean_const_as_i32_jump_condition() {
     let mut module = empty_module();
     module.constants.push(NyarConstant::Boolean(true));
     let mut code = Vec::new();
-    emit_imm1(&mut code, NyarHeadCode::Const, 0);
+    emit_imm1(&mut code, NyarHeadCode::Constant, 0);
     let br_pc = code.len();
     emit_imm1(&mut code, NyarHeadCode::JumpIfFalse, 0);
     emit_plain(&mut code, NyarHeadCode::Return);

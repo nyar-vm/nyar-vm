@@ -93,7 +93,7 @@ pub fn dispatch_exec(op: ExecOp, frame: &mut Frame, ctx: &mut ExecutionContext<'
             frame.ip += 1;
             Ok(StepResult::Continue)
         }
-        NyarHeadCode::Const => {
+        NyarHeadCode::Constant => {
             let index = op.operand1;
             let constant = ctx.module.constant_at(index).ok_or(NyarRuntimeError::ConstantIndexOutOfRange(index))?;
             ctx.stack.push(value_from_constant(constant));

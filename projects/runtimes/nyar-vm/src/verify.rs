@@ -7,10 +7,10 @@ use nyar_bytecode::{NYAR_VERSION, NyarHeadCode, NyarImport, NyarInstruction, Nya
 use crate::{error::NyarRuntimeError, host::resolve_import};
 
 /// 单函数操作数栈高度上限（加载期拒绝病理模块）。
-const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
+pub const MAX_OPERAND_STACK_HEIGHT: i32 = 8192;
 
 /// 单函数外码字节上限（体积预算；超限 fail-closed）。
-const MAX_FUNCTION_CODE_BYTES: usize = 64 * 1024;
+pub const MAX_FUNCTION_CODE_BYTES: usize = 64 * 1024;
 
 /// 整模块外码字节上限。
 const MAX_MODULE_CODE_BYTES: usize = 4 * 1024 * 1024;
@@ -461,7 +461,7 @@ fn verify_instruction_operands(
     arity: usize,
 ) -> Result<(), NyarRuntimeError> {
     match instruction.code {
-        NyarHeadCode::Const => {
+        NyarHeadCode::Constant => {
             if instruction.operand1 < 0 || (instruction.operand1 as usize) >= data.constants.len() {
                 return Err(NyarRuntimeError::ModuleLoad(format!(
                     "function[{function_index}] Const at pc {pc} constant index {} out of range",
@@ -609,7 +609,7 @@ fn stack_transfer(
             types.push(StackKind::Any);
             Ok(vec![edge(fallthrough, height - 1, *coroutine)])
         }
-        NyarHeadCode::Const => {
+        NyarHeadCode::Constant => {
             types.push(push_const_kind(data, instruction));
             Ok(vec![edge(fallthrough, height + 1, *coroutine)])
         }

@@ -1,9 +1,9 @@
 use nyar_jit::{
-    I32Cmp, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals, encode_ret_i32_cmp_imm_local,
-    encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals, encode_ret_i32_select_cmp_mixed,
-    encode_ret_local, encode_ret_void,
+    I32Binop, I32Cmp, SelectArm, encode_ret_const_i32, encode_ret_i32_binop_imm_local, encode_ret_i32_binop_locals,
+    encode_ret_i32_cmp_imm_local, encode_ret_i32_cmp_locals, encode_ret_i32_select_cmp_consts, encode_ret_i32_select_cmp_locals,
+    encode_ret_i32_select_cmp_mixed, encode_ret_local, encode_ret_void,
 };
-use nyar_vm::*;
+use nyar_vm::{nj1_runtime::execute_nj1_blob, value::Value};
 
 #[test]
 fn executes_ret_local() {

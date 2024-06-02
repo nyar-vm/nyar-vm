@@ -4,7 +4,7 @@ use nyar_bytecode::{NYAR_VERSION, NyarConstant, NyarExport, NyarExportKind, Nyar
 
 fn empty_module() -> nyar_vm::module::LoadedModule {
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::Return as u8);
     let data = NyarModuleData {
@@ -219,9 +219,9 @@ fn baseline_scalar_jit_folds_const_const_binop() {
     use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&1i32.to_le_bytes());
     code.push(NyarHeadCode::I32Add as u8);
     code.push(NyarHeadCode::Return as u8);
@@ -465,7 +465,7 @@ fn baseline_scalar_jit_fast_path_const_local_binop() {
     use nyar_vm::{Value, jit::BaselineScalarJit};
 
     let mut code = Vec::new();
-    code.push(NyarHeadCode::Const as u8);
+    code.push(NyarHeadCode::Constant as u8);
     code.extend_from_slice(&0i32.to_le_bytes());
     code.push(NyarHeadCode::LoadArg as u8);
     code.extend_from_slice(&0i32.to_le_bytes());

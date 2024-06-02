@@ -36,7 +36,8 @@ struct Nj1CacheEntry {
 }
 
 /// 按 stack map 条目抽取可能含引用的 local 槽（拷贝，供 `GcRoots` 借用）。
-fn select_local_roots(locals: &[Value], entry: &StackMapEntry) -> Vec<Value> {
+#[doc(hidden)]
+pub fn select_local_roots(locals: &[Value], entry: &StackMapEntry) -> Vec<Value> {
     entry.local_root_slots.iter().filter_map(|&slot| locals.get(slot as usize).cloned()).collect()
 }
 
@@ -141,6 +142,12 @@ impl Executor {
     /// Mutably borrows the object heap（宿主根 / 策略调整）。
     pub fn heap_mut(&mut self) -> &mut ObjectHeap {
         &mut self.heap
+    }
+
+    /// 以给定 GC 根执行一次 `collect_for_policy`，把转发图交回调用方（供集成测试观察根握手）。
+    #[doc(hidden)]
+    pub fn collect_for_policy(&mut self, roots: GcRoots<'_>) -> nyar_gc::RelocateMap {
+        self.gc.collect_for_policy(roots, &mut self.heap)
     }
 
     /// 按工作负载提示同步堆策略与 ConcurrentTrace 有界预算。
