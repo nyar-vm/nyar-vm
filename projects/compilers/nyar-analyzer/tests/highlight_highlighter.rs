@@ -1,3 +1,9 @@
+use std::any::Any;
+
+use nyar_analyzer::highlight::{
+    AnalysisContext, HighlightKind, HighlightRequest, HighlightSpan, Highlighter, HighlighterKind, HighlighterProvider, HighlighterRegistry,
+};
+
 struct LexicalStub;
 impl Highlighter for LexicalStub {
     fn language_id(&self) -> &str {

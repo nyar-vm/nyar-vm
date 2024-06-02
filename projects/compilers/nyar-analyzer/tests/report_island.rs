@@ -1,3 +1,5 @@
+use nyar_analyzer::report::{IslandKind, awsl_island_kind};
+
 #[test]
 fn chart_routes_are_hydrated() {
     assert_eq!(awsl_island_kind("charts/chart-status.awsl"), IslandKind::Hydrated);

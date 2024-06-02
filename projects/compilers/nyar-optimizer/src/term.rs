@@ -79,7 +79,9 @@ pub fn parse_term(input: &str) -> Result<AlgebraicTerm, String> {
     Ok(term)
 }
 
-fn qualified_from_dotted(value: &str) -> QualifiedName {
+/// 把点分符号文本拆成 [`QualifiedName`]（供集成测试构造期望符号）。
+#[doc(hidden)]
+pub fn qualified_from_dotted(value: &str) -> QualifiedName {
     QualifiedName::new(value.split('.').map(Identifier::new).collect())
 }
 

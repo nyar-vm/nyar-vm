@@ -1,3 +1,5 @@
+use nyar_analyzer::highlight::{HighlightKind, HighlightSpan, merge_spans};
+
 #[test]
 fn semantic_overrides_same_start() {
     let lexical = vec![HighlightSpan::new(HighlightKind::Identifier, 0..3), HighlightSpan::new(HighlightKind::Keyword, 4..7)];

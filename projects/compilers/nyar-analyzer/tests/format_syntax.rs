@@ -1,3 +1,5 @@
+use nyar_analyzer::format::{ByteRange, SyntaxElement, SyntaxNode, SyntaxToken, TriviaKind};
+
 #[test]
 fn byte_range_contains() {
     let r = ByteRange::new(5..10);

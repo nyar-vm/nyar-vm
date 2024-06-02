@@ -1,7 +1,4 @@
-use nyar_analyzer::{
-    highlight::{HighlightKind, HighlightSpan},
-    *,
-};
+use nyar_analyzer::highlight::{HighlightKind, HighlightSpan, render_spans_html};
 
 #[test]
 fn renders_keyword_span() {

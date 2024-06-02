@@ -1,3 +1,5 @@
+use nyar_analyzer::report::{ColSeriesItem, series_to_init_literal};
+
 #[test]
 fn empty_series_is_empty_list() {
     assert_eq!(series_to_init_literal(&[]), "[]");

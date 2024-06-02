@@ -1,4 +1,5 @@
 use nyar_optimizer::*;
+use nyar_types::{CapabilityTag, Identifier, QualifiedName};
 
 fn qualified(parts: &[&str]) -> QualifiedName {
     QualifiedName::new(parts.iter().map(|part| Identifier::new(part)).collect())

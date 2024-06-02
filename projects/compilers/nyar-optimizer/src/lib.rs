@@ -9,7 +9,7 @@ mod theory;
 
 pub use egraph::{EGraphHost, EGraphStats, StructuredRewrite};
 pub use pattern::{TermPattern, parse_pattern};
-pub use term::{AlgebraicTerm, parse_term};
+pub use term::{AlgebraicTerm, parse_term, qualified_from_dotted};
 pub use theory::{TermRewrite, builtin_core_rewrite_theory, builtin_core_term_rewrites, filter_equations, filter_term_rewrites};
 
 use egraph::EGraphHost as OptimizerEGraph;

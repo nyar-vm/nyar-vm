@@ -1,3 +1,5 @@
+use nyar_analyzer::format::SourceMap;
+
 #[test]
 fn identity_map_roundtrip() {
     let mut map = SourceMap::new();

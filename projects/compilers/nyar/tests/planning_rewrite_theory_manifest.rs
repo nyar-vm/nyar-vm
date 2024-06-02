@@ -1,4 +1,4 @@
-use nyar::*;
+use nyar::{planning::rewrite_theory_manifest::RewriteTheoryManifestV1, *};
 
 #[test]
 fn manifest_pattern_rule_produces_term_rewrite() {
