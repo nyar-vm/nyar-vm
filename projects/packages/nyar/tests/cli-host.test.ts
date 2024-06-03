@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {runCli} from '../src/cli/cli.ts';
 
 describe('nyar CLI host', () => {
-    it('runCli routes argv through @nyar/commander (unknown command exits 1)', async () => {
+    it('runCli routes argv through @vmz/commander (unknown command exits 1)', async () => {
         const code = await runCli(['no-such-command']);
         assert.equal(code, 1);
     });

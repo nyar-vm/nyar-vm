@@ -1,7 +1,7 @@
 {
     "name": "@nyar/nyar",
     "version": "0.0.2",
-    "description": "Nyar VM host CLI (@nyar/commander) and orthogonal nyar-napi bindings.",
+    "description": "Nyar VM host CLI (@vmz/commander) and orthogonal nyar-napi bindings.",
     "type": "module",
     "license": "MIT",
     "main": "src/index.ts",
@@ -23,7 +23,7 @@
         "test": "node --experimental-strip-types --test tests/**/*.test.ts"
     },
     "dependencies": {
-        "@nyar/commander": "workspace:*",
+        "@vmz/commander": "^0.3.2",
         "@nyar/nyar-unknown-wasm32": "workspace:*"
     },
     "optionalDependencies": {

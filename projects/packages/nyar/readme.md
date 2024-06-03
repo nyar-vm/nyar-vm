@@ -1,6 +1,6 @@
 # @nyar/nyar
 
-Cross-platform Nyar host CLI and TypeScript facade. **CLI orchestration** lives here (`@nyar/commander`); **orthogonal native capabilities** are exported from `nyar-napi` via `src/native.ts`.
+Cross-platform Nyar host CLI and TypeScript facade. **CLI orchestration** uses [`@vmz/commander`](https://www.npmjs.com/package/@vmz/commander); **orthogonal native capabilities** are exported from `nyar-napi` via `src/native.ts`.
 
 ## CLI
 

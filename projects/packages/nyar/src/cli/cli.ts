@@ -3,8 +3,8 @@ import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import path from 'node:path';
 
-import type {Cli, Command, ParsedOptions} from '@nyar/commander';
-import {createCli} from '@nyar/commander';
+import type {Cli, Command, ParsedOptions} from '@vmz/commander';
+import {createCli} from '@vmz/commander';
 
 import {NYAR_CLI_CATALOG} from './catalog.ts';
 import {getHostInfo, listRuntimeFamilies, prepareRuntimeCommand, runPreparedCommand} from '../native.ts';
@@ -103,7 +103,7 @@ function requireString(options: ParsedOptions, key: string): string {
     return value;
 }
 
-/** 解析 argv 并执行 Nyar CLI（commander 编排；能力调用走 nyar-napi）。 */
+/** 解析 argv 并执行 Nyar CLI（@vmz/commander 编排；能力调用走 nyar-napi）。 */
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
     const [cmd] = argv;
     if (cmd === 'wasm' && resolveCollect().kind === 'wasm') {
