@@ -158,7 +158,7 @@ jobs:
         uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           # Do NOT set registry-url: it writes _authToken=${NODE_AUTH_TOKEN} into
