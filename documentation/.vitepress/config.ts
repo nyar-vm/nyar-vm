@@ -1,5 +1,5 @@
 import {defineConfig} from 'vitepress';
-import {withMermaid} from 'vitepress-plugin-mermaid';
+import {mermaidMdPlugin} from './plugins/mermaid.ts';
 import valkyrieGrammar from './valkyrie.tmLanguage.json' with {type: 'json'};
 
 const config = defineConfig({
@@ -361,6 +361,9 @@ const config = defineConfig({
             light: 'one-light',
             dark: 'one-dark-pro',
         },
+        config(md) {
+            md.use(mermaidMdPlugin);
+        },
         shikiSetup(shiki) {
             shiki.loadLanguageSync({
                 name: 'valkyrie',
@@ -381,13 +384,4 @@ const config = defineConfig({
     },
 });
 
-export default withMermaid({
-    ...config,
-    mermaid: {
-        // refer https://mermaid.js.org/config/setup/modules/mermaidAPI.html#mermaidapi-configuration-defaults for options
-    },
-    // optionally set additional config for plugin itself with MermaidPluginConfig
-    mermaidPlugin: {
-        class: 'mermaid my-class', // set additional css classes for parent container
-    },
-});
+export default config;

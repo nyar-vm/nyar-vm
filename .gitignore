@@ -15,6 +15,7 @@ Cargo.lock
 
 # Node
 node_modules/
+dist/
 .env.placeholder.local
 package-lock.json
 pnpm-lock.yaml
