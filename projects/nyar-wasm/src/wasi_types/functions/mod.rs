@@ -36,6 +36,9 @@ pub enum WasiFunctionBody {
     Native {
         bytecodes: Vec<WasiInstruction>,
     },
+    Assembly {
+        text: String,
+    },
 }
 
 /// The type of WASI parameter

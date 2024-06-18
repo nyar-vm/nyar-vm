@@ -21,8 +21,8 @@ dependent_sort = "0.2.0"
 
 
 [dependencies.nyar-error]
-version = "0.1.*"
-path = "../nyar-error"
+version = "0.1.17"
+#path = "../nyar-error"
 
 
 [dev-dependencies]

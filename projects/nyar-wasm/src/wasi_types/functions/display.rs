@@ -33,6 +33,7 @@ impl ComponentSections for WasiFunction {
                 write!(w, "(export \"{wasi_name}\" (func")?;
             }
             WasiFunctionBody::Native { .. } => {}
+            WasiFunctionBody::Assembly { .. } => {}
         }
         w.indent();
         for input in self.inputs.iter() {
@@ -52,6 +53,7 @@ impl ComponentSections for WasiFunction {
         match &self.body {
             WasiFunctionBody::External { wasi_name, .. } => write!(w, "(alias export ${module} \"{wasi_name}\" (func {id}))")?,
             WasiFunctionBody::Native { .. } => {}
+            WasiFunctionBody::Assembly { .. } => {}
         }
         Ok(())
     }
@@ -74,6 +76,7 @@ impl ComponentSections for WasiFunction {
                 w.dedent(2);
             }
             WasiFunctionBody::Native { .. } => {}
+            WasiFunctionBody::Assembly { .. } => {}
         }
         Ok(())
     }
@@ -86,6 +89,7 @@ impl ComponentSections for WasiFunction {
             WasiFunctionBody::Native { .. } => {
                 write!(w, "(func {}", self.symbol.wasi_id())?;
             }
+            WasiFunctionBody::Assembly { .. } => {}
         }
         w.indent();
         for input in &self.inputs {
@@ -99,6 +103,7 @@ impl ComponentSections for WasiFunction {
         match &self.body {
             WasiFunctionBody::External { .. } => w.dedent(2),
             WasiFunctionBody::Native { .. } => w.dedent(1),
+            WasiFunctionBody::Assembly { .. } => {}
         }
         Ok(())
     }

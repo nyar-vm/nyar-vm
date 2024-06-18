@@ -75,6 +75,10 @@ impl GroupedTask for WasiType {
                     v.collect_wasi_types(graph, &mut dependents);
                     Task { id: self, group: None, dependent_tasks: dependents }
                 }
+                WasiFunctionBody::Assembly { .. } => {
+                    v.collect_wasi_types(graph, &mut dependents);
+                    Task { id: self, group: None, dependent_tasks: dependents }
+                }
             },
             Self::Enums(_) => Task { id: self, group: None, dependent_tasks: dependents },
             Self::Flags(_) => Task { id: self, group: None, dependent_tasks: dependents },
@@ -129,8 +133,10 @@ impl ComponentSections for WasiType {
                 f.wasm_define(w)
             }
             Self::Array(_) => unimplemented!(),
-            Self::Record(_) => unimplemented!(),
-
+            Self::Record(r) => {
+                w.newline()?;
+                r.wasm_define(w)
+            }
             _ => Ok(()),
         }
     }
