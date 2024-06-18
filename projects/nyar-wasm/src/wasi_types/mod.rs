@@ -90,6 +90,7 @@ impl WasiType {
             Self::Function(v) => match &v.body {
                 WasiFunctionBody::External { wasi_module, .. } => Some(wasi_module),
                 WasiFunctionBody::Native { .. } => None,
+                WasiFunctionBody::Assembly { .. } => None,
             },
             _ => None,
         }
