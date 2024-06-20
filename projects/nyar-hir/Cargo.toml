@@ -12,14 +12,7 @@ edition = "2021"
 [dependencies]
 #wasmtime = { version = "15.0.1", optional = true }
 #wasmtime-runtime = { version = "15.0.1", optional = true }
-indexmap = "2.2.6"
-
-
-[dependencies.salsa-2022]
-version = "0.1.0"
-features = []
-git = "https://github.com/salsa-rs/salsa"
-
+indexmap = "2.6.0"
 
 [dependencies.nyar-error]
 version = "0.1.*"
