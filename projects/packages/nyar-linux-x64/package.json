@@ -1,7 +1,7 @@
 {
     "name": "@nyar/nyar-linux-x64",
-    "version": "0.0.7",
-    "description": "Nyar native collect — Linux x64 (Node-API host)",
+    "version": "0.0.8",
+    "description": "Nyar native collect \u2014 Linux x64 (Node-API host)",
     "type": "module",
     "license": "MIT",
     "os": [
