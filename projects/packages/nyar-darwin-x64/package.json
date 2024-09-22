@@ -1,7 +1,7 @@
 {
     "name": "@nyar/nyar-darwin-x64",
-    "version": "0.0.8",
-    "description": "Nyar native collect \u2014 darwin x64 (Node-API host)",
+    "version": "0.0.9",
+    "description": "Nyar native collect — darwin x64 (Node-API host)",
     "type": "module",
     "license": "MIT",
     "os": [
