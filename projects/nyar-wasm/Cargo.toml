@@ -13,7 +13,7 @@ exclude = ["package.json", "tests/**"]
 [dependencies]
 semver = "1.0.23"
 indexmap = "2.2.6"
-wast = "218.0.0"
+wast = "219.0.0"
 string-pool = "0.2.1"
 itertools = "0.13.0"
 convert_case = "0.6.0"
