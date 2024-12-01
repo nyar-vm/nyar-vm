@@ -108,6 +108,12 @@ pub struct HirCompileWarning {
 pub struct HirTypeAlias {
     /// Alias name.
     pub name: Identifier,
+    /// Declaring namespace segments, excluding the alias name itself.
+    ///
+    /// Qualified references (`std.text.utf16`) must be matched against this structured
+    /// identity instead of the last path segment alone.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub namespace: Vec<Identifier>,
     /// Generic parameter names (e.g. `T` in `type Alias<T> = Result<T, E>`).
     #[cfg_attr(feature = "serde", serde(default))]
     pub generics: Vec<Identifier>,

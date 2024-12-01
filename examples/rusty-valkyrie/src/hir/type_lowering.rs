@@ -32,7 +32,15 @@ thread_local! {
     /// 当前 lowering 作用域可见的名义类型声明短名（structure/class/enums/variant）。
     ///
     /// 只登记实际声明过的名字，用于产出待冻结的 `Named`；不构成未知名字的 fallback。
-    static DECLARED_NOMINAL_TYPES: RefCell<Vec<BTreeSet<String>>> = RefCell::new(Vec::new());
+    /// 每条记录同时携带声明 namespace，限定路径必须按完整身份匹配。
+    static DECLARED_NOMINAL_TYPES: RefCell<Vec<Vec<VisibleNominalType>>> = RefCell::new(Vec::new());
+}
+
+/// 一条可见名义类型声明：短名 + 声明 namespace（不含短名本身）。
+#[derive(Debug, Clone)]
+pub(crate) struct VisibleNominalType {
+    pub(crate) namespace: Vec<String>,
+    pub(crate) name: String,
 }
 
 /// 进入一次 lowering 作用域时可见的单条类型别名。
@@ -43,6 +51,8 @@ thread_local! {
 pub(crate) struct VisibleTypeAlias {
     /// 别名短名。
     pub name: String,
+    /// 声明该别名的 namespace（不含别名本身），用于限定路径的身份匹配。
+    pub namespace: Vec<String>,
     /// 泛型形参名。
     pub params: Vec<String>,
     /// 已冻结的目标类型；本组声明为 `None`。
@@ -52,6 +62,7 @@ pub(crate) struct VisibleTypeAlias {
 /// 模块类型别名条目：可携带泛型形参；目标未填入时为 `None`。
 #[derive(Debug, Clone)]
 struct ModuleTypeAliasEntry {
+    namespace: Vec<String>,
     params: Vec<String>,
     target: Option<ValkyrieType>,
 }
@@ -71,7 +82,11 @@ impl ModuleTypeAliasScope {
     pub(crate) fn enter(visible: Vec<VisibleTypeAlias>) -> Self {
         let mut aliases = BTreeMap::new();
         for alias in visible {
-            aliases.insert(alias.name, ModuleTypeAliasEntry { params: alias.params, target: alias.target });
+            aliases.insert(alias.name, ModuleTypeAliasEntry {
+                namespace: alias.namespace,
+                params: alias.params,
+                target: alias.target,
+            });
         }
         MODULE_TYPE_ALIASES.with(|stack| {
             stack.borrow_mut().push(aliases);
@@ -80,10 +95,10 @@ impl ModuleTypeAliasScope {
     }
 
     /// 填入本组别名的目标类型；名字必须已由 [`ModuleTypeAliasScope::enter`] 注册。
-    pub(crate) fn register_alias(name: &str, params: Vec<String>, target: ValkyrieType) {
+    pub(crate) fn register_alias(name: &str, namespace: Vec<String>, params: Vec<String>, target: ValkyrieType) {
         MODULE_TYPE_ALIASES.with(|stack| {
             if let Some(top) = stack.borrow_mut().last_mut() {
-                top.insert(name.to_string(), ModuleTypeAliasEntry { params, target: Some(target) });
+                top.insert(name.to_string(), ModuleTypeAliasEntry { namespace, params, target: Some(target) });
             }
         });
     }
@@ -143,10 +158,10 @@ impl Drop for GenericBinderScope {
 pub(crate) struct NominalTypeScope;
 
 impl NominalTypeScope {
-    /// 进入一次 lowering 作用域并注册可见的名义类型短名。
-    pub(crate) fn enter(names: Vec<String>) -> Self {
+    /// 进入一次 lowering 作用域并注册可见的名义类型声明身份。
+    pub(crate) fn enter(names: Vec<VisibleNominalType>) -> Self {
         DECLARED_NOMINAL_TYPES.with(|stack| {
-            stack.borrow_mut().push(names.into_iter().collect());
+            stack.borrow_mut().push(names);
         });
         Self
     }
@@ -162,7 +177,23 @@ impl Drop for NominalTypeScope {
 
 /// 当前词法作用域（含外层声明域）是否声明了该短名的名义类型。
 fn is_declared_nominal_type(name: &str) -> bool {
-    DECLARED_NOMINAL_TYPES.with(|stack| stack.borrow().iter().rev().any(|names| names.contains(name)))
+    DECLARED_NOMINAL_TYPES.with(|stack| stack.borrow().iter().rev().any(|names| names.iter().any(|item| item.name == name)))
+}
+
+/// 限定路径是否命中作用域内某条名义声明：namespace + 短名必须与路径逐段相等。
+///
+/// 末段同名但 namespace 不同不构成可见性，禁止把限定路径折叠成短名匹配。
+fn is_declared_qualified_nominal_type(parts: &[&str]) -> bool {
+    let Some((name, namespace)) = parts.split_last() else {
+        return false;
+    };
+    DECLARED_NOMINAL_TYPES.with(|stack| {
+        stack
+            .borrow()
+            .iter()
+            .rev()
+            .any(|names| names.iter().any(|item| item.name == *name && item.namespace.iter().map(String::as_str).eq(namespace.iter().copied())))
+    })
 }
 
 /// 该短名是否已被别名、名义声明、内建或数值声明事实占据。
@@ -546,6 +577,40 @@ fn expand_module_type_alias(name: &str, arguments: &[ValkyrieType], visiting: &m
     })
 }
 
+/// 限定路径的别名展开：namespace 段 + 短名必须与条目的声明身份逐段相等。
+///
+/// 末段同名但 namespace 不同的条目不算命中；环检测用完整路径作 key。
+fn expand_qualified_module_type_alias(parts: &[&str], arguments: &[ValkyrieType], visiting: &mut BTreeSet<String>) -> Option<ValkyrieType> {
+    let (name, namespace) = parts.split_last()?;
+    let key = parts.join(".");
+    if visiting.contains(&key) {
+        return None;
+    }
+    MODULE_TYPE_ALIASES.with(|stack| {
+        let entry = stack.borrow().iter().rev().find_map(|aliases| {
+            aliases
+                .get(*name)
+                .filter(|entry| entry.namespace.iter().map(String::as_str).eq(namespace.iter().copied()))
+                .cloned()
+        })?;
+        if entry.params.len() != arguments.len() {
+            return None;
+        }
+        let target = entry.target?;
+        visiting.insert(key.clone());
+        let substituted = if entry.params.is_empty() {
+            target
+        }
+        else {
+            let mapping: BTreeMap<String, ValkyrieType> = entry.params.into_iter().zip(arguments.iter().cloned()).collect();
+            substitute_named_type_params(&target, &mapping)
+        };
+        let expanded = expand_type_aliases(&substituted, visiting);
+        visiting.remove(&key);
+        Some(expanded)
+    })
+}
+
 fn substitute_named_type_params(ty: &ValkyrieType, mapping: &BTreeMap<String, ValkyrieType>) -> ValkyrieType {
     match ty {
         ValkyrieType::Named(name) => mapping.get(name.as_str()).cloned().unwrap_or_else(|| ty.clone()),
@@ -617,6 +682,16 @@ fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
             }));
         }
         return Ok(base);
+    }
+    // 限定类型名按声明身份解析：先展开同名 namespace 的别名，再匹配同名 namespace 的
+    // 名义声明。两者都要求 namespace 段逐段相等，禁止只按末段短名命中。
+    if parts.len() > 1 {
+        if let Some(expanded) = expand_qualified_module_type_alias(&parts, &[], &mut BTreeSet::new()) {
+            return Ok(expanded);
+        }
+        if is_declared_qualified_nominal_type(&parts) {
+            return Ok(ValkyrieType::Named(Identifier::new(last)));
+        }
     }
     // `Type::Assoc`：两段且非已知命名空间前缀时保留 Associated，禁止丢前缀只留短名。
     // `core::…` / `std::…` 等限定路径仍走下方短名/builtin 规则，供 bind 按声明冻结。

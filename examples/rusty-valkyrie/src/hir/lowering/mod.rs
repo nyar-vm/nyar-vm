@@ -1,5 +1,7 @@
 use std::{cell::RefCell, ops::Range, path::Path};
 
+use crate::type_lowering::VisibleNominalType;
+
 use crate::{
     hir::{
         GenericBinderScope, ModuleTypeAliasScope, NominalTypeScope, VisibleTypeAlias, hoist_anonymous_classes, lower_type_expression,
@@ -398,14 +400,15 @@ fn visible_type_aliases(roots: &[&ValkyrieRoot], imported_semantic_exports: &[Hi
         for alias in &export.type_aliases {
             visible.push(VisibleTypeAlias {
                 name: alias.name.to_string(),
+                namespace: alias.namespace.iter().map(ToString::to_string).collect(),
                 params: alias.generics.iter().map(ToString::to_string).collect(),
                 target: Some(alias.target.clone()),
             });
         }
     }
     for root in roots {
-        for alias in root_type_alias_declarations(root) {
-            visible.push(VisibleTypeAlias { name: alias.name.name.clone(), params: Vec::new(), target: None });
+        for (namespace, alias) in root_type_alias_declarations(root) {
+            visible.push(VisibleTypeAlias { name: alias.name.name.clone(), namespace, params: Vec::new(), target: None });
         }
     }
     visible
@@ -417,67 +420,92 @@ fn visible_type_aliases(roots: &[&ValkyrieRoot], imported_semantic_exports: &[Hi
 /// 展开在引用点进行，环由 `expand_module_type_alias` 的 visiting 集合拒绝。
 fn register_root_type_alias_targets(roots: &[&ValkyrieRoot]) -> Result<(), HirError> {
     for root in roots {
-        for alias in root_type_alias_declarations(root) {
+        for (namespace, alias) in root_type_alias_declarations(root) {
             let target = lower_type_expression(&alias.target)?;
-            ModuleTypeAliasScope::register_alias(&alias.name.name, Vec::new(), target);
+            ModuleTypeAliasScope::register_alias(&alias.name.name, namespace, Vec::new(), target);
         }
     }
     Ok(())
 }
 
-/// 收集 lowering 作用域内可见的名义类型声明短名（本组声明 + 依赖导出）。
+/// 收集 lowering 作用域内可见的名义类型声明身份（本组声明 + 依赖导出）。
 ///
-/// 只登记会进入 `HirStruct`/`HirEnum` 的声明；名字仍由 `bind_declared_nominal_types`
-/// 按实际声明冻结身份，这里不提供跨 namespace 的可见性推断。
-fn visible_nominal_type_names(roots: &[&ValkyrieRoot], imported_semantic_exports: &[HirDependencySemanticExport]) -> Vec<String> {
-    fn walk<'a>(items: &'a [StatementNode], out: &mut Vec<&'a str>) {
+/// 只登记会进入 `HirStruct`/`HirEnum` 的声明；每条记录保留声明 namespace，
+/// 供限定路径按完整身份匹配。
+fn visible_nominal_type_names(roots: &[&ValkyrieRoot], imported_semantic_exports: &[HirDependencySemanticExport]) -> Vec<VisibleNominalType> {
+    fn walk(items: &[StatementNode], namespace: &[String], out: &mut Vec<VisibleNominalType>) {
         for item in items {
             match item {
-                StatementNode::Class(class_decl) => out.push(class_decl.name.name.as_str()),
-                StatementNode::Structure(structure) => out.push(structure.name.name.as_str()),
-                StatementNode::Enums(enums) => out.push(enums.name.name.as_str()),
-                StatementNode::Variant(variant) => out.push(variant.name.name.as_str()),
-                StatementNode::Namespace(namespace) => {
-                    if let Some(body) = &namespace.body {
-                        walk(&body.items, out);
+                StatementNode::Class(class_decl) => out.push(VisibleNominalType { namespace: namespace.to_vec(), name: class_decl.name.name.clone() }),
+                StatementNode::Structure(structure) => out.push(VisibleNominalType { namespace: namespace.to_vec(), name: structure.name.name.clone() }),
+                StatementNode::Enums(enums) => out.push(VisibleNominalType { namespace: namespace.to_vec(), name: enums.name.name.clone() }),
+                StatementNode::Variant(variant) => out.push(VisibleNominalType { namespace: namespace.to_vec(), name: variant.name.name.clone() }),
+                StatementNode::Namespace(inner) => {
+                    if let Some(body) = &inner.body {
+                        let mut nested = namespace.to_vec();
+                        nested.extend(lower_name_path(&inner.name).parts().iter().map(ToString::to_string));
+                        walk(&body.items, &nested, out);
                     }
                 }
-                StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), out),
+                StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), namespace, out),
                 _ => {}
             }
         }
     }
     let mut names = Vec::new();
     for export in imported_semantic_exports {
-        names.extend(export.structs.iter().map(|item| item.name.to_string()));
-        names.extend(export.enums.iter().map(|item| item.name.to_string()));
+        // `HirEnum` 目前不携带 namespace 事实，导入枚举按空 namespace 登记：
+        // 限定路径不会误命中，短名可见性与既有行为一致。
+        for item in export.structs.iter() {
+            names.push(VisibleNominalType { namespace: item.namespace.iter().map(ToString::to_string).collect(), name: item.name.to_string() });
+        }
+        for item in export.enums.iter() {
+            names.push(VisibleNominalType { namespace: Vec::new(), name: item.name.to_string() });
+        }
     }
     for root in roots {
-        let mut declared = Vec::new();
-        walk(&root.items, &mut declared);
-        names.extend(declared.into_iter().map(str::to_string));
+        // 文件头的 `namespace a.b;` 不带 body，是后续声明共同的前缀。
+        let mut prefix = Vec::new();
+        for item in &root.items {
+            if let StatementNode::Namespace(namespace) = item {
+                if !namespace.has_body() {
+                    prefix = lower_name_path(&namespace.name).parts().iter().map(ToString::to_string).collect();
+                }
+            }
+        }
+        walk(&root.items, &prefix, &mut names);
     }
     names
 }
 
 /// 收集一个源码根内全部 `type` 别名声明（含 namespace body 与包装语句）。
-fn root_type_alias_declarations(root: &ValkyrieRoot) -> Vec<&TypeAliasDeclaration> {
-    fn walk<'a>(items: &'a [StatementNode], out: &mut Vec<&'a TypeAliasDeclaration>) {
+fn root_type_alias_declarations(root: &ValkyrieRoot) -> Vec<(Vec<String>, &TypeAliasDeclaration)> {
+    fn walk<'a>(items: &'a [StatementNode], namespace: &[String], out: &mut Vec<(Vec<String>, &'a TypeAliasDeclaration)>) {
         for item in items {
             match item {
-                StatementNode::TypeAlias(alias) => out.push(alias),
-                StatementNode::Namespace(namespace) => {
-                    if let Some(body) = &namespace.body {
-                        walk(&body.items, out);
+                StatementNode::TypeAlias(alias) => out.push((namespace.to_vec(), alias)),
+                StatementNode::Namespace(inner) => {
+                    if let Some(body) = &inner.body {
+                        let mut nested = namespace.to_vec();
+                        nested.extend(lower_name_path(&inner.name).parts().iter().map(ToString::to_string));
+                        walk(&body.items, &nested, out);
                     }
                 }
-                StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), out),
+                StatementNode::Statement(inner) => walk(std::slice::from_ref(inner.as_ref()), namespace, out),
                 _ => {}
             }
         }
     }
+    let mut prefix = Vec::new();
+    for item in &root.items {
+        if let StatementNode::Namespace(namespace) = item {
+            if !namespace.has_body() {
+                prefix = lower_name_path(&namespace.name).parts().iter().map(ToString::to_string).collect();
+            }
+        }
+    }
     let mut declarations = Vec::new();
-    walk(&root.items, &mut declarations);
+    walk(&root.items, &prefix, &mut declarations);
     declarations
 }
 
@@ -2674,7 +2702,7 @@ impl AstToHir {
                 Ok(())
             }
             StatementNode::TypeAlias(alias) => {
-                type_aliases.push(self.lower_type_alias(alias)?);
+                type_aliases.push(self.lower_type_alias(alias, namespace)?);
                 Ok(())
             }
             StatementNode::Class(class_decl) => {
@@ -2769,9 +2797,10 @@ impl AstToHir {
         })
     }
 
-    fn lower_type_alias(&self, alias: &TypeAliasDeclaration) -> Result<HirTypeAlias, HirError> {
+    fn lower_type_alias(&self, alias: &TypeAliasDeclaration, namespace: &NamePath) -> Result<HirTypeAlias, HirError> {
         Ok(HirTypeAlias {
             name: Identifier::new(&alias.name.name),
+            namespace: namespace.parts().to_vec(),
             generics: Vec::new(),
             target: lower_type_expression(&alias.target)?,
             span: with_source(&frontend::std_range(&alias.span), self.source_id),
@@ -2792,6 +2821,8 @@ impl AstToHir {
     }
 
     fn lower_class(&self, class_decl: &ClassDeclaration, namespace: &NamePath) -> Result<HirStruct, HirError> {
+        // class 与 structure 同为名义类型：字段、方法、属性类型都必须看到自己声明的形参。
+        let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&class_decl.generics), &[]);
         self.lower_class_like(
             Identifier::new(&class_decl.name.name),
             namespace.parts(),
