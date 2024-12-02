@@ -531,6 +531,48 @@ impl WorkspaceResolver {
             .collect()
     }
 
+    /// 当前构建根可注入的发行版默认 SDK。
+    ///
+    /// 依赖方向只有 adaptor → std → core：把一个（传递地）依赖构建根的 SDK 注入构建根，
+    /// 会让源码组既要求自己先于 SDK、又要求 SDK 先于自己。构建 `core` 或 `std` 自身时
+    /// 因此不注入这类 SDK；应用构建保持原有闭包。
+    fn distribution_defaults_without_entry_cycle(&self, entry_dir: &Path) -> BTreeSet<String> {
+        let entry_dir = canonicalize_lossy(entry_dir);
+        self.distribution_default_sdk_names().into_iter().filter(|sdk| !self.sdk_reaches_project(sdk, &entry_dir)).collect()
+    }
+
+    /// `sdk` 的声明依赖闭包是否包含 `entry_dir` 对应的项目。
+    fn sdk_reaches_project(&self, sdk: &str, entry_dir: &Path) -> bool {
+        let mut pending = vec![sdk.to_string()];
+        let mut seen = BTreeSet::new();
+        while let Some(name) = pending.pop() {
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            let Some(dir) = self.projects_by_name.get(&name).cloned() else {
+                continue;
+            };
+            if same_path(&canonicalize_lossy(&dir), entry_dir) {
+                return true;
+            }
+            let Some(manifest) = self.project_manifest(&dir) else {
+                continue;
+            };
+            if manifest.auto_link.core {
+                pending.push("core".to_string());
+            }
+            if manifest.auto_link.std {
+                pending.push("std".to_string());
+            }
+            for (dependency_name, spec) in &manifest.dependencies {
+                if !matches!(spec, DependencySpec::Disabled) {
+                    pending.push(dependency_name.clone());
+                }
+            }
+        }
+        false
+    }
+
     /// 当前路径是否为仅有 `legions.von`、没有 `legion.von` 的 workspace 根目录。
     pub fn is_workspace_only_root(&self, project_dir: &Path) -> bool {
         self.workspace_manifest.is_some() && same_path(project_dir, &self.root_dir) && !self.root_dir.join("legion.von").exists()
@@ -704,7 +746,12 @@ impl WorkspaceResolver {
         for implicit in &implicit_names {
             dep_names.insert(implicit.clone());
         }
-        let distribution_defaults = if inject_distribution_defaults { self.distribution_default_sdk_names() } else { BTreeSet::new() };
+        let distribution_defaults = if inject_distribution_defaults {
+            self.distribution_defaults_without_entry_cycle(project_dir)
+        }
+        else {
+            BTreeSet::new()
+        };
         add_distribution_default_dependencies(manifest, &distribution_defaults, &mut dep_names);
 
         // 递归收集每个依赖的源文件。
@@ -893,7 +940,12 @@ impl WorkspaceResolver {
         for implicit in &implicit_names {
             names.insert(implicit.clone());
         }
-        let distribution_defaults = if inject_distribution_defaults { self.distribution_default_sdk_names() } else { BTreeSet::new() };
+        let distribution_defaults = if inject_distribution_defaults {
+            self.distribution_defaults_without_entry_cycle(project_manifest_dir)
+        }
+        else {
+            BTreeSet::new()
+        };
         add_distribution_default_dependencies(manifest, &distribution_defaults, &mut names);
 
         for dependency_name in names {
