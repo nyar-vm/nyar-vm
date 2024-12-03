@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use legend_vm::LegacyVmRunner;
+use legend_vm::LegendVmRunner;
 
 #[test]
 fn c_printf_and_add() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
 
     let source = r#"
@@ -26,6 +26,6 @@ int main(void) {
 
 #[test]
 fn detects_c_from_extension() {
-    let language = LegacyVmRunner::detect_language_from_file("demo.c", "int main(void) { return 0; }");
+    let language = LegendVmRunner::detect_language_from_file("demo.c", "int main(void) { return 0; }");
     assert_eq!(language.as_deref(), Some("c"));
 }

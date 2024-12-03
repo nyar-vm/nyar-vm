@@ -26,7 +26,7 @@ Core job: frames / nodes / specialization / partial evaluation — **not** concr
 | Concern | How |
 | --- | --- |
 | Weird / heterogeneous languages | **Plug-in guests**, not one shared AST. Each language keeps its own shape in `examples/rusty-<lang>`. |
-| Daily execution | `LegacyVmRunner::run` → `GuestInterpretFn` → thin `evaluator/<lang>.rs` → `rusty-<lang>` interpret |
+| Daily execution | `LegendVmRunner::run` → `GuestInterpretFn` → thin `evaluator/<lang>.rs` → `rusty-<lang>` interpret |
 | Compilation | Specialize the **interpreter** w.r.t. a program → **native-bound residual** → PE — **not** `nyar-vm` |
 | Contrast with Valkyrie | Valkyrie folds languages into a shared IR then hand-emits many backends. legend-vm unifies **registration / dispatch / specialize exit**, not syntax. |
 

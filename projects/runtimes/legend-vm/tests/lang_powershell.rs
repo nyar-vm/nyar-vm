@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use legend_vm::LegacyVmRunner;
+use legend_vm::LegendVmRunner;
 
 fn fixture(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/powershell").join(name);
@@ -11,7 +11,7 @@ fn fixture(name: &str) -> String {
 
 #[test]
 fn powershell_write_output() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("powershell", r#"Write-Output "hello""#, &mut env).expect("run");
     assert_eq!(result.to_string_value(), "hello");
@@ -19,7 +19,7 @@ fn powershell_write_output() {
 
 #[test]
 fn powershell_variables_if_while_function() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let source = r#"
 $x = 1
@@ -34,7 +34,7 @@ Write-Output (Add $x 2)
 
 #[test]
 fn powershell_pipeline_and_for() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let source = r#"
 $sum = 0
@@ -47,7 +47,7 @@ $sum | Write-Output
 
 #[test]
 fn powershell_legend_hello_fixture() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("powershell", &fixture("hello.ps1"), &mut env).expect("run");
     assert_eq!(result.to_string_value(), "legend powershell fixture");
@@ -55,7 +55,7 @@ fn powershell_legend_hello_fixture() {
 
 #[test]
 fn powershell_legend_control_fixture() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("powershell", &fixture("control.ps1"), &mut env).expect("run");
     assert_eq!(result.to_string_value(), "victory");
@@ -63,12 +63,12 @@ fn powershell_legend_control_fixture() {
 
 #[test]
 fn detects_powershell_from_extension() {
-    let language = LegacyVmRunner::detect_language_from_file("demo.ps1", "Write-Output hello");
+    let language = LegendVmRunner::detect_language_from_file("demo.ps1", "Write-Output hello");
     assert_eq!(language.as_deref(), Some("powershell"));
 }
 
 #[test]
 fn detects_powershell_from_shebang() {
-    let language = LegacyVmRunner::detect_language_from_file("demo", "#!/usr/bin/env pwsh\nWrite-Output hi");
+    let language = LegendVmRunner::detect_language_from_file("demo", "#!/usr/bin/env pwsh\nWrite-Output hi");
     assert_eq!(language.as_deref(), Some("powershell"));
 }

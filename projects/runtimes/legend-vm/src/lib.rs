@@ -13,5 +13,5 @@ pub mod runner;
 pub mod value;
 
 pub use guest::{FnGuestInterpret, GuestInterpret, GuestInterpretFn};
-pub use runner::LegacyVmRunner;
+pub use runner::LegendVmRunner;
 pub use value::LegacyValue;

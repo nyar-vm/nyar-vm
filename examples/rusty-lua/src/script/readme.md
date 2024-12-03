@@ -1,6 +1,6 @@
 # Lua text frontend (mid-subset)
 
-Lexer, parser, and AST for legend / legacy-vm. **Not** full Lua 5.x — richer than shell demos, centered on control
+Lexer, parser, and AST for legend / legend-vm. **Not** full Lua 5.x — richer than shell demos, centered on control
 flow + tables.
 
 ## Supported

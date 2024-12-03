@@ -1,4 +1,4 @@
-//! C lexer for the legend / legacy-vm subset.
+//! C lexer for the legend / legend-vm subset.
 
 mod token;
 

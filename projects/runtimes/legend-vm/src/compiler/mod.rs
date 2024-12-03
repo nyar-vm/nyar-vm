@@ -1,4 +1,4 @@
-//! Legacy VM compilers.
+//! Legend VM compilers.
 //!
 //! Host-script PE product path: [`native_residual`] -> x64 / Windows PE.
 //! [`residual::StackResidualSink`] / [`bytecode`] are probe-only (`.nyar`).
@@ -20,7 +20,7 @@ pub use pe::PeCompiler;
 pub use residual::StackResidualSink;
 pub use stack::StackCompiler;
 
-/// Artifact from [`crate::LegacyVmRunner::compile_module`].
+/// Artifact from [`crate::LegendVmRunner::compile_module`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompileArtifact {
     /// Host-script Futamura product: native-bound residual (-> PE).

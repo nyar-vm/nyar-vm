@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use legend_vm::LegacyVmRunner;
+use legend_vm::LegendVmRunner;
 
 fn fixture(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bash").join(name);
@@ -11,7 +11,7 @@ fn fixture(name: &str) -> String {
 
 #[test]
 fn bash_echo_and_if() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let source = r#"
 x=1
@@ -25,7 +25,7 @@ fi
 
 #[test]
 fn bash_while_for_function_printf() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let source = r#"
 greet() {
@@ -45,7 +45,7 @@ done
 
 #[test]
 fn bash_exit_code_via_status() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", "false\necho $?", &mut env).expect("run");
     assert_eq!(result.to_string_value(), "1");
@@ -53,7 +53,7 @@ fn bash_exit_code_via_status() {
 
 #[test]
 fn bash_exit_builtin() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", "echo before\nexit 3\necho after", &mut env).expect("run");
     assert_eq!(result.to_i64(), 3);
@@ -61,7 +61,7 @@ fn bash_exit_builtin() {
 
 #[test]
 fn bash_if_else() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner
         .run(
@@ -80,7 +80,7 @@ fi",
 
 #[test]
 fn bash_and_or() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", "false || echo fallback", &mut env).expect("run");
     assert_eq!(result.to_string_value(), "fallback");
@@ -88,7 +88,7 @@ fn bash_and_or() {
 
 #[test]
 fn bash_legend_hello_fixture() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", &fixture("hello.sh"), &mut env).expect("run");
     assert_eq!(result.to_string_value(), "legend bash fixture");
@@ -96,7 +96,7 @@ fn bash_legend_hello_fixture() {
 
 #[test]
 fn bash_legend_control_fixture() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("bash", &fixture("control.sh"), &mut env).expect("run");
     assert_eq!(result.to_string_value(), "victory");
@@ -104,19 +104,19 @@ fn bash_legend_control_fixture() {
 
 #[test]
 fn detects_bash_from_extension() {
-    let language = LegacyVmRunner::detect_language_from_file("demo.sh", "echo hi");
+    let language = LegendVmRunner::detect_language_from_file("demo.sh", "echo hi");
     assert_eq!(language.as_deref(), Some("bash"));
 }
 
 #[test]
 fn detects_bash_from_shebang() {
-    let language = LegacyVmRunner::detect_language_from_file("demo", "#!/usr/bin/env bash\necho hi");
+    let language = LegendVmRunner::detect_language_from_file("demo", "#!/usr/bin/env bash\necho hi");
     assert_eq!(language.as_deref(), Some("bash"));
 }
 
 #[test]
 fn sh_alias_runs_bash_evaluator() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let result = runner.run("sh", "echo alias", &mut env).expect("run");
     assert_eq!(result.to_string_value(), "alias");

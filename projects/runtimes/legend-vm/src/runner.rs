@@ -1,4 +1,4 @@
-//! Unified legacy VM runner.
+//! Unified legend VM runner.
 
 use std::{collections::HashMap, path::Path};
 
@@ -18,13 +18,13 @@ pub struct LanguageInfo {
     pub name: String,
 }
 
-/// Legacy VM unified runner.
+/// Legend VM unified runner.
 #[derive(Debug, Default)]
-pub struct LegacyVmRunner {
+pub struct LegendVmRunner {
     evaluators: HashMap<String, GuestInterpretFn>,
 }
 
-impl LegacyVmRunner {
+impl LegendVmRunner {
     /// Create a runner with built-in language evaluators.
     pub fn new() -> Self {
         let mut runner = Self::default();

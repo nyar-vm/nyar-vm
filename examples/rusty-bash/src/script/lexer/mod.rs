@@ -1,4 +1,4 @@
-//! Bash lexer for the legend / legacy-vm subset.
+//! Bash lexer for the legend / legend-vm subset.
 
 mod token;
 

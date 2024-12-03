@@ -1,4 +1,4 @@
-//! Native-bound PE residual (Futamura 1st projection product for `legacy-vm`).
+//! Native-bound PE residual (Futamura 1st projection product for `legend-vm`).
 //!
 //! Guests residualize into [`nyar_analyzer::residual::ResidualSink`]; this crate's **product**
 //! sink records ops for **native / x64 → Windows PE**, not NyarVM bytecode.
@@ -17,7 +17,7 @@ use super::PeCompiler;
 /// Target lane for host-script PE residuals (product path).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NativeResidualTarget {
-    /// Windows PE / x64 native frames (legacy-vm endpoint).
+    /// Windows PE / x64 native frames (legend-vm endpoint).
     #[default]
     Native,
 }

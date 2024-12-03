@@ -51,7 +51,7 @@ pub fn verify_legend_fixture_case<F>(fixture_path: &Path, entry: &LegendFixtureE
 where
     F: FnMut(&str) -> RuntimeFixtureResult,
 {
-    let targets = resolve_legend_fixture_targets(entry, &["legacy-vm"]);
+    let targets = resolve_legend_fixture_targets(entry, &["legend-vm"]);
     assert!(!targets.is_empty(), "legend fixture '{}' has no targets", fixture_path.display());
     let mut expect = BTreeMap::new();
     for target in &targets {

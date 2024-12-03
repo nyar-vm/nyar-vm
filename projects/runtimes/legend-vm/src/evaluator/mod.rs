@@ -1,4 +1,4 @@
-//! Guest language adapters for the legacy VM runner.
+//! Guest language adapters for the legend VM runner.
 //!
 //! **Target shape:** thin bridges that delegate interpret to `rusty-<lang>` guest
 //! crates (see `bash.rs` / `lua.rs` / `powershell.rs`). Registration uses the language-neutral

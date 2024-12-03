@@ -1,6 +1,6 @@
 # Bash text frontend (minimal subset)
 
-Lexer, parser, and AST for legend / legacy-vm demo scripts.
+Lexer, parser, and AST for legend / legend-vm demo scripts.
 
 ## Supported (demo subset)
 

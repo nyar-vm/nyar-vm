@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use crate::value::LegacyValue;
 
-/// Function-pointer shape registered on [`crate::LegacyVmRunner`].
+/// Function-pointer shape registered on [`crate::LegendVmRunner`].
 ///
 /// Guests typically expose `evaluate_<lang>_source` in their `rusty-<lang>` crate; VM
 /// adapters wrap those into this signature.

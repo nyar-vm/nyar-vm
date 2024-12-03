@@ -110,7 +110,7 @@ pub struct JsHostScriptResult {
 /// 执行宿主脚本源码，返回脚本最终值。
 #[napi]
 pub fn run_host_script(options: JsHostScriptOptions) -> Result<JsHostScriptResult> {
-    let runner = legend_vm::LegacyVmRunner::new();
+    let runner = legend_vm::LegendVmRunner::new();
     let mut env = HashMap::new();
     let value = runner
         .run(&options.language, &options.source, &mut env)

@@ -13,7 +13,7 @@ fn loads_and_resolves_manifest_entries() {
         r#"fixtures:
   - language: lua
     path: lua/hello.lua
-    targets: [legacy-vm]
+    targets: [legend-vm]
 "#,
     )
     .unwrap();

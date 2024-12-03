@@ -1,4 +1,4 @@
-//! Minimal Bash AST for the legend / legacy-vm subset.
+//! Minimal Bash AST for the legend / legend-vm subset.
 
 use serde::{Deserialize, Serialize};
 

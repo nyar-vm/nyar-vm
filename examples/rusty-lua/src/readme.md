@@ -6,7 +6,7 @@
 
 - Reuse the Oak Lua parse/AST model; keep language semantics in this frontend adapter.
 - Concrete `LuaModule` / `LuaSemanticBridge` (no shared `HostScript*` / language-crate trait layer).
-- Provide `interpret` tree-walker as the language-package primary evaluator; `legacy-vm` only thin-adapts.
+- Provide `interpret` tree-walker as the language-package primary evaluator; `legend-vm` only thin-adapts.
 
 ## Demo subset
 

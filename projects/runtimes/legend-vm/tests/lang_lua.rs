@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use legend_vm::LegacyVmRunner;
+use legend_vm::LegendVmRunner;
 
 #[test]
 fn lua_print_local() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
 
     let source = r#"
@@ -19,7 +19,7 @@ print(x)
 
 #[test]
 fn lua_tables_control_flow() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
 
     let source = r#"
@@ -50,6 +50,6 @@ end
 
 #[test]
 fn detects_lua_from_extension() {
-    let language = LegacyVmRunner::detect_language_from_file("demo.lua", "print(1)");
+    let language = LegendVmRunner::detect_language_from_file("demo.lua", "print(1)");
     assert_eq!(language.as_deref(), Some("lua"));
 }

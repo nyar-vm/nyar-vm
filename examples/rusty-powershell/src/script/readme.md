@@ -1,6 +1,6 @@
 # powershell text
 
-Lexer / parser / AST for the legend / legacy-vm PowerShell demo subset.
+Lexer / parser / AST for the legend / legend-vm PowerShell demo subset.
 
 ## Structure
 

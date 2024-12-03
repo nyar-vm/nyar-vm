@@ -290,7 +290,7 @@ micro i32_add(a: i32, b: i32): i32;
 
 /// 旧 `[vm(...)]` 宿主标签不得再产生外部导入合同：OVM 宿主边界统一为 `[ovm]`。
 #[test]
-fn legacy_vm_surface_tag_does_not_bind_host_contract() {
+fn vm_surface_tag_does_not_bind_host_contract() {
     let compiler = ValkyrieCompiler::new(SourceID { version_id: 920 });
     let module = compiler
         .compile_source(

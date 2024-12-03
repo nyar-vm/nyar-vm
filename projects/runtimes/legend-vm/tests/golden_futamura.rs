@@ -6,14 +6,14 @@
 use std::collections::HashMap;
 
 use legend_vm::{
-    LegacyValue, LegacyVmRunner,
+    LegacyValue, LegendVmRunner,
     compiler::{CompileArtifact, ResidualValue, eval_native_residual},
 };
 use odin_vm::{OdinVm, Value};
 
 #[test]
 fn bytecode_probe_stack_compiler_to_ovm_js_stub() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let artifact = runner.compile_module("javascript", "console.log('probe');", "probe").expect("compile module stub");
     let CompileArtifact::BytecodeProbe(module) = artifact
     else {
@@ -28,7 +28,7 @@ fn bytecode_probe_stack_compiler_to_ovm_js_stub() {
 
 #[test]
 fn bytecode_probe_python_stub_uses_nyar_path() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let artifact = runner.compile_module("python", "print('probe')", "probe").expect("compile module stub");
     let CompileArtifact::BytecodeProbe(module) = artifact
     else {
@@ -43,7 +43,7 @@ fn bytecode_probe_python_stub_uses_nyar_path() {
 
 #[test]
 fn lua_pe_specializes_to_native_residual_not_nyar() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let artifact = runner.compile_module("lua", "return 1", "ok").expect("lua compile_module");
     let CompileArtifact::Native(module) = artifact
     else {
@@ -99,7 +99,7 @@ return "n:" .. total
 
 #[test]
 fn lua_pe_emits_windows_pe_from_native_residual() {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let residual = runner.specialize_native("lua", "return 1 + 2", "lua_pe").expect("specialize");
     assert!(residual.is_native_bound());
 
@@ -112,7 +112,7 @@ fn lua_pe_emits_windows_pe_from_native_residual() {
 }
 
 fn assert_native_pe_matches_interpret(source: &str, residual_ok: impl FnOnce(&ResidualValue) -> bool) {
-    let runner = LegacyVmRunner::new();
+    let runner = LegendVmRunner::new();
     let mut env = HashMap::new();
     let interpreted = runner.run("lua", source, &mut env).expect("interpret");
 
