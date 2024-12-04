@@ -1,0 +1,53 @@
+{
+    "name": "@nyar/nyar",
+    "version": "0.0.12",
+    "description": "Nyar VM host CLI (@vmz/commander) and orthogonal nyar-napi bindings.",
+    "type": "module",
+    "license": "MIT",
+    "main": "src/index.ts",
+    "exports": {
+        ".": "./src/index.ts",
+        "./cli": "./src/cli/cli.ts"
+    },
+    "bin": {
+        "nyar": "bin/nyar.js"
+    },
+    "files": [
+        "bin",
+        "src",
+        "readme.md",
+        "README.md"
+    ],
+    "scripts": {
+        "prepack": "node ../../../scripts/prepare-npm-publish.mjs",
+        "test": "node --experimental-strip-types --test tests/**/*.test.ts"
+    },
+    "dependencies": {
+        "@vmz/commander": "^0.3.5",
+        "@vmz/diagnostic": "^0.3.5"
+    },
+    "optionalDependencies": {
+        "@nyar/nyar-darwin-arm64": "workspace:*",
+        "@nyar/nyar-darwin-x64": "workspace:*",
+        "@nyar/nyar-linux-x64": "workspace:*",
+        "@nyar/nyar-unknown-wasm32": "workspace:*",
+        "@nyar/nyar-win32-x64": "workspace:*"
+    },
+    "engines": {
+        "node": ">=20"
+    },
+    "keywords": [
+        "nyar",
+        "nyar-vm",
+        "virtual-machine",
+        "runtime"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
+        "directory": "projects/nyar.ts/packages/nyar"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}

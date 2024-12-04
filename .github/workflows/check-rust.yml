@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ master, dev ]
 
+defaults:
+  run:
+    working-directory: projects/nyar.rs
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -24,6 +28,9 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: wasm-tools,wasmtime
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: projects/nyar.rs
       - name: Build
         run: cargo build --workspace
 
@@ -45,5 +52,8 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: wasm-tools,wasmtime
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: projects/nyar.rs
       - name: Tests
         run: cargo test --workspace

@@ -19,6 +19,6 @@ jobs:
       - name: Install
         run: pnpm install
       - name: Test npm packages
-        run: pnpm --filter "./projects/packages/**" test
+        run: pnpm --filter "./projects/nyar.ts/**" test
       - name: Prepare npm package readmes
         run: node scripts/prepare-npm-publish.mjs

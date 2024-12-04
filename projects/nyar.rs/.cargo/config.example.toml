@@ -1,0 +1,16 @@
+# 复制为 `.cargo/config.toml`（已 gitignore）。CI 使用 `projects/nyar.rs/Cargo.toml` 中 pin 的 git `rev`。
+# 按本机 monorepo 布局调整 path；示例假设与 `nyar-vm.rs` 同级的兄弟检出。
+
+[registries.crates-io]
+protocol = "sparse"
+
+[patch."https://github.com/yggdrasil-language/oak.rs"]
+oak-core = { path = "<your-path>/oaks/projects/oak-core" }
+oak-valkyrie = { path = "<your-path>/oaks/examples/oak-valkyrie" }
+oak-von = { path = "<your-path>/oaks/examples/oak-von" }
+oak-awsl = { path = "<your-path>/oaks/examples/oak-awsl" }
+
+[patch."https://github.com/yggdrasil-language/acorn.rs"]
+acorn-wasm = { path = "<your-path>/acorn.rs/examples/acorn-wasm" }
+acorn-jvm = { path = "<your-path>/acorn.rs/examples/acorn-jvm" }
+acorn-pe = { path = "<your-path>/acorn.rs/examples/acorn-pe" }

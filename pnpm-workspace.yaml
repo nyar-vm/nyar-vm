@@ -1,6 +1,8 @@
 packages:
-  - 'projects/packages/*'
-  - 'documentation'
+  - "projects/nyar.ts/packages/*"
+  - "projects/nyar.ts/platforms/*"
+  - "projects/nyar.ts/emulators/*"
+  - "documentation"
 minimumReleaseAgeExclude:
-  - '@vmz/commander@0.3.5'
-  - '@vmz/diagnostic@0.3.5'
+  - "@vmz/commander@0.3.5"
+  - "@vmz/diagnostic@0.3.5"

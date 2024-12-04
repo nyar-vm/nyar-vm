@@ -17,8 +17,8 @@
         "fmt:check": "nifty format --check",
         "format": "nifty format",
         "lint": "pnpm fmt:check",
-        "check": "cargo cry",
-        "check:doc": "cargo-cry doc",
+        "check": "cargo cry --manifest-path projects/nyar.rs/Cargo.toml",
+        "check:doc": "cargo-cry doc --manifest-path projects/nyar.rs/Cargo.toml",
         "p": "cargo workspaces publish --no-git-commit --allow-dirty --yes",
         "u": "cargo upgrade --incompatible"
     },

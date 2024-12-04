@@ -15,7 +15,11 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from "no
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { RUST_MANIFEST, RUST_WS_DIR } from "./rust-manifest.mjs";
+import { resolveTsPackageDir } from "./ts-layout.mjs";
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const CARGO_MANIFEST_ARGS = ["--manifest-path", RUST_MANIFEST];
 
 /** @typedef {{ triple: string, packageDir: string, tool: "cargo" | "zigbuild", npmTriple: string, short: string }} NativeTarget */
 /** @typedef {{ triple: string, packageDir: string, libName: string, destName: string }} WasmTarget */
@@ -166,10 +170,10 @@ function resolveNativeBuild(target) {
 function cargoBuildTarget(triple, release, tool, crate) {
     const profile = release ? ["--release"] : [];
     if (tool === "zigbuild") {
-        run("cargo", ["zigbuild", "build", ...profile, "--target", triple, "-p", crate]);
+        run("cargo", ["zigbuild", "build", ...CARGO_MANIFEST_ARGS, ...profile, "--target", triple, "-p", crate]);
         return;
     }
-    run("cargo", ["build", ...profile, "--target", triple, "-p", crate]);
+    run("cargo", ["build", ...CARGO_MANIFEST_ARGS, ...profile, "--target", triple, "-p", crate]);
 }
 
 /**
@@ -179,7 +183,7 @@ function cargoBuildTarget(triple, release, tool, crate) {
  */
 function nativeLibCandidates(triple, release, libName) {
     const profile = release ? "release" : "debug";
-    const dir = join(ROOT, "target", triple, profile);
+    const dir = join(ROOT, RUST_WS_DIR, "target", triple, profile);
     if (triple.includes("windows")) {
         return [join(dir, `${libName}.dll`)];
     }
@@ -196,7 +200,7 @@ function nativeLibCandidates(triple, release, libName) {
  */
 function wasmLibCandidates(triple, release, libName) {
     const profile = release ? "release" : "debug";
-    const dir = join(ROOT, "target", triple, profile);
+    const dir = join(ROOT, RUST_WS_DIR, "target", triple, profile);
     return [join(dir, `${libName}.wasm`)];
 }
 
@@ -241,7 +245,7 @@ function findNativeArtifact(triple, release, libName) {
         }
     }
     const profile = release ? "release" : "debug";
-    const depsDir = join(ROOT, "target", triple, profile, "deps");
+    const depsDir = join(ROOT, RUST_WS_DIR, "target", triple, profile, "deps");
     if (existsSync(depsDir)) {
         for (const name of readdirSync(depsDir)) {
             if (
@@ -267,12 +271,12 @@ function buildNapi(opts) {
 
     for (const target of targets) {
         const build = resolveNativeBuild(target);
-        console.log(`\n→ ${build.triple} (${build.tool}) → projects/packages/${target.packageDir}`);
+        console.log(`\n→ ${build.triple} (${build.tool}) → ${resolveTsPackageDir(target.packageDir)}`);
         cargoBuildTarget(build.triple, release, build.tool, "nyar-napi");
 
         const src = findNativeArtifact(build.triple, release, "nyar_napi");
         const destName = nativeCollectBinaryName(target.npmTriple);
-        const destDir = join(ROOT, "projects", "packages", target.packageDir);
+        const destDir = join(ROOT, resolveTsPackageDir(target.packageDir));
         const dest = join(destDir, "lib", destName);
         copyArtifact(src, dest);
         for (const legacy of ["nyar_napi.dll", "libnyar_napi.so", "libnyar_napi.dylib", "nyar.node", destName]) {
@@ -294,11 +298,11 @@ function buildWasm(opts) {
     console.log(`build:wasm → nyar-wasm cdylib (${release ? "release" : "debug"}, ${targets.length} target(s))`);
 
     for (const target of targets) {
-        console.log(`\n→ ${target.triple} → projects/packages/${target.packageDir}`);
+        console.log(`\n→ ${target.triple} → ${resolveTsPackageDir(target.packageDir)}`);
         cargoBuildTarget(target.triple, release, "cargo", "nyar-wasm");
 
         const src = resolveArtifact(wasmLibCandidates(target.triple, release, target.libName));
-        const dest = join(ROOT, "projects", "packages", target.packageDir, target.destName);
+        const dest = join(ROOT, resolveTsPackageDir(target.packageDir), target.destName);
         copyArtifact(src, dest);
         console.log(`  copied ${target.destName}`);
     }

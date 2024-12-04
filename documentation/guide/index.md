@@ -405,7 +405,7 @@ mezzo MapType<T>(input: T) -> T {
 
 现在你已经了解了 Valkyrie 语言的基本语法和特性，可以：
 
-1. **深入学习**：查看 [语言特性详细指南](./features.md)
+1. **深入学习**：查看 [语言特性详细指南](features.md)
 2. **类型系统**：了解 [类型系统](../language/type-system/index.md) 的高级特性
 3. **模式匹配**：掌握 [模式匹配](../language/pattern-match.md) 的强大功能
 4. **模块系统**：学习 [模块系统](../language/modules.md) 的组织方式

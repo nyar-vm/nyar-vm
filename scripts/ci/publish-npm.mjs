@@ -15,8 +15,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveTsPackageDir } from '../ts-layout.mjs';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const PACKAGES_ROOT = path.join(ROOT, 'projects', 'packages');
+
+/**
+ * @param {string} packageDir
+ */
+function packageAbs(packageDir) {
+    return path.join(ROOT, resolveTsPackageDir(packageDir));
+}
 
 /** @type {{ short: string, packageDir: string, os: string[], cpu: string[], artifact: string }[]} */
 const NATIVE_PLATFORMS = [
@@ -39,7 +47,7 @@ const WASM_COLLECT = {
 };
 
 const MAIN_PACKAGE = {
-    dir: path.join(PACKAGES_ROOT, 'nyar'),
+    dir: packageAbs('nyar'),
     name: '@nyar/nyar',
 };
 
@@ -161,7 +169,7 @@ function npmPublish(stagingDir, name, version) {
 }
 
 function stageCollectPackage(spec, version, artifactsRoot) {
-    const abs = path.join(PACKAGES_ROOT, spec.packageDir);
+    const abs = packageAbs(spec.packageDir);
     if (!fs.existsSync(abs)) fail(`missing package dir ${spec.packageDir}`);
     const raw = readJson(path.join(abs, 'package.json'));
     const name = raw.name;
@@ -317,8 +325,8 @@ function publishMain(version, artifactsRoot) {
         const hasArtifact =
             fs.existsSync(path.join(artDir, 'lib', plat.artifact)) ||
             fs.existsSync(path.join(artDir, plat.artifact)) ||
-            fs.existsSync(path.join(PACKAGES_ROOT, plat.packageDir, 'lib', plat.artifact)) ||
-            fs.existsSync(path.join(PACKAGES_ROOT, plat.packageDir, plat.artifact));
+            fs.existsSync(path.join(packageAbs(plat.packageDir), 'lib', plat.artifact)) ||
+            fs.existsSync(path.join(packageAbs(plat.packageDir), plat.artifact));
         if (hasArtifact || versionExists(collectName, version)) {
             optionalNatives[collectName] = version;
         } else {

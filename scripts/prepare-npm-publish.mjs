@@ -7,19 +7,29 @@
  *   node scripts/prepare-npm-publish.mjs --check
  */
 
-import {copyFileSync, existsSync, readdirSync} from "node:fs";
-import {dirname, join, resolve} from "node:path";
-import {fileURLToPath} from "node:url";
+import { copyFileSync, existsSync, readdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES_DIR = join(ROOT, "projects", "packages");
+const TS_ROOT = join(ROOT, "projects", "nyar.ts");
 const CHECK_ONLY = process.argv.includes("--check");
 
 function packageDirs() {
-    return readdirSync(PACKAGES_DIR, {withFileTypes: true})
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => join(PACKAGES_DIR, entry.name))
-        .filter((dir) => existsSync(join(dir, "package.json")));
+    /** @type {string[]} */
+    const dirs = [];
+    for (const bucket of ["packages", "platforms", "emulators"]) {
+        const base = join(TS_ROOT, bucket);
+        if (!existsSync(base)) continue;
+        for (const entry of readdirSync(base, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const dir = join(base, entry.name);
+            if (existsSync(join(dir, "package.json"))) {
+                dirs.push(dir);
+            }
+        }
+    }
+    return dirs;
 }
 
 let missing = 0;

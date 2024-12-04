@@ -1,17 +1,16 @@
 # OS
 
-
 # IDE
 .idea/
 *.iml
 *.log
 *.txt
 
-# Rust
-.cache/
-.cargo/config.toml
+# Rust (`projects/nyar.rs/` workspace only)
+projects/nyar.rs/target/
+projects/nyar.rs/.cargo/config.toml
+projects/nyar.rs/Cargo.lock
 target/
-Cargo.lock
 
 # Node
 node_modules/

@@ -124,10 +124,10 @@ jobs:
           out="dist/${{ matrix.short }}"
           mkdir -p "$out"
           case "${{ matrix.short }}" in
-            win32-x64) src="projects/packages/nyar-win32-x64/lib/nyar.win32-x64-msvc.node" ;;
-            linux-x64) src="projects/packages/nyar-linux-x64/lib/nyar.linux-x64-gnu.node" ;;
-            darwin-x64) src="projects/packages/nyar-darwin-x64/lib/nyar.darwin-x64.node" ;;
-            darwin-arm64) src="projects/packages/nyar-darwin-arm64/lib/nyar.darwin-arm64.node" ;;
+            win32-x64) src="projects/nyar.ts/platforms/nyar-win32-x64/lib/nyar.win32-x64-msvc.node" ;;
+            linux-x64) src="projects/nyar.ts/platforms/nyar-linux-x64/lib/nyar.linux-x64-gnu.node" ;;
+            darwin-x64) src="projects/nyar.ts/platforms/nyar-darwin-x64/lib/nyar.darwin-x64.node" ;;
+            darwin-arm64) src="projects/nyar.ts/platforms/nyar-darwin-arm64/lib/nyar.darwin-arm64.node" ;;
             *) echo "unknown platform ${{ matrix.short }}" >&2; exit 1 ;;
           esac
           if [[ -f "$src" ]]; then
@@ -216,7 +216,7 @@ jobs:
             mkdir -p "dist/native-flat/$short"
             cp -r "$d"/. "dist/native-flat/$short/" || true
           done
-          cp projects/packages/nyar-unknown-wasm32/nyar_wasm.wasm dist/wasm-flat/unknown-wasm32/nyar_wasm.wasm
+          cp projects/nyar.ts/platforms/nyar-unknown-wasm32/nyar_wasm.wasm dist/wasm-flat/unknown-wasm32/nyar_wasm.wasm
           find dist/native-flat dist/wasm-flat -type f -print
 
       - name: Strip token-style npmrc (OIDC only)

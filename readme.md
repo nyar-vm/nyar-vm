@@ -158,15 +158,17 @@ graph LR
 
 | 模块           | 路径                                                                           | 功能描述                                |
 |:---------------|:-------------------------------------------------------------------------------|:----------------------------------------|
-| **虚拟机核心** | [`odin-vm`](./projects/runtimes/odin-vm)                                       | 字节码解释器、异步运行时及驱动          |
-| **类型系统**   | [`nyar-types`](./projects/compilers/nyar-types)                                | NaN-Boxing 实现与核心类型定义           |
-| **垃圾回收**   | [`nyar-gc`](./projects/runtimes/nyar-gc)                                       | 高性能分块式垃圾回收器                  |
-| **加速引擎**   | [`nyar-jit`](./projects/runtimes/nyar-jit) / [`nyar-aot`](./projects/nyar-aot) | 动态与静态编译优化工具链                |
+| **Rust 工作区** | [`projects/nyar.rs`](./projects/nyar.rs)                                     | 编译器、运行时、语言前端、ffis          |
+| **TypeScript** | [`projects/nyar.ts`](./projects/nyar.ts)                                     | npm 包、平台产物、语言模拟器            |
+| **虚拟机核心** | [`odin-vm`](./projects/nyar.rs/runtimes/odin-vm)                              | 字节码解释器、异步运行时及驱动          |
+| **类型系统**   | [`nyar-types`](./projects/nyar.rs/compilers/nyar-types)                      | NaN-Boxing 实现与核心类型定义           |
+| **垃圾回收**   | [`nyar-gc`](./projects/nyar.rs/runtimes/nyar-gc)                               | 高性能分块式垃圾回收器                  |
+| **加速引擎**   | [`nyar-jit`](./projects/nyar.rs/runtimes/nyar-jit)                            | 动态编译优化工具链                      |
 | **示例前端**   | [`examples/`](./examples)                                                      | C, Java, Go, TS 等多种语言的 Nyar 实现  |
 | **语言主链**   | [`rusty-valkyrie`](./examples/rusty-valkyrie)                                    | Valkyrie 前端：`HIR` / `MIR` 与语义闭包 |
 
 Per-crate docs live in each directory's `readme.md` (for example [
-`odin-vm/readme.md`](./projects/runtimes/odin-vm/readme.md)).
+`odin-vm/readme.md`](./projects/nyar.rs/runtimes/odin-vm/readme.md)).
 
 ---
 
@@ -174,7 +176,7 @@ Per-crate docs live in each directory's `readme.md` (for example [
 
 ```powershell
 # 构建全量发布版本
-cargo build --release
+cargo build --manifest-path projects/nyar.rs/Cargo.toml --release
 
 # 运行基准测试
 cargo bench -p odin-vm
