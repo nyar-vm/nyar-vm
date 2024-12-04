@@ -32,3 +32,4 @@ syntect = { workspace = true }
 [dev-dependencies]
 odin-bytecode = { workspace = true }
 odin-vm = { workspace = true }
+tempfile = { workspace = true }

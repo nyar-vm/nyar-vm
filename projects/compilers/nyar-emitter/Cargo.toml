@@ -26,7 +26,5 @@ serde_json = { workspace = true }
 zip = { workspace = true }
 
 [dev-dependencies]
-# Integration tests compile Valkyrie sources via the frontend crate.
-rusty-valkyrie = { workspace = true }
 ordered-float = { workspace = true }
 tempfile = { workspace = true }
