@@ -8,11 +8,10 @@ members = [
     "examples/rusty-tcl",
     "examples/rusty-valkyrie",
     "projects/formats/odin-bytecode",
-    "projects/packages/valkyrie/crates/asgard",
-    "projects/packages/valkyrie/crates/legion",
-    "projects/packages/valkyrie/crates/legion-workspace",
-    "projects/packages/valkyrie/crates/vcc-napi",
-    "projects/packages/valkyrie/crates/vcc-wasm",
+    "examples/rusty-valkyrie/crates/asgard",
+    "examples/rusty-valkyrie/crates/legion",
+    "examples/rusty-valkyrie/crates/legion-workspace",
+    "examples/rusty-valkyrie/crates/vcc-wasm",
     "projects/runtimes/legend-vm",
     "projects/runtimes/nyar-gc",
     "projects/runtimes/nyar-jit",
@@ -79,9 +78,9 @@ rusty-lua = { path = "examples/rusty-lua" }
 rusty-powershell = { path = "examples/rusty-powershell" }
 rusty-tcl = { path = "examples/rusty-tcl" }
 # Valkyrie 产品装配（Legion / Asgard CLI 与发行入口）
-legion = { path = "projects/packages/valkyrie/crates/legion" }
-legion-workspace = { path = "projects/packages/valkyrie/crates/legion-workspace" }
-asgard = { path = "projects/packages/valkyrie/crates/asgard" }
+legion = { path = "examples/rusty-valkyrie/crates/legion" }
+legion-workspace = { path = "examples/rusty-valkyrie/crates/legion-workspace" }
+asgard = { path = "examples/rusty-valkyrie/crates/asgard" }
 # Nyar Runtime（Nyar 平台的私有运行时）
 legend-vm = { path = "projects/runtimes/legend-vm" }
 odin-vm = { path = "projects/runtimes/odin-vm" }

@@ -19,11 +19,6 @@ fn source_kind_from_extension() {
 }
 
 #[test]
-fn format_v_idempotent() {
-    assert_idempotent(SourceKind::V, "micro main(){let x=1}");
-}
-
-#[test]
 fn format_awsl_idempotent() {
     let source = r#"
 <template>
@@ -39,18 +34,8 @@ fn format_von_idempotent_with_comment() {
 }
 
 #[test]
-fn format_v_idempotent_with_comment() {
-    assert_idempotent(SourceKind::V, "# note\nmicro main(){let x=1}\n");
-}
-
-#[test]
 fn format_von_idempotent() {
     assert_idempotent(SourceKind::Von, r#"{ "x": 1, "y": [true, null] }"#);
-}
-
-#[test]
-fn format_vx_idempotent() {
-    assert_idempotent(SourceKind::Vx, "namespace demo;");
 }
 
 #[test]

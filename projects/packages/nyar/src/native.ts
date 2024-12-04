@@ -55,6 +55,7 @@ type NyarNativeAddon = {
         wasiP3?: boolean;
     }): PreparedRuntimeCommand;
     runPreparedCommand(prepared: PreparedRuntimeCommand, cwd?: string): number;
+    runValkyrieCli(product: string, argv: string[]): number;
 };
 
 const pkgRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -96,7 +97,7 @@ export function resolveNativePath(): string {
 
 let nativeAddon: NyarNativeAddon | undefined;
 
-/** 加载当前平台的 nyar-napi 绑定（正交能力面，不含 CLI）。 */
+/** 加载当前平台的 nyar-napi 绑定。 */
 export function loadNative(): NyarNativeAddon {
     if (nativeAddon) return nativeAddon;
     const triple = platformTriple();
@@ -132,4 +133,16 @@ export function runPreparedCommand(prepared: PreparedRuntimeCommand, cwd?: strin
 /** 通过 nyar-napi 的 legend-vm 基板执行宿主脚本。 */
 export function runHostScript(options: HostScriptOptions): HostScriptResult {
     return loadNative().runHostScript({language: options.language, source: options.source, file: options.file});
+}
+
+/** Valkyrie 编译器 CLI 产品名。 */
+export type ValkyrieProduct = 'legion' | 'asgard';
+
+/**
+ * 通过 nyar-napi 执行 Valkyrie CLI，原样返回退出码。
+ *
+ * argv 不解析、不改写；`--help` / `--version` 等语义全部由 Rust CLI 承担。
+ */
+export async function runValkyrieCli(product: ValkyrieProduct, argv: string[]): Promise<number> {
+    return loadNative().runValkyrieCli(product, argv);
 }

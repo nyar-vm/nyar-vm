@@ -1,7 +1,7 @@
 //! Legion CLI 解析与分发（库内入口）。
 //!
-//! 原生宿主仅经 `vcc-napi` platform `.node`（`legionRun*` N-API）或 wasm collect 调用；
-//! npm 用户入口在 `packages/legion`（`bin/legion.js` → `@valkyrie-language/vcc` 宿主）。
+//! 原生宿主仅经 `nyar-napi` platform `.node`（`legionRun*` N-API）或 wasm collect 调用；
+//! npm 用户入口在 `projects/packages/valkyrie`（`bin/legion.mjs` → `@nyar/nyar` → `nyar-napi`）。
 
 use std::{ffi::OsString, io::Read, process::ExitCode};
 
@@ -104,7 +104,7 @@ pub enum LegionCommands {
     Registry(RegistryArgs),
 }
 
-/// 在独立大栈线程上解析 `argv` 并运行 Legion CLI（供 `vcc-napi` 原生宿主调用）。
+/// 在独立大栈线程上解析 `argv` 并运行 Legion CLI（供 `nyar-napi` 原生宿主调用）。
 pub fn run_from_env() -> i32 {
     run_with_argv(std::env::args_os().collect())
 }
@@ -183,6 +183,8 @@ fn exit_code_from_exit_code(code: ExitCode) -> i32 {
 }
 
 fn run_with_argv_inner(argv: Vec<OsString>) -> Result<ExitCode, Report> {
+    // 格式化是平台能力：Valkyrie formatter / printer 由前端在入口注册。
+    rusty_valkyrie::register_format_providers();
     if let Some(code) = try_forward_companion(&argv) {
         return Ok(code);
     }

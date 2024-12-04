@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Nyar VM — Node-API native bindings (orthogonal host surface, no CLI)"
+description = "Nyar VM — Node-API native bindings (host capabilities + Valkyrie CLI entry)"
 
 [lib]
 name = "nyar_napi"
@@ -12,10 +12,17 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+asgard = { workspace = true }
+clap = { workspace = true }
 legend-vm = { workspace = true }
-nyar-runner = { workspace = true }
+legion = { workspace = true }
 napi.workspace = true
 napi-derive.workspace = true
+nyar-runner = { workspace = true }
+windows-sys = { workspace = true }
 
 [build-dependencies]
-napi-build = "2.6.0"
+napi-build = { workspace = true }
+
+[target.'cfg(not(windows))'.dependencies]
+gag = { workspace = true }

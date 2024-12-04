@@ -1,16 +1,11 @@
 //! Valkyrie (`.v` / `.vx`) source formatter（Oak token-gap）。
+//!
+//! 实现位于 [`crate::format_provider`]（平台 provider 的直接路径），本入口只保留给 LSP 等
+//! 前端内部调用，确保仓库内只有一套 V formatter 实现。
 
 use nyar_analyzer::format::{FormatError, FormatOptions, FormattedOutput};
 
 /// Valkyrie / VX 源码正规格式化（CST token-gap 路径）。
 pub fn format_valkyrie(source: &str, options: &FormatOptions, _vx: bool) -> Result<FormattedOutput, FormatError> {
-    let oak_options =
-        oak_valkyrie::formatter::FormatOptions { indent_width: options.indent_width.min(255) as u8, line_width: options.max_width };
-    let text = oak_valkyrie::formatter::format_source(source, &oak_options)
-        .map_err(|error| FormatError::Parse { path: None, message: error.to_string() })?;
-    let mut out = text;
-    if options.ensure_trailing_newline && !out.is_empty() && !out.ends_with('\n') {
-        out.push('\n');
-    }
-    Ok(FormattedOutput::text_only(out))
+    crate::format_provider::format_valkyrie_source(source, options)
 }

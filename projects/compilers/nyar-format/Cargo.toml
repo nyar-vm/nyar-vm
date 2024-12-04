@@ -15,8 +15,6 @@ serde = ["oak-von/serde"]
 acorn-pe = { workspace = true }
 oak-awsl = { workspace = true }
 oak-core = { workspace = true }
-oak-valkyrie = { workspace = true }
 oak-von = { workspace = true }
 nyar-analyzer = { workspace = true }
-rusty-valkyrie = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -1,9 +1,9 @@
-//! Format parity integration tests (`.editorconfig`, idempotence, comments).
+//! Format parity integration tests (`.editorconfig`, language-neutral mappings).
 
 use std::{fs, path::PathBuf};
 
 use nyar_analyzer::format::FormatConfigLoader;
-use nyar_format::formatter::{FormatOptions, SourceKind, format_source};
+use nyar_format::formatter::{SourceKind, format_source};
 
 fn temp_dir(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("nyar_fmt_parity_{name}_{}", std::process::id()))
@@ -41,16 +41,6 @@ insert_final_newline = false
 }
 
 #[test]
-fn format_idempotent_for_v_with_comment() {
-    let source = "# header\nmicro main(){let x=1}\n";
-    let options = FormatOptions::default();
-    let once = format_source(SourceKind::V, source, &options).expect("format once");
-    let twice = format_source(SourceKind::V, &once, &options).expect("format twice");
-    assert_eq!(once, twice);
-    assert!(once.contains('#'), "comment should be preserved");
-}
-
-#[test]
 fn editorconfig_indent_applied_to_von_output() {
     let dir = temp_dir("ec_von");
     let _ = fs::remove_dir_all(&dir);
@@ -66,33 +56,4 @@ fn editorconfig_indent_applied_to_von_output() {
     assert_eq!(formatted, again);
 
     let _ = fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn golden_v_micro_main_idempotent() {
-    const INPUT: &str = "micro main(){let x=1}";
-    let options = FormatOptions::default();
-    let out = format_source(SourceKind::V, INPUT, &options).unwrap();
-    assert_eq!(format_source(SourceKind::V, &out, &options).unwrap(), out);
-}
-
-#[test]
-fn flags_members_format_idempotent() {
-    const INPUT: &str = "flags FilePerm { Read = 1 Write = 2 }";
-    let options = FormatOptions::default();
-    let out = format_source(SourceKind::V, INPUT, &options).expect("format flags");
-    assert!(out.contains("Read"));
-    assert!(out.contains("Write"));
-    assert_eq!(format_source(SourceKind::V, &out, &options).unwrap(), out);
-}
-
-#[test]
-fn enums_variants_format_idempotent() {
-    const INPUT: &str = "enums Color { RED=2 GREEN=4 BLUE=6 }";
-    let options = FormatOptions::default();
-    let out = format_source(SourceKind::V, INPUT, &options).expect("format enums");
-    assert!(out.contains("RED"));
-    assert!(out.contains("GREEN"));
-    assert!(out.contains("BLUE"));
-    assert_eq!(format_source(SourceKind::V, &out, &options).unwrap(), out);
 }

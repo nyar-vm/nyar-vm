@@ -6,31 +6,27 @@
 //! - **Printer**：已解析 AST / 值模型 → `oak_pretty_print::Document` → 文本；不保留注释与空白。
 //! - **Formatter**：源码 → CST token-gap → 文本；保留 trivia。
 //!
-//! Valkyrie / VON 的 AST print 均委托对应 `oak-*::printer`；不得在此手写布局规则。
+//! 具体语言的 printer 由前端 crate 通过 [`register_printer_provider`] 注册；本 crate 只直接注册
+//! VON / WAT / WIT / MSIL 这些平台拥有的文本模型，不反向依赖任何前端。
 
-use std::{any::Any, sync::OnceLock};
-
-use nyar_analyzer::format::{FormatError, FormatOptions, PrintStyle, Printer, PrinterRegistry};
-use oak_valkyrie::printer::{
-    Document as PrettyDocument, PrintOptions as ValkyriePrintOptions, PrintStyle as ValkyriePrintStyle, print_root as oak_print_valkyrie_root,
-    print_source as oak_print_valkyrie_source, render_document as oak_render_valkyrie_document, to_document as oak_valkyrie_to_document,
+use std::{
+    any::Any,
+    sync::{OnceLock, RwLock, RwLockReadGuard},
 };
+
+use nyar_analyzer::format::{FormatError, FormatOptions, PrintStyle, Printer, PrinterProvider, PrinterRegistry};
 use oak_von::{
     VonValue,
     printer::{PrintOptions as VonPrintOptions, PrintStyle as VonPrintStyle, print_value},
 };
 
 use acorn_pe::msil::MsilModule;
-use rusty_valkyrie::frontend::ValkyrieRoot;
 
 use crate::{
     msil::MsilTextWriter,
     wat::{WatDocument, format_wat_document},
     wit::{WitPackage, format_wit_package},
 };
-
-/// Oak pretty-print 布局文档（AST printer 路径；非 `nyar_analyzer::format::Document`）。
-pub type Document = PrettyDocument<'static>;
 
 fn map_von_print_style(style: PrintStyle) -> VonPrintStyle {
     match style {
@@ -43,59 +39,8 @@ fn map_von_print_options(style: PrintStyle, options: &FormatOptions) -> VonPrint
     VonPrintOptions { style: map_von_print_style(style), indent_width: options.indent_width, max_width: options.max_width }
 }
 
-fn map_valkyrie_print_style(style: PrintStyle) -> ValkyriePrintStyle {
-    match style {
-        PrintStyle::Compact => ValkyriePrintStyle::Compact,
-        PrintStyle::Indented => ValkyriePrintStyle::Indented,
-    }
-}
-
-fn map_valkyrie_print_options(style: PrintStyle, options: &FormatOptions) -> ValkyriePrintOptions {
-    ValkyriePrintOptions { style: map_valkyrie_print_style(style), indent_width: options.indent_width, max_width: options.max_width }
-}
-
-fn map_valkyrie_print_error(error: oak_valkyrie::printer::PrintError) -> FormatError {
-    match error {
-        oak_valkyrie::printer::PrintError::Parse(message) => FormatError::Parse { path: None, message },
-        oak_valkyrie::printer::PrintError::Unsupported { context } => FormatError::Parse { path: None, message: context },
-    }
-}
-
 fn print_von_value(value: &VonValue, style: PrintStyle, options: &FormatOptions) -> String {
     print_value(value, &map_von_print_options(style, options))
-}
-
-/// 将 `ValkyrieRoot` 转为 `oak-pretty-print` 布局文档。
-pub fn to_document(root: &ValkyrieRoot) -> Result<Document, FormatError> {
-    oak_valkyrie_to_document(root).map_err(map_valkyrie_print_error)
-}
-
-/// 渲染 Valkyrie pretty-print 文档为文本。
-pub fn render_document(doc: &Document, style: PrintStyle, options: &FormatOptions) -> String {
-    oak_render_valkyrie_document(doc, &map_valkyrie_print_options(style, options))
-}
-
-/// 将 `ValkyrieRoot` 写出为文本（AST print；非 CST formatter）。
-pub fn print_valkyrie_root(root: &ValkyrieRoot, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
-    oak_print_valkyrie_root(root, &map_valkyrie_print_options(style, options)).map_err(map_valkyrie_print_error)
-}
-
-/// Valkyrie 源码 AST print（parse → `Document` → text；非 CST formatter）。
-pub fn print_valkyrie_source(source: &str, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
-    oak_print_valkyrie_source(source, &map_valkyrie_print_options(style, options)).map_err(map_valkyrie_print_error)
-}
-
-struct ValkyriePrinter;
-
-impl Printer for ValkyriePrinter {
-    fn language_id(&self) -> &str {
-        "v"
-    }
-
-    fn print(&self, document: &dyn Any, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
-        let root = document.downcast_ref::<ValkyrieRoot>().ok_or_else(|| FormatError::WrongDocument { expected: "ValkyrieRoot".into() })?;
-        print_valkyrie_root(root, style, options)
-    }
 }
 
 struct VonPrinter;
@@ -148,28 +93,34 @@ impl Printer for MsilPrinter {
     }
 }
 
-/// 语言侧 printer 注册表。
-pub fn printer_registry() -> &'static PrinterRegistry {
-    static REGISTRY: OnceLock<PrinterRegistry> = OnceLock::new();
+/// 平台 printer 注册表（启动时由各前端 provider 补全）。
+///
+/// 读取方应通过 [`print_document`] 及其平台包装函数间接访问；Valkyrie 的 `v` / `vx` /
+/// `valkyrie` 只有在 Valkyrie 前端 provider 注册后才可用。
+pub fn printer_registry() -> &'static RwLock<PrinterRegistry> {
+    static REGISTRY: OnceLock<RwLock<PrinterRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         let mut reg = PrinterRegistry::new();
-        reg.register(&["v", "vx", "valkyrie"], Box::new(ValkyriePrinter));
         reg.register(&["von"], Box::new(VonPrinter));
         reg.register(&["wat"], Box::new(WatPrinter));
         reg.register(&["wit"], Box::new(WitPrinter));
         reg.register(&["msil", "il"], Box::new(MsilPrinter));
-        reg
+        RwLock::new(reg)
     })
+}
+
+/// 注册前端 printer provider（线程安全，可重复调用；先注册者优先）。
+pub fn register_printer_provider(provider: &dyn PrinterProvider) {
+    printer_registry().write().unwrap_or_else(|error| error.into_inner()).register_provider(provider);
+}
+
+fn printer_registry_read() -> RwLockReadGuard<'static, PrinterRegistry> {
+    printer_registry().read().unwrap_or_else(|error| error.into_inner())
 }
 
 /// 按语言 id 将已解析文档写出为文本。
 pub fn print_document(language_id: &str, document: &dyn Any, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
-    printer_registry().print(language_id, document, style, options)
-}
-
-/// 打印 `ValkyrieRoot`（AST pretty print，非 CST formatter）。
-pub fn print_valkyrie(root: &ValkyrieRoot, style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
-    print_document("v", root, style, options)
+    printer_registry_read().print(language_id, document, style, options)
 }
 
 /// 打印 `VonValue`（AST pretty print，非 CST formatter）。

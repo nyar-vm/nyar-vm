@@ -1,8 +1,8 @@
 //! `asgard` CLI：`asgard build` / `asgard dev` / `asgard pack`。
 
-use std::{path::PathBuf, process::ExitCode};
+use std::{ffi::OsString, path::PathBuf, process::ExitCode};
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum, error::ErrorKind};
 use miette::{Result, miette};
 use nyar_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
 use rusty_valkyrie::CanonicalTarget;
@@ -377,6 +377,8 @@ pub fn run_fmt(args: &AsgardFmtArgs) -> Result<ExitCode> {
 
 /// 分发 `asgard` 子命令。
 pub fn run(command: &AsgardCommands) -> Result<ExitCode> {
+    // 格式化是平台能力：Valkyrie formatter / printer 由前端在入口注册。
+    rusty_valkyrie::register_format_providers();
     match command {
         AsgardCommands::Build(args) => run_build(args),
         AsgardCommands::Dev(args) => run_dev(args),
@@ -409,8 +411,50 @@ struct AsgardCli {
     command: AsgardCommands,
 }
 
-/// 解析当前进程 `argv` 并运行 Asgard CLI（供 `vcc-napi` / `vcc-wasm` 宿主调用）。
+/// 解析当前进程 `argv` 并运行 Asgard CLI（供 `nyar-napi` / `vcc-wasm` 宿主调用）。
 pub fn run_from_env() -> Result<ExitCode> {
     let cli = AsgardCli::parse();
     run(&cli.command)
+}
+
+/// 使用显式 `argv` 运行 Asgard CLI（首项通常为 `"asgard"`）。
+///
+/// 在独立大栈线程上执行，与 `legion::cli::run_with_argv` 行为一致：
+/// `--help` / `--version` 视为成功，解析或执行失败返回退出码 1。
+pub fn run_with_argv(argv: Vec<OsString>) -> i32 {
+    let result = std::thread::Builder::new()
+        .name("asgard-main".into())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || run_with_argv_inner(argv))
+        .expect("failed to spawn asgard main thread")
+        .join()
+        .expect("asgard main thread panicked");
+    exit_code_from_result(result)
+}
+
+fn run_with_argv_inner(argv: Vec<OsString>) -> Result<ExitCode> {
+    let cli = match AsgardCli::try_parse_from(&argv) {
+        Ok(cli) => cli,
+        Err(error) => {
+            let _ = error.print();
+            match error.kind() {
+                ErrorKind::DisplayHelp | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand | ErrorKind::DisplayVersion => {
+                    return Ok(ExitCode::SUCCESS);
+                }
+                _ => return Err(miette!(error.to_string())),
+            }
+        }
+    };
+    run(&cli.command)
+}
+
+fn exit_code_from_result(result: Result<ExitCode>) -> i32 {
+    match result {
+        Ok(code) if code == ExitCode::SUCCESS => 0,
+        Ok(_) => 1,
+        Err(report) => {
+            eprintln!("{report:?}");
+            1
+        }
+    }
 }

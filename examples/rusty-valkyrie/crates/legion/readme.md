@@ -14,14 +14,14 @@ Valkyrie 工作区 CLI：清单解析、依赖解析、构建与目标选择。
 ## 构建
 
 `legion` crate 仅提供库 API（`legion::cli::run_with_argv`）。**禁止** `[[bin]]` / `vcc.exe` / `legion.exe`。
-原生 CLI 宿主由 `vcc-napi` 产出 platform `.node` collect；npm 用户入口是 `@valkyrie-language/legion`（经 VCC N-API / wasm collect）。
+原生 CLI 宿主由 `nyar-napi` 产出 platform `.node` collect；npm 用户入口是 `@nyar/valkyrie`（经 `@nyar/nyar` → `nyar-napi`）。
 
 ```bash
 cargo test -p legion
-node scripts/build.mjs napi        # 生成 platform `vcc.<triple>.node` collect
+node scripts/build.mjs napi        # 生成 platform `nyar.<triple>.node` collect
 ```
 
-npm 装配见 [`projects/packages/legion`](../../packages/legion/README.md)。
+npm 装配见 [`projects/packages/valkyrie`](../../../projects/packages/valkyrie/readme.md)。
 
 ## 本地 path 覆盖（`.config/legion/legions.von`）
 

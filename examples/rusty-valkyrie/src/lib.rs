@@ -9,6 +9,8 @@ pub mod control_flow;
 pub mod derive;
 pub mod frontend;
 pub mod frontend_contract;
+/// 向 `nyar-format` 平台注册 Valkyrie 格式化 provider（前端 → 平台单向依赖）。
+pub mod format_provider;
 pub mod highlight;
 pub mod hir;
 /// 诊断专用入口（HIR 级），与 `compile_pipeline` 产物链分离。
@@ -60,6 +62,7 @@ pub use compile_pipeline::{
     generated_source_hash, host_provider_binding_hash_for_bindings, semantic_closure_hash_for_groups,
 };
 pub use lint::{lint_valkyrie_source, lint_valkyrie_vx_source};
+pub use format_provider::{register_format_providers, ValkyriePrinterProvider, ValkyrieSourceFormatterProvider};
 pub use mir::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, MirDiagnostic, MirStorageKind, SingletonInstancePlan,
     SumTypeLayout, SumVariantLayout, collect_singleton_instance_plans, compute_aggregate_layout_plan, layout_id_for_type,

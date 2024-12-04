@@ -10,11 +10,13 @@ export {
     prepareRuntimeCommand,
     runHostScript,
     runPreparedCommand,
+    runValkyrieCli,
     type HostInfo,
     type HostScriptOptions,
     type HostScriptResult,
     type PrepareRuntimeOptions,
     type PreparedRuntimeCommand,
+    type ValkyrieProduct,
 } from './native.ts';
 export { runCli } from './cli/cli.ts';
 

@@ -17,6 +17,7 @@ acorn-pe = { workspace = true }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
+nyar-format = { workspace = true }
 nyar-types = { workspace = true }
 oak-awsl = { workspace = true }
 oak-core = { workspace = true }
