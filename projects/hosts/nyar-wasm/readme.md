@@ -17,8 +17,8 @@ pnpm build:wasm   # from projects/packages — collects into platform npm packag
 
 ## API surface
 
-Currently exposes a placeholder (`wasm_placeholder`) while Wasm export wiring is expanded. Actual lowering and module
-bytes are produced by the Nyar compile pipeline, not hand-written in this crate.
+Currently exposes only a `wasm_placeholder` marker: no host function is exported and the Wasm host import/export ABI is
+not frozen. Actual lowering and module bytes are produced by the Nyar compile pipeline, not hand-written in this crate.
 
 ## Boundaries
 
