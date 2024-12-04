@@ -88,7 +88,7 @@ impl Printer for MsilPrinter {
 
     fn print(&self, document: &dyn Any, _style: PrintStyle, options: &FormatOptions) -> Result<String, FormatError> {
         let module = document.downcast_ref::<MsilModule>().ok_or_else(|| FormatError::WrongDocument { expected: "MsilModule".into() })?;
-        let mut writer = MsilTextWriter::new().with_indent_text(" ".repeat(options.indent_width));
+        let writer = MsilTextWriter::new().with_indent_text(" ".repeat(options.indent_width));
         Ok(writer.write_module(module))
     }
 }

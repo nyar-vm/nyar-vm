@@ -46,10 +46,7 @@ where
 #[cfg(windows)]
 mod win {
     use super::*;
-    use std::{
-        io::{self, pipe},
-        os::windows::io::AsRawHandle,
-    };
+    use std::{io::pipe, os::windows::io::AsRawHandle};
     use windows_sys::Win32::{
         Foundation::HANDLE,
         System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE, SetStdHandle},
@@ -103,6 +100,7 @@ mod unix {
     }
 }
 
+#[cfg(not(windows))]
 fn truncate_capture(mut text: String) -> String {
     if text.len() <= MAX_CAPTURE_BYTES {
         return text;
