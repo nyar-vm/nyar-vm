@@ -1,6 +1,6 @@
 {
     "name": "@nyar/valkyrie",
-    "version": "0.1.0",
+    "version": "0.0.13",
     "description": "Valkyrie language package  - Asgard and Legion commands",
     "type": "module",
     "license": "MIT",
@@ -13,7 +13,7 @@
         "asgard": "bin/asgard.mjs"
     },
     "files": [
-      "bin",
+        "bin",
         "src",
         "readme.md"
     ],
