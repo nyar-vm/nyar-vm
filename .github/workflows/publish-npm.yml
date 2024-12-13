@@ -1,6 +1,6 @@
 # Trusted Publisher contract (sole npm trusted workflow — keep this filename):
 #   file = publish-npm.yml
-#   repo = nyar-vm/nyar-vm.rs
+#   repo = nyar-vm/nyar-vm
 #   env  = NPM_PUBLISH
 #
 # Triggers:

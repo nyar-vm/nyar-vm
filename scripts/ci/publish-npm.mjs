@@ -4,7 +4,7 @@
  * - tag vX.Y.Z → version X.Y.Z
  * - 幂等：目标版本已在 registry 则 skip
  * - 不使用 NPM_TOKEN；OIDC Trusted Publisher（permissions.id-token: write）
- * - 工作流合同：file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm.rs
+ * - 工作流合同：file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm
  *
  * 前置：native 产物在 NYAR_NATIVE_ARTIFACTS/<short>/；wasm 在 NYAR_WASM_ARTIFACTS/ 或同目录 unknown-wasm32/
  */
@@ -232,7 +232,7 @@ function publishCollect(spec, version, artifactsRoot) {
         return 'exists';
     }
     if (outcome === 'auth') {
-        fail(`OIDC/auth failed for ${name}. Add Trusted Publisher: file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm.rs`);
+        fail(`OIDC/auth failed for ${name}. Add Trusted Publisher: file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm`);
     }
     if (outcome === 'missing') {
         fail(`${name} missing on registry — run pnpm placeholder:publish, then pnpm placeholder:trust -- --only ${name}`);
@@ -290,7 +290,7 @@ function finalizeJsPublish(stage, name, version) {
         return 'exists';
     }
     if (outcome === 'auth') {
-        fail(`OIDC/auth failed for ${name}. Add Trusted Publisher: file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm.rs`);
+        fail(`OIDC/auth failed for ${name}. Add Trusted Publisher: file=publish-npm.yml env=NPM_PUBLISH repo=nyar-vm/nyar-vm`);
     }
     if (outcome === 'missing') {
         fail(`${name} missing on registry — run pnpm placeholder:publish, then pnpm placeholder:trust -- --only ${name}`);

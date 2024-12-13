@@ -34,7 +34,7 @@
     ],
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/nyar-vm/nyar-vm.rs.git",
+        "url": "git+https://github.com/nyar-vm/nyar-vm.git",
         "directory": "projects/nyar.ts/platforms/nyar-win32-x64"
     },
     "publishConfig": {

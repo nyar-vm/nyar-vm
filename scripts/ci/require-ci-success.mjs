@@ -7,7 +7,7 @@
 
 import {spawnSync} from 'node:child_process';
 
-const REPO = process.env.GITHUB_REPOSITORY || 'nyar-vm/nyar-vm.rs';
+const REPO = process.env.GITHUB_REPOSITORY || 'nyar-vm/nyar-vm';
 const TAG_SHA = String(process.env.TAG_SHA || process.argv.find((a) => a.startsWith('--sha='))?.slice(6) || '')
     .trim()
     .toLowerCase();

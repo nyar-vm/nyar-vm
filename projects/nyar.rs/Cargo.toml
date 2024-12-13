@@ -39,7 +39,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Nyar Team"]
 license = "MIT"
-repository = "https://github.com/nyar-vm/nyar-vm.rs"
+repository = "https://github.com/nyar-vm/nyar-vm"
 
 [workspace.dependencies]
 # Oak / Acorn：CI 从 git 解析。本机兄弟仓路径写在 `.cargo/config.toml`（见 `config.toml.example`）。

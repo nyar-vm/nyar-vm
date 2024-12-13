@@ -1,5 +1,5 @@
 // Nifty project configuration for nyar-vm.rs (hybrid cargo + pnpm).
-// Trusted Publisher contract: repo nyar-vm/nyar-vm.rs, workflow publish-npm.yml, environment NPM_PUBLISH.
+// Trusted Publisher contract: repo nyar-vm/nyar-vm, workflow publish-npm.yml, environment NPM_PUBLISH.
 import { defineConfig } from "@doki-land/nifty";
 
 export default defineConfig({
