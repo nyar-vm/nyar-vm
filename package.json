@@ -23,11 +23,10 @@
         "p": "cargo workspaces publish --no-git-commit --allow-dirty --yes",
         "u": "cargo upgrade --incompatible"
     },
-    "dependencies": {
-    },
+    "dependencies": {},
     "devDependencies": {
-        "typescript": "^7.0.2",
-        "@doki-land/nifty": "^0.1.3"
+        "@doki-land/nifty": "0.1.10",
+        "typescript": "^7.0.2"
     },
     "packageManager": "pnpm@12.14.0"
 }
