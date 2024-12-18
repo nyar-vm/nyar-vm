@@ -31,7 +31,7 @@ export default defineConfig({
     },
     trust: {
         npm: {
-            repo: "nyar-vm/nyar-vm.rs",
+            repo: "nyar-vm/nyar-vm",
             file: "publish-npm.yml",
             environment: "NPM_PUBLISH",
         },
