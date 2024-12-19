@@ -303,7 +303,8 @@ fn same_path(left: &Path, right: &Path) -> bool {
     left == right
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_cov_mod.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_cov_mod.rs"]
 mod cmds_cov_mod_tests;
+
 
 

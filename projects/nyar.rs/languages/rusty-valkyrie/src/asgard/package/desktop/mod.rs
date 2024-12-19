@@ -50,6 +50,7 @@ pub fn package_desktop_project(
     DesktopPackageOutput { platform: platform.into(), files }
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/package_desktop_mod.rs"]
+#[path = "../../../../tests/asgard/path_wired/package_desktop_mod.rs"]
 mod package_desktop_mod_tests;
+
 

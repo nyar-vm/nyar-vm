@@ -16,5 +16,6 @@ void asgard_patch_native_swift(const char *key, const char *value);
     .to_string()
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_ios_bridge.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_ios_bridge.rs"]
 mod codegen_ios_bridge_tests;
+

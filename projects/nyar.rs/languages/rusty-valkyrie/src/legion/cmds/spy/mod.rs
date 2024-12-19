@@ -115,7 +115,7 @@ pub fn run(options: &SpyOptions) -> Result<ExitCode> {
     #[cfg(not(feature = "format-spy"))]
     {
         let (mode, _) = options.split();
-        return Err(miette!("legion spy `{mode}` 不属于正式 build/run 链；请使用 `cargo build -p legion --features format-spy` 装配诊断能力"));
+        return Err(miette!("legion spy `{mode}` 不属于正式 build/run 链；请使用 `cargo build -p rusty-valkyrie --features format-spy` 装配诊断能力"));
     }
     #[cfg(feature = "format-spy")]
     {

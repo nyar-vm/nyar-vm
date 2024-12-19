@@ -227,6 +227,7 @@ pub fn take_runtime_utilities() -> BTreeSet<String> {
     std::mem::take(&mut *guard)
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/tailwind_style_collector_collector_tests.rs"]
+#[path = "../../../tests/asgard/path_wired/tailwind_style_collector_collector_tests.rs"]
 mod tailwind_style_collector_collector_tests_tests;
+
 

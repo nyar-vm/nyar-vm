@@ -69,6 +69,7 @@ fn escape_html(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/ssg_mod.rs"]
+#[path = "../../../tests/asgard/path_wired/ssg_mod.rs"]
 mod ssg_mod_tests;
+
 

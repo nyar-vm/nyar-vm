@@ -101,6 +101,7 @@ fn looks_like_encoding_corruption(line: &str) -> bool {
     line.contains("`r`n") || line.contains("`n`r")
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/cmds_source_hygiene.rs"]
+#[path = "../../../tests/legion/path_wired/cmds_source_hygiene.rs"]
 mod cmds_source_hygiene_tests;
+
 

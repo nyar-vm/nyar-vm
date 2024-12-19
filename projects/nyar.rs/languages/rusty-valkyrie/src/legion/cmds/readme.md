@@ -23,5 +23,5 @@ legion spy jvm <artifact.jar> --func demo/Main --method main
 ## 测试
 
 ```bash
-cargo test -p legion --test cmds_bootstrap
+cargo test -p rusty-valkyrie --test legion_cmds_bootstrap
 ```

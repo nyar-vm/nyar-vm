@@ -517,6 +517,7 @@ const voaRuntime = {
 module.exports = voaRuntime;
 "#;
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_mp_ir_runtime.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_mp_ir_runtime.rs"]
 mod codegen_mp_ir_runtime_tests;
+
 

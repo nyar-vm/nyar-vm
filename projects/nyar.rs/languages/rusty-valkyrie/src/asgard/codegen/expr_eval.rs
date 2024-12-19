@@ -555,6 +555,7 @@ fn unquote(text: &str) -> String {
     if text.len() >= 2 { text[1..text.len() - 1].replace("\\\"", "\"").replace("\\'", "'") } else { text.to_string() }
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_expr_eval.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_expr_eval.rs"]
 mod codegen_expr_eval_tests;
+
 

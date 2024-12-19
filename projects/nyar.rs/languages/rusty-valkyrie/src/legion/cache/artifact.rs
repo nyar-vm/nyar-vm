@@ -134,6 +134,7 @@ pub fn store_cached_build(
     )
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/cache_artifact.rs"]
+#[path = "../../../tests/legion/path_wired/cache_artifact.rs"]
 mod cache_artifact_tests;
+
 

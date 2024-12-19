@@ -403,6 +403,7 @@ pub fn encode_focusables(focusables: &[TerminalFocusable]) -> Vec<u8> {
     out
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_terminal_render.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_terminal_render.rs"]
 mod codegen_terminal_render_tests;
+
 

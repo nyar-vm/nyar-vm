@@ -214,6 +214,7 @@ fn escape_attr(text: &str) -> String {
     escape_html(text).replace('"', "&quot;")
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_html_render.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_html_render.rs"]
 mod codegen_html_render_tests;
+
 

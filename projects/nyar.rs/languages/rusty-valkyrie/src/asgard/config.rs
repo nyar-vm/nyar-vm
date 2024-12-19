@@ -312,5 +312,6 @@ fn von_to_json(value: &VonValue) -> serde_json::Value {
     }
 }
 #[cfg(test)]
-#[path = "../tests/path_wired/config.rs"]
+#[path = "../../tests/asgard/path_wired/config.rs"]
 mod config_tests;
+

@@ -556,6 +556,7 @@ pub fn dex_placeholder() -> Vec<u8> {
     dex
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_mobile_ui_binary.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_mobile_ui_binary.rs"]
 mod codegen_mobile_ui_binary_tests;
+
 

@@ -740,7 +740,8 @@ fn hex_encode(bytes: &[u8]) -> String {
     text
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_run_mod_workload_forward_tests.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_run_mod_workload_forward_tests.rs"]
 mod cmds_run_mod_workload_forward_tests_tests;
+
 
 

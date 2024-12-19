@@ -14,5 +14,6 @@ void asgard_patch_native(const char *key, const char *value) {
     .to_string()
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_desktop_linux_bridge.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_desktop_linux_bridge.rs"]
 mod codegen_desktop_linux_bridge_tests;
+

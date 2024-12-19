@@ -238,7 +238,8 @@ fn attach_asgard_boot(html: String, module_stem: &str) -> String {
     }
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_report_render.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_report_render.rs"]
 mod cmds_report_render_tests;
+
 
 

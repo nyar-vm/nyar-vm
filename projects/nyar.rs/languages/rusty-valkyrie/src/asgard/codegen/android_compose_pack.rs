@@ -314,5 +314,6 @@ pub fn write_vendor_dex_bootstrap(out_dir: &Path) -> Result<()> {
     Ok(())
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_android_compose_pack.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_android_compose_pack.rs"]
 mod codegen_android_compose_pack_tests;
+

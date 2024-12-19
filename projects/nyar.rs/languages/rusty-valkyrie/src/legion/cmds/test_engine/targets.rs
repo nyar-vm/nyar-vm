@@ -19,6 +19,7 @@ pub fn parse_target_label(label: &str) -> Result<CanonicalTarget> {
     label.parse::<CanonicalTarget>().map_err(|error| miette!("无法解析目标 '{label}': {error}"))
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_test_engine_targets.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_test_engine_targets.rs"]
 mod cmds_test_engine_targets_tests;
+
 

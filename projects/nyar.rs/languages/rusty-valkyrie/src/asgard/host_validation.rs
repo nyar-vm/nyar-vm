@@ -33,6 +33,7 @@ pub fn validate_host_logic_bytes(bytes: &[u8], platform: &str, backend: &str, ta
     Ok(())
 }
 #[cfg(test)]
-#[path = "../tests/path_wired/host_validation.rs"]
+#[path = "../../tests/asgard/path_wired/host_validation.rs"]
 mod host_validation_tests;
+
 

@@ -86,6 +86,7 @@ pub fn is_builtin_subcommand(name: &str) -> bool {
     BUILTIN_SUBCOMMANDS.iter().any(|item| *item == name)
 }
 #[cfg(test)]
-#[path = "../tests/path_wired/forward.rs"]
+#[path = "../../tests/legion/path_wired/forward.rs"]
 mod forward_tests;
+
 

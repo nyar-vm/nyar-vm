@@ -765,5 +765,6 @@ impl ScriptBinding {
     }
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/awsl_lower.rs"]
+#[path = "../../../tests/asgard/path_wired/awsl_lower.rs"]
 mod awsl_lower_tests;
+

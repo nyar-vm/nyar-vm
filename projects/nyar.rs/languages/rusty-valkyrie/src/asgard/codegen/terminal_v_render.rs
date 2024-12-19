@@ -397,6 +397,7 @@ fn sanitize_v_string(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_terminal_v_render.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_terminal_v_render.rs"]
 mod codegen_terminal_v_render_tests;
+
 

@@ -14,6 +14,10 @@ path = "src/bin/legion.rs"
 name = "asgard"
 path = "src/bin/asgard.rs"
 
+[[example]]
+name = "legion_dump_sources"
+path = "examples/legion_dump_sources/main.rs"
+
 [features]
 # Legion 正式编译链默认启用 Nyar + Node/Wasm seed；诊断链与自举旁路不默认开启。
 default = ["ovm-lane", "serde"]

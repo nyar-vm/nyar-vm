@@ -267,5 +267,6 @@ fn assignment_object_to_colon_object(source: &str) -> Result<String> {
     Ok(out)
 }
 #[cfg(test)]
-#[path = "../tests/path_wired/config_script.rs"]
+#[path = "../../tests/asgard/path_wired/config_script.rs"]
 mod config_script_tests;
+

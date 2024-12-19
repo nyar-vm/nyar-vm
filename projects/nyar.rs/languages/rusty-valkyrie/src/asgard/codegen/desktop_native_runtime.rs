@@ -373,6 +373,7 @@ fn generate_macos_swiftui_runtime() -> String {
     generate_swiftui_runtime(SwiftUiProfile::Desktop)
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_desktop_native_runtime.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_desktop_native_runtime.rs"]
 mod codegen_desktop_native_runtime_tests;
+
 

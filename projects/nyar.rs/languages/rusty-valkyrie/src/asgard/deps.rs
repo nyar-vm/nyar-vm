@@ -53,5 +53,6 @@ pub fn remove_dependency(project_dir: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 #[cfg(test)]
-#[path = "../tests/path_wired/deps.rs"]
+#[path = "../../tests/asgard/path_wired/deps.rs"]
 mod deps_tests;
+

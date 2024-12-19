@@ -241,5 +241,6 @@ pub fn print_deploy_plan(plan: &DeployPlan) {
     println!("note: 不会执行 asgard build / atlas；仅校验并打印矩阵。");
 }
 #[cfg(test)]
-#[path = "../tests/path_wired/deploy.rs"]
+#[path = "../../tests/asgard/path_wired/deploy.rs"]
 mod deploy_tests;
+

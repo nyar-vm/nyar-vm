@@ -392,7 +392,8 @@ fn remove_host_selection_spec(output_dir: &Path) -> Result<()> {
     Ok(())
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_build_mod.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_build_mod.rs"]
 mod cmds_build_mod_tests;
+
 
 

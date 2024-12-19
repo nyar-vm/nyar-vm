@@ -380,6 +380,7 @@ fn compile_host_logic(
     Ok((report.artifact_bytes, report.kind, generated_source))
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/pipeline_mod.rs"]
+#[path = "../../../tests/asgard/path_wired/pipeline_mod.rs"]
 mod pipeline_mod_tests;
+
 

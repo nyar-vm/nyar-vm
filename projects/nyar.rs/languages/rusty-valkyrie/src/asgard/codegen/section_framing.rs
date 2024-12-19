@@ -61,6 +61,7 @@ pub fn magic_bytes_literal(magic: &[u8]) -> String {
     magic.iter().map(|b| format!("0x{b:02X}")).collect::<Vec<_>>().join(", ")
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_section_framing.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_section_framing.rs"]
 mod codegen_section_framing_tests;
+
 

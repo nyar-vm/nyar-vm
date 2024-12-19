@@ -326,6 +326,7 @@ pub fn generate_hmr_client_script() -> String {
         .to_string()
 }
 #[cfg(test)]
-#[path = "../tests/path_wired/dev_server.rs"]
+#[path = "../../tests/asgard/path_wired/dev_server.rs"]
 mod dev_server_tests;
+
 

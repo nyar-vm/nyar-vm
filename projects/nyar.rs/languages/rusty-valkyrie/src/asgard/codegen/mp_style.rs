@@ -49,6 +49,7 @@ fn px_to_rpx(source: &str) -> String {
     out
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_mp_style.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_mp_style.rs"]
 mod codegen_mp_style_tests;
+
 

@@ -37,6 +37,7 @@ pub(crate) fn select_artifact<'entry>(
     selected.ok_or_else(|| "explicit artifact is not listed by the current execution manifest".into())
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_run_artifact_selection.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_run_artifact_selection.rs"]
 mod cmds_run_artifact_selection_tests;
+
 

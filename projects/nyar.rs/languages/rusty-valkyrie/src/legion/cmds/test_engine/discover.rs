@@ -160,6 +160,7 @@ fn collect_all_test_v_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) -> 
     Ok(())
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_test_engine_discover.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_test_engine_discover.rs"]
 mod cmds_test_engine_discover_tests;
+
 

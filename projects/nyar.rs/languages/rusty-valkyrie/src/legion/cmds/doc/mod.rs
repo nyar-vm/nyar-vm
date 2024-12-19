@@ -144,7 +144,8 @@ pub fn generate_for_project(project_dir: &Path, output_dir: &Path) -> Result<()>
     emit_documentation(&mut sections, output_dir, false)
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_doc_mod.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_doc_mod.rs"]
 mod cmds_doc_mod_tests;
+
 
 

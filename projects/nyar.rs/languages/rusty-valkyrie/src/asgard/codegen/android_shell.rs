@@ -153,5 +153,6 @@ fn emit_main_activity() -> JvmClassFile {
     class
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_android_shell.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_android_shell.rs"]
 mod codegen_android_shell_tests;
+

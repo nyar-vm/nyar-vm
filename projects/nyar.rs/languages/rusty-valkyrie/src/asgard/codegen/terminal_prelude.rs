@@ -37,5 +37,6 @@ pub fn terminal_prelude(tui_runtime: &str) -> String {
     out
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_terminal_prelude.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_terminal_prelude.rs"]
 mod codegen_terminal_prelude_tests;
+

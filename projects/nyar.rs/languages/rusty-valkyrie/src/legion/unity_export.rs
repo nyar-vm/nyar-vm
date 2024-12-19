@@ -306,7 +306,8 @@ fn read_json_string_field(json: &str, key: &str) -> Option<String> {
     Some(json[start..end].to_string())
 }
 #[cfg(test)]
-#[path = "../tests/path_wired/unity_export.rs"]
+#[path = "../../tests/legion/path_wired/unity_export.rs"]
 mod unity_export_tests;
+
 
 

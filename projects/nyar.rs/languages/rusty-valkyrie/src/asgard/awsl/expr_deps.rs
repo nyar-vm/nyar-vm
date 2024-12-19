@@ -49,5 +49,6 @@ fn is_js_keyword(word: &str) -> bool {
     matches!(word, "true" | "false" | "null" | "undefined" | "if" | "else" | "return" | "new" | "typeof" | "in" | "not" | "and" | "or")
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/awsl_expr_deps.rs"]
+#[path = "../../../tests/asgard/path_wired/awsl_expr_deps.rs"]
 mod awsl_expr_deps_tests;
+

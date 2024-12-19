@@ -160,6 +160,7 @@ fn escape_script_body(source: &str) -> String {
     source.replace("</script>", "<\\/script>").replace("</SCRIPT>", "<\\/SCRIPT>")
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_report_standalone.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_report_standalone.rs"]
 mod cmds_report_standalone_tests;
+
 

@@ -35,6 +35,7 @@ pub fn package_terminal_project(app_v: String, module_name: &str, native_logic: 
     TerminalPackageOutput { platform: "terminal".into(), files }
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/package_terminal_mod.rs"]
+#[path = "../../../../tests/asgard/path_wired/package_terminal_mod.rs"]
 mod package_terminal_mod_tests;
+
 

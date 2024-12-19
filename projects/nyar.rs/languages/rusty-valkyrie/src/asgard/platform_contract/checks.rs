@@ -309,6 +309,7 @@ pub fn expected_magics() -> (&'static [u8], &'static [u8]) {
     (UI_BIN_MAGIC, HOST_NATIVE_MAGIC)
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/platform_contract_checks.rs"]
+#[path = "../../../tests/asgard/path_wired/platform_contract_checks.rs"]
 mod platform_contract_checks_tests;
+
 

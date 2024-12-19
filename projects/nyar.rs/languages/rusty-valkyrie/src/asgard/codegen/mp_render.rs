@@ -246,6 +246,7 @@ fn escape_attr(value: &str) -> String {
     value.replace('&', "&amp;").replace('"', "&quot;")
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/codegen_mp_render.rs"]
+#[path = "../../../tests/asgard/path_wired/codegen_mp_render.rs"]
 mod codegen_mp_render_tests;
+
 

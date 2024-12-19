@@ -21,6 +21,7 @@ pub fn atomic_write_all_text(file_path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 #[cfg(test)]
-#[path = "../../../tests/path_wired/cmds_report_write.rs"]
+#[path = "../../../../tests/legion/path_wired/cmds_report_write.rs"]
 mod cmds_report_write_tests;
+
 

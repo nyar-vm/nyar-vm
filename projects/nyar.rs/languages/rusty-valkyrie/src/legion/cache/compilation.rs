@@ -186,6 +186,7 @@ impl<'a> ByteReader<'a> {
     }
 }
 #[cfg(test)]
-#[path = "../../tests/path_wired/cache_compilation.rs"]
+#[path = "../../../tests/legion/path_wired/cache_compilation.rs"]
 mod cache_compilation_tests;
+
 
