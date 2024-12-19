@@ -1,6 +1,10 @@
 #![doc = include_str!("../readme.md")]
 #![deny(missing_docs)]
 
+// 包内 Asgard / Legion 模块仍以 `rusty_valkyrie::` 引用前端本体，保持单包内路径稳定。
+extern crate self as rusty_valkyrie;
+
+pub mod asgard;
 pub mod assembly;
 pub(crate) mod backend_contract;
 /// 单向分析 / 处理编译流。
@@ -13,6 +17,7 @@ pub mod frontend_contract;
 pub mod format_provider;
 pub mod highlight;
 pub mod hir;
+pub mod legion;
 /// 诊断专用入口（HIR 级），与 `compile_pipeline` 产物链分离。
 pub mod lint;
 pub mod meta_reactive;
@@ -36,6 +41,7 @@ pub mod types;
 pub mod typing;
 /// 跨 HIR 与 Semantic MIR 的编译器一致性校验入口。
 pub mod validation;
+pub mod workspace;
 
 /// 供外部集成测试引用的内部符号工具（不稳定，勿在正式代码中使用）。
 #[doc(hidden)]

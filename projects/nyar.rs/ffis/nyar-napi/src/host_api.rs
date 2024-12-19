@@ -2,7 +2,7 @@
 
 use std::{path::PathBuf, thread};
 
-use legion::{CanonicalTarget, build_project, plan_project};
+use rusty_valkyrie::legion::{CanonicalTarget, build_project, plan_project};
 use napi_derive::napi;
 
 /// N-API 暴露的单个语义源码组摘要。

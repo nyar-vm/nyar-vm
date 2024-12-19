@@ -8,10 +8,6 @@ members = [
     "languages/rusty-tcl",
     "languages/rusty-valkyrie",
     "formats/odin-bytecode",
-    "languages/rusty-valkyrie/crates/asgard",
-    "languages/rusty-valkyrie/crates/legion",
-    "languages/rusty-valkyrie/crates/legion-workspace",
-    "languages/rusty-valkyrie/crates/vcc-wasm",
     "runtimes/legend-vm",
     "runtimes/nyar-gc",
     "runtimes/nyar-jit",
@@ -77,10 +73,6 @@ rusty-c = { path = "languages/rusty-c" }
 rusty-lua = { path = "languages/rusty-lua" }
 rusty-powershell = { path = "languages/rusty-powershell" }
 rusty-tcl = { path = "languages/rusty-tcl" }
-# Valkyrie 产品装配（Legion / Asgard CLI 与发行入口）
-legion = { path = "languages/rusty-valkyrie/crates/legion" }
-legion-workspace = { path = "languages/rusty-valkyrie/crates/legion-workspace" }
-asgard = { path = "languages/rusty-valkyrie/crates/asgard" }
 # Nyar Runtime（Nyar 平台的私有运行时）
 legend-vm = { path = "runtimes/legend-vm" }
 odin-vm = { path = "runtimes/odin-vm" }

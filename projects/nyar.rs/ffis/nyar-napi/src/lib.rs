@@ -8,7 +8,7 @@
 
 use std::{collections::HashMap, ffi::OsString, path::Path, process::ExitCode, thread};
 
-use legion::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, cli, run_spy};
+use rusty_valkyrie::legion::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, cli, run_spy};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use nyar_runner::{PreparedRuntimeCommand, RuntimeContract, RuntimeFamily};
@@ -16,9 +16,8 @@ use nyar_runner::{PreparedRuntimeCommand, RuntimeContract, RuntimeFamily};
 mod host_api;
 mod stdio_capture;
 
-pub use asgard;
+pub use rusty_valkyrie::{asgard, legion};
 pub use host_api::{LegionBuildOptions, LegionBuildOutcome, LegionPlanOptions, LegionPlanOutcome, LegionSemanticGroupItem};
-pub use legion;
 
 /// 当前 Node 宿主协议 id（与 JS `HOST_PROTOCOL` 对齐）。
 pub const HOST_PROTOCOL: &str = "nyar-host/0";
@@ -227,10 +226,10 @@ pub fn legion_spy_run(mode: String, options: SpyTargetRunOptions) -> Result<Legi
 #[napi]
 pub fn legion_parse(argv: Vec<String>) -> Result<String> {
     use clap::Parser;
-    use legion::cli::LegionCli;
+    use rusty_valkyrie::legion::cli::LegionCli;
 
     let os_argv: Vec<OsString> = argv.into_iter().map(OsString::from).collect();
-    if legion::forward::try_forward_companion(&os_argv).is_some() {
+    if rusty_valkyrie::legion::forward::try_forward_companion(&os_argv).is_some() {
         return Ok("forward".to_string());
     }
     let cli = LegionCli::try_parse_from(&os_argv).map_err(|error| Error::from_reason(error.to_string()))?;
@@ -247,8 +246,8 @@ pub fn run_valkyrie_cli(product: String, argv: Vec<String>) -> Result<i32> {
     os_argv.push(OsString::from(product.as_str()));
     os_argv.extend(argv.into_iter().map(OsString::from));
     match product.as_str() {
-        "legion" => Ok(legion::cli::run_with_argv(os_argv)),
-        "asgard" => Ok(asgard::cli::run_with_argv(os_argv)),
+        "legion" => Ok(rusty_valkyrie::legion::cli::run_with_argv(os_argv)),
+        "asgard" => Ok(rusty_valkyrie::asgard::cli::run_with_argv(os_argv)),
         other => Err(Error::from_reason(format!("unsupported valkyrie product '{other}' (expected legion/asgard)"))),
     }
 }

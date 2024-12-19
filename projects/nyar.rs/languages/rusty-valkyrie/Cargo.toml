@@ -4,33 +4,65 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Valkyrie frontend: binding, types, evidence and frontend-owned Semantic MIR"
+description = "Valkyrie product package: frontend, Asgard delivery, and Legion assembly"
+
+[[bin]]
+name = "legion"
+path = "src/bin/legion.rs"
+
+[[bin]]
+name = "asgard"
+path = "src/bin/asgard.rs"
 
 [features]
-default = []
+# Legion 正式编译链默认启用 Nyar + Node/Wasm seed；诊断链与自举旁路不默认开启。
+default = ["ovm-lane", "serde"]
 serde = ["nyar-types/serde", "ordered-float/serde"]
-# NyarVM bytecode 车道（CallImport / imports 表）；Node/Wasm seed 默认不启用。
 ovm-lane = ["nyar-emitter/ovm-lane"]
+legacy-lanes = ["ovm-lane"]
+# `legion spy *` 诊断（Wasm/JVM/CLR/Native 格式解码），不属于 build/run 生产链。
+format-spy = []
+# `legion bootstrap` 自举验收，不属于 LeetCode 双 target 正式链。
+bootstrap-lane = []
 
 [dependencies]
+acorn-dex = { workspace = true }
+acorn-host = { workspace = true }
+acorn-jvm = { workspace = true }
+acorn-mach-o = { workspace = true }
 acorn-pe = { workspace = true }
+acorn-wasm = { workspace = true }
+acorn-x64 = { workspace = true, features = ["serde"] }
+base64 = { workspace = true }
+clap = { workspace = true }
+gag = { workspace = true }
+katex-rs = { workspace = true }
+miette = { workspace = true, features = ["fancy"] }
 nyar = { workspace = true }
 nyar-analyzer = { workspace = true }
 nyar-emitter = { workspace = true }
-nyar-format = { workspace = true }
+nyar-format = { workspace = true, features = ["serde"] }
+nyar-package-manager = { workspace = true }
+nyar-runner = { workspace = true }
 nyar-types = { workspace = true }
+nyar-workspace = { workspace = true }
 oak-awsl = { workspace = true }
 oak-core = { workspace = true }
 oak-valkyrie = { workspace = true }
 oak-von = { workspace = true, features = ["serde"] }
-katex-rs = { workspace = true }
-miette = { workspace = true }
+odin-bytecode = { workspace = true }
 ordered-float = { workspace = true }
+pulldown-cmark = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 syntect = { workspace = true }
+zip = { workspace = true }
 
 [dev-dependencies]
-odin-bytecode = { workspace = true }
+acorn-aarch64 = { workspace = true }
+acorn-pe = { workspace = true }
+nyar-emitter = { workspace = true }
 odin-vm = { workspace = true }
 tempfile = { workspace = true }
+zip = { workspace = true }

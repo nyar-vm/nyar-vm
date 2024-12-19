@@ -12,10 +12,9 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-asgard = { workspace = true }
 clap = { workspace = true }
 legend-vm = { workspace = true }
-legion = { workspace = true }
+rusty-valkyrie = { workspace = true }
 napi.workspace = true
 napi-derive.workspace = true
 nyar-runner = { workspace = true }
