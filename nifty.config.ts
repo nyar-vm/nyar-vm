@@ -44,6 +44,7 @@ export default defineConfig({
             "@nyar/nyar-darwin-arm64",
             "@nyar/nyar-unknown-wasm32",
             "@nyar/nyar",
+            "@nyar/valkyrie",
         ],
     },
 });

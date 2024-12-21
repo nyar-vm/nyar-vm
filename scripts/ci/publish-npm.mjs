@@ -51,6 +51,12 @@ const MAIN_PACKAGE = {
     name: '@nyar/nyar',
 };
 
+/** Valkyrie 产品包装层：只暴露 `asgard` / `legion` 两个命令，全部语义在 Rust 侧。 */
+const VALKYRIE_PACKAGE = {
+    dir: packageAbs('valkyrie'),
+    name: '@nyar/valkyrie',
+};
+
 function fail(msg) {
     console.error(`ci-publish-npm: ${msg}`);
     process.exit(1);
@@ -366,6 +372,10 @@ else skipped += 1;
 
 const mainOutcome = publishMain(version, nativeArtifactsRoot);
 if (mainOutcome === 'published') published += 1;
+else skipped += 1;
+
+const valkyrieOutcome = publishJsPackage(VALKYRIE_PACKAGE, version);
+if (valkyrieOutcome === 'published') published += 1;
 else skipped += 1;
 
 console.log(`\nci-publish-npm: done (published=${published} skipped=${skipped})`);
