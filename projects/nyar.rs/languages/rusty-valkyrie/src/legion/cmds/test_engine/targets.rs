@@ -14,9 +14,23 @@ pub fn resolve_test_targets(target: Option<&str>) -> Vec<String> {
     }
 }
 
+/// Legion 产品自己的目标标签别名。
+///
+/// `legion` 是 Legion 产品标签，映射到中性的 `ovm` 架构目标；
+/// 该别名由产品层持有，Nyar 的 `CanonicalTarget` 不认识 Legion。
+fn product_target_alias(label: &str) -> Option<&'static str> {
+    match label.to_ascii_lowercase().as_str() {
+        "legion" => Some("ovm"),
+        _ => None,
+    }
+}
+
 /// 将短标签解析为 `CanonicalTarget`。
 pub fn parse_target_label(label: &str) -> Result<CanonicalTarget> {
-    label.parse::<CanonicalTarget>().map_err(|error| miette!("无法解析目标 '{label}': {error}"))
+    let canonical = product_target_alias(label).unwrap_or(label);
+    canonical
+        .parse::<CanonicalTarget>()
+        .map_err(|error| miette!("无法解析目标 '{label}': {error}"))
 }
 #[cfg(test)]
 #[path = "../../../../tests/legion/path_wired/cmds_test_engine_targets.rs"]
