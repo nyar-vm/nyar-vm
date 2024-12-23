@@ -8,6 +8,10 @@ const PLATFORM_DIRS = new Set([
     "nyar-darwin-x64",
     "nyar-darwin-arm64",
     "nyar-unknown-wasm32",
+    "valkyrie-win32-x64",
+    "valkyrie-linux-x64",
+    "valkyrie-darwin-x64",
+    "valkyrie-darwin-arm64",
 ]);
 
 const EMULATOR_DIRS = new Set(["bash", "lua", "tcl", "valkyrie"]);

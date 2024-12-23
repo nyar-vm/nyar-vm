@@ -1,0 +1,5 @@
+lib/
+*.node
+valkyrie_napi.dll
+libvalkyrie_napi.so
+libvalkyrie_napi.dylib

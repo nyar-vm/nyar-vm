@@ -1,8 +1,8 @@
 /**
  * `@nyar/valkyrie` —— Valkyrie npm 包装层。
  *
- * 本包只声明命令与导出身份；CLI 解析、编译与平台 collect 选择全部委托给
- * `@nyar/nyar`，Rust 实现位于 `projects/nyar.rs/languages/rusty-valkyrie`。
+ * 本包只声明命令与导出身份；CLI 解析、编译与平台绑定选择全部委托给
+ * `valkyrie-napi`，Rust 实现位于 `projects/nyar.rs/languages/rusty-valkyrie`。
  */
 
 /** npm 包名。 */
@@ -17,4 +17,4 @@ export const COMMANDS = ['legion', 'asgard'] as const;
 /** 命令名。 */
 export type Command = (typeof COMMANDS)[number];
 
-export {runValkyrieCli} from '@nyar/nyar';
+export {runValkyrieCli, type ValkyrieProduct} from './native.ts';

@@ -23,4 +23,4 @@ not frozen. Actual lowering and module bytes are produced by the Nyar compile pi
 ## Boundaries
 
 - Not a public import target for application code—install the main `nyar` npm package instead.
-- Does not implement the Valkyrie compiler (see `projects/nyar.rs/languages/rusty-valkyrie`).
+- Does not implement any language frontend; frontend compilers live in their own language crates.

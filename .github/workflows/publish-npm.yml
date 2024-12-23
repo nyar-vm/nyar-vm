@@ -130,11 +130,23 @@ jobs:
             darwin-arm64) src="projects/nyar.ts/platforms/nyar-darwin-arm64/lib/nyar.darwin-arm64.node" ;;
             *) echo "unknown platform ${{ matrix.short }}" >&2; exit 1 ;;
           esac
+          case "${{ matrix.short }}" in
+            win32-x64) valkyrie="projects/nyar.ts/platforms/valkyrie-win32-x64/lib/valkyrie.win32-x64-msvc.node" ;;
+            linux-x64) valkyrie="projects/nyar.ts/platforms/valkyrie-linux-x64/lib/valkyrie.linux-x64-gnu.node" ;;
+            darwin-x64) valkyrie="projects/nyar.ts/platforms/valkyrie-darwin-x64/lib/valkyrie.darwin-x64.node" ;;
+            darwin-arm64) valkyrie="projects/nyar.ts/platforms/valkyrie-darwin-arm64/lib/valkyrie.darwin-arm64.node" ;;
+          esac
           if [[ -f "$src" ]]; then
             mkdir -p "$out/lib"
             cp "$src" "$out/lib/$(basename "$src")"
           else
             echo "missing native binary $src — metadata-only collect allowed" >&2
+          fi
+          if [[ -f "$valkyrie" ]]; then
+            mkdir -p "$out/lib"
+            cp "$valkyrie" "$out/lib/$(basename "$valkyrie")"
+          else
+            echo "missing Valkyrie product binding $valkyrie — metadata-only collect allowed" >&2
           fi
           ls -la "$out" || true
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Nyar 平台 collect 构建入口（`nyar-napi` / `nyar-wasm` 均为纯 cdylib，无 bin）。
+ * Nyar 平台 collect 与 Valkyrie 产品绑定构建入口（`nyar-napi` / `valkyrie-napi` /
+ * `nyar-wasm` 均为纯 cdylib，无 bin）。
  *
  * Usage:
  *   node scripts/build.mjs              # napi + wasm
@@ -52,6 +53,30 @@ const NATIVE_TARGETS = [
         tool: "zigbuild",
         npmTriple: "darwin-arm64",
         short: "darwin-arm64",
+    },
+];
+
+/** Valkyrie 产品绑定：与 `NATIVE_TARGETS` 同 triple，独立 crate 与平台包。 */
+const VALKYRIE_TARGETS = [
+    {
+        short: "win32-x64",
+        packageDir: "valkyrie-win32-x64",
+        artifact: "valkyrie.win32-x64-msvc.node",
+    },
+    {
+        short: "linux-x64",
+        packageDir: "valkyrie-linux-x64",
+        artifact: "valkyrie.linux-x64-gnu.node",
+    },
+    {
+        short: "darwin-x64",
+        packageDir: "valkyrie-darwin-x64",
+        artifact: "valkyrie.darwin-x64.node",
+    },
+    {
+        short: "darwin-arm64",
+        packageDir: "valkyrie-darwin-arm64",
+        artifact: "valkyrie.darwin-arm64.node",
     },
 ];
 
@@ -286,6 +311,34 @@ function buildNapi(opts) {
             }
         }
         console.log(`  copied lib/${destName}`);
+    }
+
+    console.log(
+        `build:napi → valkyrie-napi cdylib (${release ? "release" : "debug"}, ${targets.length} target(s))`,
+    );
+    for (const target of targets) {
+        const valkyrie = VALKYRIE_TARGETS.find((entry) => entry.short === target.short);
+        if (!valkyrie) continue;
+        const build = resolveNativeBuild(target);
+        console.log(`\n→ ${build.triple} (${build.tool}) → ${resolveTsPackageDir(valkyrie.packageDir)}`);
+        cargoBuildTarget(build.triple, release, build.tool, "valkyrie-napi");
+
+        const src = findNativeArtifact(build.triple, release, "valkyrie_napi");
+        const destDir = join(ROOT, resolveTsPackageDir(valkyrie.packageDir));
+        const dest = join(destDir, "lib", valkyrie.artifact);
+        copyArtifact(src, dest);
+        for (const legacy of [
+            "valkyrie_napi.dll",
+            "libvalkyrie_napi.so",
+            "libvalkyrie_napi.dylib",
+            valkyrie.artifact,
+        ]) {
+            const legacyPath = join(destDir, legacy);
+            if (existsSync(legacyPath)) {
+                unlinkSync(legacyPath);
+            }
+        }
+        console.log(`  copied lib/${valkyrie.artifact}`);
     }
 }
 

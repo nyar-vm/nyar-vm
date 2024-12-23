@@ -14,6 +14,7 @@ members = [
     "runtimes/odin-vm",
     "ffis/nyar-napi",
     "ffis/nyar-wasm",
+    "ffis/valkyrie-napi",
     "compilers/nyar",
     "compilers/nyar-analyzer",
     "compilers/nyar-emitter",
@@ -64,6 +65,7 @@ nyar-package-registry = { path = "compilers/nyar-package-registry" }
 nyar-workspace = { path = "compilers/nyar-workspace" }
 nyar-napi = { path = "ffis/nyar-napi" }
 nyar-wasm = { path = "ffis/nyar-wasm" }
+valkyrie-napi = { path = "ffis/valkyrie-napi" }
 nyar-emitter = { path = "compilers/nyar-emitter" }
 # Valkyrie frontend（语言语义与 frontend-owned Semantic MIR）
 rusty-valkyrie = { path = "languages/rusty-valkyrie" }

@@ -17,8 +17,11 @@
         "src",
         "readme.md"
     ],
-    "dependencies": {
-        "@nyar/nyar": "workspace:*"
+    "optionalDependencies": {
+        "@nyar/valkyrie-darwin-arm64": "workspace:*",
+        "@nyar/valkyrie-darwin-x64": "workspace:*",
+        "@nyar/valkyrie-linux-x64": "workspace:*",
+        "@nyar/valkyrie-win32-x64": "workspace:*"
     },
     "engines": {
         "node": ">=20"

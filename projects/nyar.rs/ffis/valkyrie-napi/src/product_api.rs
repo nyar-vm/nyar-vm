@@ -1,9 +1,9 @@
-//! 程序化 N-API 宿主面（`legionPlan` / `legionBuild`），不经 CLI argv。
+//! 程序化 N-API 产品面（`legionPlan` / `legionBuild`），不经 CLI argv。
 
 use std::{path::PathBuf, thread};
 
-use rusty_valkyrie::legion::{CanonicalTarget, build_project, plan_project};
 use napi_derive::napi;
+use rusty_valkyrie::legion::{CanonicalTarget, build_project, plan_project};
 
 /// N-API 暴露的单个语义源码组摘要。
 #[napi(object)]

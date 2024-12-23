@@ -2,10 +2,10 @@
 /**
  * `legion` 命令入口。
  *
- * 参数解析与执行由 `@nyar/nyar` 暴露的 `runValkyrieCli` 承担；本文件只转发
- * 命令名与 argv，不复制 `--help` / `--version` 等 CLI 语义。
+ * 参数解析与执行由本包的 `runValkyrieCli`（`valkyrie-napi` 绑定）承担；本文件只
+ * 转发命令名与 argv，不复制 `--help` / `--version` 等 CLI 语义。
  */
 
-import {runValkyrieCli} from '@nyar/nyar';
+import {runValkyrieCli} from '../src/index.ts';
 
 process.exit(await runValkyrieCli('legion', process.argv.slice(2)));
