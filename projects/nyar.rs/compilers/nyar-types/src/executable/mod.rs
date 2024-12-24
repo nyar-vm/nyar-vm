@@ -80,8 +80,8 @@ pub enum Constant {
     Float64(OrderedFloat<f64>),
     /// Boolean constant.
     Bool(bool),
-    /// UTF-8 text constant. Valkyrie has no unqualified language-level
-    /// `string`; the encoding is part of the Semantic MIR contract.
+    /// UTF-8 text constant. There is no unqualified language-level `string`;
+    /// the encoding is part of the Semantic MIR contract.
     Utf8(String),
     /// UTF-16 text constant. This remains distinct from [`Self::Utf8`] even
     /// when a backend happens to use one physical carrier for both forms.

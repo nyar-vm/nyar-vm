@@ -12,10 +12,10 @@ use nyar_types::{DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRow,
 #[test]
 fn diagnostic_row_json_round_trip_preserves_all_structured_fields() {
     let row = DiagnosticRow::new(
-        "valkyrie.hir.unresolved_call",
+        "frontend.hir.unresolved_call",
         DiagnosticSeverity::Error,
         DiagnosticPhase::Hir,
-        DiagnosticOwner::ValkyrieFrontend,
+        DiagnosticOwner::frontend("example-frontend"),
         DiagnosticSource { id: "std/collection/v2/hash_utf8.v".into(), revision: Some("abc123def".into()) },
         DiagnosticSpan { start: 365, end: 415 },
     )
@@ -38,10 +38,10 @@ fn diagnostic_row_json_round_trip_preserves_all_structured_fields() {
     let restored: DiagnosticRow = serde_json::from_str(&json).expect("反序列化成功");
 
     // 结构化字段必须完全一致——即使 internal_message 变了，也不影响
-    assert_eq!(restored.code, "valkyrie.hir.unresolved_call", "code 必须一致");
+    assert_eq!(restored.code, "frontend.hir.unresolved_call", "code 必须一致");
     assert_eq!(restored.severity, DiagnosticSeverity::Error, "severity 必须一致");
     assert_eq!(restored.phase, DiagnosticPhase::Hir, "phase 必须一致");
-    assert_eq!(restored.owner, DiagnosticOwner::ValkyrieFrontend, "owner 必须一致");
+    assert_eq!(restored.owner, DiagnosticOwner::frontend("example-frontend"), "owner 必须一致");
     assert_eq!(restored.source.id, "std/collection/v2/hash_utf8.v", "source.id 必须一致");
     assert_eq!(restored.source.revision.as_deref(), Some("abc123def"), "source.revision 必须一致");
     assert_eq!(restored.primary_span, DiagnosticSpan { start: 365, end: 415 }, "primary_span 必须一致");
@@ -67,10 +67,10 @@ fn diagnostic_row_json_round_trip_preserves_all_structured_fields() {
 #[test]
 fn diagnostic_row_empty_optional_fields_are_omitted_from_json() {
     let row = DiagnosticRow::new(
-        "oak.parse.unexpected_token",
+        "syntax.parse.unexpected_token",
         DiagnosticSeverity::Error,
         DiagnosticPhase::Parsing,
-        DiagnosticOwner::OakParser,
+        DiagnosticOwner::syntax("example-parser"),
         DiagnosticSource { id: "hello.v".into(), revision: None },
         DiagnosticSpan { start: 42, end: 43 },
     );
@@ -87,9 +87,10 @@ fn diagnostic_row_empty_optional_fields_are_omitted_from_json() {
     assert!(!json.contains("internalMessage"), "None internal_message 不应出现在 JSON 中");
 
     // 基础字段必须存在
-    assert!(json.contains("oak.parse.unexpected_token"), "code 必须存在");
+    assert!(json.contains("syntax.parse.unexpected_token"), "code 必须存在");
     assert!(json.contains("Parsing"), "phase 必须存在");
-    assert!(json.contains("OakParser"), "owner 必须存在");
+    assert!(json.contains(r#""class":"Syntax""#), "owner.class 必须存在");
+    assert!(json.contains(r#""producer":"example-parser""#), "owner.producer 必须存在");
 }
 
 #[test]
@@ -100,7 +101,7 @@ fn compile_result_success_vs_failure_separate() {
             "backend.contract.missing_carrier",
             DiagnosticSeverity::Error,
             DiagnosticPhase::Backend,
-            DiagnosticOwner::Backend,
+            DiagnosticOwner::backend("backend"),
             DiagnosticSource { id: "wasm.wasm".into(), revision: None },
             DiagnosticSpan { start: 0, end: 0 },
         )
@@ -126,7 +127,7 @@ fn compile_result_success_vs_failure_separate() {
         nyar_types::CompileResult::Failure(rows) => {
             let row = &rows[0];
             assert_eq!(row.code, "backend.contract.missing_carrier");
-            assert_eq!(row.owner, DiagnosticOwner::Backend);
+            assert_eq!(row.owner, DiagnosticOwner::backend("backend"));
             assert_eq!(row.phase, DiagnosticPhase::Backend);
             assert!(matches!(row.args.get("type").unwrap(), DiagnosticArg::TypeName(_)));
             assert!(matches!(row.args.get("missing_carrier").unwrap(), DiagnosticArg::String(_)));
@@ -139,36 +140,39 @@ fn compile_result_success_vs_failure_separate() {
 fn diagnostic_owner_is_honest_and_never_rewritten() {
     // 这条测试确保 owner 字段是诚实的——不同 owner 产出的诊断，即使同一个 code，
     // 也必须在 JSON 里区分开
-    let oak_row = DiagnosticRow::new(
-        "valkyrie.unknown",
+    let syntax_row = DiagnosticRow::new(
+        "neutral.unknown",
         DiagnosticSeverity::Error,
         DiagnosticPhase::Parsing,
-        DiagnosticOwner::OakParser,
+        DiagnosticOwner::syntax("example-parser"),
         DiagnosticSource { id: "hello.v".into(), revision: None },
         DiagnosticSpan { start: 0, end: 0 },
     );
-    let valkyrie_row = DiagnosticRow::new(
-        "valkyrie.unknown",
+    let frontend_row = DiagnosticRow::new(
+        "neutral.unknown",
         DiagnosticSeverity::Error,
         DiagnosticPhase::Hir,
-        DiagnosticOwner::ValkyrieFrontend,
+        DiagnosticOwner::frontend("example-frontend"),
         DiagnosticSource { id: "hello.v".into(), revision: None },
         DiagnosticSpan { start: 0, end: 0 },
     );
-    let nyar_row = DiagnosticRow::new(
-        "valkyrie.unknown",
+    let compiler_row = DiagnosticRow::new(
+        "neutral.unknown",
         DiagnosticSeverity::Error,
         DiagnosticPhase::Mir,
-        DiagnosticOwner::NyarCompiler,
+        DiagnosticOwner::compiler("nyar"),
         DiagnosticSource { id: "hello.v".into(), revision: None },
         DiagnosticSpan { start: 0, end: 0 },
     );
 
-    let oak_json = serde_json::to_string(&oak_row).unwrap();
-    let valkyrie_json = serde_json::to_string(&valkyrie_row).unwrap();
-    let nyar_json = serde_json::to_string(&nyar_row).unwrap();
+    let syntax_json = serde_json::to_string(&syntax_row).unwrap();
+    let frontend_json = serde_json::to_string(&frontend_row).unwrap();
+    let compiler_json = serde_json::to_string(&compiler_row).unwrap();
 
-    assert!(oak_json.contains("OakParser"), "Oak 产出的诊断必须带 owner = OakParser");
-    assert!(valkyrie_json.contains("ValkyrieFrontend"), "Valkyrie 产出的诊断必须带 owner = ValkyrieFrontend");
-    assert!(nyar_json.contains("NyarCompiler"), "Nyar 产出的诊断必须带 owner = NyarCompiler");
+    assert!(syntax_json.contains(r#""class":"Syntax""#), "语法阶段产出的诊断必须带 class = Syntax");
+    assert!(syntax_json.contains(r#""producer":"example-parser""#), "producer 必须如实记录");
+    assert!(frontend_json.contains(r#""class":"Frontend""#), "前端阶段产出的诊断必须带 class = Frontend");
+    assert!(frontend_json.contains(r#""producer":"example-frontend""#), "producer 必须如实记录");
+    assert!(compiler_json.contains(r#""class":"Compiler""#), "编译器产出的诊断必须带 class = Compiler");
+    assert!(compiler_json.contains(r#""producer":"nyar""#), "producer 必须如实记录");
 }

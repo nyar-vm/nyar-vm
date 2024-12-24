@@ -2,7 +2,7 @@
 //!
 //! 本模块定义 HirError——HIR lowering 逻辑块的**唯一错误类型**。它取代 lowering/mod.rs
 //! 里原先散布的 ParseError::invalid(...) ad-hoc 字符串错误。HirError 不拥有诊断合同：
-//! 它实现 `Into<DiagnosticRow>` 时自动填充 code / phase=Hir / owner=ValkyrieFrontend，
+//! 它实现 `Into<DiagnosticRow>` 时自动填充 code / phase=Hir / owner=DiagnosticOwner::frontend("rusty-valkyrie")，
 //! 把结构化字段映射到 args BTreeMap。
 //!
 //! # 为什么不放进 nyar-types
@@ -23,7 +23,7 @@ use nyar_types::{DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRow,
 /// 每个 variant 对应 lowering 逻辑块里**一个语义场景**，携带结构化字段（不是已格式化的 String）。
 /// 转换成 DiagnosticRow 时：
 /// - phase 固定为 DiagnosticPhase::Hir
-/// - owner 固定为 DiagnosticOwner::ValkyrieFrontend
+/// - owner 固定为 `DiagnosticOwner::frontend("rusty-valkyrie")`
 /// - severity 固定为 DiagnosticSeverity::Error
 /// - code 由 variant 确定性生成
 /// - variant 字段映射到 args BTreeMap
@@ -939,8 +939,8 @@ impl From<HirError> for DiagnosticRow {
         };
 
         let (phase, owner) = match &error {
-            HirError::BackendContractRejected(_) => (DiagnosticPhase::Backend, DiagnosticOwner::Backend),
-            _ => (DiagnosticPhase::Hir, DiagnosticOwner::ValkyrieFrontend),
+            HirError::BackendContractRejected(_) => (DiagnosticPhase::Backend, DiagnosticOwner::backend("backend")),
+            _ => (DiagnosticPhase::Hir, DiagnosticOwner::frontend("rusty-valkyrie")),
         };
 
         let mut row = DiagnosticRow::new(error.code(), DiagnosticSeverity::Error, phase, owner, source, span);

@@ -1,13 +1,13 @@
 //! Compiler 输入与声明索引的中立数据结构。
 //!
-//! 本模块承载 Legion / Resolver 与 Valkyrie Compiler 之间的**数据传输合同**：
+//! 本模块承载装配层与编译阶段之间的**数据传输合同**：
 //! 只拥有结构体形状与纯函数辅助方法，不拥有验证或语义选择逻辑。
 //!
 //! **生产权声明**：
-//! - `CompilerSourceGroup` 的分配（dependency_key）、依赖拓扑排序、入口组身份由 Legion/Resolver 生产；
-//! - `DeclarationKey` / `DeclarationKind` / `DeclarationIndexEntry` 由前端 crate（`projects/nyar.rs/languages/rusty-valkyrie`）的 inventory 索引阶段生产；
-//! - 结构化验证与错误返回（例如依赖拓扑校验、入口组存在校验、generated 组 producer 非空校验）由前端 crate 的
-//!   frontend lowering 阶段负责，本模块不返回任何语言特化错误类型。
+//! - `CompilerSourceGroup` 的分配（dependency_key）、依赖拓扑排序、入口组身份由装配层生产；
+//! - `DeclarationKey` / `DeclarationKind` / `DeclarationIndexEntry` 由提供声明清单的 crate 在其 inventory 索引阶段生产；
+//! - 结构化验证与错误返回（例如依赖拓扑校验、入口组存在校验、generated 组 producer 非空校验）由注入这些输入的
+//!   装配层负责，本模块不返回任何语言特化错误类型。
 
 use std::collections::BTreeSet;
 
@@ -25,7 +25,7 @@ pub struct CompilerSourceFile {
     pub source: String,
 }
 
-/// Resolver 交给 Compiler 的有序源码语义组。
+/// 装配层交给 Compiler 的有序源码语义组。
 ///
 /// 入口身份是显式事实，不由依赖顺序或「最后一组」推断：只有 `is_entry` 组
 /// 能让其 `[export]` / `[main]` 声明成为闭包 seed。依赖组即使位于末尾也
@@ -33,7 +33,7 @@ pub struct CompilerSourceFile {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CompilerSourceGroup {
-    /// Resolver 分配的稳定依赖身份。
+    /// 装配层分配的稳定依赖身份。
     pub dependency_key: String,
     /// 诊断和模块身份使用的名称。
     pub name: String,
@@ -77,7 +77,7 @@ impl CompilerSourceGroup {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GeneratedSourceGroup {
-    /// 生成器稳定身份（例：`asgard.awsl.wasm`）；空身份表示来源不可证明。
+    /// 生成器稳定身份（例：`example-generator.wasm`）；空身份表示来源不可证明。
     pub producer: String,
     /// 生成源码组；必须显式标记入口。
     pub group: CompilerSourceGroup,
@@ -116,7 +116,7 @@ impl CompilerSourceInput {
 }
 
 // ---------------------------------------------------------------------------
-// Declaration 索引结构（Legion / Valkyrie frontend 之间的中立数据传输合同）
+// Declaration 索引结构（装配层与声明清单提供方之间的中立数据传输合同）
 // ---------------------------------------------------------------------------
 
 /// 预 HIR 声明种类；与后续 `ItemId` 分配一一对应，不依赖短名认亲。
@@ -193,7 +193,7 @@ pub type ReferencePath = Vec<String>;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeclarationKey {
-    /// Resolver 分配的依赖组身份。
+    /// 装配层分配的依赖组身份。
     pub dependency_key: String,
     /// 仓相对源码路径。
     pub source_path: String,

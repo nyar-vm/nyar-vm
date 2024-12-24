@@ -28,8 +28,8 @@ pub use canonical_mir::{
 };
 pub use compiled_program::{CanonicalProgram, CompiledProgram, CompiledProgramError};
 pub use diagnostics::{
-    CompileResult, CompileStage, DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRecord, DiagnosticRow, DiagnosticSeverity,
-    DiagnosticSource, DiagnosticSpan, StageResult, StructuredDiagnosticSet,
+    CompileResult, CompileStage, DiagnosticArg, DiagnosticOwner, DiagnosticOwnerClass, DiagnosticPhase, DiagnosticRecord, DiagnosticRow,
+    DiagnosticSeverity, DiagnosticSource, DiagnosticSpan, StageResult, StructuredDiagnosticSet,
 };
 pub use linked_program::{
     CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, EntryRecord, EvidenceRecord,

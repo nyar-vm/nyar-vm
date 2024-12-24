@@ -1,7 +1,10 @@
-//! 语义路径上的字符串分派不得继续增长。
+//! 语义路径上的字符串分派不得继续增长，且身份类型保持公开。
 //!
 //! 本门禁冻结一份**基线计数**：新增的 `as_str() == "` / `.ends_with("`
 //! 语义查找不得悄然合入。仅在删除违规用法后下调基线（严禁上调）。
+//!
+//! 扫描范围只包含 Nyar 平台自身的 crate；具体语言前端的同名门禁由该前端包负责，
+//! 平台测试不得引用任何前端源码目录。
 
 use std::{
     fs,
@@ -9,14 +12,14 @@ use std::{
 };
 
 /// 必须收缩字符串身份分派的 crate 的 `src/` 根（相对本测试文件）。
-const SEMANTIC_SRC_ROOTS: &[&str] = &["../../languages/rusty-valkyrie/src", "../nyar-emitter/src", "../../runtimes/odin-vm/src"];
+const SEMANTIC_SRC_ROOTS: &[&str] = &["../nyar-emitter/src", "../../runtimes/odin-vm/src"];
 
 /// `as_str() == "` 出现次数的冻结上限（仅生产 `src/`）。
 /// 删除违规用法后重新计数并下调这些常量（严禁上调）。
-const AS_STR_EQ_BASELINE: usize = 91;
+const AS_STR_EQ_BASELINE: usize = 2;
 
 /// 用作符号/路径启发式的 `.ends_with("` 出现次数的冻结上限。
-const ENDS_WITH_BASELINE: usize = 44;
+const ENDS_WITH_BASELINE: usize = 1;
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     if !dir.is_dir() {

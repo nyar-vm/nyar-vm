@@ -7,9 +7,10 @@ pub use self::{
         CanonicalArrayInitialization, CanonicalBlock, CanonicalBlockId, CanonicalCallEdge, CanonicalCallee, CanonicalConstant,
         CanonicalExternalCallEdge, CanonicalFragment, CanonicalFunction, CanonicalInstruction, CanonicalMirError, CanonicalOperand,
         CanonicalOperation, CanonicalPrimitiveType, CanonicalProgram, CanonicalSemanticMir, CanonicalTerminator, CanonicalTypeKind,
-        CompileResult, CompileStage, CompiledProgram, CompiledProgramError, DiagnosticArg, DiagnosticOwner, DiagnosticPhase, DiagnosticRecord,
-        DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan, EvidenceRecord, FieldRecord, ImportRecord, ItemInstanceRecord,
-        LinkedSemanticProgram, NominalInstanceRecord, NominalValueSemantics, StageResult, StructuredDiagnosticSet, TypeRecord, VariantRecord,
+        CompileResult, CompileStage, CompiledProgram, CompiledProgramError, DiagnosticArg, DiagnosticOwner, DiagnosticOwnerClass,
+        DiagnosticPhase, DiagnosticRecord, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan, EvidenceRecord, FieldRecord,
+        ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord, NominalValueSemantics, StageResult,
+        StructuredDiagnosticSet, TypeRecord, VariantRecord,
         pipeline,
     },
     compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath},
@@ -46,7 +47,7 @@ pub use self::{
 pub use core_surface::{CoreFeature, CoreSurfaceManifest};
 
 pub mod canonical_program;
-/// Compiler 输入与声明索引的中立数据结构（Legion / Compiler 之间的数据传输合同）。
+/// Compiler 输入与声明索引的中立数据结构（装配层与编译阶段之间的数据传输合同）。
 pub mod compiler_input;
 /// 产物 / cache 合同版本（identity / MIR / layout）。
 pub mod contract_versions;

@@ -1,14 +1,16 @@
 //! 跨阶段结构化诊断合同（语言无关）。
 //!
-//! 本模块定义编译器产出的结构化诊断行 [`DiagnosticRow`]，它是 Oak / Valkyrie frontend / Nyar / backend
+//! 本模块定义编译器产出的结构化诊断行 [`DiagnosticRow`]，它是语法、前端、编译器与后端
 //! 各阶段产出诊断的**唯一语言无关载体**。所有阶段必须通过它暴露诊断，禁止用阶段私有错误类型
 //! 携带诊断事实后再 stringify 成 `ParseError::invalid(message)` 之类的 ad-hoc 格式。
 //!
 //! **所有权边界**：
-//! - Oak 生产 `owner = DiagnosticOwner::OakParser`、`phase = DiagnosticPhase::Parsing` 的诊断；
-//! - Valkyrie frontend 生产 `owner = DiagnosticOwner::ValkyrieFrontend`、`phase = DiagnosticPhase::Staging | Binding | Hir | Type` 的诊断；
-//! - Nyar 生产 `owner = DiagnosticOwner::NyarCompiler`、`phase = DiagnosticPhase::Mir | Link | Representation | Backend | Emit` 的诊断；
-//! - Backend contract 错误只能来自 owner = DiagnosticOwner::Backend；
+//! - 语法阶段生产 `class = DiagnosticOwnerClass::Syntax`、`phase = DiagnosticPhase::Parsing` 的诊断；
+//! - 前端阶段生产 `class = DiagnosticOwnerClass::Frontend`、`phase = DiagnosticPhase::Staging | Binding | Hir | Type` 的诊断；
+//! - 编译器生产 `class = DiagnosticOwnerClass::Compiler`、`phase = DiagnosticPhase::Mir | Link | Representation | Emit` 的诊断；
+//! - 后端合同错误只能来自 `class = DiagnosticOwnerClass::Backend`、`phase = DiagnosticPhase::Backend`；
+//! - 装配阶段生产 `class = DiagnosticOwnerClass::Assembly` 的诊断；
+//! - 具体生产者身份由生产方作为输入事实提供，本模块不枚举任何具体产品或实现名称；
 //! - 禁止任何阶段把另一个 owner 的错误包装成自己的——owner 字段必须诚实记录事实生产者。
 //!
 //! **序列化边界**：
@@ -31,7 +33,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DiagnosticPhase {
-    /// Oak AST parsing / recovery（语法 / token / source 边界）。
+    /// 语法解析 / 恢复（语法 / token / source 边界）。
     Parsing,
     /// TGrammar staging / template expansion（常量 / 架构分支 / 循环展开）。
     Staging,
@@ -53,23 +55,60 @@ pub enum DiagnosticPhase {
     Emit,
 }
 
-/// 诊断所属的事实生产者 owner。
+/// 诊断所属的事实生产者。
 ///
 /// 这是**不可伪造**字段：生产侧必须如实记录是谁生产了这条诊断，
 /// 禁止消费方（如 Compiler 汇总层）在不改变语义的情况下改写 owner。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DiagnosticOwner {
+    /// 生产阶段类别（语法 / 前端 / 编译器 / 后端 / 装配）。
+    pub class: DiagnosticOwnerClass,
+    /// 具体生产者身份，由生产方作为输入事实提供（稳定的生产者标识字符串），Nyar 不枚举具体产品。
+    pub producer: String,
+}
+
+impl DiagnosticOwner {
+    /// 语法阶段生产者。
+    pub fn syntax(producer: impl Into<String>) -> Self {
+        Self { class: DiagnosticOwnerClass::Syntax, producer: producer.into() }
+    }
+
+    /// 前端阶段生产者。
+    pub fn frontend(producer: impl Into<String>) -> Self {
+        Self { class: DiagnosticOwnerClass::Frontend, producer: producer.into() }
+    }
+
+    /// 编译器阶段生产者。
+    pub fn compiler(producer: impl Into<String>) -> Self {
+        Self { class: DiagnosticOwnerClass::Compiler, producer: producer.into() }
+    }
+
+    /// 后端阶段生产者。
+    pub fn backend(producer: impl Into<String>) -> Self {
+        Self { class: DiagnosticOwnerClass::Backend, producer: producer.into() }
+    }
+
+    /// 装配阶段生产者。
+    pub fn assembly(producer: impl Into<String>) -> Self {
+        Self { class: DiagnosticOwnerClass::Assembly, producer: producer.into() }
+    }
+}
+
+/// 诊断生产阶段的类别（不绑定任何具体产品或实现）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum DiagnosticOwner {
-    /// Oak parser（语法、token、source recovery）。
-    OakParser,
-    /// Valkyrie language frontend（binding、HIR、type、semantic closure）。
-    ValkyrieFrontend,
-    /// Nyar compiler（MIR、link、representation）。
-    NyarCompiler,
-    /// Backend contract / target adaptor（ABI、carrier、layout）。
+pub enum DiagnosticOwnerClass {
+    /// 语法阶段：解析、token 化与源码恢复。
+    Syntax,
+    /// 前端阶段：声明绑定、HIR 构建与类型闭合。
+    Frontend,
+    /// 编译器阶段：语义 MIR、链接与表示规划。
+    Compiler,
+    /// 后端阶段：目标合同适配、ABI 与载体选择。
     Backend,
-    /// Legion / package manager / workspace resolver（依赖拓扑、manifest、装配）。
-    Legion,
+    /// 装配阶段：依赖拓扑、分组身份与产物装配。
+    Assembly,
 }
 
 /// 诊断严重级别。
@@ -154,7 +193,7 @@ pub enum DiagnosticArg {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DiagnosticRow {
-    /// 稳定机器 code（如 `oak.parse.unexpected_token`、`valkyrie.hir.unresolved_call`、`backend.contract.missing_carrier`）。
+    /// 稳定机器 code（如 `frontend.parse.unexpected_token`、`frontend.hir.unresolved_call`、`backend.contract.missing_carrier`）。
     pub code: String,
     /// 严重级别。
     pub severity: DiagnosticSeverity,

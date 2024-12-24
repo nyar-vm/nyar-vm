@@ -168,7 +168,7 @@ impl From<MirValidationError> for DiagnosticRow {
             error.code(),
             DiagnosticSeverity::Error,
             DiagnosticPhase::Mir,
-            DiagnosticOwner::ValkyrieFrontend,
+            DiagnosticOwner::frontend("rusty-valkyrie"),
             error.source(),
             error.span(),
         );

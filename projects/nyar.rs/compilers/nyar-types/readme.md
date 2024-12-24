@@ -37,6 +37,6 @@ let cap = CapabilityTag::new("reference.gc");
 
 ## Boundaries
 
-- Does **not** define language-level HIR / MIR / LIR branded to Valkyrie.
+- Does **not** define language-level HIR / MIR / LIR branded to any specific frontend.
 - Does **not** embed PE/COFF/MSIL containers or VM interpreter state.
 - `executable` is a lowering view, not a public semantic bus across languages.
