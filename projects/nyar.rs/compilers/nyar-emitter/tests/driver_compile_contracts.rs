@@ -211,12 +211,10 @@ fn node_launcher_is_free_of_banner_and_cli_pollution() {
     let mjs_path = output_dir.path().join("demo_node.mjs");
     let mjs_content = std::fs::read_to_string(&mjs_path).expect("read .mjs file");
 
-    assert!(!mjs_content.contains("LEGION_BOOTSTRAP_HOST"), "LEGION_BOOTSTRAP_HOST 必须不存在");
-    assert!(!mjs_content.contains("LEGION_HOST"), "LEGION_HOST 必须不存在");
-    assert!(!mjs_content.contains("host_legion_compile_from_plan"), "host_legion_compile_from_plan 必须不存在");
-    assert!(!mjs_content.contains("legion.von"), "legion.von 必须不存在");
-    assert!(!mjs_content.contains("Valkyrie legion CLI"), "Valkyrie legion CLI banner 必须不存在");
-    assert!(!mjs_content.contains("legion.tools"), "legion.tools project_name 必须不存在");
+    assert!(!mjs_content.contains("process.env"), "启动壳不得读取宿主环境变量");
+    assert!(!mjs_content.contains("host_"), "启动壳不得注入宿主桥接伪导入");
+    assert!(!mjs_content.contains(".von"), "启动壳不得硬编码清单文件名");
+    assert!(!mjs_content.contains("console.log"), "banner 必须不存在");
     assert!(!mjs_content.contains("cliState"), "cliState 全局状态必须不存在");
     assert!(!mjs_content.contains("spawnSync"), "spawnSync 导入必须不存在");
     assert!(!mjs_content.contains("\"--version\""), "--version 子命令必须不存在");
@@ -246,7 +244,7 @@ fn node_launcher_renders_only_declared_imports() {
     assert!(mjs_content.contains("emit_i32"), "声明的 import emit_i32 必须出现在 importObject 中");
     assert!(mjs_content.contains("output_bytes"), "emit_byte 触发的 output_bytes 逻辑必须存在");
     assert!(mjs_content.contains("process.stdout.write"), "stdout 写入路径必须存在");
-    assert!(!mjs_content.contains("host_legion_compile_from_plan"), "伪导入 host_legion_compile_from_plan 不应被注入");
+    assert!(!mjs_content.contains("host_"), "宿主桥接伪导入不应被注入");
     assert!(mjs_content.contains("exports.main ?? exports._start"), "入口分派必须存在");
 }
 
@@ -269,8 +267,8 @@ fn node_launcher_without_imports_has_clean_stdout() {
 
     assert!(!mjs_content.contains("process.argv[2]"), "无 imports 时不应有 CLI 参数解析");
     assert!(!mjs_content.contains("parseInt"), "无 imports 时不应有 parseInt 参数解析");
-    assert!(!mjs_content.contains("Valkyrie"), "Valkyrie banner 不应污染 stdout");
-    assert!(!mjs_content.contains("legion CLI"), "legion CLI banner 不应污染 stdout");
+    assert!(!mjs_content.contains("console.log"), "banner 不应污染 stdout");
+    assert!(!mjs_content.contains("child_process"), "宿主子进程协议不应出现在启动壳");
     assert!(mjs_content.contains("wasmResolveInstance(wasmBytes, {})"), "无 imports 时应使用空 importObject");
     assert!(mjs_content.contains("exports.main ?? exports._start"), "入口分派必须存在");
 }

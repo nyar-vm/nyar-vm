@@ -28,7 +28,7 @@ Core job: frames / nodes / specialization / partial evaluation — **not** concr
 | Weird / heterogeneous languages | **Plug-in guests**, not one shared AST. Each language keeps its own shape in `examples/rusty-<lang>`. |
 | Daily execution | `LegendVmRunner::run` → `GuestInterpretFn` → thin `evaluator/<lang>.rs` → `rusty-<lang>` interpret |
 | Compilation | Specialize the **interpreter** w.r.t. a program → **native-bound residual** → PE — **not** `nyar-vm` |
-| Contrast with Valkyrie | Valkyrie folds languages into a shared IR then hand-emits many backends. legend-vm unifies **registration / dispatch / specialize exit**, not syntax. |
+| Contrast with monolithic multi-backend compilers | They fold languages into a shared IR then hand-emit many backends. legend-vm unifies **registration / dispatch / specialize exit**, not syntax. |
 
 ## Ownership
 
@@ -78,7 +78,7 @@ interpret subject ──specialize──► NativeResidualModule ──emit─�
 - New full language tree-walks in this crate — add interpret in the `rusty-<lang>` crate, register a thin adapter here.
 - Lexer/parser copies (parsers live in `std-data`).
 - Treating `.nyar` / `nyar-vm` as the host-script PE product path.
-- Equating this path with Valkyrie’s hand-written multi-backend (`CLR` / `JVM` / `WASM` / …) story — entering `.nyar` does **not** unlock that emitter chain.
+- Equating this path with a hand-written multi-backend (`CLR` / `JVM` / `WASM` / …) emitter chain — entering `.nyar` does **not** unlock that chain.
 
 ## Tests / guards
 

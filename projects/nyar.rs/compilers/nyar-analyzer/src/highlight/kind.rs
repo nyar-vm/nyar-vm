@@ -58,7 +58,7 @@ pub enum HighlightKind {
 }
 
 impl HighlightKind {
-    /// 文档 / API 页使用的 CSS class（`hl-*`，对齐 C# `ValkyrieDocHighlighter`）。
+    /// 文档 / API 页使用的 CSS class（`hl-*`）。
     pub fn css_class(self) -> Option<&'static str> {
         match self {
             Self::None => None,

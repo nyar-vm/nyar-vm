@@ -6,7 +6,7 @@ Runtime dispatch source for `nyar-runner` (rustdoc module doc).
 
 - Organize per-target runtime descriptors.
 - Provide effects, FFI, registry, and runtime dispatch.
-- Maintain host-side target mapping for `legion run`.
+- Maintain host-side target mapping for product CLIs and embedders.
 - Keep each target runtime isolated; no shared messy host logic.
 
 ## Target mapping

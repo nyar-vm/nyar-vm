@@ -18,7 +18,7 @@ pub enum ClrSuspendStrategy {
 }
 
 impl ClrSuspendStrategy {
-    /// 从 legion build 块 `runtime_async` 字段解析。
+    /// 从构建目标 `runtime_async` 字段解析。
     pub fn from_runtime_async_flag(runtime_async: bool) -> Self {
         if runtime_async { Self::RuntimeAsync } else { Self::StateMachine }
     }
@@ -40,7 +40,7 @@ pub struct FrontendBuildContext {
 }
 
 impl FrontendBuildContext {
-    /// 由 legion `BuildTargetSpec` 字段构造。
+    /// 由 `BuildTargetSpec` 字段构造。
     pub fn from_clr_runtime_async(runtime_async: bool) -> Self {
         Self { clr_suspend_strategy: ClrSuspendStrategy::from_runtime_async_flag(runtime_async) }
     }

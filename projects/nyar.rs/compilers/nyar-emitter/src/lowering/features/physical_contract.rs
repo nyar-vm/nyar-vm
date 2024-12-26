@@ -82,7 +82,7 @@ impl PhysicalPlanError {
     }
 }
 
-/// Stable, backend-independent observation for the paired Rust/Valkyrie
+/// Stable, backend-independent observation for the paired emitter/frontend
 /// physical contract suite. Backend identities and physical carrier details
 /// deliberately do not enter this record.
 pub(crate) fn observation(case_id: &str, result: Result<(), &PhysicalPlanError>) -> String {

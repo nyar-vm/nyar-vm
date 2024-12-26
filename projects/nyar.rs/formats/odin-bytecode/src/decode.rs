@@ -1,4 +1,4 @@
-//! `.legion` 模块解码：入口与各 section 解析器。
+//! `.nyar` 模块解码：入口与各 section 解析器。
 
 use crate::{
     errors::NyarDecodeError,
@@ -9,7 +9,7 @@ use crate::{
     opcode::{HEADER_SIZE, NYAR_MAGIC, SECTION_HEADER_SIZE},
 };
 
-/// Decode a `.legion` module from bytes.
+/// Decode a `.nyar` module from bytes.
 pub fn decode_module(data: &[u8]) -> Result<NyarModuleData, NyarDecodeError> {
     if data.len() < HEADER_SIZE {
         return Err(NyarDecodeError::TooShort);

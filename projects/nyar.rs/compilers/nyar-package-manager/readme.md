@@ -1,13 +1,13 @@
 # nyar-package-manager
 
-Core package manager for the Legion ecosystem: manifests, resolution, lockfiles, cache, publish, and scripts.
+Core, language- and product-neutral package manager: manifests, resolution, lockfiles, cache, publish, and scripts.
 
 ## Overview
 
 `nyar-package-manager` orchestrates dependency graphs, on-disk project layout, vendor/auth stores, and registry-backed
 install/publish flows. Registry wire protocols live in `nyar-package-registry`; this crate focuses on **project state**
 and **solver behavior**. Product CLIs supply a `ProjectLayout` (manifest filenames, ignore rules, cache roots) rather
-than hard-coding Legion-specific paths inside the library.
+than hard-coding product-specific paths inside the library.
 
 ## Features
 
@@ -38,4 +38,4 @@ For tests, inject `MockRegistry` from `nyar_package_registry` via `open_with_reg
 
 - Does not compile source languages (delegates to the frontend crates and product pipelines).
 - Does not implement HTTP for individual registries (uses the `Registry` trait).
-- `ProjectLayout::neutral()` is a generic default; Legion/Valkyrie products should pass their own layout.
+- `ProjectLayout::neutral()` is a generic default; consumer products should pass their own layout.

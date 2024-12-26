@@ -1,7 +1,7 @@
 //! Legion CLI 解析与分发（库内入口）。
 //!
-//! 原生宿主仅经 `nyar-napi` platform `.node`（`legionRun*` N-API）或 wasm collect 调用；
-//! npm 用户入口在 `projects/nyar.ts/emulators/valkyrie`（`bin/legion.mjs` → `@nyar/nyar` → `nyar-napi`）。
+//! 原生宿主仅经 `valkyrie-napi` platform `.node`（`legionRun*` N-API）或 wasm collect 调用；
+//! npm 用户入口在 `projects/nyar.ts/emulators/valkyrie`（`bin/legion.mjs` → `@nyar/nyar` → `valkyrie-napi`）。
 
 use std::{ffi::OsString, io::Read, process::ExitCode};
 
@@ -104,7 +104,7 @@ pub enum LegionCommands {
     Registry(RegistryArgs),
 }
 
-/// 在独立大栈线程上解析 `argv` 并运行 Legion CLI（供 `nyar-napi` 原生宿主调用）。
+/// 在独立大栈线程上解析 `argv` 并运行 Legion CLI（供 `valkyrie-napi` 原生宿主调用）。
 pub fn run_from_env() -> i32 {
     run_with_argv(std::env::args_os().collect())
 }

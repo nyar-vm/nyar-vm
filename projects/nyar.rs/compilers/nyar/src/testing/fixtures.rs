@@ -98,9 +98,9 @@ pub fn assert_or_regenerate_text_sidecar(fixture_path: &Path, suffix: &str, obse
     );
 }
 
-/// 是否启用 sidecar 重生成（对齐 legion / valkyrie 测试环境变量语义）。
+/// 是否启用 sidecar 重生成。
 pub fn regenerate_enabled() -> bool {
-    ["VALKYRIE_TEST_REGENERATE", "LEGION_TEST_REGENERATE", "NYAR_TEST_REGENERATE"].into_iter().any(env_flag_enabled)
+    env_flag_enabled("NYAR_TEST_REGENERATE")
 }
 
 fn env_flag_enabled(name: &str) -> bool {

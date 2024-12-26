@@ -58,8 +58,8 @@ Low-level representation families after partitioning—not HIR, not language MIR
 
 ### testing
 
-Generic fixture collection, YAML sidecar IO, first-run generation, baseline diff. No `VALKYRIE` / `legion`-specific
-naming—generic fixture mechanics only.
+Generic fixture collection, YAML sidecar IO, first-run generation, baseline diff. No product-specific naming—generic
+fixture mechanics only.
 
 ## HIR / MIR / LIR vs this tree
 

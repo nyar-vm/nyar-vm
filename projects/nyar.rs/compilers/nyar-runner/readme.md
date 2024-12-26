@@ -1,11 +1,11 @@
 # nyar-runner
 
-Host runtime dispatch for `legion run` and native/Wasm/Node embedding.
+Host runtime dispatch for compiled artifacts, plus native/Wasm/Node embedding.
 
 ## Overview
 
 `nyar-runner` schedules **compiled artifacts** to target runtimes. It owns FFI, effect hooks, runner registration, and
-target descriptors—not the Valkyrie language main chain.
+target descriptors—not any language frontend's semantic chain.
 
 ## Target modules
 

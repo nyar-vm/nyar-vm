@@ -87,7 +87,7 @@ pub mod testing {
 
     /// Return the canonical Semantic MIR observation for a Rust executable
     /// submission.  Paired conformance tests compare this verbatim with the
-    /// Valkyrie Semantic MIR observation; neither side exposes backend data.
+    /// frontend Semantic MIR observation; neither side exposes backend data.
     pub fn semantic_mir_observation(submission: &FragmentSubmission, case_id: &str) -> String {
         let result = super::lowering::features::semantic_mir_contract::validate_submission(submission);
         super::lowering::features::semantic_mir_contract::observation(case_id, result.as_ref().map(|_| ()).map_err(|error| error))

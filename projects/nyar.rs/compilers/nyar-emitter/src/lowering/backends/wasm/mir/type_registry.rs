@@ -104,8 +104,8 @@ pub(super) fn register_gc_struct_types(
 ///
 /// `[utf8]` / `[Utf8Text]` 在 Node 轨必须登记为 `arraytype [i32]`，与 `const_utf8` 返回的
 /// i32 句柄一致；若误用 `wasm_gc_field_type_byte`（Named→anyref），`array.new_fixed` 会在
-/// V8 校验阶段报 `expected type anyref, found local.get of type i32`（见
-/// `legion::legion_requested_targets` 的 `["clr","jvm","wasm","ovm"]` 字面量）。
+/// V8 校验阶段报 `expected type anyref, found local.get of type i32`（见宿主侧
+/// `["clr","jvm","wasm","ovm"]` 目标列表字面量）。
 pub(super) fn register_gc_array_types(
     ctx: &ExecutableLoweringContext,
     type_indices: &mut Vec<Vec<u8>>,

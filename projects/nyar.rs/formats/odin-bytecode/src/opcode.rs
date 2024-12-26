@@ -6,7 +6,7 @@
 /// Magic value `NYAR` big-endian (`0x4E594152`).
 pub const NYAR_MAGIC: u32 = 0x4E59_4152;
 
-/// Current `.legion` / `.nyar` format version.
+/// Current `.nyar` format version.
 ///
 /// 未正式发布前统一为 `0`（v0 基线）；旧版本的模块一律拒绝，不做兼容读取。
 pub const NYAR_VERSION: u32 = 0;

@@ -103,7 +103,7 @@ impl Registry for JsrRegistry {
                 success: false,
                 package_name: options.package_name.clone(),
                 version: options.version.clone(),
-                message: "缺少 JSR token：请配置 JSR_TOKEN、DENO_AUTH_TOKENS、Deno 配置文件，或 `legion login jsr --token <token>`".to_string(),
+                message: "缺少 JSR token：请配置 JSR_TOKEN、DENO_AUTH_TOKENS 或 Deno 配置文件，或由宿主 CLI 完成登录".to_string(),
                 published_url: None,
                 dry_run: false,
                 sha256: None,

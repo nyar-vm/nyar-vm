@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::{FormatBatchOptions, FormatBatchReport, FormatError, FormatOptions, format_paths};
 
-/// `legion fmt` / `asgard format` 共用选项。
+/// 宿主 CLI `fmt` / `format` 子命令共用选项。
 #[derive(Debug, Clone)]
 pub struct FormatCliOptions {
     /// 要格式化的文件或目录（空则当前目录）。

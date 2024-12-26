@@ -7,13 +7,13 @@ Frontend-neutral source formatting and printer contracts (same layering as `high
 | Layer           | Location                | Role                                                                                                                                |
 |:----------------|:------------------------|:------------------------------------------------------------------------------------------------------------------------------------|
 | Platform        | `nyar-analyzer::format` | `FormatOptions`, `FormatError`, **`Document` layout engine**, **`syntax` CST**, `SourceMap`, `SourceFormatter`, `Printer`, Registry |
-| Language plugin | frontend crate (e.g. `rusty-valkyrie`) | `FormatSyntax` (CST → `Document`), `ToDocument` (model printer), per-language `SourceFormatter`        |
+| Language plugin | any frontend crate | `FormatSyntax` (CST → `Document`), `ToDocument` (model printer), per-language `SourceFormatter`        |
 
 ## Two write paths (must stay separate)
 
 | Contract            | Input                 | Output                                 | Use                                                                              |
 |:--------------------|:----------------------|:---------------------------------------|:---------------------------------------------------------------------------------|
-| **SourceFormatter** | Source text           | `FormattedOutput` (text + `SourceMap`) | **Canonical formatting**; preserves trivia; `legion fmt` / LSP                   |
+| **SourceFormatter** | Source text           | `FormattedOutput` (text + `SourceMap`) | **Canonical formatting**; preserves trivia; CLI `fmt` / LSP                      |
 | **Printer**         | Parsed **data model** | Text                                   | Serialization / debug; **does not** guarantee comment or whitespace preservation |
 
 ## Canonical formatting pipeline

@@ -95,8 +95,8 @@ impl Printer for MsilPrinter {
 
 /// 平台 printer 注册表（启动时由各前端 provider 补全）。
 ///
-/// 读取方应通过 [`print_document`] 及其平台包装函数间接访问；Valkyrie 的 `v` / `vx` /
-/// `valkyrie` 只有在 Valkyrie 前端 provider 注册后才可用。
+/// 读取方应通过 [`print_document`] 及其平台包装函数间接访问；`v` / `vx` 只有在对应前端
+/// provider 注册后才可用。
 pub fn printer_registry() -> &'static RwLock<PrinterRegistry> {
     static REGISTRY: OnceLock<RwLock<PrinterRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| {

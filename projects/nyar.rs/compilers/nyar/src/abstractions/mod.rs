@@ -515,7 +515,7 @@ impl CanonicalTarget {
             "bun" => {
                 Some(Self::new(CanonicalArch::Wasm32, CanonicalVendor::Bun, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)))
             }
-            "ovm" | "odin-vm" | "legion" => {
+            "ovm" | "odin-vm" => {
                 Some(Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)))
             }
             "native" => Some(Self::host_native()),

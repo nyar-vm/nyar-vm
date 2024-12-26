@@ -266,7 +266,7 @@ impl RunnerFamily {
             "node" => Some(Self::Node),
             "windows" => Some(Self::Windows),
             "wasi" => Some(Self::Wasi),
-            "ovm" | "odin-vm" | "legion" => Some(Self::Ovm),
+            "ovm" | "odin-vm" => Some(Self::Ovm),
             _ => None,
         }
     }

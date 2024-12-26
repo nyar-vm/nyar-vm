@@ -30,7 +30,7 @@ fn singleton_layout<'a>(submission: &'a FragmentSubmission, plan: &SingletonInst
     submission.backend_plan.aggregate_layouts().layouts.iter().find(|layout| layout.name == plan.name && layout.namespace == plan.namespace)
 }
 
-/// Append legion singleton metadata sections for backends without dedicated singleton slots.
+/// Append singleton metadata sections for backends without dedicated singleton slots.
 pub(crate) fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
     for plan in submission.backend_plan.singleton_instances() {
         let payload = singleton_metadata_line(plan);

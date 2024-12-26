@@ -22,7 +22,7 @@ pub struct SemanticMirContractError {
 }
 
 /// Stable, backend-independent observation format used by the paired
-/// Rust/Valkyrie conformance runner.
+/// emitter/frontend conformance runner.
 #[doc(hidden)]
 pub fn observation(case_id: &str, result: Result<(), &SemanticMirContractError>) -> String {
     match result {

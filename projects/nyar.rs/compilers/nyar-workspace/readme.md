@@ -26,9 +26,9 @@ paths, hashing helpers, and get/put IO.
 use nyar_workspace::{WorkspaceCache, files_hash};
 
 let cache = WorkspaceCache::open(".cache");
-let key = files_hash(&["src/main.val", "legion.toml"]);
-cache.put("compile", &key, "valkyrie.mir", &mir_bytes)?;
-if let Some(hit) = cache.get("compile", &key, "valkyrie.mir")? {
+let key = files_hash(&["src/main.ext", "project.toml"]);
+cache.put("compile", &key, "frontend.mir", &mir_bytes)?;
+if let Some(hit) = cache.get("compile", &key, "frontend.mir")? {
     // use hit
 }
 ```
@@ -37,4 +37,4 @@ if let Some(hit) = cache.get("compile", &key, "valkyrie.mir")? {
 
 - Does not parse source code or execute bytecode.
 - Does not assign meaning to bucket names beyond storage layout.
-- Type tags are conventions agreed by the caller (e.g. `valkyrie.mir`, staging tokens).
+- Type tags are conventions agreed by the caller (e.g. `frontend.mir`, staging tokens).

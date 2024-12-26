@@ -2,7 +2,7 @@
 //!
 //! 本模块只提供平台侧注册表与扩展名表：具体语言的 formatter 由前端 crate 在启动时调用
 //! [`register_source_provider`] 注册（方向是前端 → 平台），平台不反向依赖任何前端。
-//! Valkyrie provider 由前端装配入口注册；VON / AWSL 由本 crate 直接注册。合法 formatter
+//! 语言前端 provider 由前端装配入口注册；VON / AWSL 由本 crate 直接注册。合法 formatter
 //! 只能来自上游 `oak-<language>/src/formatter/`（见 `oak-typescript::formatter`），
 //! 不得在此新增 CST token-gap 排版规则。
 //!
@@ -31,28 +31,28 @@ pub use nyar_analyzer::format::{
     PrinterProvider, PrinterRegistry, SourceFormatter, SourceFormatterProvider, SourceFormatterRegistry, SourceMap,
 };
 
-/// 核心 Valkyrie 源文件扩展名（前端 provider 负责语言语义，平台只拥有扩展名表）。
+/// 核心源文件扩展名（前端 provider 负责语言语义，平台只拥有扩展名表）。
 pub const V_EXTENSIONS: &[&str] = &["v", "valkyrie"];
 
-/// Valkyrie + X-Grammar / widget 视图（`.vx`）。
+/// 模板 + X-Grammar / widget 视图（`.vx`）。
 pub const VX_EXTENSIONS: &[&str] = &["vx"];
 
 /// VON 配置/清单。
 pub const VON_EXTENSIONS: &[&str] = &["von"];
 
-/// Asgard 模板（与 `.v`/`.vx` 不同语言面）。
+/// 模板语言面（与 `.v`/`.vx` 不同）。
 pub const AWSL_EXTENSIONS: &[&str] = &["awsl"];
 
 /// 平台可识别的可格式化源码种类（按文件扩展名）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// 核心 Valkyrie：`.v` / `.valkyrie`（formatter 由前端 provider 注册）。
+    /// 核心语言：`.v` / `.valkyrie`（formatter 由前端 provider 注册）。
     V,
-    /// Valkyrie + X-Grammar：`.vx`（formatter 由前端 provider 注册）。
+    /// 模板 + X-Grammar：`.vx`（formatter 由前端 provider 注册）。
     Vx,
     /// VON 数据：`.von`（`oak-von::formatter`）。
     Von,
-    /// Asgard AWSL 模板：`.awsl`（`oak-awsl::formatter`）。
+    /// AWSL 模板：`.awsl`（`oak-awsl::formatter`）。
     Awsl,
 }
 
@@ -133,10 +133,10 @@ impl SourceFormatter for AwslSourceFormatter {
 /// 平台源码格式化注册表（启动时由各前端 provider 补全）。
 ///
 /// 读取方应通过 [`format_source`] / [`format_source_range`] / [`format_path`] 间接访问，
-/// 避免长时间持有写锁。Valkyrie 的 `v` / `vx` 只有在 Valkyrie 前端 provider 注册后才可用；
+/// 避免长时间持有写锁。`v` / `vx` 只有在对应前端 provider 注册后才可用；
 /// 未注册时返回 [`FormatError::Unsupported`]。
 ///
-/// 不要反向依赖具体前端；provider 由装配层（`legion` / `asgard` CLI、集成测试）注册。
+/// 不要反向依赖具体前端；provider 由装配层（宿主 CLI、集成测试）注册。
 pub fn source_registry() -> &'static RwLock<SourceFormatterRegistry> {
     static REGISTRY: OnceLock<RwLock<SourceFormatterRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| {

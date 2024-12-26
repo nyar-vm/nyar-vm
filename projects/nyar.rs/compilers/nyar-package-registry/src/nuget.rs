@@ -89,7 +89,7 @@ impl Registry for NugetRegistry {
             &options.package_name,
             &options.version,
             format!(
-                "NuGet 不支持从 legion 直接上传。请使用官方工具发布 {}@{}:\n\
+                "NuGet 不支持直接上传。请使用官方工具发布 {}@{}:\n\
                  1. `dotnet pack` 生成 .nupkg\n\
                  2. `dotnet nuget push <package>.nupkg --source {} --api-key <TOKEN>`",
                 options.package_name, options.version, self.endpoint

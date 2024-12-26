@@ -4,22 +4,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Build product-brand needles without embedding the forbidden quoted literals in this file.
-fn forbidden_product_literals() -> Vec<String> {
-    let mut out = Vec::new();
-    for brand in ["legion", "noodle", "panda"] {
-        out.push(format!("{brand}.von"));
-        out.push(format!("{brand}-lock.von"));
-        out.push(format!("{brand}.ignore"));
-        out.push(format!(".{brand}"));
-        out.push(format!("{}_HOME", brand.to_ascii_uppercase()));
-        out.push(format!("{}_TOKEN", brand.to_ascii_uppercase()));
-    }
-    // Legion historically used ~/.valkyrie — product default, not PM.
-    let home = "valkyrie";
-    out.push(format!(".{home}"));
-    out.push(format!("{}_HOME", home.to_ascii_uppercase()));
-    out
+/// Neutral defaults that must always come from [`ProjectLayout`], never be hard-coded in `src`.
+///
+/// `layout.rs` is the only place allowed to spell them out.
+fn neutral_layout_literals() -> Vec<String> {
+    let layout = ProjectLayout::neutral();
+    vec![
+        layout.package_manifest.to_string(),
+        layout.workspace_manifest.to_string(),
+        layout.ignore_file.to_string(),
+        layout.lockfile.to_string(),
+        layout.home_dirname.to_string(),
+        layout.home_env.to_string(),
+    ]
 }
 
 /// Ecosystem package-manager CLIs must not be spawned from the neutral core.
@@ -81,47 +78,40 @@ fn strip_rust_comments(source: &str) -> String {
     out
 }
 
-/// Drop this module's body from `layout.rs` so the guard does not scan itself.
-fn without_architecture_guards_mod(source: &str) -> String {
-    const MARKER: &str = "mod architecture_guards";
-    if let Some(idx) = source.find(MARKER) { source[..idx].to_string() } else { source.to_string() }
-}
-
 fn scan_source(path: &Path) -> String {
     let raw = fs::read_to_string(path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-    let stripped = strip_rust_comments(&raw);
-    if path.file_name().and_then(|n| n.to_str()) == Some("layout.rs") { without_architecture_guards_mod(&stripped) } else { stripped }
+    strip_rust_comments(&raw)
 }
 
 #[test]
-fn neutral_layout_has_no_product_brand() {
+fn neutral_layout_uses_nyar_defaults() {
     let layout = ProjectLayout::neutral();
     assert_eq!(layout.package_manifest, "package.von");
+    assert_eq!(layout.workspace_manifest, "workspace.von");
+    assert_eq!(layout.ignore_file, ".packageignore");
     assert_eq!(layout.lockfile, "package-lock.von");
     assert_eq!(layout.home_dirname, ".nyar");
     assert_eq!(layout.home_env, "NYAR_HOME");
-    for brand in ["legion", "noodle", "panda", "valkyrie"] {
-        assert!(!layout.package_manifest.contains(brand));
-        assert!(!layout.lockfile.contains(brand));
-        assert!(!layout.home_dirname.contains(brand));
-        assert!(!layout.home_env.to_ascii_lowercase().contains(brand));
-    }
+    assert!(layout.token_env_vars.is_empty());
 }
 
 #[test]
-fn package_manager_src_has_no_product_brand_literals() {
+fn package_manager_src_does_not_hardcode_layout_defaults() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     collect_rs_files(&root, &mut files);
     assert!(!files.is_empty());
-    let needles = forbidden_product_literals();
+    let needles = neutral_layout_literals();
     for path in files {
+        if path.file_name().and_then(|name| name.to_str()) == Some("layout.rs") {
+            continue;
+        }
         let source = scan_source(&path);
         for token in &needles {
             let quoted = format!("\"{token}\"");
             assert!(
                 !source.contains(&quoted),
-                "{} must not hard-code product identity {quoted}; inject via ProjectLayout in the product crate",
+                "{} must not hard-code layout identity {quoted}; read it from `ProjectLayout`",
                 path.display()
             );
         }

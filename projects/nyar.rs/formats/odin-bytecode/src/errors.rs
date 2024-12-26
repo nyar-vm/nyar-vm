@@ -1,8 +1,8 @@
-//! `.legion` 解码错误类型。
+//! `.nyar` 解码错误类型。
 
 use std::fmt::{Display, Formatter};
 
-/// `.legion` decode error.
+/// `.nyar` decode error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NyarDecodeError {
     /// 输入缓冲区长度不足。
@@ -24,13 +24,13 @@ pub enum NyarDecodeError {
 impl Display for NyarDecodeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TooShort => write!(f, ".legion buffer too short"),
-            Self::InvalidMagic(magic) => write!(f, "invalid .legion magic: 0x{magic:08X}"),
+            Self::TooShort => write!(f, ".nyar buffer too short"),
+            Self::InvalidMagic(magic) => write!(f, "invalid .nyar magic: 0x{magic:08X}"),
             Self::InvalidConstantKind(kind) => write!(f, "invalid constant kind: {kind}"),
             Self::InvalidImportKind(kind) => write!(f, "invalid import kind: {kind}"),
             Self::InvalidExportKind(kind) => write!(f, "invalid export kind: {kind}"),
             Self::InvalidSectionKind(kind) => write!(f, "invalid section kind: {kind}"),
-            Self::InvalidUtf8 => write!(f, "invalid UTF-8 in .legion module"),
+            Self::InvalidUtf8 => write!(f, "invalid UTF-8 in .nyar module"),
         }
     }
 }

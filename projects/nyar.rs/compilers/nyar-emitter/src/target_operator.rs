@@ -1,6 +1,6 @@
 //! 目标 operator 能力绑定的冻结合同。
 //!
-//! `operator` 表示**目标后端能力**，不是 Valkyrie 语言层的 operator。一个 operator
+//! `operator` 表示**目标后端能力**，不是语言前端层的 operator。一个 operator
 //! 绑定可以是一条目标指令、多条指令组合、参数重排或常量注入，未来也可以表达
 //! host call、ABI 转换或 allocation/runtime 操作；因此合同用配方
 //! （[`TargetOperatorRecipe`]）描述发射步骤，而不是假定「一条指令」。

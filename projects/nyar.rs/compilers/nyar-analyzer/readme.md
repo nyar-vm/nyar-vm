@@ -5,7 +5,7 @@ Frontend-neutral analysis contracts for the Nyar platform.
 ## Overview
 
 `nyar-analyzer` consumes **already-closed** facts from language frontends and expresses them in a target-agnostic shape
-for `nyar` planning, lane selection, and packaging. It does not own Valkyrie `HIR` / `MIR` / `LIR` and does not parse
+for `nyar` planning, lane selection, and packaging. It does not own any frontend's `HIR` / `MIR` / `LIR` and does not parse
 source text.
 
 ## Core types

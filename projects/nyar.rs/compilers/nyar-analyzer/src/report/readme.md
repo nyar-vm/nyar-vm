@@ -7,8 +7,8 @@ Frontend-neutral report / SSG / hydrate island contracts (same layering model as
 | Layer          | Location                                | Role                                                                         |
 |:---------------|:----------------------------------------|:-----------------------------------------------------------------------------|
 | Platform       | `nyar-analyzer::report`                 | `IslandKind`, `ColSeriesItem`, `HydratedChartSpec`, `series_to_init_literal` |
-| Implementation | `voa`                                   | AWSL static render, WASM hydrate bundles, `asgard.plotter` inlining          |
-| Tool + skin    | `legion` CLI + `*.report` AWSL projects | Emit facts and series data; pages and styling stay in AWSL                   |
+| Implementation | template renderer                       | AWSL static render, WASM hydrate bundles, plotter inlining                   |
+| Tool + skin    | host CLI + `*.report` AWSL projects     | Emit facts and series data; pages and styling stay in AWSL                   |
 
 ## Island routing
 

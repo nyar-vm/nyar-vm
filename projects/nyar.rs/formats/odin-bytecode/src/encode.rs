@@ -1,4 +1,4 @@
-//! `.legion` 模块编码：入口与各 section 序列化器。
+//! `.nyar` 模块编码：入口与各 section 序列化器。
 
 use crate::{
     model::{
@@ -7,7 +7,7 @@ use crate::{
     opcode::{HEADER_SIZE, NYAR_MAGIC, SECTION_HEADER_SIZE},
 };
 
-/// Encode a minimal `.legion` module.
+/// Encode a minimal `.nyar` module.
 pub fn encode_module(data: &NyarModuleData) -> Vec<u8> {
     let mut sections: Vec<(NyarSectionKind, Vec<u8>)> = Vec::new();
 

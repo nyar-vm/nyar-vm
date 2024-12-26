@@ -6,4 +6,4 @@ Runtime facade tests only.
 
 - Cover `RuntimeFamily`, run templates, and command expansion—pure runtime semantics.
 - Ensure `nyar-runner` consumes compiled artifacts only; no guest-language source awareness.
-- Real source fixtures and integration smoke live in `legion/tests`.
+- Real source fixtures and integration smoke live in the language frontend crates' tests.

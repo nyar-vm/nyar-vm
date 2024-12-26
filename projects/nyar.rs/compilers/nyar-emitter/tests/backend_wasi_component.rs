@@ -2,9 +2,9 @@ use nyar_emitter::*;
 
 #[test]
 fn collapses_double_dashes_in_package_segment() {
-    // Artifact stems like `legion__main_legion` must not yield WIT-illegal `--`.
-    let wit = build_component_wit_document("legion__main_legion", &[]);
-    assert!(wit.contains("package nyar:legion-main-legion@0.1.0;"), "wit={wit}");
+    // Artifact stems with `__` separators must not yield WIT-illegal `--`.
+    let wit = build_component_wit_document("sample__main_sample", &[]);
+    assert!(wit.contains("package nyar:sample-main-sample@0.1.0;"), "wit={wit}");
     assert!(!wit.contains("--"), "wit={wit}");
 }
 

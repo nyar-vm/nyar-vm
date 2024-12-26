@@ -754,7 +754,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             exports.iter().find(|(name, kind, _)| *name == "_start" && *kind == WasmExternalKind::Func.as_u8()).copied()
         {
             // Entry may be `[] -> []` / `[] -> i32`, or still carry guest argv as GC array
-            // (e.g. `legion(args: [utf8]) -> unit`). WIT `run: func() -> result` and core
+            // (e.g. a guest entry taking `[utf8]` and returning unit). WIT `run: func() -> result` and core
             // `_start` are zero-arg. Synthesize nullary wrappers that push typed defaults
             // (empty `[utf8]` via `array.new_default`, not `ref.null` -?null traps on
             // `ref.cast`/`array.len`), call entry, drop any return, then Ok(0) for CLI run.

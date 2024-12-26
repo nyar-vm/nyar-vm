@@ -64,7 +64,7 @@ fn emits_witness_entry_call_and_console_write() {
 
     augment_msil_with_witness(&submission, &mut module);
     let entry = module.global_methods.iter().find(|method| method.is_entry_point).expect("entry");
-    // 不再生成 `witness_*` 转发桩或占位桩——witness 调用必须直接打到真实 Valkyrie 方法符号。
+    // 不再生成 `witness_*` 转发桩或占位桩——witness 调用必须直接打到前端的真实方法符号。
     // 此 submission 未提供 executable（无真实方法），入口 fallback 到 `impl_symbol`，
     // 由 `reject_unresolved_local_calls` 在完整流程中报编译错误。
     assert!(!module.global_methods.iter().any(|method| method.method.name == "witness_Dog_Animal_make_sound"));

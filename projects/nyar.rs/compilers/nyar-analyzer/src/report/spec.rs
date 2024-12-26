@@ -17,7 +17,7 @@ pub struct ColSeriesItem {
     pub height_pct: f64,
 }
 
-/// Hydrate 图表岛规格：工具 → asgard。
+/// Hydrate 图表岛规格：工具 → 页面宿主。
 #[derive(Debug, Clone, PartialEq)]
 pub struct HydratedChartSpec {
     /// 组件路由（`chart-status` 等）。

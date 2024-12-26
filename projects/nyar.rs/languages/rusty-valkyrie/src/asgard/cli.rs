@@ -411,7 +411,7 @@ struct AsgardCli {
     command: AsgardCommands,
 }
 
-/// 解析当前进程 `argv` 并运行 Asgard CLI（供 `nyar-napi` / `vcc-wasm` 宿主调用）。
+/// 解析当前进程 `argv` 并运行 Asgard CLI（供 `valkyrie-napi` / `vcc-wasm` 宿主调用）。
 pub fn run_from_env() -> Result<ExitCode> {
     let cli = AsgardCli::parse();
     run(&cli.command)

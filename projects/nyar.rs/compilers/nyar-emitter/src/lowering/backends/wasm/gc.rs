@@ -1,4 +1,4 @@
-//! Mandatory wasm-gc type builders for Valkyrie reference semantics on wasm/wasi.
+//! Mandatory wasm-gc type builders for language reference semantics on wasm/wasi.
 use acorn_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmValueType, encode_arraytype_raw, encode_structtype_raw};
 use nyar::NyarType;
 

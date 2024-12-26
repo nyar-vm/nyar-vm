@@ -100,8 +100,8 @@ impl Registry for ValhallaRegistry {
     fn publish_package(&self, options: &PublishOptions, tarball_data: &[u8]) -> Result<PublishResult, RegistryError> {
         let key_material = options.auth_token.as_deref().ok_or_else(|| {
             RegistryError::message(
-                "Valhalla publish requires a publisher key. Provide --token or run \
-                 `legion vendor login valhalla --token <ed25519-seed|key-file>`",
+                "Valhalla publish requires a publisher key. Provide --token, or sign in through the host CLI \
+                 and pass the ed25519 seed / key file",
             )
         })?;
         let key = PublisherKey::parse(key_material)?;

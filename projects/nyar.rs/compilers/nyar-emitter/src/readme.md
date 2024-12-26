@@ -5,7 +5,7 @@ Bundled backend driver for partitioned compiler output.
 ## Overview
 
 `nyar-emitter` consumes completed `PartitionBackendRequirement` values and target-specific inputs, routes them to
-bundled family compilers, and returns `ArtifactSet` entries plus entry/run contracts for orchestrators such as `legion`.
+bundled family compilers, and returns `ArtifactSet` entries plus entry/run contracts for outer orchestrators and product CLIs.
 
 ## Layering
 
@@ -50,5 +50,5 @@ plans. See `testing` module for integration-test wrappers.
 
 ## Boundaries
 
-- Does not parse Valkyrie source.
+- Does not parse language-frontend source.
 - Does not run artifacts (see `nyar-runner` / `ovm`).

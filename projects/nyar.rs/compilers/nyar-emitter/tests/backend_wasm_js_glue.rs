@@ -1,14 +1,12 @@
 use nyar_emitter::*;
 
-/// 通过 `concat!` 拼接的被禁模式常量，避免在源码中出现完整字面量。
-/// 这些模式用于验证生成的启动壳不包含上层专用协议污染。
-const BANNED_BANNER: &str = concat!("Valkyrie", " ", "legion", " ", "CLI");
-const BANNED_BOOTSTRAP_ENV: &str = concat!("LEGION", "_", "BOOTSTRAP", "_", "HOST");
-const BANNED_HOST_ENV: &str = concat!("LEGION", "_", "HOST");
-const BANNED_MANIFEST_PATH: &str = concat!("legion", ".", "von");
-const BANNED_PROJECT_NAME: &str = concat!("legion", ".", "tools");
-const BANNED_HOST_COMPILE_FROM_PLAN_RUST: &str = concat!("host", "_", "legion", "_", "compile", "_", "from", "_", "plan");
-const BANNED_HOST_COMPILE_FROM_PLAN_JS: &str = concat!("host", "Legion", "Compile", "From", "Plan");
+/// 启动壳必须保持宿主中立：不输出 banner、不读取宿主环境变量、不启动子进程、
+/// 不硬编码清单文件名，也不注入宿主桥接的伪导入。
+const BANNED_HOST_ENV_READ: &str = concat!("process", ".", "env");
+const BANNED_CHILD_PROCESS: &str = concat!("child", "_", "process");
+const BANNED_CONSOLE_BANNER: &str = concat!("console", ".", "log");
+const BANNED_MANIFEST_SUFFIX: &str = concat!(".", "von");
+const BANNED_HOST_IMPORT_PREFIX: &str = concat!("host", "_");
 
 /// 验证 `collect_import_bindings` 仅消费源码声明的 imports，去重且不注入伪导入。
 #[test]
@@ -22,7 +20,7 @@ fn collect_import_bindings_consumes_only_declared_imports() {
     assert_eq!(bindings.len(), 2, "应去重重复的导入字段");
     assert!(bindings.contains(&("env".to_string(), "emit_byte".to_string())));
     assert!(bindings.contains(&("env".to_string(), "read_source_byte".to_string())));
-    assert!(!bindings.iter().any(|(_, field)| field == BANNED_HOST_COMPILE_FROM_PLAN_RUST), "不应注入伪导入");
+    assert!(!bindings.iter().any(|(_, field)| field.starts_with(BANNED_HOST_IMPORT_PREFIX)), "不应注入宿主桥接伪导入");
 }
 
 /// 验证 `collect_import_bindings` 对空导入列表返回空绑定，不塞默认 imports。
@@ -49,7 +47,7 @@ fn build_node_launcher_dispatches_build_with_requested_project_target_and_output
         ("env".to_string(), "cli_get_output".to_string()),
         ("env".to_string(), "cli_get_verbose".to_string()),
     ];
-    let launcher = build_node_launcher("legion", &imports, &[], false, None);
+    let launcher = build_node_launcher("demo_cli", &imports, &[], false, None);
 
     assert!(launcher.contains("command === \"build\""));
     assert!(launcher.contains("cli_project = positional[0]"));
@@ -59,7 +57,7 @@ fn build_node_launcher_dispatches_build_with_requested_project_target_and_output
     assert!(launcher.contains("exports.version"));
     assert!(launcher.contains("exports.help"));
     assert!(launcher.contains("command === \"\" && typeof exports.help === \"function\""), "空 argv 仅在存在 help 时走帮助");
-    assert!(!launcher.contains(BANNED_HOST_COMPILE_FROM_PLAN_JS));
+    assert!(!launcher.contains(BANNED_HOST_IMPORT_PREFIX), "不应注入宿主桥接伪导入");
 }
 
 #[test]
@@ -96,18 +94,17 @@ fn build_node_launcher_single_entry_stdout_contract() {
     assert!(launcher.contains("output_bytes"), "单入口 stdout 契约：应使用 output_bytes 缓冲区");
 }
 
-/// 验证非 CLI 程序的 `stdout` 不被上层专用协议污染：
-/// 启动壳不输出 banner、不读取被禁环境变量、不硬编码清单路径或 project_name。
+/// 验证非 CLI 程序的 `stdout` 不被宿主层协议污染：
+/// 启动壳不输出 banner、不读取宿主环境变量、不硬编码清单文件名或 project_name。
 #[test]
 fn build_node_launcher_does_not_pollute_non_cli_stdout_with_banner() {
     let imports = vec![("env".to_string(), "emit_byte".to_string())];
     let launcher = build_node_launcher("demo", &imports, &[], false, None);
-    assert!(!launcher.contains(BANNED_BANNER), "不应输出 banner");
-    assert!(!launcher.contains(BANNED_BOOTSTRAP_ENV), "不应读取 bootstrap host 环境变量");
-    assert!(!launcher.contains(BANNED_HOST_ENV), "不应读取 host 环境变量");
-    assert!(!launcher.contains(BANNED_MANIFEST_PATH), "不应硬编码清单路径");
-    assert!(!launcher.contains(BANNED_PROJECT_NAME), "不应硬编码 project_name");
-    assert!(!launcher.contains(BANNED_HOST_COMPILE_FROM_PLAN_JS), "不应包含上层专用编译协议实现");
+    assert!(!launcher.contains(BANNED_CONSOLE_BANNER), "不应输出 banner");
+    assert!(!launcher.contains(BANNED_HOST_ENV_READ), "不应读取宿主环境变量");
+    assert!(!launcher.contains(BANNED_CHILD_PROCESS), "不应启动子进程");
+    assert!(!launcher.contains(BANNED_MANIFEST_SUFFIX), "不应硬编码清单文件名");
+    assert!(!launcher.contains(BANNED_HOST_IMPORT_PREFIX), "不应注入宿主桥接伪导入");
 }
 
 /// 验证无 imports 时启动壳仍可正常实例化 `WASM` 模块，且使用空 `importObject`。
@@ -125,6 +122,5 @@ fn render_import_object_literal_excludes_synthetic_imports() {
     let imports = vec![("env".to_string(), "emit_byte".to_string())];
     let literal = nyar_emitter::backend::wasm_js_glue::render_import_object_literal(&imports);
     assert!(literal.contains("emit_byte"), "应渲染声明的 emit_byte 字段");
-    assert!(!literal.contains(BANNED_HOST_COMPILE_FROM_PLAN_RUST), "不应追加伪导入字段");
-    assert!(!literal.contains(BANNED_HOST_COMPILE_FROM_PLAN_JS), "不应追加伪导入字段的 JS 实现");
+    assert!(!literal.contains(BANNED_HOST_IMPORT_PREFIX), "不应追加宿主桥接伪导入字段");
 }

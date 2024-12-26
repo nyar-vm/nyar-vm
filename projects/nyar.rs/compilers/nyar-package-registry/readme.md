@@ -44,6 +44,6 @@ let pkg = npm.get_package("@scope/name", "1.0.0")?;
 
 ## Boundaries
 
-- No `legion.toml` / manifest parsing.
+- No manifest parsing (layout and filenames belong to the package manager and its callers).
 - No dependency graph resolution or lockfile IO.
 - `MockRegistry` is provided for unit tests in the manager crate.

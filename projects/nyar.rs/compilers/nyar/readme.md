@@ -84,7 +84,7 @@ corresponding frontend before entering the language-independent Nyar stages:
 - NyarVM is a separate route—not a GPU compile hop.
 - Extend via fragment rewrite theories (`graphic` / `neural`) and lane-specific emitters; no unified GPU IR fallback.
 
-CI gates: `cargo test -p nyar --test gpu_fragment`, `cargo test -p rusty-valkyrie --test legion_artifact_formats`.
+CI gate: `cargo test -p nyar --test gpu_fragment`. Frontend conformance suites live in their own language crates.
 
 ## Boundaries
 

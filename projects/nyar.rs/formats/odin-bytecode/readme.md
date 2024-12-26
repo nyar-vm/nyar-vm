@@ -1,6 +1,6 @@
 # odin-bytecode
 
-Authoritative on-disk contract for OVM **storage bytecode** (`.nyar` / `.legion`).
+Authoritative on-disk contract for OVM **storage bytecode** (`.nyar`).
 
 ## Overview
 

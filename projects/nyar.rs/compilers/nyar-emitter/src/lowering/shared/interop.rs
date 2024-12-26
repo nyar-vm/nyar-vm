@@ -45,7 +45,7 @@ pub(crate) fn clr_host_method_target(link: &ExternalImportLink) -> Option<ClrHos
 }
 
 /// How to repair the evaluation stack after a BCL call whose MSIL return differs from the
-/// Valkyrie/host-contract desired type (flatten often copies the contract return onto the FFI).
+/// frontend/host-contract desired type (flatten often copies the contract return onto the FFI).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClrHostReturnAdapt {
     /// Stack already matches `desired` (including void with nothing pushed).

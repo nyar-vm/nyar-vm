@@ -1,4 +1,4 @@
-//! `.nyar` / `.legion` 模块的数据模型。
+//! `.nyar` 模块的数据模型。
 //!
 //! 本模块只定义常量池、函数、导入导出、全局槽、witness 分派与布局描述等
 //! 纯格式结构；不包含 section 的编解码行为。
@@ -119,7 +119,7 @@ pub struct NyarWitnessDispatchEntry {
     pub interface_method_index: i32,
 }
 
-/// Section kind in a `.legion` module.
+/// Section kind in a `.nyar` module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum NyarSectionKind {
