@@ -1,192 +1,85 @@
-# Nyar VM
+# Nyar
 
-[![Rust](https://img.shields.io/badge/language-Rust-orange.svg)](https://www.rust-lang.org/)
-[![Status](https://img.shields.io/badge/status-active-success.svg)](#)
+Nyar 是多语言前端 + 多后端编译平台。语言前端把已闭合的语义合同交给 Nyar 平台，平台完成与语言无关的规划、降低和产物装配；`nyar`/`odin-vm` 只是其中一个后端，不是所有语言的公共 IR。
 
-## 💡 NyarVM 是什么？
+本文件是唯一仓库入口。**阅读顺序见下，按需展开各 crate 的 `readme.md`，不要一次全读。**
 
-**Nyar VM** 是 Nyar 项目中的一个编译与执行后端，负责自己的 `nyar-ir`、Nyar 字节码、解释器、GC、JIT 与 AOT 链。Nyar 项目可以拥有多个语言前端和多个并列后端；JVM、CLR、Wasm、Native 与 Nyar VM 是不同的目标后端。本文只描述 Nyar VM 后端，不把 `nyar-ir` 当作跨语言或跨后端的 Universal IR。
+## 给 agent 的阅读顺序
 
-## 🏗️ 核心架构：三位一体的执行语言
+1. 本文件（边界 + 目录 + 构建）。
+2. 需要改动某个 crate 时，只读该 crate 的 `readme.md`。
+3. 需要跨 crate 契约时，读 `projects/readme.md`（仓库结构）与对应 crate 的公开类型。
+4. 设计决策不在本仓库维护；实现状态以源码、测试和 `git log` 为准。
 
-Nyar VM 后端接收某个语言前端为该后端准备的输入 contract，并把它降低为 Nyar VM 自己的 `nyar-ir` 和字节码。语言前端仍拥有自己的语义抽象；其他后端有各自的 lowering、IR 和执行合同，不经过 `nyar-ir`。
+## 三条不可违反的依赖边界
 
-```mermaid
-graph TD
-    %% Global Styles
-    classDef frontend fill:#e3f2fd,stroke:#2196f3,stroke-width:2px;
-    classDef ir fill:#fff3e0,stroke:#ff9800,stroke-width:2px;
-    classDef runtime fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px;
-    classDef engine fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
-    classDef os fill:#eceff1,stroke:#607d8b,stroke-dasharray: 5 5;
-
-    subgraph Frontends ["语言前端 (Source Layer)"]
-        direction LR
-        SL["静态语言 (C, Java, Valkyrie)"]:::frontend
-        DL["动态语言 (TS, Python, Lua)"]:::frontend
-    end
-
-    subgraph IR_Layer ["Nyar VM 后端内部表示"]
-        IR["Nyar VM nyar-ir"]:::ir
-    end
-
-    subgraph Runtime ["Nyar VM 后端运行时"]
-        direction TB
-        VM["VM 解释器 (Quick Start)"]:::runtime
-        
-        subgraph Acceleration ["加速引擎"]
-            JIT["nyar-jit (Dynamic Opt)"]:::engine
-            AOT["nyar-aot (Native AOT)"]:::engine
-        end
-        
-        subgraph Management ["资源管理"]
-            GC["nyar-gc (TLAB/Block)"]:::runtime
-            Types["nyar-types (NaN-Boxing)"]:::runtime
-        end
-    end
-
-    SL -->|VM backend contract| IR
-    DL -->|VM backend contract| IR
-    IR --> VM
-    VM <--> JIT
-    VM <--> AOT
-    Runtime <--> OS["Operating System (Win/Lin/Mac/WASI)"]:::os
-
+```text
+Oak       ──不能知道──> Nyar
+Nyar      ──不能知道──> Valkyrie / Legion / Asgard
+Valkyrie  ──不能知道──> Legion / Asgard
 ```
 
----
+允许的方向：
 
-## 🏎️ 混合执行策略
-
-### 1. 静态语言流 (Static Languages)
-
-静态语言把已闭合的语言语义交给选定的 Nyar 模块；具体 target 可以在编译或运行阶段选择 specialization、去抽象化与内联。不同语言不必经过相同的 IR 或优化闭包。
-
-```mermaid
-graph LR
-    classDef source fill:#e3f2fd,stroke:#2196f3;
-    classDef process fill:#fff3e0,stroke:#ff9800;
-    classDef target fill:#e8f5e9,stroke:#4caf50,font-weight:bold;
-
-    Src["C/Valkyrie 源代码"]:::source -->|VM backend contract| IR["Nyar VM nyar-ir"]:::process
-    IR -->|Static Analysis| Plan{"执行决策"}
-    
-    Plan -->|生产环境| AOT["nyar-aot: Nyar VM AOT 产物"]:::target
-    Plan -->|开发阶段| JIT["nyar-jit: 即时优化机器码"]:::target
-    Plan -->|极速预览| Interp["VM: 解释执行"]:::target
+```text
+rusty-valkyrie frontend  ──> Oak，以及 Nyar 的中性 frontend/backend 合同
+rusty-valkyrie::legion   ──> rusty-valkyrie frontend（同包内产品模块）
+rusty-valkyrie::asgard   ──> rusty-valkyrie frontend（同包内产品模块）
 ```
 
-### 2. 动态语言流 (Dynamic Languages)
+`rusty-valkyrie` 是**单一 Cargo package**：`src/` 为前端本体，`src/legion`、`src/asgard`、`src/workspace` 为包内产品模块，`src/bin/{legion,asgard}.rs` 为两个产品 bin。包内不得再出现第二个 `Cargo.toml`，前端模块不得导入产品模块。
 
-动态语言可以按自身语义和目标选择 **NaN-Boxing** 等运行时表示；这不是所有 frontend 的共同 IR 或强制执行路径。
+## 仓库结构
 
-```mermaid
-graph TD
-    classDef source fill:#fce4ec,stroke:#f06292;
-    classDef process fill:#fff3e0,stroke:#ff9800;
-    classDef hot fill:#f1f8e9,stroke:#8bc34a;
-
-    TS_Src["TypeScript 源代码"]:::source -->|VM backend contract| IR["Nyar VM nyar-ir"]:::process
-    IR -->|VM| Profile["运行时类型采样"]:::process
-    Profile -->|收集 Tag| Guard{"类型守卫消除"}
-    Guard -->|Hot Path| JIT["JIT 特化机器码"]:::hot
-    IR -->|Snapshot| AOT_Snap["AOT 二进制快照"]:::hot
+```text
+projects/
+├── nyar.rs/                     Cargo workspace（nightly，edition 2024）
+│   ├── compilers/               nyar, nyar-types, nyar-analyzer, nyar-optimizer,
+│   │                            nyar-emitter, nyar-runner, nyar-workspace,
+│   │                            nyar-package-manager, nyar-package-registry
+│   ├── formats/odin-bytecode    字节码磁盘合同
+│   ├── runtimes/                odin-vm, legend-vm, nyar-gc, nyar-jit
+│   ├── languages/rusty-<lang>   各语言前端；主链是 rusty-valkyrie
+│   └── ffis/                    nyar-napi（通用宿主）, nyar-wasm, valkyrie-napi（产品宿主）
+└── nyar.ts/                     pnpm workspace
+    ├── packages/                nyar（Nyar 宿主 API）, nyar-skills
+    ├── platforms/               nyar-<target> / valkyrie-<target> 原生产物包
+    └── emulators/               valkyrie（legion/asgard 两个 bin）, bash, lua, tcl
 ```
 
-#### NaN-Boxing 64-bit 内存布局
+npm 侧两条链互相独立：
 
-所有动态类型（指针、整数、布尔）均压缩在 8 字节字宽内，零开销识别。
-
-```mermaid
-packet-beta
-title NaN-Boxing Value Layout
-0-12: "NaN Base (All 1s)"
-13-16: "Tag (4 bits)"
-17-63: "Payload (47 bits: GC Ptr / i47 / bool)"
+```text
+@nyar/nyar      ──> @nyar/nyar-<platform>      ──> nyar-napi      ──> 通用宿主/runtime
+@nyar/valkyrie  ──> @nyar/valkyrie-<platform>  ──> valkyrie-napi  ──> rusty_valkyrie::{legion,asgard}
 ```
 
----
+## 构建与测试
 
-## 🧩 核心基础设施
-
-### 1. 代数效应 (Algebraic Effects)
-
-`nyar-ir` 原生支持高阶控制流；Nyar VM 通过捕获 **Continuation** 实现异步与协程。这是 Nyar VM 后端的能力，不是所有后端的共同 IR 要求。
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Op as Nyar Opcode
-    participant VM as VM Runtime
-    participant Handler as Effect Handler
-    
-    Op->>+VM: Perform(Effect)
-    Note over VM: Capture Current Stack<br/>(Continuation)
-    VM->>+Handler: Jump to Nearest Handler
-    Handler->>-VM: Process & Resume
-    VM->>-Op: Restore Stack & Continue
-```
-
-### 2. 内存管理 (nyar-gc)
-
-专为 Nyar 执行模型设计的垃圾回收器，支持线程本地分配缓存 (TLAB)。
-
-```mermaid
-graph LR
-    classDef heap fill:#e1f5fe,stroke:#01579b;
-    classDef thread fill:#f1f8e9,stroke:#33691e;
-    classDef block fill:#ffffff,stroke:#0288d1,stroke-width:2px;
-
-    subgraph GC_Heap ["分块式堆空间 (Global Heap)"]
-        direction TB
-        Block1["Block 0 (Used)"]:::block
-        Block2["Block 1 (Active)"]:::block
-        BlockN["Block N (Free)"]:::block
-    end
-    
-    subgraph Threads ["工作线程 (Worker Threads)"]
-        T1["Thread 1"]:::thread -->|TLAB| Block1
-        T2["Thread 2"]:::thread -->|TLAB| Block2
-    end
-
-    class GC_Heap heap
-```
-
----
-
-## 🏗️ 项目模块导航
-
-| 模块           | 路径                                                                           | 功能描述                                |
-|:---------------|:-------------------------------------------------------------------------------|:----------------------------------------|
-| **Rust 工作区** | [`projects/nyar.rs`](./projects/nyar.rs)                                     | 编译器、运行时、语言前端、ffis          |
-| **TypeScript** | [`projects/nyar.ts`](./projects/nyar.ts)                                     | npm 包、平台产物、语言模拟器            |
-| **虚拟机核心** | [`odin-vm`](./projects/nyar.rs/runtimes/odin-vm)                              | 字节码解释器、异步运行时及驱动          |
-| **类型系统**   | [`nyar-types`](./projects/nyar.rs/compilers/nyar-types)                      | NaN-Boxing 实现与核心类型定义           |
-| **垃圾回收**   | [`nyar-gc`](./projects/nyar.rs/runtimes/nyar-gc)                               | 高性能分块式垃圾回收器                  |
-| **加速引擎**   | [`nyar-jit`](./projects/nyar.rs/runtimes/nyar-jit)                            | 动态编译优化工具链                      |
-| **示例前端**   | [`examples/`](./examples)                                                      | C, Java, Go, TS 等多种语言的 Nyar 实现  |
-| **语言主链**   | [`rusty-valkyrie`](./examples/rusty-valkyrie)                                    | Valkyrie 前端：`HIR` / `MIR` 与语义闭包 |
-
-Per-crate docs live in each directory's `readme.md` (for example [
-`odin-vm/readme.md`](./projects/nyar.rs/runtimes/odin-vm/readme.md)).
-
----
-
-## 🛠️ 快速开始
+需要 nightly 工具链（crate 使用 `#![feature]`）。
 
 ```powershell
-# 构建全量发布版本
-cargo build --manifest-path projects/nyar.rs/Cargo.toml --release
-
-# 运行基准测试
-cargo bench -p odin-vm
-
-# 执行 Nyar 字节码程序
-cargo run -p odin-vm -- <input_file>
+cargo build --manifest-path projects/nyar.rs/Cargo.toml
+cargo test  -p <crate>          # 单 crate 测试
+pnpm build:napi                 # 构建 nyar-napi 与 valkyrie-napi 的 .node 产物
+pnpm test                       # TS 包测试
 ```
 
-## 📖 深入探索
+产品 CLI 冒烟：
 
-- [Nyar IR 指令集详情](./documentation/zh-hans/maintenance/nyar-ir.md)
-- [对象级动态技术](./documentation/zh-hans/guide/dynamic.md)
-- [NaN-Boxing 系统深度解析](./documentation/zh-hans/maintenance/nyar-types.md)
+```powershell
+node projects/nyar.ts/emulators/valkyrie/bin/legion.mjs --version
+node projects/nyar.ts/emulators/valkyrie/bin/asgard.mjs --version
+```
+
+## 发布
+
+- 真实版本只经 GitHub Actions Trusted Publisher（OIDC）发布，触发方式是 push tag；不在本地发布真实版本。
+- 发布顺序：`valkyrie-<target>` → `nyar-<target>` / wasm → 主包 → `@nyar/valkyrie`。
+- 版本、tag 与 workflow 合同见 `scripts/ci/publish-npm.mjs` 与 `.github/workflows/publish-npm.yml`。
+
+## 文档规则
+
+- 设计真相源不在本仓库；本仓库文档只描述公开结构、构建方式与 crate 职责。
+- 不新增 `docs/`、design、roadmap、handoff 或历史进度文档；过期内容直接删除或改写，不留归档副本。
+- 单一事实只写一处：跨 crate 结构写 `projects/readme.md`，crate 内部细节写各自 `readme.md`。

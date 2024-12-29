@@ -50,7 +50,7 @@ pub fn publish_voa(input: &Path, target: PublishTarget, output: Option<&Path>) -
         PublishTarget::Web => {
             return Ok(PublishReport {
                 artifact_path: input.to_path_buf(),
-                message: "Web 发布：将 dist/ 同步至 CDN（见 documentation/platforms/web-cdn.md）".into(),
+                message: "Web 发布：将 dist/ 同步至 CDN".into(),
             });
         }
     };

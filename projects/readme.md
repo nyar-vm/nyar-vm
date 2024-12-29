@@ -1,39 +1,42 @@
 # Projects layout
 
-This directory groups Rust crates and host bindings by responsibility. It describes **only the public structure of this
-repository**.
+本仓库只分两个 workspace：`nyar.rs`（Rust）与 `nyar.ts`（TypeScript / npm）。两侧产物通过 `.node`、wasm 与 npm 包交接，不共享构建系统。
 
-## Directories
+## nyar.rs
 
-| Path         | Role                                                                     |
-|--------------|--------------------------------------------------------------------------|
-| `compilers/` | Nyar compiler stack: `nyar-emitter`, `nyar-analyzer`, `nyar-types`, … |
-| `formats/`   | On-disk bytecode contract (`odin-bytecode`)                              |
-| `runtimes/`  | VM, GC, JIT (`odin-vm`, `nyar-gc`, `nyar-jit`)                           |
-| `hosts/`     | Node-API / Wasm host bindings (`nyar-napi`, `nyar-wasm`)                 |
-| `packages/`  | npm platform collect packages (`nyar-win32-x64`, …)                      |
+| 路径 | 角色 |
+|------|------|
+| `compilers/` | Nyar 编译栈：`nyar`、`nyar-types`、`nyar-analyzer`、`nyar-optimizer`、`nyar-emitter`、`nyar-runner`、`nyar-workspace`、包管理与注册表 |
+| `formats/` | 磁盘字节码合同（`odin-bytecode`） |
+| `runtimes/` | `odin-vm`（VM）、`legend-vm`（legacy lanes）、`nyar-gc`、`nyar-jit` |
+| `languages/` | 各语言前端 `rusty-<lang>`；主链 `rusty-valkyrie` 是单包，含 `legion`/`asgard` 产品模块与两个 bin |
+| `ffis/` | 宿主绑定：`nyar-napi`（通用）、`nyar-wasm`（占位）、`valkyrie-napi`（Valkyrie 产品） |
 
-## Dependency boundaries (summary)
+## Dependency boundaries
 
-- **Text and binary formats** — Oak owns text parsing and recovery; Acorn owns external binary format models and codecs.
-- **Frontend host** — each language frontend lives in its own `languages/rusty-<lang>` crate; `rusty-valkyrie` owns
-  Valkyrie semantic facts and hands closed contracts to the Nyar platform. Frontends may use Oak parsers.
-- **Platform lowering** — `nyar` / `nyar-emitter` own language-independent planning, target lowering, and artifact
-  preparation after the frontend contract. Nyar runtime packages consume verified artifacts.
-- **Host-script frontends** (bash / lua / tcl / powershell / c): each lives in `languages/rusty-<lang>`; the corresponding
-  Oak parser owns text syntax and the adapter crate owns script semantics. No `std-data` mixed parser/codec package is a
-  required compile stage.
+- **文本与二进制格式** — Oak 拥有文本解析与恢复；Acorn 拥有外部二进制格式模型与编解码。
+- **前端** — 每个语言前端独立在 `languages/rusty-<lang>`；前端拥有语言语义事实，只向平台交付已闭合合同。前端可以使用 Oak 解析器，Oak 不反向依赖 Nyar 或任何产品。
+- **平台降低** — `nyar` / `nyar-emitter` 在前端合同之后拥有语言无关的规划、目标降低与产物准备；运行时包只消费已验证产物。
+- **产品层** — `legion` 拥有 manifest、包图、缓存与 ArtifactStore；`asgard` 拥有 AWSL 管线、UI 打包与部署产物。两者都只在 `rusty-valkyrie` 包内，不进入 Nyar。
+- **宿主** — `nyar-napi` 只暴露通用宿主/runtime；Valkyrie 产品入口在 `valkyrie-napi`，npm 侧由 `@nyar/valkyrie` 直接对接。
+
+## nyar.ts
+
+| 路径 | 角色 |
+|------|------|
+| `packages/` | `@nyar/nyar`（Nyar 宿主 API）与 skills 包 |
+| `platforms/` | 按平台打包的原生 `.node` 产物：`@nyar/nyar-<target>`、`@nyar/valkyrie-<target>` |
+| `emulators/` | `@nyar/valkyrie`（`legion`/`asgard` bin）与 bash/lua/tcl 模拟器 |
 
 ## Optional integration tests
 
-Some tests can point at an external Valkyrie language checkout via environment variable (**not required for release**):
+部分测试可通过环境变量指向外部 Valkyrie 语言 checkout（**发布不需要**）：
 
 ```bash
 export VALKYRIE_V_ROOT=/path/to/valkyrie-language-checkout
 cargo test -p rusty-valkyrie
 ```
 
-When unset, related cases are skipped and default CI is unaffected.
+未设置时相关用例跳过，默认 CI 不受影响。
 
-Per-crate documentation lives in each crate's `readme.md` (for example [
-`odin-vm/readme.md`](./runtimes/odin-vm/readme.md)).
+Per-crate 文档在各 crate 的 `readme.md`（例如 [`odin-vm/readme.md`](./nyar.rs/runtimes/odin-vm/readme.md)）。
