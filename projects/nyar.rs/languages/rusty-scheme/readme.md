@@ -1,49 +1,19 @@
 # rusty-scheme
 
-A Scheme language frontend for the Nyar VM.
+Scheme 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-scheme` brings the minimalism of classic Lisp dialect Scheme to the Nyar VM, mapping first-class continuations,
-proper tail calls, and hygienic macros to the Nyar native runtime.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-scheme`，`src/` 约 32 行。
+- 解析：`parse` 委托 `oak-scheme` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 返回占位 `0`；`codegen::Codegen` 是空实现。
+- 测试：无 `tests/` 目录。
 
-## Features
+## 能力边界
 
-- **Minimal Lisp**: oriented toward R5RS/R6RS/R7RS core specifications.
-- **First-class continuations**: `call-with-current-continuation` via Nyar algebraic effects and delimited
-  continuations.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: optimization of hot recursion and function transformations.
-    - **`nyar-gc`**: lifecycle management for pairs, closures, and symbols.
-    - **Proper tail calls**: tail-call optimization guaranteed by the Nyar VM core.
-- **Hygienic macros**: integrated with the Nyar macro system.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `define`, `lambda`, `if`, `set!`, `quote`.
-- **Data types**: symbols, lists (pairs), numbers, booleans, characters.
-- **Control flow**: `cond`, `case`, `do`, `begin`.
-- **Continuations**: `call/cc` and related control abstractions.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run script.scm
-```
-
-### As a library
-
-```rust
-use rusty_scheme::RustySchemeFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustySchemeFrontend::new();
-let result = frontend.parse("(define (factorial n) (if (= n 0) 1 (* n (factorial (- n 1)))))").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

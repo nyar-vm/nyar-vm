@@ -1,48 +1,19 @@
 # rusty-r
 
-An R language frontend for the Nyar VM.
+R 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-r` brings R, the standard language for statistical computing, to the Nyar VM, enabling data science workflows to
-enjoy Nyar JIT and memory management while preserving R syntax and data structures.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-r`，`src/` 约 41 行。
+- 解析：`parse` 委托 `oak-r` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 直接返回占位 `0`，`codegen::NyarTranslator` 的调用被注释掉。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Statistical computing**: oriented toward R's core statistical and graphics capabilities.
-- **Vectorized operations**: vector arithmetic and functional patterns mapped to optimized Gaia IR.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: optimization of hot computation loops and data processing pipelines.
-    - **`nyar-gc`**: precise memory management for large datasets and complex objects.
-    - **`nyar-aot`**: E-Graph ahead-of-time optimization for R scripts.
-- **Modern performance**: brings R ecosystem benefits to an interpreter + JIT multi-tier VM.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: assignment, function definitions, `if`/`for`/`while`.
-- **Data types**: vectors (numeric, character, logical), lists, data frames.
-- **Functional**: closures, higher-order functions, and R's unique scoping rules.
-- **Builtins**: standard R statistical functions via Nyar FFI.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run analysis.r
-```
-
-### As a library
-
-```rust
-use rusty_r::RustyRFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyRFrontend::new();
-let ast = frontend.parse("sum_squares <- function(x) sum(x^2)").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

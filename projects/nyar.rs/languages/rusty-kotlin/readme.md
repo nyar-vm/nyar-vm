@@ -1,47 +1,19 @@
 # rusty-kotlin
 
-A Kotlin language frontend for the Nyar VM.
+Kotlin 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-kotlin` brings Kotlin to the Nyar VM, mapping null safety, coroutines, and other features to the Nyar execution
-engine and algebraic effects.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-kotlin`，`src/` 约 47 行。
+- 解析：`parse` 委托 `oak-kotlin` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 返回占位 `0`；`codegen::NyarTranslator` 已定义但未接线。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Modern and concise**: Kotlin expressiveness and functional features.
-- **Null safety**: null-safety guarantees preserved when lowering to Gaia IR.
-- **Coroutines**: coroutines and `suspend` mapped to Nyar algebraic effects and continuations.
-- **Managed object model**: classes, interfaces, and data classes mapped to the Nyar object system.
-- **JIT optimization**: hot Kotlin paths optimized via `nyar-jit`.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `class`, `data class`, `interface`, `fun`, `val`, `var`.
-- **Null safety**: nullable types `?`, safe call `?.`, Elvis `?:`.
-- **Functional**: lambdas, higher-order functions, extension functions.
-- **Coroutines**: `suspend` and structured concurrency.
-- **Standard library**: initial support for the Kotlin standard library core.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run main.kt
-```
-
-### As a library
-
-```rust
-use rusty_kotlin::RustyKotlinFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyKotlinFrontend::new();
-let ast = frontend.parse("fun main() { println(\"Hello from Kotlin on Nyar!\") }").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

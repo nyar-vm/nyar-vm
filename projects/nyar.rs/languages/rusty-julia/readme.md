@@ -1,48 +1,19 @@
 # rusty-julia
 
-A Julia language frontend for the Nyar VM.
+Julia 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-julia` brings Julia, combining high-level ease of use with low-level performance, to the Nyar VM for scientific
-computing and data analysis, mapping multiple dispatch and dynamic typing to the Nyar advanced runtime.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-julia`，`src/` 约 37 行。
+- 解析：`parse` 委托 `oak-julia` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 直接返回占位 `0`，`codegen::UirConverter` 的调用被注释掉。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Multiple dispatch**: mapped to Nyar virtual dispatch and dynamic dispatch.
-- **JIT specialization**: `nyar-jit` type-specialized compilation of hot paths, similar to Julia's LLVM JIT.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: multi-tier optimization of numerical kernels.
-    - **`nyar-gc`**: high-performance mark-and-sweep for complex object graphs and arrays.
-    - **`nyar-aot`**: E-Graph ahead-of-time optimization for static Julia modules.
-- **Metaprogramming**: macros and expression manipulation integrated with Nyar metaprogramming primitives.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `function`, `struct`, `module`, `macro`.
-- **Control flow**: `if`, `while`, `for`, `try/catch`.
-- **Types**: parametric types and abstract type hierarchies.
-- **Arrays**: integrated with Nyar array representation for linear algebra support.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run analysis.jl
-```
-
-### As a library
-
-```rust
-use rusty_julia::RustyJuliaFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyJuliaFrontend::new();
-let ast = frontend.parse("f(x) = x^2 + 2x + 1").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

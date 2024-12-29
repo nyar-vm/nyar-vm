@@ -1,48 +1,19 @@
 # rusty-swift
 
-A Swift language frontend for the Nyar VM.
+Swift 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-swift` brings Swift, focused on safety, performance, and modern syntax, to the Nyar VM for developing modern
-applications in a managed environment with JIT, GC, and algebraic effects.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-swift`，`src/` 约 163 行。
+- 解析：`parse` 委托 `oak-swift` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 有一条真实的 AST → `IKun` 转换路径（`UirConverter`），覆盖范围只以代码为准。
+- 测试：无 `tests/` 目录。
 
-## Features
+## 能力边界
 
-- **Safe and fast**: Swift's safety-first philosophy mapped to the Nyar managed runtime and Gaia IR.
-- **Modern object model**: classes, structs, enums, protocols.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: multi-tier optimization of hot methods and closures.
-    - **`nyar-gc`**: precise GC (mapping Swift ARC semantics where appropriate).
-    - **Algebraic effects**: `async/await`, `try/catch`, and future concurrency models.
-- **Interop**: design reserved for bridging with other Nyar languages such as Rust and future Objective-C.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `func`, `var`, `let`, `class`, `struct`, `enum`, `protocol`.
-- **Control flow**: `if`, `guard`, `switch`, `for-in`, `while`.
-- **Optionals**: optional types and optional chaining.
-- **Generics**: Swift generic programming features.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run application.swift
-```
-
-### As a library
-
-```rust
-use rusty_swift::RustySwiftFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustySwiftFrontend::new();
-let ast = frontend.parse("func square(_ x: Int) -> Int { return x * x }").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

@@ -9,13 +9,13 @@
 | `compilers/` | Nyar 编译栈：`nyar`、`nyar-types`、`nyar-analyzer`、`nyar-optimizer`、`nyar-emitter`、`nyar-runner`、`nyar-workspace`、包管理与注册表 |
 | `formats/` | 磁盘字节码合同（`odin-bytecode`） |
 | `runtimes/` | `odin-vm`（VM）、`legend-vm`（legacy lanes）、`nyar-gc`、`nyar-jit` |
-| `languages/` | 各语言前端 `rusty-<lang>`；主链 `rusty-valkyrie` 是单包，含 `legion`/`asgard` 产品模块与两个 bin |
+| `languages/` | 主链 `rusty-valkyrie` 是单包，含 `legion`/`asgard` 产品模块与两个 bin；workspace 内另有 5 个 guest 前端 `rusty-{bash,c,lua,powershell,tcl}`，其余 `rusty-*` 目录不在 workspace |
 | `ffis/` | 宿主绑定：`nyar-napi`（通用）、`nyar-wasm`（占位）、`valkyrie-napi`（Valkyrie 产品） |
 
 ## Dependency boundaries
 
 - **文本与二进制格式** — Oak 拥有文本解析与恢复；Acorn 拥有外部二进制格式模型与编解码。
-- **前端** — 每个语言前端独立在 `languages/rusty-<lang>`；前端拥有语言语义事实，只向平台交付已闭合合同。前端可以使用 Oak 解析器，Oak 不反向依赖 Nyar 或任何产品。
+- **前端** — 每个语言前端独立在 `languages/rusty-<lang>`；前端拥有语言语义事实，只向平台交付已闭合合同。前端可以使用 Oak 解析器，Oak 不反向依赖 Nyar 或任何产品。只有 `rusty-valkyrie` 与 5 个 guest 前端在 workspace 中，其余目录不参与构建。
 - **平台降低** — `nyar` / `nyar-emitter` 在前端合同之后拥有语言无关的规划、目标降低与产物准备；运行时包只消费已验证产物。
 - **产品层** — `legion` 拥有 manifest、包图、缓存与 ArtifactStore；`asgard` 拥有 AWSL 管线、UI 打包与部署产物。两者都只在 `rusty-valkyrie` 包内，不进入 Nyar。
 - **宿主** — `nyar-napi` 只暴露通用宿主/runtime；Valkyrie 产品入口在 `valkyrie-napi`，npm 侧由 `@nyar/valkyrie` 直接对接。

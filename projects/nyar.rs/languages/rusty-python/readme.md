@@ -1,50 +1,19 @@
 # rusty-python
 
-A Python language frontend for the Nyar VM.
+Python 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-python` parses Python 3 source (via `oak-python`) into an AST, then lowers to unified IR for optimized execution
-on Nyar.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-python`，`src/` 约 759 行。
+- 解析：`parse` 委托 `oak-python` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 有一条真实的 AST → `IKun` 转换路径（`UirConverter`），覆盖范围只以代码为准。
+- 测试：`tests/` 下 9 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Python 3 subset**: common syntax and runtime features.
-- **Scoping**: local, global, and nonlocal name rules.
-- **Object model**: attributes and methods on Nyar VM objects.
-- **Nyar integration**: IR output consumable by `nyar-jit`.
-- **Interop**: call functions and objects defined in other Nyar frontends.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Control flow**: `if`, `for`, `while`, `try-except`, `with`.
-- **Data structures**: list, dict, set, tuple.
-- **Functions**: closures, decorators, generators (via algebraic effects).
-- **Classes**: inheritance and dunder methods.
-- **Assignment**: multiple and augmented assignment (`+=`, …).
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run example.py
-```
-
-### As a library
-
-```rust
-use rusty_python::RustyPythonFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyPythonFrontend::new();
-let ast = frontend.parse("print('Hello from Nyar!')").unwrap();
-```
-
-## Status
-
-Active development: core syntax is largely covered; stdlib surface and metaclasses remain incomplete.
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

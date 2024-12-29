@@ -1,49 +1,19 @@
 # rusty-fsharp
 
-An F# language frontend for the Nyar VM.
+F# 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-fsharp` brings the functional-first F# to the Nyar VM for writing concise, correct, and high-performance code
-with algebraic effects and multi-tier JIT.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-fsharp`，`src/` 约 39 行。
+- 解析：`parse` 委托 `oak-fsharp` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 直接返回占位 `0`，`codegen::NyarTranslator` 的调用被注释掉。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Functional-first**: immutability, first-class functions, pattern matching.
-- **Algebraic effects**: computation expressions (e.g. `async { ... }`, `seq { ... }`) mapped to Nyar effects and
-  delimited continuations.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: high-performance execution of hot functional paths.
-    - **`nyar-gc`**: precise memory management for closures and complex structures.
-    - **`nyar-aot`**: E-Graph optimization for pure function transformations.
-- **Type safety**: F#'s strong type system mapped to Nyar internal type representation.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `let`, `module`, `type` (records, unions).
-- **Functions**: anonymous functions, currying, partial application.
-- **Pattern matching**: exhaustive matching on records and discriminated unions.
-- **Computation expressions**: mapped to Nyar effect handlers.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run script.fs
-```
-
-### As a library
-
-```rust
-use rusty_fsharp::RustyFSharpFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyFSharpFrontend::new();
-let ast = frontend.parse("let square x = x * x").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

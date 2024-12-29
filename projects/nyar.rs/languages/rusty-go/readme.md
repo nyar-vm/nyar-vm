@@ -1,45 +1,19 @@
 # rusty-go
 
-A Go language frontend for the Nyar VM.
+Go 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-go` brings Go to the Nyar VM, mapping goroutines and channels to Nyar lightweight tasks and algebraic effects.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-go`，`src/` 约 323 行。
+- 解析：`parse` 委托 `oak-go` 的 builder 与 parser，产出 Oak AST。
+- 降低：`frontend::RustyGoFrontend` 有一条真实的 AST → `IKun` 转换路径（`UirConverter`），覆盖范围只以代码为准。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Go-style concurrency**: goroutines and channels on Nyar's task system.
-- **Managed memory**: integrates with `nyar-gc`.
-- **Fast startup**: tuned for microservices and scripting workloads.
-- **Nyar integration**: lowers to unified IR for JIT optimization.
-- **Static typing**: preserves Go's static type discipline during lowering.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `package`, `import`, `func`, `var`, `type`.
-- **Concurrency**: `go`, `chan`, `select`.
-- **Control flow**: `if`, `for`, `switch`, `defer`.
-- **Data types**: slices, maps, structs, interfaces.
-- **Pointers**: pointer support aligned with Go memory model expectations.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run main.go
-```
-
-### As a library
-
-```rust
-use rusty_go::frontend::RustyGoFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyGoFrontend::new();
-let ast = frontend.parse("package main\nfunc main() { println(\"Hello from Go!\") }").unwrap();
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

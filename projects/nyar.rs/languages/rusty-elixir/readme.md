@@ -1,49 +1,19 @@
 # rusty-elixir
 
-An Elixir language frontend for the Nyar VM.
+Elixir 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-elixir` brings Elixir to the Nyar VM, mapping the process model and message passing to Nyar lightweight tasks and
-algebraic effects to leverage functional and concurrent strengths.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-elixir`，`src/` 约 43 行。
+- 解析：`parse` 委托 `oak-elixir` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 直接返回占位 `0`，`codegen::lower_elixir_root` 的调用被注释掉。
+- 测试：无 `tests/` 目录。
 
-## Features
+## 能力边界
 
-- **Functional paradigm**: immutable data structures and pattern matching.
-- **Concurrency and fault tolerance**: Elixir processes mapped to Nyar actor-style primitives.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: optimization of hot functional paths and recursion.
-    - **`nyar-gc`**: lifecycle management for managed types such as atoms and maps.
-    - **Algebraic effects**: control flow, error handling, and concurrency patterns.
-- **Metaprogramming**: `quote`/`unquote` integrated with the Nyar macro system.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `defmodule`, `def`, `fn`, `quote`, `unquote`.
-- **Pattern matching**: complex patterns in function heads and `case`.
-- **Data types**: atoms, lists, maps, tuples, binaries.
-- **Pipe operator**: `|>`.
-- **Protocols**: Elixir protocols via witness tables.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run script.ex
-```
-
-### As a library
-
-```rust
-use rusty_elixir::RustyElixirFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyElixirFrontend::new();
-let ast = frontend.parse("defmodule Hello do def world do IO.puts \"Hello from Elixir!\" end end").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

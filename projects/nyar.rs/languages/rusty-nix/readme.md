@@ -1,48 +1,19 @@
 # rusty-nix
 
-A Nix expression language frontend for the Nyar VM.
+Nix 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-nix` brings the Nix expression language to the Nyar VM for evaluation in a high-performance managed environment,
-with algebraic effects for sandboxing and lazy evaluation.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-nix`，`src/` 约 33 行。
+- 解析：`parse` 委托 `oak-nix` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 只产出一个空模块 `rusty-nix-program`，不包含任何语句。
+- 测试：无 `tests/` 目录。
 
-## Features
+## 能力边界
 
-- **Lazy evaluation**: mapped to Nyar thunks and on-demand execution.
-- **Purely functional**: immutable data structures and side-effect-free evaluation.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: optimization of hot evaluation paths and function transformations.
-    - **`nyar-gc`**: efficient collection of many short-lived small objects in Nix evaluation.
-    - **Algebraic effects**: sandboxing and resource management.
-- **Reproducible evaluation**: preserves Nix reproducibility guarantees within the Nyar runtime.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `let`, `with`, `if-then-else`.
-- **Functions**: lambdas, attribute-set patterns, partial application.
-- **Data structures**: lists, attribute sets (recursive and non-recursive), interpolated strings.
-- **Builtins**: standard Nix built-in functions via Nyar FFI.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run expression.nix
-```
-
-### As a library
-
-```rust
-use rusty_nix::RustyNixFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyNixFrontend::new();
-let result = frontend.parse("{ a = 1; b = 2; }").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

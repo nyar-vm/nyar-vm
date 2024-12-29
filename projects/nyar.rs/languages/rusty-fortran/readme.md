@@ -1,49 +1,19 @@
 # rusty-fortran
 
-A Fortran language frontend for the Nyar VM.
+Fortran 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-fortran` brings Fortran, the classic language for scientific computing, to the Nyar VM, enabling science and
-engineering applications to use E-Graph optimization, multi-tier JIT, and advanced GC while maintaining compatibility
-with standard Fortran constructs.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-fortran`，`src/` 约 33 行。
+- 解析：`parse` 委托 `oak-fortran` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 直接返回占位 `0`，`codegen::NyarTranslator` 的调用被注释掉。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Standard Fortran**: oriented toward F90/F95/F2003 and other standards common in scientific computing.
-- **High-performance math**: array operations and built-in math functions mapped to optimized Gaia IR.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: hot computation loops compiled to native code.
-    - **`nyar-gc`**: automatic memory management for complex data structures.
-    - **Algebraic effects**: scientific data flows and advanced error handling.
-- **Modern optimization**: E-Graph saturation optimization of numerical kernels via `nyar-aot`.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Program structure**: `program`, `module`, `subroutine`, `function`.
-- **Data types**: `integer`, `real`, `complex`, `logical`, `character`.
-- **Control flow**: `if`, `do`, `select case`.
-- **Arrays**: multi-dimensional arrays and slices (lower-unified implementation).
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run calculations.f90
-```
-
-### As a library
-
-```rust
-use rusty_fortran::RustyFortranFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyFortranFrontend::new();
-let ast = frontend.parse("program hello\nprint *, 'Hello'\nend program").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

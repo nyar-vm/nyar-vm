@@ -1,45 +1,19 @@
 # rusty-csharp
 
-A C# language frontend for the Nyar VM.
+C# 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-csharp` executes C# source on the Nyar VM, mapping .NET-style OOP onto Nyar's object system and GC.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-csharp`，`src/` 约 41 行。
+- 解析：`parse` 委托 `oak-csharp` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 直接返回占位 `0`，`codegen::NyarTranslator` 的调用被注释掉。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Modern C# subset**: contemporary language features where implemented.
-- **Managed object model**: classes, interfaces, structs on Nyar objects.
-- **Algebraic effects**: `async`/`await` and Task patterns on Nyar effects.
-- **Static typing**: preserved through lowering to unified IR.
-- **JIT**: hot paths accelerated by `nyar-jit`.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **OOP**: classes, inheritance, interfaces, properties, events.
-- **Generics**: type and method generics via witness tables.
-- **LINQ**: basic query expressions.
-- **Async/await**: first-class async lowering.
-- **Standard library**: initial `System` namespace coverage.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run Program.cs
-```
-
-### As a library
-
-```rust
-use rusty_csharp::RustyCSharpFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyCSharpFrontend::new();
-let ast = frontend.parse("class Program { static void Main() { System.Console.WriteLine(\"Hello from C#!\"); } }").unwrap();
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

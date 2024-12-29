@@ -1,47 +1,19 @@
-# rusty-rust (Mini Rust)
+# rusty-rust
 
-A Rust language frontend for the Nyar VM.
+Rust 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-rust` (Mini Rust) executes a subset of Rust on the Nyar VM. The parse and lowering pipeline transforms Rust
-source into unified IR, benefiting from Nyar runtime optimizations (JIT, AOT, GC).
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-rust`，`src/` 约 456 行。
+- 解析：`parse` 委托 `oak-rust` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 调用 `converter::convert_root`，有一条真实的 AST → `IKun` 转换路径，覆盖范围只以代码为准。
+- 测试：`tests/` 下 13 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Safe subset**: ownership concepts, pattern matching, and traits.
-- **Advanced AOT**: integrates with `nyar-aot` and E-Graph optimization for bytecode modules.
-- **Type-safe lowering**: uses `chomsky-uir` for constraint analysis during lowering.
-- **Algebraic effects**: maps Rust async/future models to Nyar native effects.
-- **Zero-cost abstractions**: aims to preserve Rust performance characteristics on the VM.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `let`, `fn`, `struct`, `enum`, `impl`.
-- **Control flow**: `if`, `loop`, `while`, `for`, `match`.
-- **Ownership**: references and compile-time borrow checking during lowering.
-- **Traits**: trait polymorphism via witness tables.
-- **Macros**: basic declarative macro support.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run main.rs
-```
-
-### As a library
-
-```rust
-use rusty_rust::MiniRustFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = MiniRustFrontend::new();
-let ast = frontend.parse("fn main() { println!(\"Hello from Rust!\"); }").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

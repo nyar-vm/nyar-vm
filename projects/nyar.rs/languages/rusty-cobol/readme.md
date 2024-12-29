@@ -1,49 +1,19 @@
 # rusty-cobol
 
-A COBOL language frontend for the Nyar VM.
+COBOL 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-cobol` brings COBOL business logic to the modern Nyar VM, enabling legacy data-processing applications to run on
-a high-performance runtime with JIT optimization, advanced GC, and concurrency support.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-cobol`，`src/` 约 82 行。
+- 解析：`parse` 委托 `oak-cobol` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 返回占位 `0`；`codegen::Codegen` 是空实现。
+- 测试：无 `tests/` 目录。
 
-## Features
+## 能力边界
 
-- **Standard COBOL**: oriented toward COBOL-85/2002 and other common dialects and standards.
-- **Modern execution environment**: runs on `odin-vm` with `nyar-gc` and multi-tier JIT.
-- **Data Division mapping**: complex data structures such as PICTURE mapped to Nyar types and objects.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: optimization of hot business logic and numeric processing.
-    - **`nyar-gc`**: managed lifecycle for COBOL records.
-    - **`nyar-aot`**: ahead-of-time optimization for batch processing modules.
-- **Interop**: mixed development with modern Nyar languages.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Divisions**: Identification, Environment, Data, Procedure.
-- **Data types**: alphanumeric, numeric (including fixed-point decimal), group items.
-- **Control flow**: `PERFORM`, `IF`, `EVALUATE`, `GO TO`.
-- **File I/O**: initial support for standard COBOL file operations.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run program.cbl
-```
-
-### As a library
-
-```rust
-use rusty_cobol::RustyCobolFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyCobolFrontend::new();
-let ast = frontend.parse("IDENTIFICATION DIVISION. PROGRAM-ID. HELLO.").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

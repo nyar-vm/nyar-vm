@@ -20,5 +20,3 @@
 
 - Module + semantic bridge (exports top-level function names) + `interpret` for the legend demo subset.
 - VM `evaluator/bash.rs` delegates here (same thin-adapter shape as C / Lua / PowerShell).
-
-See [`../../../host-script-languages.md`](../../../host-script-languages.md).

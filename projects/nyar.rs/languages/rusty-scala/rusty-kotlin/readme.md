@@ -1,47 +1,19 @@
-# rusty-kotlin
+# rusty-kotlin（嵌套副本）
 
-A Kotlin language frontend for the Nyar VM (Kotlin variant implementation within the `rusty-scala` workspace).
+Kotlin 前端的一份重复副本，实际位于 `languages/rusty-scala/rusty-kotlin/`，而不是 `languages/` 下的独立目录。
 
-## Overview
+## 当前状态
 
-`rusty-kotlin` brings Kotlin to the Nyar VM, mapping null safety, coroutines, and other features to the Nyar execution
-engine and algebraic effects.
+- 本目录自带独立的 `Cargo.toml`、`src/` 与 `tests/`，但**不在 `projects/nyar.rs` 的 Cargo workspace 中**：`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 与 `languages/rusty-kotlin/` 内容重复，属于误放的副本。
+- 解析：`parse` 委托 `oak-kotlin` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 调用 `codegen::NyarTranslator::translate_to_id`，是一条已接线的 AST → `IKun` 转换路径；转换失败时回落为空 `Seq`。注意顶层 `languages/rusty-kotlin` 的同一调用仍被注释，两份副本行为不一致。
+- 测试：`tests/` 下有 `simulator.rs` 与 `.kt` 语料，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Modern and concise**: Kotlin expressiveness and functional features.
-- **Null safety**: null-safety guarantees preserved when lowering to Gaia IR.
-- **Coroutines**: coroutines and `suspend` mapped to Nyar algebraic effects and continuations.
-- **Managed object model**: classes, interfaces, and data classes mapped to the Nyar object system.
-- **JIT optimization**: hot Kotlin paths optimized via `nyar-jit`.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `class`, `data class`, `interface`, `fun`, `val`, `var`.
-- **Null safety**: nullable types `?`, safe call `?.`, Elvis `?:`.
-- **Functional**: lambdas, higher-order functions, extension functions.
-- **Coroutines**: `suspend` and structured concurrency.
-- **Standard library**: initial support for the Kotlin standard library core.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run main.kt
-```
-
-### As a library
-
-```rust
-use rusty_kotlin::RustyKotlinFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyKotlinFrontend::new();
-let ast = frontend.parse("fun main() { println(\"Hello from Kotlin on Nyar!\") }").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

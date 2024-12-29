@@ -20,5 +20,3 @@ Lexer / parser / AST for the legend / legend-vm PowerShell demo subset.
   `-notlike`
 - Pipeline: `expr | Cmdlet` (single-stage demo)
 - Command calls: space-separated args and `(Name $a $b)`
-
-Layering: [`../../../../host-script-languages.md`](../../../../host-script-languages.md).

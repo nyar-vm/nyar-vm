@@ -1,41 +1,19 @@
 # rusty-mojo
 
-An experimental Mojo language frontend for the Nyar VM.
+Mojo 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-mojo` is an experimental frontend for Mojo, aiming to combine AI- and systems-programming-oriented Mojo with Nyar
-multi-tier JIT and runtime optimization.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-mojo`，`src/` 约 44 行。
+- 解析：`parse` 委托 `oak-mojo` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 直接返回占位 `0`，`codegen::MojoCodegen` 的调用被注释掉。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Performance-oriented**: Mojo hardware-aware features mapped to Nyar's efficient execution model.
-- **AI integration**: dedicated syntax for AI model development and execution (planned).
-- **Nyar integration**: compiles to Gaia IR, optimized via `nyar-jit` and `nyar-aot`.
-- **Interop**: interaction with other Nyar-supported languages such as Python and C++ (planned).
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Project status
-
-**Current: experimental / placeholder**
-
-- **Parser**: in development (currently uses `PlaceholderLanguage`).
-- **Lowering**: basic module structure generation is available.
-- **Execution**: initial integration with `odin-vm` in progress.
-
-## Roadmap
-
-1. Complete Mojo lexical and syntactic analysis.
-2. Map Mojo structs/traits to the Nyar object model and witness tables.
-3. Integrate Nyar platform SIMD and hardware acceleration primitives.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run example.mojo
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

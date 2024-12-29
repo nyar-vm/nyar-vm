@@ -1,48 +1,19 @@
 # rusty-zig
 
-A Zig language frontend for the Nyar VM.
+Zig 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-zig` brings Zig, focused on robustness, optimality, and maintainability, to the Nyar VM, combining `comptime`,
-explicit error handling, and Nyar JIT/algebraic effects in a managed environment.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-zig`，`src/` 约 37 行。
+- 解析：`parse` 委托 `oak-zig` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 返回占位 `0`，`codegen` 模块只有 TODO 注释。
+- 测试：无 `tests/` 目录。
 
-## Features
+## 能力边界
 
-- **Robust and optimal**: "no hidden control flow" philosophy mapped to explicit Gaia IR.
-- **Managed performance**: multi-tier JIT optimization while preserving Zig's code-generation orientation.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: hot functions and loops compiled to native instructions.
-    - **`nyar-gc`**: optional automatic memory management for managed Zig objects.
-    - **Algebraic effects**: explicit error handling and future concurrency patterns.
-- **Modern toolchain**: unified CLI and diagnostic experience.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `fn`, `var`, `const`, `struct`, `enum`, `union`.
-- **Control flow**: `if`, `while`, `for`, `switch`, `defer`.
-- **Error handling**: error sets and `try` mapped to the Nyar error system.
-- **Comptime**: initial support for compile-time execution integrated with Nyar metaprogramming.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run application.zig
-```
-
-### As a library
-
-```rust
-use rusty_zig::RustyZigFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyZigFrontend::new();
-let result = frontend.parse("fn add(a: i32, b: i32) i32 { return a + b; }").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

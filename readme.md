@@ -39,7 +39,8 @@ projects/
 │   │                            nyar-package-manager, nyar-package-registry
 │   ├── formats/odin-bytecode    字节码磁盘合同
 │   ├── runtimes/                odin-vm, legend-vm, nyar-gc, nyar-jit
-│   ├── languages/rusty-<lang>   各语言前端；主链是 rusty-valkyrie
+│   ├── languages/               rusty-valkyrie（主链）与 5 个 guest 前端
+│   │                            （bash/c/lua/powershell/tcl）；其余 rusty-* 不在 workspace
 │   └── ffis/                    nyar-napi（通用宿主）, nyar-wasm, valkyrie-napi（产品宿主）
 └── nyar.ts/                     pnpm workspace
     ├── packages/                nyar（Nyar 宿主 API）, nyar-skills
@@ -83,4 +84,4 @@ node projects/nyar.ts/emulators/valkyrie/bin/asgard.mjs --version
 - 设计真相源不在本仓库；本仓库文档只描述公开结构、构建方式与 crate 职责。
 - 不新增 `docs/`、design、roadmap、handoff 或历史进度文档；过期内容直接删除或改写，不留归档副本。
 - 单一事实只写一处：跨 crate 结构写 `projects/readme.md`，crate 内部细节写各自 `readme.md`。
-- `languages/rusty-<lang>` 的多数 readme 是**愿望描述**（含尚未存在的 `nyar-aot`、`nyar-tools`、E-Graph 等说法），不是实现事实；判断能力一律以源码与测试为准。
+- `languages/` 下只有 `rusty-valkyrie` 与 5 个 guest 前端（bash/c/lua/powershell/tcl）在 workspace 中；其余 `rusty-*` 目录不被构建、无人消费，其 `readme.md` 首段即声明这一事实。判断能力一律以源码与测试为准。

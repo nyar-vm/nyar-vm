@@ -1,47 +1,19 @@
 # rusty-php
 
-A PHP language frontend for the Nyar VM.
+PHP 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-php` brings PHP, the web ecosystem workhorse, to the Nyar VM, running PHP applications on a modern JIT runtime
-with algebraic effects for request handling and GC for long-lived processes.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-php`，`src/` 约 38 行。
+- 解析：`parse` 委托 `oak-php` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 返回占位 `0`，`codegen` 模块只有 TODO 注释。
+- 测试：无 `tests/` 目录。
 
-## Features
+## 能力边界
 
-- **Web performance**: optimized for typical PHP request–response cycles.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: multi-tier optimization from interpreter to Extreme for hot functions and scripts.
-    - **`nyar-gc`**: high-performance mark-and-sweep for PHP objects and arrays.
-    - **Algebraic effects**: exceptions, generators, and future async patterns.
-- **Modern runtime**: brings PHP ecosystem benefits to a multi-language VM.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `class`, `function`, `namespace`, `use`.
-- **Control flow**: `if`, `switch`, `for`, `foreach`, `while`.
-- **Data types**: dynamic typing, associative arrays, and objects.
-- **Web features**: basic support for superglobals (`$_GET`, `$_POST`) and output buffering.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run index.php
-```
-
-### As a library
-
-```rust
-use rusty_php::RustyPhpFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyPhpFrontend::new();
-let ast = frontend.parse("<?php echo 'Hello from Nyar!'; ?>").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

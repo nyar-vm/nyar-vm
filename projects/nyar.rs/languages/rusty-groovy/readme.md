@@ -1,37 +1,19 @@
 # rusty-groovy
 
-A Groovy language frontend for the Nyar VM.
+Groovy 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-groovy` brings Groovy to the Nyar VM, providing a runtime for dynamic, flexible Groovy applications by mapping
-Groovy features to the Nyar native execution engine.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-groovy`，`src/` 约 48 行。
+- 解析：`parse` 委托 `oak-groovy` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 返回占位 `0`；`codegen::NyarTranslator` 已定义但未接线。
+- 测试：`tests/` 下 1 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Dynamic and flexible**: Groovy dynamic syntax and functional features.
-- **Managed object model**: Groovy classes and traits mapped to the Nyar object system.
-- **JIT optimization**: hot Groovy paths optimized via `nyar-jit`.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run main.groovy
-```
-
-### As a library
-
-```rust
-use rusty_groovy::RustyGroovyFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyGroovyFrontend::new();
-let ast = frontend.parse("println 'Hello from Groovy on Nyar!'").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

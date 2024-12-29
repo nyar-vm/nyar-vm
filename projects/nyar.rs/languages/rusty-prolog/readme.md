@@ -1,48 +1,19 @@
 # rusty-prolog
 
-A Prolog language frontend for the Nyar VM.
+Prolog 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-prolog` brings logic programming to the Nyar VM, mapping unification, backtracking, and logic variables to Nyar
-algebraic effects and a high-performance runtime for integrating logical reasoning into modern applications.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-prolog`，`src/` 约 32 行。
+- 解析：`parse` 委托 `oak-prolog` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 返回占位 `0`；`codegen::Codegen` 是空实现。
+- 测试：无 `tests/` 目录。
 
-## Features
+## 能力边界
 
-- **Logical reasoning**: Horn clauses, unification, and depth-first search.
-- **Algebraic effects**: backtracking and nondeterministic execution via delimited continuations and effect handlers.
-- **Nyar ecosystem integration**:
-    - **`nyar-jit`**: optimization of hot unification paths and recursive predicates.
-    - **`nyar-gc`**: lifecycle management for logic variables and choice points.
-    - **`nyar-aot`**: E-Graph optimization of logic goals.
-- **Interop**: Prolog predicates callable from other Nyar languages such as Python and Rust.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: facts, rules, and queries.
-- **Unification**: Prolog unification algorithm.
-- **Control**: cut `!`, negation as failure, logical or.
-- **Builtins**: standard predicates for arithmetic, lists, I/O, and more.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run knowledge_base.pl
-```
-
-### As a library
-
-```rust
-use rusty_prolog::RustyPrologFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyPrologFrontend::new();
-let ast = frontend.parse("mortal(X) :- human(X). human(socrates).").unwrap();
-// Lower and execute via NyarVM
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

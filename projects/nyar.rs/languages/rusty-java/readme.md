@@ -1,46 +1,19 @@
-# rusty-java (Mini Java)
+# rusty-java
 
-A Java language frontend for the Nyar VM.
+Java 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-java` (Mini Java) runs Java source on the Nyar VM, mapping JVM-style OOP onto Nyar's object system and managed
-runtime.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-java`，`src/` 约 909 行。
+- 解析：`parse` 委托 `oak-java` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 调用 `codegen::JavaUirConverter::convert_root`；转换失败时回落为 `constant(0)`，不报错。
+- 测试：`tests/` 下 5 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Object-oriented**: classes, inheritance, and interfaces on Nyar objects.
-- **Managed runtime**: `nyar-gc` plus `nyar-jit` optimization tiers.
-- **Static typing**: strong static types preserved through lowering to unified IR.
-- **Concurrency**: threads and synchronization mapped to Nyar tasks.
-- **AOT and JIT**: supports ahead-of-time and just-in-time execution paths.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **Core syntax**: `class`, `interface`, `extends`, `implements`, visibility modifiers.
-- **Methods and fields**: instance and static members.
-- **Control flow**: `if`, `switch`, `for`, `while`, `try-catch-finally`.
-- **Standard library**: initial `java.lang` / `java.util` coverage.
-- **Generics**: basic generics via witness tables.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run Main.java
-```
-
-### As a library
-
-```rust
-use rusty_java::MiniJavaFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = MiniJavaFrontend::default();
-let ast = frontend.parse("public class Hello { public static void main(String[] args) { System.out.println(\"Hello from Java!\"); } }").unwrap();
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

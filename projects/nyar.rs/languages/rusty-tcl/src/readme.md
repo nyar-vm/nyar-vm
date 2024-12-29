@@ -15,5 +15,3 @@
 - `$` / `${}` / `[...]`
 - `if` / `while` / `for` / `foreach` / `proc`
 - `list` / `llength` / `lindex`
-
-See [`../../../host-script-languages.md`](../../../host-script-languages.md).

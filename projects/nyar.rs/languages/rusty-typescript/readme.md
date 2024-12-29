@@ -1,53 +1,19 @@
 # rusty-typescript
 
-A TypeScript language frontend for the Nyar VM.
+TypeScript 前端（Nyar guest 语言包）。
 
-## Overview
+## 当前状态
 
-`rusty-typescript` targets modern TypeScript with decorators and JSX, supporting both JIT execution on `odin-vm` and AOT
-compilation to WebAssembly.
+- **不在 `projects/nyar.rs` 的 Cargo workspace 中**：`Cargo.toml` 存在，但 workspace 的 `members` 不含本包；`cargo build`、CI 与 npm 发布链都不会构建它，也没有任何 crate 依赖它。
+- 包名 `rusty-typescript`，`src/` 约 2750 行。
+- 解析：`parse` 委托 `oak-typescript` 的 builder 与 parser，产出 Oak AST。
+- 降低：`lower_unified` 有一条真实的 AST → `IKun` 转换路径（`UirConverter`），另有 `compile_to_wasm` / `compile_to_nyar` 入口；覆盖范围只以代码为准。
+- 测试：`tests/` 下 5 个用例，因本包不在 workspace，`cargo test` 不会执行。
 
-## Features
+## 能力边界
 
-- **Modern TypeScript**: decorators, JSX/TSX, and contemporary ES features.
-- **Dual execution**:
-    - **JIT**: lowers to unified IR and runs on `odin-vm` with dynamic optimization.
-    - **AOT**: emits WebAssembly for browser or edge deployment.
-- **Type system**: integrates with `nyar-aot` for constraint analysis.
-- **WASM interop**: WASM modules via `wit-bindgen` integration paths.
-- **Optimization**: E-Graph saturation improves emitted code quality.
+源码只接入 Oak 语法层与上述降低路径。旧版 readme 中出现的 `nyar-aot`、`nyar-tools`、
+`nyar-jit`、`nyar-gc`、E-Graph 优化、algebraic effects、HKT / type class、标准库 FFI
+等说法**在源码中不存在**。
 
-## Supported constructs
-
-- **TS features**: interfaces, enums, type aliases, generics, decorators.
-- **Modern JavaScript**: classes, ESM, async/await, destructuring.
-- **JSX/TSX**: React-style components and templates.
-- **Metaprogramming**: hooks into Nyar macro and reflection facilities where enabled.
-
-## Getting started
-
-### Via Nyar CLI
-
-```bash
-nyar run script.ts
-```
-
-### Compile to WebAssembly
-
-```bash
-nyar compile script.ts -o output.wasm
-```
-
-### As a library
-
-```rust
-use rusty_typescript::RustyTypescriptFrontend;
-use nyar_types::NyarFrontend;
-
-let frontend = RustyTypescriptFrontend::new();
-let ast = frontend.parse("const x: number = 42; console.log(x);").unwrap();
-```
-
-## License
-
-Licensed under MIT OR Apache-2.0.
+实际能力以 `src/` 与其中的测试为准；本文件只记录当前事实。

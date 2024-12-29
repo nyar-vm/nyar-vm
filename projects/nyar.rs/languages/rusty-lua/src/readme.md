@@ -23,5 +23,3 @@ Richer than bash/ps/tcl host-script demos; still **not** full Lua 5.x. Prefer co
 
 - Module + semantic bridge + `interpret` for the legend mid-subset.
 - VM `evaluator/lua.rs` delegates here (bash pattern).
-
-See [`../../../host-script-languages.md`](../../../host-script-languages.md).
