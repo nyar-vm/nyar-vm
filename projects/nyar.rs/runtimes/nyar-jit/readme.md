@@ -34,6 +34,6 @@ directly.
 
 ## Boundaries
 
-- Does not replace `nyar-aot` offline artifacts; online acceleration only.
+- Does not replace ahead-of-time artifacts produced by the emitter; online acceleration only.
 - Does not load modules or run the full interpreter loop.
 - Scalar encoders are building blocks for tests and baseline JIT, not a general LLVM backend.

@@ -83,3 +83,4 @@ node projects/nyar.ts/emulators/valkyrie/bin/asgard.mjs --version
 - 设计真相源不在本仓库；本仓库文档只描述公开结构、构建方式与 crate 职责。
 - 不新增 `docs/`、design、roadmap、handoff 或历史进度文档；过期内容直接删除或改写，不留归档副本。
 - 单一事实只写一处：跨 crate 结构写 `projects/readme.md`，crate 内部细节写各自 `readme.md`。
+- `languages/rusty-<lang>` 的多数 readme 是**愿望描述**（含尚未存在的 `nyar-aot`、`nyar-tools`、E-Graph 等说法），不是实现事实；判断能力一律以源码与测试为准。
