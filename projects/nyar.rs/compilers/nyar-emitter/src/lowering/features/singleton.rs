@@ -4,6 +4,7 @@ use crate::nyar_backend_wasi::WasmBinaryModule;
 use nyar_types::{AggregateLayout, SingletonInstancePlan};
 
 use crate::{FragmentSubmission, lowering::backends::wasm};
+use super::semantic_mir_contract::SemanticMirContractError;
 
 pub(crate) fn singleton_metadata_line(plan: &SingletonInstancePlan) -> String {
     let mode = if plan.is_lazy { "lazy" } else { "static" };
@@ -36,7 +37,7 @@ pub(crate) fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, 
         let payload = singleton_metadata_line(plan);
         module.sections.insert(
             0,
-            crate::nyar_backend_wasi::WasmSection { id: 0, name: Some(format!("legion.singleton.{}", plan.name)), bytes: payload.into_bytes() },
+            crate::nyar_backend_wasi::WasmSection { id: 0, name: Some(format!("nyar.singleton.{}", plan.name)), bytes: payload.into_bytes() },
         );
     }
 }
@@ -48,10 +49,35 @@ pub(crate) fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, 
 /// - 一个导出函数 `{name}__{accessor}`：
 ///   - eager 模式：直接 `global.get` 返回全局。
 ///   - lazy 模式：判空后经 `cabi_realloc(0,0,align,size)` 真实 bump 分配，写回全局。
-pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
+///
+/// 尺寸与对齐只能来自上游 `AggregateLayout`；缺失时返回结构化拒绝，
+/// 不得由 backend 以目标默认值补造表示事实。
+pub(crate) fn augment_wasm_with_singleton_accessors(
+    module: &mut WasmBinaryModule,
+    submission: &FragmentSubmission,
+) -> Result<(), SemanticMirContractError> {
     if submission.backend_plan.singleton_instances().is_empty() {
-        return;
+        return Ok(());
     }
+
+    // 先完成全部布局校验，再改写模块；避免在拒绝时留下半成品 section。
+    let allocations = submission
+        .backend_plan
+        .singleton_instances()
+        .iter()
+        .map(|plan| {
+            let layout = singleton_layout(submission, plan).ok_or_else(|| SemanticMirContractError {
+                code: "SMIR010",
+                function: plan.name.clone(),
+                location: "singleton instance".to_string(),
+                detail: format!(
+                    "singleton `{}` in namespace `{}` has no aggregate layout; backend must not synthesize size or alignment",
+                    plan.name, plan.namespace
+                ),
+            })?;
+            Ok((layout.size.max(8), layout.align.max(1)))
+        })
+        .collect::<Result<Vec<_>, SemanticMirContractError>>()?;
 
     let realloc_index = ensure_wasm_cabi_realloc(module);
 
@@ -84,13 +110,12 @@ pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModul
         .iter()
         .enumerate()
         .map(|(index, plan)| {
-            let layout = singleton_layout(submission, plan);
-            let size = layout.map(|layout| layout.size.max(8)).unwrap_or(8);
-            let align = layout.map(|layout| layout.align.max(1)).unwrap_or(8);
+            let (size, align) = allocations[index];
             wasm_singleton_accessor_body(global_base + index as u32, plan.is_lazy, realloc_index, size, align)
         })
         .collect();
     wasm::append_wasm_code_bodies(module, &bodies);
+    Ok(())
 }
 
 fn ensure_wasm_cabi_realloc(module: &mut WasmBinaryModule) -> u32 {

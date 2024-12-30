@@ -69,11 +69,6 @@ use acorn_wasm::{
     encode_ref_null_anyref, encode_ref_null_externref, encode_struct_get, encode_struct_new_default, encode_struct_set, encode_unreachable,
 };
 
-/// High-level compiler delegation is never a legal Node host import.
-fn is_forbidden_node_bridge(field: &str) -> bool {
-    field == "host_legion_compile_from_plan" || field.starts_with("host_legion_")
-}
-
 /// 线性内?bump allocator 与字符串静态区共享的最低基址?
 ///
 /// WASI 轨保?`[0, WASI_STRING_DATA_OFFSET)` 用于 argv 缓冲区与辅助变量?
@@ -96,14 +91,12 @@ const WASM_GC_EXTERNREF: u8 = VALTYPE_EXTERNREF;
 fn collect_wasm_host_imports(submission: &FragmentSubmission, synthesize_const_utf8: bool) -> Vec<(String, String)> {
     let mut imports = Vec::new();
     let mut seen = BTreeSet::new();
+    // 外部导入只来自 Compiler 已声明的 link；backend 不按产品名过滤或补造导入。
     for link in submission.backend_plan.external_import_links().values() {
         let Some(target) = wasm_host_import_target(link)
         else {
             continue;
         };
-        if is_forbidden_node_bridge(target.field) {
-            continue;
-        }
         let key = (target.module.to_string(), target.field.to_string());
         if seen.insert(key.clone()) {
             imports.push(key);

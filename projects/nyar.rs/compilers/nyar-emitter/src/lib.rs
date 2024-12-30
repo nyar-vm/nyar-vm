@@ -139,7 +139,12 @@ pub mod testing {
     }
 
     /// Inject singleton accessor globals and exports into an existing WASM module.
-    pub fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
+    ///
+    /// 单例 plan 缺少上游聚合布局时返回结构化拒绝，不补造尺寸或对齐。
+    pub fn augment_wasm_with_singleton_accessors(
+        module: &mut WasmBinaryModule,
+        submission: &FragmentSubmission,
+    ) -> std::result::Result<(), super::lowering::features::semantic_mir_contract::SemanticMirContractError> {
         super::lowering::testing_augment_wasm_with_singleton_accessors(module, submission)
     }
 

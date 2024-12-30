@@ -147,7 +147,7 @@ fn jvm_lazy_singleton_emits_get_instance() {
 fn wasm_eager_singleton_emits_global_and_accessor_export() {
     let submission = counter_submission(false);
     let mut module = minimal_wasm_module();
-    augment_wasm_with_singleton_accessors(&mut module, &submission);
+    augment_wasm_with_singleton_accessors(&mut module, &submission).expect("singleton WASM lowering");
 
     assert!(module.sections.iter().any(|section| section.id == 6));
     let export_section = module.sections.iter().find(|section| section.id == 7).expect("export section");
@@ -162,7 +162,7 @@ fn wasm_eager_singleton_emits_global_and_accessor_export() {
 fn wasm_lazy_singleton_emits_global_and_get_instance_export() {
     let submission = counter_submission(true);
     let mut module = minimal_wasm_module();
-    augment_wasm_with_singleton_accessors(&mut module, &submission);
+    augment_wasm_with_singleton_accessors(&mut module, &submission).expect("singleton WASM lowering");
 
     assert!(module.sections.iter().any(|section| section.id == 6));
     let export_section = module.sections.iter().find(|section| section.id == 7).expect("export section");
@@ -178,8 +178,8 @@ fn wasm_singleton_metadata_uses_unified_schema() {
     let singleton_section = module
         .sections
         .iter()
-        .find(|section| section.id == 0 && section.name.as_deref() == Some("legion.singleton.Counter"))
-        .expect("legion.singleton.Counter custom section");
+        .find(|section| section.id == 0 && section.name.as_deref() == Some("nyar.singleton.Counter"))
+        .expect("nyar.singleton.Counter custom section");
     let payload = String::from_utf8_lossy(&singleton_section.bytes);
     assert!(payload.contains("|Counter|INSTANCE|static|instance|-|-|-"));
 }
@@ -193,8 +193,8 @@ fn wasm_lazy_singleton_metadata_uses_lazy_mode() {
     let singleton_section = module
         .sections
         .iter()
-        .find(|section| section.id == 0 && section.name.as_deref() == Some("legion.singleton.Counter"))
-        .expect("legion.singleton.Counter custom section");
+        .find(|section| section.id == 0 && section.name.as_deref() == Some("nyar.singleton.Counter"))
+        .expect("nyar.singleton.Counter custom section");
     let payload = String::from_utf8_lossy(&singleton_section.bytes);
     assert!(payload.contains("|Counter|INSTANCE|lazy|get_instance|-|-|unload"));
 }
