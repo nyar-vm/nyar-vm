@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{FormatError, FormatOptions, SourceKind, format_path};
+use super::{FormatError, FormatOptions, format_path, source_registry_read};
 
 /// 批量格式化选项。
 #[derive(Debug, Clone)]
@@ -117,15 +117,15 @@ fn format_path_large_stack(path: &Path, options: &FormatOptions) -> Result<super
 }
 
 fn matches_extension_filter(path: &Path, extensions: Option<&[String]>) -> bool {
-    let Some(extensions) = extensions
-    else {
-        return SourceKind::from_path(path).is_some();
-    };
     let Some(ext) = path.extension().and_then(|value| value.to_str())
     else {
         return false;
     };
-    extensions.iter().any(|allowed| allowed.eq_ignore_ascii_case(ext))
+    match extensions {
+        Some(extensions) => extensions.iter().any(|allowed| allowed.eq_ignore_ascii_case(ext)),
+        // 未指定过滤时，以注册表实际拥有的扩展名为准（平台与前端 provider 共同构成）。
+        None => source_registry_read().supports_extension(ext),
+    }
 }
 
 fn collect_files_iterative(root: &Path, batch: &FormatBatchOptions, out: &mut Vec<PathBuf>) -> Result<(), FormatError> {

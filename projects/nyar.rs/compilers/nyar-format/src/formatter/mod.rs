@@ -31,25 +31,18 @@ pub use nyar_analyzer::format::{
     PrinterProvider, PrinterRegistry, SourceFormatter, SourceFormatterProvider, SourceFormatterRegistry, SourceMap,
 };
 
-/// 核心源文件扩展名（前端 provider 负责语言语义，平台只拥有扩展名表）。
-pub const V_EXTENSIONS: &[&str] = &["v", "valkyrie"];
-
-/// 模板 + X-Grammar / widget 视图（`.vx`）。
-pub const VX_EXTENSIONS: &[&str] = &["vx"];
-
 /// VON 配置/清单。
 pub const VON_EXTENSIONS: &[&str] = &["von"];
 
-/// 模板语言面（与 `.v`/`.vx` 不同）。
+/// 平台拥有的模板语言面（AWSL）。
 pub const AWSL_EXTENSIONS: &[&str] = &["awsl"];
 
-/// 平台可识别的可格式化源码种类（按文件扩展名）。
+/// 平台直接拥有 formatter 的源码种类（按文件扩展名）。
+///
+/// 其它语言的扩展名与语言种类由前端 provider 在启动时注册，平台不以枚举或常量
+/// 携带这些事实。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// 核心语言：`.v` / `.valkyrie`（formatter 由前端 provider 注册）。
-    V,
-    /// 模板 + X-Grammar：`.vx`（formatter 由前端 provider 注册）。
-    Vx,
     /// VON 数据：`.von`（`oak-von::formatter`）。
     Von,
     /// AWSL 模板：`.awsl`（`oak-awsl::formatter`）。
@@ -60,33 +53,27 @@ impl SourceKind {
     /// 对应 `SourceFormatter::language_id`。
     pub fn language_id(self) -> &'static str {
         match self {
-            Self::V => "v",
-            Self::Vx => "vx",
             Self::Von => "von",
             Self::Awsl => "awsl",
         }
     }
 
-    /// 由文件扩展名推断种类。
+    /// 由文件扩展名推断种类（只含平台拥有的语言）。
     pub fn from_extension(ext: &str) -> Option<Self> {
         source_kind_from_extension(ext)
     }
 
-    /// 由路径推断。
+    /// 由路径推断（只含平台拥有的语言）。
     pub fn from_path(path: &Path) -> Option<Self> {
         path.extension().and_then(|ext| ext.to_str()).and_then(Self::from_extension)
     }
 }
 
-/// 由扩展名推断 `SourceKind`（legacy `.vk` 不再识别）。
+/// 由扩展名推断平台拥有的 `SourceKind`。
+///
+/// 前端语言的扩展名由 [`source_registry`] 中的注册结果解析，不在本函数内判定。
 pub fn source_kind_from_extension(ext: &str) -> Option<SourceKind> {
-    if V_EXTENSIONS.contains(&ext) {
-        Some(SourceKind::V)
-    }
-    else if VX_EXTENSIONS.contains(&ext) {
-        Some(SourceKind::Vx)
-    }
-    else if VON_EXTENSIONS.contains(&ext) {
+    if VON_EXTENSIONS.contains(&ext) {
         Some(SourceKind::Von)
     }
     else if AWSL_EXTENSIONS.contains(&ext) {
@@ -132,17 +119,17 @@ impl SourceFormatter for AwslSourceFormatter {
 
 /// 平台源码格式化注册表（启动时由各前端 provider 补全）。
 ///
-/// 读取方应通过 [`format_source`] / [`format_source_range`] / [`format_path`] 间接访问，
-/// 避免长时间持有写锁。`v` / `vx` 只有在对应前端 provider 注册后才可用；
-/// 未注册时返回 [`FormatError::Unsupported`]。
+/// 读取方应通过 [`format_source`] / [`format_source_for_extension`] / [`format_path`]
+/// 间接访问，避免长时间持有写锁。扩展名 → formatter 的映射由平台注册（VON / AWSL）
+/// 与前端 provider 注册共同构成；未注册的扩展名返回 [`FormatError::Unsupported`]。
 ///
 /// 不要反向依赖具体前端；provider 由装配层（宿主 CLI、集成测试）注册。
 pub fn source_registry() -> &'static RwLock<SourceFormatterRegistry> {
     static REGISTRY: OnceLock<RwLock<SourceFormatterRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         let mut reg = SourceFormatterRegistry::new();
-        reg.register(&["von"], Box::new(VonSourceFormatter));
-        reg.register(&["awsl"], Box::new(AwslSourceFormatter));
+        reg.register(&["von"], VON_EXTENSIONS, Box::new(VonSourceFormatter));
+        reg.register(&["awsl"], AWSL_EXTENSIONS, Box::new(AwslSourceFormatter));
         // JS/TS/JSON 与 Python 的源码排版归各自 Oak formatter（`oak-typescript::formatter` 等）；
         // 本 crate 不得再注册「只裁剪空白行」的第二套本地 formatter 冒充格式化。
         // 在这些 Oak formatter 接入前，相应扩展名按 unsupported 失败。
@@ -169,10 +156,25 @@ pub fn format_source_range(kind: SourceKind, source: &str, range: ByteRange, opt
     source_registry_read().format_range(kind.language_id(), source, range, options)
 }
 
+/// 按源码文件扩展名格式化。
+///
+/// 扩展名 → formatter 的映射来自注册表：平台注册 VON / AWSL，前端 provider 注册
+/// 自己语言面的扩展名。
+pub fn format_source_for_extension(extension: &str, source: &str, options: &FormatOptions) -> Result<String, FormatError> {
+    let registry = source_registry_read();
+    let language = registry.extension_language_id(extension).ok_or_else(|| FormatError::unsupported_language(extension))?;
+    registry.format(language, source, options)
+}
+
 /// 读取路径并格式化（不写盘）。
 pub fn format_path(path: &Path, options: &FormatOptions) -> Result<FormatFileOutcome, FormatError> {
-    let kind = SourceKind::from_path(path).ok_or_else(|| FormatError::unsupported_extension(path.to_path_buf()))?;
+    let extension = path.extension().and_then(|ext| ext.to_str()).ok_or_else(|| FormatError::unsupported_extension(path.to_path_buf()))?;
+    let language = {
+        let registry = source_registry_read();
+        registry.extension_language_id(extension).map(str::to_owned)
+    };
+    let language = language.ok_or_else(|| FormatError::unsupported_extension(path.to_path_buf()))?;
     let source = std::fs::read_to_string(path).map_err(|error| FormatError::Io { path: path.to_path_buf(), source: error })?;
-    let formatted = format_source(kind, &source, options)?;
+    let formatted = source_registry_read().format(&language, &source, options)?;
     Ok(FormatFileOutcome { path: path.to_path_buf(), changed: formatted != source, formatted })
 }

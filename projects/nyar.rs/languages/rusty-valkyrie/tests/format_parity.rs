@@ -1,12 +1,15 @@
 //! Valkyrie 格式化 parity（`.editorconfig` 无关的 V 断言）。
 
-use nyar_format::formatter::{FormatOptions, SourceKind, format_source};
+use nyar_format::formatter::{FormatOptions, format_source_for_extension};
+use rusty_valkyrie::source_surface::V_EXTENSIONS;
+
+const V_EXTENSION: &str = V_EXTENSIONS[0];
 
 fn format_v_twice(source: &str) -> String {
     rusty_valkyrie::register_format_providers();
     let options = FormatOptions::default();
-    let once = format_source(SourceKind::V, source, &options).expect("format once");
-    let twice = format_source(SourceKind::V, &once, &options).expect("format twice");
+    let once = format_source_for_extension(V_EXTENSION, source, &options).expect("format once");
+    let twice = format_source_for_extension(V_EXTENSION, &once, &options).expect("format twice");
     assert_eq!(once, twice);
     once
 }
@@ -20,7 +23,7 @@ fn format_idempotent_for_v_with_comment() {
 #[test]
 fn golden_v_micro_main_idempotent() {
     let out = format_v_twice("micro main(){let x=1}");
-    assert_eq!(format_source(SourceKind::V, &out, &FormatOptions::default()).unwrap(), out);
+    assert_eq!(format_source_for_extension(V_EXTENSION, &out, &FormatOptions::default()).unwrap(), out);
 }
 
 #[test]

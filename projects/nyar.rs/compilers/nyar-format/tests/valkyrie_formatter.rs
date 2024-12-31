@@ -1,4 +1,6 @@
-use nyar_format::formatter::{FormatBatchOptions, FormatOptions, SourceKind, format_paths, format_source};
+//! 平台拥有的 VON / AWSL 源码格式化（前端语言的扩展名由 provider 注册）。
+
+use nyar_format::formatter::{FormatBatchOptions, FormatOptions, SourceKind, format_paths, format_source, format_source_for_extension};
 
 fn assert_idempotent(kind: SourceKind, source: &str) {
     let options = FormatOptions::default();
@@ -8,14 +10,20 @@ fn assert_idempotent(kind: SourceKind, source: &str) {
 }
 
 #[test]
-fn source_kind_from_extension() {
-    assert_eq!(SourceKind::from_extension("v"), Some(SourceKind::V));
-    assert_eq!(SourceKind::from_extension("valkyrie"), Some(SourceKind::V));
-    assert_eq!(SourceKind::from_extension("vx"), Some(SourceKind::Vx));
+fn platform_source_kind_from_extension() {
     assert_eq!(SourceKind::from_extension("von"), Some(SourceKind::Von));
     assert_eq!(SourceKind::from_extension("awsl"), Some(SourceKind::Awsl));
-    assert_eq!(SourceKind::from_extension("vk"), None);
+    // 前端语言（如 `.v` / `.vx`）的扩展名不由平台枚举判定。
+    assert_eq!(SourceKind::from_extension("v"), None);
+    assert_eq!(SourceKind::from_extension("vx"), None);
     assert_eq!(SourceKind::from_extension("rs"), None);
+}
+
+#[test]
+fn format_von_by_registered_extension() {
+    let options = FormatOptions::default();
+    let formatted = format_source_for_extension("von", r#"{ "a": 1 }"#, &options).expect("von fmt");
+    assert_eq!(format_source_for_extension("von", &formatted, &options).expect("von idempotent"), formatted);
 }
 
 #[test]

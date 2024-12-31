@@ -19,6 +19,10 @@ impl SourceFormatterProvider for ValkyrieSourceFormatterProvider {
         &["v", "vx"]
     }
 
+    fn extensions(&self) -> &[&str] {
+        crate::source_surface::FORMAT_EXTENSIONS
+    }
+
     fn formatter(&self) -> Box<dyn SourceFormatter> {
         Box::new(ValkyrieSourceFormatter)
     }

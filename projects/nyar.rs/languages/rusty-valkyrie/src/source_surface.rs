@@ -52,6 +52,11 @@ pub const V_EXTENSIONS: &[&str] = &["v", "valkyrie"];
 /// Valkyrie + X-Grammar / widget 视图（`.vx`）。
 pub const VX_EXTENSIONS: &[&str] = &["vx"];
 
+/// 注册到平台格式化注册表的 Valkyrie 族扩展名（`V_EXTENSIONS` ∪ `VX_EXTENSIONS`）。
+///
+/// 平台只保存“扩展名 → formatter provider”的注册结果，扩展名事实仍由本模块拥有。
+pub const FORMAT_EXTENSIONS: &[&str] = &["v", "valkyrie", "vx"];
+
 /// VON 配置/清单。
 pub const VON_EXTENSIONS: &[&str] = &["von"];
 

@@ -71,27 +71,9 @@ impl FormattingHandler {
     }
 }
 
-/// 由路径后缀决定源码种类（`.valkyrie` 先于 `.v`）。
+/// 由 URI 扩展名决定源码种类（扩展名事实归 [`crate::source_surface`]）。
 fn source_kind_from_uri(uri: &str) -> Option<SourceKind> {
-    let path = uri.to_ascii_lowercase();
-    if path.ends_with(".awsl") {
-        Some(SourceKind::Awsl)
-    }
-    else if path.ends_with(".valkyrie") {
-        Some(SourceKind::V)
-    }
-    else if path.ends_with(".vx") {
-        Some(SourceKind::Vx)
-    }
-    else if path.ends_with(".von") {
-        Some(SourceKind::Von)
-    }
-    else if path.ends_with(".v") {
-        Some(SourceKind::V)
-    }
-    else {
-        path.rsplit('.').next().and_then(crate::source_surface::source_kind_from_extension)
-    }
+    uri.to_ascii_lowercase().rsplit('.').next().and_then(crate::source_surface::source_kind_from_extension)
 }
 
 /// 语言文件格式化器：只注册 Valkyrie family 与同仓格式协议。
@@ -101,7 +83,6 @@ fn formatter_for(kind: SourceKind) -> LanguageFormatter {
         SourceKind::Vx => "vx",
         SourceKind::Von => "von",
         SourceKind::Awsl => "awsl",
-        _ => "unsupported",
     };
     LanguageFormatter { language_id: id }
 }

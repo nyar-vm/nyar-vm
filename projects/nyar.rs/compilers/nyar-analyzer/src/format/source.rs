@@ -41,6 +41,13 @@ pub trait SourceFormatterProvider {
     /// 支持的语言 id 列表（首个为规范 id）。
     fn language_ids(&self) -> &[&str];
 
+    /// 该 provider 负责的源码文件扩展名（不含点，全部映射到首个语言 id）。
+    ///
+    /// 扩展名事实由语言前端拥有；平台只保存注册结果。
+    fn extensions(&self) -> &[&str] {
+        &[]
+    }
+
     /// 该语言的格式化器实例。
     fn formatter(&self) -> Box<dyn SourceFormatter>;
 }
@@ -50,6 +57,7 @@ pub trait SourceFormatterProvider {
 pub struct SourceFormatterRegistry {
     by_lang: HashMap<String, Box<dyn SourceFormatter>>,
     aliases: HashMap<String, String>,
+    by_extension: HashMap<String, String>,
 }
 
 impl SourceFormatterRegistry {
@@ -58,29 +66,35 @@ impl SourceFormatterRegistry {
         Self::default()
     }
 
-    /// 从 provider 注册。
+    /// 从 provider 注册（语言 id、扩展名与格式化器一并登记）。
     pub fn register_provider(&mut self, provider: &dyn SourceFormatterProvider) {
-        let ids = provider.language_ids();
-        if ids.is_empty() {
-            return;
-        }
-        let canonical = ids[0].to_ascii_lowercase();
-        for id in ids {
-            self.aliases.insert(id.to_ascii_lowercase(), canonical.clone());
-        }
-        self.by_lang.entry(canonical).or_insert_with(|| provider.formatter());
+        self.register(provider.language_ids(), provider.extensions(), provider.formatter());
     }
 
-    /// 直接注册。
-    pub fn register(&mut self, language_ids: &[&str], formatter: Box<dyn SourceFormatter>) {
-        if language_ids.is_empty() {
+    /// 直接注册语言 id（首个为规范 id）与源码扩展名。
+    pub fn register(&mut self, language_ids: &[&str], extensions: &[&str], formatter: Box<dyn SourceFormatter>) {
+        let Some(canonical_id) = language_ids.first()
+        else {
             return;
-        }
-        let canonical = language_ids[0].to_ascii_lowercase();
+        };
+        let canonical = canonical_id.to_ascii_lowercase();
         for id in language_ids {
             self.aliases.insert(id.to_ascii_lowercase(), canonical.clone());
         }
+        for extension in extensions {
+            self.by_extension.entry(extension.to_ascii_lowercase()).or_insert_with(|| canonical.clone());
+        }
         self.by_lang.entry(canonical).or_insert(formatter);
+    }
+
+    /// 由扩展名解析规范语言 id（未注册返回 `None`）。
+    pub fn extension_language_id(&self, extension: &str) -> Option<&str> {
+        self.by_extension.get(&extension.to_ascii_lowercase()).map(String::as_str)
+    }
+
+    /// 是否已为该扩展名注册格式化器。
+    pub fn supports_extension(&self, extension: &str) -> bool {
+        self.by_extension.contains_key(&extension.to_ascii_lowercase())
     }
 
     fn canonicalize(&self, language_id: &str) -> String {
