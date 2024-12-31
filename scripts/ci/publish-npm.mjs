@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildAllNpmPackageJs } from '../build-npm-package-js.mjs';
 import { resolveTsPackageDir } from '../ts-layout.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -282,7 +283,44 @@ function publishCollect(spec, version, artifactsRoot) {
     fail(`publish failed for ${name}`);
 }
 
+/** 发布包只允许指向 JS；`.ts` 在 node_modules 内无法被 Node 剥离类型。 */
+let jsEntrypointsBuilt = false;
+
+function ensureJsEntrypointsBuilt() {
+    if (jsEntrypointsBuilt) return;
+    try {
+        buildAllNpmPackageJs();
+    } catch (error) {
+        fail(`JS entry build failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    jsEntrypointsBuilt = true;
+}
+
+/**
+ * 校验 package.json 声明的运行时入口确实进入了暂存目录。
+ * @param {string} stage
+ * @param {{[key: string]: any}} pkg
+ */
+function assertEntrypoints(stage, pkg) {
+    /** @type {string[]} */
+    const entries = [];
+    if (typeof pkg.main === 'string') entries.push(pkg.main);
+    if (typeof pkg.bin === 'string') entries.push(pkg.bin);
+    else if (pkg.bin) entries.push(...Object.values(pkg.bin));
+    /** @param {any} node */
+    const walk = (node) => {
+        if (typeof node === 'string') entries.push(node);
+        else if (node && typeof node === 'object') for (const value of Object.values(node)) walk(value);
+    };
+    if (pkg.exports) walk(pkg.exports);
+    const missing = entries.filter((rel) => !rel.includes('*') && !fs.existsSync(path.join(stage, rel)));
+    if (missing.length > 0) {
+        fail(`${pkg.name}: missing publish entry ${missing.join(', ')} (run node scripts/build-npm-package-js.mjs)`);
+    }
+}
+
 function stageJsPackage(spec, version) {
+    ensureJsEntrypointsBuilt();
     const abs = spec.dir;
     const raw = readJson(path.join(abs, 'package.json'));
     const name = spec.name ?? raw.name;
@@ -321,6 +359,7 @@ function stageJsPackage(spec, version) {
     }
     delete pkg.devDependencies;
     writeJson(path.join(stage, 'package.json'), pkg);
+    assertEntrypoints(stage, pkg);
     return { stage, name, pkg };
 }
 

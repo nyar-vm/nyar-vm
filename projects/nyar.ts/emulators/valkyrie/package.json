@@ -4,9 +4,9 @@
     "description": "Valkyrie language package  - Asgard and Legion commands",
     "type": "module",
     "license": "MIT",
-    "main": "src/index.ts",
+    "main": "./dist/index.js",
     "exports": {
-        ".": "./src/index.ts"
+        ".": "./dist/index.js"
     },
     "bin": {
         "legion": "bin/legion.mjs",
@@ -14,9 +14,15 @@
     },
     "files": [
         "bin",
+        "dist",
         "src",
         "readme.md"
     ],
+    "scripts": {
+        "build": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/emulators/valkyrie",
+        "prepare": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/emulators/valkyrie",
+        "prepack": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/emulators/valkyrie && node ../../../../scripts/prepare-npm-publish.mjs"
+    },
     "optionalDependencies": {
         "@nyar/valkyrie-darwin-arm64": "workspace:*",
         "@nyar/valkyrie-darwin-x64": "workspace:*",
@@ -24,7 +30,7 @@
         "@nyar/valkyrie-win32-x64": "workspace:*"
     },
     "engines": {
-        "node": ">=20"
+        "node": ">=22.18.0"
     },
     "keywords": [
         "nyar",

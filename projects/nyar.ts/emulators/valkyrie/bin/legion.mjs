@@ -1,4 +1,4 @@
-#!/usr/bin/env node --experimental-strip-types
+#!/usr/bin/env node
 /**
  * `legion` 命令入口。
  *
@@ -6,6 +6,6 @@
  * 转发命令名与 argv，不复制 `--help` / `--version` 等 CLI 语义。
  */
 
-import {runValkyrieCli} from '../src/index.ts';
+import {runValkyrieCli} from '../dist/index.js';
 
 process.exit(await runValkyrieCli('legion', process.argv.slice(2)));

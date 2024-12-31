@@ -4,22 +4,25 @@
     "description": "Nyar VM host CLI (@vmz/commander) and orthogonal nyar-napi bindings.",
     "type": "module",
     "license": "MIT",
-    "main": "src/index.ts",
+    "main": "./dist/index.js",
     "exports": {
-        ".": "./src/index.ts",
-        "./cli": "./src/cli/cli.ts"
+        ".": "./dist/index.js",
+        "./cli": "./dist/cli/cli.js"
     },
     "bin": {
         "nyar": "bin/nyar.js"
     },
     "files": [
         "bin",
+        "dist",
         "src",
         "readme.md",
         "README.md"
     ],
     "scripts": {
-        "prepack": "node ../../../scripts/prepare-npm-publish.mjs",
+        "build": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/packages/nyar",
+        "prepare": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/packages/nyar",
+        "prepack": "node ../../../../scripts/build-npm-package-js.mjs projects/nyar.ts/packages/nyar && node ../../../../scripts/prepare-npm-publish.mjs",
         "test": "node --experimental-strip-types --test tests/**/*.test.ts"
     },
     "dependencies": {
@@ -34,7 +37,7 @@
         "@nyar/nyar-win32-x64": "workspace:*"
     },
     "engines": {
-        "node": ">=20"
+        "node": ">=22.18.0"
     },
     "keywords": [
         "nyar",
