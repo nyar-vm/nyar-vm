@@ -803,17 +803,20 @@ fn symbol_matches_unqualified_free_call(symbol: &NamePath, callee_name: &Identif
     symbol.parts() == expected.as_slice()
 }
 
-/// 依赖语义导出中的顶层函数：consumer 内无限定调用只按导出名匹配完整声明身份。
-/// 禁止末段字符串兜底；symbol 必须是已冻结的单段导出名或带完整 namespace 的完整路径。
+/// 依赖语义导出中的顶层函数：consumer 内无限定调用按导出名匹配。
+/// 导出候选的 symbol 由 `export.module + name` 构成，consumer 侧没有该 module 前缀；
+/// 只对 `imported_dependency_export` 候选按末段导出名匹配，本地候选仍走完整 identity。
 fn symbol_matches_imported_dependency_export(candidate: &OverloadCandidate, callee_name: &Identifier) -> bool {
     if !candidate.imported_dependency_export {
         return false;
     }
-    match candidate.symbol.parts() {
-        [name] => name == callee_name,
-        // 多段 symbol 必须完整匹配，禁止末段兜底 app::helper 命中 std::helper。
-        parts => parts == &[callee_name.clone()][..],
-    }
+    candidate.symbol.parts().last() == Some(callee_name)
+}
+
+/// 语言内建候选（如数组下标）不属于任何模块，symbol 是注册表内的单段结构名。
+/// 只匹配 `declaration` 为空的注册候选，源码声明仍必须走完整 namespace identity。
+fn symbol_matches_language_builtin(candidate: &OverloadCandidate, callee_name: &Identifier) -> bool {
+    candidate.declaration.is_none() && candidate.intrinsic.is_some() && matches!(candidate.symbol.parts(), [name] if name == callee_name)
 }
 
 /// 自有/静态成员候选：符号为单段成员名，由 `owner` / `trait_owner` 携带归属。
@@ -853,26 +856,29 @@ fn candidate_variant_constructor_matches(candidate: &OverloadCandidate, variant_
         && matches!(candidate.symbol.parts(), [name] if name == variant_name)
 }
 
-/// 聚合构造候选：结构化路径硬对齐，禁止跨 owner 末段碰撞。
-/// lowering 必须把源码 short name 先绑定为带 namespace 的完整 identity；
-/// 这里不再兜底 `path.parts().last() == candidate.symbol.parts().last()`。
+/// 聚合构造候选：限定路径按完整 identity 对齐，未限定短名按已冻结的声明归属对齐。
+/// `owner` 为 `Some` 时 symbol 是变体短名，`[owner, variant]` 必须 owner 精确匹配；
+/// 源码未限定写 `Variant { .. }` 时只允许单段变体名，由候选自身的 owner 提供归属。
+/// free constructor 的 symbol 带声明 namespace；源码短名只在单段时按末段对齐，
+/// 多段限定路径仍要求完整匹配，重名候选交给 `resolve_overload` 报歧义而不是静默选取。
 fn aggregate_constructor_matches_name(candidate: &OverloadCandidate, path: &NamePath) -> bool {
     if candidate.domain != OverloadDomain::Constructor {
         return false;
     }
+    let path_parts = path.parts();
     if let Some(expected_owner) = candidate.owner.as_ref() {
-        // enum variant 构造：完整 identity 是 [owner, variant_name]，
-        // 不得只用 path 末段短名兜底。path 必须是 lowering 已绑定的完整路径。
         let Some(variant_name) = candidate.symbol.parts().first()
         else {
             return false;
         };
-        matches!(path.parts(), [owner, variant] if owner == expected_owner && variant == variant_name)
+        match path_parts {
+            [owner, variant] => owner == expected_owner && variant == variant_name,
+            [variant] => variant == variant_name,
+            _ => false,
+        }
     }
     else {
-        // free constructor：要求 lowering 已将 path 绑定为带完整声明 namespace 的完整路径，
-        // 与 candidate.symbol 硬匹配。单段 short name 不再兜底命中带命名空间的候选。
-        candidate.symbol.parts() == path.parts()
+        candidate.symbol.parts() == path_parts || (path_parts.len() == 1 && candidate.symbol.parts().last() == path_parts.last())
     }
 }
 
@@ -2347,6 +2353,7 @@ fn try_resolve_call(
             // 完整声明身份； lowering 没绑定就是 lowering 的缺失，不得在这里猜。
             symbol_matches_unqualified_free_call(&candidate.symbol, &callee_name, enclosing_module)
                 || symbol_matches_imported_dependency_export(candidate, &callee_name)
+                || symbol_matches_language_builtin(candidate, &callee_name)
         })
         .filter_map(|candidate| {
             // Function 候选不做 contextual_type 反推——返回类型由声明决定，防止把裸泛型
