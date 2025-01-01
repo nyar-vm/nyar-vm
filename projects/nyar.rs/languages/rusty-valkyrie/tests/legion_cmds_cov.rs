@@ -8,8 +8,22 @@ use rusty_valkyrie::legion::cmds::cov::{CovArgs, infer_coverage_features, run};
 
 use support::create_smoke_project_with_manifest;
 
+/// 覆盖率报告依赖 `valkyrie.v` 的 asgard.plotter 资产；未配置 `VALKYRIE_V_ROOT` 时跳过。
+fn valkyrie_v_root_configured() -> bool {
+    match std::env::var_os("VALKYRIE_V_ROOT") {
+        Some(root) if !root.is_empty() => true,
+        _ => {
+            eprintln!("skip: VALKYRIE_V_ROOT 未配置，覆盖率报告需要 valkyrie.v 资产");
+            false
+        }
+    }
+}
+
 #[test]
 fn coverage_generates_json_and_html() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let fixture = create_smoke_project_with_manifest(
         "legion-cov",
         r#"{

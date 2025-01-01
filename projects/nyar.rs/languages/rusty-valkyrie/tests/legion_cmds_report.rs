@@ -5,6 +5,18 @@ use rusty_valkyrie::legion::cmds::report::{
     render_coverage_report, render_test_report,
 };
 
+/// 报告渲染依赖 `valkyrie.v` 的 asgard.plotter 资产；未配置 `VALKYRIE_V_ROOT` 时跳过，
+/// 与 `tests/legion/path_wired/cmds_report_render.rs` 保持同一约定。
+fn valkyrie_v_root_configured() -> bool {
+    match std::env::var_os("VALKYRIE_V_ROOT") {
+        Some(root) if !root.is_empty() => true,
+        _ => {
+            eprintln!("skip: VALKYRIE_V_ROOT 未配置，报告渲染需要 valkyrie.v 资产");
+            false
+        }
+    }
+}
+
 /// HTML may only load scripts via `src=`; inline script bodies are forbidden JS patches.
 fn assert_no_inline_scripts(html: &str) {
     let mut rest = html;
@@ -19,6 +31,9 @@ fn assert_no_inline_scripts(html: &str) {
 
 #[test]
 fn test_report_html_structure() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let results = vec![
         TestResultEntry { name: "add".into(), status: "pass".into(), error: None, target: "legion".into() },
@@ -61,6 +76,9 @@ fn test_report_html_structure() {
 
 #[test]
 fn coverage_report_html_structure() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let report = CoverageReport {
         covered: 2,
@@ -88,6 +106,9 @@ fn coverage_report_html_structure() {
 
 #[test]
 fn bench_report_html_structure() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let report = BenchReport {
         runs: 3,
@@ -113,6 +134,9 @@ fn bench_report_html_structure() {
 
 #[test]
 fn test_report_standalone_html_is_self_contained() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let results = vec![
         TestResultEntry { name: "add".into(), status: "pass".into(), error: None, target: "legion".into() },
@@ -135,6 +159,9 @@ fn test_report_standalone_html_is_self_contained() {
 
 #[test]
 fn coverage_report_standalone_html_is_self_contained() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let report = CoverageReport {
         covered: 2,
@@ -154,6 +181,9 @@ fn coverage_report_standalone_html_is_self_contained() {
 
 #[test]
 fn bench_report_standalone_html_is_self_contained() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let report = BenchReport {
         runs: 3,
