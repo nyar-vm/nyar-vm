@@ -35,7 +35,8 @@ fn nyar_emitter_must_not_import_vcc_data() {
 
 #[test]
 fn workspace_must_not_alias_vcc_data_as_std_data() {
-    let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../Cargo.toml");
+    // workspace 根为 `projects/nyar.rs`：从 `compilers/nyar-emitter` 上溯两级。
+    let cargo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
     let cargo = fs::read_to_string(&cargo_path).unwrap_or_else(|error| panic!("failed to read {}: {error}", cargo_path.display()));
     for line in cargo.lines() {
         let trimmed = line.trim();

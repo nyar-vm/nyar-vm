@@ -19,7 +19,8 @@ fn collect_rs_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
 }
 
 fn valkyrie_production_sources() -> Vec<PathBuf> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie");
+    // 单包重组后前端本体直接位于 crate 的 `src/` 根，不再有 `src/valkyrie/` 子目录。
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     collect_rs_files(&root, &mut files);
     files
@@ -84,7 +85,7 @@ fn mir_must_not_guess_result_owner_by_suffix() {
 
 #[test]
 fn compile_pipeline_exports_single_artifact_entry() {
-    let pipeline = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/compile_pipeline/mod.rs");
+    let pipeline = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compile_pipeline/mod.rs");
     let source = fs::read_to_string(&pipeline).unwrap_or_else(|error| panic!("read pipeline: {error}"));
     assert!(source.contains("compile_source_groups_to_artifacts"));
     assert!(!source.contains("body_source"));
@@ -93,7 +94,7 @@ fn compile_pipeline_exports_single_artifact_entry() {
 
 #[test]
 fn representation_planner_must_only_consume_canonical_program() {
-    let representation = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/compile_pipeline/representation.rs");
+    let representation = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compile_pipeline/representation.rs");
     let source = fs::read_to_string(&representation).unwrap_or_else(|error| panic!("read representation: {error}"));
     let production = strip_test_modules(&source);
     assert!(production.contains("CanonicalProgram"));
@@ -104,7 +105,7 @@ fn representation_planner_must_only_consume_canonical_program() {
 
 #[test]
 fn driver_must_validate_semantic_mir_before_canonical_program() {
-    let driver = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/compile_pipeline/driver.rs");
+    let driver = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compile_pipeline/driver.rs");
     let source = fs::read_to_string(&driver).unwrap_or_else(|error| panic!("read driver: {error}"));
     let production = strip_test_modules(&source);
     let body = extract_function_body(&production, "compile_linked_semantic_mir");
@@ -117,7 +118,7 @@ fn driver_must_validate_semantic_mir_before_canonical_program() {
 
 #[test]
 fn mir_must_not_lower_nullary_variants_by_variant_name() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/mir/ssa/expr_lowering.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/mir/ssa/expr_lowering.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let production = strip_test_modules(&source);
     assert!(!production.contains("try_lower_nullary_sum_variant"), "{} still lowers nullary unite arms by variant spelling", path.display());
@@ -126,7 +127,7 @@ fn mir_must_not_lower_nullary_variants_by_variant_name() {
 
 #[test]
 fn mir_ssa_must_not_keep_spelling_based_sum_identity_helper() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/mir/ssa/mod.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/mir/ssa/mod.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let production = strip_test_modules(&source);
     assert!(!production.contains("fn sum_identity("), "{} still exposes spelling-based sum identity lookup", path.display());
@@ -134,7 +135,7 @@ fn mir_ssa_must_not_keep_spelling_based_sum_identity_helper() {
 
 #[test]
 fn mir_builtin_constructor_lowering_must_not_use_spelling_based_sum_identity() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/mir/ssa/expr_lowering.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/mir/ssa/expr_lowering.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let production = strip_test_modules(&source);
     for pattern in ["sum_identity(\"Option\",", "sum_identity(\"Result\",", "sum_identity(&sum_name, \"Some\")"] {
@@ -144,7 +145,7 @@ fn mir_builtin_constructor_lowering_must_not_use_spelling_based_sum_identity() {
 
 #[test]
 fn mir_pattern_lowering_must_not_rediscover_sum_variant_identity_by_name() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/mir/ssa/pattern_lowering.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/mir/ssa/pattern_lowering.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let production = strip_test_modules(&source);
     for pattern in [
@@ -158,7 +159,7 @@ fn mir_pattern_lowering_must_not_rediscover_sum_variant_identity_by_name() {
 
 #[test]
 fn mir_try_propagate_lowering_must_not_use_spelling_based_sum_identity() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/mir/ssa/try_propagate_lowering.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/mir/ssa/try_propagate_lowering.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let production = strip_test_modules(&source);
     for pattern in ["self.sum_identity(", "sum_variant_declaration_ids(", "HirPattern::Name", "lower_pattern_match_operand"] {
@@ -168,7 +169,7 @@ fn mir_try_propagate_lowering_must_not_use_spelling_based_sum_identity() {
 
 #[test]
 fn mir_construct_lowering_must_not_rediscover_variant_identity_by_name() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/mir/ssa/expr_lowering.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/mir/ssa/expr_lowering.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let production = strip_test_modules(&source);
     assert!(
@@ -180,7 +181,7 @@ fn mir_construct_lowering_must_not_rediscover_variant_identity_by_name() {
 
 #[test]
 fn backend_bundle_must_plan_artifacts_from_context_target_after_compiled_program() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/compile_pipeline/backend_bundle.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compile_pipeline/backend_bundle.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let production = strip_test_modules(&source);
     let body = extract_function_body(&production, "compile_source_groups_to_backend_bundle");
@@ -193,7 +194,7 @@ fn backend_bundle_must_plan_artifacts_from_context_target_after_compiled_program
 
 #[test]
 fn lint_entry_must_not_reference_artifact_pipeline() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/lint.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lint.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let production = strip_test_modules(&source);
     assert!(production.contains("lint_valkyrie_source"));
@@ -205,7 +206,7 @@ fn lint_entry_must_not_reference_artifact_pipeline() {
 
 #[test]
 fn compiler_build_context_must_carry_target_and_host_bindings() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/compile_pipeline/context.rs");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compile_pipeline/context.rs");
     let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     assert!(source.contains("CanonicalTarget"));
     assert!(source.contains("selected_host_providers"));
@@ -215,7 +216,7 @@ fn compiler_build_context_must_carry_target_and_host_bindings() {
 
 #[test]
 fn processing_half_must_not_reference_parallel_emitter_bypasses() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/valkyrie/compile_pipeline");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compile_pipeline");
     for name in ["representation.rs", "backend_bundle.rs", "driver.rs"] {
         let path = root.join(name);
         let source = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
