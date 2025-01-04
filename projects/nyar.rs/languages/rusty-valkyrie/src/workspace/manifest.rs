@@ -7,10 +7,12 @@ use std::{
 
 use miette::{Diagnostic, LabeledSpan, Severity};
 
-use crate::workspace::oak::{labeled_span, source_point_span};
-use rusty_valkyrie::{CanonicalTarget, PublishFormat, RunnerSelector};
+use crate::{
+    legion::von::from_str,
+    workspace::oak::{labeled_span, source_point_span},
+};
 use oak_core::OakError as VonError;
-use oak_von::from_str;
+use rusty_valkyrie::{CanonicalTarget, PublishFormat, RunnerSelector};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, MapAccess, Visitor},
@@ -273,19 +275,19 @@ pub struct BuildPluginSpec {
     /// 插件类型标识（如 `unity`）。
     pub kind: String,
     /// 插件 SDK 名称。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_option_string")]
     pub sdk: Option<String>,
     /// 插件运行模式。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_option_string")]
     pub mode: Option<String>,
     /// 插件输入目录。
-    #[serde(rename = "input_directory", default)]
+    #[serde(rename = "input_directory", default, deserialize_with = "deserialize_option_string")]
     pub input_directory: Option<String>,
     /// 插件输出目录。
-    #[serde(rename = "output_directory", default)]
+    #[serde(rename = "output_directory", default, deserialize_with = "deserialize_option_string")]
     pub output_directory: Option<String>,
     /// 插件执行后的后续步骤说明。
-    #[serde(rename = "next_step", default)]
+    #[serde(rename = "next_step", default, deserialize_with = "deserialize_option_string")]
     pub next_step: Option<String>,
     /// 导出路由表：源码导出名到插件产物路径的映射。
     #[serde(rename = "export_routes", default)]
