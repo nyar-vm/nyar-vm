@@ -70,7 +70,7 @@ fn generated_source_input_is_composed_and_bound_into_evidence() {
 fn generated_source_group_must_be_an_entry_group() {
     let group = CompilerSourceGroup::single_source("asgard.generated", "asgard.generated", "[export] micro hydrate() -> bool { return false }");
     let error = build_generated_group("asgard.awsl.wasm", group).expect_err("生成组不能依赖顺序推断入口");
-    assert!(error.to_string().contains("必须显式标记入口"), "{error}");
+    assert!(error.to_string().contains("must be explicitly marked as entry"), "{error}");
 }
 
 #[test]
@@ -84,5 +84,5 @@ fn generated_source_group_must_depend_on_already_provided_groups() {
     )
     .expect("producer 与入口身份成立");
     let error = build_source_input_with_generated(groups, vec![generated]).expect_err("未提供的依赖必须 fail-closed");
-    assert!(error.to_string().contains("未在此之前提供"), "{error}");
+    assert!(error.to_string().contains("未在 `asgard.generated` 之前提供"), "{error}");
 }

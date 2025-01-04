@@ -65,7 +65,8 @@ fn unresolved_qualified_type_path_fails_before_canonical() {
     let error = ValkyrieCompiler::default()
         .resolve_source_groups(&groups, DEFAULT_COMPILE_ARCH)
         .expect_err("未绑定限定类型路径不得进入 HIR 成功类型集合");
-    assert!(error.to_string().contains("限定类型路径"), "{error}");
+    assert!(error.to_string().contains("unknown type name"), "{error}");
+    assert!(error.to_string().contains("Solution"), "{error}");
 }
 
 #[test]
@@ -178,7 +179,8 @@ fn materialized_hir_requires_call_resolution_before_semantic_success() {
     let source = "micro answer() -> i32 { return 1 } micro main() -> i32 { return answer() }";
     let hir = compiler.parse_source_group_without_call_resolution(source, &[], None, DEFAULT_COMPILE_ARCH).expect("物化阶段不绑定调用");
     let error = compiler.validate_hir_semantic_contract(&hir).expect_err("未绑定 HIR 不能越过语义边界");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("answer"), "{error}");
     compiler.compile_source(source).expect("分析入口必须执行解析和验证");
 }
 
@@ -223,7 +225,8 @@ fn materialized_group_does_not_grant_undeclared_dependency_visibility() {
         },
     ];
     let error = ValkyrieCompiler::default().compile_source_groups_to_program(&groups).expect_err("完整闭包不授予未声明依赖可见性");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("answer"), "{error}");
 }
 
 #[test]
@@ -232,7 +235,10 @@ fn compiler_owns_dependency_group_linking() {
         CompilerSourceGroup {
             dependency_key: "core".into(),
             name: "core".into(),
-            sources: vec![CompilerSourceFile { path: "core.v".into(), source: "micro answer() -> i32 { return 1 }".into() }],
+            sources: vec![CompilerSourceFile {
+                path: "core.v".into(),
+                source: format!("{PRIMITIVE_I32}micro answer() -> i32 {{ return 1 }}"),
+            }],
             direct_dependencies: Vec::new(),
             is_entry: false,
         },
@@ -257,7 +263,7 @@ fn compiler_links_transitive_calls_by_instance_and_excludes_unused_bodies() {
             name: "base".into(),
             sources: vec![CompilerSourceFile {
                 path: "base.v".into(),
-                source: "micro answer() -> i32 { return 23 } micro unused() -> bool { return true }".into(),
+                source: format!("{PRIMITIVE_I32}micro answer() -> i32 {{ return 23 }} micro unused() -> bool {{ return true }}"),
             }],
             direct_dependencies: vec![],
             is_entry: false,
@@ -273,7 +279,9 @@ fn compiler_links_transitive_calls_by_instance_and_excludes_unused_bodies() {
             dependency_key: "app".into(),
             name: "app".into(),
             sources: vec![CompilerSourceFile { path: "app.v".into(), source: "[export] micro run() -> i32 { return relay() }".into() }],
-            direct_dependencies: vec!["library".into()],
+            // `i32` 的声明身份由 `base` 组的 primitive 结构提供：依赖可见性只看 `direct_dependencies`，
+            // 因此入口组必须直接声明这条依赖，才能把 `run` 的返回类型冻结为 Nominal。
+            direct_dependencies: vec!["base".into(), "library".into()],
             is_entry: true,
         },
     ];

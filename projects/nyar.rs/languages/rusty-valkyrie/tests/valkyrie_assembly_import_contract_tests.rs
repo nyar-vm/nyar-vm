@@ -49,7 +49,8 @@ fn compiler_surface_rejects_duplicate_public_names_before_assembly() {
             "[export(name: \"same\")] micro first() -> unit { return }\n[export(name: \"same\")] micro second() -> unit { return }",
         )
         .expect_err("重复公开名不能进入装配");
-    assert!(error.to_string().contains("DuplicateExportName"), "{error}");
+    // 重复公开名在 Canonical 装配前由 pipeline 以 CAN015 拒绝，不得进入装配。
+    assert!(error.to_string().contains("CAN015"), "{error}");
 }
 
 fn source_partition_contract() -> (CompiledProgram, ArtifactPartitionPlan) {

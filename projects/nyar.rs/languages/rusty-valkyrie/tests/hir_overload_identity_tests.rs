@@ -117,7 +117,7 @@ fn panic_and_format_names_require_source_callable_declarations() {
     let compiler = ValkyrieCompiler::default();
     for source in ["micro caller(value: i64) -> i64 { panic(value) }", "micro formatter(value: i64) -> i64 { format(value) }"] {
         let error = compiler.compile_source(source).expect_err("未声明名称不得获得合成 callable 合同");
-        assert!(error.to_string().contains("SMIR003"), "应在 Semantic HIR 合同边界失败：{error}");
+        assert!(error.to_string().contains("unresolved call"), "应在 Semantic HIR 合同边界失败：{error}");
     }
 
     let hir = compiler

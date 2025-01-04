@@ -31,12 +31,13 @@ fn fragment_contract_ignores_colliding_diagnostic_labels() {
 #[test]
 fn fragment_contract_closes_recursive_calls_without_unused_bodies() {
     let program = ValkyrieCompiler::default()
-        .compile_source_to_program(
-            "micro unused(value: i32) -> i32 { return value } \
-         micro recursive(value: i32) -> i32 { return recursive(value) } \
-         micro middle(value: i32) -> i32 { return recursive(value) } \
-         [export(name: \"answer\")] micro answer(value: i32) -> i32 { return middle(value) }",
-        )
+        .compile_source_to_program(&format!(
+            "{PRIMITIVE_I32}\
+         micro unused(value: i32) -> i32 {{ return value }} \
+         micro recursive(value: i32) -> i32 {{ return recursive(value) }} \
+         micro middle(value: i32) -> i32 {{ return recursive(value) }} \
+         [export(name: \"answer\")] micro answer(value: i32) -> i32 {{ return middle(value) }}"
+        ))
         .expect("递归调用的编译闭包必须终止，不执行递归体");
     let canonical = program.canonical();
     let fragment = canonical.linked.fragments.values().next().expect("公开片段");
@@ -55,12 +56,13 @@ fn fragment_contract_closes_recursive_calls_without_unused_bodies() {
 #[test]
 fn fragment_contract_binds_distinct_import_indices() {
     let program = ValkyrieCompiler::default()
-        .compile_source_to_program(
-            "[host_contract] micro first(value: i32) -> i32; \
+        .compile_source_to_program(&format!(
+            "{PRIMITIVE_I32}\
+         [host_contract] micro first(value: i32) -> i32; \
          [host_contract] micro second(value: i32) -> i32; \
-         micro middle(value: i32) -> i32 { return second(value) } \
-         [export(name: \"answer\")] micro answer(value: i32) -> i32 { return middle(first(value)) }",
-        )
+         micro middle(value: i32) -> i32 {{ return second(value) }} \
+         [export(name: \"answer\")] micro answer(value: i32) -> i32 {{ return middle(first(value)) }}"
+        ))
         .expect("两个显式导入沿完整源码编译链闭合");
     let canonical = program.canonical();
     let fragment = canonical.linked.fragments.values().next().expect("公开片段");
