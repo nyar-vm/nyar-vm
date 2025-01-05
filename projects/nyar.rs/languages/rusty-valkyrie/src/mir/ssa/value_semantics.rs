@@ -6,7 +6,7 @@
 //!
 //! Layout payload types live in `nyar_types`; this module owns Valkyrie HIR → layout planning.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use nyar_types::StorageKind;
 
@@ -101,13 +101,30 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
     let mut plan = AggregateLayoutPlan::default();
     let mut structs = Vec::new();
     collect_module_structs(module, &mut structs);
+    // 核心 primitive（如 `structure i32 { }`）的声明身份在 HIR 保留为 Nominal{ItemId}，
+    // 但字段布局必须使用其平台载体形状。
+    let mut primitive_carriers = BTreeMap::new();
+    for hir_struct in &structs {
+        if !hir_struct.is_value_type || !hir_struct.generics.is_empty() || !hir_struct.fields.is_empty() {
+            continue;
+        }
+        let Some(declaration) = hir_struct.constructor_declaration
+        else {
+            continue;
+        };
+        let Some(carrier) = crate::hir::type_lowering::numeric_builtin_cast_type(hir_struct.name.as_str())
+        else {
+            continue;
+        };
+        primitive_carriers.insert(declaration, carrier);
+    }
     for hir_struct in structs {
         // 开放泛型声明不得生成平台布局（字段仍是 binder）；与 SumTypeLayout 同口径。
         if !hir_struct.generics.is_empty() {
             continue;
         }
         let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
-        let layout = layout_for_struct(hir_struct, &mut plan, storage);
+        let layout = layout_for_struct(hir_struct, &mut plan, storage, &primitive_carriers);
         register_declared_layout(&mut plan, hir_struct, layout);
     }
     // Semantic-group builds keep only consumer HIR; imported structures (e.g.
@@ -125,7 +142,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
                 continue;
             }
             let storage = if hir_struct.is_value_type { MirStorageKind::Value } else { MirStorageKind::Reference };
-            let layout = layout_for_struct(hir_struct, &mut plan, storage);
+            let layout = layout_for_struct(hir_struct, &mut plan, storage, &primitive_carriers);
             register_declared_layout(&mut plan, hir_struct, layout);
         }
     }
@@ -134,7 +151,7 @@ pub fn compute_aggregate_layout_plan(module: &HirModule) -> AggregateLayoutPlan 
         if !hir_struct.generics.is_empty() {
             continue;
         }
-        let layout = layout_for_struct(&hir_struct, &mut plan, MirStorageKind::Reference);
+        let layout = layout_for_struct(&hir_struct, &mut plan, MirStorageKind::Reference, &primitive_carriers);
         register_declared_layout(&mut plan, &hir_struct, layout);
     }
     plan
@@ -225,13 +242,22 @@ pub fn layout_for_fixed_array(element_type: &ValkyrieType, length: usize, plan: 
     layout
 }
 
-fn layout_for_struct(hir_struct: &HirStruct, plan: &AggregateLayoutPlan, storage: MirStorageKind) -> AggregateLayout {
+fn layout_for_struct(
+    hir_struct: &HirStruct,
+    plan: &AggregateLayoutPlan,
+    storage: MirStorageKind,
+    primitive_carriers: &BTreeMap<nyar_types::ItemId, ValkyrieType>,
+) -> AggregateLayout {
     let fields = hir_struct
         .fields
         .iter()
         .map(|field| {
-            let (size, align) = scalar_layout(&field.ty, plan);
-            FieldSpec { name: field.name.to_string(), ty: field.ty.clone(), size, align }
+            // 核心 primitive 声明在 HIR 中冻结为 Nominal{ItemId}；布局必须回到平台载体，
+            // 否则字段布局缺少平台 NyarType::Nominal 形状。
+            let ty =
+                field.ty.nominal_declaration().and_then(|declaration| primitive_carriers.get(&declaration)).cloned().unwrap_or_else(|| field.ty.clone());
+            let (size, align) = scalar_layout(&ty, plan);
+            FieldSpec { name: field.name.to_string(), ty, size, align }
         })
         .collect();
     let namespace = hir_struct.namespace.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(".");
