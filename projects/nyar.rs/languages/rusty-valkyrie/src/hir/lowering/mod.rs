@@ -2809,6 +2809,8 @@ impl AstToHir {
 
     fn lower_type_function(&self, function: &TypeFunction) -> Result<HirTypeFunction, HirError> {
         let span = frontend::std_range(&function.span);
+        // 类型函数的形参作用域必须覆盖 where 约束、参数与返回类型，否则 `T` 会被误判为未声明类型。
+        let _generic_scope = GenericBinderScope::enter(&generic_parameter_names(&function.generics), &[]);
         Ok(HirTypeFunction {
             name: Identifier::new(&function.name.name),
             documents: lower_documentation(&function.annotations),
