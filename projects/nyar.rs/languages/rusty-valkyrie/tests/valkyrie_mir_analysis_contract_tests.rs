@@ -6,7 +6,8 @@ fn source_mir_analysis_rejects_the_same_unresolved_call_as_hir() {
     let source = "micro caller() -> i32 { return missing() }";
     let hir_error = compiler.compile_source(source).expect_err("HIR 必须拒绝缺失的调用身份");
     let mir_error = compiler.compile_source_to_mir(source).expect_err("分析入口不得跳过 HIR 调用合同");
-    assert!(hir_error.to_string().contains("SMIR003"), "{hir_error}");
+    assert!(hir_error.to_string().contains("unresolved call"), "{hir_error}");
+    assert!(hir_error.to_string().contains("missing"), "{hir_error}");
     assert_eq!(hir_error.to_string(), mir_error.to_string());
 }
 
@@ -14,7 +15,8 @@ fn source_mir_analysis_rejects_the_same_unresolved_call_as_hir() {
 fn ast_mir_analysis_rejects_unresolved_calls_before_lowering() {
     let root = frontend::parse_source("micro caller() -> i32 { return missing() }").expect("Oak 应解析测试源码");
     let error = ValkyrieCompiler::default().lower_root_to_mir(&root).expect_err("AST 分析入口必须执行 HIR 合同");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("missing"), "{error}");
 }
 
 #[test]

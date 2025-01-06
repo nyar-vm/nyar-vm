@@ -14,11 +14,18 @@ fn test_span() -> SourceSpan {
 
 #[test]
 fn sum_layouts_are_not_synthesized_without_source_declarations() {
+    const SOURCE: &str = r#"
+[primitive("core::primitive::i32")]
+structure i32 { }
+
+[main]
+micro entry() -> i32 { return 23 }
+"#;
     let output = ValkyrieCompiler::default()
-        .compile_source_to_program("[main] micro entry() -> i32 { return 23 }")
+        .compile_source_to_program(SOURCE)
         .expect("普通源码必须完成正式 Compiler 成功边界");
     let semantic_mir = rusty_valkyrie::mir::MirLowerer::lower_module_semantic(
-        &ValkyrieCompiler::default().compile_source("[main] micro entry() -> i32 { return 23 }").expect("test source"),
+        &ValkyrieCompiler::default().compile_source(SOURCE).expect("test source"),
     );
     assert!(semantic_mir.sum_types.is_empty());
     assert!(output.canonical().linked.variants.is_empty());
@@ -51,7 +58,8 @@ fn unresolved_call_contract_is_rejected_before_mir() {
         span: test_span(),
     };
     let error = validate_expr_call_contracts(&expression, "contract_test").expect_err("unresolved call must fail");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("missing"), "{error}");
 }
 
 #[test]
@@ -67,7 +75,8 @@ fn singleton_unresolved_call_is_rejected_before_mir_from_source() {
     let error = compiler
         .compile_source("singleton Counter { micro invalid(self) -> i32 { return missing() } }")
         .expect_err("singleton methods must obey the same resolved call contract");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("missing"), "{error}");
 }
 
 #[test]
@@ -76,7 +85,8 @@ fn non_callable_local_is_rejected_from_source() {
     let error = compiler
         .compile_source("micro invalid(value: i32) -> i32 { return value() }")
         .expect_err("scalar local must not acquire an inferred callable signature");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("value"), "{error}");
 }
 
 #[test]
@@ -85,7 +95,8 @@ fn unique_callee_with_wrong_argument_type_is_rejected_from_source() {
     let error = compiler
         .compile_source("micro take(value: i32) -> i32 { return value } micro invalid(value: utf8) -> i32 { return take(value) }")
         .expect_err("unique name and arity must not override signature matching");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("take"), "{error}");
 }
 
 #[test]
@@ -115,18 +126,38 @@ fn callable_local_preserves_declared_signature_from_source() {
 fn array_push_missing_element_type_is_rejected_from_source() {
     let compiler = ValkyrieCompiler::new(SourceID::default());
     let error = compiler
-        .compile_source("micro invalid(values: [i32]) -> [i32] { push(values, missing) return values }")
+        .compile_source(
+            r#"
+[intrinsic("builtin.array.push")]
+micro push<T>(array: [T], value: T) -> [T] { }
+
+micro invalid(values: [i32]) -> [i32] { push(values, missing) return values }
+"#,
+        )
         .expect_err("missing element facts must not become AutoType intrinsic arguments");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("push"), "{error}");
 }
 
 #[test]
 fn array_push_nominal_receiver_mismatch_is_rejected_from_source() {
     let compiler = ValkyrieCompiler::new(SourceID::default());
     let error = compiler
-        .compile_source("class Owner {} imply Owner { micro invalid(self, values: [utf8]) -> [utf8] { push(values, self) return values } }")
+        .compile_source(
+            r#"
+[intrinsic("builtin.array.push")]
+micro push<T>(array: [T], value: T) -> [T] { }
+
+class Owner {}
+
+imply Owner {
+    micro invalid(self, values: [utf8]) -> [utf8] { push(values, self) return values }
+}
+"#,
+        )
         .expect_err("nominal self must not be treated as an unknown utf8 element");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
+    assert!(error.to_string().contains("push"), "{error}");
 }
 
 #[test]

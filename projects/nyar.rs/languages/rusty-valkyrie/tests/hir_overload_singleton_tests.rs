@@ -468,7 +468,7 @@ micro slice_probe(text: utf8, start: i32, count: i32) -> utf8 {
 "#,
         )
         .expect_err("missing adaptor contract must fail before MIR");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
     assert!(error.to_string().contains("slice_probe"), "{error}");
 }
 
@@ -500,7 +500,7 @@ micro slice_loop_probe(text: utf8, op: utf8) -> i32 {
 "#,
         )
         .expect_err("loop control flow must not bypass missing adaptor contracts");
-    assert!(error.to_string().contains("SMIR003"), "{error}");
+    assert!(error.to_string().contains("unresolved call"), "{error}");
     assert!(error.to_string().contains("slice_loop_probe"), "{error}");
 }
 
@@ -541,6 +541,11 @@ fn array_length_value_access_resolves_through_builtin_contract() {
     let hir = compiler
         .compile_source(
             r#"
+namespace builtin.array;
+
+[intrinsic("builtin.array.length")]
+micro length<T>(array: [T]): usize { }
+
 micro len(items: [i32]) -> usize {
     let count: usize = items.length
     return count
@@ -720,6 +725,9 @@ fn array_push_resolves_to_intrinsic_builtin_symbol() {
             r#"
 namespace test;
 
+[intrinsic("builtin.array.push")]
+micro push<T>(array: [T], value: T) -> [T] { }
+
 micro grow(text: utf8) -> [utf8] {
     let mut result: [utf8] = []
     push(result, text)
@@ -737,8 +745,7 @@ micro grow(text: utf8) -> [utf8] {
     else {
         panic!("push must resolve via IntrinsicId builtin candidate: {statement:?}")
     };
-    let parts = resolved.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
-    assert_eq!(IntrinsicId::resolve_from_segments(&parts), Some(IntrinsicId::ArrayPush));
+    assert_eq!(resolved.intrinsic, Some(IntrinsicId::ArrayPush));
 }
 
 #[test]
@@ -748,6 +755,9 @@ fn array_push_resolves_inside_imply_with_declared_element_type() {
         .compile_source(
             r#"
 namespace test;
+
+[intrinsic("builtin.array.push")]
+micro push<T>(array: [T], value: T) -> [T] { }
 
 class Utf8Text {}
 
@@ -768,11 +778,10 @@ imply Utf8Text {
         fn walk(expr: &HirExpr, push_calls: &mut usize) {
             match &expr.kind {
                 HirExprKind::Call { resolved, args, .. } => {
-                    if let Some(resolved) = resolved {
-                        let parts = resolved.symbol.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>();
-                        if IntrinsicId::resolve_from_segments(&parts) == Some(IntrinsicId::ArrayPush) {
-                            *push_calls += 1;
-                        }
+                    if let Some(resolved) = resolved
+                        && resolved.intrinsic == Some(IntrinsicId::ArrayPush)
+                    {
+                        *push_calls += 1;
                     }
                     for arg in args {
                         walk(&arg.value, push_calls);

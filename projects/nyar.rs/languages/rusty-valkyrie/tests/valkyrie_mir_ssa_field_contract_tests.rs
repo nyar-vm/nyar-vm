@@ -234,7 +234,8 @@ fn option_sum_construct_binds_declaration_identity_without_short_name() {
 
 #[test]
 fn namespaced_struct_param_binds_declaration_identity_through_canonical() {
-    let source = "namespace core.text; structure TextSpan { start: i32, end: i32 } \
+    let source = "[primitive(\"core::primitive::i32\")] structure i32 { } \
+             namespace core.text; structure TextSpan { start: i32, end: i32 } \
              micro as_start(span: TextSpan) -> i32 { return span.start }";
     let mir = ValkyrieCompiler::default().compile_source_to_mir(source).expect("Semantic MIR");
     let structure = mir.structs.iter().find(|item| item.name == "TextSpan").expect("TextSpan");

@@ -1,6 +1,7 @@
 use rusty_valkyrie::{ValkyrieCompiler, mir::MirLowerer};
 
-const HOST_CONTRACT_SOURCE: &str = "[host_contract] micro foreign(value: i32) -> i32 { } \
+const HOST_CONTRACT_SOURCE: &str = "[primitive(\"core::primitive::i32\")] structure i32 { } \
+    [host_contract] micro foreign(value: i32) -> i32 { } \
     micro caller(value: i32) -> i32 { return foreign(value) }";
 
 #[test]
