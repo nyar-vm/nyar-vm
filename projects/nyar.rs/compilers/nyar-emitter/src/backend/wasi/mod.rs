@@ -207,7 +207,7 @@ impl TargetCodeGenBackend for WasmBinaryBackend {
             });
             artifacts.push(ArtifactDescriptor {
                 name: format!("{}.component", artifact_stem),
-                path: format!("{artifact_stem}.component.wit"),
+                path: format!("{artifact_stem}.component-wit/component.wit"),
                 kind: nyar::ArtifactKind::AssemblyListing,
                 format: ArtifactFormat::RawBinary,
                 target: options.target.clone(),
