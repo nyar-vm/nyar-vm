@@ -9,5 +9,5 @@ expect:
     per_artifact: {}
     artifacts: []
     compile_errors:
-    - 'build failed for wasm32-node-unknown-wasm: physical contract failed [BPHYS001] main::main at value 1: void/unit cannot occupy a physical value slot'
+    - 'build failed for wasm32-node-unknown-wasm: compile pipeline rejected module `wasm_interop_stdout` (PIPE004)'
     errors: []

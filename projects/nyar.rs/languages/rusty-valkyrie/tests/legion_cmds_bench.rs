@@ -18,7 +18,7 @@ fn bench_command_writes_html_when_results_exist() {
         "std": false,
         "core": false
     },
-    build: [ { target: "legion" } ]
+    build: [ { target: "ovm" } ]
 }
 "#,
         r#"micro main() -> i64 {
@@ -63,7 +63,7 @@ fn bench_skips_when_no_benchmarks() {
         "legion-bench-empty",
         r#"{
     name: "bench_empty",
-    build: [ { target: "legion" } ]
+    build: [ { target: "ovm" } ]
 }
 "#,
         r#"micro main() -> i64 {

@@ -105,7 +105,7 @@ fn renders_pretty_report_for_missing_workspace() {
 
     GraphicalReportHandler::new().with_links(false).with_urls(false).render_report(&mut rendered, report.as_ref()).unwrap();
 
-    assert!(rendered.contains("rusty_valkyrie::legion::planner::missing_workspace"));
+    assert!(rendered.contains("legion::planner::missing_workspace"));
     assert!(rendered.contains("cannot locate `legions.von`"));
     assert!(rendered.contains("请在工作区根目录放置 `legions.von`"));
 }
@@ -370,7 +370,7 @@ fn reports_registry_dependency_without_version() {
     let report = Report::new(error);
     let mut rendered = String::new();
     GraphicalReportHandler::new().with_links(false).with_urls(false).render_report(&mut rendered, report.as_ref()).unwrap();
-    assert!(rendered.contains("rusty_valkyrie::legion::planner::registry_dependency_missing_version"));
+    assert!(rendered.contains("legion::planner::registry_dependency_missing_version"));
 }
 
 #[test]
@@ -415,7 +415,7 @@ fn reports_forced_workspace_dependency_missing() {
     let report = Report::new(error);
     let mut rendered = String::new();
     GraphicalReportHandler::new().with_links(false).with_urls(false).render_report(&mut rendered, report.as_ref()).unwrap();
-    assert!(rendered.contains("rusty_valkyrie::legion::planner::forced_workspace_dependency_missing"));
+    assert!(rendered.contains("legion::planner::forced_workspace_dependency_missing"));
 }
 
 #[test]

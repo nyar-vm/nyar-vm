@@ -29,7 +29,7 @@ fn coverage_generates_json_and_html() {
         r#"{
     name: "cov_app",
     build: [
-        { target: "legion" }
+        { target: "ovm" }
     ]
 }
 "#,
@@ -79,7 +79,7 @@ fn infer_detects_core_features() {
         "legion-cov-infer",
         r#"{
     name: "infer_app",
-    build: [ { target: "legion" } ]
+    build: [ { target: "ovm" } ]
 }
 "#,
         r#"micro main() -> i64 {

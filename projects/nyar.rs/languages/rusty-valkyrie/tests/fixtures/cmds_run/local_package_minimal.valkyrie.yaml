@@ -9,5 +9,5 @@ expect:
     per_artifact: {}
     artifacts: []
     compile_errors:
-    - 'build failed for clr-microsoft-unknown-managed: `Clr` lane is frozen for 0.0.x Node/Wasm delivery; enable Cargo feature `legacy-lanes` to compile CLR/JVM/native/nyar_vm lowering'
+    - 'build failed for clr-microsoft-unknown-managed: no backend interpreter for fragment `functions` (family=Clr, host=Clr)'
     errors: []

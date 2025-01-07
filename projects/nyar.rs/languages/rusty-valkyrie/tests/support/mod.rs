@@ -13,6 +13,39 @@ pub struct SmokeProject {
     pub project_dir: PathBuf,
 }
 
+/// 源级 `core/primitive` 声明族：数值原始类型名不是语言内建，必须绑定到源码声明身份。
+/// 夹具项目声明 `"core": false`，因此在 `source/` 下写入等价声明文件；属性值给出
+/// `core::primitive::*` 身份，与内联编译测试的 `PRIMITIVE_I32` 保持同一合同。
+const CORE_PRIMITIVE_DECLARATIONS: &str = concat!(
+    "[primitive(\"core::primitive::i8\")] structure i8 { }\n",
+    "[primitive(\"core::primitive::i16\")] structure i16 { }\n",
+    "[primitive(\"core::primitive::i32\")] structure i32 { }\n",
+    "[primitive(\"core::primitive::i64\")] structure i64 { }\n",
+    "[primitive(\"core::primitive::i128\")] structure i128 { }\n",
+    "[primitive(\"core::primitive::u8\")] structure u8 { }\n",
+    "[primitive(\"core::primitive::u16\")] structure u16 { }\n",
+    "[primitive(\"core::primitive::u32\")] structure u32 { }\n",
+    "[primitive(\"core::primitive::u64\")] structure u64 { }\n",
+    "[primitive(\"core::primitive::u128\")] structure u128 { }\n",
+    "[primitive(\"core::primitive::isize\")] structure isize { }\n",
+    "[primitive(\"core::primitive::usize\")] structure usize { }\n",
+    "[primitive(\"core::primitive::f32\")] structure f32 { }\n",
+    "[primitive(\"core::primitive::f64\")] structure f64 { }\n",
+    "[primitive(\"core::primitive::f128\")] structure f128 { }\n",
+    "[primitive(\"core::primitive::byte\")] structure byte { }\n",
+    "[primitive(\"core::primitive::sbyte\")] structure sbyte { }\n",
+    // 运行时夹具的 `main` 以 `ExitCode` 表达进程退出码；该名字来自 `std` 适配层，
+    // 夹具项目声明 `\"std\": false`，因此在源级给出等价别名，避免依赖未链接的 std 组。
+    "type ExitCode = i32;\n",
+    "micro ExitCode(value: i32): i32 { return value }\n",
+);
+
+/// 写入夹具入口源码，并同时提供源级 primitive 声明。
+fn write_main_source(source_dir: &Path, source: &str) {
+    fs::write(source_dir.join("main.v"), source).unwrap();
+    fs::write(source_dir.join("core_primitive.v"), CORE_PRIMITIVE_DECLARATIONS).unwrap();
+}
+
 pub fn create_smoke_project(prefix: &str) -> SmokeProject {
     create_fixture(
         prefix,
@@ -78,7 +111,7 @@ pub fn create_local_package_project(prefix: &str, build_block: &str, source: &st
         ),
     )
     .unwrap();
-    fs::write(source_dir.join("main.v"), source).unwrap();
+    write_main_source(&source_dir, source);
 
     SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&project_dir) }
 }
@@ -136,7 +169,7 @@ fn create_nested_manifest_fixture(
     };
     fs::write(root.join("legions.von"), workspace_manifest).unwrap();
     fs::write(project_dir.join("legion.von"), manifest).unwrap();
-    fs::write(source_dir.join("main.v"), source).unwrap();
+    write_main_source(&source_dir, source);
 
     SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&project_dir) }
 }
@@ -179,7 +212,7 @@ fn create_nested_workspace_fixture(prefix: &str, project_relative_dir: PathBuf, 
     )
     .unwrap();
     fs::write(project_dir.join("legion.von"), manifest).unwrap();
-    fs::write(source_dir.join("main.v"), source).unwrap();
+    write_main_source(&source_dir, source);
 
     SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&project_dir) }
 }
@@ -207,7 +240,7 @@ fn create_root_manifest_fixture(prefix: &str, manifest: &str, source: &str, incl
     };
     fs::write(root.join("legions.von"), workspace_manifest).unwrap();
     fs::write(root.join("legion.von"), manifest).unwrap();
-    fs::write(source_dir.join("main.v"), source).unwrap();
+    write_main_source(&source_dir, source);
 
     SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&root) }
 }
@@ -218,7 +251,7 @@ fn create_standalone_manifest_fixture(prefix: &str, manifest: &str, source: &str
     let source_dir = root.join("source");
     fs::create_dir_all(&source_dir).unwrap();
     fs::write(root.join("legion.von"), manifest).unwrap();
-    fs::write(source_dir.join("main.v"), source).unwrap();
+    write_main_source(&source_dir, source);
 
     SmokeProject { _temp_dir: temp_dir, project_dir: canonicalize_lossy(&root) }
 }

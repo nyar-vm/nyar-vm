@@ -11,6 +11,18 @@ use rusty_valkyrie::legion::cmds::{
 
 use support::create_smoke_project_with_manifest;
 
+/// HTML 报告依赖 `valkyrie.v` 的 asgard.plotter 资产；未配置 `VALKYRIE_V_ROOT` 时跳过，
+/// 与 `tests/legion_cmds_report.rs`、`tests/legion_cmds_cov.rs` 保持同一约定。
+fn valkyrie_v_root_configured() -> bool {
+    match std::env::var_os("VALKYRIE_V_ROOT") {
+        Some(root) if !root.is_empty() => true,
+        _ => {
+            eprintln!("skip: VALKYRIE_V_ROOT 未配置，测试报告需要 valkyrie.v 资产");
+            false
+        }
+    }
+}
+
 fn write_test_suite(project_dir: &std::path::Path) {
     let test_dir = project_dir.join("test");
     fs::create_dir_all(&test_dir).unwrap();
@@ -41,7 +53,7 @@ fn discover_finds_test_and_benchmark() {
         "legion-test-discover",
         r#"{
     name: "test_app",
-    build: [ { target: "legion" } ]
+    build: [ { target: "ovm" } ]
 }
 "#,
         r#"micro main() -> i64 {
@@ -63,6 +75,9 @@ fn resolve_targets_defaults_and_all() {
 
 #[test]
 fn test_command_writes_html_report() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let fixture = create_smoke_project_with_manifest(
         "legion-test-report",
         r#"{
@@ -71,7 +86,7 @@ fn test_command_writes_html_report() {
         "std": false,
         "core": false
     },
-    build: [ { target: "legion" } ]
+    build: [ { target: "ovm" } ]
 }
 "#,
         r#"micro main() -> i64 {
@@ -101,6 +116,9 @@ fn test_command_writes_html_report() {
 
 #[test]
 fn test_filter_skips_non_matching() {
+    if !valkyrie_v_root_configured() {
+        return;
+    }
     let fixture = create_smoke_project_with_manifest(
         "legion-test-filter",
         r#"{
@@ -109,7 +127,7 @@ fn test_filter_skips_non_matching() {
         "std": false,
         "core": false
     },
-    build: [ { target: "legion" } ]
+    build: [ { target: "ovm" } ]
 }
 "#,
         r#"micro main() -> i64 {

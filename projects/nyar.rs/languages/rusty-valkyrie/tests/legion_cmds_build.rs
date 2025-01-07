@@ -150,7 +150,7 @@ micro beta_entry() -> i64 {
     assert_eq!(manifest.run_contracts.len(), 2);
     assert!(manifest.run_contracts.iter().any(|contract| contract.physical_entry.contains("alpha_entry")));
     assert!(manifest.run_contracts.iter().any(|contract| contract.physical_entry.contains("beta_entry")));
-    assert!(output_dir.join("run-contract.txt").exists());
+    assert!(output_dir.join("run-contracts.txt").exists());
 }
 
 #[test]
