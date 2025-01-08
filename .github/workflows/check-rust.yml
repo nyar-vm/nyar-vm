@@ -62,13 +62,11 @@ jobs:
       - name: Tests
         run: cargo test --workspace --lib
 
-  # Integration and emulator fixture suites still reject legacy project fixtures
-  # (CAN003 canonical primitive declarations). Run them for visibility without
-  # gating the build/unit gate or npm publishing.
+  # 集成与模拟器夹具套件是独立门槛：它们覆盖真实 manifest → Compiler → 产物执行链路，
+  # 必须与 build/test 同权，不再以 continue-on-error 掩盖失败。
   integration:
     needs: build
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       # Runs before checkout, so it must not inherit the workspace working-directory.
       - run: git config --global core.autocrlf false
@@ -83,5 +81,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: projects/nyar.rs
-      - name: Integration tests (known-red)
+      - name: Integration tests
         run: cargo test --workspace --tests --no-fail-fast
