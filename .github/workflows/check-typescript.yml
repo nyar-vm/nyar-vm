@@ -22,3 +22,5 @@ jobs:
         run: pnpm --filter "./projects/nyar.ts/**" test
       - name: Prepare npm package readmes
         run: node scripts/prepare-npm-publish.mjs
+      - name: Check published npm package versions stay in sync
+        run: node scripts/check-nyar-workspace-versions.mjs
