@@ -1,3 +1,5 @@
+import {createRequire} from 'node:module';
+
 /**
  * `@nyar/valkyrie` —— Valkyrie npm 包装层。
  *
@@ -5,11 +7,14 @@
  * `valkyrie-napi`，Rust 实现位于 `projects/nyar.rs/languages/rusty-valkyrie`。
  */
 
-/** npm 包名。 */
-export const PACKAGE_NAME = '@nyar/valkyrie';
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json') as {name: string; version: string};
 
-/** 包装层版本。 */
-export const PACKAGE_VERSION = '0.0.13';
+/** npm 包名（与 `package.json` `name` 一致）。 */
+export const PACKAGE_NAME = pkg.name;
+
+/** 包装层版本（与 `package.json` `version` 一致）。 */
+export const PACKAGE_VERSION = pkg.version;
 
 /** 本包安装后提供的命令。 */
 export const COMMANDS = ['legion', 'asgard'] as const;
