@@ -25,7 +25,7 @@ asgard --help
 
 ## 导出
 
-- `PACKAGE_NAME` / `PACKAGE_VERSION`：包装层身份与版本
+- `PACKAGE_NAME` / `PACKAGE_VERSION`：来自本包 `package.json` 的 `name` / `version`
 - `COMMANDS`：本包提供的命令名
 - `runValkyrieCli`：来自本包 `valkyrie-napi` 绑定的命令执行入口
 
