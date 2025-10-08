@@ -1,8 +1,8 @@
-import {describe, expect, it} from 'vitest';
-import {Diagnostic} from '../src/diagnostic.js';
-import {DiagnosticCollector} from '../src/diagnostic-collector.js';
-import {SourceFile} from '../src/source-file.js';
-import {SourceSpan} from '../src/source-span.js';
+import { describe, expect, it } from 'vitest';
+import { Diagnostic } from '../src/diagnostic.js';
+import { DiagnosticCollector } from '../src/diagnostic-collector.js';
+import { SourceFile } from '../src/source-file.js';
+import { SourceSpan } from '../src/source-span.js';
 
 describe('DiagnosticCollector', () => {
     const create_test_diagnostic = (severity: 'error' | 'warning' | 'info' | 'hint' = 'error') => {

@@ -13,7 +13,6 @@
         "lint": "pnpm -r lint",
         "lint:fix": "pnpm -r lint:fix",
         "typecheck": "pnpm -r typecheck",
-        "clean": "pnpm -r clean && rm -rf node_modules",
         "build:pre": "cargo run --release --color=always --package nyar-prebuild --bin nyar-prebuild && cargo fmt --all",
         "cargo:build": "cargo build --release",
         "cargo:test": "cargo build",
