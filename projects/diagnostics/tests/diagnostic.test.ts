@@ -54,7 +54,7 @@ describe('Diagnostic', () => {
         const main = Diagnostic.error('E001', 'Main Error', 'Main error message');
         const related = Diagnostic.info('I001', 'Related Info', 'Related information');
 
-        const withRelated = main.withRelated(related);
+        const withRelated = main.with_related(related);
         expect(withRelated.related).toContain(related);
     });
 
@@ -63,7 +63,7 @@ describe('Diagnostic', () => {
         const related1 = Diagnostic.info('I001', 'Related Info', 'Related information');
         const related2 = Diagnostic.hint('H001', 'Related Hint', 'Related hint');
 
-        const withRelated = main.withRelatedMany([related1, related2]);
+        const withRelated = main.with_related_many([related1, related2]);
         expect(withRelated.related).toContain(related1);
         expect(withRelated.related).toContain(related2);
     });

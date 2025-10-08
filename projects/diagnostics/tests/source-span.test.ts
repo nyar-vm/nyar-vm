@@ -51,13 +51,13 @@ describe('SourceSpan', () => {
 
     it('should merge spans', () => {
         const file = createTestFile();
-        const span1 = new SourceSpan(0, 6, file);
-        const span2 = new SourceSpan(6, 12, file);
+        const span1 = new SourceSpan(0, 7, file);
+        const span2 = new SourceSpan(7, 13, file);
 
         const merged = span1.merge(span2);
         expect(merged.start).toBe(0);
-        expect(merged.end).toBe(12);
-        expect(merged.text).toBe('line 1\nline 2');
+        expect(merged.end).toBe(13);
+        expect(merged.text).toBe('line 1\nline 2\n');
     });
 
     it('should create span from line and column', () => {
@@ -65,7 +65,7 @@ describe('SourceSpan', () => {
         const span = SourceSpan.from_line_column(1, 1, 2, 1, file);
 
         expect(span.start).toBe(0);
-        expect(span.end).toBe(6);
-        expect(span.text).toBe('line 1');
+        expect(span.end).toBe(7);
+        expect(span.text).toBe('line 1\n');
     });
 });
