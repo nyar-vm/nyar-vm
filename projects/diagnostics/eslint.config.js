@@ -27,9 +27,9 @@ export default [
             '@typescript-eslint/explicit-function-return-type': 'off',
             '@typescript-eslint/explicit-module-boundary-types': 'off',
 
-            // Naming conventions - snake_case for functions and variables, camelCase allowed for existing code
+            // Override naming convention from warn to error for this project
             '@typescript-eslint/naming-convention': [
-                'warn',
+                'error',
                 {
                     selector: 'function',
                     format: ['snake_case'],

@@ -19,16 +19,16 @@ export class Formatter {
         const lines: string[] = [];
 
         // Header with severity and code
-        const severityColor = this.getSeverityColor(diagnostic.severity);
-        const header = `${severityColor}${this.formatSeverity(diagnostic.severity)}${this.resetColor()} ${diagnostic.code}: ${diagnostic.title}`;
+        const severityColor = this.get_severity_color(diagnostic.severity);
+        const header = `${severityColor}${this.format_severity(diagnostic.severity)}${this.resetColor()} ${diagnostic.code}: ${diagnostic.title}`;
         lines.push(header);
 
         // Primary message and location
         if (diagnostic.span) {
             lines.push('');
-            lines.push(this.formatLocation(diagnostic.span));
+            lines.push(this.format_location(diagnostic.span));
             lines.push('');
-            lines.push(this.formatSourceSnippet(diagnostic.span));
+            lines.push(this.format_source_snippet(diagnostic.span));
         }
 
         // Additional messages
@@ -73,11 +73,11 @@ export class Formatter {
     /**
      * Format multiple diagnostics
      */
-    formatMany(diagnostics: Diagnostic[]): string {
+    format_many(diagnostics: Diagnostic[]): string {
         return diagnostics.map(d => this.format(d)).join('\n\n');
     }
 
-    private formatSeverity(severity: DiagnosticSeverity): string {
+    private format_severity(severity: DiagnosticSeverity): string {
         switch (severity) {
             case DiagnosticSeverity.Error:
                 return 'error';
@@ -90,7 +90,7 @@ export class Formatter {
         }
     }
 
-    private formatLocation(span: SourceSpan): string {
+    private format_location(span: SourceSpan): string {
         const start = span.start_position;
         const end = span.end_position;
         const filename = span.source_file.filename;
@@ -102,7 +102,7 @@ export class Formatter {
         }
     }
 
-    private formatSourceSnippet(span: SourceSpan): string {
+    private format_source_snippet(span: SourceSpan): string {
         const start = span.start_position;
         const end = span.end_position;
         const sourceFile = span.source_file;
@@ -125,7 +125,7 @@ export class Formatter {
             // Add underline for the error line
             if (i + 1 === start.line) {
                 const underline =
-                    this.getSeverityColor(DiagnosticSeverity.Error) +
+                    this.get_severity_color(DiagnosticSeverity.Error) +
                     '^'.repeat(Math.min(span.length, line.length)) +
                     this.resetColor();
                 snippetLines.push(
@@ -137,7 +137,7 @@ export class Formatter {
         return snippetLines.join('\n');
     }
 
-    private getSeverityColor(severity: DiagnosticSeverity): string {
+    private get_severity_color(severity: DiagnosticSeverity): string {
         if (!this.useColors) return '';
 
         switch (severity) {
