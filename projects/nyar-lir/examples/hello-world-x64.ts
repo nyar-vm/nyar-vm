@@ -1,5 +1,5 @@
 import {writeFileSync} from 'fs';
-import {PeAssembler} from "@/pe-writer";
+import { PeAssembler } from "../src/pe-writer/index";
 
 // 创建一个简单的 Hello World PE 可执行文件 (x64)
 function createHelloWorldExe() {
