@@ -1,4 +1,4 @@
-import type {AnyNode} from "./nodes/ENode";
+import type { AnyNode } from './nodes/ENode';
 
 export type EClassId = number | symbol;
 

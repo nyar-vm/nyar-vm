@@ -1,5 +1,5 @@
-import type {EClass, EClassId} from "./EClass";
-import {AnyNode, CallNode, ConstantNode, EGraph, LambdaNode, SymbolNode} from "./EGraph";
+import type { EClass, EClassId } from './EClass';
+import { AnyNode, CallNode, ConstantNode, EGraph, LambdaNode, SymbolNode } from './EGraph';
 
 /**
  * 将ENode添加到E-graph中
@@ -20,7 +20,7 @@ export function add_node(graph: EGraph, node: AnyNode): EClassId {
     const new_eclass: EClass = {
         id: new_id,
         nodes: [node],
-        parents: new Map()
+        parents: new Map(),
     };
 
     graph.e_classes.set(new_id, new_eclass);

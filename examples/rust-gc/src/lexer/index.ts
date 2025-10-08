@@ -67,218 +67,221 @@ export class Lexer {
         this.source = sourceFile.content;
     }
 
-    scanTokens(): Token[] {
-        while (!this.isAtEnd()) {
+    scan_tokens(): Token[] {
+        while (!this.is_at_end()) {
             this.start = this.current;
-            this.scanToken();
+            this.scan_token();
         }
 
-        this.addToken(TokenType.EOF);
+        this.tokens.push({ type: TokenType.EOF, lexeme: '', line: this.line });
         return this.tokens;
-    }
-
-    private scanToken(): void {
-        const c = this.advance();
-
-        switch (c) {
-            // 单个字符的token
-            case '(':
-                this.addToken(TokenType.LEFT_PAREN);
-                break;
-            case ')':
-                this.addToken(TokenType.RIGHT_PAREN);
-                break;
-            case '{':
-                this.addToken(TokenType.LEFT_BRACE);
-                break;
-            case '}':
-                this.addToken(TokenType.RIGHT_BRACE);
-                break;
-            case '[':
-                this.addToken(TokenType.LEFT_BRACKET);
-                break;
-            case ']':
-                this.addToken(TokenType.RIGHT_BRACKET);
-                break;
-            case ',':
-                this.addToken(TokenType.COMMA);
-                break;
-            case ';':
-                this.addToken(TokenType.SEMICOLON);
-                break;
-            case '.':
-                this.addToken(TokenType.DOT);
-                break;
-            case '+':
-                this.addToken(TokenType.PLUS);
-                break;
-            case '*':
-                this.addToken(TokenType.STAR);
-                break;
-            case '-':
-                this.addToken(TokenType.MINUS);
-                break;
-
-            // 可能有两个字符的token
-            case '!':
-                this.addToken(this.match('=') ? TokenType.BANG_EQUAL : TokenType.MINUS);
-                break;
-            case '=':
-                this.addToken(this.match('=') ? TokenType.EQUAL_EQUAL : TokenType.EQUAL);
-                break;
-            case '<':
-                this.addToken(this.match('=') ? TokenType.LESS_EQUAL : TokenType.LESS);
-                break;
-            case '>':
-                this.addToken(this.match('=') ? TokenType.GREATER_EQUAL : TokenType.GREATER);
-                break;
-
-            // 注释
-            case '/':
-                if (this.match('/')) {
-                    // 单行注释
-                    while (this.peek() !== '\n' && !this.isAtEnd()) this.advance();
-                } else {
-                    this.addToken(TokenType.SLASH);
-                }
-                break;
-
-            // 空白字符
-            case ' ':
-            case '\r':
-            case '\t':
-                // 忽略空白字符
-                break;
-
-            case '\n':
-                this.line++;
-                this.column = 1;
-                break;
-
-            // 字符串
-            case '"':
-                this.string();
-                break;
-
-            default:
-                if (this.isDigit(c)) {
-                    this.number();
-                } else if (this.isAlpha(c)) {
-                    this.identifier();
-                } else {
-                    this.diagnostics.error(this.span(), `Unexpected character: ${c}`);
-                }
-                break;
-        }
-    }
-
-    private string(): void {
-        while (this.peek() !== '"' && !this.isAtEnd()) {
-            if (this.peek() === '\n') {
-                this.line++;
-                this.column = 1;
-            }
-            this.advance();
-        }
-
-        if (this.isAtEnd()) {
-            this.diagnostics.error(this.span(), 'Unterminated string.');
-            return;
-        }
-
-        // 闭合的引号
-        this.advance();
-
-        // 去掉引号，提取字符串值
-        const value = this.source.substring(this.start + 1, this.current - 1);
-        this.addToken(TokenType.IDENTIFIER, value);
-    }
-
-    private number(): void {
-        while (this.isDigit(this.peek())) this.advance();
-
-        // 查找小数部分
-        if (this.peek() === '.' && this.isDigit(this.peekNext())) {
-            // 消费 "."
-            this.advance();
-
-            while (this.isDigit(this.peek())) this.advance();
-        }
-
-        const value = this.source.substring(this.start, this.current);
-        this.addToken(TokenType.NUMBER, value);
-    }
-
-    private identifier(): void {
-        while (this.isAlphaNumeric(this.peek())) this.advance();
-
-        const text = this.source.substring(this.start, this.current);
-        const type = this.getKeywordType(text) || TokenType.IDENTIFIER;
-        this.addToken(type, text);
-    }
-
-    private getKeywordType(text: string): TokenType | undefined {
-        const keywords: Record<string, TokenType> = {
-            fn: TokenType.FN,
-            let: TokenType.LET,
-            mut: TokenType.MUT,
-            if: TokenType.IF,
-            else: TokenType.ELSE,
-            while: TokenType.WHILE,
-            struct: TokenType.STRUCT,
-            true: TokenType.TRUE,
-            false: TokenType.FALSE,
-        };
-
-        return keywords[text];
-    }
-
-    private match(expected: string): boolean {
-        if (this.isAtEnd()) return false;
-        if (this.source[this.current] !== expected) return false;
-
-        this.current++;
-        this.column++;
-        return true;
-    }
-
-    private peek(): string {
-        if (this.isAtEnd()) return '\0';
-        return this.source[this.current];
-    }
-
-    private peekNext(): string {
-        if (this.current + 1 >= this.source.length) return '\0';
-        return this.source[this.current + 1];
-    }
-
-    private isAlpha(c: string): boolean {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_';
-    }
-
-    private isDigit(c: string): boolean {
-        return c >= '0' && c <= '9';
-    }
-
-    private isAlphaNumeric(c: string): boolean {
-        return this.isAlpha(c) || this.isDigit(c);
     }
 
     private is_at_end(): boolean {
         return this.current >= this.source.length;
     }
 
-    private add_token(type: TokenType, _literal?: string): void {
-        const text = this.source.substring(this.start, this.current);
-        const span = new SourceSpan(this.sourceFile, this.start, this.current);
-        this.tokens.push({
-            type,
-            lexeme: text,
-            span,
-        });
+    private scan_token(): void {
+        const c = this.advance();
+        switch (c) {
+            case '(':
+                this.add_token(TokenType.LEFT_PAREN);
+                break;
+            case ')':
+                this.add_token(TokenType.RIGHT_PAREN);
+                break;
+            case '{':
+                this.add_token(TokenType.LEFT_BRACE);
+                break;
+            case '}':
+                this.add_token(TokenType.RIGHT_BRACE);
+                break;
+            case ',':
+                this.add_token(TokenType.COMMA);
+                break;
+            case '.':
+                this.add_token(TokenType.DOT);
+                break;
+            case '-':
+                this.add_token(TokenType.MINUS);
+                break;
+            case '+':
+                this.add_token(TokenType.PLUS);
+                break;
+            case ';':
+                this.add_token(TokenType.SEMICOLON);
+                break;
+            case '*':
+                this.add_token(TokenType.STAR);
+                break;
+            case '!':
+                this.add_token(this.match('=') ? TokenType.BANG_EQUAL : TokenType.BANG);
+                break;
+            case '=':
+                this.add_token(this.match('=') ? TokenType.EQUAL_EQUAL : TokenType.EQUAL);
+                break;
+            case '<':
+                this.add_token(this.match('=') ? TokenType.LESS_EQUAL : TokenType.LESS);
+                break;
+            case '>':
+                this.add_token(this.match('=') ? TokenType.GREATER_EQUAL : TokenType.GREATER);
+                break;
+            case '/':
+                if (this.match('/')) {
+                    while (this.peek() !== '\n' && !this.is_at_end()) this.advance();
+                } else {
+                    this.add_token(TokenType.SLASH);
+                }
+                break;
+            case ' ':
+            case '\r':
+            case '\t':
+                break;
+            case '\n':
+                this.line++;
+                break;
+            case '"':
+                this.string();
+                break;
+            default:
+                if (this.is_digit(c)) {
+                    this.number();
+                } else if (this.is_alpha(c)) {
+                    this.identifier();
+                } else {
+                    this.diagnostics.error(this.line, `Unexpected character: ${c}`);
+                }
+                break;
+        }
     }
 
-    private span(): SourceSpan {
-        return new SourceSpan(this.sourceFile, this.start, this.current);
+    private string(): void {
+        while (this.peek() !== '"' && !this.is_at_end()) {
+            if (this.peek() === '\n') this.line++;
+            this.advance();
+        }
+
+        if (this.is_at_end()) {
+            this.diagnostics.error(this.line, 'Unterminated string.');
+            return;
+        }
+
+        this.advance();
+
+        const value = this.source.substring(this.start + 1, this.current - 1);
+        this.add_token(TokenType.STRING, value);
+    }
+
+    private number(): void {
+        while (this.is_digit(this.peek())) this.advance();
+
+        if (this.peek() === '.' && this.is_digit(this.peek_next())) {
+            this.advance();
+            while (this.is_digit(this.peek())) this.advance();
+        }
+
+        const value = this.source.substring(this.start, this.current);
+        this.add_token(TokenType.NUMBER, value);
+    }
+
+    private identifier(): void {
+        while (this.is_alpha_numeric(this.peek())) this.advance();
+
+        const text = this.source.substring(this.start, this.current);
+        let type = this.get_keyword_type(text);
+        if (type === undefined) type = TokenType.IDENTIFIER;
+        this.add_token(type);
+    }
+
+    private get_keyword_type(name: string): TokenType | undefined {
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        const keywords: Record<string, TokenType> = {
+            and: TokenType.AND,
+            class: TokenType.CLASS,
+            else: TokenType.ELSE,
+            false: TokenType.FALSE,
+            for: TokenType.FOR,
+            fun: TokenType.FUN,
+            if: TokenType.IF,
+            nil: TokenType.NIL,
+            or: TokenType.OR,
+            print: TokenType.PRINT,
+            return: TokenType.RETURN,
+            super: TokenType.SUPER,
+            this: TokenType.THIS,
+            true: TokenType.TRUE,
+            var: TokenType.VAR,
+            while: TokenType.WHILE,
+            struct: TokenType.STRUCT,
+            impl: TokenType.IMPL,
+            trait: TokenType.TRAIT,
+            let: TokenType.LET,
+            mut: TokenType.MUT,
+            ref: TokenType.REF,
+            match: TokenType.MATCH,
+            enum: TokenType.ENUM,
+            mod: TokenType.MOD,
+            use: TokenType.USE,
+            pub: TokenType.PUB,
+            priv: TokenType.PRIV,
+            static: TokenType.STATIC,
+            async: TokenType.ASYNC,
+            await: TokenType.AWAIT,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            Box: TokenType.BOX,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            Vec: TokenType.VEC,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            Option: TokenType.OPTION,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            Result: TokenType.RESULT,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            Some: TokenType.SOME,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            None: TokenType.NONE,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            Ok: TokenType.OK,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            Err: TokenType.ERR,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            String: TokenType.STRING_TYPE,
+            i32: TokenType.I32,
+            i64: TokenType.I64,
+            f32: TokenType.F32,
+            f64: TokenType.F64,
+            bool: TokenType.BOOL,
+            char: TokenType.CHAR,
+            usize: TokenType.USIZE,
+            isize: TokenType.ISIZE,
+            u32: TokenType.U32,
+            u64: TokenType.U64,
+        };
+        return keywords[name];
+    }
+
+    private peek_next(): string {
+        if (this.current + 1 >= this.source.length) return '\0';
+        return this.source.charAt(this.current + 1);
+    }
+
+    private is_alpha(c: string): boolean {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_';
+    }
+
+    private is_digit(c: string): boolean {
+        return c >= '0' && c <= '9';
+    }
+
+    private is_alpha_numeric(c: string): boolean {
+        return this.is_alpha(c) || this.is_digit(c);
+    }
+
+    private advance(): string {
+        return this.source.charAt(this.current++);
+    }
+
+    private add_token(type: TokenType, literal?: unknown): void {
+        const text = this.source.substring(this.start, this.current);
+        this.tokens.push({ type, lexeme: text, literal, line: this.line });
     }
 }
