@@ -43,8 +43,8 @@ function createHelloWorldExe() {
     };
 
     // 计算 MessageBoxA 和 ExitProcess 的 IAT RVA
-    const message_box_a_iat_rva = pe_builder.import_table.get_iat_rva('user32.dll', 'MessageBoxA');
-    const exit_process_iat_rva = pe_builder.import_table.get_iat_rva('kernel32.dll', 'ExitProcess');
+    const message_box_a_iat_rva = pe_builder.get_iat_rva('user32.dll', 'MessageBoxA');
+    const exit_process_iat_rva = pe_builder.get_iat_rva('kernel32.dll', 'ExitProcess');
 
     // 计算 rip 相对偏移量
     // lea rdx, [rip + offset_to_title]

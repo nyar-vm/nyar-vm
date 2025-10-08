@@ -5,9 +5,9 @@ export default defineConfig({
     build: {
         lib: {
             entry: resolve(__dirname, 'src/index.ts'),
-            name: 'NyarMir',
+            name: 'NyarLir',
             formats: ['es', 'cjs'],
-            fileName: (format) => `nyar-mir.${format}.js`
+            fileName: (format) => `nyar-lir.${format}.js`
         },
         rollupOptions: {
             external: ['@nyar/diagnostics'],
