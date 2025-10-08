@@ -55,7 +55,6 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-
     public get_pe_magic(): number {
         return this.architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
     }
@@ -63,9 +62,9 @@ export class PeHeaders {
     public generate_file_header(): Uint8Array {
         const writer = new BinaryWriter();
 
-        const machineType = this.get_machine_type(this.architecture);
+        const machine_type = this.get_machine_type(this.architecture);
 
-        writer.write_u16(machineType);
+        writer.write_u16(machine_type);
         writer.write_u16(this.number_of_sections); // 节数量
         writer.write_u32(Math.floor(Date.now() / 1000)); // 时间戳
         writer.write_u32(0); // 符号表指针
@@ -74,7 +73,7 @@ export class PeHeaders {
         writer.write_u16(this.characteristics);
 
         console.log(
-            `[PeHeaders] File Header - Machine: 0x${machineType.toString(16)}, NumberOfSections: ${this.number_of_sections}, Characteristics: 0x${this.characteristics.toString(16)}`
+            `[PeHeaders] File Header - Machine: 0x${machine_type.toString(16)}, NumberOfSections: ${this.number_of_sections}, Characteristics: 0x${this.characteristics.toString(16)}`
         );
 
         return writer.get_bytes();
@@ -196,19 +195,10 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-    public generate_nt_headers(): Uint8Array {
-        const writer = new BinaryWriter();
-
-        // Signature
+    public write_nt_headers(writer: BinaryWriter) {
         writer.write_u32(0x00004550); // "PE\0\0"
-
-        // File Header
         writer.write_bytes(this.generate_file_header());
-
-        // Optional Header
         writer.write_bytes(this.generate_optional_header());
-
-        return writer.get_bytes();
     }
-}
 
+}

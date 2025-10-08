@@ -12,7 +12,6 @@ export class PeAssembler {
     private section_alignment: number;
     private import_table: ImportTable;
 
-
     constructor(target_architecture = PeTargetArchitecture.X86) {
         this.sections = new Map();
         this.pe_headers = new PeHeaders(target_architecture);
@@ -205,8 +204,7 @@ export class PeAssembler {
         this.pe_headers.dll_characteristics = 0x8160;
 
         // 生成NT头
-        const nt_headers = this.generate_nt_headers();
-        writer.write_bytes(nt_headers);
+        this.pe_headers.write_nt_headers(writer);
 
         // 生成节头 (使用 ordered_sections)
         const section_headers = this.generate_section_headers(ordered_sections);
@@ -234,18 +232,6 @@ export class PeAssembler {
             0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ]);
         return stub;
-    }
-
-    private generate_nt_headers(): Uint8Array {
-        const writer = new BinaryWriter();
-
-        // Signature
-        writer.write_u32(0x00004550); // "PE\0\0"
-
-        // File Header and Optional Header
-        writer.write_bytes(this.pe_headers.generate_nt_headers());
-
-        return writer.get_bytes();
     }
 
     private generate_section_headers(sections_to_write: PeSection[]): Uint8Array {
@@ -280,84 +266,6 @@ export class PeAssembler {
         }
 
         return writer.get_bytes();
-    }
-
-    private write_data_directories(writer: BinaryWriter): void {
-        // 导出表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 导入表
-        writer.write_u32(this.import_table.get_import_directory_rva());
-        writer.write_u32(this.import_table.get_import_directory_size());
-
-        // 资源表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 异常表 (x64重要)
-        const pdata_section = this.sections.get('.pdata');
-        if (pdata_section) {
-            writer.write_u32(pdata_section.get_virtual_address());
-            writer.write_u32(pdata_section.get_virtual_size());
-        } else {
-            writer.write_u32(0);
-            writer.write_u32(0);
-        }
-
-        // 证书表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 重定位表
-        const reloc_section = this.sections.get('.reloc');
-        if (reloc_section) {
-            writer.write_u32(reloc_section.get_virtual_address());
-            writer.write_u32(reloc_section.get_virtual_size());
-        } else {
-            writer.write_u32(0);
-            writer.write_u32(0);
-        }
-
-        // 调试信息
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 架构特定数据
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 全局指针
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // TLS表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 加载配置表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 绑定导入表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // IAT表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 延迟导入描述符
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // CLR运行时头部
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 保留
-        writer.write_u32(0);
-        writer.write_u32(0);
     }
 
     private align_to_file_alignment(size: number): number {
