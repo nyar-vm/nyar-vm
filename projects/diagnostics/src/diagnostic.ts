@@ -1,6 +1,6 @@
-import {SourceSpan} from './source-span.js';
-import {DiagnosticSeverity} from "./diagnosticSeverity";
-import {DiagnosticMessage} from "./diagnostic-message";
+import { SourceSpan } from './source-span.js';
+import { DiagnosticSeverity } from './diagnostic-severity';
+import { DiagnosticMessage } from './diagnostic-message';
 
 /**
  * Represents a diagnostic (error, warning, info, hint)

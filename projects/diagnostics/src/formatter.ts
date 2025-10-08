@@ -1,6 +1,6 @@
 import { Diagnostic } from './diagnostic.js';
 import { SourceSpan } from './source-span.js';
-import {DiagnosticSeverity} from "./diagnosticSeverity";
+import { DiagnosticSeverity } from './diagnostic-severity';
 
 /**
  * Formats diagnostics for display
