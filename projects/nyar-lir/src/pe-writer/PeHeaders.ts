@@ -1,5 +1,7 @@
 import {BinaryWriter} from '../BinaryWriter';
 
+import {PeTargetArchitecture} from "@/pe-writer/PeTargetArchitecture";
+
 export class PeHeaders {
     generate_dos_header(): Uint8Array {
         const writer = new BinaryWriter();
@@ -29,8 +31,8 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-    private get_pe_magic(architecture: string): number {
-        return architecture === 'x64' ? 0x020b : 0x010b;
+    private get_pe_magic(architecture: PeTargetArchitecture): number {
+        return architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
     }
 
 }

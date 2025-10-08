@@ -1,20 +1,21 @@
 import {BinaryWriter} from '../BinaryWriter';
 import {PeSection} from "./PeSection";
 import {ImportTable} from "./ImportTable";
+import {PeTargetArchitecture} from "@/pe-writer/PeTargetArchitecture";
 
 export class PeAssembler {
     private sections: Map<string, PeSection>;
-    private architecture: string;
+    private architecture: PeTargetArchitecture;
     private base_address: number;
     private file_alignment: number;
     private section_alignment: number;
     private import_table: ImportTable;
 
-    constructor(target_architecture = 'x86') {
+    constructor(target_architecture = PeTargetArchitecture.X86) {
         this.sections = new Map();
 
         this.architecture = target_architecture;
-        this.base_address = target_architecture === 'x64' ? 0x140000000 : 0x400000;
+        this.base_address = target_architecture === PeTargetArchitecture.X64 ? 0x140000000 : 0x400000;
         this.file_alignment = 0x200;
         this.section_alignment = 0x1000;
 
@@ -79,7 +80,7 @@ export class PeAssembler {
         return this.sections.size + (this.import_table.libraries.size > 0 ? 1 : 0);
     }
 
-    get_architecture(): string {
+    get_architecture(): PeTargetArchitecture {
         return this.architecture;
     }
 
@@ -161,7 +162,7 @@ export class PeAssembler {
         if (this.import_table.libraries.size > 0) {
             const idata_section = this.sections.get('.idata');
             if (idata_section) {
-                const idata_raw_data = this.import_table.generate_raw_data(idata_section.get_virtual_address(), this.image_base);
+                const idata_raw_data = this.import_table.generate_raw_data(idata_section.get_virtual_address(), this.base_address);
                 idata_section.set_raw_data(idata_raw_data);
             }
         }
@@ -251,16 +252,16 @@ export class PeAssembler {
     }
 
     private get_machine_type(): number {
-        return this.architecture === 'x64' ? 0x8664 : 0x014c;
+        return this.architecture === PeTargetArchitecture.X64 ? 0x8664 : 0x014c;
     }
 
     private get_optional_header_size(): number {
-        return this.architecture === 'x64' ? 240 : 224;
+        return this.architecture === PeTargetArchitecture.X64 ? 240 : 224;
     }
 
     private get_characteristics(): number {
         let characteristics = 0x0002; // IMAGE_FILE_EXECUTABLE_IMAGE
-        if (this.architecture === 'x86') {
+        if (this.architecture === PeTargetArchitecture.X86) {
             characteristics |= 0x0100; // IMAGE_FILE_32BIT_MACHINE
         }
         return characteristics;
@@ -279,7 +280,7 @@ export class PeAssembler {
         writer.write_u32(this.get_entry_point_rva());
         writer.write_u32(this.get_code_base_rva());
 
-        if (this.architecture === 'x86') {
+        if (this.architecture === PeTargetArchitecture.X86) {
             writer.write_u32(this.get_data_base_rva());
         }
 
@@ -318,7 +319,7 @@ export class PeAssembler {
     }
 
     private get_pe_magic(): number {
-        return this.architecture === 'x64' ? 0x020b : 0x010b;
+        return this.architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
     }
 
     private get_subsystem(): number {
@@ -328,7 +329,7 @@ export class PeAssembler {
     private get_dll_characteristics(): number {
         let characteristics = 0x0080; // IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE
         characteristics |= 0x0040; // IMAGE_DLLCHARACTERISTICS_NX_COMPAT
-        if (this.architecture === 'x64') {
+        if (this.architecture === PeTargetArchitecture.X64) {
             characteristics |= 0x0020; // IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA
         }
         return characteristics;
@@ -456,4 +457,3 @@ export class PeAssembler {
         return Math.ceil(size / this.file_alignment) * this.file_alignment;
     }
 }
-

@@ -1,4 +1,4 @@
-import { BinaryWriter } from '../BinaryWriter';
+import {BinaryWriter} from '../BinaryWriter';
 
 export class ImportFunction {
     name: string | null;
@@ -127,23 +127,21 @@ export class ImportTable {
 
         // 1. 写入 DLL 名称
         for (const library of this.libraries.values()) {
-            writer.seek(library.name_rva);
-            writer.write_string(library.name);
-            writer.write_u8(0); // Null terminator
+            writer.set_position(library.name_rva);
+            writer.write_cstring(library.name);
         }
 
         // 2. 写入 Hint/Name Table
         for (const library of this.libraries.values()) {
             for (const func of library.functions.values()) {
-                writer.seek(func.rva);
+                writer.set_position(func.rva);
                 writer.write_u16(func.hint);
                 if (func.name) {
-                    writer.write_string(func.name);
-                    writer.write_u8(0); // Null terminator
+                    writer.write_cstring(func.name);
                 }
                 // 确保对齐
-                if (writer.offset % 2 !== 0) {
-                    writer.write_u8(0);
+                if (writer.get_position() % 2 !== 0) {
+                    writer.set_position(writer.get_position() + 1);
                 }
             }
         }
@@ -151,7 +149,7 @@ export class ImportTable {
         // 3. 写入 OriginalFirstThunk (ILT) 和 FirstThunk (IAT)
         for (const library of this.libraries.values()) {
             // ILT
-            writer.seek(library.original_first_thunk_rva);
+            writer.set_position(library.original_first_thunk_rva);
             for (const func of library.functions.values()) {
                 if (func.ordinal !== null) {
                     writer.write_u64(BigInt(0x8000000000000000 | func.ordinal)); // Ordinal import
@@ -160,7 +158,7 @@ export class ImportTable {
                 }
             }
             // IAT (初始时与ILT相同)
-            writer.seek(library.first_thunk_rva);
+            writer.set_position(library.first_thunk_rva);
             for (const func of library.functions.values()) {
                 if (func.ordinal !== null) {
                     writer.write_u64(BigInt(0x8000000000000000 | func.ordinal)); // Ordinal import
@@ -171,7 +169,7 @@ export class ImportTable {
         }
 
         // 4. 写入 Import Directory Table
-        writer.seek(import_directory_table_start_rva);
+        writer.set_position(import_directory_table_start_rva);
         for (const library of this.libraries.values()) {
             writer.write_u32(library.original_first_thunk_rva); // OriginalFirstThunk (ILT)
             writer.write_u32(library.time_date_stamp);
@@ -191,7 +189,7 @@ export class ImportTable {
         const total_size = this.layout(idata_section_rva);
         const writer = new BinaryWriter(total_size);
         this._write_to_writer(writer, image_base);
-        return writer.buffer;
+        return writer.get_bytes();
     }
 
     get_iat_rva(library_name: string, function_name: string): number {

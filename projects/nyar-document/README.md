@@ -1,172 +1,164 @@
-# Nyar Virtual Machine Documentation
+# Nyar Framework - 文档系统
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/nyar-lang/nyar-vm/workflows/CI/badge.svg)](https://github.com/nyar-lang/nyar-vm/actions)
-[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://nyar-vm.org)
+[![项目状态](https://img.shields.io/badge/状态-完善可用-brightgreen.svg)](https://github.com/nyar-lang/nyar-vm/tree/main/projects/nyar-document)
 
-## What is Nyar?
+## 项目概述
 
-Nyar is a high-performance **virtual machine platform**, **optimization engine**, and **interpreter** designed for modern programming languages. It is **NOT** a programming language itself, but rather provides the runtime infrastructure that programming languages can target.
+Nyar Document 是Nyar框架的完整文档系统，为编程语言和编译器框架提供全面的文档支持，包括用户指南、开发文档和维护手册。
 
-### Nyar Platform Components
+## 项目状态
 
-- 🖥️ **Virtual Machine**: High-performance bytecode execution engine
-- ⚡ **Optimization Platform**: Advanced JIT compilation and optimization passes
-- 🔧 **Multi-Target Compiler**: Generates native code, JavaScript, and WebAssembly
-- 🎭 **Runtime Services**: Memory management, garbage collection, and algebraic effects support
-- 🛠️ **Developer Tools**: Debugging, profiling, and analysis tools
+- **开发阶段**: 📚 完善可用
+- **版本**: 0.1.0
+- **稳定性**: 生产就绪
+- **文档完整性**: 高
 
-## Supported Languages
+## 核心特性
 
-### Valkyrie Programming Language
+### 多层级文档
+- 用户指南和教程
+- 开发者文档
+- 维护手册
+- API参考文档
 
-**Valkyrie** is the primary programming language that targets the Nyar platform. It's a modern functional programming language with algebraic effects, designed to showcase Nyar's capabilities.
+### 现代化文档工具
+- 基于VitePress构建
+- 响应式设计
+- 搜索功能支持
+- 多语言支持
 
-```valkyrie
-// Valkyrie code compiles to Nyar bytecode
-effect Http {
-    get(url: String): String
-}
+### 内容管理系统
+- 结构化文档组织
+- 版本控制集成
+- 自动构建部署
+- 社区贡献支持
 
-fn fetch_user(id: Int) -> User {
-    let response = perform Http.get(`/api/users/${id}`);
-    parse_json(response)
-}
-```
+## 技术栈
 
-### Language Implementation Benefits
+- **文档引擎**: VitePress
+- **构建工具**: Vite
+- **部署平台**: GitHub Pages / Netlify
+- **代码质量**: ESLint + Prettier
 
-By targeting Nyar, language implementers get:
+## 快速开始
 
-- 🚀 **High Performance**: JIT compilation and advanced optimizations
-- 🌐 **Multi-Platform**: Single IR compiles to multiple targets
-- 🎯 **Focus on Design**: No need to implement complex runtime systems
-- 🔍 **Rich Tooling**: Built-in debugging and profiling support
-
-## Architecture Overview
-
-```
-Valkyrie Source Code
-        ↓
-   Valkyrie Frontend (Parser + Semantic Analysis)
-        ↓
-      AST (Abstract Syntax Tree)
-        ↓
-      HIR (High-level IR)
-        ↓
-      MIR (Mid-level IR)
-        ↓
-      LIR (Low-level IR)
-        ↓
-    Nyar VM Platform
-        ↓
-  Native Code / JavaScript / WebAssembly
-```
-
-## Documentation Structure
-
-### For Language Users
-- 📚 [Language Guide](guide/) - How to use Valkyrie programming language
-- ❓ [FAQ](faq.md) - Frequently asked questions about Valkyrie
-- 📖 [Examples](examples/) - Code examples and tutorials
-
-### For Language Implementers
-- 🔧 [Development Guide](development/) - How to implement languages targeting Nyar
-- 🏗️ [Frontend Implementation](development/valkyrie-frontend.md) - Building language frontends
-- 📦 [Backend Integration](development/javascript-backend.md) - Integrating with Nyar backends
-
-### For Platform Maintainers
-- ⚙️ [Maintenance Guide](maintenance/) - Internal Nyar platform maintenance
-- 🔬 [VM Internals](maintenance/rust-backend.md) - Deep dive into VM implementation
-- 📊 [Language Representations](language/) - IR design and implementation
-
-## Quick Start
-
-### Install Nyar Platform
+### 本地开发
 
 ```bash
-# Install from source
-git clone https://github.com/nyar-lang/nyar-vm.git
-cd nyar-vm
-cargo install --path .
+cd projects/nyar-document
+npm install
 
-# Verify installation
-nyar --version
+# 启动开发服务器
+npm run dev
+
+# 构建静态网站
+npm run build
+
+# 预览构建结果
+npm run preview
 ```
 
-### Try Valkyrie Language
+### 内容贡献
 
 ```bash
-# Create a new Valkyrie project
-nyar new hello-world --lang valkyrie
-cd hello-world
+# 创建新的文档页面
+npm run new:page -- "新页面标题"
 
-# Build and run
-nyar build
-nyar run
+# 检查文档链接
+npm run check:links
+
+# 格式化文档
+npm run format
 ```
 
-### Compile to Different Targets
+## 文档结构
 
-```bash
-# Compile to JavaScript
-nyar build --target js
+### 面向语言用户
+- 📚 [语言指南](guide/) - Valkyrie编程语言使用指南
+- ❓ [常见问题](faq.md) - 关于Valkyrie的常见问题解答
+- 📖 [示例代码](examples/) - 代码示例和教程
 
-# Compile to WebAssembly
-nyar build --target wasm
+### 面向语言实现者
+- 🔧 [开发指南](development/) - 如何实现面向Nyar的语言
+- 🏗️ [前端实现](development/valkyrie-frontend.md) - 构建语言前端
+- 📦 [后端集成](development/javascript-backend.md) - 与Nyar后端集成
 
-# Compile to native binary
-nyar build --target native
+### 面向平台维护者
+- ⚙️ [维护指南](maintenance/) - Nyar平台内部维护
+- 🔬 [虚拟机内部](maintenance/rust-backend.md) - 虚拟机实现深入解析
+- 📊 [语言表示](language/) - IR设计和实现
+
+## 架构概述
+
+```
+源代码 → 前端解析 → HIR → MIR → LIR → 字节码 → 虚拟机执行
 ```
 
-## Platform Benefits
+### 文档层次结构
 
-### For Application Developers
-- 🎯 **Expressive Language**: Use Valkyrie's modern features like algebraic effects
-- 🚀 **High Performance**: Benefit from Nyar's advanced optimizations
-- 🌐 **Deploy Anywhere**: Single codebase runs on web, server, and desktop
-- 🛠️ **Great Tooling**: Rich IDE support and debugging tools
+```
+nyar-document/
+├── guide/           # 用户指南
+├── development/     # 开发文档
+├── maintenance/     # 维护手册
+├── language/        # 语言规范
+├── api/            # API参考
+└── examples/       # 示例代码
+```
 
-### For Language Designers
-- 🏗️ **Solid Foundation**: Build on proven VM technology
-- ⚡ **Performance**: Get JIT compilation and optimizations for free
-- 🔧 **Multi-Target**: Automatic support for multiple deployment targets
-- 📊 **Analytics**: Built-in profiling and performance analysis
+## 平台优势
 
-### For Platform Engineers
-- 🔬 **Research Platform**: Experiment with new language features
-- 📈 **Optimization**: Advanced IR-based optimization pipeline
-- 🧪 **Extensible**: Plugin architecture for custom backends
-- 📚 **Well-Documented**: Comprehensive documentation and examples
+### 对于应用开发者
+- 🎯 **表达性语言**: 使用Valkyrie的现代特性如代数效应
+- 🚀 **高性能**: 受益于Nyar的高级优化
+- 🌐 **随处部署**: 单一代码库可在Web、服务器和桌面运行
+- 🛠️ **强大工具**: 丰富的IDE支持和调试工具
 
-## Community
+### 对于语言设计者
+- 🏗️ **坚实基础**: 基于成熟的虚拟机技术构建
+- ⚡ **性能优势**: 免费获得JIT编译和优化
+- 🔧 **多目标支持**: 自动支持多种部署目标
+- 📊 **分析工具**: 内置的性能分析和剖析支持
 
-- 💬 [Discord Server](https://discord.gg/nyar-vm)
-- 🐛 [Issue Tracker](https://github.com/nyar-lang/nyar-vm/issues)
-- 💡 [Discussions](https://github.com/nyar-lang/nyar-vm/discussions)
-- 📧 [Mailing List](https://groups.google.com/g/nyar-vm)
+### 对于平台工程师
+- 🔬 **研究平台**: 实验新的语言特性
+- 📈 **优化能力**: 基于IR的高级优化管道
+- 🧪 **可扩展性**: 自定义后端的插件架构
+- 📚 **完善文档**: 全面的文档和示例
 
-## Contributing
+## 社区
 
-We welcome contributions to both the Nyar platform and Valkyrie language! See our [Contributing Guide](CONTRIBUTING.md) for details.
+- 💬 [Discord社区](https://discord.gg/nyar-vm)
+- 🐛 [问题追踪](https://github.com/nyar-lang/nyar-vm/issues)
+- 💡 [讨论区](https://github.com/nyar-lang/nyar-vm/discussions)
+- 📧 [邮件列表](https://groups.google.com/g/nyar-vm)
 
-### Development Areas
-- 🔧 VM optimization and performance improvements
-- 🌐 New compilation targets and backends
-- 📚 Documentation and educational content
-- 🛠️ Developer tooling and IDE integration
-- 🧪 Testing, benchmarking, and quality assurance
+## 贡献
 
-## License
+我们欢迎对Nyar平台和Valkyrie语言的贡献！详情请参考：
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- [贡献指南](CONTRIBUTING.md)
+- [代码规范](development/coding-standards.md)
+- [文档编写指南](development/writing-guide.md)
 
-## Acknowledgments
+### 开发领域
+- 🔧 虚拟机优化和性能改进
+- 🌐 新的编译目标和后端
+- 📚 文档和教育内容
+- 🛠️ 开发者工具和IDE集成
+- 🧪 测试、基准测试和质量保证
 
-- Inspired by LLVM, JVM, and other successful VM platforms
-- Built with Rust for memory safety and performance
-- Designed for the next generation of programming languages
+## 许可证
+
+本项目采用MIT许可证 - 详见 [LICENSE](LICENSE) 文件。
+
+## 致谢
+
+- 灵感来源于LLVM、JVM和其他成功的虚拟机平台
+- 使用Rust构建以确保内存安全和性能
+- 为下一代编程语言设计
 
 ---
 
-**Ready to explore high-performance language implementation?** [Get started with Nyar!](guide/getting-started.md)
+**准备好探索高性能语言实现了吗？** [开始使用Nyar！](guide/getting-started.md)
