@@ -26,9 +26,7 @@ export class PeHeaders {
         this.architecture = architecture;
     }
 
-    generate_dos_header(): Uint8Array {
-        const writer = new BinaryWriter();
-
+    public write_dos_header(writer: BinaryWriter): void {
         // DOS MZ头
         writer.write_u16(0x5a4d); // e_magic: 'MZ'
         writer.write_u16(0x0090); // e_cblp
@@ -52,16 +50,15 @@ export class PeHeaders {
 
         writer.write_u32(0x00000074); // e_lfanew (PE头偏移)
 
-        return writer.get_bytes();
     }
 
-    public get_pe_magic(): number {
-        return this.architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
+    public write_nt_headers(writer: BinaryWriter) {
+        writer.write_u32(0x00004550); // "PE\0\0"
+        this.write_file_header(writer);
+        this.write_optional_header(writer);
     }
 
-    public generate_file_header(): Uint8Array {
-        const writer = new BinaryWriter();
-
+    public write_file_header(writer: BinaryWriter) {
         const machine_type = this.get_machine_type(this.architecture);
 
         writer.write_u16(machine_type);
@@ -75,19 +72,10 @@ export class PeHeaders {
         console.log(
             `[PeHeaders] File Header - Machine: 0x${machine_type.toString(16)}, NumberOfSections: ${this.number_of_sections}, Characteristics: 0x${this.characteristics.toString(16)}`
         );
-
-        return writer.get_bytes();
     }
 
-    private get_machine_type(architecture: PeTargetArchitecture): number {
-        return architecture === PeTargetArchitecture.X64 ? 0x8664 : 0x014c;
-    }
-
-    public generate_optional_header(): Uint8Array {
-        const writer = new BinaryWriter();
-
+    public write_optional_header(writer: BinaryWriter) {
         const magic = this.get_pe_magic();
-
         // 标准字段
         writer.write_u16(magic);
         writer.write_u8(0); // 主链接器版本
@@ -188,17 +176,16 @@ export class PeHeaders {
         writer.write_u32(0);
         writer.write_u32(0);
 
-        // console.log(
-        //     `[PeHeaders] Optional Header - Magic: 0x${magic.toString(16)}, EntryPoint: 0x${this.entryPointRva.toString(16)}, ImageBase: 0x${this.imageBase.toString(16)}, SectionAlignment: 0x${this.sectionAlignment.toString(16)}, FileAlignment: 0x${this.fileAlignment.toString(16)}, SizeOfImage: 0x${this.sizeOfImage.toString(16)}, SizeOfHeaders: 0x${this.sizeOfHeaders.toString(16)}`
-        // );
-
-        return writer.get_bytes();
+        console.log(
+            `[PeHeaders] Optional Header - Magic: 0x${magic.toString(16)}, EntryPoint: 0x${this.entry_point_rva.toString(16)}, ImageBase: 0x${this.image_base.toString(16)}, SectionAlignment: 0x${this.section_alignment.toString(16)}, FileAlignment: 0x${this.file_alignment.toString(16)}, SizeOfImage: 0x${this.size_of_image.toString(16)}, SizeOfHeaders: 0x${this.size_of_headers.toString(16)}`
+        );
     }
 
-    public write_nt_headers(writer: BinaryWriter) {
-        writer.write_u32(0x00004550); // "PE\0\0"
-        writer.write_bytes(this.generate_file_header());
-        writer.write_bytes(this.generate_optional_header());
+    public get_pe_magic(): number {
+        return this.architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
     }
 
+    private get_machine_type(architecture: PeTargetArchitecture): number {
+        return architecture === PeTargetArchitecture.X64 ? 0x8664 : 0x014c;
+    }
 }

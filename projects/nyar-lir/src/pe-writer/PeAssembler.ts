@@ -177,11 +177,8 @@ export class PeAssembler {
         }
 
         const writer = new BinaryWriter();
-
         // 生成DOS头
-        const dos_header = this.generate_dos_header();
-        writer.write_bytes(dos_header);
-
+        this.pe_headers.write_dos_header(writer);
         // 设置 PeHeaders 的公共字段
         this.pe_headers.number_of_sections = this.sections.size;
         this.pe_headers.optional_header_size =
@@ -205,18 +202,10 @@ export class PeAssembler {
 
         // 生成NT头
         this.pe_headers.write_nt_headers(writer);
-        // 生成节头 (使用 ordered_sections)
-        this.write_section_headers(writer, ordered_sections);
-        // 写入节数据 (使用 ordered_sections)
-        for (const section of ordered_sections) {
-            writer.write_bytes(section.get_raw_data());
-        }
+
+        this.write_sections(writer, ordered_sections);
 
         return writer.get_bytes();
-    }
-
-    private generate_dos_header(): Uint8Array {
-        return this.pe_headers.generate_dos_header();
     }
 
     private generate_dos_stub(): Uint8Array {
@@ -231,7 +220,8 @@ export class PeAssembler {
         return stub;
     }
 
-    private write_section_headers(writer: BinaryWriter, sections_to_write: PeSection[]) {
+    private write_sections(writer: BinaryWriter, sections_to_write: PeSection[]) {
+        // 生成节头 (使用 ordered_sections)
         for (const section of sections_to_write) {
             // 节名 (8字节)
             const name_bytes = new TextEncoder().encode(section.get_name());
@@ -257,6 +247,10 @@ export class PeAssembler {
 
             // 特征
             writer.write_u32(section.get_characteristics());
+        }
+        // 写入节数据 (使用 ordered_sections)
+        for (const section of sections_to_write) {
+            writer.write_bytes(section.get_raw_data());
         }
     }
 
