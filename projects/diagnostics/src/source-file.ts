@@ -35,9 +35,10 @@ export class SourceFile {
    */
   offsetToPosition(offset: number): { line: number; column: number } {
     const lines = this.content.substring(0, offset).split('\n');
+    const lastLine = lines[lines.length - 1];
     return {
       line: lines.length,
-      column: lines[lines.length - 1].length + 1,
+      column: lastLine ? lastLine.length + 1 : 1,
     };
   }
 
@@ -48,12 +49,18 @@ export class SourceFile {
     const lines = this.content.split('\n');
     let offset = 0;
     
-    for (let i = 1; i < line && i <= lines.length; i++) {
-      offset += lines[i - 1].length + 1; // +1 for newline
+    // Add up the lengths of all lines before the target line
+    for (let i = 0; i < line - 1 && i < lines.length; i++) {
+      const lineContent = lines[i];
+      if (lineContent) {
+        offset += lineContent.length + 1; // +1 for newline
+      }
     }
     
+    // Add the column position on the target line
     if (line <= lines.length) {
-      offset += Math.min(column - 1, lines[line - 1]?.length ?? 0);
+      const lineContent = lines[line - 1];
+      offset += Math.min(column - 1, lineContent?.length ?? 0);
     }
     
     return offset;

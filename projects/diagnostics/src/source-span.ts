@@ -7,7 +7,7 @@ export class SourceSpan {
   constructor(
     public readonly start: number,
     public readonly end: number,
-    public readonly sourceFile: SourceFile
+    public readonly source_file: SourceFile
   ) {
     if (start < 0 || end < start) {
       throw new Error(`Invalid source span: start=${start}, end=${end}`);
@@ -18,7 +18,7 @@ export class SourceSpan {
    * Get the text content of this span
    */
   get text(): string {
-    return this.sourceFile.substring(this.start, this.end);
+    return this.source_file.substring(this.start, this.end);
   }
 
   /**
@@ -32,14 +32,14 @@ export class SourceSpan {
    * Get the start position (line and column)
    */
   get startPosition(): { line: number; column: number } {
-    return this.sourceFile.offsetToPosition(this.start);
+    return this.source_file.offsetToPosition(this.start);
   }
 
   /**
    * Get the end position (line and column)
    */
   get endPosition(): { line: number; column: number } {
-    return this.sourceFile.offsetToPosition(this.end);
+    return this.source_file.offsetToPosition(this.end);
   }
 
   /**
@@ -60,14 +60,14 @@ export class SourceSpan {
    * Merge two spans into a single span that covers both
    */
   merge(other: SourceSpan): SourceSpan {
-    if (this.sourceFile !== other.sourceFile) {
+    if (this.source_file !== other.source_file) {
       throw new Error('Cannot merge spans from different source files');
     }
     
     const newStart = Math.min(this.start, other.start);
     const newEnd = Math.max(this.end, other.end);
     
-    return new SourceSpan(newStart, newEnd, this.sourceFile);
+    return new SourceSpan(newStart, newEnd, this.source_file);
   }
 
   /**

@@ -42,11 +42,11 @@ export class Diagnostic {
     span?: SourceSpan,
     suggestion?: string
   ): Diagnostic {
-    const messages: DiagnosticMessage[] = [{ message }];
+    const messageObj: DiagnosticMessage = { message };
     if (suggestion) {
-      messages[0].suggestion = suggestion;
+      messageObj.suggestion = suggestion;
     }
-    return new Diagnostic(DiagnosticSeverity.Error, code, title, messages, span);
+    return new Diagnostic(DiagnosticSeverity.Error, code, title, [messageObj], span);
   }
 
   /**
@@ -59,11 +59,11 @@ export class Diagnostic {
     span?: SourceSpan,
     suggestion?: string
   ): Diagnostic {
-    const messages: DiagnosticMessage[] = [{ message }];
+    const messageObj: DiagnosticMessage = { message };
     if (suggestion) {
-      messages[0].suggestion = suggestion;
+      messageObj.suggestion = suggestion;
     }
-    return new Diagnostic(DiagnosticSeverity.Warning, code, title, messages, span);
+    return new Diagnostic(DiagnosticSeverity.Warning, code, title, [messageObj], span);
   }
 
   /**
@@ -122,7 +122,14 @@ export class Diagnostic {
    * Add additional messages
    */
   withMessage(message: string, suggestion?: string, help?: string): Diagnostic {
-    const newMessages = [...this.messages, { message, suggestion, help }];
+    const newMessage: DiagnosticMessage = { message };
+    if (suggestion !== undefined) {
+      newMessage.suggestion = suggestion;
+    }
+    if (help !== undefined) {
+      newMessage.help = help;
+    }
+    const newMessages = [...this.messages, newMessage];
     return new Diagnostic(
       this.severity,
       this.code,

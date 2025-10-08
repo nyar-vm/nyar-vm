@@ -33,12 +33,14 @@ export class Formatter {
     // Additional messages
     for (let i = 1; i < diagnostic.messages.length; i++) {
       const msg = diagnostic.messages[i];
-      lines.push(`  ${msg.message}`);
-      if (msg.suggestion) {
-        lines.push(`  ${this.dimColor()}help: ${msg.suggestion}${this.resetColor()}`);
-      }
-      if (msg.help) {
-        lines.push(`  ${this.dimColor()}note: ${msg.help}${this.resetColor()}`);
+      if (msg) {
+        lines.push(`  ${msg.message}`);
+        if (msg.suggestion) {
+          lines.push(`  ${this.dimColor()}help: ${msg.suggestion}${this.resetColor()}`);
+        }
+        if (msg.help) {
+          lines.push(`  ${this.dimColor()}note: ${msg.help}${this.resetColor()}`);
+        }
       }
     }
     
@@ -88,7 +90,7 @@ export class Formatter {
   private formatLocation(span: SourceSpan): string {
     const start = span.startPosition;
     const end = span.endPosition;
-    const filename = span.sourceFile.filename;
+    const filename = span.source_file.filename;
     
     if (start.line === end.line) {
       return `  --> ${filename}:${start.line}:${start.column}`;
@@ -100,7 +102,7 @@ export class Formatter {
   private formatSourceSnippet(span: SourceSpan): string {
     const start = span.startPosition;
     const end = span.endPosition;
-    const sourceFile = span.sourceFile;
+    const sourceFile = span.source_file;
     
     // Get relevant lines
     const lines = sourceFile.content.split('\n');
@@ -112,14 +114,14 @@ export class Formatter {
     
     for (let i = startLine; i < endLine; i++) {
       const lineNumber = i + 1;
-      const line = lines[i] || '';
+      const line = lines[i] ?? '';
       const gutter = String(lineNumber).padStart(gutterWidth);
       
       snippetLines.push(`${this.dimColor()}${gutter} |${this.resetColor()} ${line}`);
       
       // Add underline for the error line
       if (i + 1 === start.line) {
-        const underline = this.getSeverityColor('error') + 
+        const underline = this.getSeverityColor(DiagnosticSeverity.Error) +
           '^'.repeat(Math.min(span.length, line.length)) + 
           this.resetColor();
         snippetLines.push(`${' '.repeat(gutterWidth)} | ${' '.repeat(start.column - 1)}${underline}`);
@@ -157,6 +159,6 @@ export class Formatter {
     return typeof process !== 'undefined' && 
            process.stdout && 
            process.stdout.isTTY &&
-           process.env.COLORS !== 'false';
+           process.env['COLORS'] !== 'false';
   }
 }

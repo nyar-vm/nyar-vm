@@ -5,7 +5,7 @@ import { Diagnostic } from './diagnostic.js';
  */
 export class DiagnosticCollector {
   private diagnostics: Diagnostic[] = [];
-  private hasErrors = false;
+  private _hasErrors = false;
 
   /**
    * Add a diagnostic to the collector
@@ -13,7 +13,7 @@ export class DiagnosticCollector {
   add(diagnostic: Diagnostic): void {
     this.diagnostics.push(diagnostic);
     if (diagnostic.severity === 'error') {
-      this.hasErrors = true;
+      this._hasErrors = true;
     }
   }
 
@@ -30,7 +30,7 @@ export class DiagnosticCollector {
    * Check if there are any errors
    */
   hasErrors(): boolean {
-    return this.hasErrors;
+    return this._hasErrors;
   }
 
   /**
@@ -80,7 +80,7 @@ export class DiagnosticCollector {
    */
   clear(): void {
     this.diagnostics = [];
-    this.hasErrors = false;
+    this._hasErrors = false;
   }
 
   /**
@@ -108,7 +108,7 @@ export class DiagnosticCollector {
    * Throw an error if there are any errors
    */
   throwIfErrors(): void {
-    if (this.hasErrors) {
+    if (this._hasErrors) {
       const errorMessages = this.getErrors()
         .map(err => `${err.code}: ${err.title} - ${err.primaryMessage}`)
         .join('\n');
