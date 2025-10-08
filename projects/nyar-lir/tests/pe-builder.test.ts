@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { PeAssembler } from '../src/./pe-writer/PeAssembler';
+import {describe, expect, it} from 'vitest';
+import {PeAssembler, PeTargetArchitecture} from '@/pe-writer';
 
 describe('PE Builder Tests', () => {
     it('should create a simple PE executable', () => {
-        const pe_builder = new PeAssembler('x86');
+        const pe_builder = new PeAssembler(PeTargetArchitecture.X64);
 
         // 添加一些简单的 x86 机器码 (Hello World 程序)
         const text_section = pe_builder.add_section('.text', 0x60000020);
