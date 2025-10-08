@@ -1,8 +1,32 @@
 import {BinaryWriter} from '../BinaryWriter';
 
-import {PeTargetArchitecture} from "@/pe-writer/PeTargetArchitecture";
+import {PeTargetArchitecture} from '@/pe-writer/PeTargetArchitecture';
 
 export class PeHeaders {
+    public readonly architecture: PeTargetArchitecture;
+
+    public numberOfSections: number = 0;
+    public optionalHeaderSize: number = 0;
+    public characteristics: number = 0;
+    public entryPointRva: number = 0;
+    public imageBase: number = 0;
+    public sectionAlignment: number = 0;
+    public fileAlignment: number = 0;
+    public sizeOfImage: number = 0;
+    public sizeOfHeaders: number = 0;
+    public codeSize: number = 0;
+    public initializedDataSize: number = 0;
+    public uninitializedDataSize: number = 0;
+    public codeBaseRva: number = 0;
+    public dataBaseRva: number = 0;
+    public checksum: number = 0;
+    public subsystem: number = 0;
+    public dllCharacteristics: number = 0;
+
+    constructor(architecture: PeTargetArchitecture) {
+        this.architecture = architecture;
+    }
+
     generate_dos_header(): Uint8Array {
         const writer = new BinaryWriter();
 
@@ -32,29 +56,6 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-    public readonly architecture: PeTargetArchitecture;
-
-    public numberOfSections: number = 0;
-    public optionalHeaderSize: number = 0;
-    public characteristics: number = 0;
-    public entryPointRva: number = 0;
-    public imageBase: number = 0;
-    public sectionAlignment: number = 0;
-    public fileAlignment: number = 0;
-    public sizeOfImage: number = 0;
-    public sizeOfHeaders: number = 0;
-    public codeSize: number = 0;
-    public initializedDataSize: number = 0;
-    public uninitializedDataSize: number = 0;
-    public codeBaseRva: number = 0;
-    public dataBaseRva: number = 0;
-    public checksum: number = 0;
-    public subsystem: number = 0;
-    public dllCharacteristics: number = 0;
-
-    constructor(architecture: PeTargetArchitecture) {
-        this.architecture = architecture;
-    }
 
     public get_pe_magic(): number {
         return this.architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
@@ -73,7 +74,9 @@ export class PeHeaders {
         writer.write_u16(this.optionalHeaderSize);
         writer.write_u16(this.characteristics);
 
-        console.log(`[PeHeaders] File Header - Machine: 0x${machineType.toString(16)}, NumberOfSections: ${this.numberOfSections}, Characteristics: 0x${this.characteristics.toString(16)}`);
+        console.log(
+            `[PeHeaders] File Header - Machine: 0x${machineType.toString(16)}, NumberOfSections: ${this.numberOfSections}, Characteristics: 0x${this.characteristics.toString(16)}`
+        );
 
         return writer.get_bytes();
     }
@@ -187,7 +190,9 @@ export class PeHeaders {
         writer.write_u32(0);
         writer.write_u32(0);
 
-        console.log(`[PeHeaders] Optional Header - Magic: 0x${magic.toString(16)}, EntryPoint: 0x${this.entryPointRva.toString(16)}, ImageBase: 0x${this.imageBase.toString(16)}, SectionAlignment: 0x${this.sectionAlignment.toString(16)}, FileAlignment: 0x${this.fileAlignment.toString(16)}, SizeOfImage: 0x${this.sizeOfImage.toString(16)}, SizeOfHeaders: 0x${this.sizeOfHeaders.toString(16)}`);
+        console.log(
+            `[PeHeaders] Optional Header - Magic: 0x${magic.toString(16)}, EntryPoint: 0x${this.entryPointRva.toString(16)}, ImageBase: 0x${this.imageBase.toString(16)}, SectionAlignment: 0x${this.sectionAlignment.toString(16)}, FileAlignment: 0x${this.fileAlignment.toString(16)}, SizeOfImage: 0x${this.sizeOfImage.toString(16)}, SizeOfHeaders: 0x${this.sizeOfHeaders.toString(16)}`
+        );
 
         return writer.get_bytes();
     }

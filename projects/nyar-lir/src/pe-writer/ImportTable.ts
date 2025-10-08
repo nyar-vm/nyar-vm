@@ -1,4 +1,4 @@
-import {BinaryWriter} from '../BinaryWriter';
+import { BinaryWriter } from '../BinaryWriter';
 
 export class ImportFunction {
     name: string | null;
@@ -64,7 +64,12 @@ export class ImportTable {
         return library;
     }
 
-    add_import(library_name: string, function_name: string | null, ordinal: number | null = null, hint: number = 0): ImportFunction {
+    add_import(
+        library_name: string,
+        function_name: string | null,
+        ordinal: number | null = null,
+        hint: number = 0
+    ): ImportFunction {
         const library = this.add_library(library_name);
         return library.add_function(function_name, ordinal, hint);
     }
@@ -99,9 +104,9 @@ export class ImportTable {
         // ILT 和 IAT 是并行的数组，每个函数一个条目
         for (const library of this.libraries.values()) {
             library.original_first_thunk_rva = this.current_rva;
-            this.current_rva += library.functions.size * (8); // x64 uses 8 bytes per THUNK
+            this.current_rva += library.functions.size * 8; // x64 uses 8 bytes per THUNK
             library.first_thunk_rva = this.current_rva;
-            this.current_rva += library.functions.size * (8); // x64 uses 8 bytes per THUNK
+            this.current_rva += library.functions.size * 8; // x64 uses 8 bytes per THUNK
         }
 
         // 4. 计算并设置 Import Directory Table 的 RVA

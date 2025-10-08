@@ -1,8 +1,8 @@
-import {BinaryWriter} from '../BinaryWriter';
-import {PeSection} from "./PeSection";
-import {ImportTable} from "./ImportTable";
-import {PeTargetArchitecture} from "./PeTargetArchitecture";
-import {PeHeaders} from "./PeHeaders";
+import { BinaryWriter } from '../BinaryWriter';
+import { PeSection } from './PeSection';
+import { ImportTable } from './ImportTable';
+import { PeTargetArchitecture } from './PeTargetArchitecture';
+import { PeHeaders } from './PeHeaders';
 
 export class PeAssembler {
     private sections: Map<string, PeSection>;
@@ -15,7 +15,8 @@ export class PeAssembler {
     constructor(target_architecture = PeTargetArchitecture.X86) {
         this.sections = new Map();
         this.pe_headers = new PeHeaders(target_architecture);
-        this.base_address = target_architecture === PeTargetArchitecture.X64 ? 0x140000000 : 0x400000;
+        this.base_address =
+            target_architecture === PeTargetArchitecture.X64 ? 0x140000000 : 0x400000;
         this.file_alignment = 0x200;
         this.section_alignment = 0x1000;
         this.init_standard_sections();
@@ -27,7 +28,7 @@ export class PeAssembler {
         this.add_section('.text', 0x60000020); // 可执行、可读、代码
         this.add_section('.data', 0xc0000040); // 可读、可写、初始化数据
         this.add_section('.rdata', 0x40000040); // 只读数据
-        this.add_section('.pdata', 0xC0000040); // 异常信息(x64)
+        this.add_section('.pdata', 0xc0000040); // 异常信息(x64)
         this.add_section('.reloc', 0x42000000); // 重定位
     }
 
@@ -42,51 +43,6 @@ export class PeAssembler {
         }
         this.sections.set(name, section);
         return section;
-    }
-
-    get_code_size(): number {
-        let total_size = 0;
-        for (const section of this.sections.values()) {
-            if ((section.get_characteristics() & 0x00000020) === 0x00000020) { // IMAGE_SCN_CNT_CODE
-                total_size += section.get_raw_data_size();
-            }
-        }
-        return total_size;
-    }
-
-    get_initialized_data_size(): number {
-        let total_size = 0;
-        for (const section of this.sections.values()) {
-            if ((section.get_characteristics() & 0x00000040) === 0x00000040) { // IMAGE_SCN_CNT_INITIALIZED_DATA
-                total_size += section.get_raw_data_size();
-            }
-        }
-        return total_size;
-    }
-
-    get_uninitialized_data_size(): number {
-        let total_size = 0;
-        for (const section of this.sections.values()) {
-            if ((section.get_characteristics() & 0x00000080) === 0x00000080) { // IMAGE_SCN_CNT_UNINITIALIZED_DATA
-                total_size += section.get_virtual_size();
-            }
-        }
-        return total_size;
-    }
-
-    get_entry_point_rva(): number {
-        // For now, hardcode entry point RVA to match hello-world-x64.js
-        return 0x1000;
-    }
-
-    get_code_base_rva(): number {
-        const text_section = this.sections.get('.text');
-        return text_section ? text_section.get_virtual_address() : 0;
-    }
-
-    get_data_base_rva(): number {
-        const data_section = this.sections.get('.data');
-        return data_section ? data_section.get_virtual_address() : 0;
     }
 
     get_sections_count(): number {
@@ -118,10 +74,43 @@ export class PeAssembler {
     }
 
     get_exception_directory(): { rva: number; size: number } {
-        return {rva: 0, size: 0};
+        return { rva: 0, size: 0 };
     }
 
-    get_image_size(): number {
+    private calculate_code_size(): number {
+        let total_size = 0;
+        for (const section of this.sections.values()) {
+            if ((section.get_characteristics() & 0x00000020) === 0x00000020) {
+                // IMAGE_SCN_CNT_CODE
+                total_size += section.get_raw_data_size();
+            }
+        }
+        return total_size;
+    }
+
+    private calculate_initialized_data_size(): number {
+        let total_size = 0;
+        for (const section of this.sections.values()) {
+            if ((section.get_characteristics() & 0x00000040) === 0x00000040) {
+                // IMAGE_SCN_CNT_INITIALIZED_DATA
+                total_size += section.get_raw_data_size();
+            }
+        }
+        return total_size;
+    }
+
+    private calculate_uninitialized_data_size(): number {
+        let total_size = 0;
+        for (const section of this.sections.values()) {
+            if ((section.get_characteristics() & 0x00000080) === 0x00000080) {
+                // IMAGE_SCN_CNT_UNINITIALIZED_DATA
+                total_size += section.get_virtual_size();
+            }
+        }
+        return total_size;
+    }
+
+    private calculate_image_size(): number {
         let image_size = 0;
         for (const section of this.sections.values()) {
             const end_address = section.get_virtual_address() + section.get_virtual_size();
@@ -130,19 +119,14 @@ export class PeAssembler {
         return this.align_to_section_alignment(image_size);
     }
 
-    get_headers_size(): number {
+    private calculate_headers_size(): number {
         let size = 64; // DOS Header
         size += this.generate_dos_stub().length; // DOS Stub
         size += 4; // PE Signature
         size += 20; // File Header
-        size += this.get_optional_header_size(); // Optional Header
+        size += this.pe_headers.size_of_optional_header; // Optional Header - use public field
         size += this.get_sections_count() * 40; // Section Headers (40 bytes per section)
         return this.align_to_file_alignment(size);
-    }
-
-    calculate_checksum(): number {
-        // 简化的校验和计算
-        return 0;
     }
 
     private align_to_section_alignment(size: number): number {
@@ -152,7 +136,7 @@ export class PeAssembler {
     build(): Uint8Array {
         // 预先计算所有节的虚拟地址和原始数据偏移量
         let current_virtual_address = this.section_alignment; // 从第一个节的对齐地址开始
-        let current_raw_offset = this.align_to_file_alignment(this.get_headers_size());
+        let current_raw_offset = this.align_to_file_alignment(this.calculate_headers_size());
 
         // 临时存储节，以便按顺序处理
         const ordered_sections: PeSection[] = [];
@@ -180,10 +164,15 @@ export class PeAssembler {
             ordered_sections.push(idata_section);
 
             // 生成 .idata 节的原始数据
-            const idata_raw_data = this.import_table.generate_raw_data(idata_section.get_virtual_address(), this.base_address);
+            const idata_raw_data = this.import_table.generate_raw_data(
+                idata_section.get_virtual_address(),
+                this.base_address
+            );
             idata_section.set_raw_data(idata_raw_data);
 
-            current_virtual_address += this.align_to_section_alignment(idata_section.get_virtual_size());
+            current_virtual_address += this.align_to_section_alignment(
+                idata_section.get_virtual_size()
+            );
             current_raw_offset += this.align_to_file_alignment(idata_section.get_raw_data_size());
         }
 
@@ -194,23 +183,23 @@ export class PeAssembler {
         writer.write_bytes(dos_header);
 
         // 设置 PeHeaders 的公共字段
-        this.pe_headers.number_of_sections = this.sections.size;
-        this.pe_headers.size_of_optional_header = this.get_optional_header_size();
-        this.pe_headers.characteristics = this.get_characteristics();
-        this.pe_headers.address_of_entry_point = this.get_entry_point_rva();
-        this.pe_headers.image_base = this.base_address;
-        this.pe_headers.section_alignment = this.section_alignment;
-        this.pe_headers.file_alignment = this.file_alignment;
-        this.pe_headers.size_of_image = this.get_image_size();
-        this.pe_headers.size_of_headers = this.get_headers_size();
-        this.pe_headers.size_of_code = this.get_code_size();
-        this.pe_headers.size_of_initialized_data = this.get_initialized_data_size();
-        this.pe_headers.size_of_uninitialized_data = this.get_uninitialized_data_size();
-        this.pe_headers.base_of_code = this.get_code_base_rva();
-        this.pe_headers.base_of_data = this.get_data_base_rva();
-        this.pe_headers.checksum = this.calculate_checksum();
-        this.pe_headers.subsystem = this.get_subsystem();
-        this.pe_headers.dll_characteristics = this.get_dll_characteristics();
+        this.pe_headers.numberOfSections = this.sections.size;
+        this.pe_headers.optionalHeaderSize = this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0xF0 : 0xE0;
+        this.pe_headers.characteristics = this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x010B : 0x010B;
+        this.pe_headers.entryPointRva = 0x1000;
+        this.pe_headers.imageBase = this.base_address;
+        this.pe_headers.sectionAlignment = this.section_alignment;
+        this.pe_headers.fileAlignment = this.file_alignment;
+        this.pe_headers.sizeOfImage = this.calculate_image_size();
+        this.pe_headers.sizeOfHeaders = this.calculate_headers_size();
+        this.pe_headers.codeSize = this.calculate_code_size();
+        this.pe_headers.initializedDataSize = this.calculate_initialized_data_size();
+        this.pe_headers.uninitializedDataSize = this.calculate_uninitialized_data_size();
+        this.pe_headers.codeBaseRva = this.sections.get('.text') ? this.sections.get('.text').get_virtual_address() : 0;
+        this.pe_headers.dataBaseRva = this.sections.get('.data') ? this.sections.get('.data').get_virtual_address() : 0;
+        this.pe_headers.checksum = 0;
+        this.pe_headers.subsystem = 3;
+        this.pe_headers.dllCharacteristics = 0x8160;
 
         // 生成NT头
         const nt_headers = this.generate_nt_headers();
@@ -256,39 +245,38 @@ export class PeAssembler {
         return writer.get_bytes();
     }
 
-    private get_optional_header_size(): number {
-        return this.architecture === PeTargetArchitecture.X64 ? 240 : 224;
-    }
+    private generate_section_headers(sections_to_write: PeSection[]): Uint8Array {
+        const writer = new BinaryWriter();
 
-    private get_characteristics(): number {
-        let characteristics = 0x0002; // IMAGE_FILE_EXECUTABLE_IMAGE
-        characteristics |= 0x0001; // IMAGE_FILE_RELOCS_STRIPPED
-        switch (this.pe_headers.architecture) {
-            case PeTargetArchitecture.X86:
-                characteristics |= 0x0100; // IMAGE_FILE_32BIT_MACHINE
-                break;
-            case PeTargetArchitecture.X64:
-                characteristics |= 0x0020; // IMAGE_FILE_LARGE_ADDRESS_AWARE
-                break;
+        for (const section of sections_to_write) {
+            // 节名 (8字节)
+            const name_bytes = new TextEncoder().encode(section.get_name());
+            writer.write_bytes(name_bytes);
+            writer.write_bytes(new Uint8Array(8 - name_bytes.length));
+
+            // 虚拟大小
+            writer.write_u32(section.get_virtual_size());
+
+            // 虚拟地址
+            writer.write_u32(section.get_virtual_address());
+
+            // 原始数据大小
+            writer.write_u32(section.get_raw_data_size());
+
+            // 原始数据指针
+            writer.write_u32(section.get_raw_offset());
+
+            // 重定位信息
+            writer.write_u32(0); // 重定位指针
+            writer.write_u32(0); // 行号指针
+            writer.write_u16(0); // 重定位数量
+            writer.write_u16(0); // 行号数量
+
+            // 特征
+            writer.write_u32(section.get_characteristics());
         }
-        return characteristics;
-    }
 
-    private get_subsystem(): number {
-        return 3; // Windows GUI
-    }
-
-    private get_dll_characteristics(): number {
-        let characteristics = 0;
-        characteristics |= 0x0040; // IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE
-        characteristics |= 0x0080; // IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY
-        characteristics |= 0x0100; // IMAGE_DLLCHARACTERISTICS_NX_COMPAT
-        characteristics |= 0x0200; // IMAGE_DLLCHARACTERISTICS_NO_ISOLATION
-        characteristics |= 0x0400; // IMAGE_DLLCHARACTERISTICS_NO_SEH
-        characteristics |= 0x0800; // IMAGE_DLLCHARACTERISTICS_NO_BIND
-        characteristics |= 0x2000; // IMAGE_DLLCHARACTERISTICS_WDM_DRIVER
-        characteristics |= 0x8000; // IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE
-        return characteristics;
+        return writer.get_bytes();
     }
 
     private write_data_directories(writer: BinaryWriter): void {
@@ -367,40 +355,6 @@ export class PeAssembler {
         // 保留
         writer.write_u32(0);
         writer.write_u32(0);
-    }
-
-    private generate_section_headers(sections_to_write: PeSection[]): Uint8Array {
-        const writer = new BinaryWriter();
-
-        for (const section of sections_to_write) {
-            // 节名 (8字节)
-            const name_bytes = new TextEncoder().encode(section.get_name());
-            writer.write_bytes(name_bytes);
-            writer.write_bytes(new Uint8Array(8 - name_bytes.length));
-
-            // 虚拟大小
-            writer.write_u32(section.get_virtual_size());
-
-            // 虚拟地址
-            writer.write_u32(section.get_virtual_address());
-
-            // 原始数据大小
-            writer.write_u32(section.get_raw_data_size());
-
-            // 原始数据指针
-            writer.write_u32(section.get_raw_offset());
-
-            // 重定位信息
-            writer.write_u32(0); // 重定位指针
-            writer.write_u32(0); // 行号指针
-            writer.write_u16(0); // 重定位数量
-            writer.write_u16(0); // 行号数量
-
-            // 特征
-            writer.write_u32(section.get_characteristics());
-        }
-
-        return writer.get_bytes();
     }
 
     private align_to_file_alignment(size: number): number {

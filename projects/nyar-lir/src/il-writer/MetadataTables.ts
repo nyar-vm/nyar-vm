@@ -1,4 +1,4 @@
-import {BinaryWriter} from "../BinaryWriter";
+import { BinaryWriter } from '../BinaryWriter';
 
 export class MetadataTables {
     private tables: Map<string, unknown[]>;
