@@ -15,17 +15,17 @@ describe('SourceFile', () => {
     const content = 'line 1\nline 2\nline 3';
     const file = new SourceFile('test.ts', content);
     
-    expect(file.getLine(1)).toBe('line 1');
-    expect(file.getLine(2)).toBe('line 2');
-    expect(file.getLine(3)).toBe('line 3');
-    expect(file.getLine(4)).toBe('');
+    expect(file.get_line(1)).toBe('line 1');
+    expect(file.get_line(2)).toBe('line 2');
+    expect(file.get_line(3)).toBe('line 3');
+    expect(file.get_line(4)).toBe('');
   });
 
   it('should get line count', () => {
     const content = 'line 1\nline 2\nline 3';
     const file = new SourceFile('test.ts', content);
     
-    expect(file.lineCount).toBe(3);
+    expect(file.line_count).toBe(3);
   });
 
   it('should convert offset to position', () => {

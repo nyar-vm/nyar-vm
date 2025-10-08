@@ -12,7 +12,7 @@ export class SourceFile {
     /**
      * Get a specific line from the source file
      */
-    getLine(lineNumber: number): string {
+    get_line(lineNumber: number): string {
         const lines = this.content.split('\n');
         return lines[lineNumber - 1] || '';
     }
@@ -20,7 +20,7 @@ export class SourceFile {
     /**
      * Get the total number of lines in the source file
      */
-    get lineCount(): number {
+    get line_count(): number {
         return this.content.split('\n').length;
     }
 
