@@ -5,19 +5,29 @@ export class PeSection {
     private virtual_address: number;
     private raw_data: Uint8Array;
     private raw_offset: number;
+    private file_alignment: number;
 
-    constructor(name: string, characteristics: number) {
+    constructor(name: string, characteristics: number, file_alignment: number) {
         this.name = name;
         this.characteristics = characteristics;
         this.virtual_size = 0;
         this.virtual_address = 0;
         this.raw_data = new Uint8Array(0);
         this.raw_offset = 0;
+        this.file_alignment = file_alignment;
     }
 
     set_raw_data(data: Uint8Array): void {
         this.raw_data = data;
         this.virtual_size = data.length;
+
+        // Align raw_data.length to file_alignment
+        const aligned_raw_data_size = Math.ceil(data.length / this.file_alignment) * this.file_alignment;
+        if (data.length < aligned_raw_data_size) {
+            const padded_data = new Uint8Array(aligned_raw_data_size);
+            padded_data.set(data);
+            this.raw_data = padded_data;
+        }
     }
 
     get_raw_data(): Uint8Array {

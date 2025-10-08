@@ -19,6 +19,7 @@ export class PeHeaders {
     public checksum: number = 0;
     public subsystem: number = 0;
     public dll_characteristics: number = 0;
+    public pe_header_offset: number = 0;
 
     private import_table_rva: number = 0;
     private import_table_size: number = 0;
@@ -29,6 +30,10 @@ export class PeHeaders {
 
     constructor(architecture: PeTargetArchitecture) {
         this.architecture = architecture;
+    }
+
+    public set_pe_header_offset(offset: number): void {
+        this.pe_header_offset = offset;
     }
 
     public update_exception_section(pdata_section: PeSection): void {
@@ -67,7 +72,7 @@ export class PeHeaders {
         writer.write_u16(0x0000); // e_csum
         writer.write_u16(0x0000); // e_ip
         writer.write_u16(0x0000); // e_cs
-        writer.write_u32(0x00000040); // e_lfarlc
+        writer.write_u32(0x00000000); // e_lfarlc
         writer.write_u32(0x00000000); // e_ovno
 
         // 保留字段
@@ -75,7 +80,7 @@ export class PeHeaders {
             writer.write_u16(0);
         }
 
-        writer.write_u32(0x00000074); // e_lfanew (PE头偏移)
+        writer.write_u32(this.pe_header_offset); // e_lfanew (PE头偏移)
 
     }
 

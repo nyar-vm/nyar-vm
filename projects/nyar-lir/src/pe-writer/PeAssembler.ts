@@ -34,7 +34,7 @@ export class PeAssembler {
         characteristics: number,
         raw_data: Uint8Array | null = null
     ): PeSection {
-        const section = new PeSection(name, characteristics);
+        const section = new PeSection(name, characteristics, this.file_alignment);
         if (raw_data) {
             section.set_raw_data(raw_data);
         }
@@ -150,9 +150,10 @@ export class PeAssembler {
         for (const section of this.sections.values()) {
             section.set_virtual_address(current_virtual_address);
             section.set_raw_offset(current_raw_offset);
+            section.set_virtual_size(this.align_to_section_alignment(section.get_virtual_size()));
             ordered_sections.push(section);
 
-            current_virtual_address += this.align_to_section_alignment(section.get_virtual_size());
+            current_virtual_address += section.get_virtual_size();
             current_raw_offset += this.align_to_file_alignment(section.get_raw_data_size());
         }
 
@@ -161,7 +162,7 @@ export class PeAssembler {
             const idata_section_rva = current_virtual_address; // idata 节的 RVA
             const import_table_size = this.import_table.layout(idata_section_rva);
 
-            const idata_section = new PeSection('.idata', 0xc0000040); // 可读、可写、初始化数据
+            const idata_section = new PeSection('.idata', 0xc0000040, this.file_alignment); // 可读、可写、初始化数据
             idata_section.set_virtual_address(idata_section_rva);
             idata_section.set_virtual_size(import_table_size);
             idata_section.set_raw_offset(current_raw_offset);
@@ -210,6 +211,7 @@ export class PeAssembler {
 
         const writer = new BinaryWriter();
         // 生成DOS头
+        this.pe_headers.set_pe_header_offset(64 + this.generate_dos_stub().length);
         this.pe_headers.write_dos_header(writer);
         // 设置 PeHeaders 的公共字段
         this.pe_headers.number_of_sections = this.sections.size;
@@ -225,7 +227,7 @@ export class PeAssembler {
         this.pe_headers.data_base_rva = this.sections.get('.data')?.get_virtual_address() || 0;
         this.pe_headers.checksum = 0;
         this.pe_headers.subsystem = 3;
-        this.pe_headers.dll_characteristics = 0x0060; // NX_COMPAT (0x0040) | NO_SEH (0x0020)
+        this.pe_headers.dll_characteristics = 0;
 
         // 生成NT头
         this.pe_headers.write_nt_headers(writer);
@@ -276,6 +278,7 @@ export class PeAssembler {
             writer.write_u32(section.get_characteristics());
         }
         // 写入节数据 (使用 ordered_sections)
+        writer.align(this.file_alignment);
         for (const section of sections_to_write) {
             writer.write_bytes(section.get_raw_data());
         }
