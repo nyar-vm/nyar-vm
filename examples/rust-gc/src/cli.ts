@@ -2,13 +2,15 @@
 
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve, basename, extname } from 'path';
-import { EGraph } from '@nyar/hir';
-import { hir_to_mir } from './hir_to_mir.js';
+import { compile } from '@nyar/vm';
+import { parse_rust_to_ast } from './parser.js';
+import { rust_ast_to_mir } from './hir_to_mir.js';
 import { compile_to_javascript } from './compiler/javascript.js';
 
 /**
  * Rust-GC CLI 编译器
  * 支持: rust-gc compile xxx.rs --target js
+ * 通过 @nyar/vm 提供的编译管线进行编译
  */
 class RustGCCompiler {
     private source_file: string;
@@ -94,16 +96,32 @@ class RustGCCompiler {
             // 读取源文件
             const source_code = this.read_source_file();
             
-            // 解析Rust代码（简化版本，实际应该使用完整的Rust解析器）
-            const hir_program = this.parse_rust_to_hir(source_code);
-            
-            // HIR到MIR转换
-            console.log('正在执行 HIR -> MIR 转换...');
-            const mir_graph = hir_to_mir(hir_program);
-            
-            // MIR到JavaScript编译
-            console.log('正在执行 MIR -> JavaScript 编译...');
-            const javascript_code = compile_to_javascript(mir_graph);
+            // 第一步：解析Rust代码为AST
+            const ast = parse_rust_to_ast(source_code);
+            console.log('✓ 解析Rust代码为AST');
+
+            // 根据目标平台编译
+            let javascript_code: string;
+            switch (this.target) {
+                case 'js':
+                case 'javascript':
+                    // 使用@nyar/vm的完整编译管线
+                    const result = compile(ast, {
+                        source_language: 'rust',
+                        target: 'javascript',
+                        optimizations: ['constant-folding', 'dead-code-elimination'],
+                        backend: 'vanilla-js'
+                    });
+
+                    if (!result.success) {
+                        throw new Error(`编译失败: ${result.errors.join(', ')}`);
+                    }
+                    javascript_code = result.code;
+                    break;
+
+                default:
+                    throw new Error('目前只支持 "js" 或 "javascript" 目标');
+            }
             
             // 确定输出文件路径
             const output_path = this.get_output_path();

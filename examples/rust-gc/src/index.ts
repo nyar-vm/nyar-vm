@@ -1,142 +1,300 @@
-// Rust-GC 示例语言 - HIR 定义
-export interface RustProgram {
+// Rust-GC 示例语言 - Rust AST 定义
+// 这是源语言前端，负责将Rust代码解析为AST，然后转换为HIR
+
+export interface RustAstProgram {
     type: 'Program';
-    items: RustItem[];
+    items: RustAstItem[];
 }
 
-export interface RustItem {
-    type: 'Function';
+export interface RustAstItem {
+    type: 'Function' | 'Struct' | 'Enum' | 'Module';
 }
 
-export interface RustFunction extends RustItem {
+export interface RustAstFunction extends RustAstItem {
     type: 'Function';
     name: string;
-    params: HirParam[];
-    return_type: HirType;
-    body: HirExpr;
+    params: RustAstParam[];
+    return_type: RustAstType;
+    body: RustAstBlock;
+    visibility?: 'pub';
 }
 
-export interface RustParam {
+export interface RustAstParam {
     name: string;
-    type: HirType;
+    type: RustAstType;
 }
 
-export type RustType = 'i32' | 'bool';
+export type RustAstType =
+    | RustAstTypePrimitive
+    | RustAstTypeReference
+    | RustAstTypePointer
+    | RustAstTypePath;
 
-export type RustExpr =
-    | HirExprBinary
-    | HirExprIf
-    | HirExprLiteral
-    | HirExprCall
-    | HirExprPath
-    | HirExprBlock;
-
-export interface RustExprBinary {
-    type: 'Binary';
-    op: HirBinaryOp;
-    left: HirExpr;
-    right: HirExpr;
+export interface RustAstTypePrimitive {
+    type: 'Primitive';
+    name: 'i32' | 'i64' | 'u32' | 'u64' | 'bool' | 'str' | 'char';
 }
 
-export type RustBinaryOp = 'Add' | 'Sub' | 'Mul' | 'Div' | 'Eq' | 'Ne' | 'Lt' | 'Gt';
-
-export interface RustExprIf {
-    type: 'If';
-    cond: HirExpr;
-    then_expr: HirExpr;
-    else_expr: HirExpr;
+export interface RustAstTypeReference {
+    type: 'Reference';
+    lifetime?: string;
+    mutable: boolean;
+    element: RustAstType;
 }
 
-export interface RustExprLiteral {
-    type: 'Literal';
-    value: number | boolean;
-    literal_type: HirType;
+export interface RustAstTypePointer {
+    type: 'Pointer';
+    mutable: boolean;
+    element: RustAstType;
 }
 
-export interface RustExprCall {
-    type: 'Call';
-    func: HirExpr;
-    args: HirExpr[];
-}
-
-export interface RustExprPath {
+export interface RustAstTypePath {
     type: 'Path';
-    name: string;
+    segments: string[];
 }
 
-export interface RustExprBlock {
+export type RustAstExpr =
+    | RustAstExprBinary
+    | RustAstExprUnary
+    | RustAstExprIf
+    | RustAstExprWhile
+    | RustAstExprFor
+    | RustAstExprLoop
+    | RustAstExprMatch
+    | RustAstExprLiteral
+    | RustAstExprCall
+    | RustAstExprMethodCall
+    | RustAstExprField
+    | RustAstExprPath
+    | RustAstExprBlock
+    | RustAstExprStruct
+    | RustAstExprTuple
+    | RustAstExprArray
+    | RustAstExprIndex
+    | RustAstExprClosure;
+
+export interface RustAstExprBinary {
+    type: 'Binary';
+    op: RustAstBinaryOp;
+    left: RustAstExpr;
+    right: RustAstExpr;
+}
+
+export type RustAstBinaryOp = 
+    | 'Add' | 'Sub' | 'Mul' | 'Div' | 'Rem'  // Arithmetic
+    | 'Eq' | 'Ne' | 'Lt' | 'Le' | 'Gt' | 'Ge'  // Comparison
+    | 'And' | 'Or'  // Logical
+    | 'BitAnd' | 'BitOr' | 'BitXor' | 'Shl' | 'Shr'  // Bitwise
+    ;
+
+export interface RustAstExprUnary {
+    type: 'Unary';
+    op: RustAstUnaryOp;
+    expr: RustAstExpr;
+}
+
+export type RustAstUnaryOp = 'Not' | 'Neg' | 'Deref' | 'Ref' | 'RefMut';
+
+export interface RustAstExprIf {
+    type: 'If';
+    cond: RustAstExpr;
+    then_expr: RustAstBlock;
+    else_expr: RustAstExpr | RustAstBlock | null;
+}
+
+export interface RustAstExprWhile {
+    type: 'While';
+    cond: RustAstExpr;
+    body: RustAstBlock;
+}
+
+export interface RustAstExprFor {
+    type: 'For';
+    pattern: RustAstPattern;
+    iter: RustAstExpr;
+    body: RustAstBlock;
+}
+
+export interface RustAstExprLoop {
+    type: 'Loop';
+    body: RustAstBlock;
+}
+
+export interface RustAstExprMatch {
+    type: 'Match';
+    expr: RustAstExpr;
+    arms: RustAstMatchArm[];
+}
+
+export interface RustAstMatchArm {
+    pattern: RustAstPattern;
+    guard: RustAstExpr | null;
+    body: RustAstExpr;
+}
+
+export type RustAstPattern =
+    | RustAstPatternWildcard
+    | RustAstPatternLiteral
+    | RustAstPatternPath
+    | RustAstPatternStruct
+    | RustAstPatternTuple
+    | RustAstPatternBinding;
+
+export interface RustAstPatternWildcard {
+    type: 'Wildcard';
+}
+
+export interface RustAstPatternLiteral {
+    type: 'Literal';
+    value: number | boolean | string;
+}
+
+export interface RustAstPatternPath {
+    type: 'Path';
+    segments: string[];
+}
+
+export interface RustAstPatternStruct {
+    type: 'Struct';
+    path: RustAstPatternPath;
+    fields: RustAstPatternField[];
+}
+
+export interface RustAstPatternField {
+    name: string;
+    pattern: RustAstPattern;
+}
+
+export interface RustAstPatternTuple {
+    type: 'Tuple';
+    elements: RustAstPattern[];
+}
+
+export interface RustAstPatternBinding {
+    type: 'Binding';
+    name: string;
+    pattern: RustAstPattern | null;
+}
+
+export interface RustAstExprLiteral {
+    type: 'Literal';
+    value: number | boolean | string;
+    literal_type: RustAstType;
+}
+
+export interface RustAstExprCall {
+    type: 'Call';
+    func: RustAstExpr;
+    args: RustAstExpr[];
+}
+
+export interface RustAstExprMethodCall {
+    type: 'MethodCall';
+    receiver: RustAstExpr;
+    method: string;
+    args: RustAstExpr[];
+    type_args: RustAstType[];
+}
+
+export interface RustAstExprField {
+    type: 'Field';
+    expr: RustAstExpr;
+    field: string;
+}
+
+export interface RustAstExprPath {
+    type: 'Path';
+    segments: string[];
+}
+
+export interface RustAstExprBlock {
     type: 'Block';
-    stmts: HirStmt[];
-    expr: HirExpr | null;
+    stmts: RustAstStmt[];
+    expr: RustAstExpr | null;
 }
 
-export type RustStmt = HirStmtLet;
+export interface RustAstExprStruct {
+    type: 'Struct';
+    path: RustAstExprPath;
+    fields: RustAstExprField[];
+}
 
-export interface RustStmtLet {
-    type: 'Let';
+export interface RustAstExprField {
     name: string;
-    init: HirExpr;
+    value: RustAstExpr;
 }
 
-// 辅助函数
-export function create_hir_program(items: RustItem[]): RustProgram {
+export interface RustAstExprTuple {
+    type: 'Tuple';
+    elements: RustAstExpr[];
+}
+
+export interface RustAstExprArray {
+    type: 'Array';
+    elements: RustAstExpr[];
+}
+
+export interface RustAstExprIndex {
+    type: 'Index';
+    expr: RustAstExpr;
+    index: RustAstExpr;
+}
+
+export interface RustAstExprClosure {
+    type: 'Closure';
+    params: RustAstParam[];
+    return_type: RustAstType | null;
+    body: RustAstExpr;
+}
+
+export type RustAstStmt =
+    | RustAstStmtLet
+    | RustAstStmtExpr
+    | RustAstStmtItem
+    | RustAstStmtSemi;
+
+export interface RustAstStmtLet {
+    type: 'Let';
+    pattern: RustAstPattern;
+    init: RustAstExpr;
+    type_annotation: RustAstType | null;
+}
+
+export interface RustAstStmtExpr {
+    type: 'Expr';
+    expr: RustAstExpr;
+}
+
+export interface RustAstStmtItem {
+    type: 'Item';
+    item: RustAstItem;
+}
+
+export interface RustAstStmtSemi {
+    type: 'Semi';
+    expr: RustAstExpr;
+}
+
+export type RustAstBlock = RustAstStmt[];
+
+// AST 辅助函数
+export function create_ast_program(items: RustAstItem[]): RustAstProgram {
     return { type: 'Program', items };
 }
 
-export function create_hir_function(
+export function create_ast_function(
     name: string,
-    params: HirParam[],
-    return_type: HirType,
-    body: HirExpr
-): HirFunction {
+    params: RustAstParam[],
+    return_type: RustAstType,
+    body: RustAstBlock,
+    visibility?: 'pub'
+): RustAstFunction {
     return {
         type: 'Function',
         name,
         params,
         return_type,
         body,
+        visibility,
     };
-}
-
-export function create_hir_param(name: string, type: HirType): HirParam {
-    return { name, type };
-}
-
-export function create_hir_expr_binary(
-    op: HirBinaryOp,
-    left: HirExpr,
-    right: HirExpr
-): HirExprBinary {
-    return { type: 'Binary', op, left, right };
-}
-
-export function create_hir_expr_if(
-    cond: HirExpr,
-    then_expr: HirExpr,
-    else_expr: HirExpr
-): HirExprIf {
-    return { type: 'If', cond, then_expr, else_expr };
-}
-
-export function create_hir_expr_literal(
-    value: number | boolean,
-    literal_type: HirType
-): HirExprLiteral {
-    return { type: 'Literal', value, literal_type };
-}
-
-export function create_hir_expr_call(func: HirExpr, args: HirExpr[]): HirExprCall {
-    return { type: 'Call', func, args };
-}
-
-export function create_hir_expr_path(name: string): HirExprPath {
-    return { type: 'Path', name };
-}
-
-export function create_hir_expr_block(stmts: HirStmt[], expr: HirExpr | null = null): HirExprBlock {
-    return { type: 'Block', stmts, expr };
-}
-
-export function create_hir_stmt_let(name: string, init: HirExpr): HirStmtLet {
-    return { type: 'Let', name, init };
 }
