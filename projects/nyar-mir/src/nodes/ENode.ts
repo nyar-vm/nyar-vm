@@ -6,7 +6,7 @@ export interface ENode {
 
 export interface ConstantNode extends ENode {
     type: 'CONSTANT';
-    value: any;
+    value: string | number | boolean | null;
 }
 
 export interface SymbolNode extends ENode {

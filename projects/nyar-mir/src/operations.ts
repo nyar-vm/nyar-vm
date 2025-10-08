@@ -69,7 +69,7 @@ export function rebuild_graph(graph: EGraph): void {
         const merged_id = graph.worklist.pop()!;
 
         // 查找所有引用这个merged_id的父节点
-        for (const [eclass_id, eclass] of graph.e_classes) {
+        for (const [, eclass] of graph.e_classes) {
             for (const node of eclass.nodes) {
                 if (references_class(node, merged_id)) {
                     // 如果这个节点引用了被合并的ID，我们需要处理它
