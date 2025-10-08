@@ -5,7 +5,7 @@ import { SourceFile } from '../src/source-file.js';
 import { SourceSpan } from '../src/source-span.js';
 
 describe('DiagnosticCollector', () => {
-    const createTestDiagnostic = (severity: 'error' | 'warning' | 'info' | 'hint' = 'error') => {
+    const create_test_diagnostic = (severity: 'error' | 'warning' | 'info' | 'hint' = 'error') => {
         const file = new SourceFile('test.ts', 'test content');
         const span = new SourceSpan(0, 4, file);
 
@@ -23,7 +23,7 @@ describe('DiagnosticCollector', () => {
 
     it('should add diagnostics', () => {
         const collector = new DiagnosticCollector();
-        const diagnostic = createTestDiagnostic('error');
+        const diagnostic = create_test_diagnostic('error');
 
         collector.add(diagnostic);
         expect(collector.hasErrors()).toBe(true);
@@ -33,9 +33,9 @@ describe('DiagnosticCollector', () => {
 
     it('should add multiple diagnostics', () => {
         const collector = new DiagnosticCollector();
-        const error1 = createTestDiagnostic('error');
-        const error2 = createTestDiagnostic('error');
-        const warning = createTestDiagnostic('warning');
+        const error1 = create_test_diagnostic('error');
+        const error2 = create_test_diagnostic('error');
+        const warning = create_test_diagnostic('warning');
 
         collector.addMany([error1, error2, warning]);
         expect(collector.hasErrors()).toBe(true);
@@ -46,10 +46,10 @@ describe('DiagnosticCollector', () => {
 
     it('should get diagnostics by severity', () => {
         const collector = new DiagnosticCollector();
-        const error = createTestDiagnostic('error');
-        const warning = createTestDiagnostic('warning');
-        const info = createTestDiagnostic('info');
-        const hint = createTestDiagnostic('hint');
+        const error = create_test_diagnostic('error');
+        const warning = create_test_diagnostic('warning');
+        const info = create_test_diagnostic('info');
+        const hint = create_test_diagnostic('hint');
 
         collector.addMany([error, warning, info, hint]);
 
@@ -61,7 +61,7 @@ describe('DiagnosticCollector', () => {
 
     it('should clear diagnostics', () => {
         const collector = new DiagnosticCollector();
-        collector.add(createTestDiagnostic('error'));
+        collector.add(create_test_diagnostic('error'));
 
         expect(collector.hasErrors()).toBe(true);
 
