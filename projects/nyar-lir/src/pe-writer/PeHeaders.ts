@@ -118,6 +118,7 @@ export class PeHeaders {
         writer.write_u32(this.entry_point_rva);
         writer.write_u32(this.code_base_rva);
 
+        // 对于32位PE文件，需要写入data_base_rva，对于64位PE文件，这个字段被跳过
         if (this.architecture === PeTargetArchitecture.X86) {
             writer.write_u32(this.data_base_rva);
         }
@@ -249,9 +250,9 @@ export class PeHeaders {
     public get_characteristics(): number {
         switch (this.architecture) {
             case PeTargetArchitecture.X64:
-                return 0x0020 | 0x0002 | 0x0020;
+                return 0x0020 | 0x0002 | 0x2000; // IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_LARGE_ADDRESS_AWARE | IMAGE_FILE_DEBUG_STRIPPED
             default:
-                return 0x0100 | 0x0002;
+                return 0x0100 | 0x0002 | 0x2000; // IMAGE_FILE_32BIT_MACHINE | IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_DEBUG_STRIPPED
         }
     }
 }

@@ -157,20 +157,25 @@ export class ImportTable {
             writer.set_position(library.original_first_thunk_rva - idata_section_rva);
             for (const func of library.functions.values()) {
                 if (func.ordinal !== null) {
-                    writer.write_u64(BigInt(0x8000000000000000 | func.ordinal)); // Ordinal import
+                    writer.write_u64(BigInt(0x8000000000000000n | BigInt(func.ordinal))); // Ordinal import
                 } else {
                     writer.write_u64(BigInt(func.rva)); // RVA to Hint/Name Table
                 }
             }
+            // 写入ILT结束标记 (0)
+            writer.write_u64(0n);
+            
             // IAT (初始时与ILT相同)
             writer.set_position(library.first_thunk_rva - idata_section_rva);
             for (const func of library.functions.values()) {
                 if (func.ordinal !== null) {
-                    writer.write_u64(BigInt(0x8000000000000000 | func.ordinal)); // Ordinal import
+                    writer.write_u64(BigInt(0x8000000000000000n | BigInt(func.ordinal))); // Ordinal import
                 } else {
                     writer.write_u64(BigInt(func.rva)); // RVA to Hint/Name Table
                 }
             }
+            // 写入IAT结束标记 (0)
+            writer.write_u64(0n);
         }
 
         // 4. 写入 Import Directory Table

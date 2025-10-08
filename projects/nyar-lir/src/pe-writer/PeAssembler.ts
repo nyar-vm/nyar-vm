@@ -1,4 +1,4 @@
-import {BinaryWriter} from '../BinaryWriter';
+import {BinaryWriter} from '@/BinaryWriter';
 import {PeSection} from './PeSection';
 import {ImportTable} from './ImportTable';
 import {PeTargetArchitecture} from './PeTargetArchitecture';
@@ -26,7 +26,7 @@ export class PeAssembler {
         this.add_section('.data', 0xc0000040); // 可读、可写、初始化数据
         this.add_section('.rdata', 0x40000040); // 只读数据
         this.add_section('.pdata', 0x40000040); // 异常信息(x64)
-        this.add_section('.reloc', 0x42000000); // 重定位
+        this.add_section('.reloc', 0x42000040); // 重定位、可读、初始化数据
     }
 
     add_section(
@@ -153,7 +153,7 @@ export class PeAssembler {
             section.set_virtual_size(this.align_to_section_alignment(section.get_virtual_size()));
             ordered_sections.push(section);
 
-            current_virtual_address += section.get_virtual_size();
+            current_virtual_address += this.align_to_section_alignment(section.get_virtual_size());
             current_raw_offset += this.align_to_file_alignment(section.get_raw_data_size());
         }
 
@@ -238,7 +238,7 @@ export class PeAssembler {
     }
 
     private generate_dos_stub(): Uint8Array {
-        // 简化的DOS存根程序
+        // 标准的DOS存根程序，显示"This program cannot be run in DOS mode."
         const stub = new Uint8Array([
             0x0e, 0x1f, 0xba, 0x0e, 0x00, 0xb4, 0x09, 0xcd, 0x21, 0xb8, 0x01, 0x4c, 0xcd, 0x21,
             0x54, 0x68, 0x69, 0x73, 0x20, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x20, 0x63,
