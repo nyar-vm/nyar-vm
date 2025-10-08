@@ -1,7 +1,7 @@
 import {BinaryWriter} from '../BinaryWriter';
 import {PeSection} from "./PeSection";
 import {ImportTable} from "./ImportTable";
-import {PeTargetArchitecture} from "@/pe-writer/PeTargetArchitecture";
+import {PeTargetArchitecture} from "./PeTargetArchitecture";
 
 export class PeAssembler {
     private sections: Map<string, PeSection>;
@@ -132,15 +132,21 @@ export class PeAssembler {
     }
 
     build(): Uint8Array {
-        let import_table_size = 0;
-        if (this.import_table.libraries.size > 0) {
-            import_table_size = this.import_table.layout(this.architecture);
+        let current_virtual_address = this.section_alignment; // 从第一个节的对齐地址开始
+        for (const section of this.sections.values()) {
+            current_virtual_address += this.align_to_section_alignment(section.get_virtual_size());
         }
 
-        // 如果有导入，则添加.idata节
+        let import_table_size = 0;
+        let idata_section_rva = 0;
+
         if (this.import_table.libraries.size > 0) {
-            // 先添加节，raw_data 稍后设置
+            idata_section_rva = current_virtual_address; // idata 节的 RVA
+            import_table_size = this.import_table.layout(idata_section_rva);
+
+            // 添加 .idata 节
             const idata_section = this.add_section('.idata', 0xc0000040); // 可读、可写、初始化数据
+            idata_section.set_virtual_address(idata_section_rva); // 设置虚拟地址
             idata_section.set_virtual_size(import_table_size);
         }
 

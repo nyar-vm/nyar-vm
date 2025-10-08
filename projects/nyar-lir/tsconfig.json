@@ -17,7 +17,7 @@
         "declarationMap": true,
         "sourceMap": true,
         "outDir": "dist",
-        "rootDir": "src",
+        "rootDir": ".",
         "lib": [
             "ES2022"
         ]

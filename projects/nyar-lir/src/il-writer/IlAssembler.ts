@@ -1,5 +1,5 @@
 import {BinaryWriter} from '../BinaryWriter.js';
-import {PeAssembler} from '.././pe-writer/PeAssembler';
+import {PeAssembler, PeTargetArchitecture} from '.././pe-writer';
 
 export class IlAssembler {
     private module_name: string;
@@ -27,7 +27,7 @@ export class IlAssembler {
         this.custom_attributes = [];
 
         // 重用现有的 PE 构建器
-        this.pe_builder = new PeAssembler('x86');
+        this.pe_builder = new PeAssembler(PeTargetArchitecture.X86);
         this.init_dotnet_sections();
     }
 
@@ -62,7 +62,7 @@ export class IlAssembler {
         const writer = new BinaryWriter();
 
         // 存储签名
-        writer.write_u32(0x424a5342); // BSJB
+        writer.write_u32(0x424A5342); // BSJB
 
         // 主版本和次版本
         writer.write_u16(1);
@@ -112,27 +112,27 @@ export class IlAssembler {
 
     private generate_tilde_stream(): { offset: number; size: number } {
         // 简化的实现
-        return { offset: 0, size: 0 };
+        return {offset: 0, size: 0};
     }
 
     private generate_strings_heap(): { offset: number; size: number } {
         // 简化的实现
-        return { offset: 0, size: 0 };
+        return {offset: 0, size: 0};
     }
 
     private generate_us_heap(): { offset: number; size: number } {
         // 简化的实现
-        return { offset: 0, size: 0 };
+        return {offset: 0, size: 0};
     }
 
     private generate_guid_heap(): { offset: number; size: number } {
         // 简化的实现
-        return { offset: 0, size: 0 };
+        return {offset: 0, size: 0};
     }
 
     private generate_blob_heap(): { offset: number; size: number } {
         // 简化的实现
-        return { offset: 0, size: 0 };
+        return {offset: 0, size: 0};
     }
 
     build(): Uint8Array {
