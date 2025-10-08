@@ -1,6 +1,5 @@
-import { PeAssembler } from '../src/index.ts';
-import { BinaryWriter } from '../src/BinaryWriter.ts';
 import { writeFileSync } from 'fs';
+import {PeAssembler} from "../src/pe/PeBuilder";
 
 // 创建一个真正能在 x64 Windows 上运行的 Hello World
 function createWorkingHelloWorldX64() {

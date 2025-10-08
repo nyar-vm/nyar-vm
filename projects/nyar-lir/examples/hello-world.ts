@@ -1,6 +1,5 @@
-import { PeAssembler } from '../src/pe/PeBuilder.js';
-import { BinaryWriter } from '../src/BinaryWriter.js';
 import { writeFileSync } from 'fs';
+import {PeAssembler} from "../src/pe/PeBuilder";
 
 // 创建一个简单的 Hello World PE 可执行文件
 function createHelloWorldExe() {
