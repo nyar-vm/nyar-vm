@@ -1,7 +1,8 @@
 {
-    "name": "vos-document",
+    "private": true,
+    "name": "@nyar/document",
     "version": "1.0.0",
-    "description": "VOS Language Documentation",
+    "description": "Nyar Language Documentation",
     "type": "module",
     "main": "index.js",
     "scripts": {
