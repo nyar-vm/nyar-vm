@@ -1051,14 +1051,14 @@ class TypeDefinitionGenerator {
 class DotNetDllBuilder {
     constructor(assembly_name) {
         this.assembly_name = assembly_name;
-        this.module_builder = new DotNetModuleBuilder(assembly_name, 'dll');
+        this.module_builder = new IlAssembler(assembly_name, 'dll');
         this.manifest_generator = new AssemblyManifestGenerator(assembly_name);
         this.type_system = new ILTypeSystem();
-        
+
         this.types = [];
         this.references = [];
     }
-    
+
     add_reference(assembly_name, version, public_key_token = null) {
         const ref_token = this.manifest_generator.generate_assembly_reference(
             assembly_name, version, public_key_token
@@ -1066,54 +1066,54 @@ class DotNetDllBuilder {
         this.references.push(ref_token);
         return ref_token;
     }
-    
+
     define_type(type_name, namespace = '') {
         const type_generator = new TypeDefinitionGenerator(type_name, namespace);
         this.types.push(type_generator);
         return type_generator;
     }
-    
+
     build() {
         // 1. 生成程序集定义
         this.manifest_generator.generate_assembly_definition();
-        
+
         // 2. 生成模块定义
         this.manifest_generator.generate_module_definition();
-        
+
         // 3. 生成所有类型定义
         for (const type of this.types) {
             type.generate_type_definition();
         }
-        
+
         // 4. 生成元数据
         const metadata = this.module_builder.generate_metadata_root();
-        
+
         // 5. 生成 COR20 头
         const cor20_header = this.module_builder.generate_cor20_header();
-        
+
         // 6. 构建 PE 文件
         const pe_builder = this.module_builder.pe_builder;
-        
+
         // 添加 .text 节（包含元数据和IL代码）
         const text_section = pe_builder.sections.get('.text');
         text_section.data = this.concat_arrays(metadata, text_section.data);
-        
+
         // 设置数据目录
         pe_builder.data_directories.clr_runtime_header = {
             rva: this.calculate_cor20_header_rva(),
             size: cor20_header.length
         };
-        
+
         // 7. 生成最终的 DLL
         return pe_builder.build();
     }
-    
+
     calculate_cor20_header_rva() {
         // COR20 头通常位于 PE 头之后
         const pe_headers_size = 0x200; // 典型的PE头大小
         return pe_headers_size;
     }
-    
+
     concat_arrays(a, b) {
         const result = new Uint8Array(a.length + b.length);
         result.set(a);
