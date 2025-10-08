@@ -6,7 +6,8 @@ export class PeHeaders {
     generate_dos_header(): Uint8Array {
         const writer = new BinaryWriter();
 
-        // DOS MZ�?        writer.write_u16(0x5a4d); // e_magic: 'MZ'
+        // DOS MZ头
+        writer.write_u16(0x5a4d); // e_magic: 'MZ'
         writer.write_u16(0x0090); // e_cblp
         writer.write_u16(0x0003); // e_cp
         writer.write_u16(0x0000); // e_crlc
@@ -31,7 +32,178 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-    public get_pe_magic(architecture: PeTargetArchitecture): number {
-        return architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
+    public readonly architecture: PeTargetArchitecture;
+
+    public numberOfSections: number = 0;
+    public optionalHeaderSize: number = 0;
+    public characteristics: number = 0;
+    public entryPointRva: number = 0;
+    public imageBase: number = 0;
+    public sectionAlignment: number = 0;
+    public fileAlignment: number = 0;
+    public sizeOfImage: number = 0;
+    public sizeOfHeaders: number = 0;
+    public codeSize: number = 0;
+    public initializedDataSize: number = 0;
+    public uninitializedDataSize: number = 0;
+    public codeBaseRva: number = 0;
+    public dataBaseRva: number = 0;
+    public checksum: number = 0;
+    public subsystem: number = 0;
+    public dllCharacteristics: number = 0;
+
+    constructor(architecture: PeTargetArchitecture) {
+        this.architecture = architecture;
+    }
+
+    public get_pe_magic(): number {
+        return this.architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
+    }
+
+    public generate_file_header(): Uint8Array {
+        const writer = new BinaryWriter();
+
+        const machineType = this.get_machine_type(this.architecture);
+
+        writer.write_u16(machineType);
+        writer.write_u16(this.numberOfSections); // 节数量
+        writer.write_u32(Math.floor(Date.now() / 1000)); // 时间戳
+        writer.write_u32(0); // 符号表指针
+        writer.write_u32(0); // 符号数量
+        writer.write_u16(this.optionalHeaderSize);
+        writer.write_u16(this.characteristics);
+
+        console.log(`[PeHeaders] File Header - Machine: 0x${machineType.toString(16)}, NumberOfSections: ${this.numberOfSections}, Characteristics: 0x${this.characteristics.toString(16)}`);
+
+        return writer.get_bytes();
+    }
+
+    private get_machine_type(architecture: PeTargetArchitecture): number {
+        return architecture === PeTargetArchitecture.X64 ? 0x8664 : 0x014c;
+    }
+
+    public generate_optional_header(): Uint8Array {
+        const writer = new BinaryWriter();
+
+        const magic = this.get_pe_magic();
+
+        // 标准字段
+        writer.write_u16(magic);
+        writer.write_u8(0); // 主链接器版本
+        writer.write_u8(0); // 副链接器版本
+        writer.write_u32(this.codeSize);
+        writer.write_u32(this.initializedDataSize);
+        writer.write_u32(this.uninitializedDataSize);
+        writer.write_u32(this.entryPointRva);
+        writer.write_u32(this.codeBaseRva);
+
+        if (this.architecture === PeTargetArchitecture.X86) {
+            writer.write_u32(this.dataBaseRva);
+        }
+
+        // Windows特定字段
+        if (this.architecture === PeTargetArchitecture.X64) {
+            writer.write_u64(BigInt(this.imageBase));
+        } else {
+            writer.write_u32(this.imageBase);
+        }
+        writer.write_u32(this.sectionAlignment);
+        writer.write_u32(this.fileAlignment);
+        writer.write_u16(10); // 主操作系统版本 (Windows 10/11)
+        writer.write_u16(0); // 副操作系统版本
+        writer.write_u16(0); // 主映像版本
+        writer.write_u16(0); // 副映像版本
+        writer.write_u16(10); // 主子系统版本
+        writer.write_u16(0); // 副子系统版本
+        writer.write_u32(0); // Win32版本值
+
+        // 大小字段
+        writer.write_u32(this.sizeOfImage);
+        writer.write_u32(this.sizeOfHeaders);
+        writer.write_u32(this.checksum);
+        writer.write_u16(this.subsystem);
+        writer.write_u16(this.dllCharacteristics);
+
+        // 栈堆大小
+        if (this.architecture === PeTargetArchitecture.X64) {
+            writer.write_u64(BigInt(0x00100000)); // 栈保留大小
+            writer.write_u64(BigInt(0x00001000)); // 栈提交大小
+        } else {
+            writer.write_u32(0x00100000); // 栈保留大小
+            writer.write_u32(0x00001000); // 栈提交大小
+        }
+        writer.write_u32(0x00100000); // 堆保留大小
+        writer.write_u32(0x00001000); // 堆提交大小
+        writer.write_u32(0); // 加载器标志
+        writer.write_u32(16); // 数据目录数量
+
+        // 数据目录 (16个，每个8字节)
+        // 导出表
+        writer.write_u32(0); // RVA
+        writer.write_u32(0); // Size
+        // 导入表
+        writer.write_u32(0); // RVA - 占位符，实际值在 build() 中设置
+        writer.write_u32(0); // Size - 占位符，实际值在 build() 中设置
+        // 资源表
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 异常表
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 安全目录
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 重定位表
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 调试目录
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 版权所有
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 全局指针
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // TLS表
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 加载配置表
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 绑定导入
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // IAT
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 延迟导入描述符
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // COM描述符
+        writer.write_u32(0);
+        writer.write_u32(0);
+        // 保留
+        writer.write_u32(0);
+        writer.write_u32(0);
+
+        console.log(`[PeHeaders] Optional Header - Magic: 0x${magic.toString(16)}, EntryPoint: 0x${this.entryPointRva.toString(16)}, ImageBase: 0x${this.imageBase.toString(16)}, SectionAlignment: 0x${this.sectionAlignment.toString(16)}, FileAlignment: 0x${this.fileAlignment.toString(16)}, SizeOfImage: 0x${this.sizeOfImage.toString(16)}, SizeOfHeaders: 0x${this.sizeOfHeaders.toString(16)}`);
+
+        return writer.get_bytes();
+    }
+
+    public generate_nt_headers(): Uint8Array {
+        const writer = new BinaryWriter();
+
+        // Signature
+        writer.write_u32(0x00004550); // "PE\0\0"
+
+        // File Header
+        writer.write_bytes(this.generate_file_header());
+
+        // Optional Header
+        writer.write_bytes(this.generate_optional_header());
+
+        return writer.get_bytes();
     }
 }
