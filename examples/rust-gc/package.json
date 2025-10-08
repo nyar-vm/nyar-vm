@@ -20,7 +20,7 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@nyar/diagnostics": "workspace:*"
+        "@nyar/vm": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "^20.0.0",
