@@ -1,5 +1,5 @@
-import {describe, expect, it} from 'vitest';
-import {PeAssembler, PeTargetArchitecture} from '@/pe-writer';
+import { describe, expect, it } from 'vitest';
+import { PeAssembler, PeTargetArchitecture } from '@/pe-writer';
 
 describe('PE Builder Tests', () => {
     it('should create a simple PE executable', () => {

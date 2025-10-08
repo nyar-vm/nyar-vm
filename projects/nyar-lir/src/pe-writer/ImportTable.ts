@@ -127,7 +127,7 @@ export class ImportTable {
     }
 
     // 写入导入表数据
-    _write_to_writer(writer: BinaryWriter, idata_section_rva: number, image_base: number): void {
+    write_to_writer(writer: BinaryWriter, idata_section_rva: number): void {
         const import_directory_table_start_rva = this.import_directory_rva;
 
         // 1. 写入 DLL 名称
@@ -193,7 +193,7 @@ export class ImportTable {
     generate_raw_data(idata_section_rva: number, image_base: number): Uint8Array {
         const total_size = this.layout(idata_section_rva);
         const writer = new BinaryWriter(total_size);
-        this._write_to_writer(writer, idata_section_rva, image_base);
+        this.write_to_writer(writer, idata_section_rva);
         return writer.get_bytes();
     }
 
