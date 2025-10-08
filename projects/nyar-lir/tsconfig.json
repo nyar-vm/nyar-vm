@@ -2,7 +2,9 @@
     "compilerOptions": {
         "target": "ES2022",
         "module": "ESNext",
-        "moduleResolution": "bundler",
+        "moduleResolution": "node",
+        "baseUrl": ".",
+        "paths": { "@/*": ["src/*"] },
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,

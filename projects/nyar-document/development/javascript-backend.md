@@ -656,7 +656,7 @@ class BenchmarkSuite {
   "files": [
     "dist/",
     "runtime/",
-    "README.md"
+    "readme.md"
   ],
   "scripts": {
     "build": "rollup -c",

@@ -902,7 +902,7 @@ export class WeakCache<K extends object, V> {
   "files": [
     "dist/",
     "bin/",
-    "README.md",
+    "readme.md",
     "LICENSE"
   ],
   "scripts": {

@@ -76,7 +76,7 @@ export class PeAssembler {
     }
 
     get_sections_count(): number {
-        return this.sections.size + (this.import_table.get_libraries().length > 0 ? 1 : 0);
+        return this.sections.size + (this.import_table.libraries.size > 0 ? 1 : 0);
     }
 
     get_architecture(): string {
@@ -158,10 +158,10 @@ export class PeAssembler {
         writer.write_bytes(section_headers);
 
         // 如果有导入，设置 .idata 节的 raw_data
-        if (this.import_table.get_libraries().length > 0) {
+        if (this.import_table.libraries.size > 0) {
             const idata_section = this.sections.get('.idata');
             if (idata_section) {
-                const idata_raw_data = this.import_table.write_import_table_data();
+                const idata_raw_data = this.import_table.generate_raw_data(idata_section.get_virtual_address(), this.image_base);
                 idata_section.set_raw_data(idata_raw_data);
             }
         }
@@ -407,7 +407,7 @@ export class PeAssembler {
         let raw_offset = this.align_to_file_alignment(this.get_headers_size());
 
         // 将导入表节添加到 sections 映射中，以便在生成节头时处理
-        if (this.import_table.get_libraries().length > 0) {
+        if (this.import_table.libraries.size > 0) {
             const idata_section = this.sections.get('.idata');
             if (idata_section) {
                 // 确保 .idata 节在迭代器中被处理
