@@ -48,6 +48,10 @@ export class PeSection {
         return this.raw_offset;
     }
 
+    set_virtual_size(size: number): void {
+        this.virtual_size = size;
+    }
+
     get_characteristics(): number {
         return this.characteristics;
     }

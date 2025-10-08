@@ -1,7 +1,7 @@
 {
     "name": "@nyar/interpreter",
     "version": "0.1.0",
-    "description": "Nyar LIR - Low-level intermediate representation",
+    "description": "Nyar Interpreter - Bytecode interpreter for the Nyar virtual machine",
     "type": "module",
     "main": "dist/index.js",
     "module": "dist/index.js",
@@ -33,8 +33,15 @@
     ],
     "keywords": [
         "nyar",
-        "mir",
-        "egraph",
-        "compiler"
-    ]
+        "interpreter",
+        "bytecode",
+        "virtual-machine",
+        "language-runtime"
+    ],
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/nyar-framework/nyar-vm.git",
+        "directory": "projects/nyar-interpreter"
+    }
 }

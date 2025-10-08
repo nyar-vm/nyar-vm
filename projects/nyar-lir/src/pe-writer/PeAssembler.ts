@@ -1,5 +1,6 @@
 import {BinaryWriter} from '../BinaryWriter';
 import {PeSection} from "./PeSection";
+import {ImportTable} from "./ImportTable";
 
 export class PeAssembler {
     private sections: Map<string, PeSection>;
@@ -7,6 +8,7 @@ export class PeAssembler {
     private base_address: number;
     private file_alignment: number;
     private section_alignment: number;
+    private import_table: ImportTable;
 
     constructor(target_architecture = 'x86') {
         this.sections = new Map();
@@ -17,6 +19,7 @@ export class PeAssembler {
         this.section_alignment = 0x1000;
 
         this.init_standard_sections();
+        this.import_table = new ImportTable();
     }
 
     private init_standard_sections(): void {
@@ -73,7 +76,7 @@ export class PeAssembler {
     }
 
     get_sections_count(): number {
-        return this.sections.size;
+        return this.sections.size + (this.import_table.get_libraries().length > 0 ? 1 : 0);
     }
 
     get_architecture(): string {
@@ -92,7 +95,13 @@ export class PeAssembler {
         return this.file_alignment;
     }
 
+    add_import(library_name: string, function_name: string) {
+        this.import_table.add_import(library_name, function_name);
+    }
 
+    get_iat_rva(library_name: string, function_name: string): number {
+        return this.import_table.get_iat_rva(library_name, function_name);
+    }
 
     get_exception_directory(): { rva: number; size: number } {
         return {rva: 0, size: 0};
@@ -122,6 +131,18 @@ export class PeAssembler {
     }
 
     build(): Uint8Array {
+        let import_table_size = 0;
+        if (this.import_table.libraries.size > 0) {
+            import_table_size = this.import_table.layout(this.architecture);
+        }
+
+        // 如果有导入，则添加.idata节
+        if (this.import_table.libraries.size > 0) {
+            // 先添加节，raw_data 稍后设置
+            const idata_section = this.add_section('.idata', 0xc0000040); // 可读、可写、初始化数据
+            idata_section.set_virtual_size(import_table_size);
+        }
+
         const writer = new BinaryWriter();
 
         // 生成DOS头
@@ -135,6 +156,15 @@ export class PeAssembler {
         // 生成节头
         const section_headers = this.generate_section_headers();
         writer.write_bytes(section_headers);
+
+        // 如果有导入，设置 .idata 节的 raw_data
+        if (this.import_table.get_libraries().length > 0) {
+            const idata_section = this.sections.get('.idata');
+            if (idata_section) {
+                const idata_raw_data = this.import_table.write_import_table_data();
+                idata_section.set_raw_data(idata_raw_data);
+            }
+        }
 
         // 写入节数据
         for (const section of this.sections.values()) {
@@ -310,8 +340,8 @@ export class PeAssembler {
         writer.write_u32(0);
 
         // 导入表
-        writer.write_u32(0);
-        writer.write_u32(0);
+        writer.write_u32(this.import_table.get_import_directory_rva());
+        writer.write_u32(this.import_table.get_import_directory_size());
 
         // 资源表
         writer.write_u32(0);
@@ -375,6 +405,15 @@ export class PeAssembler {
 
         let virtual_address = this.section_alignment;
         let raw_offset = this.align_to_file_alignment(this.get_headers_size());
+
+        // 将导入表节添加到 sections 映射中，以便在生成节头时处理
+        if (this.import_table.get_libraries().length > 0) {
+            const idata_section = this.sections.get('.idata');
+            if (idata_section) {
+                // 确保 .idata 节在迭代器中被处理
+                // 这里我们只是确保它存在，实际的 raw_data 已经在 build 方法中设置
+            }
+        }
 
         for (const [name, section] of this.sections) {
             section.set_virtual_address(virtual_address);

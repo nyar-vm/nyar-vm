@@ -2,7 +2,7 @@
     "name": "@nyar/mir",
     "version": "0.0.0",
     "type": "module",
-    "description": "Nyar diagnostic utilities - Source locations, error reporting, and diagnostics",
+    "description": "Nyar MIR - Mid-level intermediate representation for the Nyar compiler framework",
     "main": "./dist/index.js",
     "module": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -31,15 +31,17 @@
     "devDependencies": {},
     "keywords": [
         "nyar",
-        "diagnostics",
+        "mir",
+        "mid-level-ir",
+        "intermediate-representation",
         "compiler",
-        "source-maps",
-        "error-reporting"
+        "language-compiler",
+        "egraph"
     ],
     "license": "MIT",
     "repository": {
         "type": "git",
         "url": "https://github.com/nyar-framework/nyar-vm.git",
-        "directory": "projects/diagnostics"
+        "directory": "projects/nyar-mir"
     }
 }
