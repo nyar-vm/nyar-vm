@@ -27,8 +27,10 @@
         "lint:fix": "eslint src tests --fix",
         "typecheck": "tsc --noEmit"
     },
-    "dependencies": {},
-    "devDependencies": {},
+    "dependencies": {
+        "ts-node": "^10.9.2",
+        "tsconfig-paths": "^4.2.0"
+    },
     "keywords": [
         "nyar",
         "lir",
