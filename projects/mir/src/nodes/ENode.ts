@@ -1,5 +1,4 @@
-import {EClass} from "../EClass";
-import {EClassId} from "../EGraph";
+import {EClassId} from "../EClass";
 
 export interface ENode {
     type: 'CONSTANT' | 'SYMBOL' | 'CALL' | 'LAMBDA';
