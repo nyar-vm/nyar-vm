@@ -25,7 +25,7 @@ export class PeAssembler {
         this.add_section('.text', 0x60000020); // 可执行、可读、代码
         this.add_section('.data', 0xc0000040); // 可读、可写、初始化数据
         this.add_section('.rdata', 0x40000040); // 只读数据
-        this.add_section('.pdata', 0xc0000040); // 异常信息(x64)
+        this.add_section('.pdata', 0x40000040); // 异常信息(x64)
         this.add_section('.reloc', 0x42000000); // 重定位
     }
 
@@ -50,7 +50,7 @@ export class PeAssembler {
         return this.pe_headers.architecture;
     }
 
-    get_base_address(): number {
+    get_base_address(): number | bigint {
         return this.pe_headers.get_base_address();
     }
 
@@ -60,6 +60,14 @@ export class PeAssembler {
 
     get_file_alignment(): number {
         return this.file_alignment;
+    }
+
+    get_section(name: string): PeSection | undefined {
+        return this.sections.get(name);
+    }
+
+    get_import_table(): ImportTable {
+        return this.import_table;
     }
 
     add_import(library_name: string, function_name: string) {
@@ -173,6 +181,31 @@ export class PeAssembler {
 
             // 更新导入表节信息
             this.pe_headers.update_import_section(idata_section);
+        }
+
+        // 处理 .pdata 节
+        const pdata_section = this.sections.get('.pdata');
+        if (pdata_section) {
+            // 添加一个空的 RUNTIME_FUNCTION 条目，以确保异常表有效
+            const pdata_data = new BinaryWriter();
+            pdata_data.write_u32(0); // BeginAddress
+            pdata_data.write_u32(0); // EndAddress
+            pdata_data.write_u32(0); // UnwindData
+            pdata_section.set_raw_data(pdata_data.get_bytes());
+
+            this.pe_headers.update_exception_section(pdata_section);
+        }
+
+        // 处理 .reloc 节
+        const reloc_section = this.sections.get('.reloc');
+        if (reloc_section) {
+            // 添加一个空的重定位块，以确保重定位表有效
+            const reloc_data = new BinaryWriter();
+            reloc_data.write_u32(this.sections.get('.text')?.get_virtual_address() || 0); // VirtualAddress
+            reloc_data.write_u32(8); // SizeOfBlock (只有头)
+            reloc_section.set_raw_data(reloc_data.get_bytes());
+
+            this.pe_headers.update_relocation_section(reloc_section);
         }
 
         const writer = new BinaryWriter();

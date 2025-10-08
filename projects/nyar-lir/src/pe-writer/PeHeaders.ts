@@ -22,9 +22,35 @@ export class PeHeaders {
 
     private import_table_rva: number = 0;
     private import_table_size: number = 0;
+    private exception_table_rva: number = 0;
+    private exception_table_size: number = 0;
+    private relocation_table_rva: number = 0;
+    private relocation_table_size: number = 0;
 
     constructor(architecture: PeTargetArchitecture) {
         this.architecture = architecture;
+    }
+
+    public update_exception_section(pdata_section: PeSection): void {
+        this.exception_table_rva = pdata_section.get_virtual_address();
+        this.exception_table_size = pdata_section.get_virtual_size();
+
+        console.log(
+            `[PeHeaders] Exception Table - RVA: 0x${this.exception_table_rva.toString(16)}, Size: 0x${this.exception_table_size.toString(16)}`
+        );
+    }
+
+    /**
+     * 更新重定位表节信息
+     * @param reloc_section 重定位表节对象
+     */
+    public update_relocation_section(reloc_section: PeSection): void {
+        this.relocation_table_rva = reloc_section.get_virtual_address();
+        this.relocation_table_size = reloc_section.get_virtual_size();
+
+        console.log(
+            `[PeHeaders] Relocation Table - RVA: 0x${this.relocation_table_rva.toString(16)}, Size: 0x${this.relocation_table_size.toString(16)}`
+        );
     }
 
     public write_dos_header(writer: BinaryWriter): void {
@@ -92,14 +118,18 @@ export class PeHeaders {
         }
 
         // Windows特定字段
-        writer.write_u32(this.get_base_address());
+        if (this.architecture === PeTargetArchitecture.X64) {
+            writer.write_u64(this.get_base_address() as bigint);
+        } else {
+            writer.write_u32(this.get_base_address() as number);
+        }
         writer.write_u32(this.section_alignment);
         writer.write_u32(this.file_alignment);
-        writer.write_u16(10); // 主操作系统版本 (Windows 10/11)
+        writer.write_u16(6); // 主操作系统版本 (Windows Vista/Server 2008)
         writer.write_u16(0); // 副操作系统版本
         writer.write_u16(0); // 主映像版本
         writer.write_u16(0); // 副映像版本
-        writer.write_u16(10); // 主子系统版本
+        writer.write_u16(6); // 主子系统版本 (Windows Vista/Server 2008)
         writer.write_u16(0); // 副子系统版本
         writer.write_u32(0); // Win32版本值
 
@@ -129,14 +159,14 @@ export class PeHeaders {
         writer.write_u32(0);
         writer.write_u32(0);
         // 异常表
-        writer.write_u32(0);
-        writer.write_u32(0);
+        writer.write_u32(this.exception_table_rva);
+        writer.write_u32(this.exception_table_size);
         // 安全目录
         writer.write_u32(0);
         writer.write_u32(0);
         // 重定位表
-        writer.write_u32(0);
-        writer.write_u32(0);
+        writer.write_u32(this.relocation_table_rva);
+        writer.write_u32(this.relocation_table_size);
         // 调试目录
         writer.write_u32(0);
         writer.write_u32(0);
@@ -198,10 +228,10 @@ export class PeHeaders {
      * 获取PE映像基址
      * @returns PE映像基址
      */
-    public get_base_address(): number {
-        switch (PeTargetArchitecture.X64) {
-            case this.architecture:
-                return 0x140000000;
+    public get_base_address(): bigint | number {
+        switch (this.architecture) {
+            case PeTargetArchitecture.X64:
+                return BigInt(0x140000000);
             default:
                 return 0x400000;
         }
