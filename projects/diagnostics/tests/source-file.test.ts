@@ -8,7 +8,7 @@ describe('SourceFile', () => {
     
     expect(file.filename).toBe('test.ts');
     expect(file.content).toBe(content);
-    expect(file.languageId).toBe('typescript');
+    expect(file.language_id).toBe('typescript');
   });
 
   it('should get line by number', () => {
