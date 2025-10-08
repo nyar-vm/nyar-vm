@@ -121,7 +121,7 @@ export class PeAssembler {
         size += this.generate_dos_stub().length; // DOS Stub
         size += 4; // PE Signature
         size += 20; // File Header
-        size += this.pe_headers.optional_header_size; // Optional Header - use public field
+        size += this.pe_headers.get_optional_header_size(); // Optional Header - use public field
         size += this.get_sections_count() * 40; // Section Headers (40 bytes per section)
         return this.align_to_file_alignment(size);
     }

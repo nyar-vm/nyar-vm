@@ -111,13 +111,8 @@ export class PeHeaders {
         writer.write_u16(this.dll_characteristics);
 
         // 栈堆大小
-        if (this.architecture === PeTargetArchitecture.X64) {
-            writer.write_u64(BigInt(0x00100000)); // 栈保留大小
-            writer.write_u64(BigInt(0x00001000)); // 栈提交大小
-        } else {
-            writer.write_u32(0x00100000); // 栈保留大小
-            writer.write_u32(0x00001000); // 栈提交大小
-        }
+        writer.write_u32(0x00100000); // 栈保留大小
+        writer.write_u32(0x00001000); // 栈提交大小
         writer.write_u32(0x00100000); // 堆保留大小
         writer.write_u32(0x00001000); // 堆提交大小
         writer.write_u32(0); // 加载器标志
