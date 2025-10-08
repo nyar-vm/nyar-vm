@@ -36,15 +36,15 @@ export interface EClass {
 }
 
 export interface EGraph {
-    eclasses: Map<EClassId, EClass>;
+    e_classes: Map<EClassId, EClass>;
     worklist: EClassId[];
-    nextId: number;
+    next_id: number;
 }
 
-export function createEGraph(): EGraph {
+export function create_graph(): EGraph {
     return {
-        eclasses: new Map(),
+        e_classes: new Map(),
         worklist: [],
-        nextId: 0
+        next_id: 0
     };
 }

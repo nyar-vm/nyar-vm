@@ -39,7 +39,26 @@ importers:
         specifier: ^1.2.1
         version: 1.6.1(@types/node@20.19.19)(terser@5.44.0)
 
-  projects/diagnostics: {}
+  projects/mir:
+    dependencies:
+      '@nyar/diagnostics':
+        specifier: workspace:*
+        version: link:../nyar-diagnostics
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.19
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.2
+      vite:
+        specifier: ^5.0.0
+        version: 5.4.20(@types/node@20.19.19)(terser@5.44.0)
+      vitest:
+        specifier: ^1.0.0
+        version: 1.6.1(@types/node@20.19.19)(terser@5.44.0)
+
+  projects/nyar-diagnostics: {}
 
   projects/nyar-document:
     devDependencies:
