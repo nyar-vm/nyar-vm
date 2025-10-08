@@ -69,24 +69,14 @@ export class Diagnostic {
   /**
    * Create an info diagnostic
    */
-  static info(
-    code: string,
-    title: string,
-    message: string,
-    span?: SourceSpan
-  ): Diagnostic {
+  static info(code: string, title: string, message: string, span?: SourceSpan): Diagnostic {
     return new Diagnostic(DiagnosticSeverity.Info, code, title, [{ message }], span);
   }
 
   /**
    * Create a hint diagnostic
    */
-  static hint(
-    code: string,
-    title: string,
-    message: string,
-    span?: SourceSpan
-  ): Diagnostic {
+  static hint(code: string, title: string, message: string, span?: SourceSpan): Diagnostic {
     return new Diagnostic(DiagnosticSeverity.Hint, code, title, [{ message }], span);
   }
 
@@ -94,28 +84,20 @@ export class Diagnostic {
    * Add a related diagnostic
    */
   withRelated(diagnostic: Diagnostic): Diagnostic {
-    return new Diagnostic(
-      this.severity,
-      this.code,
-      this.title,
-      this.messages,
-      this.span,
-      [...this.related, diagnostic]
-    );
+    return new Diagnostic(this.severity, this.code, this.title, this.messages, this.span, [
+      ...this.related,
+      diagnostic,
+    ]);
   }
 
   /**
    * Add multiple related diagnostics
    */
   withRelatedMany(diagnostics: Diagnostic[]): Diagnostic {
-    return new Diagnostic(
-      this.severity,
-      this.code,
-      this.title,
-      this.messages,
-      this.span,
-      [...this.related, ...diagnostics]
-    );
+    return new Diagnostic(this.severity, this.code, this.title, this.messages, this.span, [
+      ...this.related,
+      ...diagnostics,
+    ]);
   }
 
   /**

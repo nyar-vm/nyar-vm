@@ -8,7 +8,7 @@ describe('DiagnosticCollector', () => {
   const createTestDiagnostic = (severity: 'error' | 'warning' | 'info' | 'hint' = 'error') => {
     const file = new SourceFile('test.ts', 'test content');
     const span = new SourceSpan(0, 4, file);
-    
+
     switch (severity) {
       case 'error':
         return Diagnostic.error('E001', 'Test Error', 'Test error message', span);
@@ -24,7 +24,7 @@ describe('DiagnosticCollector', () => {
   it('should add diagnostics', () => {
     const collector = new DiagnosticCollector();
     const diagnostic = createTestDiagnostic('error');
-    
+
     collector.add(diagnostic);
     expect(collector.hasErrors()).toBe(true);
     expect(collector.hasDiagnostics()).toBe(true);
@@ -36,7 +36,7 @@ describe('DiagnosticCollector', () => {
     const error1 = createTestDiagnostic('error');
     const error2 = createTestDiagnostic('error');
     const warning = createTestDiagnostic('warning');
-    
+
     collector.addMany([error1, error2, warning]);
     expect(collector.hasErrors()).toBe(true);
     expect(collector.count).toBe(3);
@@ -50,9 +50,9 @@ describe('DiagnosticCollector', () => {
     const warning = createTestDiagnostic('warning');
     const info = createTestDiagnostic('info');
     const hint = createTestDiagnostic('hint');
-    
+
     collector.addMany([error, warning, info, hint]);
-    
+
     expect(collector.getErrors()).toHaveLength(1);
     expect(collector.getWarnings()).toHaveLength(1);
     expect(collector.getInfo()).toHaveLength(1);
@@ -62,9 +62,9 @@ describe('DiagnosticCollector', () => {
   it('should clear diagnostics', () => {
     const collector = new DiagnosticCollector();
     collector.add(createTestDiagnostic('error'));
-    
+
     expect(collector.hasErrors()).toBe(true);
-    
+
     collector.clear();
     expect(collector.hasErrors()).toBe(false);
     expect(collector.hasDiagnostics()).toBe(false);
@@ -74,14 +74,14 @@ describe('DiagnosticCollector', () => {
   it('should throw if there are errors', () => {
     const collector = new DiagnosticCollector();
     collector.add(createTestDiagnostic('error'));
-    
+
     expect(() => collector.throwIfErrors()).toThrow('Compilation failed with 1 error(s)');
   });
 
   it('should not throw if there are only warnings', () => {
     const collector = new DiagnosticCollector();
     collector.add(createTestDiagnostic('warning'));
-    
+
     expect(() => collector.throwIfErrors()).not.toThrow();
   });
 });
