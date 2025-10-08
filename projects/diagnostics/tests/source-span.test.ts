@@ -26,8 +26,8 @@ describe('SourceSpan', () => {
     const file = createTestFile();
     const span = new SourceSpan(0, 6, file);
     
-    expect(span.startPosition).toEqual({ line: 1, column: 1 });
-    expect(span.endPosition).toEqual({ line: 2, column: 1 });
+    expect(span.start_position).toEqual({ line: 1, column: 1 });
+    expect(span.end_position).toEqual({ line: 2, column: 1 });
   });
 
   it('should check if span contains another span', () => {
@@ -62,7 +62,7 @@ describe('SourceSpan', () => {
 
   it('should create span from line and column', () => {
     const file = createTestFile();
-    const span = SourceSpan.fromLineColumn(1, 1, 2, 1, file);
+    const span = SourceSpan.from_line_column(1, 1, 2, 1, file);
     
     expect(span.start).toBe(0);
     expect(span.end).toBe(6);

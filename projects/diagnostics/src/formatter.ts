@@ -88,8 +88,8 @@ export class Formatter {
   }
 
   private formatLocation(span: SourceSpan): string {
-    const start = span.startPosition;
-    const end = span.endPosition;
+    const start = span.start_position;
+    const end = span.end_position;
     const filename = span.source_file.filename;
     
     if (start.line === end.line) {
@@ -100,8 +100,8 @@ export class Formatter {
   }
 
   private formatSourceSnippet(span: SourceSpan): string {
-    const start = span.startPosition;
-    const end = span.endPosition;
+    const start = span.start_position;
+    const end = span.end_position;
     const sourceFile = span.source_file;
     
     // Get relevant lines
