@@ -1,4 +1,5 @@
-import {AnyENode, CallNode, ConstantNode, EClass, EClassId, EGraph, LambdaNode, SymbolNode} from './egraph.js';
+import type {EClass, EClassId} from "./EClass";
+import {AnyENode, CallNode, ConstantNode, EGraph, LambdaNode, SymbolNode} from "./EGraph";
 
 /**
  * 将ENode添加到E-graph中
@@ -101,7 +102,7 @@ function nodes_equal(node1: AnyENode, node2: AnyENode): boolean {
             if (call1.callee !== call2.callee || call1.args.length !== call2.args.length) {
                 return false;
             }
-            return call1.args.every((arg, i) => arg === call2.args[i]);
+            return call1.args.every((arg: EClassId, i: number) => arg === call2.args[i]);
         }
 
         case 'LAMBDA': {
@@ -110,7 +111,7 @@ function nodes_equal(node1: AnyENode, node2: AnyENode): boolean {
             if (lambda1.params.length !== lambda2.params.length || lambda1.body !== lambda2.body) {
                 return false;
             }
-            return lambda1.params.every((param, i) => param === lambda2.params[i]);
+            return lambda1.params.every((param: string, i: number) => param === lambda2.params[i]);
         }
 
         default:
@@ -129,7 +130,7 @@ function references_class(node: AnyENode, class_id: EClassId): boolean {
 
         case 'CALL': {
             const call = node as CallNode;
-            return call.callee === class_id || call.args.some(arg => arg === class_id);
+            return call.callee === class_id || call.args.some((arg: EClassId) => arg === class_id);
         }
 
         case 'LAMBDA': {
