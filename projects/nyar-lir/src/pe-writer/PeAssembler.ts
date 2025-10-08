@@ -1,16 +1,17 @@
-import { BinaryWriter } from '../BinaryWriter';
-import { PeSection } from './PeSection';
-import { ImportTable } from './ImportTable';
-import { PeTargetArchitecture } from './PeTargetArchitecture';
-import { PeHeaders } from './PeHeaders';
+import {BinaryWriter} from '../BinaryWriter';
+import {PeSection} from './PeSection';
+import {ImportTable} from './ImportTable';
+import {PeTargetArchitecture} from './PeTargetArchitecture';
+import {PeHeaders} from './PeHeaders';
 
 export class PeAssembler {
+    private pe_headers: PeHeaders;
     private sections: Map<string, PeSection>;
     private base_address: number;
     private file_alignment: number;
     private section_alignment: number;
     private import_table: ImportTable;
-    private pe_headers: PeHeaders;
+
 
     constructor(target_architecture = PeTargetArchitecture.X86) {
         this.sections = new Map();
@@ -74,7 +75,7 @@ export class PeAssembler {
     }
 
     get_exception_directory(): { rva: number; size: number } {
-        return { rva: 0, size: 0 };
+        return {rva: 0, size: 0};
     }
 
     private calculate_code_size(): number {
