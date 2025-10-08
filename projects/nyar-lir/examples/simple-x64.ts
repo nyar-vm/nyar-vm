@@ -1,15 +1,15 @@
-import { PeAssembler } from '../src/pe/PeBuilder';
-import { writeFileSync } from 'fs';
+import {PeAssembler} from '../src/pe/PeBuilder';
+import {writeFileSync} from 'fs';
 
 // 创建一个简单的 x64 可执行文件
 function createSimpleX64Exe() {
     console.log('Creating simple x64 executable...');
-    
+
     const pe_builder = new PeAssembler('x64');
-    
+
     // 创建 .text 节
     const text_section = pe_builder.add_section('.text', 0x60000020);
-    
+
     // 非常简单的 x64 代码 - 只是返回 0
     const simple_code = new Uint8Array([
         0x55,                         // push rbp
@@ -18,37 +18,25 @@ function createSimpleX64Exe() {
         0x5D,                         // pop rbp
         0xC3                          // ret
     ]);
-    
+
     text_section.set_raw_data(simple_code);
-    
+
     // 生成 PE 文件
     const pe_data = pe_builder.build();
-    
+
     // 保存到文件
     const filename = 'simple_x64.exe';
     writeFileSync(filename, pe_data);
-    
+
     console.log(`Simple x64 executable created: ${filename}`);
     console.log(`File size: ${pe_data.length} bytes`);
-    
+
     return filename;
 }
 
-// 主函数
-function main() {
-    try {
-        console.log('=== Simple x64 PE Generator ===\n');
-        
-        const simple_file = createSimpleX64Exe();
-        
-        console.log(`\nCreated: ${simple_file}`);
-        console.log('This should be a valid x64 PE executable that returns 0');
-        
-    } catch (error) {
-        console.error('Error creating PE executable:', error);
-        process.exit(1);
-    }
-}
+console.log('=== Simple x64 PE Generator ===\n');
 
-// 运行主函数
-main();
+const simple_file = createSimpleX64Exe();
+
+console.log(`\nCreated: ${simple_file}`);
+console.log('This should be a valid x64 PE executable that returns 0');

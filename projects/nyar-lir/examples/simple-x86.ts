@@ -1,21 +1,21 @@
 import { PeAssembler } from '../src/pe/PeBuilder';
 import { writeFileSync } from 'fs';
 
-// 创建一个简单的 x64 可执行文件
-function createSimpleX64Exe() {
-    console.log('Creating simple x64 executable...');
+// 创建一个简单的 x86 可执行文件
+function createSimpleX86Exe() {
+    console.log('Creating simple x86 executable...');
     
-    const pe_builder = new PeAssembler('x64');
+    const pe_builder = new PeAssembler('x86');
     
     // 创建 .text 节
     const text_section = pe_builder.add_section('.text', 0x60000020);
     
-    // 非常简单的 x64 代码 - 只是返回 0
+    // 非常简单的 x86 代码 - 只是返回 0
     const simple_code = new Uint8Array([
-        0x55,                         // push rbp
-        0x48, 0x8B, 0xEC,             // mov rbp, rsp
-        0x48, 0x31, 0xC0,             // xor rax, rax (return 0)
-        0x5D,                         // pop rbp
+        0x55,                         // push ebp
+        0x8B, 0xEC,                   // mov ebp, esp
+        0x31, 0xC0,                   // xor eax, eax (return 0)
+        0x5D,                         // pop ebp
         0xC3                          // ret
     ]);
     
@@ -25,10 +25,10 @@ function createSimpleX64Exe() {
     const pe_data = pe_builder.build();
     
     // 保存到文件
-    const filename = 'simple_x64.exe';
+    const filename = 'simple_x86.exe';
     writeFileSync(filename, pe_data);
     
-    console.log(`Simple x64 executable created: ${filename}`);
+    console.log(`Simple x86 executable created: ${filename}`);
     console.log(`File size: ${pe_data.length} bytes`);
     
     return filename;
@@ -37,12 +37,12 @@ function createSimpleX64Exe() {
 // 主函数
 function main() {
     try {
-        console.log('=== Simple x64 PE Generator ===\n');
+        console.log('=== Simple x86 PE Generator ===\n');
         
-        const simple_file = createSimpleX64Exe();
+        const simple_file = createSimpleX86Exe();
         
         console.log(`\nCreated: ${simple_file}`);
-        console.log('This should be a valid x64 PE executable that returns 0');
+        console.log('This should be a valid x86 PE executable that returns 0');
         
     } catch (error) {
         console.error('Error creating PE executable:', error);
@@ -51,4 +51,6 @@ function main() {
 }
 
 // 运行主函数
-main();
+if (import.meta.url === `file://${process.argv[1]}`) {
+    main();
+}

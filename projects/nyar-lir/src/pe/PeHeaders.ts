@@ -5,8 +5,7 @@ export class PeHeaders {
     generate_dos_header(): Uint8Array {
         const writer = new BinaryWriter();
 
-        // DOS MZ头
-        writer.write_u16(0x5a4d); // e_magic: 'MZ'
+        // DOS MZ�?        writer.write_u16(0x5a4d); // e_magic: 'MZ'
         writer.write_u16(0x0090); // e_cblp
         writer.write_u16(0x0003); // e_cp
         writer.write_u16(0x0000); // e_crlc
@@ -26,7 +25,7 @@ export class PeHeaders {
             writer.write_u16(0);
         }
 
-        writer.write_u32(0x00000080); // e_lfanew (PE头偏移)
+        writer.write_u32(0x00000074); // e_lfanew (PE头偏�??
 
         // DOS存根程序
         const stub = this.generate_dos_stub();
@@ -41,8 +40,7 @@ export class PeHeaders {
         // PE签名
         writer.write_u32(0x00004550); // 'PE\0\0'
 
-        // 文件头
-        const file_header = this.generate_file_header(pe_builder);
+        // 文件�?        const file_header = this.generate_file_header(pe_builder);
         writer.write_bytes(file_header);
 
         // 可选头
@@ -56,10 +54,7 @@ export class PeHeaders {
         const writer = new BinaryWriter();
 
         writer.write_u16(this.get_machine_type(pe_builder.get_architecture()));
-        writer.write_u16(pe_builder.get_sections_count()); // 节数量
-        writer.write_u32(Math.floor(Date.now() / 1000)); // 时间戳
-        writer.write_u32(0); // 符号表指针
-        writer.write_u32(0); // 符号数量
+        writer.write_u16(pe_builder.get_sections_count()); // 节数�?        writer.write_u32(Math.floor(Date.now() / 1000)); // 时间�?        writer.write_u32(0); // 符号表指�?        writer.write_u32(0); // 符号数量
         writer.write_u16(this.get_optional_header_size(pe_builder.get_architecture()));
         writer.write_u16(this.get_characteristics(pe_builder.get_architecture()));
 
@@ -87,14 +82,10 @@ export class PeHeaders {
         writer.write_u32(pe_builder.get_base_address()); // 映像基址
         writer.write_u32(pe_builder.get_section_alignment());
         writer.write_u32(pe_builder.get_file_alignment());
-        writer.write_u16(6); // 主操作系统版本 (Windows 10)
-        writer.write_u16(0); // 副操作系统版本
-        writer.write_u16(0); // 主映像版本
-        writer.write_u16(0); // 副映像版本
-        writer.write_u16(5); // 主子系统版本
+        writer.write_u16(6); // 主操作系统版�?(Windows 10)
+        writer.write_u16(0); // 副操作系统版�?        writer.write_u16(0); // 主映像版�?        writer.write_u16(0); // 副映像版�?        writer.write_u16(5); // 主子系统版本
         writer.write_u16(0); // 副子系统版本
-        writer.write_u32(0); // Win32版本值
-
+        writer.write_u32(0); // Win32版本�?
         // 大小字段
         writer.write_u32(pe_builder.get_image_size());
         writer.write_u32(pe_builder.get_headers_size());
@@ -103,13 +94,8 @@ export class PeHeaders {
         writer.write_u16(this.get_dll_characteristics());
 
         // 栈堆大小
-        writer.write_u32(0x00100000); // 栈保留大小
-        writer.write_u32(0x00001000); // 栈提交大小
-        writer.write_u32(0x00100000); // 堆保留大小
-        writer.write_u32(0x00001000); // 堆提交大小
-
-        writer.write_u32(0); // 加载器标志
-        writer.write_u32(16); // 数据目录数量
+        writer.write_u32(0x00100000); // 栈保留大�?        writer.write_u32(0x00001000); // 栈提交大�?        writer.write_u32(0x00100000); // 堆保留大�?        writer.write_u32(0x00001000); // 堆提交大�?
+        writer.write_u32(0); // 加载器标�?        writer.write_u32(16); // 数据目录数量
 
         // 数据目录
         this.write_data_directories(writer, pe_builder);
@@ -150,7 +136,7 @@ export class PeHeaders {
     }
 
     private get_subsystem(): number {
-        return 3; // IMAGE_SUBSYSTEM_WINDOWS_CUI (控制台应用)
+        return 3; // IMAGE_SUBSYSTEM_WINDOWS_CUI (控制台应�?
     }
 
     private get_dll_characteristics(): number {
@@ -160,28 +146,24 @@ export class PeHeaders {
     }
 
     private write_data_directories(writer: BinaryWriter, pe_builder: PeAssembler): void {
-        // 导出表
-        const export_table = pe_builder.get_exports().get_directory_entry();
+        // 导出�?        const export_table = pe_builder.get_exports().get_directory_entry();
         writer.write_u32(export_table.rva);
         writer.write_u32(export_table.size);
 
-        // 导入表
-        const import_table = pe_builder.get_imports().get_directory_entry();
+        // 导入�?        const import_table = pe_builder.get_imports().get_directory_entry();
         writer.write_u32(import_table.rva);
         writer.write_u32(import_table.size);
 
-        // 资源表
-        const resource_table = pe_builder.get_resources().get_directory_entry();
+        // 资源�?        const resource_table = pe_builder.get_resources().get_directory_entry();
         writer.write_u32(resource_table.rva);
         writer.write_u32(resource_table.size);
 
-        // 异常表 (x64重要)
+        // 异常�?(x64重要)
         const exception_table = pe_builder.get_exception_directory();
         writer.write_u32(exception_table.rva);
         writer.write_u32(exception_table.size);
 
-        // 证书表
-        writer.write_u32(0);
+        // 证书�?        writer.write_u32(0);
         writer.write_u32(0);
 
         // 重定位表
@@ -202,28 +184,22 @@ export class PeHeaders {
         writer.write_u32(0);
         writer.write_u32(0);
 
-        // TLS表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // 加载配置表
-        writer.write_u32(0);
+        // TLS�?        writer.write_u32(0);
         writer.write_u32(0);
 
-        // 绑定导入表
-        writer.write_u32(0);
-        writer.write_u32(0);
-
-        // IAT表
-        writer.write_u32(0);
+        // 加载配置�?        writer.write_u32(0);
         writer.write_u32(0);
 
-        // 延迟导入描述符
-        writer.write_u32(0);
+        // 绑定导入�?        writer.write_u32(0);
         writer.write_u32(0);
 
-        // CLR运行时头部
+        // IAT�?        writer.write_u32(0);
         writer.write_u32(0);
+
+        // 延迟导入描述�?        writer.write_u32(0);
+        writer.write_u32(0);
+
+        // CLR运行时头�?        writer.write_u32(0);
         writer.write_u32(0);
 
         // 保留
