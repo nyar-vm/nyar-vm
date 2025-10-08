@@ -8,8 +8,8 @@ function createHelloWorldExe() {
     const pe_builder = new PeAssembler('x64');
 
     // 导入所需的函数
-    pe_builder.add_import('user32.dll', 'MessageBoxA');
-    pe_builder.add_import('kernel32.dll', 'ExitProcess');
+    pe_builder.import_table.add_import('user32.dll', 'MessageBoxA');
+    pe_builder.import_table.add_import('kernel32.dll', 'ExitProcess');
     
     // 创建 .text 节（代码段）
     const text_section = pe_builder.add_section('.text', 0x60000020);
@@ -44,8 +44,8 @@ function createHelloWorldExe() {
     };
 
     // 计算 MessageBoxA 和 ExitProcess 的 IAT RVA
-    const message_box_a_iat_rva = pe_builder.get_iat_rva('user32.dll', 'MessageBoxA');
-    const exit_process_iat_rva = pe_builder.get_iat_rva('kernel32.dll', 'ExitProcess');
+    const message_box_a_iat_rva = pe_builder.import_table.get_iat_rva('user32.dll', 'MessageBoxA');
+    const exit_process_iat_rva = pe_builder.import_table.get_iat_rva('kernel32.dll', 'ExitProcess');
 
     // 计算 rip 相对偏移量
     // lea rdx, [rip + offset_to_title]
