@@ -7,7 +7,6 @@ import {PeHeaders} from './PeHeaders';
 export class PeAssembler {
     private pe_headers: PeHeaders;
     private sections: Map<string, PeSection>;
-    private base_address: number;
     private file_alignment: number;
     private section_alignment: number;
     private import_table: ImportTable;
@@ -15,8 +14,6 @@ export class PeAssembler {
     constructor(target_architecture = PeTargetArchitecture.X86) {
         this.sections = new Map();
         this.pe_headers = new PeHeaders(target_architecture);
-        this.base_address =
-            target_architecture === PeTargetArchitecture.X64 ? 0x140000000 : 0x400000;
         this.file_alignment = 0x200;
         this.section_alignment = 0x1000;
         this.init_standard_sections();
@@ -54,7 +51,7 @@ export class PeAssembler {
     }
 
     get_base_address(): number {
-        return this.base_address;
+        return this.pe_headers.get_base_address();
     }
 
     get_section_alignment(): number {
@@ -183,13 +180,7 @@ export class PeAssembler {
         this.pe_headers.write_dos_header(writer);
         // 设置 PeHeaders 的公共字段
         this.pe_headers.number_of_sections = this.sections.size;
-        this.pe_headers.optional_header_size =
-            this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0xf0 : 0xe0;
-        this.pe_headers.characteristics =
-            this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x0020 | 0x0002 : 0x0100 | 0x0002;
         this.pe_headers.entry_point_rva = this.sections.get('.text')?.get_virtual_address() ?? 0x1000;
-        this.pe_headers.image_base = this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x140000000 : 0x400000;
-        this.pe_headers.characteristics = this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x0020 | 0x0002 | 0x0020 : 0x0100 | 0x0002;
         this.pe_headers.section_alignment = this.section_alignment;
         this.pe_headers.file_alignment = this.file_alignment;
         this.pe_headers.size_of_image = this.calculate_image_size();

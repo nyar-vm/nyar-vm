@@ -5,10 +5,8 @@ import {PeSection} from './PeSection';
 export class PeHeaders {
     public readonly architecture: PeTargetArchitecture;
     public number_of_sections: number = 0;
-    public optional_header_size: number = 0;
-    public characteristics: number = 0;
+
     public entry_point_rva: number = 0;
-    public image_base: number = 0;
     public section_alignment: number = 0;
     public file_alignment: number = 0;
     public size_of_image: number = 0;
@@ -69,11 +67,11 @@ export class PeHeaders {
         writer.write_u32(Math.floor(Date.now() / 1000)); // 时间戳
         writer.write_u32(0); // 符号表指针
         writer.write_u32(0); // 符号数量
-        writer.write_u16(this.optional_header_size);
-        writer.write_u16(this.characteristics);
+        writer.write_u16(this.get_optional_header_size());
+        writer.write_u16(this.get_characteristics());
 
         console.log(
-            `[PeHeaders] File Header - Machine: 0x${machine_type.toString(16)}, NumberOfSections: ${this.number_of_sections}, Characteristics: 0x${this.characteristics.toString(16)}`
+            `[PeHeaders] File Header - Machine: 0x${machine_type.toString(16)}, NumberOfSections: ${this.number_of_sections}, Characteristics: 0x${this.get_characteristics().toString(16)}`
         );
     }
 
@@ -94,11 +92,7 @@ export class PeHeaders {
         }
 
         // Windows特定字段
-        if (this.architecture === PeTargetArchitecture.X64) {
-            writer.write_u64(BigInt(this.image_base));
-        } else {
-            writer.write_u32(this.image_base);
-        }
+        writer.write_u32(this.get_base_address());
         writer.write_u32(this.section_alignment);
         writer.write_u32(this.file_alignment);
         writer.write_u16(10); // 主操作系统版本 (Windows 10/11)
@@ -180,7 +174,7 @@ export class PeHeaders {
         writer.write_u32(0);
 
         console.log(
-            `[PeHeaders] Optional Header - Magic: 0x${magic.toString(16)}, EntryPoint: 0x${this.entry_point_rva.toString(16)}, ImageBase: 0x${this.image_base.toString(16)}, SectionAlignment: 0x${this.section_alignment.toString(16)}, FileAlignment: 0x${this.file_alignment.toString(16)}, SizeOfImage: 0x${this.size_of_image.toString(16)}, SizeOfHeaders: 0x${this.size_of_headers.toString(16)}`
+            `[PeHeaders] Optional Header - Magic: 0x${magic.toString(16)}, EntryPoint: 0x${this.entry_point_rva.toString(16)}, ImageBase: 0x${this.get_base_address().toString(16)}, SectionAlignment: 0x${this.section_alignment.toString(16)}, FileAlignment: 0x${this.file_alignment.toString(16)}, SizeOfImage: 0x${this.size_of_image.toString(16)}, SizeOfHeaders: 0x${this.size_of_headers.toString(16)}`
         );
     }
 
@@ -203,5 +197,31 @@ export class PeHeaders {
         console.log(
             `[PeHeaders] Import Table - RVA: 0x${this.import_table_rva.toString(16)}, Size: 0x${this.import_table_size.toString(16)}`
         );
+    }
+
+    /**
+     * 获取PE映像基址
+     * @returns PE映像基址
+     */
+    public get_base_address(): number {
+        switch (PeTargetArchitecture.X64) {
+            case this.architecture:
+                return 0x140000000;
+            default:
+                return 0x400000;
+        }
+    }
+
+    public get_optional_header_size(): number {
+        return this.architecture === PeTargetArchitecture.X64 ? 0xf0 : 0xe0;
+    }
+
+    public get_characteristics(): number {
+        switch (this.architecture) {
+            case PeTargetArchitecture.X64:
+                return 0x0020 | 0x0002 | 0x0020;
+            default:
+                return 0x0100 | 0x0002;
+        }
     }
 }
