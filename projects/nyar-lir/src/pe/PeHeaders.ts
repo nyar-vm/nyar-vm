@@ -1,4 +1,5 @@
-import { BinaryWriter } from '../BinaryWriter.js';
+import {BinaryWriter} from '../BinaryWriter';
+import {PeAssembler} from "./PeBuilder";
 
 export class PeHeaders {
     generate_dos_header(): Uint8Array {
@@ -34,7 +35,7 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-    generate_nt_headers(pe_builder: ProfessionalPeBuilder): Uint8Array {
+    generate_nt_headers(pe_builder: PeAssembler): Uint8Array {
         const writer = new BinaryWriter();
 
         // PE签名
@@ -51,7 +52,7 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-    generate_file_header(pe_builder: ProfessionalPeBuilder): Uint8Array {
+    generate_file_header(pe_builder: PeAssembler): Uint8Array {
         const writer = new BinaryWriter();
 
         writer.write_u16(this.get_machine_type(pe_builder.get_architecture()));
@@ -65,7 +66,7 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-    generate_optional_header(pe_builder: ProfessionalPeBuilder): Uint8Array {
+    generate_optional_header(pe_builder: PeAssembler): Uint8Array {
         const writer = new BinaryWriter();
 
         // 标准字段
@@ -158,7 +159,7 @@ export class PeHeaders {
         return characteristics;
     }
 
-    private write_data_directories(writer: BinaryWriter, pe_builder: ProfessionalPeBuilder): void {
+    private write_data_directories(writer: BinaryWriter, pe_builder: PeAssembler): void {
         // 导出表
         const export_table = pe_builder.get_exports().get_directory_entry();
         writer.write_u32(export_table.rva);
@@ -229,44 +230,4 @@ export class PeHeaders {
         writer.write_u32(0);
         writer.write_u32(0);
     }
-}
-
-// 前向声明，避免循环依赖
-interface ProfessionalPeBuilder {
-    get_architecture(): string;
-    get_sections_count(): number;
-    get_base_address(): number;
-    get_section_alignment(): number;
-    get_file_alignment(): number;
-    get_exports(): ExportTable;
-    get_imports(): ImportTable;
-    get_resources(): ResourceTable;
-    get_relocations(): RelocationTable;
-    get_debug_info(): DebugInfo;
-    get_exception_directory(): DirectoryEntry;
-}
-
-interface DirectoryEntry {
-    rva: number;
-    size: number;
-}
-
-interface ExportTable {
-    get_directory_entry(): DirectoryEntry;
-}
-
-interface ImportTable {
-    get_directory_entry(): DirectoryEntry;
-}
-
-interface ResourceTable {
-    get_directory_entry(): DirectoryEntry;
-}
-
-interface RelocationTable {
-    get_directory_entry(): DirectoryEntry;
-}
-
-interface DebugInfo {
-    get_directory_entry(): DirectoryEntry;
 }
