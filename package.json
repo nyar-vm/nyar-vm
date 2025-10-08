@@ -1,18 +1,41 @@
 {
     "name": "native-nyar",
     "private": true,
+    "type": "module",
+    "version": "0.0.1",
+    "description": "Nyar framework - A gradual abstraction lowering compiler framework",
     "scripts": {
+        "dev": "pnpm -r --parallel dev",
+        "build": "pnpm -r build",
+        "test": "pnpm -r test",
+        "test:watch": "pnpm -r test:watch",
+        "test:coverage": "pnpm -r test:coverage",
+        "lint": "pnpm -r lint",
+        "lint:fix": "pnpm -r lint:fix",
+        "typecheck": "pnpm -r typecheck",
+        "clean": "pnpm -r clean && rm -rf node_modules",
         "build:pre": "cargo run --release --color=always --package nyar-prebuild --bin nyar-prebuild && cargo fmt --all",
-        "build": "cargo build --release",
-        "test": "cargo build",
+        "cargo:build": "cargo build --release",
+        "cargo:test": "cargo build",
         "fmt": "cargo fmt --all",
-        "push": "yarn test && git push",
+        "push": "pnpm test && git push",
         "reset": "git reset Head~ --soft",
         "u": "cargo upgrade --incompatible"
     },
-    "dependencies": {
-        "@bytecodealliance/jco": "^1.0.2",
-        "@bytecodealliance/preview2-shim": "^0.15.1"
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "@typescript-eslint/eslint-plugin": "^6.19.0",
+        "@typescript-eslint/parser": "^6.19.0",
+        "eslint": "^8.56.0",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-plugin-prettier": "^5.1.3",
+        "prettier": "^3.2.4",
+        "typescript": "^5.3.3",
+        "vite": "^5.0.12",
+        "vitest": "^1.2.1"
     },
-    "packageManager": "pnpm@10.12.2"
+    "packageManager": "pnpm@10.12.2",
+    "engines": {
+        "node": ">=18.0.0"
+    }
 }
