@@ -7,7 +7,7 @@ export default defineConfig({
             entry: resolve(__dirname, 'src/index.ts'),
             name: 'NyarLir',
             formats: ['es', 'cjs'],
-            fileName: (format) => `nyar-lir.${format}.js`
+            fileName: (format) => `index.${format === 'es' ? 'js' : 'cjs'}`
         },
         rollupOptions: {
             external: ['@nyar/diagnostics'],

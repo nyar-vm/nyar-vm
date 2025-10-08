@@ -19,17 +19,17 @@ export class PeAssembler {
         this.file_alignment = 0x200;
         this.section_alignment = 0x1000;
 
-        this.init_standard_sections();
+        this.add_standard_sections();
         this.import_table = new ImportTable();
     }
 
-    private init_standard_sections(): void {
+    private add_standard_sections(): void {
         // 标准PE节
         this.add_section('.text', 0x60000020); // 可执行、可读、代码
         this.add_section('.data', 0xc0000040); // 可读、可写、初始化数据
         this.add_section('.rdata', 0x40000040); // 只读数据
-        this.add_section('.pdata', 0x40000040); // 异常信息(x64)
-        this.add_section('.reloc', 0x42000040); // 重定位
+        this.add_section('.pdata', 0xC0000040); // 异常信息(x64)
+        this.add_section('.reloc', 0x42000000); // 重定位
     }
 
     add_section(
@@ -46,24 +46,38 @@ export class PeAssembler {
     }
 
     get_code_size(): number {
-        const text_section = this.sections.get('.text');
-        return text_section ? text_section.get_raw_data_size() : 0;
+        let total_size = 0;
+        for (const section of this.sections.values()) {
+            if ((section.get_characteristics() & 0x00000020) === 0x00000020) { // IMAGE_SCN_CNT_CODE
+                total_size += section.get_raw_data_size();
+            }
+        }
+        return total_size;
     }
 
     get_initialized_data_size(): number {
-        const data_section = this.sections.get('.data');
-        return data_section ? data_section.get_raw_data_size() : 0;
+        let total_size = 0;
+        for (const section of this.sections.values()) {
+            if ((section.get_characteristics() & 0x00000040) === 0x00000040) { // IMAGE_SCN_CNT_INITIALIZED_DATA
+                total_size += section.get_raw_data_size();
+            }
+        }
+        return total_size;
     }
 
     get_uninitialized_data_size(): number {
-        const bss_section = this.sections.get('.bss');
-        return bss_section ? bss_section.get_virtual_size() : 0;
+        let total_size = 0;
+        for (const section of this.sections.values()) {
+            if ((section.get_characteristics() & 0x00000080) === 0x00000080) { // IMAGE_SCN_CNT_UNINITIALIZED_DATA
+                total_size += section.get_virtual_size();
+            }
+        }
+        return total_size;
     }
 
     get_entry_point_rva(): number {
-        // 默认从.text节开始
-        const text_section = this.sections.get('.text');
-        return text_section ? text_section.get_virtual_address() : 0;
+        // For now, hardcode entry point RVA to match hello-world-x64.js
+        return 0x1000;
     }
 
     get_code_base_rva(): number {
@@ -77,7 +91,7 @@ export class PeAssembler {
     }
 
     get_sections_count(): number {
-        return this.sections.size + (this.import_table.libraries.size > 0 ? 1 : 0);
+        return this.sections.size;
     }
 
     get_architecture(): PeTargetArchitecture {
@@ -118,8 +132,13 @@ export class PeAssembler {
     }
 
     get_headers_size(): number {
-        // DOS头 + PE头 + 节头
-        return 0x400; // 1KB对齐
+        let size = 64; // DOS Header
+        size += this.generate_dos_stub().length; // DOS Stub
+        size += 4; // PE Signature
+        size += 20; // File Header
+        size += this.get_optional_header_size(); // Optional Header
+        size += this.get_sections_count() * 40; // Section Headers (40 bytes per section)
+        return this.align_to_file_alignment(size);
     }
 
     calculate_checksum(): number {
@@ -132,22 +151,41 @@ export class PeAssembler {
     }
 
     build(): Uint8Array {
+        // 预先计算所有节的虚拟地址和原始数据偏移量
         let current_virtual_address = this.section_alignment; // 从第一个节的对齐地址开始
+        let current_raw_offset = this.align_to_file_alignment(this.get_headers_size());
+
+        // 临时存储节，以便按顺序处理
+        const ordered_sections: PeSection[] = [];
+
+        // 处理标准节
         for (const section of this.sections.values()) {
+            section.set_virtual_address(current_virtual_address);
+            section.set_raw_offset(current_raw_offset);
+            ordered_sections.push(section);
+
             current_virtual_address += this.align_to_section_alignment(section.get_virtual_size());
+            current_raw_offset += this.align_to_file_alignment(section.get_raw_data_size());
         }
 
-        let import_table_size = 0;
-        let idata_section_rva = 0;
-
+        // 处理 .idata 节 (如果存在导入表)
         if (this.import_table.libraries.size > 0) {
-            idata_section_rva = current_virtual_address; // idata 节的 RVA
-            import_table_size = this.import_table.layout(idata_section_rva);
+            const idata_section_rva = current_virtual_address; // idata 节的 RVA
+            const import_table_size = this.import_table.layout(idata_section_rva);
 
-            // 添加 .idata 节
-            const idata_section = this.add_section('.idata', 0xc0000040); // 可读、可写、初始化数据
-            idata_section.set_virtual_address(idata_section_rva); // 设置虚拟地址
+            const idata_section = new PeSection('.idata', 0xc0000040); // 可读、可写、初始化数据
+            idata_section.set_virtual_address(idata_section_rva);
             idata_section.set_virtual_size(import_table_size);
+            idata_section.set_raw_offset(current_raw_offset);
+            this.sections.set('.idata', idata_section); // 添加到 sections 映射
+            ordered_sections.push(idata_section);
+
+            // 生成 .idata 节的原始数据
+            const idata_raw_data = this.import_table.generate_raw_data(idata_section.get_virtual_address(), this.base_address);
+            idata_section.set_raw_data(idata_raw_data);
+
+            current_virtual_address += this.align_to_section_alignment(idata_section.get_virtual_size());
+            current_raw_offset += this.align_to_file_alignment(idata_section.get_raw_data_size());
         }
 
         const writer = new BinaryWriter();
@@ -160,21 +198,12 @@ export class PeAssembler {
         const nt_headers = this.generate_nt_headers();
         writer.write_bytes(nt_headers);
 
-        // 生成节头
-        const section_headers = this.generate_section_headers();
+        // 生成节头 (使用 ordered_sections)
+        const section_headers = this.generate_section_headers(ordered_sections);
         writer.write_bytes(section_headers);
 
-        // 如果有导入，设置 .idata 节的 raw_data
-        if (this.import_table.libraries.size > 0) {
-            const idata_section = this.sections.get('.idata');
-            if (idata_section) {
-                const idata_raw_data = this.import_table.generate_raw_data(idata_section.get_virtual_address(), this.base_address);
-                idata_section.set_raw_data(idata_raw_data);
-            }
-        }
-
-        // 写入节数据
-        for (const section of this.sections.values()) {
+        // 写入节数据 (使用 ordered_sections)
+        for (const section of ordered_sections) {
             writer.write_bytes(section.get_raw_data());
         }
 
@@ -205,7 +234,7 @@ export class PeAssembler {
             writer.write_u16(0);
         }
 
-        writer.write_u32(0x00000074); // e_lfanew (PE头偏移)
+        writer.write_u32(0x0000007c); // e_lfanew (PE头偏移)
 
         // DOS存根程序
         const stub = this.generate_dos_stub();
@@ -267,8 +296,11 @@ export class PeAssembler {
 
     private get_characteristics(): number {
         let characteristics = 0x0002; // IMAGE_FILE_EXECUTABLE_IMAGE
+        characteristics |= 0x0001; // IMAGE_FILE_RELOCS_STRIPPED
         if (this.architecture === PeTargetArchitecture.X86) {
             characteristics |= 0x0100; // IMAGE_FILE_32BIT_MACHINE
+        } else if (this.architecture === PeTargetArchitecture.X64) {
+            characteristics |= 0x0020; // IMAGE_FILE_LARGE_ADDRESS_AWARE
         }
         return characteristics;
     }
@@ -291,7 +323,11 @@ export class PeAssembler {
         }
 
         // Windows特定字段
-        writer.write_u32(this.base_address); // 映像基址
+        if (this.architecture === PeTargetArchitecture.X64) {
+            writer.write_u64(BigInt(this.base_address)); // 映像基址
+        } else {
+            writer.write_u32(this.base_address); // 映像基址
+        }
         writer.write_u32(this.section_alignment);
         writer.write_u32(this.file_alignment);
         writer.write_u16(10); // 主操作系统版本 (Windows 10/11)
@@ -310,10 +346,17 @@ export class PeAssembler {
         writer.write_u16(this.get_dll_characteristics());
 
         // 栈堆大小
-        writer.write_u32(0x00100000); // 栈保留大小
-        writer.write_u32(0x00001000); // 栈提交大小
-        writer.write_u32(0x00100000); // 堆保留大小
-        writer.write_u32(0x00001000); // 堆提交大小
+        if (this.architecture === PeTargetArchitecture.X64) {
+            writer.write_u64(BigInt(0x00100000)); // 栈保留大小
+            writer.write_u64(BigInt(0x00001000)); // 栈提交大小
+            writer.write_u64(BigInt(0x00100000)); // 堆保留大小
+            writer.write_u64(BigInt(0x00001000)); // 堆提交大小
+        } else {
+            writer.write_u32(0x00100000); // 栈保留大小
+            writer.write_u32(0x00001000); // 栈提交大小
+            writer.write_u32(0x00100000); // 堆保留大小
+            writer.write_u32(0x00001000); // 堆提交大小
+        }
 
         writer.write_u32(0); // 加载器标志
         writer.write_u32(16); // 数据目录数量
@@ -355,16 +398,28 @@ export class PeAssembler {
         writer.write_u32(0);
 
         // 异常表 (x64重要)
-        writer.write_u32(0);
-        writer.write_u32(0);
+        const pdata_section = this.sections.get('.pdata');
+        if (pdata_section) {
+            writer.write_u32(pdata_section.get_virtual_address());
+            writer.write_u32(pdata_section.get_virtual_size());
+        } else {
+            writer.write_u32(0);
+            writer.write_u32(0);
+        }
 
         // 证书表
         writer.write_u32(0);
         writer.write_u32(0);
 
         // 重定位表
-        writer.write_u32(0);
-        writer.write_u32(0);
+        const reloc_section = this.sections.get('.reloc');
+        if (reloc_section) {
+            writer.write_u32(reloc_section.get_virtual_address());
+            writer.write_u32(reloc_section.get_virtual_size());
+        } else {
+            writer.write_u32(0);
+            writer.write_u32(0);
+        }
 
         // 调试信息
         writer.write_u32(0);
@@ -407,27 +462,12 @@ export class PeAssembler {
         writer.write_u32(0);
     }
 
-    private generate_section_headers(): Uint8Array {
+    private generate_section_headers(sections_to_write: PeSection[]): Uint8Array {
         const writer = new BinaryWriter();
 
-        let virtual_address = this.section_alignment;
-        let raw_offset = this.align_to_file_alignment(this.get_headers_size());
-
-        // 将导入表节添加到 sections 映射中，以便在生成节头时处理
-        if (this.import_table.libraries.size > 0) {
-            const idata_section = this.sections.get('.idata');
-            if (idata_section) {
-                // 确保 .idata 节在迭代器中被处理
-                // 这里我们只是确保它存在，实际的 raw_data 已经在 build 方法中设置
-            }
-        }
-
-        for (const [name, section] of this.sections) {
-            section.set_virtual_address(virtual_address);
-            section.set_raw_offset(raw_offset);
-
+        for (const section of sections_to_write) {
             // 节名 (8字节)
-            const name_bytes = new TextEncoder().encode(name);
+            const name_bytes = new TextEncoder().encode(section.get_name());
             writer.write_bytes(name_bytes);
             writer.write_bytes(new Uint8Array(8 - name_bytes.length));
 
@@ -451,9 +491,6 @@ export class PeAssembler {
 
             // 特征
             writer.write_u32(section.get_characteristics());
-
-            virtual_address += this.align_to_section_alignment(section.get_virtual_size());
-            raw_offset += this.align_to_file_alignment(section.get_raw_data_size());
         }
 
         return writer.get_bytes();

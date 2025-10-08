@@ -24,6 +24,10 @@ export class PeSection {
         return this.raw_data;
     }
 
+    get_name(): string {
+        return this.name;
+    }
+
     get_virtual_size(): number {
         return this.virtual_size;
     }

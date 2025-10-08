@@ -122,19 +122,19 @@ export class ImportTable {
     }
 
     // 写入导入表数据
-    _write_to_writer(writer: BinaryWriter, image_base: number): void {
+    _write_to_writer(writer: BinaryWriter, idata_section_rva: number, image_base: number): void {
         const import_directory_table_start_rva = this.import_directory_rva;
 
         // 1. 写入 DLL 名称
         for (const library of this.libraries.values()) {
-            writer.set_position(library.name_rva);
+            writer.set_position(library.name_rva - idata_section_rva);
             writer.write_cstring(library.name);
         }
 
         // 2. 写入 Hint/Name Table
         for (const library of this.libraries.values()) {
             for (const func of library.functions.values()) {
-                writer.set_position(func.rva);
+                writer.set_position(func.rva - idata_section_rva);
                 writer.write_u16(func.hint);
                 if (func.name) {
                     writer.write_cstring(func.name);
@@ -149,7 +149,7 @@ export class ImportTable {
         // 3. 写入 OriginalFirstThunk (ILT) 和 FirstThunk (IAT)
         for (const library of this.libraries.values()) {
             // ILT
-            writer.set_position(library.original_first_thunk_rva);
+            writer.set_position(library.original_first_thunk_rva - idata_section_rva);
             for (const func of library.functions.values()) {
                 if (func.ordinal !== null) {
                     writer.write_u64(BigInt(0x8000000000000000 | func.ordinal)); // Ordinal import
@@ -158,7 +158,7 @@ export class ImportTable {
                 }
             }
             // IAT (初始时与ILT相同)
-            writer.set_position(library.first_thunk_rva);
+            writer.set_position(library.first_thunk_rva - idata_section_rva);
             for (const func of library.functions.values()) {
                 if (func.ordinal !== null) {
                     writer.write_u64(BigInt(0x8000000000000000 | func.ordinal)); // Ordinal import
@@ -169,7 +169,7 @@ export class ImportTable {
         }
 
         // 4. 写入 Import Directory Table
-        writer.set_position(import_directory_table_start_rva);
+        writer.set_position(import_directory_table_start_rva - idata_section_rva);
         for (const library of this.libraries.values()) {
             writer.write_u32(library.original_first_thunk_rva); // OriginalFirstThunk (ILT)
             writer.write_u32(library.time_date_stamp);
@@ -188,7 +188,7 @@ export class ImportTable {
     generate_raw_data(idata_section_rva: number, image_base: number): Uint8Array {
         const total_size = this.layout(idata_section_rva);
         const writer = new BinaryWriter(total_size);
-        this._write_to_writer(writer, image_base);
+        this._write_to_writer(writer, idata_section_rva, image_base);
         return writer.get_bytes();
     }
 
