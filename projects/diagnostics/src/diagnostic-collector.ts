@@ -1,4 +1,4 @@
-import {Diagnostic} from './diagnostic.js';
+import { Diagnostic } from './diagnostic.js';
 
 /**
  * Collects and manages diagnostics during compilation

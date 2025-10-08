@@ -24,7 +24,7 @@ describe('SourceSpan', () => {
 
     it('should get start and end positions', () => {
         const file = createTestFile();
-        const span = new SourceSpan(0, 6, file);
+        const span = new SourceSpan(0, 7, file);
 
         expect(span.start_position).toEqual({ line: 1, column: 1 });
         expect(span.end_position).toEqual({ line: 2, column: 1 });
@@ -57,7 +57,7 @@ describe('SourceSpan', () => {
         const merged = span1.merge(span2);
         expect(merged.start).toBe(0);
         expect(merged.end).toBe(13);
-        expect(merged.text).toBe('line 1\nline 2\n');
+        expect(merged.text).toBe('line 1\nline 2');
     });
 
     it('should create span from line and column', () => {

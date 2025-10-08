@@ -1,4 +1,4 @@
-import {SourceSpan} from './source-span.js';
+import { SourceSpan } from './source-span.js';
 
 /**
  * Severity levels for diagnostics
@@ -30,8 +30,7 @@ export class Diagnostic {
         public readonly messages: DiagnosticMessage[],
         public readonly span: SourceSpan | null = null,
         public readonly related: Diagnostic[] = []
-    ) {
-    }
+    ) {}
 
     /**
      * Create an error diagnostic
@@ -43,7 +42,7 @@ export class Diagnostic {
         span?: SourceSpan,
         suggestion?: string
     ): Diagnostic {
-        const messageObj: DiagnosticMessage = {message};
+        const messageObj: DiagnosticMessage = { message };
         if (suggestion) {
             messageObj.suggestion = suggestion;
         }
@@ -60,7 +59,7 @@ export class Diagnostic {
         span?: SourceSpan,
         suggestion?: string
     ): Diagnostic {
-        const messageObj: DiagnosticMessage = {message};
+        const messageObj: DiagnosticMessage = { message };
         if (suggestion) {
             messageObj.suggestion = suggestion;
         }
@@ -71,14 +70,14 @@ export class Diagnostic {
      * Create an info diagnostic
      */
     static info(code: string, title: string, message: string, span?: SourceSpan): Diagnostic {
-        return new Diagnostic(DiagnosticSeverity.Info, code, title, [{message}], span);
+        return new Diagnostic(DiagnosticSeverity.Info, code, title, [{ message }], span);
     }
 
     /**
      * Create a hint diagnostic
      */
     static hint(code: string, title: string, message: string, span?: SourceSpan): Diagnostic {
-        return new Diagnostic(DiagnosticSeverity.Hint, code, title, [{message}], span);
+        return new Diagnostic(DiagnosticSeverity.Hint, code, title, [{ message }], span);
     }
 
     /**
@@ -105,7 +104,7 @@ export class Diagnostic {
      * Add additional messages
      */
     withMessage(message: string, suggestion?: string, help?: string): Diagnostic {
-        const newMessage: DiagnosticMessage = {message};
+        const newMessage: DiagnosticMessage = { message };
         if (suggestion !== undefined) {
             newMessage.suggestion = suggestion;
         }

@@ -36,19 +36,19 @@ export default [
                 },
                 {
                     selector: 'variable',
-                    format: ['snake_case', 'camelCase'],
+                    format: ['snake_case'],
                 },
                 {
                     selector: 'parameter',
-                    format: ['snake_case', 'camelCase'],
+                    format: ['snake_case'],
                 },
                 {
                     selector: 'method',
-                    format: ['snake_case', 'camelCase'],
+                    format: ['snake_case'],
                 },
                 {
                     selector: 'property',
-                    format: ['snake_case', 'camelCase'],
+                    format: ['snake_case'],
                 },
                 {
                     selector: 'class',

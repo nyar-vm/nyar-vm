@@ -1,33 +1,83 @@
-module.exports = {
-    root: true,
-    env: {
-        node: true,
-        es2022: true,
+import typescriptEslint from '@typescript-eslint/eslint-plugin';
+import typescriptParser from '@typescript-eslint/parser';
+import prettier from 'eslint-plugin-prettier';
+import prettierConfig from 'eslint-config-prettier';
+
+export default [
+    {
+        files: ['src/**/*.ts', 'tests/**/*.ts'],
+        languageOptions: {
+            parser: typescriptParser,
+            parserOptions: {
+                ecmaVersion: 2022,
+                sourceType: 'module',
+            },
+        },
+        plugins: {
+            '@typescript-eslint': typescriptEslint,
+            prettier: prettier,
+        },
+        rules: {
+            // Prettier integration
+            'prettier/prettier': 'error',
+
+            // TypeScript specific rules
+            '@typescript-eslint/no-unused-vars': 'error',
+            '@typescript-eslint/no-explicit-any': 'warn',
+            '@typescript-eslint/explicit-function-return-type': 'off',
+            '@typescript-eslint/explicit-module-boundary-types': 'off',
+
+            // Naming conventions - snake_case for functions and variables, camelCase allowed for existing code
+            '@typescript-eslint/naming-convention': [
+                'error',
+                {
+                    selector: 'function',
+                    format: ['snake_case'],
+                },
+                {
+                    selector: 'variable',
+                    format: ['snake_case'],
+                },
+                {
+                    selector: 'parameter',
+                    format: ['snake_case'],
+                },
+                {
+                    selector: 'method',
+                    format: ['snake_case'],
+                },
+                {
+                    selector: 'property',
+                    format: ['snake_case'],
+                },
+                {
+                    selector: 'class',
+                    format: ['PascalCase'],
+                },
+                {
+                    selector: 'interface',
+                    format: ['PascalCase'],
+                },
+                {
+                    selector: 'typeAlias',
+                    format: ['PascalCase'],
+                },
+                {
+                    selector: 'enum',
+                    format: ['PascalCase'],
+                },
+            ],
+
+            // General best practices
+            'no-console': 'warn',
+            'prefer-const': 'error',
+            'no-var': 'error',
+        },
     },
-    extends: [
-        'eslint:recommended',
-        '@typescript-eslint/recommended',
-        '@typescript-eslint/recommended-requiring-type-checking',
-        'prettier',
-    ],
-    parser: '@typescript-eslint/parser',
-    parserOptions: {
-        ecmaVersion: 2022,
-        sourceType: 'module',
-        project: './tsconfig.json',
+    {
+        files: ['*.js', '*.ts'],
+        rules: {
+            ...prettierConfig.rules,
+        },
     },
-    plugins: ['@typescript-eslint', 'prettier'],
-    rules: {
-        'prettier/prettier': 'error',
-        '@typescript-eslint/no-unused-vars': ['error', {argsIgnorePattern: '^_'}],
-        '@typescript-eslint/explicit-function-return-type': 'warn',
-        '@typescript-eslint/no-explicit-any': 'error',
-        '@typescript-eslint/no-non-null-assertion': 'warn',
-        '@typescript-eslint/prefer-const': 'error',
-        '@typescript-eslint/no-var-requires': 'error',
-        'prefer-const': 'error',
-        'no-var': 'error',
-        'no-console': 'warn',
-    },
-    ignorePatterns: ['dist/', 'node_modules/', 'coverage/', '*.js'],
-};
+];
