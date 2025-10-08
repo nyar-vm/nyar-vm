@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { Diagnostic } from '../src/diagnostic.js';
-import { DiagnosticCollector } from '../src/diagnostic-collector.js';
-import { SourceFile } from '../src/source-file.js';
-import { SourceSpan } from '../src/source-span.js';
+import {describe, expect, it} from 'vitest';
+import {Diagnostic} from '../src/diagnostic.js';
+import {DiagnosticCollector} from '../src/diagnostic-collector.js';
+import {SourceFile} from '../src/source-file.js';
+import {SourceSpan} from '../src/source-span.js';
 
 describe('DiagnosticCollector', () => {
     const create_test_diagnostic = (severity: 'error' | 'warning' | 'info' | 'hint' = 'error') => {
@@ -26,8 +26,8 @@ describe('DiagnosticCollector', () => {
         const diagnostic = create_test_diagnostic('error');
 
         collector.add(diagnostic);
-        expect(collector.hasErrors()).toBe(true);
-        expect(collector.hasDiagnostics()).toBe(true);
+        expect(collector.has_errors()).toBe(true);
+        expect(collector.has_diagnostics()).toBe(true);
         expect(collector.count).toBe(1);
     });
 
@@ -37,11 +37,12 @@ describe('DiagnosticCollector', () => {
         const error2 = create_test_diagnostic('error');
         const warning = create_test_diagnostic('warning');
 
-        collector.addMany([error1, error2, warning]);
-        expect(collector.hasErrors()).toBe(true);
+        collector.add_many([error1, error2, warning]);
+        expect(collector.has_errors()).toBe(true);
+        expect(collector.has_diagnostics()).toBe(true);
         expect(collector.count).toBe(3);
-        expect(collector.errorCount).toBe(2);
-        expect(collector.warningCount).toBe(1);
+        expect(collector.error_count).toBe(2);
+        expect(collector.warning_count).toBe(1);
     });
 
     it('should get diagnostics by severity', () => {
@@ -51,23 +52,23 @@ describe('DiagnosticCollector', () => {
         const info = create_test_diagnostic('info');
         const hint = create_test_diagnostic('hint');
 
-        collector.addMany([error, warning, info, hint]);
+        collector.add_many([error, warning, info, hint]);
 
-        expect(collector.getErrors()).toHaveLength(1);
-        expect(collector.getWarnings()).toHaveLength(1);
-        expect(collector.getInfo()).toHaveLength(1);
-        expect(collector.getHints()).toHaveLength(1);
+        expect(collector.get_errors()).toHaveLength(1);
+        expect(collector.get_warnings()).toHaveLength(1);
+        expect(collector.get_info()).toHaveLength(1);
+        expect(collector.get_hints()).toHaveLength(1);
     });
 
     it('should clear diagnostics', () => {
         const collector = new DiagnosticCollector();
         collector.add(create_test_diagnostic('error'));
 
-        expect(collector.hasErrors()).toBe(true);
+        expect(collector.has_errors()).toBe(true);
 
         collector.clear();
-        expect(collector.hasErrors()).toBe(false);
-        expect(collector.hasDiagnostics()).toBe(false);
+        expect(collector.has_errors()).toBe(false);
+        expect(collector.has_diagnostics()).toBe(false);
         expect(collector.count).toBe(0);
     });
 
@@ -75,13 +76,13 @@ describe('DiagnosticCollector', () => {
         const collector = new DiagnosticCollector();
         collector.add(create_test_diagnostic('error'));
 
-        expect(() => collector.throwIfErrors()).toThrow('Compilation failed with 1 error(s)');
+        expect(() => collector.throw_if_errors()).toThrow('Compilation failed with 1 error(s)');
     });
 
     it('should not throw if there are only warnings', () => {
         const collector = new DiagnosticCollector();
         collector.add(create_test_diagnostic('warning'));
 
-        expect(() => collector.throwIfErrors()).not.toThrow();
+        expect(() => collector.throw_if_errors()).not.toThrow();
     });
 });

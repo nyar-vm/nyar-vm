@@ -18,11 +18,5 @@ export default defineConfig({
         target: 'es2022',
         sourcemap: true,
         minify: false,
-    },
-    test: {
-        globals: true,
-        environment: 'node',
-        include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-        exclude: ['node_modules', 'dist', 'coverage'],
-    },
+    }
 });

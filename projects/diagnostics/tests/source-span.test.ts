@@ -16,14 +16,14 @@ describe('SourceSpan', () => {
     });
 
     it('should throw on invalid span', () => {
-        const file = createTestFile();
+        const file = create_test_file();
 
         expect(() => new SourceSpan(-1, 6, file)).toThrow('Invalid source span');
         expect(() => new SourceSpan(6, 0, file)).toThrow('Invalid source span');
     });
 
     it('should get start and end positions', () => {
-        const file = createTestFile();
+        const file = create_test_file();
         const span = new SourceSpan(0, 7, file);
 
         expect(span.start_position).toEqual({ line: 1, column: 1 });
@@ -31,7 +31,7 @@ describe('SourceSpan', () => {
     });
 
     it('should check if span contains another span', () => {
-        const file = createTestFile();
+        const file = create_test_file();
         const outer = new SourceSpan(0, 12, file);
         const inner = new SourceSpan(6, 12, file);
 
@@ -40,7 +40,7 @@ describe('SourceSpan', () => {
     });
 
     it('should check if spans overlap', () => {
-        const file = createTestFile();
+        const file = create_test_file();
         const span1 = new SourceSpan(0, 10, file);
         const span2 = new SourceSpan(5, 15, file);
         const span3 = new SourceSpan(15, 20, file);
@@ -50,7 +50,7 @@ describe('SourceSpan', () => {
     });
 
     it('should merge spans', () => {
-        const file = createTestFile();
+        const file = create_test_file();
         const span1 = new SourceSpan(0, 7, file);
         const span2 = new SourceSpan(7, 13, file);
 
@@ -61,7 +61,7 @@ describe('SourceSpan', () => {
     });
 
     it('should create span from line and column', () => {
-        const file = createTestFile();
+        const file = create_test_file();
         const span = SourceSpan.from_line_column(1, 1, 2, 1, file);
 
         expect(span.start).toBe(0);

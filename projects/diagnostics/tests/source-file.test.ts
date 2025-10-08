@@ -30,16 +30,16 @@ describe('SourceFile', () => {
     it('should convert offset to position', () => {
         const file = create_test_file();
 
-        expect(file.offsetToPosition(0)).toEqual({ line: 1, column: 1 });
-        expect(file.offsetToPosition(7)).toEqual({ line: 2, column: 1 });
-        expect(file.offsetToPosition(14)).toEqual({ line: 3, column: 1 });
+        expect(file.offset_to_position(0)).toEqual({ line: 1, column: 1 });
+        expect(file.offset_to_position(7)).toEqual({ line: 2, column: 1 });
+        expect(file.offset_to_position(14)).toEqual({ line: 3, column: 1 });
     });
 
     it('should convert position to offset', () => {
         const file = create_test_file();
 
-        expect(file.positionToOffset(1, 1)).toBe(0);
-        expect(file.positionToOffset(2, 1)).toBe(7);
-        expect(file.positionToOffset(3, 1)).toBe(14);
+        expect(file.position_to_offset(1, 1)).toBe(0);
+        expect(file.position_to_offset(2, 1)).toBe(7);
+        expect(file.position_to_offset(3, 1)).toBe(14);
     });
 });
