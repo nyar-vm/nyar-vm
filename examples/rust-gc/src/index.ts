@@ -80,14 +80,14 @@ export interface RustStmtLet {
 
 // 辅助函数
 export function create_hir_program(items: RustItem[]): RustProgram {
-    return {type: 'Program', items};
+    return { type: 'Program', items };
 }
 
 export function create_hir_function(
     name: string,
     params: HirParam[],
     return_type: HirType,
-    body: HirExpr,
+    body: HirExpr
 ): HirFunction {
     return {
         type: 'Function',
@@ -99,33 +99,44 @@ export function create_hir_function(
 }
 
 export function create_hir_param(name: string, type: HirType): HirParam {
-    return {name, type};
+    return { name, type };
 }
 
-export function create_hir_expr_binary(op: HirBinaryOp, left: HirExpr, right: HirExpr): HirExprBinary {
-    return {type: 'Binary', op, left, right};
+export function create_hir_expr_binary(
+    op: HirBinaryOp,
+    left: HirExpr,
+    right: HirExpr
+): HirExprBinary {
+    return { type: 'Binary', op, left, right };
 }
 
-export function create_hir_expr_if(cond: HirExpr, then_expr: HirExpr, else_expr: HirExpr): HirExprIf {
-    return {type: 'If', cond, then_expr, else_expr};
+export function create_hir_expr_if(
+    cond: HirExpr,
+    then_expr: HirExpr,
+    else_expr: HirExpr
+): HirExprIf {
+    return { type: 'If', cond, then_expr, else_expr };
 }
 
-export function create_hir_expr_literal(value: number | boolean, literal_type: HirType): HirExprLiteral {
-    return {type: 'Literal', value, literal_type};
+export function create_hir_expr_literal(
+    value: number | boolean,
+    literal_type: HirType
+): HirExprLiteral {
+    return { type: 'Literal', value, literal_type };
 }
 
 export function create_hir_expr_call(func: HirExpr, args: HirExpr[]): HirExprCall {
-    return {type: 'Call', func, args};
+    return { type: 'Call', func, args };
 }
 
 export function create_hir_expr_path(name: string): HirExprPath {
-    return {type: 'Path', name};
+    return { type: 'Path', name };
 }
 
 export function create_hir_expr_block(stmts: HirStmt[], expr: HirExpr | null = null): HirExprBlock {
-    return {type: 'Block', stmts, expr};
+    return { type: 'Block', stmts, expr };
 }
 
 export function create_hir_stmt_let(name: string, init: HirExpr): HirStmtLet {
-    return {type: 'Let', name, init};
+    return { type: 'Let', name, init };
 }

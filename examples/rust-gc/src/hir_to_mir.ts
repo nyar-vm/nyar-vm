@@ -14,7 +14,13 @@ import {
 } from './index.js';
 
 import { EGraph, create_graph, EClassId, EClass } from '../../projects/mir/src/EGraph.js';
-import { AnyNode, ConstantNode, SymbolNode, CallNode, LambdaNode } from '../../projects/mir/src/nodes/ENode.js';
+import {
+    AnyNode,
+    ConstantNode,
+    SymbolNode,
+    CallNode,
+    LambdaNode,
+} from '../../projects/mir/src/nodes/ENode.js';
 
 // 核心库函数符号
 export const CORE_SYMBOLS = {
@@ -36,14 +42,14 @@ export const CORE_SYMBOLS = {
 
 // 操作符到核心符号的映射
 const BINARY_OP_TO_SYMBOL: Record<HirBinaryOp, string> = {
-    'Add': CORE_SYMBOLS['core.ops.add'],
-    'Sub': CORE_SYMBOLS['core.ops.sub'],
-    'Mul': CORE_SYMBOLS['core.ops.mul'],
-    'Div': CORE_SYMBOLS['core.ops.div'],
-    'Eq': CORE_SYMBOLS['core.ops.eq'],
-    'Ne': CORE_SYMBOLS['core.ops.ne'],
-    'Lt': CORE_SYMBOLS['core.ops.lt'],
-    'Gt': CORE_SYMBOLS['core.ops.gt'],
+    Add: CORE_SYMBOLS['core.ops.add'],
+    Sub: CORE_SYMBOLS['core.ops.sub'],
+    Mul: CORE_SYMBOLS['core.ops.mul'],
+    Div: CORE_SYMBOLS['core.ops.div'],
+    Eq: CORE_SYMBOLS['core.ops.eq'],
+    Ne: CORE_SYMBOLS['core.ops.ne'],
+    Lt: CORE_SYMBOLS['core.ops.lt'],
+    Gt: CORE_SYMBOLS['core.ops.gt'],
 };
 
 // MIR 转换器类
@@ -302,40 +308,40 @@ export function convert_factorial_example(): EGraph {
     const factorial_func = {
         type: 'Function',
         name: 'factorial',
-        params: [
-            {name: 'n', type: 'i32' as const}
-        ],
+        params: [{ name: 'n', type: 'i32' as const }],
         return_type: 'i32' as const,
         body: {
             type: 'If',
             cond: {
                 type: 'Binary',
                 op: 'Eq',
-                left: {type: 'Path', name: 'n'},
-                right: {type: 'Literal', value: 0, literal_type: 'i32'}
+                left: { type: 'Path', name: 'n' },
+                right: { type: 'Literal', value: 0, literal_type: 'i32' },
             },
-            then_expr: {type: 'Literal', value: 1, literal_type: 'i32'},
+            then_expr: { type: 'Literal', value: 1, literal_type: 'i32' },
             else_expr: {
                 type: 'Binary',
                 op: 'Mul',
-                left: {type: 'Path', name: 'n'},
+                left: { type: 'Path', name: 'n' },
                 right: {
                     type: 'Call',
-                    func: {type: 'Path', name: 'factorial'},
-                    args: [{
-                        type: 'Binary',
-                        op: 'Sub',
-                        left: {type: 'Path', name: 'n'},
-                        right: {type: 'Literal', value: 1, literal_type: 'i32'}
-                    }]
-                }
-            }
-        }
+                    func: { type: 'Path', name: 'factorial' },
+                    args: [
+                        {
+                            type: 'Binary',
+                            op: 'Sub',
+                            left: { type: 'Path', name: 'n' },
+                            right: { type: 'Literal', value: 1, literal_type: 'i32' },
+                        },
+                    ],
+                },
+            },
+        },
     };
 
     const program = {
         type: 'Program',
-        items: [factorial_func]
+        items: [factorial_func],
     };
 
     return converter.convert_program(program);

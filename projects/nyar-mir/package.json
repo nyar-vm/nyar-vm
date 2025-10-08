@@ -1,40 +1,45 @@
 {
     "name": "@nyar/mir",
-    "version": "0.1.0",
-    "description": "Nyar MIR - E-graph based intermediate representation",
+    "version": "0.0.0",
     "type": "module",
-    "main": "dist/index.js",
-    "module": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "description": "Nyar diagnostic utilities - Source locations, error reporting, and diagnostics",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
     "exports": {
         ".": {
+            "types": "./dist/index.d.ts",
             "import": "./dist/index.js",
-            "types": "./dist/index.d.ts"
+            "require": "./dist/index.cjs"
         }
     },
+    "files": [
+        "dist",
+        "src"
+    ],
     "scripts": {
-        "build": "tsc && vite build",
         "dev": "vite build --watch",
-        "test": "vitest",
-        "test:ui": "vitest --ui",
+        "build": "tsc -p . && vite build",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "lint": "eslint src tests",
+        "lint:fix": "eslint src tests --fix",
         "typecheck": "tsc --noEmit"
     },
-    "dependencies": {
-        "@nyar/diagnostics": "workspace:*"
-    },
-    "devDependencies": {
-        "@types/node": "^20.0.0",
-        "typescript": "^5.0.0",
-        "vite": "^5.0.0",
-        "vitest": "^1.0.0"
-    },
-    "files": [
-        "dist"
-    ],
+    "dependencies": {},
+    "devDependencies": {},
     "keywords": [
         "nyar",
-        "mir",
-        "egraph",
-        "compiler"
-    ]
+        "diagnostics",
+        "compiler",
+        "source-maps",
+        "error-reporting"
+    ],
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/nyar-framework/nyar-vm.git",
+        "directory": "projects/diagnostics"
+    }
 }
