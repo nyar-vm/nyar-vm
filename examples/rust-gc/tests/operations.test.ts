@@ -1,13 +1,6 @@
 import {describe, expect, it} from 'vitest';
-import {
-    add_node,
-    CallNode,
-    ConstantNode,
-    create_graph,
-    merge_classes,
-    rebuild_graph,
-    SymbolNode
-} from '../src/index.js';
+import {create_graph} from "@nyar/mir";
+
 
 describe('E-graph operations', () => {
     describe('add_node', () => {
