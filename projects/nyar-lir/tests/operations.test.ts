@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
     add_node,
     CallNode,
@@ -6,14 +6,14 @@ import {
     create_graph,
     merge_classes,
     rebuild_graph,
-    SymbolNode
+    SymbolNode,
 } from '../src/index.js';
 
 describe('E-graph operations', () => {
     describe('add_node', () => {
         it('should add a constant node to the graph', () => {
             const graph = create_graph();
-            const node: ConstantNode = {type: 'CONSTANT', value: 42};
+            const node: ConstantNode = { type: 'CONSTANT', value: 42 };
 
             const class_id = add_node(graph, node);
 
@@ -24,7 +24,7 @@ describe('E-graph operations', () => {
 
         it('should return existing class ID for duplicate nodes', () => {
             const graph = create_graph();
-            const node: ConstantNode = {type: 'CONSTANT', value: 42};
+            const node: ConstantNode = { type: 'CONSTANT', value: 42 };
 
             const class_id1 = add_node(graph, node);
             const class_id2 = add_node(graph, node);
@@ -35,8 +35,8 @@ describe('E-graph operations', () => {
 
         it('should add different constant nodes to different classes', () => {
             const graph = create_graph();
-            const node1: ConstantNode = {type: 'CONSTANT', value: 42};
-            const node2: ConstantNode = {type: 'CONSTANT', value: 43};
+            const node1: ConstantNode = { type: 'CONSTANT', value: 42 };
+            const node2: ConstantNode = { type: 'CONSTANT', value: 43 };
 
             const class_id1 = add_node(graph, node1);
             const class_id2 = add_node(graph, node2);
@@ -47,7 +47,7 @@ describe('E-graph operations', () => {
 
         it('should add symbol nodes correctly', () => {
             const graph = create_graph();
-            const node: SymbolNode = {type: 'SYMBOL', name: 'foo'};
+            const node: SymbolNode = { type: 'SYMBOL', name: 'foo' };
 
             const class_id = add_node(graph, node);
 
@@ -57,8 +57,8 @@ describe('E-graph operations', () => {
 
         it('should add call nodes correctly', () => {
             const graph = create_graph();
-            const symbol_node: SymbolNode = {type: 'SYMBOL', name: 'add'};
-            const const_node: ConstantNode = {type: 'CONSTANT', value: 1};
+            const symbol_node: SymbolNode = { type: 'SYMBOL', name: 'add' };
+            const const_node: ConstantNode = { type: 'CONSTANT', value: 1 };
 
             const symbol_class = add_node(graph, symbol_node);
             const const_class = add_node(graph, const_node);
@@ -66,7 +66,7 @@ describe('E-graph operations', () => {
             const call_node: CallNode = {
                 type: 'CALL',
                 callee: symbol_class,
-                args: [const_class, const_class]
+                args: [const_class, const_class],
             };
 
             const call_class = add_node(graph, call_node);
@@ -79,8 +79,8 @@ describe('E-graph operations', () => {
     describe('merge_classes', () => {
         it('should merge two different classes', () => {
             const graph = create_graph();
-            const node1: ConstantNode = {type: 'CONSTANT', value: 1};
-            const node2: ConstantNode = {type: 'CONSTANT', value: 2};
+            const node1: ConstantNode = { type: 'CONSTANT', value: 1 };
+            const node2: ConstantNode = { type: 'CONSTANT', value: 2 };
 
             const class_id1 = add_node(graph, node1);
             const class_id2 = add_node(graph, node2);
@@ -95,7 +95,7 @@ describe('E-graph operations', () => {
 
         it('should return same ID when merging identical classes', () => {
             const graph = create_graph();
-            const node: ConstantNode = {type: 'CONSTANT', value: 42};
+            const node: ConstantNode = { type: 'CONSTANT', value: 42 };
 
             const class_id = add_node(graph, node);
             const merged_id = merge_classes(graph, class_id, class_id);
@@ -121,8 +121,8 @@ describe('E-graph operations', () => {
 
         it('should clear worklist after rebuild', () => {
             const graph = create_graph();
-            const node1: ConstantNode = {type: 'CONSTANT', value: 1};
-            const node2: ConstantNode = {type: 'CONSTANT', value: 2};
+            const node1: ConstantNode = { type: 'CONSTANT', value: 1 };
+            const node2: ConstantNode = { type: 'CONSTANT', value: 2 };
 
             const class_id1 = add_node(graph, node1);
             const class_id2 = add_node(graph, node2);
@@ -140,9 +140,9 @@ describe('E-graph operations', () => {
             const graph = create_graph();
 
             // 创建一些基本节点
-            const add_symbol: SymbolNode = {type: 'SYMBOL', name: 'add'};
-            const const_1: ConstantNode = {type: 'CONSTANT', value: 1};
-            const const_2: ConstantNode = {type: 'CONSTANT', value: 2};
+            const add_symbol: SymbolNode = { type: 'SYMBOL', name: 'add' };
+            const const_1: ConstantNode = { type: 'CONSTANT', value: 1 };
+            const const_2: ConstantNode = { type: 'CONSTANT', value: 2 };
 
             const add_class = add_node(graph, add_symbol);
             const const_1_class = add_node(graph, const_1);
@@ -152,7 +152,7 @@ describe('E-graph operations', () => {
             const call_node: CallNode = {
                 type: 'CALL',
                 callee: add_class,
-                args: [const_1_class, const_2_class]
+                args: [const_1_class, const_2_class],
             };
 
             const call_class = add_node(graph, call_node);
@@ -161,7 +161,7 @@ describe('E-graph operations', () => {
             expect(call_class).toBe(3);
 
             // 测试合并操作
-            const const_3: ConstantNode = {type: 'CONSTANT', value: 3};
+            const const_3: ConstantNode = { type: 'CONSTANT', value: 3 };
             const const_3_class = add_node(graph, const_3);
 
             merge_classes(graph, const_1_class, const_3_class);
@@ -172,7 +172,7 @@ describe('E-graph operations', () => {
 
         it('should maintain node uniqueness after merge', () => {
             const graph = create_graph();
-            const node: ConstantNode = {type: 'CONSTANT', value: 42};
+            const node: ConstantNode = { type: 'CONSTANT', value: 42 };
 
             const class_id1 = add_node(graph, node);
             const class_id2 = add_node(graph, node);
