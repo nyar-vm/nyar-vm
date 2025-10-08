@@ -1,16 +1,16 @@
-import { writeFileSync } from 'fs';
-import { PeAssembler } from "@/pe-writer/PeAssembler";
+import {writeFileSync} from 'fs';
+import {PeAssembler} from "../src/pe-writer";
 
 // 创建一个简单的 Hello World PE 可执行文件 (x64)
 function createHelloWorldExe() {
     console.log('Creating Hello World PE executable for x64...');
-    
+
     const pe_builder = new PeAssembler('x64');
 
     // 导入所需的函数
     pe_builder.import_table.add_import('user32.dll', 'MessageBoxA');
     pe_builder.import_table.add_import('kernel32.dll', 'ExitProcess');
-    
+
     // 创建 .text 节（代码段）
     const text_section = pe_builder.add_section('.text', 0x60000020);
 
@@ -100,17 +100,6 @@ function createHelloWorldExe() {
     return filename;
 }
 
-// 主函数
-function main() {
-    try {
-        console.log('=== PE Hello World Generator (x64) ===\n');
-        const filename = createHelloWorldExe();
-        console.log(`\nCreated: ${filename}`);
-    } catch (error) {
-        console.error('Error creating PE executable:', error);
-        process.exit(1);
-    }
-}
-
-// 运行主函数
-main();
+console.log('=== PE Hello World Generator (x64) ===\n');
+const filename = createHelloWorldExe();
+console.log(`\nCreated: ${filename}`);
