@@ -2,6 +2,7 @@ import {BinaryWriter} from '../BinaryWriter';
 import {PeSection} from "./PeSection";
 import {ImportTable} from "./ImportTable";
 import {PeTargetArchitecture} from "./PeTargetArchitecture";
+import {PeHeaders} from "./PeHeaders";
 
 export class PeAssembler {
     private sections: Map<string, PeSection>;
@@ -10,6 +11,7 @@ export class PeAssembler {
     private file_alignment: number;
     private section_alignment: number;
     private import_table: ImportTable;
+    private pe_headers: PeHeaders;
 
     constructor(target_architecture = PeTargetArchitecture.X86) {
         this.sections = new Map();
@@ -19,11 +21,12 @@ export class PeAssembler {
         this.file_alignment = 0x200;
         this.section_alignment = 0x1000;
 
-        this.add_standard_sections();
+        this.init_standard_sections();
         this.import_table = new ImportTable();
+        this.pe_headers = new PeHeaders();
     }
 
-    private add_standard_sections(): void {
+    private init_standard_sections(): void {
         // 标准PE节
         this.add_section('.text', 0x60000020); // 可执行、可读、代码
         this.add_section('.data', 0xc0000040); // 可读、可写、初始化数据
@@ -211,36 +214,7 @@ export class PeAssembler {
     }
 
     private generate_dos_header(): Uint8Array {
-        const writer = new BinaryWriter();
-
-        // DOS MZ头
-        writer.write_u16(0x5a4d); // e_magic: 'MZ'
-        writer.write_u16(0x0090); // e_cblp
-        writer.write_u16(0x0003); // e_cp
-        writer.write_u16(0x0000); // e_crlc
-        writer.write_u16(0x0004); // e_cparhdr
-        writer.write_u16(0x0000); // e_minalloc
-        writer.write_u16(0xffff); // e_maxalloc
-        writer.write_u16(0x0000); // e_ss
-        writer.write_u16(0x00b8); // e_sp
-        writer.write_u16(0x0000); // e_csum
-        writer.write_u16(0x0000); // e_ip
-        writer.write_u16(0x0000); // e_cs
-        writer.write_u32(0x00000040); // e_lfarlc
-        writer.write_u32(0x00000000); // e_ovno
-
-        // 保留字段
-        for (let i = 0; i < 8; i++) {
-            writer.write_u16(0);
-        }
-
-        writer.write_u32(0x0000007c); // e_lfanew (PE头偏移)
-
-        // DOS存根程序
-        const stub = this.generate_dos_stub();
-        writer.write_bytes(stub);
-
-        return writer.get_bytes();
+        return this.pe_headers.generate_dos_header();
     }
 
     private generate_dos_stub(): Uint8Array {
@@ -275,13 +249,20 @@ export class PeAssembler {
     private generate_file_header(): Uint8Array {
         const writer = new BinaryWriter();
 
-        writer.write_u16(this.get_machine_type());
-        writer.write_u16(this.sections.size); // 节数量
+        const machineType = this.get_machine_type();
+        const numberOfSections = this.sections.size;
+        const optionalHeaderSize = this.get_optional_header_size();
+        const characteristics = this.get_characteristics();
+
+        writer.write_u16(machineType);
+        writer.write_u16(numberOfSections); // 节数量
         writer.write_u32(Math.floor(Date.now() / 1000)); // 时间戳
         writer.write_u32(0); // 符号表指针
         writer.write_u32(0); // 符号数量
-        writer.write_u16(this.get_optional_header_size());
-        writer.write_u16(this.get_characteristics());
+        writer.write_u16(optionalHeaderSize);
+        writer.write_u16(characteristics);
+
+        console.log(`[PeAssembler] File Header - Machine: 0x${machineType.toString(16)}, NumberOfSections: ${numberOfSections}, Characteristics: 0x${characteristics.toString(16)}`);
 
         return writer.get_bytes();
     }
@@ -308,14 +289,22 @@ export class PeAssembler {
     private generate_optional_header(): Uint8Array {
         const writer = new BinaryWriter();
 
+        const magic = this.pe_headers.get_pe_magic(this.architecture);
+        const address_of_entry_point = this.get_entry_point_rva();
+        const image_base = this.base_address;
+        const section_alignment = this.section_alignment;
+        const file_alignment = this.file_alignment;
+        const size_of_image = this.get_image_size();
+        const size_of_headers = this.get_headers_size();
+
         // 标准字段
-        writer.write_u16(this.get_pe_magic());
+        writer.write_u16(magic);
         writer.write_u8(0); // 主链接器版本
         writer.write_u8(0); // 副链接器版本
         writer.write_u32(this.get_code_size());
         writer.write_u32(this.get_initialized_data_size());
         writer.write_u32(this.get_uninitialized_data_size());
-        writer.write_u32(this.get_entry_point_rva());
+        writer.write_u32(address_of_entry_point);
         writer.write_u32(this.get_code_base_rva());
 
         if (this.architecture === PeTargetArchitecture.X86) {
@@ -324,12 +313,12 @@ export class PeAssembler {
 
         // Windows特定字段
         if (this.architecture === PeTargetArchitecture.X64) {
-            writer.write_u64(BigInt(this.base_address)); // 映像基址
+            writer.write_u64(BigInt(image_base));
         } else {
-            writer.write_u32(this.base_address); // 映像基址
+            writer.write_u32(image_base);
         }
-        writer.write_u32(this.section_alignment);
-        writer.write_u32(this.file_alignment);
+        writer.write_u32(section_alignment);
+        writer.write_u32(file_alignment);
         writer.write_u16(10); // 主操作系统版本 (Windows 10/11)
         writer.write_u16(0); // 副操作系统版本
         writer.write_u16(0); // 主映像版本
@@ -339,8 +328,8 @@ export class PeAssembler {
         writer.write_u32(0); // Win32版本值
 
         // 大小字段
-        writer.write_u32(this.get_image_size());
-        writer.write_u32(this.get_headers_size());
+        writer.write_u32(size_of_image);
+        writer.write_u32(size_of_headers);
         writer.write_u32(this.calculate_checksum());
         writer.write_u16(this.get_subsystem());
         writer.write_u16(this.get_dll_characteristics());
@@ -363,6 +352,8 @@ export class PeAssembler {
 
         // 数据目录
         this.write_data_directories(writer);
+
+        console.log(`[PeAssembler] Optional Header - Magic: 0x${magic.toString(16)}, EntryPoint: 0x${address_of_entry_point.toString(16)}, ImageBase: 0x${image_base.toString(16)}, SectionAlignment: 0x${section_alignment.toString(16)}, FileAlignment: 0x${file_alignment.toString(16)}, SizeOfImage: 0x${size_of_image.toString(16)}, SizeOfHeaders: 0x${size_of_headers.toString(16)}`);
 
         return writer.get_bytes();
     }

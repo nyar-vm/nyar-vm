@@ -31,8 +31,7 @@ export class PeHeaders {
         return writer.get_bytes();
     }
 
-    private get_pe_magic(architecture: PeTargetArchitecture): number {
+    public get_pe_magic(architecture: PeTargetArchitecture): number {
         return architecture === PeTargetArchitecture.X64 ? 0x020b : 0x010b;
     }
-
 }
