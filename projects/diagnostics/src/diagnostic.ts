@@ -25,11 +25,11 @@ export class Diagnostic {
         span?: SourceSpan,
         suggestion?: string
     ): Diagnostic {
-        const messageObj: DiagnosticMessage = { message };
+        const message_obj: DiagnosticMessage = { message };
         if (suggestion) {
-            messageObj.suggestion = suggestion;
+            message_obj.suggestion = suggestion;
         }
-        return new Diagnostic(DiagnosticSeverity.Error, code, title, [messageObj], span);
+        return new Diagnostic(DiagnosticSeverity.Error, code, title, [message_obj], span);
     }
 
     /**
@@ -42,11 +42,11 @@ export class Diagnostic {
         span?: SourceSpan,
         suggestion?: string
     ): Diagnostic {
-        const messageObj: DiagnosticMessage = { message };
+        const message_obj: DiagnosticMessage = { message };
         if (suggestion) {
-            messageObj.suggestion = suggestion;
+            message_obj.suggestion = suggestion;
         }
-        return new Diagnostic(DiagnosticSeverity.Warning, code, title, [messageObj], span);
+        return new Diagnostic(DiagnosticSeverity.Warning, code, title, [message_obj], span);
     }
 
     /**
@@ -86,20 +86,20 @@ export class Diagnostic {
     /**
      * Add additional messages
      */
-    withMessage(message: string, suggestion?: string, help?: string): Diagnostic {
-        const newMessage: DiagnosticMessage = { message };
+    with_message(message: string, suggestion?: string, help?: string): Diagnostic {
+        const new_message: DiagnosticMessage = { message };
         if (suggestion !== undefined) {
-            newMessage.suggestion = suggestion;
+            new_message.suggestion = suggestion;
         }
         if (help !== undefined) {
-            newMessage.help = help;
+            new_message.help = help;
         }
-        const newMessages = [...this.messages, newMessage];
+        const new_messages = [...this.messages, new_message];
         return new Diagnostic(
             this.severity,
             this.code,
             this.title,
-            newMessages,
+            new_messages,
             this.span,
             this.related
         );

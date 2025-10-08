@@ -32,14 +32,14 @@ export class SourceSpan {
      * Get the start position (line and column)
      */
     get start_position(): { line: number; column: number } {
-        return this.source_file.offsetToPosition(this.start);
+        return this.source_file.offset_to_position(this.start);
     }
 
     /**
      * Get the end position (line and column)
      */
     get end_position(): { line: number; column: number } {
-        return this.source_file.offsetToPosition(this.end);
+        return this.source_file.offset_to_position(this.end);
     }
 
     /**
@@ -64,10 +64,10 @@ export class SourceSpan {
             throw new Error('Cannot merge spans from different source files');
         }
 
-        const newStart = Math.min(this.start, other.start);
-        const newEnd = Math.max(this.end, other.end);
+        const new_start = Math.min(this.start, other.start);
+        const new_end = Math.max(this.end, other.end);
 
-        return new SourceSpan(newStart, newEnd, this.source_file);
+        return new SourceSpan(new_start, new_end, this.source_file);
     }
 
     /**
@@ -80,8 +80,8 @@ export class SourceSpan {
         end_column: number,
         source_file: SourceFile
     ): SourceSpan {
-        const start = source_file.positionToOffset(start_line, start_column);
-        const end = source_file.positionToOffset(end_line, end_column);
+        const start = source_file.position_to_offset(start_line, start_column);
+        const end = source_file.position_to_offset(end_line, end_column);
         return new SourceSpan(start, end, source_file);
     }
 }

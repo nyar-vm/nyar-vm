@@ -5,7 +5,7 @@ import { Diagnostic } from './diagnostic.js';
  */
 export class DiagnosticCollector {
     private diagnostics: Diagnostic[] = [];
-    private _hasErrors = false;
+    private _has_errors = false;
 
     /**
      * Add a diagnostic to the collector
@@ -13,14 +13,14 @@ export class DiagnosticCollector {
     add(diagnostic: Diagnostic): void {
         this.diagnostics.push(diagnostic);
         if (diagnostic.severity === 'error') {
-            this._hasErrors = true;
+            this._has_errors = true;
         }
     }
 
     /**
      * Add multiple diagnostics
      */
-    addMany(diagnostics: Diagnostic[]): void {
+    add_many(diagnostics: Diagnostic[]): void {
         for (const diagnostic of diagnostics) {
             this.add(diagnostic);
         }
@@ -29,49 +29,49 @@ export class DiagnosticCollector {
     /**
      * Check if there are any errors
      */
-    hasErrors(): boolean {
-        return this._hasErrors;
+    has_errors(): boolean {
+        return this._has_errors;
     }
 
     /**
      * Check if there are any diagnostics
      */
-    hasDiagnostics(): boolean {
+    has_diagnostics(): boolean {
         return this.diagnostics.length > 0;
     }
 
     /**
      * Get all diagnostics
      */
-    getDiagnostics(): Diagnostic[] {
+    get_diagnostics(): Diagnostic[] {
         return [...this.diagnostics];
     }
 
     /**
      * Get only error diagnostics
      */
-    getErrors(): Diagnostic[] {
+    get_errors(): Diagnostic[] {
         return this.diagnostics.filter(d => d.severity === 'error');
     }
 
     /**
      * Get only warning diagnostics
      */
-    getWarnings(): Diagnostic[] {
+    get_warnings(): Diagnostic[] {
         return this.diagnostics.filter(d => d.severity === 'warning');
     }
 
     /**
      * Get only info diagnostics
      */
-    getInfo(): Diagnostic[] {
+    get_info(): Diagnostic[] {
         return this.diagnostics.filter(d => d.severity === 'info');
     }
 
     /**
      * Get only hint diagnostics
      */
-    getHints(): Diagnostic[] {
+    get_hints(): Diagnostic[] {
         return this.diagnostics.filter(d => d.severity === 'hint');
     }
 
@@ -80,7 +80,7 @@ export class DiagnosticCollector {
      */
     clear(): void {
         this.diagnostics = [];
-        this._hasErrors = false;
+        this._has_errors = false;
     }
 
     /**
@@ -93,27 +93,27 @@ export class DiagnosticCollector {
     /**
      * Get the number of errors
      */
-    get errorCount(): number {
-        return this.getErrors().length;
+    get error_count(): number {
+        return this.get_errors().length;
     }
 
     /**
      * Get the number of warnings
      */
-    get warningCount(): number {
-        return this.getWarnings().length;
+    get warning_count(): number {
+        return this.get_warnings().length;
     }
 
     /**
      * Throw an error if there are any errors
      */
-    throwIfErrors(): void {
-        if (this._hasErrors) {
-            const errorMessages = this.getErrors()
+    throw_if_errors(): void {
+        if (this._has_errors) {
+            const error_messages = this.get_errors()
                 .map(err => `${err.code}: ${err.title} - ${err.primaryMessage}`)
                 .join('\n');
             throw new Error(
-                `Compilation failed with ${this.errorCount} error(s):\n${errorMessages}`
+                `Compilation failed with ${this.error_count} error(s):\n${error_messages}`
             );
         }
     }

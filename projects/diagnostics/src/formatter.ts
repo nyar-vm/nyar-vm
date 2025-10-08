@@ -6,10 +6,10 @@ import { DiagnosticSeverity } from './diagnostic-severity';
  * Formats diagnostics for display
  */
 export class Formatter {
-    private readonly useColors: boolean;
+    private readonly use_colors: boolean;
 
-    constructor(useColors = true) {
-        this.useColors = useColors && this.supportsColor();
+    constructor(use_colors = true) {
+        this.use_colors = use_colors && this.supports_color();
     }
 
     /**
@@ -19,8 +19,8 @@ export class Formatter {
         const lines: string[] = [];
 
         // Header with severity and code
-        const severityColor = this.get_severity_color(diagnostic.severity);
-        const header = `${severityColor}${this.format_severity(diagnostic.severity)}${this.resetColor()} ${diagnostic.code}: ${diagnostic.title}`;
+        const severity_color = this.get_severity_color(diagnostic.severity);
+        const header = `${severity_color}${this.format_severity(diagnostic.severity)}${this.reset_color()} ${diagnostic.code}: ${diagnostic.title}`;
         lines.push(header);
 
         // Primary message and location
@@ -37,10 +37,10 @@ export class Formatter {
             if (msg) {
                 lines.push(`  ${msg.message}`);
                 if (msg.suggestion) {
-                    lines.push(`  ${this.dimColor()}help: ${msg.suggestion}${this.resetColor()}`);
+                    lines.push(`  ${this.dim_color()}help: ${msg.suggestion}${this.reset_color()}`);
                 }
                 if (msg.help) {
-                    lines.push(`  ${this.dimColor()}note: ${msg.help}${this.resetColor()}`);
+                    lines.push(`  ${this.dim_color()}note: ${msg.help}${this.reset_color()}`);
                 }
             }
         }
@@ -48,11 +48,11 @@ export class Formatter {
         // Primary suggestion and help
         if (diagnostic.primarySuggestion) {
             lines.push(
-                `  ${this.dimColor()}help: ${diagnostic.primarySuggestion}${this.resetColor()}`
+                `  ${this.dim_color()}help: ${diagnostic.primarySuggestion}${this.reset_color()}`
             );
         }
         if (diagnostic.help) {
-            lines.push(`  ${this.dimColor()}note: ${diagnostic.help}${this.resetColor()}`);
+            lines.push(`  ${this.dim_color()}note: ${diagnostic.help}${this.reset_color()}`);
         }
 
         // Related diagnostics
@@ -60,8 +60,8 @@ export class Formatter {
             lines.push('');
             lines.push('  Related diagnostics:');
             for (const related of diagnostic.related) {
-                const relatedLines = this.format(related).split('\n');
-                for (const line of relatedLines) {
+                const related_lines = this.format(related).split('\n');
+                for (const line of related_lines) {
                     lines.push(`  ${line}`);
                 }
             }
@@ -105,40 +105,40 @@ export class Formatter {
     private format_source_snippet(span: SourceSpan): string {
         const start = span.start_position;
         const end = span.end_position;
-        const sourceFile = span.source_file;
+        const source_file = span.source_file;
 
         // Get relevant lines
-        const lines = sourceFile.content.split('\n');
-        const startLine = Math.max(0, start.line - 2);
-        const endLine = Math.min(lines.length, end.line + 1);
+        const lines = source_file.content.split('\n');
+        const start_line = Math.max(0, start.line - 2);
+        const end_line = Math.min(lines.length, end.line + 1);
 
-        const snippetLines: string[] = [];
-        const gutterWidth = String(endLine).length;
+        const snippet_lines: string[] = [];
+        const gutter_width = String(end_line).length;
 
-        for (let i = startLine; i < endLine; i++) {
-            const lineNumber = i + 1;
+        for (let i = start_line; i < end_line; i++) {
+            const line_number = i + 1;
             const line = lines[i] ?? '';
-            const gutter = String(lineNumber).padStart(gutterWidth);
+            const gutter = String(line_number).padStart(gutter_width);
 
-            snippetLines.push(`${this.dimColor()}${gutter} |${this.resetColor()} ${line}`);
+            snippet_lines.push(`${this.dim_color()}${gutter} |${this.reset_color()} ${line}`);
 
             // Add underline for the error line
             if (i + 1 === start.line) {
                 const underline =
                     this.get_severity_color(DiagnosticSeverity.Error) +
                     '^'.repeat(Math.min(span.length, line.length)) +
-                    this.resetColor();
-                snippetLines.push(
-                    `${' '.repeat(gutterWidth)} | ${' '.repeat(start.column - 1)}${underline}`
+                    this.reset_color();
+                snippet_lines.push(
+                    `${' '.repeat(gutter_width)} | ${' '.repeat(start.column - 1)}${underline}`
                 );
             }
         }
 
-        return snippetLines.join('\n');
+        return snippet_lines.join('\n');
     }
 
     private get_severity_color(severity: DiagnosticSeverity): string {
-        if (!this.useColors) return '';
+        if (!this.use_colors) return '';
 
         switch (severity) {
             case DiagnosticSeverity.Error:
@@ -152,15 +152,15 @@ export class Formatter {
         }
     }
 
-    private dimColor(): string {
-        return this.useColors ? '\x1b[90m' : '';
+    private dim_color(): string {
+        return this.use_colors ? '\x1b[90m' : '';
     }
 
-    private resetColor(): string {
-        return this.useColors ? '\x1b[0m' : '';
+    private reset_color(): string {
+        return this.use_colors ? '\x1b[0m' : '';
     }
 
-    private supportsColor(): boolean {
+    private supports_color(): boolean {
         // Simple check for color support
         return (
             typeof process !== 'undefined' &&

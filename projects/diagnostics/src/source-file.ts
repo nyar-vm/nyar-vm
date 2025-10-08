@@ -11,9 +11,9 @@ export class SourceFile {
     /**
      * Get a specific line from the source file
      */
-    get_line(lineNumber: number): string {
+    get_line(line_number: number): string {
         const lines = this.content.split('\n');
-        return lines[lineNumber - 1] || '';
+        return lines[line_number - 1] || '';
     }
 
     /**
@@ -33,34 +33,34 @@ export class SourceFile {
     /**
      * Convert a character offset to line and column position
      */
-    offsetToPosition(offset: number): { line: number; column: number } {
+    offset_to_position(offset: number): { line: number; column: number } {
         const lines = this.content.substring(0, offset).split('\n');
-        const lastLine = lines[lines.length - 1];
+        const last_line = lines[lines.length - 1];
         return {
             line: lines.length,
-            column: lastLine ? lastLine.length + 1 : 1,
+            column: last_line ? last_line.length + 1 : 1,
         };
     }
 
     /**
      * Convert line and column position to character offset
      */
-    positionToOffset(line: number, column: number): number {
+    position_to_offset(line: number, column: number): number {
         const lines = this.content.split('\n');
         let offset = 0;
 
         // Add up the lengths of all lines before the target line
         for (let i = 0; i < line - 1 && i < lines.length; i++) {
-            const lineContent = lines[i];
-            if (lineContent) {
-                offset += lineContent.length + 1; // +1 for newline
+            const line_content = lines[i];
+            if (line_content) {
+                offset += line_content.length + 1; // +1 for newline
             }
         }
 
         // Add the column position on the target line
         if (line <= lines.length) {
-            const lineContent = lines[line - 1];
-            offset += Math.min(column - 1, lineContent?.length ?? 0);
+            const line_content = lines[line - 1];
+            offset += Math.min(column - 1, line_content?.length ?? 0);
         }
 
         return offset;

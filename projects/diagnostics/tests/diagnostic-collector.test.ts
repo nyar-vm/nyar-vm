@@ -73,14 +73,14 @@ describe('DiagnosticCollector', () => {
 
     it('should throw if there are errors', () => {
         const collector = new DiagnosticCollector();
-        collector.add(createTestDiagnostic('error'));
+        collector.add(create_test_diagnostic('error'));
 
         expect(() => collector.throwIfErrors()).toThrow('Compilation failed with 1 error(s)');
     });
 
     it('should not throw if there are only warnings', () => {
         const collector = new DiagnosticCollector();
-        collector.add(createTestDiagnostic('warning'));
+        collector.add(create_test_diagnostic('warning'));
 
         expect(() => collector.throwIfErrors()).not.toThrow();
     });

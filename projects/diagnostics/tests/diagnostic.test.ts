@@ -71,7 +71,7 @@ describe('Diagnostic', () => {
 
     it('should add additional messages', () => {
         const diagnostic = Diagnostic.error('E001', 'Main Error', 'Main error message');
-        const with_message = diagnostic.withMessage('Additional context', 'Fix suggestion');
+        const with_message = diagnostic.with_message('Additional context', 'Fix suggestion');
 
         expect(with_message.messages).toHaveLength(2);
         expect(with_message.messages[1]?.message).toBe('Additional context');
