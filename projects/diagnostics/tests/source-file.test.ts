@@ -33,8 +33,8 @@ describe('SourceFile', () => {
         const file = new SourceFile('test.ts', content);
 
         expect(file.offsetToPosition(0)).toEqual({ line: 1, column: 1 });
-        expect(file.offsetToPosition(6)).toEqual({ line: 2, column: 1 });
-        expect(file.offsetToPosition(12)).toEqual({ line: 3, column: 1 });
+        expect(file.offsetToPosition(7)).toEqual({ line: 2, column: 1 });
+        expect(file.offsetToPosition(14)).toEqual({ line: 3, column: 1 });
     });
 
     it('should convert position to offset', () => {
@@ -42,7 +42,7 @@ describe('SourceFile', () => {
         const file = new SourceFile('test.ts', content);
 
         expect(file.positionToOffset(1, 1)).toBe(0);
-        expect(file.positionToOffset(2, 1)).toBe(6);
-        expect(file.positionToOffset(3, 1)).toBe(12);
+        expect(file.positionToOffset(2, 1)).toBe(7);
+        expect(file.positionToOffset(3, 1)).toBe(14);
     });
 });

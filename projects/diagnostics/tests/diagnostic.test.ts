@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Diagnostic, DiagnosticSeverity } from '../src/diagnostic.js';
+import { Diagnostic } from '../src/diagnostic.js';
 import { SourceFile } from '../src/source-file.js';
 import { SourceSpan } from '../src/source-span.js';
+import {DiagnosticSeverity} from "../src";
 
 describe('Diagnostic', () => {
     const createTestFile = () => new SourceFile('test.ts', 'line 1\nline 2\nline 3');

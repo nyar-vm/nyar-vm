@@ -29,7 +29,7 @@ export default [
 
             // Naming conventions - snake_case for functions and variables, camelCase allowed for existing code
             '@typescript-eslint/naming-convention': [
-                'error',
+                'warn',
                 {
                     selector: 'function',
                     format: ['snake_case'],

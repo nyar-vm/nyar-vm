@@ -1,23 +1,6 @@
-import { SourceSpan } from './source-span.js';
-
-/**
- * Severity levels for diagnostics
- */
-export enum DiagnosticSeverity {
-    Error = 'error',
-    Warning = 'warning',
-    Info = 'info',
-    Hint = 'hint',
-}
-
-/**
- * Represents a diagnostic message with optional suggestions
- */
-export interface DiagnosticMessage {
-    message: string;
-    suggestion?: string;
-    help?: string;
-}
+import {SourceSpan} from './source-span.js';
+import {DiagnosticSeverity} from "./diagnosticSeverity";
+import {DiagnosticMessage} from "./diagnostic-message";
 
 /**
  * Represents a diagnostic (error, warning, info, hint)
