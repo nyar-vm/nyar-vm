@@ -165,8 +165,7 @@ export class PeAssembler {
 
             // 生成 .idata 节的原始数据
             const idata_raw_data = this.import_table.generate_raw_data(
-                idata_section.get_virtual_address(),
-                this.base_address
+                idata_section.get_virtual_address()
             );
             idata_section.set_raw_data(idata_raw_data);
 
@@ -174,6 +173,9 @@ export class PeAssembler {
                 idata_section.get_virtual_size()
             );
             current_raw_offset += this.align_to_file_alignment(idata_section.get_raw_data_size());
+
+            // 更新导入表节信息
+            this.pe_headers.update_import_section(idata_section);
         }
 
         const writer = new BinaryWriter();
@@ -184,9 +186,10 @@ export class PeAssembler {
         this.pe_headers.optional_header_size =
             this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0xf0 : 0xe0;
         this.pe_headers.characteristics =
-            this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x010b : 0x010b;
-        this.pe_headers.entry_point_rva = 0x1000;
-        this.pe_headers.image_base = this.base_address;
+            this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x0020 | 0x0002 : 0x0100 | 0x0002;
+        this.pe_headers.entry_point_rva = this.sections.get('.text')?.get_virtual_address() ?? 0x1000;
+        this.pe_headers.image_base = this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x140000000 : 0x400000;
+        this.pe_headers.characteristics = this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x0020 | 0x0002 | 0x0020 : 0x0100 | 0x0002;
         this.pe_headers.section_alignment = this.section_alignment;
         this.pe_headers.file_alignment = this.file_alignment;
         this.pe_headers.size_of_image = this.calculate_image_size();
@@ -198,7 +201,7 @@ export class PeAssembler {
         this.pe_headers.data_base_rva = this.sections.get('.data')?.get_virtual_address() || 0;
         this.pe_headers.checksum = 0;
         this.pe_headers.subsystem = 3;
-        this.pe_headers.dll_characteristics = 0x8160;
+        this.pe_headers.dll_characteristics = 0x0060; // NX_COMPAT (0x0040) | NO_SEH (0x0020)
 
         // 生成NT头
         this.pe_headers.write_nt_headers(writer);

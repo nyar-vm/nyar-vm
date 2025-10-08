@@ -1,6 +1,6 @@
 import {BinaryWriter} from '../BinaryWriter';
-
 import {PeTargetArchitecture} from '@/pe-writer/PeTargetArchitecture';
+import {PeSection} from './PeSection';
 
 export class PeHeaders {
     public readonly architecture: PeTargetArchitecture;
@@ -21,6 +21,9 @@ export class PeHeaders {
     public checksum: number = 0;
     public subsystem: number = 0;
     public dll_characteristics: number = 0;
+
+    private import_table_rva: number = 0;
+    private import_table_size: number = 0;
 
     constructor(architecture: PeTargetArchitecture) {
         this.architecture = architecture;
@@ -131,8 +134,8 @@ export class PeHeaders {
         writer.write_u32(0); // RVA
         writer.write_u32(0); // Size
         // 导入表
-        writer.write_u32(0); // RVA - 占位符，实际值在 build() 中设置
-        writer.write_u32(0); // Size - 占位符，实际值在 build() 中设置
+        writer.write_u32(this.import_table_rva);
+        writer.write_u32(this.import_table_size);
         // 资源表
         writer.write_u32(0);
         writer.write_u32(0);
@@ -187,5 +190,18 @@ export class PeHeaders {
 
     private get_machine_type(architecture: PeTargetArchitecture): number {
         return architecture === PeTargetArchitecture.X64 ? 0x8664 : 0x014c;
+    }
+
+    /**
+     * 更新导入表节信息
+     * @param idata_section 导入表节对象
+     */
+    public update_import_section(idata_section: PeSection): void {
+        this.import_table_rva = idata_section.get_virtual_address();
+        this.import_table_size = idata_section.get_virtual_size();
+
+        console.log(
+            `[PeHeaders] Import Table - RVA: 0x${this.import_table_rva.toString(16)}, Size: 0x${this.import_table_size.toString(16)}`
+        );
     }
 }
