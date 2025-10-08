@@ -1,4 +1,4 @@
-import { PeAssembler } from '../src/pe/PeBuilder';
+import { PeAssembler } from '../src/pe/PeAssembler';
 import { writeFileSync } from 'fs';
 
 console.log('=== Simple x86 PE Generator ===\n');

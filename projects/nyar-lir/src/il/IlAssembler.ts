@@ -1,5 +1,5 @@
 import {BinaryWriter} from '../BinaryWriter.js';
-import {PeAssembler} from '../pe/PeBuilder.js';
+import {PeAssembler} from '../pe/PeAssembler';
 
 export class IlAssembler {
     private module_name: string;

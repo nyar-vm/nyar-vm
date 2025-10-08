@@ -3,12 +3,6 @@ import {PeSection} from "./PeSection";
 
 export class PeAssembler {
     private sections: Map<string, PeSection>;
-    private symbol_table: SymbolTable;
-    private relocations: RelocationTable;
-    private imports: ImportTable;
-    private exports: ExportTable;
-    private resources: ResourceTable;
-    private debug_info: DebugInfo;
     private architecture: string;
     private base_address: number;
     private file_alignment: number;
@@ -16,12 +10,6 @@ export class PeAssembler {
 
     constructor(target_architecture = 'x86') {
         this.sections = new Map();
-        this.symbol_table = new SymbolTable();
-        this.relocations = new RelocationTable();
-        this.imports = new ImportTable();
-        this.exports = new ExportTable();
-        this.resources = new ResourceTable();
-        this.debug_info = new DebugInfo();
 
         this.architecture = target_architecture;
         this.base_address = target_architecture === 'x64' ? 0x140000000 : 0x400000;
@@ -104,25 +92,7 @@ export class PeAssembler {
         return this.file_alignment;
     }
 
-    get_exports(): ExportTable {
-        return this.exports;
-    }
 
-    get_imports(): ImportTable {
-        return this.imports;
-    }
-
-    get_resources(): ResourceTable {
-        return this.resources;
-    }
-
-    get_relocations(): RelocationTable {
-        return this.relocations;
-    }
-
-    get_debug_info(): DebugInfo {
-        return this.debug_info;
-    }
 
     get_exception_directory(): { rva: number; size: number } {
         return {rva: 0, size: 0};
@@ -448,26 +418,3 @@ export class PeAssembler {
     }
 }
 
-class SymbolTable {
-    // 符号表实现
-}
-
-class RelocationTable {
-    // 重定位表实现
-}
-
-class ImportTable {
-    // 导入表实现
-}
-
-class ExportTable {
-    // 导出表实现
-}
-
-class ResourceTable {
-    // 资源表实现
-}
-
-class DebugInfo {
-    // 调试信息实现
-}

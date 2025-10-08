@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {PeAssembler} from "../src/pe/PeBuilder";
+import {PeAssembler} from "../src/pe/PeAssembler";
 
 describe('PE Builder Tests', () => {
     it('should create a simple PE executable', () => {
