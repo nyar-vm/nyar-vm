@@ -1,5 +1,10 @@
 // 测试文件 - 验证HIR到MIR的转换
 import { convert_factorial_example } from './hir_to_mir.js';
+import { EGraph } from '../../projects/mir/src/EGraph.js';
+
+// 修改为正确的导入路径
+import { convert_factorial_example } from './hir_to_mir.js';
+import { EGraph } from '../../../projects/mir/src/EGraph.js';
 
 // 运行测试
 function run_test(): void {

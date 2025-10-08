@@ -13,8 +13,8 @@ import {
     HirStmtLet,
 } from './index.js';
 
-import {create_graph, EClass, EClassId, EGraph} from '../../projects/mir/src/EGraph.js';
-import {AnyNode, CallNode, ConstantNode, LambdaNode, SymbolNode} from '../../projects/mir/src/nodes/ENode.js';
+import { EGraph, create_graph, EClassId, EClass } from '../../projects/mir/src/EGraph.js';
+import { AnyNode, ConstantNode, SymbolNode, CallNode, LambdaNode } from '../../projects/mir/src/nodes/ENode.js';
 
 // 核心库函数符号
 export const CORE_SYMBOLS = {
