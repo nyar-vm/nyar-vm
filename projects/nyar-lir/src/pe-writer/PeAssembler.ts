@@ -205,11 +205,8 @@ export class PeAssembler {
 
         // 生成NT头
         this.pe_headers.write_nt_headers(writer);
-
         // 生成节头 (使用 ordered_sections)
-        const section_headers = this.generate_section_headers(ordered_sections);
-        writer.write_bytes(section_headers);
-
+        this.write_section_headers(writer, ordered_sections);
         // 写入节数据 (使用 ordered_sections)
         for (const section of ordered_sections) {
             writer.write_bytes(section.get_raw_data());
@@ -234,15 +231,12 @@ export class PeAssembler {
         return stub;
     }
 
-    private generate_section_headers(sections_to_write: PeSection[]): Uint8Array {
-        const writer = new BinaryWriter();
-
+    private write_section_headers(writer: BinaryWriter, sections_to_write: PeSection[]) {
         for (const section of sections_to_write) {
             // 节名 (8字节)
             const name_bytes = new TextEncoder().encode(section.get_name());
             writer.write_bytes(name_bytes);
             writer.write_bytes(new Uint8Array(8 - name_bytes.length));
-
             // 虚拟大小
             writer.write_u32(section.get_virtual_size());
 
@@ -264,8 +258,6 @@ export class PeAssembler {
             // 特征
             writer.write_u32(section.get_characteristics());
         }
-
-        return writer.get_bytes();
     }
 
     private align_to_file_alignment(size: number): number {
