@@ -1,4 +1,4 @@
-import {PeAssembler} from '../src/pe/PeAssembler';
+import {PeAssembler} from '../src/./pe-writer/PeAssembler';
 import {writeFileSync} from 'fs';
 
 // 创建一个简单的 x64 可执行文件
