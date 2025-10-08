@@ -2,7 +2,7 @@
     "private": true,
     "name": "@nyar/document",
     "version": "1.0.0",
-    "description": "Nyar Language Documentation",
+    "description": "Nyar Language Documentation - Comprehensive documentation for the Nyar programming language and compiler framework",
     "type": "module",
     "main": "index.js",
     "scripts": {
@@ -12,13 +12,20 @@
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "keywords": [
-        "vos",
-        "rpc",
+        "nyar",
         "documentation",
-        "schema"
+        "language",
+        "compiler",
+        "programming-language",
+        "virtual-machine"
     ],
-    "author": "VOS Team",
+    "author": "Nyar Framework Team",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/nyar-framework/nyar-vm.git",
+        "directory": "projects/nyar-document"
+    },
     "devDependencies": {
         "@shikijs/vitepress-twoslash": "^3.12.2",
         "mermaid": "^11.11.0",

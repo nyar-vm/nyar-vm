@@ -2,7 +2,7 @@
     "name": "@nyar/diagnostics",
     "version": "0.0.0",
     "type": "module",
-    "description": "Nyar diagnostic utilities - Source locations, error reporting, and diagnostics",
+    "description": "Nyar Diagnostics - Source locations, error reporting, and diagnostic utilities for the Nyar compiler framework",
     "main": "./dist/index.js",
     "module": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -34,12 +34,14 @@
         "diagnostics",
         "compiler",
         "source-maps",
-        "error-reporting"
+        "error-reporting",
+        "source-locations",
+        "compiler-errors"
     ],
     "license": "MIT",
     "repository": {
         "type": "git",
         "url": "https://github.com/nyar-framework/nyar-vm.git",
-        "directory": "projects/diagnostics"
+        "directory": "projects/nyar-diagnostics"
     }
 }
