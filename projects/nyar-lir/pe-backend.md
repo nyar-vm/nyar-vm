@@ -1310,25 +1310,25 @@ class WindowsRuntime {
 #### 3.1.1 x64 PE头差异
 
 ```javascript
-class X64PeBuilder extends ProfessionalPeBuilder {
+class X64PeBuilder extends PeAssembler {
     constructor() {
         super('x64');
         this.base_address = 0x140000000;
         this.init_x64_specific_sections();
     }
-    
+
     init_x64_specific_sections() {
         // x64特有节
         this.add_section('.pdata', 0x40000040); // 异常信息
         this.add_section('.xdata', 0x40000040); // 异常处理数据
     }
-    
+
     generate_optional_header() {
         const writer = new BinaryWriter();
-        
+
         // x64可选头魔术字
         writer.write_u16(0x020B); // PE32+ magic
-        
+
         // 标准字段
         writer.write_u8(0); // 主链接器版本
         writer.write_u8(0); // 副链接器版本
@@ -1337,9 +1337,9 @@ class X64PeBuilder extends ProfessionalPeBuilder {
         writer.write_u32(this.get_uninitialized_data_size());
         writer.write_u32(this.get_entry_point_rva());
         writer.write_u32(this.get_code_base_rva());
-        
+
         // x64没有单独的数据基址
-        
+
         // Windows特定字段
         writer.write_u64(this.base_address); // 64位基址
         writer.write_u32(this.section_alignment);
@@ -1351,26 +1351,26 @@ class X64PeBuilder extends ProfessionalPeBuilder {
         writer.write_u16(5); // 主子系统版本
         writer.write_u16(0); // 副子系统版本
         writer.write_u32(0); // Win32版本值
-        
+
         // 大小字段
         writer.write_u32(this.get_image_size());
         writer.write_u32(this.get_headers_size());
         writer.write_u32(this.calculate_checksum());
         writer.write_u16(this.get_subsystem());
         writer.write_u16(this.get_dll_characteristics());
-        
+
         // 栈堆大小 (64位)
         writer.write_u64(0x0000000000200000); // 栈保留大小
         writer.write_u64(0x0000000000002000); // 栈提交大小
         writer.write_u64(0x0000000000200000); // 堆保留大小
         writer.write_u64(0x0000000000002000); // 堆提交大小
-        
+
         writer.write_u32(0); // 加载器标志
         writer.write_u32(16); // 数据目录数量
-        
+
         // 数据目录
         this.write_data_directories(writer);
-        
+
         return writer.get_bytes();
     }
 }
@@ -2409,19 +2409,19 @@ class Linker {
         this.sections = new Map();
         this.base_address = 0x400000;
     }
-    
+
     add_object_file(object_file) {
         this.object_files.push(object_file);
         this.process_object_file(object_file);
     }
-    
+
     process_object_file(object_file) {
         // 处理符号
         for (const symbol of object_file.symbols) {
             if (this.symbol_table.has(symbol.name) && symbol.is_global) {
                 throw new Error(`重复的符号定义: ${symbol.name}`);
             }
-            
+
             if (symbol.is_global || !this.symbol_table.has(symbol.name)) {
                 this.symbol_table.set(symbol.name, {
                     ...symbol,
@@ -2430,7 +2430,7 @@ class Linker {
                 });
             }
         }
-        
+
         // 处理重定位
         for (const relocation of object_file.relocations) {
             this.relocations.push({
@@ -2438,7 +2438,7 @@ class Linker {
                 object_file: object_file
             });
         }
-        
+
         // 处理节
         for (const [section_name, section] of object_file.sections) {
             if (!this.sections.has(section_name)) {
@@ -2450,7 +2450,7 @@ class Linker {
                     contributions: []
                 });
             }
-            
+
             this.sections.get(section_name).contributions.push({
                 object_file: object_file,
                 data: section.data,
@@ -2459,27 +2459,27 @@ class Linker {
             });
         }
     }
-    
+
     link() {
         // 解析所有符号
         this.resolve_symbols();
-        
+
         // 分配虚拟地址
         this.assign_virtual_addresses();
-        
+
         // 应用重定位
         this.apply_relocations();
-        
+
         // 生成最终映像
         return this.generate_executable();
     }
-    
+
     resolve_symbols() {
         let changed = true;
-        
+
         while (changed) {
             changed = false;
-            
+
             for (const [name, symbol] of this.symbol_table) {
                 if (!symbol.resolved && symbol.is_defined) {
                     // 已定义的符号现在可以解析
@@ -2487,7 +2487,7 @@ class Linker {
                     changed = true;
                 }
             }
-            
+
             // 解析外部引用
             for (const relocation of this.relocations) {
                 const symbol = this.symbol_table.get(relocation.symbol_name);
@@ -2498,54 +2498,54 @@ class Linker {
                 }
             }
         }
-        
+
         // 检查未解析的符号
         const unresolved = Array.from(this.symbol_table.values())
             .filter(s => !s.resolved && s.is_global);
-        
+
         if (unresolved.length > 0) {
             throw new Error(`未解析的符号: ${unresolved.map(s => s.name).join(', ')}`);
         }
     }
-    
+
     assign_virtual_addresses() {
         let current_rva = 0x1000; // 第一个节从RVA 0x1000开始
-        
+
         for (const [name, section] of this.sections) {
             section.virtual_address = current_rva;
-            
+
             // 计算节大小（包括所有贡献）
             let section_size = 0;
             for (const contribution of section.contributions) {
                 section_size += contribution.size;
             }
-            
+
             // 对齐到节对齐
             section_size = this.align_to(section_size, 0x1000);
             current_rva += section_size;
         }
     }
-    
+
     apply_relocations() {
         for (const section of this.sections.values()) {
             // 合并所有贡献的数据
             let section_data = new Uint8Array(this.calculate_section_size(section));
             let current_offset = 0;
-            
+
             for (const contribution of section.contributions) {
                 // 复制数据
                 section_data.set(contribution.data, current_offset);
-                
+
                 // 应用重定位
                 for (const relocation of contribution.relocations) {
                     const symbol = this.symbol_table.get(relocation.symbol_name);
                     if (!symbol) {
                         throw new Error(`未找到符号: ${relocation.symbol_name}`);
                     }
-                    
+
                     const target_address = symbol.value + relocation.addend;
                     const relocation_offset = current_offset + relocation.offset;
-                    
+
                     this.apply_single_relocation(
                         section_data,
                         relocation_offset,
@@ -2553,14 +2553,14 @@ class Linker {
                         relocation.type
                     );
                 }
-                
+
                 current_offset += contribution.size;
             }
-            
+
             section.data = section_data;
         }
     }
-    
+
     apply_single_relocation(data, offset, target_address, type) {
         switch (type) {
             case 'REL32':
@@ -2568,25 +2568,25 @@ class Linker {
                 const relative_offset = target_address - (this.base_address + offset + 4);
                 this.write_u32(data, offset, relative_offset);
                 break;
-                
+
             case 'ABS32':
                 // 32位绝对地址
                 this.write_u32(data, offset, target_address);
                 break;
-                
+
             case 'ABS64':
                 // 64位绝对地址
                 this.write_u64(data, offset, target_address);
                 break;
-                
+
             default:
                 throw new Error(`未知的重定位类型: ${type}`);
         }
     }
-    
+
     generate_executable() {
-        const pe_builder = new ProfessionalPeBuilder(this.architecture);
-        
+        const pe_builder = new PeAssembler(this.architecture);
+
         // 添加所有节
         for (const section of this.sections.values()) {
             pe_builder.add_section(
@@ -2595,16 +2595,16 @@ class Linker {
                 section.data
             );
         }
-        
+
         // 设置入口点
         const entry_symbol = this.symbol_table.get('_start') || this.symbol_table.get('main');
         if (entry_symbol) {
             pe_builder.set_entry_point(entry_symbol.value);
         }
-        
+
         // 生成导入表（如果需要）
         this.generate_imports(pe_builder);
-        
+
         return pe_builder.build();
     }
 }

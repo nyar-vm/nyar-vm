@@ -11,7 +11,7 @@ class DotNetModuleBuilder {
     constructor(module_name, output_type = 'dll') {
         this.module_name = module_name;
         this.output_type = output_type;
-        
+
         // .NET 特定的数据结构
         this.metadata_tables = new Map();
         this.heap_data = new Map(); // #Strings, #US, #GUID, #Blob
@@ -20,22 +20,22 @@ class DotNetModuleBuilder {
         this.method_defs = [];
         this.field_defs = [];
         this.custom_attributes = [];
-        
+
         // 重用现有的 PE 构建器
-        this.pe_builder = new ProfessionalPeBuilder('x86', output_type);
+        this.pe_builder = new PeAssembler('x86', output_type);
         this.init_dotnet_sections();
     }
-    
+
     init_dotnet_sections() {
         // .NET 特定的节
         this.pe_builder.add_section('.text', 0x60000020);  // 代码和元数据
         this.pe_builder.add_section('.rsrc', 0x40000040);  // 资源
         this.pe_builder.add_section('.reloc', 0x42000040); // 重定位
     }
-    
+
     generate_cor20_header() {
         const writer = new BinaryWriter();
-        
+
         // IMAGE_COR20_HEADER
         writer.write_u32(0x48);                   // cb
         writer.write_u16(0x0002);                 // MajorRuntimeVersion
@@ -49,42 +49,42 @@ class DotNetModuleBuilder {
         writer.write_u32(0x00000000);             // VTableFixups
         writer.write_u32(0x00000000);             // ExportAddressTableJumps
         writer.write_u32(0x00000000);             // ManagedNativeHeader
-        
+
         return writer.get_bytes();
     }
-    
+
     generate_metadata_root() {
         const writer = new BinaryWriter();
-        
+
         // 存储签名
         writer.write_u32(0x424A5342); // BSJB
-        
+
         // 主版本和次版本
         writer.write_u16(1);
         writer.write_u16(1);
-        
+
         // 保留
         writer.write_u32(0);
-        
+
         // 版本字符串长度
         const version_string = "v4.0.30319\0";
         writer.write_u32(version_string.length);
         writer.write_cstring(version_string);
-        
+
         // 标志和流数量
         writer.write_u16(0);
         writer.write_u16(5); // 5个流
-        
+
         // 流头
         this.write_stream_header(writer, "#~", this.generate_tilde_stream());
         this.write_stream_header(writer, "#Strings", this.generate_strings_heap());
         this.write_stream_header(writer, "#US", this.generate_us_heap());
         this.write_stream_header(writer, "#GUID", this.generate_guid_heap());
         this.write_stream_header(writer, "#Blob", this.generate_blob_heap());
-        
+
         return writer.get_bytes();
     }
-    
+
     write_stream_header(writer, name, data) {
         writer.write_u32(this.align_to_4(data.offset)); // Offset
         writer.write_u32(data.size);                   // Size
