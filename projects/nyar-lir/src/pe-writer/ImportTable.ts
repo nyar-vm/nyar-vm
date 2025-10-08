@@ -190,7 +190,7 @@ export class ImportTable {
         writer.write_u32(0);
     }
 
-    generate_raw_data(idata_section_rva: number, image_base: number): Uint8Array {
+    generate_raw_data(idata_section_rva: number): Uint8Array {
         const total_size = this.layout(idata_section_rva);
         const writer = new BinaryWriter(total_size);
         this.write_to_writer(writer, idata_section_rva);

@@ -184,25 +184,25 @@ export class PeAssembler {
         writer.write_bytes(dos_header);
 
         // 设置 PeHeaders 的公共字段
-        this.pe_headers.numberOfSections = this.sections.size;
+        this.pe_headers.number_of_sections = this.sections.size;
         this.pe_headers.optional_header_size =
             this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0xf0 : 0xe0;
         this.pe_headers.characteristics =
             this.pe_headers.architecture === PeTargetArchitecture.X64 ? 0x010b : 0x010b;
         this.pe_headers.entry_point_rva = 0x1000;
         this.pe_headers.image_base = this.base_address;
-        this.pe_headers.sectionAlignment = this.section_alignment;
-        this.pe_headers.fileAlignment = this.file_alignment;
-        this.pe_headers.sizeOfImage = this.calculate_image_size();
-        this.pe_headers.sizeOfHeaders = this.calculate_headers_size();
-        this.pe_headers.codeSize = this.calculate_code_size();
-        this.pe_headers.initializedDataSize = this.calculate_initialized_data_size();
-        this.pe_headers.uninitializedDataSize = this.calculate_uninitialized_data_size();
-        this.pe_headers.codeBaseRva = this.sections.get('.text')?.get_virtual_address() || 0;
-        this.pe_headers.dataBaseRva = this.sections.get('.data')?.get_virtual_address() || 0;
+        this.pe_headers.section_alignment = this.section_alignment;
+        this.pe_headers.file_alignment = this.file_alignment;
+        this.pe_headers.size_of_image = this.calculate_image_size();
+        this.pe_headers.size_of_headers = this.calculate_headers_size();
+        this.pe_headers.code_size = this.calculate_code_size();
+        this.pe_headers.initialized_data_size = this.calculate_initialized_data_size();
+        this.pe_headers.uninitialized_data_size = this.calculate_uninitialized_data_size();
+        this.pe_headers.code_base_rva = this.sections.get('.text')?.get_virtual_address() || 0;
+        this.pe_headers.data_base_rva = this.sections.get('.data')?.get_virtual_address() || 0;
         this.pe_headers.checksum = 0;
         this.pe_headers.subsystem = 3;
-        this.pe_headers.dllCharacteristics = 0x8160;
+        this.pe_headers.dll_characteristics = 0x8160;
 
         // 生成NT头
         const nt_headers = this.generate_nt_headers();
