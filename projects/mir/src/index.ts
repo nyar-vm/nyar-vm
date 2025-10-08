@@ -4,7 +4,7 @@ export type {
     SymbolNode,
     CallNode,
     LambdaNode,
-    AnyENode,
+    AnyNode,
 } from './nodes/ENode';
 
 export {

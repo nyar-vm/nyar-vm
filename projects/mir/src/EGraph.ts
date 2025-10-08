@@ -1,7 +1,7 @@
 // E-graph核心类型定义
 import {EClass, EClassId} from "./EClass";
 
-export type {ENode, ConstantNode, SymbolNode, CallNode, LambdaNode, AnyENode} from './nodes/ENode';
+export type {ENode, ConstantNode, SymbolNode, CallNode, LambdaNode, AnyNode} from './nodes/ENode';
 
 export interface EGraph {
     e_classes: Map<EClassId, EClass>;

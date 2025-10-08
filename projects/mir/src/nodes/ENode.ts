@@ -26,4 +26,4 @@ export interface LambdaNode extends ENode {
     body: EClassId;
 }
 
-export type AnyENode = ConstantNode | SymbolNode | CallNode | LambdaNode;
+export type AnyNode = ConstantNode | SymbolNode | CallNode | LambdaNode;

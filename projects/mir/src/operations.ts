@@ -1,11 +1,11 @@
 import type {EClass, EClassId} from "./EClass";
-import {AnyENode, CallNode, ConstantNode, EGraph, LambdaNode, SymbolNode} from "./EGraph";
+import {AnyNode, CallNode, ConstantNode, EGraph, LambdaNode, SymbolNode} from "./EGraph";
 
 /**
  * 将ENode添加到E-graph中
  * 如果同样的ENode已存在，则返回已有的EClassId
  */
-export function add_node(graph: EGraph, node: AnyENode): EClassId {
+export function add_node(graph: EGraph, node: AnyNode): EClassId {
     // 首先检查是否已存在相同的节点
     for (const [existing_id, eclass] of graph.e_classes) {
         for (const existing_node of eclass.nodes) {
@@ -84,7 +84,7 @@ export function rebuild_graph(graph: EGraph): void {
 /**
  * 检查两个节点是否相等
  */
-function nodes_equal(node1: AnyENode, node2: AnyENode): boolean {
+function nodes_equal(node1: AnyNode, node2: AnyNode): boolean {
     if (node1.type !== node2.type) {
         return false;
     }
@@ -122,7 +122,7 @@ function nodes_equal(node1: AnyENode, node2: AnyENode): boolean {
 /**
  * 检查节点是否引用了指定的E-class ID
  */
-function references_class(node: AnyENode, class_id: EClassId): boolean {
+function references_class(node: AnyNode, class_id: EClassId): boolean {
     switch (node.type) {
         case 'CONSTANT':
         case 'SYMBOL':
