@@ -5,15 +5,15 @@ import { SourceSpan } from '../src/source-span.js';
 import { DiagnosticSeverity } from '../src';
 
 describe('Diagnostic', () => {
-    const createTestFile = () => new SourceFile('test.ts', 'line 1\nline 2\nline 3');
-    const createTestSpan = () => new SourceSpan(0, 6, createTestFile());
+    const create_test_file = () => new SourceFile('test.ts', 'line 1\nline 2\nline 3');
+    const create_test_span = () => new SourceSpan(0, 6, create_test_file());
 
     it('should create an error diagnostic', () => {
         const diagnostic = Diagnostic.error(
             'E001',
             'Test Error',
             'This is a test error',
-            createTestSpan(),
+            create_test_span(),
             'Try fixing this'
         );
 
@@ -55,8 +55,8 @@ describe('Diagnostic', () => {
         const main = Diagnostic.error('E001', 'Main Error', 'Main error message');
         const related = Diagnostic.info('I001', 'Related Info', 'Related information');
 
-        const withRelated = main.with_related(related);
-        expect(withRelated.related).toContain(related);
+        const with_related = main.with_related(related);
+        expect(with_related.related).toContain(related);
     });
 
     it('should add multiple related diagnostics', () => {
@@ -64,17 +64,17 @@ describe('Diagnostic', () => {
         const related1 = Diagnostic.info('I001', 'Related Info', 'Related information');
         const related2 = Diagnostic.hint('H001', 'Related Hint', 'Related hint');
 
-        const withRelated = main.with_related_many([related1, related2]);
-        expect(withRelated.related).toContain(related1);
-        expect(withRelated.related).toContain(related2);
+        const with_related = main.with_related_many([related1, related2]);
+        expect(with_related.related).toContain(related1);
+        expect(with_related.related).toContain(related2);
     });
 
     it('should add additional messages', () => {
         const diagnostic = Diagnostic.error('E001', 'Main Error', 'Main error message');
-        const withMessage = diagnostic.withMessage('Additional context', 'Fix suggestion');
+        const with_message = diagnostic.withMessage('Additional context', 'Fix suggestion');
 
-        expect(withMessage.messages).toHaveLength(2);
-        expect(withMessage.messages[1]?.message).toBe('Additional context');
-        expect(withMessage.messages[1]?.suggestion).toBe('Fix suggestion');
+        expect(with_message.messages).toHaveLength(2);
+        expect(with_message.messages[1]?.message).toBe('Additional context');
+        expect(with_message.messages[1]?.suggestion).toBe('Fix suggestion');
     });
 });

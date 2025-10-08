@@ -2,18 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { SourceFile } from '../src/source-file.js';
 
 describe('SourceFile', () => {
+    const create_test_file = () => new SourceFile('test.ts', 'line 1\nline 2\nline 3');
+
     it('should create a source file', () => {
-        const content = 'line 1\nline 2\nline 3';
-        const file = new SourceFile('test.ts', content);
+        const file = create_test_file();
 
         expect(file.filename).toBe('test.ts');
-        expect(file.content).toBe(content);
+        expect(file.content).toBe('line 1\nline 2\nline 3');
         expect(file.language_id).toBe('typescript');
     });
 
     it('should get line by number', () => {
-        const content = 'line 1\nline 2\nline 3';
-        const file = new SourceFile('test.ts', content);
+        const file = create_test_file();
 
         expect(file.get_line(1)).toBe('line 1');
         expect(file.get_line(2)).toBe('line 2');
@@ -22,15 +22,13 @@ describe('SourceFile', () => {
     });
 
     it('should get line count', () => {
-        const content = 'line 1\nline 2\nline 3';
-        const file = new SourceFile('test.ts', content);
+        const file = create_test_file();
 
         expect(file.line_count).toBe(3);
     });
 
     it('should convert offset to position', () => {
-        const content = 'line 1\nline 2\nline 3';
-        const file = new SourceFile('test.ts', content);
+        const file = create_test_file();
 
         expect(file.offsetToPosition(0)).toEqual({ line: 1, column: 1 });
         expect(file.offsetToPosition(7)).toEqual({ line: 2, column: 1 });
@@ -38,8 +36,7 @@ describe('SourceFile', () => {
     });
 
     it('should convert position to offset', () => {
-        const content = 'line 1\nline 2\nline 3';
-        const file = new SourceFile('test.ts', content);
+        const file = create_test_file();
 
         expect(file.positionToOffset(1, 1)).toBe(0);
         expect(file.positionToOffset(2, 1)).toBe(7);

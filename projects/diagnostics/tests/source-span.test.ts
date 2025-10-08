@@ -3,10 +3,10 @@ import { SourceFile } from '../src/source-file.js';
 import { SourceSpan } from '../src/source-span.js';
 
 describe('SourceSpan', () => {
-    const createTestFile = () => new SourceFile('test.ts', 'line 1\nline 2\nline 3');
+    const create_test_file = () => new SourceFile('test.ts', 'line 1\nline 2\nline 3');
 
     it('should create a valid source span', () => {
-        const file = createTestFile();
+        const file = create_test_file();
         const span = new SourceSpan(0, 6, file);
 
         expect(span.start).toBe(0);
