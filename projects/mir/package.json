@@ -1,40 +1,40 @@
 {
-  "name": "@nyar/mir",
-  "version": "0.1.0",
-  "description": "Nyar MIR - E-graph based intermediate representation",
-  "type": "module",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
-  },
-  "scripts": {
-    "build": "tsc && vite build",
-    "dev": "vite build --watch",
-    "test": "vitest",
-    "test:ui": "vitest --ui",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@nyar/diagnostics": "workspace:*"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "vitest": "^1.0.0"
-  },
-  "files": [
-    "dist"
-  ],
-  "keywords": [
-    "nyar",
-    "mir",
-    "egraph",
-    "compiler"
-  ]
+    "name": "@nyar/mir",
+    "version": "0.1.0",
+    "description": "Nyar MIR - E-graph based intermediate representation",
+    "type": "module",
+    "main": "dist/index.js",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsc && vite build",
+        "dev": "vite build --watch",
+        "test": "vitest",
+        "test:ui": "vitest --ui",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@nyar/diagnostics": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.0.0",
+        "vite": "^5.0.0",
+        "vitest": "^1.0.0"
+    },
+    "files": [
+        "dist"
+    ],
+    "keywords": [
+        "nyar",
+        "mir",
+        "egraph",
+        "compiler"
+    ]
 }
