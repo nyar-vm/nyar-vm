@@ -26,7 +26,7 @@ export class PeHeaders {
     
     // File Header (COFF Header)
     public machine: number = 0x8664; // x64
-    public number_of_sections: number = 3;
+    public number_of_sections: number = 2; // .text and .idata sections only
     public time_date_stamp: number = Math.floor(Date.now() / 1000);
     public pointer_to_symbol_table: number = 0;
     public number_of_symbols: number = 0;
@@ -52,11 +52,11 @@ export class PeHeaders {
     public major_subsystem_version: number = 6;
     public minor_subsystem_version: number = 0;
     public win32_version_value: number = 0;
-    public size_of_image: number = 0x4000;
+    public size_of_image: number = 0x3000; // Updated to match actual sections
     public size_of_headers: number = 0x400;
     public checksum_optional: number = 0;
     public subsystem: number = 3; // CONSOLE
-    public dll_characteristics: number = 0x8160;
+    public dll_characteristics: number = 0x0160; // DYNAMIC_BASE | NX_COMPAT | TERMINAL_SERVER_AWARE
     public size_of_stack_reserve: bigint = 0x100000n;
     public size_of_stack_commit: bigint = 0x1000n;
     public size_of_heap_reserve: bigint = 0x100000n;

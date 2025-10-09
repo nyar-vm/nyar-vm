@@ -5,66 +5,57 @@ import * as fs from 'fs';
 
 /**
  * Generate x64 machine code for Hello World program
- * This code calls WriteConsoleA to output "Hello, World!" and then ExitProcess
+ * This code uses MessageBoxA to display "Hello, World!" and then ExitProcess
+ * Much simpler than console output and easier to debug
  */
 function generate_hello_world_code(): Uint8Array {
     // x64 assembly equivalent:
     // sub rsp, 40          ; Reserve stack space (shadow space + alignment)
-    // mov rcx, -11         ; STD_OUTPUT_HANDLE
-    // call GetStdHandle    ; Get stdout handle
-    // mov rcx, rax         ; Console handle
-    // lea rdx, [hello_msg] ; Message pointer
-    // mov r8, 13           ; Message length
-    // lea r9, [bytes_written] ; Bytes written pointer
-    // mov qword ptr [rsp+32], 0 ; Reserved parameter
-    // call WriteConsoleA   ; Write to console
-    // mov rcx, 0           ; Exit code
+    // mov rcx, 0           ; hWnd = NULL
+    // lea rdx, [hello_msg] ; lpText = "Hello, World!"
+    // lea r8, [title_msg]  ; lpCaption = "Hello"
+    // mov r9, 0            ; uType = MB_OK
+    // call MessageBoxA     ; Show message box
+    // mov rcx, 0           ; Exit code = 0
     // call ExitProcess     ; Exit
 
     const code = new Uint8Array([
-        // sub rsp, 40 (0x28)
+        // sub rsp, 40 (0x28) - Reserve shadow space
         0x48, 0x83, 0xEC, 0x28,
         
-        // mov rcx, -11 (STD_OUTPUT_HANDLE)
-        0x48, 0xC7, 0xC1, 0xF5, 0xFF, 0xFF, 0xFF,
+        // mov rcx, 0 (hWnd = NULL)
+        0x48, 0x31, 0xC9,
         
-        // call GetStdHandle (placeholder - will be resolved by import table)
-        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00, // call [GetStdHandle]
+        // lea rdx, [hello_msg] (message pointer - relative to current position)
+        0x48, 0x8D, 0x15, 0x1C, 0x00, 0x00, 0x00, // lea rdx, [rip+0x1C]
         
-        // mov rcx, rax (console handle)
-        0x48, 0x89, 0xC1,
+        // lea r8, [title_msg] (title pointer)
+        0x4C, 0x8D, 0x05, 0x20, 0x00, 0x00, 0x00, // lea r8, [rip+0x20]
         
-        // lea rdx, [hello_msg] (message pointer - relative to RIP)
-        0x48, 0x8D, 0x15, 0x20, 0x00, 0x00, 0x00, // lea rdx, [rip+0x20]
+        // mov r9, 0 (uType = MB_OK)
+        0x49, 0x31, 0xC9,
         
-        // mov r8, 13 (message length)
-        0x49, 0xC7, 0xC0, 0x0D, 0x00, 0x00, 0x00,
-        
-        // lea r9, [bytes_written] (bytes written pointer)
-        0x4C, 0x8D, 0x0D, 0x30, 0x00, 0x00, 0x00, // lea r9, [rip+0x30]
-        
-        // mov qword ptr [rsp+32], 0 (reserved parameter)
-        0x48, 0xC7, 0x44, 0x24, 0x20, 0x00, 0x00, 0x00, 0x00,
-        
-        // call WriteConsoleA (placeholder - will be resolved by import table)
-        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00, // call [WriteConsoleA]
+        // call MessageBoxA - use absolute address from import table
+        // IAT is at import_section_rva + 60, MessageBoxA is first entry (user32.dll)
+        0xFF, 0x15, 0xCA, 0x1F, 0x00, 0x00, // call [0x203C] - MessageBoxA import
         
         // mov rcx, 0 (exit code)
         0x48, 0x31, 0xC9,
         
-        // call ExitProcess (placeholder - will be resolved by import table)
-        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00, // call [ExitProcess]
+        // call ExitProcess - use absolute address from import table  
+        // ExitProcess is second entry in IAT (kernel32.dll)
+        0xFF, 0x15, 0xD4, 0x1F, 0x00, 0x00, // call [0x2044] - ExitProcess import
         
-        // Data section starts here (aligned)
-        // "Hello, World!" string
+        // String data (aligned to current position)
+        // "Hello, World!" message
         0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57,
         0x6F, 0x72, 0x6C, 0x64, 0x21, 0x00, // "Hello, World!\0"
         
-        // Padding to align
-        0x00, 0x00,
+        // "Hello" title
+        0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00, // "Hello\0"
         
-        // bytes_written variable (4 bytes)
-        0x00, 0x00, 0x00, 0x00
+        // Padding for alignment
+        0x00, 0x00
     ]);
 
     return code;
@@ -79,7 +70,8 @@ function create_hello_world_pe(): Uint8Array {
     
     // Create import table with required Windows API functions
     const import_table = new ImportTable();
-    import_table.add_kernel32_imports(); // This adds GetStdHandle, WriteConsoleA, ExitProcess
+    import_table.add_kernel32_imports(); // ExitProcess
+    import_table.add_user32_imports();   // MessageBoxA
     
     // Set the import table
     assembler.set_import_table(import_table);

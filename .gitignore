@@ -16,5 +16,9 @@ cache/
 dist/
 package-lock.json
 
+# Asm
+*.exe
+*.dll
+
 # Wasm
 *.wasm

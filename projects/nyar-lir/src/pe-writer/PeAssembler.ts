@@ -46,13 +46,40 @@ export class PeAssembler {
 
         // Add import table if it has imports
         if (this.import_table.has_imports()) {
-            const import_data = this.import_table.generate_import_table();
-            const import_section = PeSection.create_rdata_section(import_data);
+            const import_section = PeSection.create_idata_section(new Uint8Array(0)); // Placeholder
             this.add_section(import_section);
         }
 
         // Update headers with section count
         this.pe_headers.number_of_sections = this.sections.size;
+
+        // Calculate section virtual addresses
+        let current_rva = 0x1000; // Start at 4KB boundary
+        const sections_array = Array.from(this.sections.values());
+        
+        for (const section of sections_array) {
+            section.virtual_address = current_rva;
+            current_rva += Math.ceil(section.get_virtual_size() / 0x1000) * 0x1000; // Align to section boundary
+        }
+
+        // Update import table RVA in headers if we have imports
+        if (this.import_table.has_imports()) {
+            const import_section = sections_array.find(s => s.name.startsWith('.idata'));
+            if (import_section) {
+                // Generate import table data with correct RVA
+                const import_data = this.import_table.generate_import_table(import_section.virtual_address);
+                import_section.set_data(import_data);
+                
+                this.pe_headers.import_table_rva = import_section.virtual_address;
+                this.pe_headers.iat_rva = import_section.virtual_address + 40; // IAT starts after descriptors (2*20 bytes)
+                
+                // Recalculate current_rva after setting import data
+                current_rva = import_section.virtual_address + Math.ceil(import_section.get_virtual_size() / 0x1000) * 0x1000;
+            }
+        }
+
+        // Update size of image (after all section data is set)
+        this.pe_headers.size_of_image = current_rva;
 
         // Write DOS header and stub
         this.pe_headers.write_dos_header(writer);
@@ -65,13 +92,14 @@ export class PeAssembler {
         this.pe_headers.write_nt_headers(writer);
 
         // Write section headers
-        const sections_array = Array.from(this.sections.values());
         let current_file_offset = this.pe_headers.size_of_headers;
 
         for (const section of sections_array) {
             section.set_raw_data_pointer(current_file_offset);
             section.write_section_header(writer);
-            current_file_offset += section.get_file_size();
+            // Align file size to file alignment
+            const aligned_size = Math.ceil(section.get_file_size() / this.pe_headers.file_alignment) * this.pe_headers.file_alignment;
+            current_file_offset += aligned_size;
         }
 
         // Align to file alignment
@@ -81,6 +109,8 @@ export class PeAssembler {
         for (const section of sections_array) {
             writer.align(section.pointer_to_raw_data);
             section.write_section_data(writer);
+            // Align after writing section data
+            writer.align(this.pe_headers.file_alignment);
         }
 
         return writer.get_bytes();

@@ -48,6 +48,15 @@ export class PeSection {
     }
 
     /**
+     * Set section data and update sizes
+     */
+    set_data(data: Uint8Array): void {
+        this.data = data;
+        this.virtual_size = data.length;
+        this.size_of_raw_data = this.align_to_file_alignment(data.length);
+    }
+
+    /**
      * Align size to file alignment (512 bytes)
      */
     private align_to_file_alignment(size: number): number {
@@ -111,12 +120,12 @@ export class PeSection {
     }
 
     /**
-     * Create a code section (.text)
+     * Create a .text section for executable code
      */
     static create_text_section(code: Uint8Array): PeSection {
         return new PeSection(
             '.text',
-            0x1000, // Virtual address
+            0x1000, // Will be updated by assembler
             SectionCharacteristics.IMAGE_SCN_CNT_CODE |
             SectionCharacteristics.IMAGE_SCN_MEM_EXECUTE |
             SectionCharacteristics.IMAGE_SCN_MEM_READ,
