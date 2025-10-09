@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { PeAssembler, PeTargetArchitecture } from '../src/pe-writer/PeAssembler';
-import { PeSection } from '../src/pe-writer/PeSection';
+import { PeAssembler, PeTargetArchitecture } from '@/pe-writer';
+import { PeSection } from '@/pe-writer/PeSection';
 
 describe('PE Builder Tests', () => {
     it('should create a simple PE executable', () => {
         const pe_builder = new PeAssembler(PeTargetArchitecture.X64);
 
         // 添加一些简单的 x86 机器码 (Hello World 程序)
-        const text_section = pe_builder.add_section('.text', 0x60000020);
-
-        // 简单的 x86 汇编代码，调用 Windows API
-        const hello_code = new Uint8Array([
+        const text_section = PeSection.create_text_section(new Uint8Array([
             // 简化的 "Hello World" x86 机器码
             0x68,
             0x00,
@@ -36,9 +33,9 @@ describe('PE Builder Tests', () => {
             0x00,
             0x00,
             0x00, // call ExitProcess
-        ]);
+        ]));
 
-        text_section.set_raw_data(hello_code);
+        pe_builder.add_section(text_section);
 
         // 生成 PE 文件
         const pe_data = pe_builder.build();
@@ -57,9 +54,13 @@ describe('PE Builder Tests', () => {
     });
 
     it('should create PE with proper section headers', () => {
-        const pe_builder = new PeAssembler('x86');
-        pe_builder.add_section('.text', 0x60000020);
-        pe_builder.add_section('.data', 0xc0000040);
+        const pe_builder = new PeAssembler(PeTargetArchitecture.X86);
+        
+        const text_section = PeSection.create_text_section(new Uint8Array([0x90, 0x90, 0x90]));
+        const idata_section = PeSection.create_idata_section(new Uint8Array([0x01, 0x02, 0x03, 0x04]));
+        
+        pe_builder.add_section(text_section);
+        pe_builder.add_section(idata_section);
 
         const pe_data = pe_builder.build();
 

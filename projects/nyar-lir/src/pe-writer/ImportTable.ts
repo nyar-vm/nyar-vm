@@ -141,4 +141,27 @@ export class ImportTable {
     has_imports(): boolean {
         return this.imports.length > 0;
     }
+
+    /**
+     * Get the RVA of a function's entry in the Import Address Table (IAT)
+     * relative to the start of the import table data.
+     * @param function_name The name of the function to find.
+     * @returns The relative RVA, or undefined if not found.
+     */
+    get_import_rva(function_name: string): number | undefined {
+        const descriptor_size = (this.imports.length + 1) * 20;
+        let current_iat_rva = descriptor_size;
+
+        for (const imp of this.imports) {
+            for (const func of imp.functions) {
+                if (func === function_name) {
+                    return current_iat_rva;
+                }
+                current_iat_rva += 8; // 8 bytes for the IAT entry
+            }
+            current_iat_rva += 8; // 8 bytes for the null terminator for this DLL's function list
+        }
+
+        return undefined;
+    }
 }

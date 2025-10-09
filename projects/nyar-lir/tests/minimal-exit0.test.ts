@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { spawn } from 'child_process';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import { PeAssembler } from '../src/pe-writer/PeAssembler';
-import { PeSection } from '../src/pe-writer/PeSection';
-import { PeTargetArchitecture } from '../src/pe-writer/PeTargetArchitecture';
-import { ImportTable } from '../src/pe-writer/ImportTable';
+import { PeAssembler } from '@/pe-writer/PeAssembler';
+import { PeSection } from '@/pe-writer/PeSection';
+import { PeTargetArchitecture } from '@/pe-writer/PeTargetArchitecture';
+import { ImportTable } from '@/pe-writer/ImportTable';
 
 describe('Minimal Exit0 Test', () => {
     it('should create a minimal PE executable that exits with code 0', async () => {

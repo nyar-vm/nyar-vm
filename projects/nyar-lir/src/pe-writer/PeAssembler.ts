@@ -2,6 +2,7 @@ import {PeSection} from './PeSection';
 import {ImportTable} from './ImportTable';
 import {PeTargetArchitecture} from './PeTargetArchitecture';
 import {PeHeaders} from './PeHeaders';
+import { RelocationTable } from './RelocationTable';
 
 export class PeAssembler {
     private architecture: PeTargetArchitecture;
@@ -21,6 +22,41 @@ export class PeAssembler {
      */
     add_section(section: PeSection): void {
         this.sections.set(section.name, section);
+    }
+
+    add_relocations(section: PeSection, relocations: RelocationTable[]): void {
+        // This is a placeholder for a more robust relocation system.
+        // For now, we will manually patch the code.
+        const text_section = this.sections.get('.text');
+        if (!text_section) {
+            throw new Error('Cannot add relocations before .text section is added.');
+        }
+
+        const import_table_rva = this.pe_headers.import_table_rva;
+
+        for (const reloc of relocations) {
+            const offset = reloc.offset;
+            const symbol = reloc.symbol;
+            const type = reloc.type;
+
+            if (type === 'rip_relative_import') {
+                const import_entry = this.import_table.get_import_rva(symbol);
+                if (import_entry === undefined) {
+                    throw new Error(`Import symbol not found: ${symbol}`);
+                }
+                const target_rva = import_table_rva + import_entry;
+                const rip = text_section.virtual_address + offset + 4;
+                const relative_offset = target_rva - rip;
+                text_section.data.set(new Uint32Array([relative_offset]), offset);
+            } else if (type === 'rip_relative') {
+                // For now, assume strings are appended to the end of the .text section
+                const symbol_offset = text_section.data.length - 16; // Approximate offset of strings
+                const target_rva = text_section.virtual_address + symbol_offset;
+                const rip = text_section.virtual_address + offset + 4;
+                const relative_offset = target_rva - rip;
+                text_section.data.set(new Uint32Array([relative_offset]), offset);
+            }
+        }
     }
 
     /**
@@ -130,15 +166,6 @@ export class X64Assembler extends PeAssembler {
     }
 }
 
-
-export class PeReader {
-    public read(input: Uint8Array | ArrayBuffer): PeAssembler {
-        throw new Error('Not implemented');
-    }
-    private read_u8(view: DataView, offset: number): number {
-        return view.getUint8(offset);
-    }
-}
 
 /**
  * use little_endian

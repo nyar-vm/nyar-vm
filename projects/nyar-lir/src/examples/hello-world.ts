@@ -8,7 +8,7 @@ import * as fs from 'fs';
  * This code uses MessageBoxA to display "Hello, World!" and then ExitProcess
  * Much simpler than console output and easier to debug
  */
-function generate_hello_world_code(): Uint8Array {
+function generate_hello_world_code(): { code: Uint8Array, relocations: any[] } {
     // x64 assembly equivalent:
     // sub rsp, 40          ; Reserve stack space (shadow space + alignment)
     // mov rcx, 0           ; hWnd = NULL
@@ -27,24 +27,22 @@ function generate_hello_world_code(): Uint8Array {
         0x48, 0x31, 0xC9,
         
         // lea rdx, [hello_msg] (message pointer - relative to current position)
-        0x48, 0x8D, 0x15, 0x1C, 0x00, 0x00, 0x00, // lea rdx, [rip+0x1C]
+        0x48, 0x8D, 0x15, 0x00, 0x00, 0x00, 0x00, // lea rdx, [rip+0x??]
         
         // lea r8, [title_msg] (title pointer)
-        0x4C, 0x8D, 0x05, 0x20, 0x00, 0x00, 0x00, // lea r8, [rip+0x20]
+        0x4C, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00, // lea r8, [rip+0x??]
         
         // mov r9, 0 (uType = MB_OK)
         0x49, 0x31, 0xC9,
         
         // call MessageBoxA - use absolute address from import table
-        // IAT is at import_section_rva + 60, MessageBoxA is first entry (user32.dll)
-        0xFF, 0x15, 0xCA, 0x1F, 0x00, 0x00, // call [0x203C] - MessageBoxA import
+        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00, // call [rip+0x??] - MessageBoxA import
         
         // mov rcx, 0 (exit code)
         0x48, 0x31, 0xC9,
         
         // call ExitProcess - use absolute address from import table  
-        // ExitProcess is second entry in IAT (kernel32.dll)
-        0xFF, 0x15, 0xD4, 0x1F, 0x00, 0x00, // call [0x2044] - ExitProcess import
+        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00, // call [rip+0x??] - ExitProcess import
         
         // String data (aligned to current position)
         // "Hello, World!" message
@@ -58,7 +56,14 @@ function generate_hello_world_code(): Uint8Array {
         0x00, 0x00
     ]);
 
-    return code;
+    const relocations = [
+        { offset: 10, type: 'rip_relative', symbol: 'hello_msg' },
+        { offset: 17, type: 'rip_relative', symbol: 'title_msg' },
+        { offset: 24, type: 'rip_relative_import', symbol: 'MessageBoxA' },
+        { offset: 31, type: 'rip_relative_import', symbol: 'ExitProcess' },
+    ];
+
+    return { code, relocations };
 }
 
 /**
@@ -70,15 +75,19 @@ function create_hello_world_pe(): Uint8Array {
     
     // Create import table with required Windows API functions
     const import_table = new ImportTable();
-    import_table.add_kernel32_imports(); // ExitProcess
-    import_table.add_user32_imports();   // MessageBoxA
+    import_table.add_import("kernel32.dll", ["ExitProcess"]);
+    import_table.add_import("user32.dll", ["MessageBoxA"]);
     
     // Set the import table
     assembler.set_import_table(import_table);
     
     // Generate and add the machine code
-    const code = generate_hello_world_code();
-    assembler.add_code_section(code);
+    const { code, relocations } = generate_hello_world_code();
+    const text_section = PeSection.create_text_section(code);
+    assembler.add_section(text_section);
+
+    // Add relocations
+    assembler.add_relocations(text_section, relocations);
     
     // Build the PE file
     return assembler.build();
