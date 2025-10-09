@@ -96,37 +96,54 @@ export class PeAssembler {
 
         // Update headers with section count
         this.pe_headers.number_of_sections = this.sections.size;
-
-        // Calculate section virtual addresses
-        let current_rva = 0x1000; // Start at 4KB boundary
         const sections_array = Array.from(this.sections.values());
-        
-        for (const section of sections_array) {
-            section.virtual_address = current_rva;
-            current_rva += Math.ceil(section.get_virtual_size() / 0x1000) * 0x1000; // Align to section boundary
-        }
 
-        // Update import table RVA in headers if we have imports
+        // Generate import data before calculating layout
         if (this.import_table.has_imports()) {
             const import_section = sections_array.find(s => s.name.startsWith('.idata'));
             if (import_section) {
-                // Generate import table data with correct RVA
-                const import_data = this.import_table.generate_import_table(import_section.virtual_address);
+                // Tentatively set a virtual address to generate the table
+                import_section.virtual_address = 0; 
+                const import_data = this.import_table.generate_import_table(0);
                 import_section.set_data(import_data);
-                
+            }
+        }
+
+        // Calculate section virtual addresses and file offsets
+        let current_rva = 0x1000; // Start at 4KB boundary
+        let current_file_offset = 0x400; // Start after headers
+
+        for (const section of sections_array) {
+            section.virtual_address = current_rva;
+            section.set_raw_data_pointer(current_file_offset);
+
+            const aligned_virtual_size = Math.ceil(section.get_virtual_size() / 0x1000) * 0x1000;
+            current_rva += aligned_virtual_size;
+
+            const aligned_file_size = Math.ceil(section.get_file_size() / this.pe_headers.file_alignment) * this.pe_headers.file_alignment;
+            current_file_offset += aligned_file_size;
+        }
+
+        // Update import table RVA and data now that we have the final virtual address
+        if (this.import_table.has_imports()) {
+            const import_section = sections_array.find(s => s.name.startsWith('.idata'));
+            if (import_section) {
+                const final_import_data = this.import_table.generate_import_table(import_section.virtual_address);
+                import_section.set_data(final_import_data);
+
                 this.pe_headers.import_table_rva = import_section.virtual_address;
-                this.pe_headers.iat_rva = import_section.virtual_address + 40; // IAT starts after descriptors (2*20 bytes)
-                
-                // Recalculate current_rva after setting import data
-                current_rva = import_section.virtual_address + Math.ceil(import_section.get_virtual_size() / 0x1000) * 0x1000;
+                this.pe_headers.import_table_size = import_section.get_virtual_size();
+                this.pe_headers.iat_rva = import_section.virtual_address + this.import_table.get_iat_offset();
+                this.pe_headers.iat_size = this.import_table.get_iat_size();
             }
         }
 
         // Apply relocations now that all sections have their virtual addresses
         this.apply_relocations();
 
-        // Update size of image (after all section data is set)
+        // Update size of image and headers
         this.pe_headers.size_of_image = current_rva;
+        this.pe_headers.size_of_headers = 0x400;
 
         // Write DOS header and stub
         this.pe_headers.write_dos_header(writer);
@@ -139,25 +156,14 @@ export class PeAssembler {
         this.pe_headers.write_nt_headers(writer);
 
         // Write section headers
-        let current_file_offset = this.pe_headers.size_of_headers;
-
         for (const section of sections_array) {
-            section.set_raw_data_pointer(current_file_offset);
             section.write_section_header(writer);
-            // Align file size to file alignment
-            const aligned_size = Math.ceil(section.get_file_size() / this.pe_headers.file_alignment) * this.pe_headers.file_alignment;
-            current_file_offset += aligned_size;
         }
-
-        // Align to file alignment
-        writer.align(this.pe_headers.file_alignment);
 
         // Write section data
         for (const section of sections_array) {
             writer.align(section.pointer_to_raw_data);
             section.write_section_data(writer);
-            // Align after writing section data
-            writer.align(this.pe_headers.file_alignment);
         }
 
         return writer.get_bytes();
