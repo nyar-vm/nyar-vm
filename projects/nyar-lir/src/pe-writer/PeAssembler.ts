@@ -2,14 +2,14 @@ import {PeSection} from './PeSection';
 import {ImportTable} from './ImportTable';
 import {PeTargetArchitecture} from './PeTargetArchitecture';
 import {PeHeaders} from './PeHeaders';
-import { RelocationTable } from './RelocationTable';
+import { Relocation, RelocationTable } from './RelocationTable';
 
 export class PeAssembler {
     private architecture: PeTargetArchitecture;
     private pe_headers: PeHeaders;
     private sections: Map<string, PeSection>;
     private import_table: ImportTable;
-    private relocations: { section: PeSection, table: RelocationTable, symbols: Map<string, number> }[] = [];
+    private relocations: RelocationTable[] = [];
 
     constructor(architecture: PeTargetArchitecture) {
         this.architecture = architecture;
@@ -25,7 +25,7 @@ export class PeAssembler {
         this.sections.set(section.name, section);
     }
 
-    add_relocations(section: PeSection, table: RelocationTable, symbols: Map<string, number>): void {
+    add_relocations(section: PeSection, table: Relocation[], symbols: Map<string, number>): void {
         this.relocations.push({ section, table, symbols });
     }
 

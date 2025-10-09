@@ -3,13 +3,14 @@ import { PeTargetArchitecture } from '../pe-writer/PeTargetArchitecture';
 import { ImportTable } from '../pe-writer/ImportTable';
 import { PeSection } from '../pe-writer/PeSection';
 import * as fs from 'fs';
+import { RelocationTable } from '../pe-writer/RelocationTable';
 
 /**
  * Generate x64 machine code for Hello World program
  * This code uses MessageBoxA to display "Hello, World!" and then ExitProcess
  * Much simpler than console output and easier to debug
  */
-function generate_hello_world_code(): { code: Uint8Array, relocations: any[], symbols: Map<string, number> } {
+function generate_hello_world_code(): { code: Uint8Array, relocations: RelocationTable, symbols: Map<string, number> } {
     // x64 assembly equivalent:
     // sub rsp, 40          ; Reserve stack space (shadow space + alignment)
     // mov rcx, 0           ; hWnd = NULL
@@ -30,7 +31,7 @@ function generate_hello_world_code(): { code: Uint8Array, relocations: any[], sy
         // lea r8, [rip+title_msg]
         0x4C, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00,
         // mov r9, 0
-        0x49, 0x31, 0xC9, // xor r9, r9
+        0x41, 0xB9, 0x00, 0x00, 0x00, 0x00, // mov r9d, 0
         // call MessageBoxA
         0xFF, 0x15, 0x00, 0x00, 0x00, 0x00,
         // mov rcx, 0

@@ -41,6 +41,19 @@ export class ImportTable {
         ]);
     }
 
+    public get_iat_offset(): number {
+        const num_descriptors = this.imports.length;
+        return (num_descriptors + 1) * 20; // Offset after import descriptors
+    }
+
+    public get_iat_size(): number {
+        let iat_size = 0;
+        for (const import_desc of this.imports) {
+            iat_size += (import_desc.functions.length + 1) * 8; // 8 bytes per entry (64-bit)
+        }
+        return iat_size;
+    }
+
     /**
      * Generate import table data with correct RVA calculations
      */

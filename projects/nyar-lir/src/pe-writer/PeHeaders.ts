@@ -55,7 +55,7 @@ export class PeHeaders {
     public size_of_image: number = 0x3000; // Updated to match actual sections
     public size_of_headers: number = 0x400;
     public checksum_optional: number = 0;
-    public subsystem: number = 3; // CONSOLE
+    public subsystem: number = 2; // WINDOWS_GUI
     public dll_characteristics: number = 0x0160; // DYNAMIC_BASE | NX_COMPAT | TERMINAL_SERVER_AWARE
     public size_of_stack_reserve: bigint = 0x100000n;
     public size_of_stack_commit: bigint = 0x1000n;
