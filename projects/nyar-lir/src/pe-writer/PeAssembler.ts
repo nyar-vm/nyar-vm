@@ -19,15 +19,16 @@ export class PeAssembler {
     }
 }
 
+/**
+ * use little_endian
+ */
 export class PeWriter {
     private buffer: Uint8Array;
     private position: number;
-    private little_endian: boolean;
 
     constructor(initial_capacity: number = 1024, little_endian: boolean = true) {
         this.buffer = new Uint8Array(initial_capacity);
         this.position = 0;
-        this.little_endian = little_endian;
     }
 
     private ensure_capacity(additional_bytes: number) {
@@ -48,29 +49,17 @@ export class PeWriter {
 
     write_u16(value: number): this {
         this.ensure_capacity(2);
-        if (this.little_endian) {
-            this.buffer[this.position++] = value & 0xff;
-            this.buffer[this.position++] = (value >> 8) & 0xff;
-        } else {
-            this.buffer[this.position++] = (value >> 8) & 0xff;
-            this.buffer[this.position++] = value & 0xff;
-        }
+        this.buffer[this.position++] = value & 0xff;
+        this.buffer[this.position++] = (value >> 8) & 0xff;
         return this;
     }
 
     write_u32(value: number): this {
         this.ensure_capacity(4);
-        if (this.little_endian) {
-            this.buffer[this.position++] = value & 0xff;
-            this.buffer[this.position++] = (value >> 8) & 0xff;
-            this.buffer[this.position++] = (value >> 16) & 0xff;
-            this.buffer[this.position++] = (value >> 24) & 0xff;
-        } else {
-            this.buffer[this.position++] = (value >> 24) & 0xff;
-            this.buffer[this.position++] = (value >> 16) & 0xff;
-            this.buffer[this.position++] = (value >> 8) & 0xff;
-            this.buffer[this.position++] = value & 0xff;
-        }
+        this.buffer[this.position++] = value & 0xff;
+        this.buffer[this.position++] = (value >> 8) & 0xff;
+        this.buffer[this.position++] = (value >> 16) & 0xff;
+        this.buffer[this.position++] = (value >> 24) & 0xff;
         return this;
     }
 
@@ -78,14 +67,8 @@ export class PeWriter {
         this.ensure_capacity(8);
         const low = Number(value & 0xffffffffn);
         const high = Number((value >> 32n) & 0xffffffffn);
-
-        if (this.little_endian) {
-            this.write_u32(low);
-            this.write_u32(high);
-        } else {
-            this.write_u32(high);
-            this.write_u32(low);
-        }
+        this.write_u32(low);
+        this.write_u32(high);
         return this;
     }
 

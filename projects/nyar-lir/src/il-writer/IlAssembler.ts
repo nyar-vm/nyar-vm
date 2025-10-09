@@ -1,8 +1,8 @@
-import { BinaryWriter } from '../BinaryWriter.js';
-import { PeAssembler, PeTargetArchitecture } from '.././pe-writer';
+import {PeAssembler, PeTargetArchitecture} from '.././pe-writer';
 
 export class IlAssembler {
     private pe: PeAssembler;
+
     constructor(architecture: PeTargetArchitecture) {
         this.pe = new PeAssembler(architecture);
     }
