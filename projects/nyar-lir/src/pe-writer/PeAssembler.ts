@@ -1,7 +1,7 @@
 import {PeSection} from './PeSection';
 import {ImportTable} from './ImportTable';
 import {PeTargetArchitecture} from './PeTargetArchitecture';
-import {PeHeaders} from './PeHeaders';
+import {PeHeaders} from '../structures/PeHeaders';
 import { Relocation, RelocationTable } from './RelocationTable';
 
 export class PeAssembler {
