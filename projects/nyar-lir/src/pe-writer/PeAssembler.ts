@@ -8,14 +8,35 @@ export class PeAssembler {
     private pe_headers: PeHeaders;
     private sections: Map<string, PeSection>;
     private import_table: ImportTable;
-    private writer: PeWriter;
 
     constructor(architecture: PeTargetArchitecture) {
         this.architecture = architecture;
         this.pe_headers = new PeHeaders();
         this.sections = new Map();
         this.import_table = new ImportTable();
-        this.writer = new PeWriter();
+    }
+}
+
+
+export class X86Assembler extends PeAssembler {
+    constructor() {
+        super(PeTargetArchitecture.X86);
+    }
+}
+
+export class X64Assembler extends PeAssembler {
+    constructor() {
+        super(PeTargetArchitecture.X64);
+    }
+}
+
+
+export class PeReader {
+    public read(input: Uint8Array | ArrayBuffer): PeAssembler {
+        throw new Error('Not implemented');
+    }
+    private read_u8(view: DataView, offset: number): number {
+        return view.getUint8(offset);
     }
 }
 
@@ -29,6 +50,10 @@ export class PeWriter {
     constructor(initial_capacity: number = 1024, little_endian: boolean = true) {
         this.buffer = new Uint8Array(initial_capacity);
         this.position = 0;
+    }
+
+    public write(data: Uint8Array | File, pe: PeAssembler) {
+       throw new Error('Not implemented');
     }
 
     private ensure_capacity(additional_bytes: number) {
