@@ -26,7 +26,7 @@ export class PeAssembler {
     }
 
     add_relocations(section: PeSection, table: Relocation[], symbols: Map<string, number>): void {
-        this.relocations.push({ section, table, symbols });
+        this.relocations.push(new RelocationTable(section, table, symbols));
     }
 
     /**
@@ -47,11 +47,11 @@ export class PeAssembler {
     private apply_relocations() {
         const import_section = this.sections.get('.idata'.padEnd(8, '\0'));
 
-        for (const reloc_info of this.relocations) {
-            const section = reloc_info.section;
-            const symbols = reloc_info.symbols;
+        for (const reloc_table of this.relocations) {
+            const section = reloc_table.section;
+            const symbols = reloc_table.symbols;
 
-            for (const reloc of reloc_info.table) {
+            for (const reloc of reloc_table.table) {
                 const offset = reloc.offset;
                 const symbol = reloc.symbol;
                 const type = reloc.type;

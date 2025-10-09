@@ -1,9 +1,9 @@
-import {PeSection} from "@/pe-writer/PeSection";
+import { PeSection } from "./PeSection";
 
 export interface Relocation {
     offset: number;
     symbol: string;
-    type: string;
+    type: 'rip_relative' | 'rip_relative_import';
 }
 
 export class RelocationTable {
