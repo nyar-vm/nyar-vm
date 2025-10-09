@@ -1,7 +1,4 @@
-import {DosHeader} from "@/reader/DosHeader";
-import {FileHeader} from "@/reader/FileHeader";
-import {OptionalHeader} from "@/reader/OptionalHeader";
-import {SectionHeader} from "@/reader/SectionHeader";
+import {DosHeader, FileHeader, OptionalHeader, SectionHeader} from "@/reader";
 import {PeAssembler} from "@/pe-writer";
 
 

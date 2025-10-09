@@ -29,19 +29,19 @@ describe('PE Reader Tests', () => {
         // 验证 DOS 头
         const dos_header = pe_reader.get_dos_header();
         expect(dos_header).not.toBeNull();
-        expect(dos_header!.e_magic).toBe(0x5A4D); // 'MZ'
-        expect(dos_header!.e_lfanew).toBeGreaterThan(0);
+        expect(dos_header!.e_magic).toBe(0x5A4Dn); // 'MZ'
+        expect(dos_header!.e_lfanew).toBeGreaterThan(0n);
         
         // 验证文件头
         const file_header = pe_reader.get_file_header();
         expect(file_header).not.toBeNull();
-        expect(file_header!.machine).toBe(0x8664); // AMD64
-        expect(file_header!.number_of_sections).toBeGreaterThan(0);
+        expect(file_header!.machine).toBe(0x8664n); // AMD64
+        expect(file_header!.number_of_sections).toBeGreaterThan(0n);
         
         // 验证可选头
         const optional_header = pe_reader.get_optional_header();
         expect(optional_header).not.toBeNull();
-        expect(optional_header!.magic).toBe(0x20B); // PE32+
+        expect(optional_header!.magic).toBe(0x20Bn); // PE32+
         
         // 验证节头
         const section_headers = pe_reader.get_section_headers();
@@ -94,7 +94,7 @@ describe('PE Reader Tests', () => {
         // 验证文件头
         const file_header = pe_reader.get_file_header();
         expect(file_header).not.toBeNull();
-        expect(file_header!.machine).toBe(0x014C); // I386
+        expect(file_header!.machine).toBe(0x014Cn); // I386
     });
     
     it('should detect x64 architecture correctly', () => {
@@ -102,7 +102,7 @@ describe('PE Reader Tests', () => {
         const pe_builder = new PeAssembler(PeTargetArchitecture.X64);
         
         // 添加一个简单的文本节
-        const text_section = pe_builder.add_section('.text', 0x60000020);
+        const text_section = pe_builder.add_section('.text', 0x60000020n);
         
         // 简单的 x86 汇编代码
         const hello_code = new Uint8Array([
@@ -125,7 +125,7 @@ describe('PE Reader Tests', () => {
         // 验证文件头
         const file_header = pe_reader.get_file_header();
         expect(file_header).not.toBeNull();
-        expect(file_header!.machine).toBe(0x8664); // AMD64
+        expect(file_header!.machine).toBe(0x8664n); // AMD64
     });
     
     it('should parse section headers correctly', () => {
@@ -133,9 +133,9 @@ describe('PE Reader Tests', () => {
         const pe_builder = new PeAssembler(PeTargetArchitecture.X64);
         
         // 添加多个节
-        const text_section = pe_builder.add_section('.text', 0x60000020);
-        const data_section = pe_builder.add_section('.data', 0xC0000040);
-        const rdata_section = pe_builder.add_section('.rdata', 0x40000040);
+        const text_section = pe_builder.add_section('.text', 0x60000020n);
+        const data_section = pe_builder.add_section('.data', 0xC0000040n);
+        const rdata_section = pe_builder.add_section('.rdata', 0x40000040n);
         
         // 设置节数据
         text_section.set_data(new Uint8Array([0xB8, 0x01, 0x00, 0x00, 0x00, 0xC3]));
