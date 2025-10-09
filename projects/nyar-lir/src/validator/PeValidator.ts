@@ -3,7 +3,7 @@ import * as fs from 'fs';
 /**
  * Simple PE file validator to check basic structure
  */
-class PeValidator {
+export class PeValidator {
     private buffer: Buffer;
     
     constructor(filePath: string) {

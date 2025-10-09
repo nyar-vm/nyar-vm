@@ -165,17 +165,17 @@ describe('PE Reader Tests', () => {
         // 验证节特征
         const text_section_header = section_headers.find(section => section.name === '.text');
         expect(text_section_header).toBeDefined();
-        expect(text_section_header!.characteristics & 0x00000020).toBe(0x00000020); // IMAGE_SCN_CNT_CODE
-        expect(text_section_header!.characteristics & 0x20000000).toBe(0x20000000); // IMAGE_SCN_MEM_EXECUTE
+        expect(text_section_header!.characteristics & 0x00000020n).toBe(0x00000020n); // IMAGE_SCN_CNT_CODE
+        expect(text_section_header!.characteristics & 0x20000000n).toBe(0x20000000n); // IMAGE_SCN_MEM_EXECUTE
         
         const data_section_header = section_headers.find(section => section.name === '.data');
         expect(data_section_header).toBeDefined();
-        expect(data_section_header!.characteristics & 0x00000040).toBe(0x00000040); // IMAGE_SCN_CNT_INITIALIZED_DATA
-        expect(data_section_header!.characteristics & 0x80000000).toBe(0x80000000); // IMAGE_SCN_MEM_WRITE
+        expect(data_section_header!.characteristics & 0x00000040n).toBe(0x00000040n); // IMAGE_SCN_CNT_INITIALIZED_DATA
+        expect(data_section_header!.characteristics & 0x80000000n).toBe(0x80000000n); // IMAGE_SCN_MEM_WRITE
         
         const rdata_section_header = section_headers.find(section => section.name === '.rdata');
         expect(rdata_section_header).toBeDefined();
-        expect(rdata_section_header!.characteristics & 0x00000040).toBe(0x00000040); // IMAGE_SCN_CNT_INITIALIZED_DATA
-        expect(rdata_section_header!.characteristics & 0x40000000).toBe(0x40000000); // IMAGE_SCN_MEM_READ
+        expect(rdata_section_header!.characteristics & 0x00000040n).toBe(0x00000040n); // IMAGE_SCN_CNT_INITIALIZED_DATA
+        expect(rdata_section_header!.characteristics & 0x40000000n).toBe(0x40000000n); // IMAGE_SCN_MEM_READ
     });
 });

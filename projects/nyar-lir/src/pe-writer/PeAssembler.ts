@@ -9,7 +9,7 @@ export class PeAssembler {
     private pe_headers: PeHeaders;
     private sections: Map<string, PeSection>;
     private import_table: ImportTable;
-    private relocations: RelocationTable[] = [];
+    private relocations: { section: PeSection, table: RelocationTable, symbols: Map<string, number> }[] = [];
 
     constructor(architecture: PeTargetArchitecture) {
         this.architecture = architecture;
@@ -25,8 +25,8 @@ export class PeAssembler {
         this.sections.set(section.name, section);
     }
 
-    add_relocations(section: PeSection, relocations: { offset: number; type: string; symbol: string; }[]): void {
-        this.relocations.push({ section, relocations });
+    add_relocations(section: PeSection, table: RelocationTable, symbols: Map<string, number>): void {
+        this.relocations.push({ section, table, symbols });
     }
 
     /**
@@ -45,17 +45,13 @@ export class PeAssembler {
     }
 
     private apply_relocations() {
-        const text_section = this.sections.get('.text'.padEnd(8, '\0'));
-        if (!text_section) {
-            // No text section, no relocations to apply
-            return;
-        }
-
         const import_section = this.sections.get('.idata'.padEnd(8, '\0'));
 
         for (const reloc_info of this.relocations) {
             const section = reloc_info.section;
-            for (const reloc of reloc_info.relocations) {
+            const symbols = reloc_info.symbols;
+
+            for (const reloc of reloc_info.table) {
                 const offset = reloc.offset;
                 const symbol = reloc.symbol;
                 const type = reloc.type;
@@ -73,8 +69,10 @@ export class PeAssembler {
                     const relative_offset = target_rva - rip;
                     section.data.set(new Uint32Array([relative_offset]), offset);
                 } else if (type === 'rip_relative') {
-                    // For now, assume strings are appended to the end of the .text section
-                    const symbol_offset = section.data.length - 24; // Approximate offset of strings
+                    const symbol_offset = symbols.get(symbol);
+                    if (symbol_offset === undefined) {
+                        throw new Error(`Symbol not found: ${symbol}`);
+                    }
                     const target_rva = section.virtual_address + symbol_offset;
                     const rip = section.virtual_address + offset + 4;
                     const relative_offset = target_rva - rip;
