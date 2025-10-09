@@ -7,3 +7,16 @@ export class IlAssembler {
         this.pe = new PeAssembler(architecture);
     }
 }
+
+
+export class IlReader {
+    public read(input: Uint8Array | ArrayBuffer): PeAssembler {
+        throw new Error('Not implemented');
+    }
+}
+
+export class IlParser {
+    public read(input: Uint8Array | ArrayBuffer): PeAssembler {
+        throw new Error('Not implemented');
+    }
+}

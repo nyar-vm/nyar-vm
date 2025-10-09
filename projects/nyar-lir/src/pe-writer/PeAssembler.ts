@@ -15,6 +15,76 @@ export class PeAssembler {
         this.sections = new Map();
         this.import_table = new ImportTable();
     }
+
+    /**
+     * Add a section to the PE file
+     */
+    add_section(section: PeSection): void {
+        this.sections.set(section.name, section);
+    }
+
+    /**
+     * Add code section with machine code
+     */
+    add_code_section(code: Uint8Array): void {
+        const text_section = PeSection.create_text_section(code);
+        this.add_section(text_section);
+    }
+
+    /**
+     * Add import table
+     */
+    set_import_table(import_table: ImportTable): void {
+        this.import_table = import_table;
+    }
+
+    /**
+     * Build the complete PE file
+     */
+    build(): Uint8Array {
+        const writer = new PeWriter();
+
+        // Add import table if it has imports
+        if (this.import_table.has_imports()) {
+            const import_data = this.import_table.generate_import_table();
+            const import_section = PeSection.create_rdata_section(import_data);
+            this.add_section(import_section);
+        }
+
+        // Update headers with section count
+        this.pe_headers.number_of_sections = this.sections.size;
+
+        // Write DOS header and stub
+        this.pe_headers.write_dos_header(writer);
+        this.pe_headers.write_dos_stub(writer);
+
+        // Align to NT headers offset
+        writer.align(this.pe_headers.e_lfanew);
+
+        // Write NT headers
+        this.pe_headers.write_nt_headers(writer);
+
+        // Write section headers
+        const sections_array = Array.from(this.sections.values());
+        let current_file_offset = this.pe_headers.size_of_headers;
+
+        for (const section of sections_array) {
+            section.set_raw_data_pointer(current_file_offset);
+            section.write_section_header(writer);
+            current_file_offset += section.get_file_size();
+        }
+
+        // Align to file alignment
+        writer.align(this.pe_headers.file_alignment);
+
+        // Write section data
+        for (const section of sections_array) {
+            writer.align(section.pointer_to_raw_data);
+            section.write_section_data(writer);
+        }
+
+        return writer.get_bytes();
+    }
 }
 
 
@@ -52,8 +122,8 @@ export class PeWriter {
         this.position = 0;
     }
 
-    public write(data: Uint8Array | File, pe: PeAssembler) {
-       throw new Error('Not implemented');
+    public write(pe: PeAssembler): Uint8Array {
+        return pe.build();
     }
 
     private ensure_capacity(additional_bytes: number) {
