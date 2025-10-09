@@ -1,4 +1,4 @@
-import { BinaryWriter } from '@/BinaryWriter';
+import { PeWriter } from './PeAssembler';
 
 export class RelocationTable {
 

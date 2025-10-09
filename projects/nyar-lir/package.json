@@ -1,7 +1,7 @@
 {
-    "name": "@nyar/lir",
+    "name": "pe-assembler",
     "version": "0.0.0",
-    "type": "module",
+    "type": "commonjs",
     "description": "Nyar LIR - Low-level intermediate representation for the Nyar compiler framework",
     "main": "./dist/index.js",
     "module": "./dist/index.js",
