@@ -149,17 +149,18 @@ export class ImportTable {
      * @returns The relative RVA, or undefined if not found.
      */
     get_import_rva(function_name: string): number | undefined {
-        const descriptor_size = (this.imports.length + 1) * 20;
-        let current_iat_rva = descriptor_size;
+        const num_descriptors = this.imports.length + 1; // +1 for null terminator
+        const iat_start_rva = num_descriptors * 20; // RVA relative to start of .idata section data
+        let iat_entry_index = 0;
 
-        for (const imp of this.imports) {
-            for (const func of imp.functions) {
+        for (const descriptor of this.imports) {
+            for (const func of descriptor.functions) {
                 if (func === function_name) {
-                    return current_iat_rva;
+                    // RVA is start of IAT + index * size_of_entry
+                    return iat_start_rva + (iat_entry_index * 8);
                 }
-                current_iat_rva += 8; // 8 bytes for the IAT entry
+                iat_entry_index++;
             }
-            current_iat_rva += 8; // 8 bytes for the null terminator for this DLL's function list
         }
 
         return undefined;

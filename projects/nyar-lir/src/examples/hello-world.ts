@@ -1,6 +1,7 @@
 import { PeAssembler } from '../pe-writer/PeAssembler';
 import { PeTargetArchitecture } from '../pe-writer/PeTargetArchitecture';
 import { ImportTable } from '../pe-writer/ImportTable';
+import { PeSection } from '../pe-writer/PeSection';
 import * as fs from 'fs';
 
 /**
@@ -8,7 +9,7 @@ import * as fs from 'fs';
  * This code uses MessageBoxA to display "Hello, World!" and then ExitProcess
  * Much simpler than console output and easier to debug
  */
-function generate_hello_world_code(): { code: Uint8Array, relocations: any[] } {
+function generate_hello_world_code(): { code: Uint8Array, relocations: any[], symbols: Map<string, number> } {
     // x64 assembly equivalent:
     // sub rsp, 40          ; Reserve stack space (shadow space + alignment)
     // mov rcx, 0           ; hWnd = NULL
@@ -19,77 +20,70 @@ function generate_hello_world_code(): { code: Uint8Array, relocations: any[] } {
     // mov rcx, 0           ; Exit code = 0
     // call ExitProcess     ; Exit
 
-    const code = new Uint8Array([
-        // sub rsp, 40 (0x28) - Reserve shadow space
+    const code_section_bytes = [
+        // sub rsp, 40 (0x28)
         0x48, 0x83, 0xEC, 0x28,
-        
-        // mov rcx, 0 (hWnd = NULL)
+        // mov rcx, 0
         0x48, 0x31, 0xC9,
-        
-        // lea rdx, [hello_msg] (message pointer - relative to current position)
-        0x48, 0x8D, 0x15, 0x00, 0x00, 0x00, 0x00, // lea rdx, [rip+0x??]
-        
-        // lea r8, [title_msg] (title pointer)
-        0x4C, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00, // lea r8, [rip+0x??]
-        
-        // mov r9, 0 (uType = MB_OK)
-        0x49, 0x31, 0xC9,
-        
-        // call MessageBoxA - use absolute address from import table
-        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00, // call [rip+0x??] - MessageBoxA import
-        
-        // mov rcx, 0 (exit code)
+        // lea rdx, [rip+hello_msg]
+        0x48, 0x8D, 0x15, 0x00, 0x00, 0x00, 0x00,
+        // lea r8, [rip+title_msg]
+        0x4C, 0x8D, 0x05, 0x00, 0x00, 0x00, 0x00,
+        // mov r9, 0
+        0x49, 0x31, 0xC9, // xor r9, r9
+        // call MessageBoxA
+        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00,
+        // mov rcx, 0
         0x48, 0x31, 0xC9,
-        
-        // call ExitProcess - use absolute address from import table  
-        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00, // call [rip+0x??] - ExitProcess import
-        
-        // String data (aligned to current position)
-        // "Hello, World!" message
-        0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57,
-        0x6F, 0x72, 0x6C, 0x64, 0x21, 0x00, // "Hello, World!\0"
-        
-        // "Hello" title
-        0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00, // "Hello\0"
-        
-        // Padding for alignment
-        0x00, 0x00
+        // call ExitProcess
+        0xFF, 0x15, 0x00, 0x00, 0x00, 0x00,
+    ];
+
+    const hello_msg = "Hello, World!\0".split('').map(c => c.charCodeAt(0));
+    const title_msg = "Hello\0".split('').map(c => c.charCodeAt(0));
+
+    const hello_msg_offset = code_section_bytes.length;
+    const title_msg_offset = hello_msg_offset + hello_msg.length;
+
+    const final_code = new Uint8Array([
+        ...code_section_bytes,
+        ...hello_msg,
+        ...title_msg,
     ]);
 
     const relocations = [
         { offset: 10, type: 'rip_relative', symbol: 'hello_msg' },
         { offset: 17, type: 'rip_relative', symbol: 'title_msg' },
-        { offset: 24, type: 'rip_relative_import', symbol: 'MessageBoxA' },
-        { offset: 31, type: 'rip_relative_import', symbol: 'ExitProcess' },
+        { offset: 26, type: 'rip_relative_import', symbol: 'MessageBoxA' },
+        { offset: 35, type: 'rip_relative_import', symbol: 'ExitProcess' },
     ];
 
-    return { code, relocations };
+    const symbols = new Map<string, number>([
+        ['hello_msg', hello_msg_offset],
+        ['title_msg', title_msg_offset],
+    ]);
+
+    return { code: final_code, relocations, symbols };
 }
 
 /**
  * Create and build a Hello World PE executable
  */
 function create_hello_world_pe(): Uint8Array {
-    // Create PE assembler for x64 architecture
     const assembler = new PeAssembler(PeTargetArchitecture.X64);
     
-    // Create import table with required Windows API functions
     const import_table = new ImportTable();
     import_table.add_import("kernel32.dll", ["ExitProcess"]);
     import_table.add_import("user32.dll", ["MessageBoxA"]);
     
-    // Set the import table
     assembler.set_import_table(import_table);
     
-    // Generate and add the machine code
-    const { code, relocations } = generate_hello_world_code();
+    const { code, relocations, symbols } = generate_hello_world_code();
     const text_section = PeSection.create_text_section(code);
     assembler.add_section(text_section);
 
-    // Add relocations
-    assembler.add_relocations(text_section, relocations);
+    assembler.add_relocations(text_section, relocations, symbols);
     
-    // Build the PE file
     return assembler.build();
 }
 
