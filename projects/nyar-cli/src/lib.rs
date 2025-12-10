@@ -3,7 +3,6 @@ use nyar_vm::bytecode::decoder::{DecodeError, Decoder};
 use nyar_vm::bytecode::format::{Chunk, FormatError, NyarModule};
 use nyar_vm::vm::interpreter::NyarVM;
 use nyar_vm::vm::VmError;
-use valkyrie_minimal::compile_text_to_module;
 use std::fs;
 use std::io::{BufRead, Write};
 
@@ -188,16 +187,6 @@ fn bench_cmd() -> Result<(), CliError> {
     Ok(())
 }
 
-fn run_valkyrie_cmd(path: &str) -> Result<(), CliError> {
-    let src = fs::read_to_string(path)?;
-    let module = compile_text_to_module(&src).map_err(|e| CliError::Format(FormatError::Text(e.to_string())))?;
-    let chunk = module.chunks.get(0).cloned().ok_or(CliError::NoChunk)?;
-    let program = Decoder::new(&chunk.code).decode_all()?;
-    let mut vm = NyarVM::new(module.constants, module.effects);
-    let v = vm.execute(&program)?;
-    std::io::stdout().write_all(format!("{:?}\n", v.tag).as_bytes())?;
-    Ok(())
-}
 
 #[derive(Parser)]
 #[command(name = "nyar-vm", version, about = "NYAR VM CLI")]
@@ -212,7 +201,7 @@ pub enum NyarCommand {
     Dump { file: String },
     Repl,
     Bench,
-    Valkyrie { file: String },
+    
 }
 
 impl NyarCli {
@@ -222,7 +211,7 @@ impl NyarCli {
             NyarCommand::Dump { file } => dump_cmd(&file),
             NyarCommand::Repl => repl_cmd(),
             NyarCommand::Bench => bench_cmd(),
-            NyarCommand::Valkyrie { file } => run_valkyrie_cmd(&file),
+            
         }
     }
 }

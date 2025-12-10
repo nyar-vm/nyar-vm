@@ -145,6 +145,36 @@ impl NyarVM {
                     };
                     self.push(Value::int(tid));
                 }
+                Instruction::FFICall(desc, argc) => {
+                    let mut args = Vec::with_capacity(argc as usize);
+                    for _ in 0..argc { args.push(self.pop()?); }
+                    let name = match self.constants.get(desc as usize) {
+                        Some(Constant::String(s)) => s.as_str(),
+                        _ => "",
+                    };
+                    match name {
+                        "print" => {
+                            if let Some(v) = args.last() {
+                                match v.tag {
+                                    ValueTag::Int => println!("{}", unsafe { v.as_int() }),
+                                    ValueTag::Float => println!("{}", unsafe { v.as_float() }),
+                                    ValueTag::Bool => println!("{}", unsafe { v.as_bool() }),
+                                    ValueTag::Null => println!("null"),
+                                    _ => println!("<unsupported>"),
+                                }
+                            }
+                            self.push(Value::null());
+                        }
+                        "add" => {
+                            let mut acc = 0i64;
+                            for v in args.iter().rev() {
+                                match v.tag { ValueTag::Int => { acc += unsafe { v.as_int() } }, _ => { acc += 0; } }
+                            }
+                            self.push(Value::int(acc));
+                        }
+                        _ => return Err(VmError::UnhandledEffect(name.to_string())),
+                    }
+                }
                 Instruction::Halt => break,
                 _ => {}
             }
