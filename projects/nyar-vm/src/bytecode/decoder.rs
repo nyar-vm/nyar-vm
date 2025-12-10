@@ -1,6 +1,7 @@
 use crate::bytecode::opcode::Opcode;
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
+pub use nyar_error::DecodeError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -50,7 +51,6 @@ pub enum Instruction {
     Halt,
 }
 
-use nyar_error::DecodeError;
 
 pub struct Decoder<'a> {
     code: &'a [u8],
