@@ -3,6 +3,7 @@ use nyar_vm::bytecode::decoder::{DecodeError, Decoder};
 use nyar_vm::bytecode::format::{Chunk, FormatError, NyarModule};
 use nyar_vm::vm::interpreter::NyarVM;
 use nyar_vm::vm::VmError;
+use valkyrie_minimal::compile_text_to_module;
 use std::fs;
 use std::io::{BufRead, Write};
 
@@ -14,6 +15,8 @@ pub enum CliError {
     Vm(VmError),
     NoChunk,
 }
+
+mod cmds;
 
 impl std::fmt::Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -89,7 +92,7 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-async fn run_cmd(path: &str) -> Result<(), CliError> {
+fn run_cmd(path: &str) -> Result<(), CliError> {
     let module = if path.ends_with(".nyar") {
         let text = fs::read_to_string(path)?;
         NyarModule::parse_toml_str(&text)?
@@ -105,7 +108,7 @@ async fn run_cmd(path: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-async fn dump_cmd(path: &str) -> Result<(), CliError> {
+fn dump_cmd(path: &str) -> Result<(), CliError> {
     let module = if path.ends_with(".nyar") {
         let text = fs::read_to_string(path)?;
         NyarModule::parse_toml_str(&text)?
@@ -125,7 +128,7 @@ async fn dump_cmd(path: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-async fn repl_cmd() -> Result<(), CliError> {
+fn repl_cmd() -> Result<(), CliError> {
     let mut buf = String::new();
     let stdin = std::io::stdin();
     let mut handle = stdin.lock();
@@ -161,7 +164,7 @@ async fn repl_cmd() -> Result<(), CliError> {
     Ok(())
 }
 
-async fn bench_cmd() -> Result<(), CliError> {
+fn bench_cmd() -> Result<(), CliError> {
     let mut code = Vec::new();
     code.push(nyar_vm::bytecode::opcode::Opcode::Push as u8);
     code.extend_from_slice(&0u16.to_le_bytes());
@@ -185,6 +188,17 @@ async fn bench_cmd() -> Result<(), CliError> {
     Ok(())
 }
 
+fn run_valkyrie_cmd(path: &str) -> Result<(), CliError> {
+    let src = fs::read_to_string(path)?;
+    let module = compile_text_to_module(&src).map_err(|e| CliError::Format(FormatError::Text(e.to_string())))?;
+    let chunk = module.chunks.get(0).cloned().ok_or(CliError::NoChunk)?;
+    let program = Decoder::new(&chunk.code).decode_all()?;
+    let mut vm = NyarVM::new(module.constants, module.effects);
+    let v = vm.execute(&program)?;
+    std::io::stdout().write_all(format!("{:?}\n", v.tag).as_bytes())?;
+    Ok(())
+}
+
 #[derive(Parser)]
 #[command(name = "nyar-vm", version, about = "NYAR VM CLI")]
 pub struct NyarCli {
@@ -198,15 +212,17 @@ pub enum NyarCommand {
     Dump { file: String },
     Repl,
     Bench,
+    Valkyrie { file: String },
 }
 
 impl NyarCli {
-    pub async fn run(&self) -> Result<(), CliError> {
+    pub fn run(&self) -> Result<(), CliError> {
         match &self.cmds {
-            NyarCommand::Run { file } => run_cmd(&file).await,
-            NyarCommand::Dump { file } => dump_cmd(&file).await,
-            NyarCommand::Repl => repl_cmd().await,
-            NyarCommand::Bench => bench_cmd().await,
+            NyarCommand::Run { file } => run_cmd(&file),
+            NyarCommand::Dump { file } => dump_cmd(&file),
+            NyarCommand::Repl => repl_cmd(),
+            NyarCommand::Bench => bench_cmd(),
+            NyarCommand::Valkyrie { file } => run_valkyrie_cmd(&file),
         }
     }
 }

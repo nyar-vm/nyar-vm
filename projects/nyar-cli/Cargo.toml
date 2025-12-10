@@ -10,3 +10,4 @@ path = "src/main.rs"
 [dependencies]
 nyar-vm = { path = "../nyar-vm" }
 clap = { workspace = true }
+valkyrie-minimal = { path = "../valkyrie-minimal" }
