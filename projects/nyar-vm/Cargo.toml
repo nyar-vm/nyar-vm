@@ -1,0 +1,22 @@
+[package]
+name = "nyar-vm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "nyar_vm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nyar-vm"
+path = "src/main.rs"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "bench"
+harness = false
+
