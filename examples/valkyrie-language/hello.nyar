@@ -1,0 +1,16 @@
+version = 1
+flags = 0
+timestamp = 0
+
+effects = []
+
+[[constants]]
+kind = "Int"
+value = 42
+
+[[chunks]]
+locals = 0
+upvalues = 0
+max_stack = 8
+code = [1, 0, 0, 19]
+handlers = []

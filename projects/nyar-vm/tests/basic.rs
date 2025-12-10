@@ -1,5 +1,5 @@
 use nyar_vm::bytecode::decoder::Decoder;
-use nyar_vm::bytecode::format::{minimal_module_with_chunk, Constant, NyarcModule};
+use nyar_vm::bytecode::format::{minimal_module_with_chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::interpreter::NyarVM;
 use nyar_vm::vm::VmError;
@@ -12,7 +12,7 @@ fn run_push_const_return() {
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![Constant::Int(42)]);
     let data = module.encode();
-    let parsed = NyarcModule::parse(&data).unwrap();
+    let parsed = NyarModule::parse(&data).unwrap();
     let chunk = parsed.chunks[0].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();
     let mut vm = NyarVM::new(parsed.constants, parsed.effects);
@@ -31,7 +31,7 @@ fn perform_throw_unhandled() {
     code.extend_from_slice(&0u16.to_le_bytes());
     code.push(1u8);
     code.push(Opcode::Return as u8);
-    let module = NyarcModule {
+    let module = NyarModule {
         version: 1,
         flags: 0,
         timestamp: 0,

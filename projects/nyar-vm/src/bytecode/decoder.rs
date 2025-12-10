@@ -1,4 +1,6 @@
 use crate::bytecode::opcode::Opcode;
+use std::io::Cursor;
+use byteorder::{ReadBytesExt, LittleEndian};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -50,7 +52,7 @@ pub enum Instruction {
 
 pub struct Decoder<'a> {
     code: &'a [u8],
-    ip: usize,
+    cursor: Cursor<&'a [u8]>,
 }
 
 #[derive(Debug)]
@@ -60,44 +62,11 @@ pub enum DecodeError {
 }
 
 impl<'a> Decoder<'a> {
-    pub fn new(code: &'a [u8]) -> Self {
-        Self { code, ip: 0 }
-    }
-    fn read_u8(&mut self) -> Option<u8> {
-        if self.ip >= self.code.len() {
-            None
-        } else {
-            let v = self.code[self.ip];
-            self.ip += 1;
-            Some(v)
-        }
-    }
-    fn read_u16(&mut self) -> Option<u16> {
-        if self.ip + 1 >= self.code.len() {
-            None
-        } else {
-            let v = u16::from_le_bytes([self.code[self.ip], self.code[self.ip + 1]]);
-            self.ip += 2;
-            Some(v)
-        }
-    }
-    fn read_i16(&mut self) -> Option<i16> {
-        self.read_u16().map(|x| x as i16)
-    }
-    fn read_u32(&mut self) -> Option<u32> {
-        if self.ip + 3 >= self.code.len() {
-            None
-        } else {
-            let v = u32::from_le_bytes([
-                self.code[self.ip],
-                self.code[self.ip + 1],
-                self.code[self.ip + 2],
-                self.code[self.ip + 3],
-            ]);
-            self.ip += 4;
-            Some(v)
-        }
-    }
+    pub fn new(code: &'a [u8]) -> Self { Self { code, cursor: Cursor::new(code) } }
+    fn read_u8(&mut self) -> Option<u8> { self.cursor.read_u8().ok() }
+    fn read_u16(&mut self) -> Option<u16> { self.cursor.read_u16::<LittleEndian>().ok() }
+    fn read_i16(&mut self) -> Option<i16> { self.cursor.read_i16::<LittleEndian>().ok() }
+    fn read_u32(&mut self) -> Option<u32> { self.cursor.read_u32::<LittleEndian>().ok() }
     fn parse_opcode(b: u8) -> Option<Opcode> {
         Some(match b {
             0x00 => Opcode::Nop,
@@ -253,7 +222,7 @@ impl<'a> Decoder<'a> {
     }
     pub fn decode_all(mut self) -> Result<Vec<Instruction>, DecodeError> {
         let mut out = Vec::new();
-        while self.ip < self.code.len() {
+        while (self.cursor.position() as usize) < self.code.len() {
             out.push(self.next_result()?);
         }
         Ok(out)
