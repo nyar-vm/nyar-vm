@@ -9,6 +9,7 @@ pub enum VmError {
     IndexOutOfBounds,
     UnhandledEffect(String),
     UnhandledError,
+    RuntimeError(String),
 }
 
 #[derive(Debug)]

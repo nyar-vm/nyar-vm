@@ -24,6 +24,12 @@ pub struct Chunk {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClassInfo {
+    pub name: String,
+    pub fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NyarcModule {
     pub version: u16,
     pub flags: u32,
@@ -31,6 +37,8 @@ pub struct NyarcModule {
     pub constants: Vec<Constant>,
     pub effects: Vec<String>,
     pub chunks: Vec<Chunk>,
+    #[serde(default)]
+    pub classes: Vec<ClassInfo>,
 }
 
 pub type NyarModule = NyarcModule;
@@ -134,6 +142,27 @@ impl NyarcModule {
                 handlers: vec![],
             });
         }
+        
+        let mut classes = Vec::new();
+        if cur.position() < cur.get_ref().len() as u64 {
+             let class_count = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
+             for _ in 0..class_count {
+                 let name_len = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
+                 let mut buf = vec![0u8; name_len];
+                 cur.read_exact(&mut buf).map_err(|_| FormatError::Truncated)?;
+                 let name = String::from_utf8_lossy(&buf).into_owned();
+                 let field_count = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
+                 let mut fields = Vec::with_capacity(field_count as usize);
+                 for _ in 0..field_count {
+                     let flen = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
+                     let mut fbuf = vec![0u8; flen];
+                     cur.read_exact(&mut fbuf).map_err(|_| FormatError::Truncated)?;
+                     fields.push(String::from_utf8_lossy(&fbuf).into_owned());
+                 }
+                 classes.push(ClassInfo { name, fields });
+             }
+        }
+        
         Ok(Self {
             version,
             flags,
@@ -141,6 +170,7 @@ impl NyarcModule {
             constants,
             effects,
             chunks,
+            classes,
         })
     }
     pub fn encode(&self) -> Vec<u8> {
@@ -178,6 +208,14 @@ impl NyarcModule {
             buf.extend_from_slice(&(ch.code.len() as u32).to_le_bytes());
             buf.extend_from_slice(&ch.code);
         }
+        buf.extend_from_slice(&(self.classes.len() as u32).to_le_bytes());
+        for c in &self.classes {
+             write_string(&mut buf, &c.name);
+             buf.extend_from_slice(&(c.fields.len() as u16).to_le_bytes());
+             for f in &c.fields {
+                 write_string(&mut buf, f);
+             }
+        }
         buf
     }
     pub fn parse_toml_str(s: &str) -> Result<Self, FormatError> {
@@ -203,5 +241,6 @@ pub fn minimal_module_with_chunk(code: Vec<u8>, constants: Vec<Constant>) -> Nya
             code,
             handlers: vec![],
         }],
+        classes: vec![],
     }
 }

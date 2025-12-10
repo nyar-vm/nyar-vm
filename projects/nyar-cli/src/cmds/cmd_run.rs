@@ -15,7 +15,7 @@ pub fn run(path: &str) -> Result<(), CliError> {
     };
     let chunk = module.chunks.get(0).cloned().ok_or(CliError::NoChunk)?;
     let program = Decoder::new(&chunk.code).decode_all()?;
-    let mut vm = NyarVM::new(module.constants, module.effects);
+    let mut vm = NyarVM::new(module.constants, module.chunks, module.classes, module.effects);
     let v = vm.execute(&program)?;
     std::io::stdout().write_all(format!("{:?}\n", v.tag).as_bytes())?;
     Ok(())

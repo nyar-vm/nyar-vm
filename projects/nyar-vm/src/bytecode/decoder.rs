@@ -21,10 +21,12 @@ pub enum Instruction {
     JumpIfFalse(i16),
     JumpIfNull(i16),
     Return,
+    MakeClosure(u16),
     TailCall,
     Call(u16, u8),
     CallVirtual(u16, u8),
     CallDynamic(u16, u8),
+    CallClosure(u8),
     GetField(u16),
     SetField(u16),
     NewObject(u16),
@@ -95,9 +97,11 @@ impl<'a> Decoder<'a> {
             0x12 => Opcode::JumpIfNull,
             0x13 => Opcode::Return,
             0x14 => Opcode::TailCall,
+            0x15 => Opcode::MakeClosure,
             0x20 => Opcode::Call,
             0x21 => Opcode::CallVirtual,
             0x22 => Opcode::CallDynamic,
+            0x23 => Opcode::CallClosure,
             0x30 => Opcode::GetField,
             0x31 => Opcode::SetField,
             0x32 => Opcode::NewObject,
@@ -161,6 +165,9 @@ impl<'a> Decoder<'a> {
                 Instruction::JumpIfNull(self.read_i16().ok_or(DecodeError::Truncated)?)
             }
             Opcode::Return => Instruction::Return,
+            Opcode::MakeClosure => {
+                Instruction::MakeClosure(self.read_u16().ok_or(DecodeError::Truncated)?)
+            }
             Opcode::TailCall => Instruction::TailCall,
             Opcode::Call => Instruction::Call(
                 self.read_u16().ok_or(DecodeError::Truncated)?,
@@ -174,6 +181,9 @@ impl<'a> Decoder<'a> {
                 self.read_u16().ok_or(DecodeError::Truncated)?,
                 self.read_u8().ok_or(DecodeError::Truncated)?,
             ),
+            Opcode::CallClosure => {
+                Instruction::CallClosure(self.read_u8().ok_or(DecodeError::Truncated)?)
+            }
             Opcode::GetField => {
                 Instruction::GetField(self.read_u16().ok_or(DecodeError::Truncated)?)
             }

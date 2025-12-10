@@ -29,6 +29,7 @@ impl std::fmt::Display for CliError {
                 write!(f, "vm error: unhandled effect {}", name)
             }
             CliError::Vm(VmError::UnhandledError) => write!(f, "vm error: unhandled error"),
+            CliError::Vm(VmError::RuntimeError(msg)) => write!(f, "vm error: {}", msg),
             CliError::NoChunk => write!(f, "no chunk to execute"),
         }
     }

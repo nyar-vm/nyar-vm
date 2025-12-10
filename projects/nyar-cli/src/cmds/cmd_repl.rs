@@ -58,7 +58,7 @@ pub fn repl() -> Result<(), CliError> {
                 handlers: vec![],
             };
             if let Ok(program) = Decoder::new(&chunk.code).decode_all() {
-                let mut vm = NyarVM::new(vec![], vec![]);
+                let mut vm = NyarVM::new(vec![], vec![chunk], vec![], vec![]);
                 let _ = vm.execute(&program);
             }
         }

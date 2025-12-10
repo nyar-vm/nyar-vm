@@ -1,5 +1,5 @@
 use crate::bytecode::decoder::Instruction;
-use crate::bytecode::format::Constant;
+use crate::bytecode::format::{Chunk, Constant, ClassInfo};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::value::{Value, ValueTag};
 use crate::vm::VmError;
@@ -8,6 +8,7 @@ use crate::vm::VmError;
 struct Frame {
     instrs: Vec<Instruction>,
     ip: usize,
+    locals: Vec<Value>,
 }
 
 pub struct NyarVM {
@@ -15,17 +16,21 @@ pub struct NyarVM {
     sp: usize,
     frames: Vec<Frame>,
     pub constants: Vec<Constant>,
+    pub chunks: Vec<Chunk>,
+    pub classes: Vec<ClassInfo>,
     pub effects: Vec<String>,
     pub handler_stack: Vec<HandlerFrame>,
 }
 
 impl NyarVM {
-    pub fn new(constants: Vec<Constant>, effects: Vec<String>) -> Self {
+    pub fn new(constants: Vec<Constant>, chunks: Vec<Chunk>, classes: Vec<ClassInfo>, effects: Vec<String>) -> Self {
         Self {
             stack: Vec::with_capacity(64),
             sp: 0,
             frames: Vec::new(),
             constants,
+            chunks,
+            classes,
             effects,
             handler_stack: Vec::new(),
         }
@@ -67,6 +72,7 @@ impl NyarVM {
         let frame = Frame {
             instrs: program.to_vec(),
             ip: 0,
+            locals: vec![Value::null(); 32],
         };
         self.frames.push(frame.clone());
         loop {
@@ -101,6 +107,25 @@ impl NyarVM {
                 Instruction::Swap(d) => {
                     self.swap_with(d as usize)?;
                 }
+                Instruction::LoadLocal(idx) => {
+                    let f = self.frames.last().unwrap();
+                    if (idx as usize) < f.locals.len() {
+                        let v = f.locals[idx as usize];
+                        println!("LoadLocal {} -> {:?}", idx, v.tag);
+                        self.push(v);
+                    } else {
+                        return Err(VmError::StackUnderflow);
+                    }
+                }
+                Instruction::StoreLocal(idx) => {
+                    let v = self.pop()?;
+                    println!("StoreLocal {} <- {:?}", idx, v.tag);
+                    let f = self.frames.last_mut().unwrap();
+                    if (idx as usize) >= f.locals.len() {
+                        f.locals.resize((idx as usize) + 1, Value::null());
+                    }
+                    f.locals[idx as usize] = v;
+                }
                 Instruction::Jump(off) => {
                     let target = (cur_ip as isize + off as isize) as usize;
                     next_ip = Some(target);
@@ -121,7 +146,81 @@ impl NyarVM {
                 Instruction::Return => {
                     let v = self.pop()?;
                     self.frames.pop();
-                    return Ok(v);
+                    if self.frames.is_empty() {
+                        return Ok(v);
+                    }
+                    self.push(v);
+                    next_ip = None;
+                }
+                Instruction::MakeClosure(idx) => {
+                    // TODO: Capture upvalues
+                    let v = Value::closure(idx, vec![]);
+                    self.push(v);
+                }
+                Instruction::CallClosure(argc) => {
+                    let callee = self.pop()?;
+                    if callee.tag != ValueTag::Closure {
+                        return Err(VmError::InvalidOpcode); // Expected closure
+                    }
+                    
+                    let mut args = Vec::with_capacity(argc as usize);
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
+                    args.reverse();
+                    
+                    let closure_ptr = unsafe { callee.data.ptr as *mut crate::vm::value::Closure };
+                    let closure = unsafe { &*closure_ptr };
+                    let chunk_idx = closure.func;
+                    
+                    let chunk = self.chunks.get(chunk_idx).cloned().ok_or(VmError::IndexOutOfBounds)?;
+                    use crate::bytecode::decoder::Decoder;
+                    let decoder = Decoder::new(&chunk.code);
+                    let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+
+                    if args.len() < chunk.locals as usize {
+                        args.resize(chunk.locals as usize, Value::null());
+                    }
+
+                    let new_frame = Frame {
+                        instrs,
+                        ip: 0,
+                        locals: args,
+                    };
+
+                    if let Some(next) = next_ip {
+                        self.frames.last_mut().unwrap().ip = next;
+                    }
+                    self.frames.push(new_frame);
+                    next_ip = None;
+                }
+                Instruction::Call(idx, argc) => {
+                    let chunk = self.chunks.get(idx as usize).cloned().ok_or(VmError::IndexOutOfBounds)?;
+                    use crate::bytecode::decoder::Decoder;
+                    let decoder = Decoder::new(&chunk.code);
+                    let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+
+                    let mut args = Vec::with_capacity(argc as usize);
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
+                    args.reverse();
+
+                    if args.len() < chunk.locals as usize {
+                        args.resize(chunk.locals as usize, Value::null());
+                    }
+
+                    let new_frame = Frame {
+                        instrs,
+                        ip: 0,
+                        locals: args,
+                    };
+
+                    if let Some(next) = next_ip {
+                        self.frames.last_mut().unwrap().ip = next;
+                    }
+                    self.frames.push(new_frame);
+                    next_ip = None;
                 }
                 Instruction::Perform(idx, argc) => {
                     let mut args = Vec::with_capacity(argc as usize);
@@ -174,6 +273,71 @@ impl NyarVM {
                         }
                         _ => return Err(VmError::UnhandledEffect(name.to_string())),
                     }
+                }
+                Instruction::NewObject(class_idx) => {
+                    let cls = self.classes.get(class_idx as usize).ok_or(VmError::IndexOutOfBounds)?;
+                    let fields = vec![Value::null(); cls.fields.len()];
+                    let obj = Value::object(class_idx, fields);
+                    self.push(obj);
+                }
+                Instruction::GetField(name_idx) => {
+                    let obj = self.pop()?;
+                    if obj.tag != ValueTag::Object { return Err(VmError::InvalidOpcode); }
+                    let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
+                    let obj_ref = unsafe { &*obj_ptr };
+                    
+                    let name = match self.constants.get(name_idx as usize) {
+                        Some(Constant::String(s)) => s,
+                        _ => return Err(VmError::InvalidOpcode),
+                    };
+                    let cls = self.classes.get(obj_ref.class_idx as usize).ok_or(VmError::IndexOutOfBounds)?;
+                    if let Some(idx) = cls.fields.iter().position(|f| f == name) {
+                        self.push(obj_ref.fields[idx]);
+                    } else {
+                        return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
+                    }
+                }
+                Instruction::SetField(name_idx) => {
+                    let val = self.pop()?;
+                    let obj = self.pop()?;
+                    if obj.tag != ValueTag::Object { return Err(VmError::InvalidOpcode); }
+                    let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
+                    let obj_mut = unsafe { &mut *obj_ptr };
+                    
+                    let name = match self.constants.get(name_idx as usize) {
+                        Some(Constant::String(s)) => s,
+                        _ => return Err(VmError::InvalidOpcode),
+                    };
+                    let cls = self.classes.get(obj_mut.class_idx as usize).ok_or(VmError::IndexOutOfBounds)?;
+                    if let Some(idx) = cls.fields.iter().position(|f| f == name) {
+                        obj_mut.fields[idx] = val;
+                        self.push(val);
+                    } else {
+                        return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
+                    }
+                }
+                Instruction::InstanceOf(class_idx) => {
+                    let obj = self.pop()?;
+                    let is_instance = if obj.tag == ValueTag::Object {
+                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
+                        let obj_ref = unsafe { &*obj_ptr };
+                        obj_ref.class_idx == class_idx
+                    } else {
+                        false
+                    };
+                    self.push(Value::bool(is_instance));
+                }
+                Instruction::Cast(class_idx) => {
+                     let obj = self.peek_at(0)?;
+                     if obj.tag == ValueTag::Object {
+                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
+                        let obj_ref = unsafe { &*obj_ptr };
+                        if obj_ref.class_idx != class_idx {
+                             return Err(VmError::RuntimeError("Cast failed".into()));
+                        }
+                     } else {
+                         return Err(VmError::RuntimeError(format!("Cast failed: not an object, found {:?}", obj.tag)));
+                     }
                 }
                 Instruction::Halt => break,
                 _ => {}

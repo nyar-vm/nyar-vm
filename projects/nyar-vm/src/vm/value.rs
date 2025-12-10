@@ -62,6 +62,30 @@ impl Value {
             data: ValueData { ptr: null_mut() },
         }
     }
+    pub fn closure(func_idx: u16, upvalues: Vec<Upvalue>) -> Self {
+        let c = Box::new(Closure {
+            func: func_idx as usize,
+            upvalues,
+        });
+        Self {
+            tag: ValueTag::Closure,
+            data: ValueData {
+                ptr: Box::into_raw(c) as *mut (),
+            },
+        }
+    }
+    pub fn object(class_idx: u16, fields: Vec<Value>) -> Self {
+        let o = Box::new(Object {
+            class_idx,
+            fields,
+        });
+        Self {
+            tag: ValueTag::Object,
+            data: ValueData {
+                ptr: Box::into_raw(o) as *mut (),
+            },
+        }
+    }
     pub unsafe fn as_int(&self) -> i64 {
         self.data.int
     }
@@ -86,6 +110,12 @@ pub struct Upvalue(pub Value);
 pub struct Closure {
     pub func: usize,
     pub upvalues: Vec<Upvalue>,
+}
+
+#[derive(Clone)]
+pub struct Object {
+    pub class_idx: u16,
+    pub fields: Vec<Value>,
 }
 
 #[derive(Clone)]

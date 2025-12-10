@@ -17,10 +17,12 @@ pub enum Opcode {
     JumpIfFalse = 0x11,
     JumpIfNull = 0x12,
     Return = 0x13,
+    MakeClosure = 0x15,
 
     Call = 0x20,
     CallVirtual = 0x21,
     CallDynamic = 0x22,
+    CallClosure = 0x23,
     FFICall = 0xF0,
     TailCall = 0x14,
 
