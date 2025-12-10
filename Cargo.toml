@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+members = ["projects/*"]
+default-members = [
+    "projects/nyar-vm",
+    "projects/nyar-cli",
+    "projects/valkyrie-language",
+]
+exclude = [
+    "projects/nyar-wasm32-wasi"
+]
+
+[profile.release]
+lto = true
+opt-level = "s"
+
+#
+#[workspace.dependencies.valkyrie-error]
+#version = "0.1.17"
+#features = ["json5", "num", "dashu", "walkdir", "pratt", "yggdrasil-rt"]
+#path = 'projects/valkyrie-error'
+#
+#[workspace.dependencies.valkyrie-parser]
+#version = "*"
+#path = 'projects/valkyrie-parser'
+#
+#[workspace.dependencies.valkyrie-types]
+#version = "*"
+#path = 'projects/valkyrie-types'
+#
+#[workspace.dependencies.valkyrie-ast]
+#version = "*"
+#path = 'projects/valkyrie-ast'
+#
+#[workspace.dependencies.valkyrie-hir]
+#version = "*"
+#path = 'projects/valkyrie-hir'
+#
+#[workspace.dependencies.valkyrie-mir]
+#version = "*"
+#path = 'projects/valkyrie-mir'
+#
+#[workspace.dependencies.valkyrie-lir]
+#version = "0.0.7"
+#path = 'projects/valkyrie-lir'
