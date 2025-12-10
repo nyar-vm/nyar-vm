@@ -1,12 +1,19 @@
 [workspace]
 resolver = "2"
-members = ["projects/nyar-vm"]
-default-members = ["projects/nyar-vm"]
+members = ["projects/*"]
+default-members = [
+    "projects/nyar-error",
+    "projects/nyar-vm",
+    "projects/nyar-cli",
+]
 exclude = ["projects/nyar-wasm32-wasi"]
 
 [profile.release]
 lto = true
 opt-level = "s"
+
+[workspace.dependencies]
+criterion = "0.5"
 
 #
 #[workspace.dependencies.valkyrie-error]

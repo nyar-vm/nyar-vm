@@ -5,10 +5,4 @@ edition = "2021"
 
 [dependencies]
 
-[dev-dependencies]
-criterion = "0.5"
-
-[[bench]]
-name = "bench"
-harness = false
 

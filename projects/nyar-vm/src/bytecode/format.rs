@@ -1,16 +1,18 @@
 use std::time::{SystemTime, UNIX_EPOCH};
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value")]
 pub enum Constant {
     Int(i64),
     Float(f64),
     String(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Handler {}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chunk {
     pub locals: u16,
     pub upvalues: u16,
@@ -19,7 +21,7 @@ pub struct Chunk {
     pub handlers: Vec<Handler>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NyarcModule {
     pub version: u16,
     pub flags: u32,
@@ -33,6 +35,7 @@ pub struct NyarcModule {
 pub enum FormatError {
     InvalidHeader,
     Truncated,
+    Text(String),
 }
 
 fn read_u16(b: &[u8], i: &mut usize) -> Option<u16> {
@@ -196,6 +199,9 @@ impl NyarcModule {
             buf.extend_from_slice(&ch.code);
         }
         buf
+    }
+    pub fn parse_toml_str(s: &str) -> Result<Self, FormatError> {
+        toml::from_str::<NyarcModule>(s).map_err(|e| FormatError::Text(e.to_string()))
     }
 }
 

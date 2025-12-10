@@ -7,11 +7,4 @@ pub mod stage;
 pub mod traits;
 pub mod value;
 
-#[derive(Debug)]
-pub enum VmError {
-    InvalidOpcode,
-    StackUnderflow,
-    IndexOutOfBounds,
-    UnhandledEffect(String),
-    UnhandledError,
-}
+pub use nyar_error::VmError;
