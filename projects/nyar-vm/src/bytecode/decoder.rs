@@ -50,15 +50,11 @@ pub enum Instruction {
     Halt,
 }
 
+use nyar_error::DecodeError;
+
 pub struct Decoder<'a> {
     code: &'a [u8],
     cursor: Cursor<&'a [u8]>,
-}
-
-#[derive(Debug)]
-pub enum DecodeError {
-    InvalidOpcode(u8),
-    Truncated,
 }
 
 impl<'a> Decoder<'a> {

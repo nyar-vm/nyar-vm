@@ -35,12 +35,7 @@ pub struct NyarcModule {
 
 pub type NyarModule = NyarcModule;
 
-#[derive(Debug)]
-pub enum FormatError {
-    InvalidHeader,
-    Truncated,
-    Text(String),
-}
+pub use nyar_error::FormatError;
 
 pub fn write_string(buf: &mut Vec<u8>, s: &str) {
     let l = s.len() as u32;

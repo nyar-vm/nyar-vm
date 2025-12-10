@@ -8,5 +8,6 @@ name = "nyar"
 path = "src/main.rs"
 
 [dependencies]
+nyar-error = { path = "../nyar-error" }
 nyar-vm = { path = "../nyar-vm" }
 clap = { workspace = true }
