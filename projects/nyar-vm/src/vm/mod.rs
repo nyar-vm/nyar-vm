@@ -1,11 +1,11 @@
-pub mod value;
-pub mod interpreter;
-pub mod effects;
-pub mod traits;
 pub mod async_rt;
-pub mod stage;
+pub mod effects;
 pub mod ffi;
+pub mod interpreter;
 pub mod safety;
+pub mod stage;
+pub mod traits;
+pub mod value;
 
 #[derive(Debug)]
 pub enum VmError {
@@ -15,4 +15,3 @@ pub enum VmError {
     UnhandledEffect(String),
     UnhandledError,
 }
-

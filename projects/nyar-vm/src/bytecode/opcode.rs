@@ -49,4 +49,3 @@ pub enum Opcode {
 
     Halt = 0xFF,
 }
-
