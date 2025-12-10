@@ -1,9 +1,67 @@
 use clap::{Parser, Subcommand};
-use nyar_vm::bytecode::decoder::Decoder;
-use nyar_vm::bytecode::format::{Chunk, NyarModule};
+use nyar_vm::bytecode::decoder::{DecodeError, Decoder};
+use nyar_vm::bytecode::format::{Chunk, FormatError, NyarModule};
 use nyar_vm::vm::interpreter::NyarVM;
+use nyar_vm::vm::VmError;
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::{BufRead, Write};
+
+#[derive(Debug)]
+pub enum CliError {
+    Io(std::io::Error),
+    Format(FormatError),
+    Decode(DecodeError),
+    Vm(VmError),
+    NoChunk,
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::Io(e) => write!(f, "io error: {}", e),
+            CliError::Format(FormatError::InvalidHeader) => {
+                write!(f, "format error: invalid header")
+            }
+            CliError::Format(FormatError::Truncated) => write!(f, "format error: truncated data"),
+            CliError::Format(FormatError::Text(msg)) => write!(f, "format error: {}", msg),
+            CliError::Decode(DecodeError::InvalidOpcode(op)) => {
+                write!(f, "decode error: invalid opcode 0x{:02X}", op)
+            }
+            CliError::Decode(DecodeError::Truncated) => write!(f, "decode error: truncated code"),
+            CliError::Vm(VmError::InvalidOpcode) => write!(f, "vm error: invalid opcode"),
+            CliError::Vm(VmError::StackUnderflow) => write!(f, "vm error: stack underflow"),
+            CliError::Vm(VmError::IndexOutOfBounds) => write!(f, "vm error: index out of bounds"),
+            CliError::Vm(VmError::UnhandledEffect(name)) => {
+                write!(f, "vm error: unhandled effect {}", name)
+            }
+            CliError::Vm(VmError::UnhandledError) => write!(f, "vm error: unhandled error"),
+            CliError::NoChunk => write!(f, "no chunk to execute"),
+        }
+    }
+}
+
+impl std::error::Error for CliError {}
+
+impl From<std::io::Error> for CliError {
+    fn from(e: std::io::Error) -> Self {
+        CliError::Io(e)
+    }
+}
+impl From<FormatError> for CliError {
+    fn from(e: FormatError) -> Self {
+        CliError::Format(e)
+    }
+}
+impl From<DecodeError> for CliError {
+    fn from(e: DecodeError) -> Self {
+        CliError::Decode(e)
+    }
+}
+impl From<VmError> for CliError {
+    fn from(e: VmError) -> Self {
+        CliError::Vm(e)
+    }
+}
 
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
     let t = s.as_bytes();
@@ -31,75 +89,29 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn run_cmd(path: &str) -> i32 {
+async fn run_cmd(path: &str) -> Result<(), CliError> {
     let module = if path.ends_with(".nyar") {
-        let text = match fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => return 2,
-        };
-        match NyarModule::parse_toml_str(&text) {
-            Ok(m) => m,
-            Err(e) => {
-                let _ = io::stderr().write_all(format!("{:?}\n", e).as_bytes());
-                return 3;
-            }
-        }
+        let text = fs::read_to_string(path)?;
+        NyarModule::parse_toml_str(&text)?
     } else {
-        let data = match fs::read(path) {
-            Ok(d) => d,
-            Err(_) => return 2,
-        };
-        match NyarModule::parse(&data) {
-            Ok(m) => m,
-            Err(e) => {
-                let _ = io::stderr().write_all(format!("{:?}\n", e).as_bytes());
-                return 3;
-            }
-        }
+        let data = fs::read(path)?;
+        NyarModule::parse(&data)?
     };
-    let chunk = match module.chunks.get(0) {
-        Some(c) => c.clone(),
-        None => return 4,
-    };
-    let program = match Decoder::new(&chunk.code).decode_all() {
-        Ok(p) => p,
-        Err(_) => return 6,
-    };
+    let chunk = module.chunks.get(0).cloned().ok_or(CliError::NoChunk)?;
+    let program = Decoder::new(&chunk.code).decode_all()?;
     let mut vm = NyarVM::new(module.constants, module.effects);
-    match vm.execute(&program) {
-        Ok(v) => {
-            let _ = io::stdout().write_all(format!("{:?}\n", v.tag).as_bytes());
-            0
-        }
-        Err(_) => 5,
-    }
+    let v = vm.execute(&program)?;
+    std::io::stdout().write_all(format!("{:?}\n", v.tag).as_bytes())?;
+    Ok(())
 }
 
-fn dump_cmd(path: &str) -> i32 {
+async fn dump_cmd(path: &str) -> Result<(), CliError> {
     let module = if path.ends_with(".nyar") {
-        let text = match fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => return 2,
-        };
-        match NyarModule::parse_toml_str(&text) {
-            Ok(m) => m,
-            Err(e) => {
-                let _ = io::stderr().write_all(format!("{:?}\n", e).as_bytes());
-                return 3;
-            }
-        }
+        let text = fs::read_to_string(path)?;
+        NyarModule::parse_toml_str(&text)?
     } else {
-        let data = match fs::read(path) {
-            Ok(d) => d,
-            Err(_) => return 2,
-        };
-        match NyarModule::parse(&data) {
-            Ok(m) => m,
-            Err(e) => {
-                let _ = io::stderr().write_all(format!("{:?}\n", e).as_bytes());
-                return 3;
-            }
-        }
+        let data = fs::read(path)?;
+        NyarModule::parse(&data)?
     };
     let mut out = String::new();
     out.push_str(&format!("consts:{}\n", module.constants.len()));
@@ -109,18 +121,19 @@ fn dump_cmd(path: &str) -> i32 {
     for (i, ch) in module.chunks.iter().enumerate() {
         out.push_str(&format!("chunk{}:{} bytes\n", i, ch.code.len()));
     }
-    let _ = io::stdout().write_all(out.as_bytes());
-    0
+    std::io::stdout().write_all(out.as_bytes())?;
+    Ok(())
 }
 
-fn repl_cmd() -> i32 {
+async fn repl_cmd() -> Result<(), CliError> {
     let mut buf = String::new();
-    let stdin = io::stdin();
+    let stdin = std::io::stdin();
     let mut handle = stdin.lock();
     loop {
         buf.clear();
-        let _ = io::stdout().write_all(b"> ");
-        if handle.read_line(&mut buf).is_err() {
+        std::io::stdout().write_all(b"> ")?;
+        let n = handle.read_line(&mut buf)?;
+        if n == 0 {
             break;
         }
         let line = buf.trim();
@@ -139,18 +152,16 @@ fn repl_cmd() -> i32 {
                 code,
                 handlers: vec![],
             };
-            let program = match Decoder::new(&chunk.code).decode_all() {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-            let mut vm = NyarVM::new(vec![], vec![]);
-            let _ = vm.execute(&program);
+            if let Ok(program) = Decoder::new(&chunk.code).decode_all() {
+                let mut vm = NyarVM::new(vec![], vec![]);
+                let _ = vm.execute(&program);
+            }
         }
     }
-    0
+    Ok(())
 }
 
-fn bench_cmd() -> i32 {
+async fn bench_cmd() -> Result<(), CliError> {
     let mut code = Vec::new();
     code.push(nyar_vm::bytecode::opcode::Opcode::Push as u8);
     code.extend_from_slice(&0u16.to_le_bytes());
@@ -170,8 +181,8 @@ fn bench_cmd() -> i32 {
         let _ = vm.execute(&program);
         acc += 1;
     }
-    let _ = io::stdout().write_all(format!("{}\n", acc).as_bytes());
-    0
+    std::io::stdout().write_all(format!("{}\n", acc).as_bytes())?;
+    Ok(())
 }
 
 #[derive(Parser)]
@@ -190,12 +201,12 @@ pub enum NyarCommand {
 }
 
 impl NyarCli {
-    pub async fn run(&self) {
-        let code = match self.cmds {
-            NyarCommand::Run { file } => run_cmd(&file),
-            NyarCommand::Dump { file } => dump_cmd(&file),
-            NyarCommand::Repl => repl_cmd(),
-            NyarCommand::Bench => bench_cmd(),
-        };
+    pub async fn run(&self) -> Result<(), CliError> {
+        match &self.cmds {
+            NyarCommand::Run { file } => run_cmd(&file).await,
+            NyarCommand::Dump { file } => dump_cmd(&file).await,
+            NyarCommand::Repl => repl_cmd().await,
+            NyarCommand::Bench => bench_cmd().await,
+        }
     }
 }

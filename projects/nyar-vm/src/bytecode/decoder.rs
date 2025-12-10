@@ -1,6 +1,6 @@
 use crate::bytecode::opcode::Opcode;
+use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
-use byteorder::{ReadBytesExt, LittleEndian};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -62,11 +62,24 @@ pub enum DecodeError {
 }
 
 impl<'a> Decoder<'a> {
-    pub fn new(code: &'a [u8]) -> Self { Self { code, cursor: Cursor::new(code) } }
-    fn read_u8(&mut self) -> Option<u8> { self.cursor.read_u8().ok() }
-    fn read_u16(&mut self) -> Option<u16> { self.cursor.read_u16::<LittleEndian>().ok() }
-    fn read_i16(&mut self) -> Option<i16> { self.cursor.read_i16::<LittleEndian>().ok() }
-    fn read_u32(&mut self) -> Option<u32> { self.cursor.read_u32::<LittleEndian>().ok() }
+    pub fn new(code: &'a [u8]) -> Self {
+        Self {
+            code,
+            cursor: Cursor::new(code),
+        }
+    }
+    fn read_u8(&mut self) -> Option<u8> {
+        self.cursor.read_u8().ok()
+    }
+    fn read_u16(&mut self) -> Option<u16> {
+        self.cursor.read_u16::<LittleEndian>().ok()
+    }
+    fn read_i16(&mut self) -> Option<i16> {
+        self.cursor.read_i16::<LittleEndian>().ok()
+    }
+    fn read_u32(&mut self) -> Option<u32> {
+        self.cursor.read_u32::<LittleEndian>().ok()
+    }
     fn parse_opcode(b: u8) -> Option<Opcode> {
         Some(match b {
             0x00 => Opcode::Nop,

@@ -1,7 +1,10 @@
+use clap::Parser;
+use std::process::ExitCode;
+
+use nyar_cli::{CliError, NyarCli};
 
 #[tokio::main]
-async fn main() {
+fn main() -> Result<(), CliError> {
     let cli = NyarCli::parse();
-    cli.run().await?;
-    std::process::exit(code);
+    cli.run()
 }

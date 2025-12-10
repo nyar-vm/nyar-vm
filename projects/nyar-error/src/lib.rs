@@ -6,4 +6,3 @@ pub enum VmError {
     UnhandledEffect(String),
     UnhandledError,
 }
-

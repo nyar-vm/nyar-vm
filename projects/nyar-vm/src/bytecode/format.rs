@@ -1,7 +1,7 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::io::{Cursor, Read};
 use byteorder::{LittleEndian, ReadBytesExt};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::io::{Cursor, Read};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value")]
@@ -42,7 +42,6 @@ pub enum FormatError {
     Text(String),
 }
 
-
 pub fn write_string(buf: &mut Vec<u8>, s: &str) {
     let l = s.len() as u32;
     buf.extend_from_slice(&l.to_le_bytes());
@@ -51,38 +50,103 @@ pub fn write_string(buf: &mut Vec<u8>, s: &str) {
 
 impl NyarcModule {
     pub fn parse(b: &[u8]) -> Result<Self, FormatError> {
-        if b.len() < 8 { return Err(FormatError::InvalidHeader) }
-        if &b[0..8] != b"NYAR\x01\x00\x00\x00" { return Err(FormatError::InvalidHeader) }
+        if b.len() < 8 {
+            return Err(FormatError::InvalidHeader);
+        }
+        if &b[0..8] != b"NYAR\x01\x00\x00\x00" {
+            return Err(FormatError::InvalidHeader);
+        }
         let mut cur = Cursor::new(&b[8..]);
-        let version = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-        let flags = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-        let timestamp = cur.read_u64::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-        let const_count = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
+        let version = cur
+            .read_u16::<LittleEndian>()
+            .map_err(|_| FormatError::Truncated)?;
+        let flags = cur
+            .read_u32::<LittleEndian>()
+            .map_err(|_| FormatError::Truncated)?;
+        let timestamp = cur
+            .read_u64::<LittleEndian>()
+            .map_err(|_| FormatError::Truncated)?;
+        let const_count = cur
+            .read_u32::<LittleEndian>()
+            .map_err(|_| FormatError::Truncated)? as usize;
         let mut constants = Vec::with_capacity(const_count);
         for _ in 0..const_count {
             let kind = cur.read_u8().map_err(|_| FormatError::Truncated)?;
             match kind {
-                0 => { let v = cur.read_u64::<LittleEndian>().map_err(|_| FormatError::Truncated)? as i64; constants.push(Constant::Int(v)); }
-                1 => { let raw = cur.read_u64::<LittleEndian>().map_err(|_| FormatError::Truncated)?; constants.push(Constant::Float(f64::from_bits(raw))); }
-                2 => { let l = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize; let mut buf = vec![0u8; l]; cur.read_exact(&mut buf).map_err(|_| FormatError::Truncated)?; let s = String::from_utf8_lossy(&buf).into_owned(); constants.push(Constant::String(s)); }
-                _ => return Err(FormatError::Truncated)
+                0 => {
+                    let v = cur
+                        .read_u64::<LittleEndian>()
+                        .map_err(|_| FormatError::Truncated)? as i64;
+                    constants.push(Constant::Int(v));
+                }
+                1 => {
+                    let raw = cur
+                        .read_u64::<LittleEndian>()
+                        .map_err(|_| FormatError::Truncated)?;
+                    constants.push(Constant::Float(f64::from_bits(raw)));
+                }
+                2 => {
+                    let l = cur
+                        .read_u32::<LittleEndian>()
+                        .map_err(|_| FormatError::Truncated)? as usize;
+                    let mut buf = vec![0u8; l];
+                    cur.read_exact(&mut buf)
+                        .map_err(|_| FormatError::Truncated)?;
+                    let s = String::from_utf8_lossy(&buf).into_owned();
+                    constants.push(Constant::String(s));
+                }
+                _ => return Err(FormatError::Truncated),
             }
         }
-        let eff_count = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
+        let eff_count = cur
+            .read_u32::<LittleEndian>()
+            .map_err(|_| FormatError::Truncated)? as usize;
         let mut effects = Vec::with_capacity(eff_count);
-        for _ in 0..eff_count { let l = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize; let mut buf = vec![0u8; l]; cur.read_exact(&mut buf).map_err(|_| FormatError::Truncated)?; effects.push(String::from_utf8_lossy(&buf).into_owned()); }
-        let chunk_count = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
+        for _ in 0..eff_count {
+            let l = cur
+                .read_u32::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)? as usize;
+            let mut buf = vec![0u8; l];
+            cur.read_exact(&mut buf)
+                .map_err(|_| FormatError::Truncated)?;
+            effects.push(String::from_utf8_lossy(&buf).into_owned());
+        }
+        let chunk_count = cur
+            .read_u32::<LittleEndian>()
+            .map_err(|_| FormatError::Truncated)? as usize;
         let mut chunks = Vec::with_capacity(chunk_count);
         for _ in 0..chunk_count {
-            let locals = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-            let upvalues = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-            let max_stack = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-            let code_size = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
+            let locals = cur
+                .read_u16::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)?;
+            let upvalues = cur
+                .read_u16::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)?;
+            let max_stack = cur
+                .read_u16::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)?;
+            let code_size = cur
+                .read_u32::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)? as usize;
             let mut code = vec![0u8; code_size];
-            cur.read_exact(&mut code).map_err(|_| FormatError::Truncated)?;
-            chunks.push(Chunk { locals, upvalues, max_stack, code, handlers: vec![] });
+            cur.read_exact(&mut code)
+                .map_err(|_| FormatError::Truncated)?;
+            chunks.push(Chunk {
+                locals,
+                upvalues,
+                max_stack,
+                code,
+                handlers: vec![],
+            });
         }
-        Ok(Self { version, flags, timestamp, constants, effects, chunks })
+        Ok(Self {
+            version,
+            flags,
+            timestamp,
+            constants,
+            effects,
+            chunks,
+        })
     }
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::new();
