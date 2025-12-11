@@ -1,4 +1,4 @@
-use crate::bytecode::opcode::Opcode;
+use crate::bytecode::opcode::{Opcode, I32Op, I64Op, F32Op, F64Op, BigIntOp, StringOp};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 pub use nyar_error::DecodeError;
@@ -58,6 +58,118 @@ pub enum Instruction {
     ExpandMacro(u16, u8),
     FFICall(u16, u8),
     Halt,
+    I32Const(i32),
+    I32Add,
+    I32Sub,
+    I32Mul,
+    I32DivS,
+    I32DivU,
+    I32RemS,
+    I32RemU,
+    I32Neg,
+    I32Eq,
+    I32Ne,
+    I32LtS,
+    I32LtU,
+    I32LeS,
+    I32LeU,
+    I32GtS,
+    I32GtU,
+    I32GeS,
+    I32GeU,
+    I32Extend64S,
+    I32Extend64U,
+    I32Trunc64SLow,
+    I32Trunc64S,
+    I32Trunc64U,
+    I32ToF32S,
+    I32ToF32U,
+    I32ToF64S,
+    I32ToF64U,
+    I64Const(i64),
+    I64Add,
+    I64Sub,
+    I64Mul,
+    I64DivS,
+    I64DivU,
+    I64RemS,
+    I64RemU,
+    I64Neg,
+    I64Eq,
+    I64Ne,
+    I64LtS,
+    I64LtU,
+    I64LeS,
+    I64LeU,
+    I64GtS,
+    I64GtU,
+    I64GeS,
+    I64GeU,
+    I64ToF32S,
+    I64ToF32U,
+    I64ToF64S,
+    I64ToF64U,
+    F32Const(f32),
+    F32Add,
+    F32Sub,
+    F32Mul,
+    F32Div,
+    F32Neg,
+    F32Eq,
+    F32Ne,
+    F32Lt,
+    F32Le,
+    F32Gt,
+    F32Ge,
+    F32ToI32S,
+    F32ToI32U,
+    F32ToI64S,
+    F32ToI64U,
+    F32ToF64,
+    F64Const(f64),
+    F64Add,
+    F64Sub,
+    F64Mul,
+    F64Div,
+    F64Neg,
+    F64Eq,
+    F64Ne,
+    F64Lt,
+    F64Le,
+    F64Gt,
+    F64Ge,
+    F64ToI32S,
+    F64ToI32U,
+    F64ToI64S,
+    F64ToI64U,
+    F64ToF32,
+    BigIntConst { sign: u8, bytes: Vec<u8> },
+    BigIntAdd,
+    BigIntSub,
+    BigIntMul,
+    BigIntDiv,
+    BigIntMod,
+    BigIntNeg,
+    BigIntEq,
+    BigIntNe,
+    BigIntLt,
+    BigIntLe,
+    BigIntGt,
+    BigIntGe,
+    BigIntToI64,
+    BigIntFromI64,
+    BigIntToString,
+    StringConst(String),
+    StringConcat,
+    StringLenBytes,
+    StringSubstr,
+    StringEq,
+    StringNe,
+    StringLt,
+    StringLe,
+    StringGt,
+    StringGe,
+    StringLenChars,
 }
 
 
@@ -84,6 +196,30 @@ impl<'a> Decoder<'a> {
     }
     fn read_u32(&mut self) -> Option<u32> {
         self.cursor.read_u32::<LittleEndian>().ok()
+    }
+    fn read_i32(&mut self) -> Option<i32> {
+        self.cursor.read_i32::<LittleEndian>().ok()
+    }
+    fn read_i64(&mut self) -> Option<i64> {
+        self.cursor.read_i64::<LittleEndian>().ok()
+    }
+    fn read_f32(&mut self) -> Option<f32> {
+        self.cursor.read_f32::<LittleEndian>().ok()
+    }
+    fn read_f64(&mut self) -> Option<f64> {
+        self.cursor.read_f64::<LittleEndian>().ok()
+    }
+    fn read_varuint(&mut self) -> Option<u64> {
+        let mut result: u64 = 0;
+        let mut shift = 0u32;
+        loop {
+            let b = self.read_u8()? as u64;
+            result |= (b & 0x7F) << shift;
+            if (b & 0x80) == 0 { break; }
+            shift += 7;
+            if shift > 63 { return None; }
+        }
+        Some(result)
     }
     fn parse_opcode(b: u8) -> Option<Opcode> {
         Some(match b {
@@ -139,6 +275,155 @@ impl<'a> Decoder<'a> {
     }
     pub fn next_result(&mut self) -> Result<Instruction, DecodeError> {
         let op = self.read_u8().ok_or(DecodeError::Truncated)?;
+        if (0xC1..=0xC6).contains(&op) {
+            let sub = self.read_u8().ok_or(DecodeError::Truncated)?;
+            let ins = match op {
+                x if x == 0xC1 => match sub {
+                    x if x == I32Op::Const as u8 => Instruction::I32Const(self.read_i32().ok_or(DecodeError::Truncated)?),
+                    x if x == I32Op::Add as u8 => Instruction::I32Add,
+                    x if x == I32Op::Sub as u8 => Instruction::I32Sub,
+                    x if x == I32Op::Mul as u8 => Instruction::I32Mul,
+                    x if x == I32Op::DivS as u8 => Instruction::I32DivS,
+                    x if x == I32Op::DivU as u8 => Instruction::I32DivU,
+                    x if x == I32Op::RemS as u8 => Instruction::I32RemS,
+                    x if x == I32Op::RemU as u8 => Instruction::I32RemU,
+                    x if x == I32Op::Neg as u8 => Instruction::I32Neg,
+                    x if x == I32Op::Eq as u8 => Instruction::I32Eq,
+                    x if x == I32Op::Ne as u8 => Instruction::I32Ne,
+                    x if x == I32Op::LtS as u8 => Instruction::I32LtS,
+                    x if x == I32Op::LtU as u8 => Instruction::I32LtU,
+                    x if x == I32Op::LeS as u8 => Instruction::I32LeS,
+                    x if x == I32Op::LeU as u8 => Instruction::I32LeU,
+                    x if x == I32Op::GtS as u8 => Instruction::I32GtS,
+                    x if x == I32Op::GtU as u8 => Instruction::I32GtU,
+                    x if x == I32Op::GeS as u8 => Instruction::I32GeS,
+                    x if x == I32Op::GeU as u8 => Instruction::I32GeU,
+                    x if x == I32Op::Extend64S as u8 => Instruction::I32Extend64S,
+                    x if x == I32Op::Extend64U as u8 => Instruction::I32Extend64U,
+                    x if x == I32Op::Trunc64SLow as u8 => Instruction::I32Trunc64SLow,
+                    x if x == I32Op::Trunc64S as u8 => Instruction::I32Trunc64S,
+                    x if x == I32Op::Trunc64U as u8 => Instruction::I32Trunc64U,
+                    x if x == I32Op::ToF32S as u8 => Instruction::I32ToF32S,
+                    x if x == I32Op::ToF32U as u8 => Instruction::I32ToF32U,
+                    x if x == I32Op::ToF64S as u8 => Instruction::I32ToF64S,
+                    x if x == I32Op::ToF64U as u8 => Instruction::I32ToF64U,
+                    _ => return Err(DecodeError::InvalidOpcode(sub)),
+                },
+                x if x == 0xC2 => match sub {
+                    x if x == I64Op::Const as u8 => Instruction::I64Const(self.read_i64().ok_or(DecodeError::Truncated)?),
+                    x if x == I64Op::Add as u8 => Instruction::I64Add,
+                    x if x == I64Op::Sub as u8 => Instruction::I64Sub,
+                    x if x == I64Op::Mul as u8 => Instruction::I64Mul,
+                    x if x == I64Op::DivS as u8 => Instruction::I64DivS,
+                    x if x == I64Op::DivU as u8 => Instruction::I64DivU,
+                    x if x == I64Op::RemS as u8 => Instruction::I64RemS,
+                    x if x == I64Op::RemU as u8 => Instruction::I64RemU,
+                    x if x == I64Op::Neg as u8 => Instruction::I64Neg,
+                    x if x == I64Op::Eq as u8 => Instruction::I64Eq,
+                    x if x == I64Op::Ne as u8 => Instruction::I64Ne,
+                    x if x == I64Op::LtS as u8 => Instruction::I64LtS,
+                    x if x == I64Op::LtU as u8 => Instruction::I64LtU,
+                    x if x == I64Op::LeS as u8 => Instruction::I64LeS,
+                    x if x == I64Op::LeU as u8 => Instruction::I64LeU,
+                    x if x == I64Op::GtS as u8 => Instruction::I64GtS,
+                    x if x == I64Op::GtU as u8 => Instruction::I64GtU,
+                    x if x == I64Op::GeS as u8 => Instruction::I64GeS,
+                    x if x == I64Op::GeU as u8 => Instruction::I64GeU,
+                    x if x == I64Op::ToF32S as u8 => Instruction::I64ToF32S,
+                    x if x == I64Op::ToF32U as u8 => Instruction::I64ToF32U,
+                    x if x == I64Op::ToF64S as u8 => Instruction::I64ToF64S,
+                    x if x == I64Op::ToF64U as u8 => Instruction::I64ToF64U,
+                    _ => return Err(DecodeError::InvalidOpcode(sub)),
+                },
+                x if x == 0xC3 => match sub {
+                    x if x == F32Op::Const as u8 => Instruction::F32Const(self.read_f32().ok_or(DecodeError::Truncated)?),
+                    x if x == F32Op::Add as u8 => Instruction::F32Add,
+                    x if x == F32Op::Sub as u8 => Instruction::F32Sub,
+                    x if x == F32Op::Mul as u8 => Instruction::F32Mul,
+                    x if x == F32Op::Div as u8 => Instruction::F32Div,
+                    x if x == F32Op::Neg as u8 => Instruction::F32Neg,
+                    x if x == F32Op::Eq as u8 => Instruction::F32Eq,
+                    x if x == F32Op::Ne as u8 => Instruction::F32Ne,
+                    x if x == F32Op::Lt as u8 => Instruction::F32Lt,
+                    x if x == F32Op::Le as u8 => Instruction::F32Le,
+                    x if x == F32Op::Gt as u8 => Instruction::F32Gt,
+                    x if x == F32Op::Ge as u8 => Instruction::F32Ge,
+                    x if x == F32Op::ToI32S as u8 => Instruction::F32ToI32S,
+                    x if x == F32Op::ToI32U as u8 => Instruction::F32ToI32U,
+                    x if x == F32Op::ToI64S as u8 => Instruction::F32ToI64S,
+                    x if x == F32Op::ToI64U as u8 => Instruction::F32ToI64U,
+                    x if x == F32Op::ToF64 as u8 => Instruction::F32ToF64,
+                    _ => return Err(DecodeError::InvalidOpcode(sub)),
+                },
+                x if x == 0xC4 => match sub {
+                    x if x == F64Op::Const as u8 => Instruction::F64Const(self.read_f64().ok_or(DecodeError::Truncated)?),
+                    x if x == F64Op::Add as u8 => Instruction::F64Add,
+                    x if x == F64Op::Sub as u8 => Instruction::F64Sub,
+                    x if x == F64Op::Mul as u8 => Instruction::F64Mul,
+                    x if x == F64Op::Div as u8 => Instruction::F64Div,
+                    x if x == F64Op::Neg as u8 => Instruction::F64Neg,
+                    x if x == F64Op::Eq as u8 => Instruction::F64Eq,
+                    x if x == F64Op::Ne as u8 => Instruction::F64Ne,
+                    x if x == F64Op::Lt as u8 => Instruction::F64Lt,
+                    x if x == F64Op::Le as u8 => Instruction::F64Le,
+                    x if x == F64Op::Gt as u8 => Instruction::F64Gt,
+                    x if x == F64Op::Ge as u8 => Instruction::F64Ge,
+                    x if x == F64Op::ToI32S as u8 => Instruction::F64ToI32S,
+                    x if x == F64Op::ToI32U as u8 => Instruction::F64ToI32U,
+                    x if x == F64Op::ToI64S as u8 => Instruction::F64ToI64S,
+                    x if x == F64Op::ToI64U as u8 => Instruction::F64ToI64U,
+                    x if x == F64Op::ToF32 as u8 => Instruction::F64ToF32,
+                    _ => return Err(DecodeError::InvalidOpcode(sub)),
+                },
+                x if x == 0xC5 => match sub {
+                    x if x == BigIntOp::Const as u8 => {
+                        let sign = self.read_u8().ok_or(DecodeError::Truncated)?;
+                        let len = self.read_varuint().ok_or(DecodeError::Truncated)? as usize;
+                        let mut bytes = vec![0u8; len];
+                        for i in 0..len { bytes[i] = self.read_u8().ok_or(DecodeError::Truncated)?; }
+                        Instruction::BigIntConst { sign, bytes }
+                    }
+                    x if x == BigIntOp::Add as u8 => Instruction::BigIntAdd,
+                    x if x == BigIntOp::Sub as u8 => Instruction::BigIntSub,
+                    x if x == BigIntOp::Mul as u8 => Instruction::BigIntMul,
+                    x if x == BigIntOp::Div as u8 => Instruction::BigIntDiv,
+                    x if x == BigIntOp::Mod as u8 => Instruction::BigIntMod,
+                    x if x == BigIntOp::Neg as u8 => Instruction::BigIntNeg,
+                    x if x == BigIntOp::Eq as u8 => Instruction::BigIntEq,
+                    x if x == BigIntOp::Ne as u8 => Instruction::BigIntNe,
+                    x if x == BigIntOp::Lt as u8 => Instruction::BigIntLt,
+                    x if x == BigIntOp::Le as u8 => Instruction::BigIntLe,
+                    x if x == BigIntOp::Gt as u8 => Instruction::BigIntGt,
+                    x if x == BigIntOp::Ge as u8 => Instruction::BigIntGe,
+                    x if x == BigIntOp::ToI64 as u8 => Instruction::BigIntToI64,
+                    x if x == BigIntOp::FromI64 as u8 => Instruction::BigIntFromI64,
+                    x if x == BigIntOp::ToString as u8 => Instruction::BigIntToString,
+                    _ => return Err(DecodeError::InvalidOpcode(sub)),
+                },
+                x if x == 0xC6 => match sub {
+                    x if x == StringOp::Const as u8 => {
+                        let len = self.read_varuint().ok_or(DecodeError::Truncated)? as usize;
+                        let mut bytes = vec![0u8; len];
+                        for i in 0..len { bytes[i] = self.read_u8().ok_or(DecodeError::Truncated)?; }
+                        let s = String::from_utf8(bytes).map_err(|_| DecodeError::InvalidOpcode(sub))?;
+                        Instruction::StringConst(s)
+                    }
+                    x if x == StringOp::Concat as u8 => Instruction::StringConcat,
+                    x if x == StringOp::LenBytes as u8 => Instruction::StringLenBytes,
+                    x if x == StringOp::Substr as u8 => Instruction::StringSubstr,
+                    x if x == StringOp::Eq as u8 => Instruction::StringEq,
+                    x if x == StringOp::Ne as u8 => Instruction::StringNe,
+                    x if x == StringOp::Lt as u8 => Instruction::StringLt,
+                    x if x == StringOp::Le as u8 => Instruction::StringLe,
+                    x if x == StringOp::Gt as u8 => Instruction::StringGt,
+                    x if x == StringOp::Ge as u8 => Instruction::StringGe,
+                    x if x == StringOp::LenChars as u8 => Instruction::StringLenChars,
+                    _ => return Err(DecodeError::InvalidOpcode(sub)),
+                },
+                _ => return Err(DecodeError::InvalidOpcode(op)),
+            };
+            return Ok(ins);
+        }
         let opcode = Self::parse_opcode(op).ok_or(DecodeError::InvalidOpcode(op))?;
         let ins = match opcode {
             Opcode::Nop => Instruction::Nop,
@@ -256,6 +541,7 @@ impl<'a> Decoder<'a> {
                 self.read_u8().ok_or(DecodeError::Truncated)?,
             ),
             Opcode::Halt => Instruction::Halt,
+            Opcode::I32Ext | Opcode::I64Ext | Opcode::F32Ext | Opcode::F64Ext | Opcode::BigIntExt | Opcode::StringExt => return Err(DecodeError::InvalidOpcode(op)),
         };
         Ok(ins)
     }

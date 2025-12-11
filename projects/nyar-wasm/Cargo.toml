@@ -11,3 +11,4 @@ path = "src/lib.rs"
 nyar-vm = { path = "../nyar-vm" }
 nyar-error = { path = "../nyar-error" }
 wasm-encoder = "0.38"
+serde = { workspace = true, features = ["derive"] }

@@ -1,0 +1,16 @@
+class Point { x, y }
+
+let p = new Point()
+let i = 1
+
+print(p is Point)      # Expect: true
+print(i is Point)      # Expect: false
+
+let q = p as? Point
+print(q is Point)      # Expect: true
+
+let r = i as? Point
+print(r)               # Expect: null
+print(typeof(r))       # Expect: 3
+print(typeof(1))       # Expect: 0
+print(typeof(true))    # Expect: 2

@@ -42,7 +42,3 @@ fn derive_base(path: &str) -> String {
     let dir = p.parent().and_then(|d| d.to_str()).unwrap_or(".");
     format!("{}/{}", dir, stem)
 }
-
-// FFI 名称收集已不再用于 JS 绑定
-
- 

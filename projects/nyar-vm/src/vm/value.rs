@@ -62,6 +62,13 @@ impl Value {
             data: ValueData { ptr: null_mut() },
         }
     }
+    pub fn string(s: String) -> Self {
+        let b = Box::new(s);
+        Self {
+            tag: ValueTag::String,
+            data: ValueData { ptr: Box::into_raw(b) as *mut () },
+        }
+    }
     pub fn closure(func_idx: u16, upvalues: Vec<Upvalue>) -> Self {
         let c = Box::new(Closure {
             func: func_idx as usize,
@@ -94,6 +101,9 @@ impl Value {
     }
     pub unsafe fn as_bool(&self) -> bool {
         self.data.bool_ != 0
+    }
+    pub unsafe fn as_string<'a>(&self) -> &'a String {
+        &*(self.data.ptr as *const String)
     }
 }
 

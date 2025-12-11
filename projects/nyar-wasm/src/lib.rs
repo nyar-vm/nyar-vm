@@ -1,6 +1,6 @@
 pub mod aot;
 
-pub use aot::compile_module_to_wasm;
+pub use aot::{compile_module_to_wasm, compile_module_to_wasm_with, WasmCompileOptions, ClosureTypeSelectionMode};
 pub use nyar_error::WasmAotError;
 
 #[cfg(test)]

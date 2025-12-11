@@ -247,9 +247,12 @@ impl Precedence {
 fn get_precedence(token: &Token) -> Precedence {
     match token {
         Token::Eq => Precedence::Assignment,
+        Token::Or => Precedence::Or,
+        Token::And => Precedence::And,
+        Token::DoubleEq | Token::NotEq => Precedence::Equality,
+        Token::Lt | Token::Le | Token::Gt | Token::Ge | Token::Is | Token::As | Token::AsSafe => Precedence::Comparison,
         Token::Plus | Token::Minus => Precedence::Term,
         Token::Star | Token::Slash => Precedence::Factor,
-        Token::Is | Token::As => Precedence::Comparison,
         Token::Dot | Token::LParen => Precedence::Call,
         _ => Precedence::None,
     }
@@ -280,6 +283,46 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
                     _ => return Err(Error::Parse("Invalid assignment target".into())),
                 }
             }
+            Token::Or => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Or)?;
+                left = Expr::Or(Box::new(left), Box::new(right));
+            }
+            Token::And => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::And)?;
+                left = Expr::And(Box::new(left), Box::new(right));
+            }
+            Token::DoubleEq => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Equality)?;
+                left = Expr::Eq(Box::new(left), Box::new(right));
+            }
+            Token::NotEq => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Equality)?;
+                left = Expr::Ne(Box::new(left), Box::new(right));
+            }
+            Token::Lt => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Comparison)?;
+                left = Expr::Lt(Box::new(left), Box::new(right));
+            }
+            Token::Le => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Comparison)?;
+                left = Expr::Le(Box::new(left), Box::new(right));
+            }
+            Token::Gt => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Comparison)?;
+                left = Expr::Gt(Box::new(left), Box::new(right));
+            }
+            Token::Ge => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Comparison)?;
+                left = Expr::Ge(Box::new(left), Box::new(right));
+            }
             Token::Plus => {
                 *i += 1;
                 let right = parse_expr_pratt(tokens, i, Precedence::Term)?;
@@ -309,6 +352,11 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
                 *i += 1;
                 let name = expect_ident(tokens, i)?;
                 left = Expr::Cast(Box::new(left), name);
+            }
+            Token::AsSafe => {
+                *i += 1;
+                let name = expect_ident(tokens, i)?;
+                left = Expr::CheckCast(Box::new(left), name);
             }
             Token::Dot => {
                 *i += 1;
@@ -342,6 +390,11 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
 
 fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
     match tokens.get(*i) {
+        Some(Token::Typeof) => {
+            *i += 1;
+            let right = parse_expr_pratt(tokens, i, Precedence::Unary)?;
+            Ok(Expr::TypeOf(Box::new(right)))
+        }
         Some(Token::Match) => {
             *i += 1;
             let target = parse_expr(tokens, i)?;
@@ -369,7 +422,19 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
             }
             Ok(Expr::Match(Box::new(target), branches))
         }
+        Some(Token::Not) => {
+            *i += 1;
+            let right = parse_expr_pratt(tokens, i, Precedence::Unary)?;
+            Ok(Expr::Not(Box::new(right)))
+        }
+        Some(Token::Minus) => {
+            *i += 1;
+            let right = parse_expr_pratt(tokens, i, Precedence::Unary)?;
+            Ok(Expr::Neg(Box::new(right)))
+        }
         Some(Token::Int(v)) => { *i += 1; Ok(Expr::Int(*v)) }
+        Some(Token::True) => { *i += 1; Ok(Expr::Bool(true)) }
+        Some(Token::False) => { *i += 1; Ok(Expr::Bool(false)) }
         Some(Token::Ident(name)) => {
             *i += 1;
             Ok(Expr::Variable(name.clone()))

@@ -245,67 +245,149 @@ impl NyarVM {
                 }
                 Instruction::InvokeMethod(name_idx, argc) => {
                     let mut args = Vec::with_capacity(argc as usize);
-                    for _ in 0..argc {
-                        args.push(self.pop()?);
-                    }
+                    for _ in 0..argc { args.push(self.pop()?); }
                     args.reverse();
 
                     let receiver = self.pop()?;
-                    if receiver.tag != ValueTag::Object {
-                        return Err(VmError::RuntimeError("Receiver is not an object".into()));
-                    }
-                    
-                    let obj_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::Object };
-                    let obj_ref = unsafe { &*obj_ptr };
-                    let class_idx = obj_ref.class_idx;
-                    
+
                     let name = match self.constants.get(name_idx as usize) {
-                        Some(Constant::String(s)) => s,
+                        Some(Constant::String(s)) => s.as_str(),
                         _ => return Err(VmError::InvalidOpcode),
                     };
 
-                    let mut chunk_idx = None;
-                    for impl_info in &self.impls {
-                        if impl_info.class_idx == class_idx {
-                            if let Some(trait_info) = self.traits.get(impl_info.trait_idx as usize) {
-                                if let Some(idx) = trait_info.methods.iter().position(|m| m == name) {
-                                    if idx < impl_info.methods.len() {
-                                        chunk_idx = Some(impl_info.methods[idx]);
-                                        break;
+                    if receiver.tag != ValueTag::Object {
+                        // Built-in primitive method dispatch for arithmetic/comparison
+                        match name {
+                            "add" => {
+                                if args.len() == 1 {
+                                    let rhs = args[0];
+                                    let lhs = receiver;
+                                    unsafe {
+                                        match (lhs.tag, rhs.tag) {
+                                            (ValueTag::Int, ValueTag::Int) => self.push(Value::int(lhs.as_int() + rhs.as_int())),
+                                            (ValueTag::Float, ValueTag::Float) => self.push(Value::float(lhs.as_float() + rhs.as_float())),
+                                            _ => self.push(Value::null()),
+                                        }
+                                    }
+                                } else { self.push(Value::null()); }
+                            }
+                            "sub" => {
+                                if args.len() == 1 {
+                                    let rhs = args[0];
+                                    let lhs = receiver;
+                                    unsafe {
+                                        match (lhs.tag, rhs.tag) {
+                                            (ValueTag::Int, ValueTag::Int) => self.push(Value::int(lhs.as_int() - rhs.as_int())),
+                                            (ValueTag::Float, ValueTag::Float) => self.push(Value::float(lhs.as_float() - rhs.as_float())),
+                                            _ => self.push(Value::null()),
+                                        }
+                                    }
+                                } else { self.push(Value::null()); }
+                            }
+                            "mul" => {
+                                if args.len() == 1 {
+                                    let rhs = args[0];
+                                    let lhs = receiver;
+                                    unsafe {
+                                        match (lhs.tag, rhs.tag) {
+                                            (ValueTag::Int, ValueTag::Int) => self.push(Value::int(lhs.as_int() * rhs.as_int())),
+                                            (ValueTag::Float, ValueTag::Float) => self.push(Value::float(lhs.as_float() * rhs.as_float())),
+                                            _ => self.push(Value::null()),
+                                        }
+                                    }
+                                } else { self.push(Value::null()); }
+                            }
+                            "div" => {
+                                if args.len() == 1 {
+                                    let rhs = args[0];
+                                    let lhs = receiver;
+                                    unsafe {
+                                        match (lhs.tag, rhs.tag) {
+                                            (ValueTag::Int, ValueTag::Int) => self.push(Value::int(lhs.as_int() / rhs.as_int())),
+                                            (ValueTag::Float, ValueTag::Float) => self.push(Value::float(lhs.as_float() / rhs.as_float())),
+                                            _ => self.push(Value::null()),
+                                        }
+                                    }
+                                } else { self.push(Value::null()); }
+                            }
+                            "eq" => {
+                                if args.len() == 1 {
+                                    let rhs = args[0];
+                                    let lhs = receiver;
+                                    let eq = unsafe {
+                                        if lhs.tag != rhs.tag { false } else {
+                                            match lhs.tag {
+                                                ValueTag::Int => lhs.as_int() == rhs.as_int(),
+                                                ValueTag::Float => lhs.as_float() == rhs.as_float(),
+                                                ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
+                                                ValueTag::Null => true,
+                                                ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
+                                                _ => false,
+                                            }
+                                        }
+                                    };
+                                    self.push(Value::bool(eq));
+                                } else { self.push(Value::bool(false)); }
+                            }
+                            "ne" => {
+                                if args.len() == 1 {
+                                    let rhs = args[0];
+                                    let lhs = receiver;
+                                    let eq = unsafe {
+                                        if lhs.tag != rhs.tag { false } else {
+                                            match lhs.tag {
+                                                ValueTag::Int => lhs.as_int() == rhs.as_int(),
+                                                ValueTag::Float => lhs.as_float() == rhs.as_float(),
+                                                ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
+                                                ValueTag::Null => true,
+                                                ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
+                                                _ => false,
+                                            }
+                                        }
+                                    };
+                                    self.push(Value::bool(!eq));
+                                } else { self.push(Value::bool(true)); }
+                            }
+                            _ => return Err(VmError::RuntimeError("Receiver is not an object".into())),
+                        }
+                    } else {
+                        let obj_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::Object };
+                        let obj_ref = unsafe { &*obj_ptr };
+                        let class_idx = obj_ref.class_idx;
+
+                        let mut chunk_idx = None;
+                        for impl_info in &self.impls {
+                            if impl_info.class_idx == class_idx {
+                                if let Some(trait_info) = self.traits.get(impl_info.trait_idx as usize) {
+                                    if let Some(idx) = trait_info.methods.iter().position(|m| m == name) {
+                                        if idx < impl_info.methods.len() {
+                                            chunk_idx = Some(impl_info.methods[idx]);
+                                            break;
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    
-                    let chunk_idx = chunk_idx.ok_or_else(|| VmError::RuntimeError(format!("Method {} not found for class {}", name, class_idx)))?;
-                    
-                    let chunk = self.chunks.get(chunk_idx as usize).cloned().ok_or(VmError::IndexOutOfBounds)?;
-                    
-                    let mut full_args = Vec::with_capacity(args.len() + 1);
-                    full_args.push(receiver);
-                    full_args.extend(args);
-                    
-                    use crate::bytecode::decoder::Decoder;
-                    let decoder = Decoder::new(&chunk.code);
-                    let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
 
-                    if full_args.len() < chunk.locals as usize {
-                        full_args.resize(chunk.locals as usize, Value::null());
-                    }
+                        let chunk_idx = chunk_idx.ok_or_else(|| VmError::RuntimeError(format!("Method {} not found for class {}", name, class_idx)))?;
+                        let chunk = self.chunks.get(chunk_idx as usize).cloned().ok_or(VmError::IndexOutOfBounds)?;
 
-                    let new_frame = Frame {
-                        instrs,
-                        ip: 0,
-                        locals: full_args,
-                        closure: null(),
-                    };
+                        let mut full_args = Vec::with_capacity(args.len() + 1);
+                        full_args.push(receiver);
+                        full_args.extend(args);
 
-                    if let Some(next) = next_ip {
-                        self.frames.last_mut().unwrap().ip = next;
+                        use crate::bytecode::decoder::Decoder;
+                        let decoder = Decoder::new(&chunk.code);
+                        let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+
+                        if full_args.len() < chunk.locals as usize { full_args.resize(chunk.locals as usize, Value::null()); }
+
+                        let new_frame = Frame { instrs, ip: 0, locals: full_args, closure: null() };
+
+                        if let Some(next) = next_ip { self.frames.last_mut().unwrap().ip = next; }
+                        self.frames.push(new_frame);
+                        next_ip = None;
                     }
-                    self.frames.push(new_frame);
-                    next_ip = None;
                 }
                 Instruction::Call(idx, argc) => {
                     let chunk = self.chunks.get(idx as usize).cloned().ok_or(VmError::IndexOutOfBounds)?;
@@ -392,10 +474,10 @@ impl NyarVM {
                         }
                         "sub" => {
                             if args.len() == 2 {
-                                let b = args[1];
-                                let a = args[0];
-                                if a.tag == ValueTag::Int && b.tag == ValueTag::Int {
-                                    self.push(Value::int(unsafe { a.as_int() - b.as_int() }));
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
+                                    self.push(Value::int(unsafe { lhs.as_int() - rhs.as_int() }));
                                 } else {
                                     self.push(Value::null());
                                 }
@@ -405,10 +487,10 @@ impl NyarVM {
                         }
                         "mul" => {
                             if args.len() == 2 {
-                                let b = args[1];
-                                let a = args[0];
-                                if a.tag == ValueTag::Int && b.tag == ValueTag::Int {
-                                    self.push(Value::int(unsafe { a.as_int() * b.as_int() }));
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
+                                    self.push(Value::int(unsafe { lhs.as_int() * rhs.as_int() }));
                                 } else {
                                     self.push(Value::null());
                                 }
@@ -418,10 +500,10 @@ impl NyarVM {
                         }
                         "div" => {
                             if args.len() == 2 {
-                                let b = args[1];
-                                let a = args[0];
-                                if a.tag == ValueTag::Int && b.tag == ValueTag::Int {
-                                    self.push(Value::int(unsafe { a.as_int() / b.as_int() }));
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
+                                    self.push(Value::int(unsafe { lhs.as_int() / rhs.as_int() }));
                                 } else {
                                     self.push(Value::null());
                                 }
@@ -447,18 +529,18 @@ impl NyarVM {
                         }
                         "eq" => {
                             if args.len() == 2 {
-                                let b = args[1];
-                                let a = args[0];
-                                let eq = if a.tag != b.tag {
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                let eq = if lhs.tag != rhs.tag {
                                     false
                                 } else {
                                     unsafe {
-                                        match a.tag {
-                                            ValueTag::Int => a.as_int() == b.as_int(),
-                                            ValueTag::Float => a.as_float() == b.as_float(),
-                                            ValueTag::Bool => a.as_bool() == b.as_bool(),
+                                        match lhs.tag {
+                                            ValueTag::Int => lhs.as_int() == rhs.as_int(),
+                                            ValueTag::Float => lhs.as_float() == rhs.as_float(),
+                                            ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
                                             ValueTag::Null => true,
-                                            ValueTag::Object => a.data.ptr == b.data.ptr,
+                                            ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
                                             _ => false,
                                         }
                                     }
@@ -470,18 +552,18 @@ impl NyarVM {
                         }
                         "ne" => {
                             if args.len() == 2 {
-                                let b = args[1];
-                                let a = args[0];
-                                let eq = if a.tag != b.tag {
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                let eq = if lhs.tag != rhs.tag {
                                     false
                                 } else {
                                     unsafe {
-                                        match a.tag {
-                                            ValueTag::Int => a.as_int() == b.as_int(),
-                                            ValueTag::Float => a.as_float() == b.as_float(),
-                                            ValueTag::Bool => a.as_bool() == b.as_bool(),
+                                        match lhs.tag {
+                                            ValueTag::Int => lhs.as_int() == rhs.as_int(),
+                                            ValueTag::Float => lhs.as_float() == rhs.as_float(),
+                                            ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
                                             ValueTag::Null => true,
-                                            ValueTag::Object => a.data.ptr == b.data.ptr,
+                                            ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
                                             _ => false,
                                         }
                                     }
@@ -489,6 +571,101 @@ impl NyarVM {
                                 self.push(Value::bool(!eq));
                             } else {
                                 self.push(Value::bool(true));
+                            }
+                        }
+                        "lt" => {
+                            if args.len() == 2 {
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
+                                    self.push(Value::bool(unsafe { lhs.as_int() < rhs.as_int() }));
+                                } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
+                                    self.push(Value::bool(unsafe { lhs.as_float() < rhs.as_float() }));
+                                } else {
+                                    self.push(Value::bool(false));
+                                }
+                            } else {
+                                self.push(Value::bool(false));
+                            }
+                        }
+                        "le" => {
+                            if args.len() == 2 {
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
+                                    self.push(Value::bool(unsafe { lhs.as_int() <= rhs.as_int() }));
+                                } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
+                                    self.push(Value::bool(unsafe { lhs.as_float() <= rhs.as_float() }));
+                                } else {
+                                    self.push(Value::bool(false));
+                                }
+                            } else {
+                                self.push(Value::bool(false));
+                            }
+                        }
+                        "gt" => {
+                            if args.len() == 2 {
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
+                                    self.push(Value::bool(unsafe { lhs.as_int() > rhs.as_int() }));
+                                } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
+                                    self.push(Value::bool(unsafe { lhs.as_float() > rhs.as_float() }));
+                                } else {
+                                    self.push(Value::bool(false));
+                                }
+                            } else {
+                                self.push(Value::bool(false));
+                            }
+                        }
+                        "ge" => {
+                            if args.len() == 2 {
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
+                                    self.push(Value::bool(unsafe { lhs.as_int() >= rhs.as_int() }));
+                                } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
+                                    self.push(Value::bool(unsafe { lhs.as_float() >= rhs.as_float() }));
+                                } else {
+                                    self.push(Value::bool(false));
+                                }
+                            } else {
+                                self.push(Value::bool(false));
+                            }
+                        }
+                        "and" => {
+                            if args.len() == 2 {
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                let ba = unsafe { if lhs.tag == ValueTag::Bool { lhs.as_bool() } else { false } };
+                                let bb = unsafe { if rhs.tag == ValueTag::Bool { rhs.as_bool() } else { false } };
+                                self.push(Value::bool(ba && bb));
+                            } else {
+                                self.push(Value::bool(false));
+                            }
+                        }
+                        "or" => {
+                            if args.len() == 2 {
+                                let rhs = args[0];
+                                let lhs = args[1];
+                                let ba = unsafe { if lhs.tag == ValueTag::Bool { lhs.as_bool() } else { false } };
+                                let bb = unsafe { if rhs.tag == ValueTag::Bool { rhs.as_bool() } else { false } };
+                                self.push(Value::bool(ba || bb));
+                            } else {
+                                self.push(Value::bool(false));
+                            }
+                        }
+                        "neg" => {
+                            if let Some(a) = args.first() {
+                                if a.tag == ValueTag::Int {
+                                    self.push(Value::int(unsafe { -a.as_int() }));
+                                } else if a.tag == ValueTag::Float {
+                                    self.push(Value::float(unsafe { -a.as_float() }));
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            } else {
+                                self.push(Value::null());
                             }
                         }
                         _ => return Err(VmError::UnhandledEffect(name.to_string())),
@@ -546,6 +723,20 @@ impl NyarVM {
                         false
                     };
                     self.push(Value::bool(is_instance));
+                }
+                Instruction::CheckCast(class_idx) => {
+                    let obj = self.pop()?;
+                    if obj.tag == ValueTag::Object {
+                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
+                        let obj_ref = unsafe { &*obj_ptr };
+                        if obj_ref.class_idx == class_idx {
+                            self.push(obj);
+                        } else {
+                            self.push(Value::null());
+                        }
+                    } else {
+                        self.push(Value::null());
+                    }
                 }
                 Instruction::Cast(class_idx) => {
                      let obj = self.peek_at(0)?;

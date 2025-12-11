@@ -8,9 +8,11 @@ pub struct JvmBackend;
 
 impl AotBackend for JvmBackend {
     type Error = JvmAotError;
+    type Config = ();
     fn compile(&self, module: &NyarcModule) -> Result<Vec<u8>, JvmAotError> {
         compile_module_to_jvm(module)
     }
+    fn compile_with_config(&self, module: &NyarcModule, _config: &Self::Config) -> Result<Vec<u8>, JvmAotError> { compile_module_to_jvm(module) }
 }
 
 pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotError> {
@@ -58,6 +60,7 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
         let mut desc = String::new();
         desc.push('(');
         for _ in 0..ch.locals { desc.push('J'); }
+        desc.push_str("Ljava/lang/Object;");
         desc.push(')');
         desc.push('J');
         let nidx = cp_utf8(&mut cp, &name, &mut cp_count);
@@ -124,7 +127,11 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
                     code.push(0x09); code.push(0x94); code.push(0x99);
                     let pos = code.len(); code.extend_from_slice(&0i16.to_be_bytes()); branches.push((pos, target as usize));
                 }
-                Instruction::Call(target_idx, _argc) => {
+                Instruction::Call(target_idx, argc) => {
+                    let callee = module.chunks.get(target_idx as usize).ok_or_else(|| JvmAotError::Decode("callee out of range".to_string()))?;
+                    let need_pad = if (argc as u16) >= callee.locals { 0 } else { (callee.locals - argc as u16) as usize };
+                    for _ in 0..need_pad { code.push(0x09); }
+                    code.push(0x01);
                     code.push(0xB8); // invokestatic
                     let mr = chunk_mref_idx[target_idx as usize];
                     code.extend_from_slice(&mr.to_be_bytes());
@@ -138,7 +145,7 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
             let target_off = ins_offsets[target_idx] as i32; let next_off = (pos as i32) + 2; let rel = target_off - next_off; let rel16 = rel as i16; let bytes = rel16.to_be_bytes(); code[pos] = bytes[0]; code[pos + 1] = bytes[1];
         }
         let code_len = code.len() as u32;
-        let max_stack = ch.max_stack; let max_locals = ch.locals;
+        let max_stack = ch.max_stack; let max_locals = ch.locals * 2 + 1;
         let attr_len = 12 + code_len;
         class.extend_from_slice(&attr_len.to_be_bytes());
         class.extend_from_slice(&max_stack.to_be_bytes());

@@ -20,7 +20,6 @@ struct Compiler {
 struct FunctionContext {
     code: Vec<u8>,
     locals: Vec<String>,
-    args: Vec<String>,
     upvalues: Vec<(bool, u8)>, // (is_local, index)
 }
 
@@ -58,7 +57,6 @@ impl FunctionContext {
         Self {
             code: Vec::new(),
             locals: args, // Arguments are the first locals
-            args: Vec::new(), // Not used for tracking, just reference
             upvalues: Vec::new(),
         }
     }
@@ -143,7 +141,7 @@ fn compile_func_to_chunk(compiler: &mut Compiler, args: Vec<String>, body: &[Stm
         }
     }
 
-    let mut func_ctx = contexts.pop().unwrap();
+    let func_ctx = contexts.pop().unwrap();
     
     let chunk = Chunk {
         locals: func_ctx.locals.len() as u16,
@@ -170,6 +168,14 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
             ctx.code.push(Opcode::Push as u8);
             ctx.code.extend_from_slice(&idx.to_le_bytes());
         }
+        Expr::Bool(b) => {
+            let s = if *b { "true" } else { "false" };
+            let idx = compiler.add_string(s);
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(0u8); // 0 args
+        }
         Expr::Variable(name) => {
             if let Some(idx) = contexts.last().unwrap().find_local(name) {
                 let ctx = contexts.last_mut().unwrap();
@@ -186,38 +192,131 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
         Expr::Add(a, b) => {
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let didx = compiler.add_string("add");
+            let idx = compiler.add_string("add");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&didx.to_le_bytes());
-            ctx.code.push(2u8);
+            ctx.code.push(Opcode::InvokeMethod as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(1u8);
         }
         Expr::Sub(a, b) => {
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let didx = compiler.add_string("sub");
+            let idx = compiler.add_string("sub");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&didx.to_le_bytes());
-            ctx.code.push(2u8);
+            ctx.code.push(Opcode::InvokeMethod as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(1u8);
         }
         Expr::Mul(a, b) => {
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let didx = compiler.add_string("mul");
+            let idx = compiler.add_string("mul");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&didx.to_le_bytes());
-            ctx.code.push(2u8);
+            ctx.code.push(Opcode::InvokeMethod as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(1u8);
         }
         Expr::Div(a, b) => {
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let didx = compiler.add_string("div");
+            let idx = compiler.add_string("div");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::InvokeMethod as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(1u8);
+        }
+        Expr::And(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let idx = compiler.add_string("and");
             let ctx = contexts.last_mut().unwrap();
             ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&didx.to_le_bytes());
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
             ctx.code.push(2u8);
+        }
+        Expr::Or(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let idx = compiler.add_string("or");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Expr::Eq(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let name_idx = compiler.add_string("eq");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::InvokeMethod as u8);
+            ctx.code.extend_from_slice(&name_idx.to_le_bytes());
+            ctx.code.push(1u8);
+        }
+        Expr::Ne(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let name_idx = compiler.add_string("ne");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::InvokeMethod as u8);
+            ctx.code.extend_from_slice(&name_idx.to_le_bytes());
+            ctx.code.push(1u8);
+        }
+        Expr::Lt(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let idx = compiler.add_string("lt");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Expr::Le(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let idx = compiler.add_string("le");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Expr::Gt(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let idx = compiler.add_string("gt");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Expr::Ge(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let idx = compiler.add_string("ge");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Expr::Not(a) => {
+            compile_expr(compiler, contexts, a)?;
+            let idx = compiler.add_string("not");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(1u8);
+        }
+        Expr::Neg(a) => {
+            compile_expr(compiler, contexts, a)?;
+            let idx = compiler.add_string("neg");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            ctx.code.push(1u8);
+        }
+        Expr::TypeOf(a) => {
+            compile_expr(compiler, contexts, a)?;
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::TypeOf as u8);
         }
         Expr::Call(callee, args) => {
             // Check for InvokeMethod pattern: Call(GetField(obj, method), args)
@@ -313,7 +412,7 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
                 }
             }
             
-            let mut func_ctx = contexts.pop().unwrap();
+            let func_ctx = contexts.pop().unwrap();
 
             let chunk_idx = (compiler.chunks.len() + 1) as u16;
             let upvalues = func_ctx.upvalues.clone();
@@ -377,6 +476,16 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
             if let Some(&idx) = compiler.class_map.get(class_name) {
                 let ctx = contexts.last_mut().unwrap();
                 ctx.code.push(Opcode::Cast as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+            } else {
+                return Err(Error::Compile(format!("undefined class: {}", class_name)));
+            }
+        }
+        Expr::CheckCast(expr, class_name) => {
+            compile_expr(compiler, contexts, expr)?;
+            if let Some(&idx) = compiler.class_map.get(class_name) {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::CheckCast as u8);
                 ctx.code.extend_from_slice(&idx.to_le_bytes());
             } else {
                 return Err(Error::Compile(format!("undefined class: {}", class_name)));
@@ -655,6 +764,7 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                 let variant_field_idx = compiler.add_string("__variant__");
                 ctx.code.push(Opcode::SetField as u8);
                 ctx.code.extend_from_slice(&variant_field_idx.to_le_bytes());
+                ctx.code.push(Opcode::Pop as u8);
                 
                 // Set fields
                 for (i, _) in v_fields.iter().enumerate() {
@@ -670,6 +780,7 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                     let f_idx = compiler.add_string(&field_name);
                     ctx.code.push(Opcode::SetField as u8);
                     ctx.code.extend_from_slice(&f_idx.to_le_bytes());
+                    ctx.code.push(Opcode::Pop as u8);
                 }
                 
                 // Return object

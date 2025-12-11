@@ -10,6 +10,15 @@ pub enum Token {
     Minus,
     Star,
     Slash,
+    DoubleEq, // ==
+    NotEq,    // !=
+    Lt,       // <
+    Le,       // <=
+    Gt,       // >
+    Ge,       // >=
+    And,      // &&
+    Or,       // ||
+    Not,      // !
     Eq,
     Pipe,
     Dot,
@@ -20,6 +29,8 @@ pub enum Token {
     New,
     Is,
     As,
+    AsSafe,
+    Typeof,
     Trait,
     Impl,
     For,
@@ -28,6 +39,8 @@ pub enum Token {
     Match,
     Arrow, // =>
     Underscore, // _
+    True,
+    False,
     Int(i64),
     Eof,
 }
@@ -79,13 +92,45 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
              }
              out.push(Token::Minus); i += 1; continue;
         }
+        if c == b'!' {
+            if i + 1 < b.len() && b[i + 1] == b'=' {
+                out.push(Token::NotEq); i += 2; continue;
+            }
+            out.push(Token::Not); i += 1; continue;
+        }
+        if c == b'<' {
+            if i + 1 < b.len() && b[i + 1] == b'=' {
+                out.push(Token::Le); i += 2; continue;
+            }
+            out.push(Token::Lt); i += 1; continue;
+        }
+        if c == b'>' {
+            if i + 1 < b.len() && b[i + 1] == b'=' {
+                out.push(Token::Ge); i += 2; continue;
+            }
+            out.push(Token::Gt); i += 1; continue;
+        }
+        if c == b'&' {
+            if i + 1 < b.len() && b[i + 1] == b'&' {
+                out.push(Token::And); i += 2; continue;
+            }
+            return Err(Error::Lex(format!("unexpected byte {}", c)));
+        }
         if c == b'=' {
             if i + 1 < b.len() && b[i + 1] == b'>' {
                 out.push(Token::Arrow); i += 2; continue;
             }
+            if i + 1 < b.len() && b[i + 1] == b'=' {
+                out.push(Token::DoubleEq); i += 2; continue;
+            }
             out.push(Token::Eq); i += 1; continue;
         }
-        if c == b'|' { out.push(Token::Pipe); i += 1; continue; }
+        if c == b'|' { 
+            if i + 1 < b.len() && b[i + 1] == b'|' {
+                out.push(Token::Or); i += 2; continue;
+            }
+            out.push(Token::Pipe); i += 1; continue; 
+        }
         if c == b'.' { out.push(Token::Dot); i += 1; continue; }
         if c == b'_' {
             // Check if it's a standalone underscore or start of identifier
@@ -112,12 +157,17 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
                 "class" => out.push(Token::Class),
                 "new" => out.push(Token::New),
                 "is" => out.push(Token::Is),
-                "as" => out.push(Token::As),
+                "as" => {
+                    if i < b.len() && b[i] == b'?' { i += 1; out.push(Token::AsSafe); } else { out.push(Token::As); }
+                },
+                "typeof" => out.push(Token::Typeof),
                 "trait" => out.push(Token::Trait),
                 "impl" => out.push(Token::Impl),
                 "for" => out.push(Token::For),
                 "enum" => out.push(Token::Enum),
                 "match" => out.push(Token::Match),
+                "true" => out.push(Token::True),
+                "false" => out.push(Token::False),
                 _ => out.push(Token::Ident(s.to_string())),
             }
             continue;

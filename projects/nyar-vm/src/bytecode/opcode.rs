@@ -50,5 +50,168 @@ pub enum Opcode {
     Eval = 0x72,
     ExpandMacro = 0x73,
 
+    I32Ext = 0xC1,
+    I64Ext = 0xC2,
+    F32Ext = 0xC3,
+    F64Ext = 0xC4,
+    BigIntExt = 0xC5,
+    StringExt = 0xC6,
+
     Halt = 0xFF,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum I32Ext {
+    Const = 0x00,
+    // add wrapping
+    Add = 0x01,
+    // add sat
+    AddSat = 0x40,
+    Sub = 0x02,
+    Mul = 0x03,
+    DivS = 0x04,
+    DivU = 0x05,
+    RemS = 0x06,
+    RemU = 0x07,
+    Neg = 0x08,
+    Eq = 0x10,
+    Ne = 0x11,
+    LtS = 0x12,
+    LtU = 0x13,
+    LeS = 0x14,
+    LeU = 0x15,
+    GtS = 0x16,
+    GtU = 0x17,
+    GeS = 0x18,
+    GeU = 0x19,
+    // as signed at low
+    Extend64SL = 0x20,
+    Extend64SH = 0x21,
+    Extend64UL = 0x20,
+    // as unsigned at high
+    Extend64UH = 0x21,
+    // 
+    Truncature64UL = 0x22,
+    TruncHigh64S = 0x23,
+    TruncLow64U = 0x24,
+    ToF32S = 0x30,
+    ToF32U = 0x31,
+    ToF64S = 0x32,
+    ToF64U = 0x33,
+
+    AddSatU = 0x41,
+    SubSatS = 0x42,
+    SubSatU = 0x43,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum I64Ext {
+    Const = 0x00,
+    Add = 0x01,
+    Sub = 0x02,
+    Mul = 0x03,
+    DivS = 0x04,
+    DivU = 0x05,
+    RemS = 0x06,
+    RemU = 0x07,
+    Neg = 0x08,
+    Eq = 0x10,
+    Ne = 0x11,
+    LtS = 0x12,
+    LtU = 0x13,
+    LeS = 0x14,
+    LeU = 0x15,
+    GtS = 0x16,
+    GtU = 0x17,
+    GeS = 0x18,
+    GeU = 0x19,
+    ToF32S = 0x30,
+    ToF32U = 0x31,
+    ToF64S = 0x32,
+    ToF64U = 0x33,
+    AddSatS = 0x40,
+    AddSatU = 0x41,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum F32Ext {
+    Const = 0x00,
+    Add = 0x01,
+    Sub = 0x02,
+    Mul = 0x03,
+    Div = 0x04,
+    Neg = 0x08,
+    Eq = 0x10,
+    Ne = 0x11,
+    Lt = 0x12,
+    Le = 0x13,
+    Gt = 0x14,
+    Ge = 0x15,
+    ToI32S = 0x20,
+    ToI32U = 0x21,
+    ToI64S = 0x22,
+    ToI64U = 0x23,
+    ToF64 = 0x30,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum F64Ext {
+    Const = 0x00,
+    Add = 0x01,
+    Sub = 0x02,
+    Mul = 0x03,
+    Div = 0x04,
+    Neg = 0x08,
+    Eq = 0x10,
+    Ne = 0x11,
+    Lt = 0x12,
+    Le = 0x13,
+    Gt = 0x14,
+    Ge = 0x15,
+    ToI32S = 0x20,
+    ToI32U = 0x21,
+    ToI64S = 0x22,
+    ToI64U = 0x23,
+    ToF32 = 0x30,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BigIntExt {
+    Const = 0x00,
+    Add = 0x01,
+    Sub = 0x02,
+    Mul = 0x03,
+    Div = 0x04,
+    Mod = 0x05,
+    Neg = 0x08,
+    Eq = 0x10,
+    Ne = 0x11,
+    Lt = 0x12,
+    Le = 0x13,
+    Gt = 0x14,
+    Ge = 0x15,
+    ToI64 = 0x20,
+    FromI64 = 0x21,
+    ToString = 0x30,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StringExt {
+    Const = 0x00,
+    Concat = 0x01,
+    LenBytes = 0x02,
+    Substr = 0x03,
+    Eq = 0x10,
+    Ne = 0x11,
+    Lt = 0x12,
+    Le = 0x13,
+    Gt = 0x14,
+    Ge = 0x15,
+    LenChars = 0x20,
 }
