@@ -159,63 +159,97 @@ impl NyarcModule {
                 handlers: vec![],
             });
         }
-        
+
         let mut classes = Vec::new();
         if cur.position() < cur.get_ref().len() as u64 {
-             let class_count = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
-             for _ in 0..class_count {
-                 let name_len = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
-                 let mut buf = vec![0u8; name_len];
-                 cur.read_exact(&mut buf).map_err(|_| FormatError::Truncated)?;
-                 let name = String::from_utf8_lossy(&buf).into_owned();
-                 let field_count = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-                 let mut fields = Vec::with_capacity(field_count as usize);
-                 for _ in 0..field_count {
-                     let flen = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
-                     let mut fbuf = vec![0u8; flen];
-                     cur.read_exact(&mut fbuf).map_err(|_| FormatError::Truncated)?;
-                     fields.push(String::from_utf8_lossy(&fbuf).into_owned());
-                 }
-                 classes.push(ClassInfo { name, fields });
-             }
+            let class_count = cur
+                .read_u32::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)? as usize;
+            for _ in 0..class_count {
+                let name_len = cur
+                    .read_u32::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)? as usize;
+                let mut buf = vec![0u8; name_len];
+                cur.read_exact(&mut buf)
+                    .map_err(|_| FormatError::Truncated)?;
+                let name = String::from_utf8_lossy(&buf).into_owned();
+                let field_count = cur
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)?;
+                let mut fields = Vec::with_capacity(field_count as usize);
+                for _ in 0..field_count {
+                    let flen =
+                        cur.read_u32::<LittleEndian>()
+                            .map_err(|_| FormatError::Truncated)? as usize;
+                    let mut fbuf = vec![0u8; flen];
+                    cur.read_exact(&mut fbuf)
+                        .map_err(|_| FormatError::Truncated)?;
+                    fields.push(String::from_utf8_lossy(&fbuf).into_owned());
+                }
+                classes.push(ClassInfo { name, fields });
+            }
         }
-        
+
         let mut traits = Vec::new();
         if cur.position() < cur.get_ref().len() as u64 {
-             let trait_count = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
-             for _ in 0..trait_count {
-                 let name_len = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
-                 let mut buf = vec![0u8; name_len];
-                 cur.read_exact(&mut buf).map_err(|_| FormatError::Truncated)?;
-                 let name = String::from_utf8_lossy(&buf).into_owned();
-                 let method_count = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-                 let mut methods = Vec::with_capacity(method_count as usize);
-                 for _ in 0..method_count {
-                     let mlen = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
-                     let mut mbuf = vec![0u8; mlen];
-                     cur.read_exact(&mut mbuf).map_err(|_| FormatError::Truncated)?;
-                     methods.push(String::from_utf8_lossy(&mbuf).into_owned());
-                 }
-                 traits.push(TraitInfo { name, methods });
-             }
+            let trait_count = cur
+                .read_u32::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)? as usize;
+            for _ in 0..trait_count {
+                let name_len = cur
+                    .read_u32::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)? as usize;
+                let mut buf = vec![0u8; name_len];
+                cur.read_exact(&mut buf)
+                    .map_err(|_| FormatError::Truncated)?;
+                let name = String::from_utf8_lossy(&buf).into_owned();
+                let method_count = cur
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)?;
+                let mut methods = Vec::with_capacity(method_count as usize);
+                for _ in 0..method_count {
+                    let mlen =
+                        cur.read_u32::<LittleEndian>()
+                            .map_err(|_| FormatError::Truncated)? as usize;
+                    let mut mbuf = vec![0u8; mlen];
+                    cur.read_exact(&mut mbuf)
+                        .map_err(|_| FormatError::Truncated)?;
+                    methods.push(String::from_utf8_lossy(&mbuf).into_owned());
+                }
+                traits.push(TraitInfo { name, methods });
+            }
         }
 
         let mut impls = Vec::new();
         if cur.position() < cur.get_ref().len() as u64 {
-             let impl_count = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)? as usize;
-             for _ in 0..impl_count {
-                 let class_idx = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-                 let trait_idx = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-                 let method_count = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-                 let mut methods = Vec::with_capacity(method_count as usize);
-                 for _ in 0..method_count {
-                     let chunk_idx = cur.read_u16::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-                     methods.push(chunk_idx);
-                 }
-                 impls.push(ImplInfo { class_idx, trait_idx, methods });
-             }
+            let impl_count = cur
+                .read_u32::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)? as usize;
+            for _ in 0..impl_count {
+                let class_idx = cur
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)?;
+                let trait_idx = cur
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)?;
+                let method_count = cur
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)?;
+                let mut methods = Vec::with_capacity(method_count as usize);
+                for _ in 0..method_count {
+                    let chunk_idx = cur
+                        .read_u16::<LittleEndian>()
+                        .map_err(|_| FormatError::Truncated)?;
+                    methods.push(chunk_idx);
+                }
+                impls.push(ImplInfo {
+                    class_idx,
+                    trait_idx,
+                    methods,
+                });
+            }
         }
-        
+
         Ok(Self {
             version,
             flags,
@@ -263,41 +297,41 @@ impl NyarcModule {
             buf.extend_from_slice(&(ch.code.len() as u32).to_le_bytes());
             buf.extend_from_slice(&ch.code);
         }
-        
+
         if !self.classes.is_empty() || !self.traits.is_empty() || !self.impls.is_empty() {
-             buf.extend_from_slice(&(self.classes.len() as u32).to_le_bytes());
-             for c in &self.classes {
-                 write_string(&mut buf, &c.name);
-                 buf.extend_from_slice(&(c.fields.len() as u16).to_le_bytes());
-                 for f in &c.fields {
-                     write_string(&mut buf, f);
-                 }
-             }
+            buf.extend_from_slice(&(self.classes.len() as u32).to_le_bytes());
+            for c in &self.classes {
+                write_string(&mut buf, &c.name);
+                buf.extend_from_slice(&(c.fields.len() as u16).to_le_bytes());
+                for f in &c.fields {
+                    write_string(&mut buf, f);
+                }
+            }
         }
-        
+
         if !self.traits.is_empty() || !self.impls.is_empty() {
-             buf.extend_from_slice(&(self.traits.len() as u32).to_le_bytes());
-             for t in &self.traits {
-                 write_string(&mut buf, &t.name);
-                 buf.extend_from_slice(&(t.methods.len() as u16).to_le_bytes());
-                 for m in &t.methods {
-                     write_string(&mut buf, m);
-                 }
-             }
+            buf.extend_from_slice(&(self.traits.len() as u32).to_le_bytes());
+            for t in &self.traits {
+                write_string(&mut buf, &t.name);
+                buf.extend_from_slice(&(t.methods.len() as u16).to_le_bytes());
+                for m in &t.methods {
+                    write_string(&mut buf, m);
+                }
+            }
         }
-        
+
         if !self.impls.is_empty() {
-             buf.extend_from_slice(&(self.impls.len() as u32).to_le_bytes());
-             for i in &self.impls {
-                 buf.extend_from_slice(&i.class_idx.to_le_bytes());
-                 buf.extend_from_slice(&i.trait_idx.to_le_bytes());
-                 buf.extend_from_slice(&(i.methods.len() as u16).to_le_bytes());
-                 for m in &i.methods {
-                     buf.extend_from_slice(&m.to_le_bytes());
-                 }
-             }
+            buf.extend_from_slice(&(self.impls.len() as u32).to_le_bytes());
+            for i in &self.impls {
+                buf.extend_from_slice(&i.class_idx.to_le_bytes());
+                buf.extend_from_slice(&i.trait_idx.to_le_bytes());
+                buf.extend_from_slice(&(i.methods.len() as u16).to_le_bytes());
+                for m in &i.methods {
+                    buf.extend_from_slice(&m.to_le_bytes());
+                }
+            }
         }
-        
+
         buf
     }
     pub fn parse_toml_str(s: &str) -> Result<Self, FormatError> {

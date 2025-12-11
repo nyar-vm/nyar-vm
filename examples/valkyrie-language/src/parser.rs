@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Stmt, Pattern};
+use crate::ast::{Expr, Pattern, Stmt};
 use crate::lexer::{Error, Token};
 
 pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, Error> {
@@ -17,7 +17,12 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, Error> {
 }
 
 fn parse_if(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
-    match tokens.get(*i) { Some(Token::If) => { *i += 1; } _ => return Err(Error::Parse("expect if".into())) }
+    match tokens.get(*i) {
+        Some(Token::If) => {
+            *i += 1;
+        }
+        _ => return Err(Error::Parse("expect if".into())),
+    }
     let cond = parse_expr(tokens, i)?;
     let then_body = parse_block(tokens, i)?;
     let else_body = if let Some(Token::Else) = tokens.get(*i) {
@@ -28,7 +33,9 @@ fn parse_if(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         } else {
             Some(parse_block(tokens, i)?)
         }
-    } else { None };
+    } else {
+        None
+    };
     Ok(Stmt::If(cond, then_body, else_body))
 }
 
@@ -44,34 +51,51 @@ fn expect_ident(tokens: &[Token], i: &mut usize) -> Result<String, Error> {
 
 fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
     match tokens.get(*i) {
-        Some(Token::Int(v)) => { *i += 1; Ok(Pattern::Literal(*v)) }
-        Some(Token::Underscore) => { *i += 1; Ok(Pattern::Wildcard) }
+        Some(Token::Int(v)) => {
+            *i += 1;
+            Ok(Pattern::Literal(*v))
+        }
+        Some(Token::Underscore) => {
+            *i += 1;
+            Ok(Pattern::Wildcard)
+        }
         Some(Token::Ident(name)) => {
             *i += 1;
             // Check if it starts with uppercase -> Constructor
             if name.chars().next().unwrap().is_uppercase() {
                 // Constructor
-                 if let Some(Token::LParen) = tokens.get(*i) {
+                if let Some(Token::LParen) = tokens.get(*i) {
                     *i += 1;
                     let mut pats = Vec::new();
                     loop {
                         match tokens.get(*i) {
-                            Some(Token::RParen) => { *i += 1; break; }
+                            Some(Token::RParen) => {
+                                *i += 1;
+                                break;
+                            }
                             _ => {
                                 pats.push(parse_pattern(tokens, i)?);
                                 match tokens.get(*i) {
-                                    Some(Token::Comma) => { *i += 1; continue; }
-                                    Some(Token::RParen) => { *i += 1; break; }
-                                    _ => return Err(Error::Parse("expect , or ) in pattern".into())),
+                                    Some(Token::Comma) => {
+                                        *i += 1;
+                                        continue;
+                                    }
+                                    Some(Token::RParen) => {
+                                        *i += 1;
+                                        break;
+                                    }
+                                    _ => {
+                                        return Err(Error::Parse("expect , or ) in pattern".into()))
+                                    }
                                 }
                             }
                         }
                     }
                     Ok(Pattern::Constructor(name.clone(), pats))
-                 } else {
+                } else {
                     // Unit variant
                     Ok(Pattern::Constructor(name.clone(), vec![]))
-                 }
+                }
             } else {
                 // Variable
                 Ok(Pattern::Variable(name.clone()))
@@ -83,9 +107,7 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
 
 fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
     match tokens.get(*i) {
-        Some(Token::If) => {
-            parse_if(tokens, i)
-        }
+        Some(Token::If) => parse_if(tokens, i),
         Some(Token::While) => {
             *i += 1;
             let cond = parse_expr(tokens, i)?;
@@ -109,7 +131,9 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
             *i += 1;
             let name = expect_ident(tokens, i)?;
             match tokens.get(*i) {
-                Some(Token::Eq) => { *i += 1; }
+                Some(Token::Eq) => {
+                    *i += 1;
+                }
                 _ => return Err(Error::Parse("expect = after identifier".into())),
             }
             let val = parse_expr(tokens, i)?;
@@ -125,17 +149,31 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         Some(Token::Class) => {
             *i += 1;
             let name = expect_ident(tokens, i)?;
-            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect {".into())) }
+            match tokens.get(*i) {
+                Some(Token::LBrace) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect {".into())),
+            }
             let mut fields = Vec::new();
             loop {
                 match tokens.get(*i) {
-                    Some(Token::RBrace) => { *i += 1; break; }
+                    Some(Token::RBrace) => {
+                        *i += 1;
+                        break;
+                    }
                     Some(Token::Ident(s)) => {
                         fields.push(s.clone());
                         *i += 1;
                         match tokens.get(*i) {
-                            Some(Token::Comma) => { *i += 1; continue; }
-                            Some(Token::RBrace) => { *i += 1; break; }
+                            Some(Token::Comma) => {
+                                *i += 1;
+                                continue;
+                            }
+                            Some(Token::RBrace) => {
+                                *i += 1;
+                                break;
+                            }
                             _ => return Err(Error::Parse("expect , or }".into())),
                         }
                     }
@@ -147,17 +185,31 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         Some(Token::Trait) => {
             *i += 1;
             let name = expect_ident(tokens, i)?;
-            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect {".into())) }
+            match tokens.get(*i) {
+                Some(Token::LBrace) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect {".into())),
+            }
             let mut methods = Vec::new();
             loop {
                 match tokens.get(*i) {
-                    Some(Token::RBrace) => { *i += 1; break; }
+                    Some(Token::RBrace) => {
+                        *i += 1;
+                        break;
+                    }
                     Some(Token::Ident(s)) => {
                         methods.push(s.clone());
                         *i += 1;
                         match tokens.get(*i) {
-                            Some(Token::Comma) => { *i += 1; continue; }
-                            Some(Token::RBrace) => { *i += 1; break; }
+                            Some(Token::Comma) => {
+                                *i += 1;
+                                continue;
+                            }
+                            Some(Token::RBrace) => {
+                                *i += 1;
+                                break;
+                            }
                             _ => return Err(Error::Parse("expect , or }".into())),
                         }
                     }
@@ -169,7 +221,12 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         Some(Token::Impl) => {
             *i += 1;
             let trait_name = expect_ident(tokens, i)?;
-            match tokens.get(*i) { Some(Token::For) => { *i += 1; } _ => return Err(Error::Parse("expect for".into())) }
+            match tokens.get(*i) {
+                Some(Token::For) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect for".into())),
+            }
             let class_name = expect_ident(tokens, i)?;
             let body = parse_block(tokens, i)?;
             Ok(Stmt::ImplDef(trait_name, class_name, body))
@@ -177,11 +234,19 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         Some(Token::Enum) => {
             *i += 1;
             let name = expect_ident(tokens, i)?;
-            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect { after enum name".into())) }
+            match tokens.get(*i) {
+                Some(Token::LBrace) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect { after enum name".into())),
+            }
             let mut variants = Vec::new();
             loop {
                 match tokens.get(*i) {
-                    Some(Token::RBrace) => { *i += 1; break; }
+                    Some(Token::RBrace) => {
+                        *i += 1;
+                        break;
+                    }
                     Some(Token::Ident(v_name)) => {
                         let v_name = v_name.clone();
                         *i += 1;
@@ -190,24 +255,47 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
                             *i += 1;
                             loop {
                                 match tokens.get(*i) {
-                                    Some(Token::RParen) => { *i += 1; break; }
+                                    Some(Token::RParen) => {
+                                        *i += 1;
+                                        break;
+                                    }
                                     Some(Token::Ident(f)) => {
                                         fields.push(f.clone());
                                         *i += 1;
                                         match tokens.get(*i) {
-                                            Some(Token::Comma) => { *i += 1; continue; }
-                                            Some(Token::RParen) => { *i += 1; break; }
-                                            _ => return Err(Error::Parse("expect , or ) in variant fields".into())),
+                                            Some(Token::Comma) => {
+                                                *i += 1;
+                                                continue;
+                                            }
+                                            Some(Token::RParen) => {
+                                                *i += 1;
+                                                break;
+                                            }
+                                            _ => {
+                                                return Err(Error::Parse(
+                                                    "expect , or ) in variant fields".into(),
+                                                ))
+                                            }
                                         }
                                     }
-                                    _ => return Err(Error::Parse("expect identifier in variant fields".into())),
+                                    _ => {
+                                        return Err(Error::Parse(
+                                            "expect identifier in variant fields".into(),
+                                        ))
+                                    }
                                 }
                             }
                         }
                         variants.push((v_name, fields));
                         match tokens.get(*i) {
-                            Some(Token::Comma) => { *i += 1; continue; }
-                            Some(Token::RBrace) => { *i += 1; break; }
+                            Some(Token::Comma) => {
+                                *i += 1;
+                                continue;
+                            }
+                            Some(Token::RBrace) => {
+                                *i += 1;
+                                break;
+                            }
                             _ => return Err(Error::Parse("expect , or } after variant".into())),
                         }
                     }
@@ -221,6 +309,11 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
             let val = parse_expr(tokens, i)?;
             Ok(Stmt::Return(val))
         }
+        Some(Token::Yield) => {
+            *i += 1;
+            let val = parse_expr(tokens, i)?;
+            Ok(Stmt::Yield(val))
+        }
         _ => {
             let e = parse_expr(tokens, i)?;
             Ok(Stmt::Expr(e))
@@ -229,17 +322,31 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
 }
 
 fn parse_args_decl(tokens: &[Token], i: &mut usize) -> Result<Vec<String>, Error> {
-    match tokens.get(*i) { Some(Token::LParen) => { *i += 1; } _ => return Err(Error::Parse("expect (".into())) }
+    match tokens.get(*i) {
+        Some(Token::LParen) => {
+            *i += 1;
+        }
+        _ => return Err(Error::Parse("expect (".into())),
+    }
     let mut args = Vec::new();
     loop {
         match tokens.get(*i) {
-            Some(Token::RParen) => { *i += 1; break; }
+            Some(Token::RParen) => {
+                *i += 1;
+                break;
+            }
             Some(Token::Ident(s)) => {
                 args.push(s.clone());
                 *i += 1;
                 match tokens.get(*i) {
-                    Some(Token::Comma) => { *i += 1; continue; }
-                    Some(Token::RParen) => { *i += 1; break; }
+                    Some(Token::Comma) => {
+                        *i += 1;
+                        continue;
+                    }
+                    Some(Token::RParen) => {
+                        *i += 1;
+                        break;
+                    }
                     _ => return Err(Error::Parse("expect , or )".into())),
                 }
             }
@@ -250,11 +357,19 @@ fn parse_args_decl(tokens: &[Token], i: &mut usize) -> Result<Vec<String>, Error
 }
 
 fn parse_block(tokens: &[Token], i: &mut usize) -> Result<Vec<Stmt>, Error> {
-    match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect {".into())) }
+    match tokens.get(*i) {
+        Some(Token::LBrace) => {
+            *i += 1;
+        }
+        _ => return Err(Error::Parse("expect {".into())),
+    }
     let mut stmts = Vec::new();
     loop {
         match tokens.get(*i) {
-            Some(Token::RBrace) => { *i += 1; break; }
+            Some(Token::RBrace) => {
+                *i += 1;
+                break;
+            }
             Some(Token::Eof) | None => return Err(Error::Parse("unexpected eof in block".into())),
             _ => {
                 stmts.push(parse_stmt(tokens, i)?);
@@ -279,8 +394,7 @@ enum Precedence {
     Primary,
 }
 
-impl Precedence {
-}
+impl Precedence {}
 
 fn get_precedence(token: &Token) -> Precedence {
     match token {
@@ -288,7 +402,9 @@ fn get_precedence(token: &Token) -> Precedence {
         Token::Or => Precedence::Or,
         Token::And => Precedence::And,
         Token::DoubleEq | Token::NotEq => Precedence::Equality,
-        Token::Lt | Token::Le | Token::Gt | Token::Ge | Token::Is | Token::As | Token::AsSafe => Precedence::Comparison,
+        Token::Lt | Token::Le | Token::Gt | Token::Ge | Token::Is | Token::As | Token::AsSafe => {
+            Precedence::Comparison
+        }
         Token::Plus | Token::Minus => Precedence::Term,
         Token::Star | Token::Slash => Precedence::Factor,
         Token::Dot | Token::LParen => Precedence::Call,
@@ -313,7 +429,7 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
             Token::Eq => {
                 *i += 1;
                 // Assignment is right-associative, so we pass a lower precedence (None) to allow chaining
-                let right = parse_expr_pratt(tokens, i, Precedence::None)?; 
+                let right = parse_expr_pratt(tokens, i, Precedence::None)?;
                 match left {
                     Expr::GetField(obj, field) => {
                         left = Expr::SetField(obj, field, Box::new(right));
@@ -406,13 +522,22 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
                 let mut args = Vec::new();
                 loop {
                     match tokens.get(*i) {
-                        Some(Token::RParen) => { *i += 1; break; }
+                        Some(Token::RParen) => {
+                            *i += 1;
+                            break;
+                        }
                         _ => {
                             let e = parse_expr(tokens, i)?;
                             args.push(e);
                             match tokens.get(*i) {
-                                Some(Token::Comma) => { *i += 1; continue; }
-                                Some(Token::RParen) => { *i += 1; break; }
+                                Some(Token::Comma) => {
+                                    *i += 1;
+                                    continue;
+                                }
+                                Some(Token::RParen) => {
+                                    *i += 1;
+                                    break;
+                                }
                                 _ => return Err(Error::Parse("expect , or )".into())),
                             }
                         }
@@ -436,25 +561,40 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
         Some(Token::Match) => {
             *i += 1;
             let target = parse_expr(tokens, i)?;
-            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect { after match target".into())) }
+            match tokens.get(*i) {
+                Some(Token::LBrace) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect { after match target".into())),
+            }
             let mut branches = Vec::new();
             loop {
                 match tokens.get(*i) {
-                    Some(Token::RBrace) => { *i += 1; break; }
+                    Some(Token::RBrace) => {
+                        *i += 1;
+                        break;
+                    }
                     _ => {
                         let pat = parse_pattern(tokens, i)?;
-                        match tokens.get(*i) { Some(Token::Arrow) => { *i += 1; } _ => return Err(Error::Parse("expect => after pattern".into())) }
-                        
+                        match tokens.get(*i) {
+                            Some(Token::Arrow) => {
+                                *i += 1;
+                            }
+                            _ => return Err(Error::Parse("expect => after pattern".into())),
+                        }
+
                         let body = if let Some(Token::LBrace) = tokens.get(*i) {
-                             parse_block(tokens, i)?
+                            parse_block(tokens, i)?
                         } else {
-                             let stmt = parse_stmt(tokens, i)?;
-                             vec![stmt]
+                            let stmt = parse_stmt(tokens, i)?;
+                            vec![stmt]
                         };
-                        
+
                         branches.push((pat, body));
-                        
-                        if let Some(Token::Comma) = tokens.get(*i) { *i += 1; }
+
+                        if let Some(Token::Comma) = tokens.get(*i) {
+                            *i += 1;
+                        }
                     }
                 }
             }
@@ -470,9 +610,18 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
             let right = parse_expr_pratt(tokens, i, Precedence::Unary)?;
             Ok(Expr::Neg(Box::new(right)))
         }
-        Some(Token::Int(v)) => { *i += 1; Ok(Expr::Int(*v)) }
-        Some(Token::True) => { *i += 1; Ok(Expr::Bool(true)) }
-        Some(Token::False) => { *i += 1; Ok(Expr::Bool(false)) }
+        Some(Token::Int(v)) => {
+            *i += 1;
+            Ok(Expr::Int(*v))
+        }
+        Some(Token::True) => {
+            *i += 1;
+            Ok(Expr::Bool(true))
+        }
+        Some(Token::False) => {
+            *i += 1;
+            Ok(Expr::Bool(false))
+        }
         Some(Token::Ident(name)) => {
             *i += 1;
             Ok(Expr::Variable(name.clone()))
@@ -482,27 +631,47 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
             let name = expect_ident(tokens, i)?;
             if let Some(Token::LParen) = tokens.get(*i) {
                 *i += 1;
-                match tokens.get(*i) { Some(Token::RParen) => { *i += 1; } _ => return Err(Error::Parse("expect )".into())) }
+                match tokens.get(*i) {
+                    Some(Token::RParen) => {
+                        *i += 1;
+                    }
+                    _ => return Err(Error::Parse("expect )".into())),
+                }
             }
             Ok(Expr::New(name))
         }
         Some(Token::LParen) => {
             *i += 1;
             let e = parse_expr(tokens, i)?;
-            match tokens.get(*i) { Some(Token::RParen) => { *i += 1; Ok(e) } _ => Err(Error::Parse("expect )".into())) }
+            match tokens.get(*i) {
+                Some(Token::RParen) => {
+                    *i += 1;
+                    Ok(e)
+                }
+                _ => Err(Error::Parse("expect )".into())),
+            }
         }
         Some(Token::Pipe) => {
             *i += 1;
             let mut args = Vec::new();
             loop {
                 match tokens.get(*i) {
-                    Some(Token::Pipe) => { *i += 1; break; }
+                    Some(Token::Pipe) => {
+                        *i += 1;
+                        break;
+                    }
                     Some(Token::Ident(s)) => {
                         args.push(s.clone());
                         *i += 1;
                         match tokens.get(*i) {
-                            Some(Token::Comma) => { *i += 1; continue; }
-                            Some(Token::Pipe) => { *i += 1; break; }
+                            Some(Token::Comma) => {
+                                *i += 1;
+                                continue;
+                            }
+                            Some(Token::Pipe) => {
+                                *i += 1;
+                                break;
+                            }
                             _ => return Err(Error::Parse("expect , or |".into())),
                         }
                     }

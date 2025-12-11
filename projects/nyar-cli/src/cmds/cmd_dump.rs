@@ -1,4 +1,5 @@
 use nyar_error::CliError;
+use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::NyarModule;
 use std::fs;
 use std::io::Write;
@@ -18,6 +19,12 @@ pub fn dump(path: &str) -> Result<(), CliError> {
     }
     for (i, ch) in module.chunks.iter().enumerate() {
         out.push_str(&format!("chunk{}:{} bytes\n", i, ch.code.len()));
+        let decoder = Decoder::new(&ch.code);
+        if let Ok(instrs) = decoder.decode_all() {
+            for (j, ins) in instrs.iter().enumerate() {
+                out.push_str(&format!("  {:04}: {:?}\n", j, ins));
+            }
+        }
     }
     std::io::stdout().write_all(out.as_bytes())?;
     Ok(())

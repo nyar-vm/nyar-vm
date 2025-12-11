@@ -1,10 +1,10 @@
+use nyar_vm::bytecode::decoder::Decoder;
+use nyar_vm::vm::interpreter::NyarVM;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 use std::rc::Rc;
 use valkyrie_language::compile_text_to_module;
-use nyar_vm::vm::interpreter::NyarVM;
-use nyar_vm::bytecode::decoder::Decoder;
 
 #[test]
 fn test_all_vk_files() {
@@ -23,7 +23,7 @@ fn test_all_vk_files() {
 
 fn run_test(path: &Path) {
     let src = fs::read_to_string(path).expect("Failed to read file");
-    
+
     // Parse expected output
     let mut expected_output = Vec::new();
     for line in src.lines() {
@@ -34,14 +34,17 @@ fn run_test(path: &Path) {
     }
 
     if expected_output.is_empty() {
-        println!("Skipping verification for {:?} (no expectations found)", path);
+        println!(
+            "Skipping verification for {:?} (no expectations found)",
+            path
+        );
         // Still verify it compiles
         compile_text_to_module(&src).expect("Failed to compile");
         return;
     }
 
     let module = compile_text_to_module(&src).expect("Failed to compile");
-    
+
     // Setup VM
     let mut vm = NyarVM::new(
         module.constants,
@@ -62,22 +65,28 @@ fn run_test(path: &Path) {
     let main_chunk = &module.chunks[0];
     let decoder = Decoder::new(&main_chunk.code);
     let instrs = decoder.decode_all().expect("Failed to decode main chunk");
-    
+
     vm.execute(&instrs).expect("VM execution failed");
 
     let actual_output = output_buffer.borrow();
-    
+
     // Check if actual output matches expected output
     // Note: Test files might have expectations interleaved, but we collect them all.
     // The order should match the execution order.
-    
+
     if actual_output.len() != expected_output.len() {
         println!("Expected: {:?}", expected_output);
         println!("Actual:   {:?}", actual_output);
         panic!("Output line count mismatch for {:?}", path);
     }
-    
+
     for (i, (actual, expected)) in actual_output.iter().zip(expected_output.iter()).enumerate() {
-        assert_eq!(actual, expected, "Output mismatch at line {} for {:?}", i + 1, path);
+        assert_eq!(
+            actual,
+            expected,
+            "Output mismatch at line {} for {:?}",
+            i + 1,
+            path
+        );
     }
 }

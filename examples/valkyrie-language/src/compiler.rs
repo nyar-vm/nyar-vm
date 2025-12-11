@@ -1,6 +1,6 @@
-use crate::ast::{Expr, Stmt, Pattern};
+use crate::ast::{Expr, Pattern, Stmt};
 use crate::lexer::Error;
-use nyar_vm::bytecode::format::{Chunk, ClassInfo, TraitInfo, ImplInfo, Constant, NyarcModule};
+use nyar_vm::bytecode::format::{Chunk, ClassInfo, Constant, ImplInfo, NyarcModule, TraitInfo};
 use nyar_vm::bytecode::opcode::Opcode;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -93,30 +93,113 @@ impl FunctionContext {
     }
 }
 
+fn instr_size(code: &[u8], pos: usize) -> usize {
+    if pos >= code.len() {
+        return 0;
+    }
+    match code[pos] {
+        x if x == Opcode::Nop as u8 => 1,
+        x if x == Opcode::Push as u8 => 3,
+        x if x == Opcode::Pop as u8 => 1,
+        x if x == Opcode::Dup as u8 => 2,
+        x if x == Opcode::Swap as u8 => 2,
+        x if x == Opcode::LoadLocal as u8 => 2,
+        x if x == Opcode::StoreLocal as u8 => 2,
+        x if x == Opcode::LoadGlobal as u8 => 3,
+        x if x == Opcode::StoreGlobal as u8 => 3,
+        x if x == Opcode::LoadUpvalue as u8 => 2,
+        x if x == Opcode::StoreUpvalue as u8 => 2,
+        x if x == Opcode::CloseUpvalues as u8 => 1,
+        x if x == Opcode::Jump as u8 => 3,
+        x if x == Opcode::JumpIfFalse as u8 => 3,
+        x if x == Opcode::JumpIfNull as u8 => 3,
+        x if x == Opcode::Return as u8 => 1,
+        x if x == Opcode::MakeClosure as u8 => {
+            let upc = if pos + 3 < code.len() {
+                code[pos + 3] as usize
+            } else {
+                0
+            };
+            1 + 2 + 1 + (2 * upc)
+        }
+        x if x == Opcode::TailCall as u8 => 1,
+        x if x == Opcode::Call as u8 => 4,
+        x if x == Opcode::CallVirtual as u8 => 4,
+        x if x == Opcode::CallDynamic as u8 => 4,
+        x if x == Opcode::CallClosure as u8 => 2,
+        x if x == Opcode::InvokeMethod as u8 => 4,
+        x if x == Opcode::GetField as u8 => 3,
+        x if x == Opcode::SetField as u8 => 3,
+        x if x == Opcode::NewObject as u8 => 3,
+        x if x == Opcode::NewArray as u8 => 3,
+        x if x == Opcode::GetElement as u8 => 1,
+        x if x == Opcode::SetElement as u8 => 1,
+        x if x == Opcode::TypeOf as u8 => 1,
+        x if x == Opcode::InstanceOf as u8 => 3,
+        x if x == Opcode::CheckCast as u8 => 3,
+        x if x == Opcode::Cast as u8 => 3,
+        x if x == Opcode::Perform as u8 => 4,
+        x if x == Opcode::WithHandler as u8 => 3,
+        x if x == Opcode::ResumeWith as u8 => 1,
+        x if x == Opcode::CaptureCont as u8 => 1,
+        x if x == Opcode::GetWitnessTable as u8 => 5,
+        x if x == Opcode::WitnessMethod as u8 => 3,
+        x if x == Opcode::OpenExistential as u8 => 1,
+        x if x == Opcode::CloseExistential as u8 => 1,
+        x if x == Opcode::Quote as u8 => 5,
+        x if x == Opcode::Splice as u8 => 1,
+        x if x == Opcode::Eval as u8 => 2,
+        x if x == Opcode::ExpandMacro as u8 => 4,
+        x if x == Opcode::FFICall as u8 => 4,
+        x if x == Opcode::Halt as u8 => 1,
+        _ => 1,
+    }
+}
+
+fn count_instructions(code: &[u8], from_opcode_pos: usize, to_opcode_pos: usize) -> i16 {
+    let mut p = from_opcode_pos;
+    let mut n = 0i16;
+    while p < to_opcode_pos {
+        let sz = instr_size(code, p);
+        if sz == 0 {
+            break;
+        }
+        p += sz;
+        n += 1;
+    }
+    n
+}
+
 fn resolve_upvalue(contexts: &mut [FunctionContext], name: &str) -> Option<u8> {
     let len = contexts.len();
-    if len < 2 { return None; }
-    
+    if len < 2 {
+        return None;
+    }
+
     // Check immediate parent
     let parent_idx = len - 2;
     if let Some(local_idx) = contexts[parent_idx].find_local(name) {
         return Some(contexts[len - 1].add_upvalue(true, local_idx));
     }
-    
+
     // Check upvalues of parent (recursion)
     let (parent_slice, child_slice) = contexts.split_at_mut(len - 1);
     let child = &mut child_slice[0];
-    
+
     if let Some(upvalue_idx) = resolve_upvalue(parent_slice, name) {
         return Some(child.add_upvalue(false, upvalue_idx));
     }
-    
+
     None
 }
 
-fn compile_func_to_chunk(compiler: &mut Compiler, args: Vec<String>, body: &[Stmt]) -> Result<u16, Error> {
+fn compile_func_to_chunk(
+    compiler: &mut Compiler,
+    args: Vec<String>,
+    body: &[Stmt],
+) -> Result<u16, Error> {
     let mut contexts = vec![FunctionContext::new(args)];
-    
+
     let len = body.len();
     if len == 0 {
         let func_ctx = contexts.last_mut().unwrap();
@@ -152,7 +235,7 @@ fn compile_func_to_chunk(compiler: &mut Compiler, args: Vec<String>, body: &[Stm
     }
 
     let func_ctx = contexts.pop().unwrap();
-    
+
     let chunk = Chunk {
         locals: func_ctx.locals.len() as u16,
         upvalues: func_ctx.upvalues.len() as u16,
@@ -160,7 +243,7 @@ fn compile_func_to_chunk(compiler: &mut Compiler, args: Vec<String>, body: &[Stm
         code: func_ctx.code,
         handlers: vec![],
     };
-    
+
     // Chunk index in the final module will be (existing chunks) + 1 (for main) + 1 (this new one)?
     // No, compiler.chunks contains all chunks except main.
     // So index 0 in compiler.chunks is index 1 in module.chunks.
@@ -170,7 +253,11 @@ fn compile_func_to_chunk(compiler: &mut Compiler, args: Vec<String>, body: &[Stm
     Ok(chunk_idx)
 }
 
-fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e: &Expr) -> Result<(), Error> {
+fn compile_expr(
+    compiler: &mut Compiler,
+    contexts: &mut Vec<FunctionContext>,
+    e: &Expr,
+) -> Result<(), Error> {
     match e {
         Expr::Int(v) => {
             let idx = compiler.add_constant(Constant::Int(*v));
@@ -331,25 +418,25 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
         Expr::Call(callee, args) => {
             // Check for InvokeMethod pattern: Call(GetField(obj, method), args)
             if let Expr::GetField(obj, field) = &**callee {
-                 // Compile receiver
-                 compile_expr(compiler, contexts, obj)?;
-                 // Compile args
-                 for arg in args {
-                     compile_expr(compiler, contexts, arg)?;
-                 }
-                 let name_idx = compiler.add_string(field);
-                 let ctx = contexts.last_mut().unwrap();
-                 ctx.code.push(Opcode::InvokeMethod as u8);
-                 ctx.code.extend_from_slice(&name_idx.to_le_bytes());
-                 ctx.code.push(args.len() as u8);
-                 return Ok(());
+                // Compile receiver
+                compile_expr(compiler, contexts, obj)?;
+                // Compile args
+                for arg in args {
+                    compile_expr(compiler, contexts, arg)?;
+                }
+                let name_idx = compiler.add_string(field);
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&name_idx.to_le_bytes());
+                ctx.code.push(args.len() as u8);
+                return Ok(());
             }
 
             let mut is_static_or_ffi = false;
             if let Expr::Variable(name) = &**callee {
                 // Check for static function first
                 let static_func = compiler.functions.get(name).copied();
-                
+
                 if let Some(idx) = static_func {
                     // Static function call
                     for arg in args {
@@ -360,7 +447,9 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
                     ctx.code.extend_from_slice(&idx.to_le_bytes());
                     ctx.code.push(args.len() as u8);
                     is_static_or_ffi = true;
-                } else if contexts.last().unwrap().find_local(name).is_none() && resolve_upvalue(contexts, name).is_none() {
+                } else if contexts.last().unwrap().find_local(name).is_none()
+                    && resolve_upvalue(contexts, name).is_none()
+                {
                     // FFI call (if not local variable AND not upvalue)
                     for arg in args {
                         compile_expr(compiler, contexts, arg)?;
@@ -373,7 +462,7 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
                     is_static_or_ffi = true;
                 }
             }
-            
+
             if !is_static_or_ffi {
                 // Closure Call
                 compile_expr(compiler, contexts, callee)?;
@@ -387,7 +476,7 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
         }
         Expr::Closure(args, body) => {
             contexts.push(FunctionContext::new(args.clone()));
-            
+
             let len = body.len();
             if len == 0 {
                 let func_ctx = contexts.last_mut().unwrap();
@@ -421,12 +510,12 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
                     }
                 }
             }
-            
+
             let func_ctx = contexts.pop().unwrap();
 
             let chunk_idx = (compiler.chunks.len() + 1) as u16;
             let upvalues = func_ctx.upvalues.clone();
-            
+
             let chunk = Chunk {
                 locals: func_ctx.locals.len() as u16,
                 upvalues: func_ctx.upvalues.len() as u16,
@@ -439,7 +528,7 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
             let ctx = contexts.last_mut().unwrap();
             ctx.code.push(Opcode::MakeClosure as u8);
             ctx.code.extend_from_slice(&chunk_idx.to_le_bytes());
-            
+
             // Emit upvalues info
             ctx.code.push(upvalues.len() as u8);
             for (is_local, index) in upvalues {
@@ -503,24 +592,24 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
         }
         Expr::Match(target, branches) => {
             compile_expr(compiler, contexts, target)?;
-            
+
             let mut end_jumps = Vec::new();
-            
+
             for (pat, body) in branches {
                 let jump_idx = {
                     let ctx = contexts.last_mut().unwrap();
                     ctx.code.push(Opcode::Dup as u8);
                     compile_pattern_check(compiler, ctx, pat)?;
-                    
+
                     ctx.code.push(Opcode::JumpIfFalse as u8);
                     let idx = ctx.code.len();
                     ctx.code.extend_from_slice(&0u16.to_le_bytes());
-                    
+
                     compile_pattern_binding(compiler, ctx, pat)?;
                     ctx.code.push(Opcode::Pop as u8);
                     idx
                 };
-                
+
                 let len = body.len();
                 if len == 0 {
                     let ctx = contexts.last_mut().unwrap();
@@ -547,44 +636,48 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
                         }
                     }
                 }
-                
+
                 let ctx = contexts.last_mut().unwrap();
                 ctx.code.push(Opcode::Jump as u8);
                 let end_jump_idx = ctx.code.len();
                 ctx.code.extend_from_slice(&0u16.to_le_bytes());
                 end_jumps.push(end_jump_idx);
-                
+
                 let next_branch_offset = (ctx.code.len() - (jump_idx + 2)) as u16;
                 let bytes = next_branch_offset.to_le_bytes();
                 ctx.code[jump_idx] = bytes[0];
-                ctx.code[jump_idx+1] = bytes[1];
+                ctx.code[jump_idx + 1] = bytes[1];
             }
-            
+
             let ctx = contexts.last_mut().unwrap();
             ctx.code.push(Opcode::Pop as u8);
             ctx.code.push(Opcode::Push as u8);
             let null_idx = compiler.add_constant(Constant::Int(0));
             ctx.code.extend_from_slice(&null_idx.to_le_bytes());
-            
+
             let end_pos = ctx.code.len();
             for idx in end_jumps {
                 let offset = (end_pos - (idx + 2)) as u16;
                 let bytes = offset.to_le_bytes();
                 ctx.code[idx] = bytes[0];
-                ctx.code[idx+1] = bytes[1];
+                ctx.code[idx + 1] = bytes[1];
             }
         }
     }
     Ok(())
 }
 
-fn compile_pattern_check(compiler: &mut Compiler, ctx: &mut FunctionContext, pat: &Pattern) -> Result<(), Error> {
+fn compile_pattern_check(
+    compiler: &mut Compiler,
+    ctx: &mut FunctionContext,
+    pat: &Pattern,
+) -> Result<(), Error> {
     match pat {
         Pattern::Literal(val) => {
             ctx.code.push(Opcode::Push as u8);
             let idx = compiler.add_constant(Constant::Int(*val));
             ctx.code.extend_from_slice(&idx.to_le_bytes());
-            
+
             let eq_idx = compiler.add_string("eq");
             ctx.code.push(Opcode::FFICall as u8);
             ctx.code.extend_from_slice(&eq_idx.to_le_bytes());
@@ -602,16 +695,16 @@ fn compile_pattern_check(compiler: &mut Compiler, ctx: &mut FunctionContext, pat
             ctx.code.push(Opcode::GetField as u8);
             let v_idx = compiler.add_string("__variant__");
             ctx.code.extend_from_slice(&v_idx.to_le_bytes());
-            
+
             ctx.code.push(Opcode::Push as u8);
             let n_idx = compiler.add_string(name);
             ctx.code.extend_from_slice(&n_idx.to_le_bytes());
-            
+
             let eq_idx = compiler.add_string("eq");
             ctx.code.push(Opcode::FFICall as u8);
             ctx.code.extend_from_slice(&eq_idx.to_le_bytes());
             ctx.code.push(2u8);
-            
+
             let mut jumps = Vec::new();
             ctx.code.push(Opcode::JumpIfFalse as u8);
             let j = ctx.code.len();
@@ -624,52 +717,56 @@ fn compile_pattern_check(compiler: &mut Compiler, ctx: &mut FunctionContext, pat
                 let field_name = format!("_{}", i);
                 let f_idx = compiler.add_string(&field_name);
                 ctx.code.extend_from_slice(&f_idx.to_le_bytes());
-                
+
                 compile_pattern_check(compiler, ctx, p)?;
-                
+
                 ctx.code.push(Opcode::JumpIfFalse as u8);
                 let j = ctx.code.len();
                 ctx.code.extend_from_slice(&0u16.to_le_bytes());
                 jumps.push(j);
             }
-            
+
             // Success path
             ctx.code.push(Opcode::Pop as u8); // Pop target
             let t_idx = compiler.add_string("true");
             ctx.code.push(Opcode::FFICall as u8);
             ctx.code.extend_from_slice(&t_idx.to_le_bytes());
             ctx.code.push(0u8);
-            
+
             ctx.code.push(Opcode::Jump as u8);
             let success_jump = ctx.code.len();
             ctx.code.extend_from_slice(&0u16.to_le_bytes());
-            
+
             // Fail path
             let fail_pos = ctx.code.len();
             for j in jumps {
-                 let offset = (fail_pos - (j + 2)) as u16;
-                 let bytes = offset.to_le_bytes();
-                 ctx.code[j] = bytes[0];
-                 ctx.code[j+1] = bytes[1];
+                let offset = (fail_pos - (j + 2)) as u16;
+                let bytes = offset.to_le_bytes();
+                ctx.code[j] = bytes[0];
+                ctx.code[j + 1] = bytes[1];
             }
-            
+
             ctx.code.push(Opcode::Pop as u8); // Pop target
             let f_idx = compiler.add_string("false");
             ctx.code.push(Opcode::FFICall as u8);
             ctx.code.extend_from_slice(&f_idx.to_le_bytes());
             ctx.code.push(0u8);
-            
+
             let success_pos = ctx.code.len();
             let offset = (success_pos - (success_jump + 2)) as u16;
             let bytes = offset.to_le_bytes();
             ctx.code[success_jump] = bytes[0];
-            ctx.code[success_jump+1] = bytes[1];
+            ctx.code[success_jump + 1] = bytes[1];
         }
     }
     Ok(())
 }
 
-fn compile_pattern_binding(compiler: &mut Compiler, ctx: &mut FunctionContext, pat: &Pattern) -> Result<(), Error> {
+fn compile_pattern_binding(
+    compiler: &mut Compiler,
+    ctx: &mut FunctionContext,
+    pat: &Pattern,
+) -> Result<(), Error> {
     match pat {
         Pattern::Variable(name) => {
             ctx.code.push(Opcode::Dup as u8);
@@ -684,9 +781,9 @@ fn compile_pattern_binding(compiler: &mut Compiler, ctx: &mut FunctionContext, p
                 let field_name = format!("_{}", i);
                 let f_idx = compiler.add_string(&field_name);
                 ctx.code.extend_from_slice(&f_idx.to_le_bytes());
-                
+
                 compile_pattern_binding(compiler, ctx, p)?;
-                
+
                 ctx.code.push(Opcode::Pop as u8);
             }
         }
@@ -695,7 +792,11 @@ fn compile_pattern_binding(compiler: &mut Compiler, ctx: &mut FunctionContext, p
     Ok(())
 }
 
-fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s: &Stmt) -> Result<(), Error> {
+fn compile_stmt(
+    compiler: &mut Compiler,
+    contexts: &mut Vec<FunctionContext>,
+    s: &Stmt,
+) -> Result<(), Error> {
     match s {
         Stmt::If(cond, then_body, else_body) => {
             compile_expr(compiler, contexts, cond)?;
@@ -717,8 +818,9 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                 let idx = ctx.code.len();
                 ctx.code.extend_from_slice(&0i16.to_le_bytes());
                 let else_pos = ctx.code.len();
-                let off = (else_pos as isize - (j_false as isize + 2)) as i16;
-                let bytes = off.to_le_bytes();
+                let jump_pos = j_false - 1;
+                let off = count_instructions(&ctx.code, jump_pos, else_pos);
+                let bytes = (off as i16).to_le_bytes();
                 ctx.code[j_false] = bytes[0];
                 ctx.code[j_false + 1] = bytes[1];
                 idx
@@ -732,7 +834,8 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
 
             let ctx = contexts.last_mut().unwrap();
             let end_pos = ctx.code.len();
-            let off = (end_pos as isize - (j_end as isize + 2)) as i16;
+            let jump_pos = j_end - 1;
+            let off = count_instructions(&ctx.code, jump_pos, end_pos) as i16;
             let bytes = off.to_le_bytes();
             ctx.code[j_end] = bytes[0];
             ctx.code[j_end + 1] = bytes[1];
@@ -744,7 +847,12 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
             };
             {
                 let ctx = contexts.last_mut().unwrap();
-                ctx.loops.push(LoopContext { start_pos, cond_pos: Some(start_pos), breaks: Vec::new(), continues: Vec::new() });
+                ctx.loops.push(LoopContext {
+                    start_pos,
+                    cond_pos: Some(start_pos),
+                    breaks: Vec::new(),
+                    continues: Vec::new(),
+                });
             }
 
             compile_expr(compiler, contexts, cond)?;
@@ -762,9 +870,14 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
 
             {
                 let ctx = contexts.last_mut().unwrap();
-                let back_off = (start_pos as isize - (ctx.code.len() as isize + 2)) as i16;
                 ctx.code.push(Opcode::Jump as u8);
-                ctx.code.extend_from_slice(&back_off.to_le_bytes());
+                let jpos = ctx.code.len();
+                ctx.code.extend_from_slice(&0i16.to_le_bytes());
+                let jump_pos = jpos - 1;
+                let off = -(count_instructions(&ctx.code, start_pos, jump_pos));
+                let bytes = (off as i16).to_le_bytes();
+                ctx.code[jpos] = bytes[0];
+                ctx.code[jpos + 1] = bytes[1];
             }
 
             let end_pos = {
@@ -773,7 +886,9 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
             };
             {
                 let ctx = contexts.last_mut().unwrap();
-                let bytes = ((end_pos as isize - (j_exit as isize + 2)) as i16).to_le_bytes();
+                let jump_pos = j_exit - 1;
+                let off = count_instructions(&ctx.code, jump_pos, end_pos) as i16;
+                let bytes = off.to_le_bytes();
                 ctx.code[j_exit] = bytes[0];
                 ctx.code[j_exit + 1] = bytes[1];
             }
@@ -785,14 +900,16 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
             {
                 let ctx = contexts.last_mut().unwrap();
                 for idx in lc.breaks {
-                    let off = (end_pos as isize - (idx as isize + 2)) as i16;
+                    let jump_pos = idx - 1;
+                    let off = count_instructions(&ctx.code, jump_pos, end_pos) as i16;
                     let b = off.to_le_bytes();
                     ctx.code[idx] = b[0];
                     ctx.code[idx + 1] = b[1];
                 }
                 if let Some(cpos) = lc.cond_pos {
                     for idx in lc.continues {
-                        let off = (cpos as isize - (idx as isize + 2)) as i16;
+                        let jump_pos = idx - 1;
+                        let off = -(count_instructions(&ctx.code, cpos, jump_pos) as i16);
                         let b = off.to_le_bytes();
                         ctx.code[idx] = b[0];
                         ctx.code[idx + 1] = b[1];
@@ -807,7 +924,12 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
             };
             {
                 let ctx = contexts.last_mut().unwrap();
-                ctx.loops.push(LoopContext { start_pos, cond_pos: None, breaks: Vec::new(), continues: Vec::new() });
+                ctx.loops.push(LoopContext {
+                    start_pos,
+                    cond_pos: None,
+                    breaks: Vec::new(),
+                    continues: Vec::new(),
+                });
             }
 
             for stmt in body {
@@ -820,9 +942,14 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
             };
             {
                 let ctx = contexts.last_mut().unwrap();
-                let back_off = (start_pos as isize - (ctx.code.len() as isize + 2)) as i16;
                 ctx.code.push(Opcode::Jump as u8);
-                ctx.code.extend_from_slice(&back_off.to_le_bytes());
+                let jpos = ctx.code.len();
+                ctx.code.extend_from_slice(&0i16.to_le_bytes());
+                let jump_pos = jpos - 1;
+                let off = -(count_instructions(&ctx.code, start_pos, jump_pos));
+                let b = (off as i16).to_le_bytes();
+                ctx.code[jpos] = b[0];
+                ctx.code[jpos + 1] = b[1];
             }
             let end_pos2 = {
                 let ctx = contexts.last().unwrap();
@@ -835,13 +962,15 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
             {
                 let ctx = contexts.last_mut().unwrap();
                 for idx in lc.breaks {
-                    let off = (end_pos2 as isize - (idx as isize + 2)) as i16;
+                    let jump_pos = idx - 1;
+                    let off = count_instructions(&ctx.code, jump_pos, end_pos2) as i16;
                     let b = off.to_le_bytes();
                     ctx.code[idx] = b[0];
                     ctx.code[idx + 1] = b[1];
                 }
                 for idx in lc.continues {
-                    let off = (start_pos as isize - (idx as isize + 2)) as i16;
+                    let jump_pos = idx - 1;
+                    let off = -(count_instructions(&ctx.code, start_pos, jump_pos) as i16);
                     let b = off.to_le_bytes();
                     ctx.code[idx] = b[0];
                     ctx.code[idx + 1] = b[1];
@@ -850,7 +979,9 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
         }
         Stmt::Break => {
             let ctx = contexts.last_mut().unwrap();
-            if ctx.loops.is_empty() { return Err(Error::Compile("break outside loop".into())); }
+            if ctx.loops.is_empty() {
+                return Err(Error::Compile("break outside loop".into()));
+            }
             ctx.code.push(Opcode::Jump as u8);
             let idx = ctx.code.len();
             ctx.code.extend_from_slice(&0i16.to_le_bytes());
@@ -859,7 +990,9 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
         }
         Stmt::Continue => {
             let ctx = contexts.last_mut().unwrap();
-            if ctx.loops.is_empty() { return Err(Error::Compile("continue outside loop".into())); }
+            if ctx.loops.is_empty() {
+                return Err(Error::Compile("continue outside loop".into()));
+            }
             ctx.code.push(Opcode::Jump as u8);
             let idx = ctx.code.len();
             ctx.code.extend_from_slice(&0i16.to_le_bytes());
@@ -882,6 +1015,15 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
             compile_expr(compiler, contexts, val)?;
             let ctx = contexts.last_mut().unwrap();
             ctx.code.push(Opcode::Return as u8);
+        }
+        Stmt::Yield(val) => {
+            compile_expr(compiler, contexts, val)?;
+            let ctx = contexts.last_mut().unwrap();
+            let didx = compiler.add_string("yield");
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&didx.to_le_bytes());
+            ctx.code.push(1u8);
+            ctx.code.push(Opcode::Pop as u8);
         }
         Stmt::FuncDef(name, args, body) => {
             let chunk_idx = compile_func_to_chunk(compiler, args.clone(), body)?;
@@ -913,47 +1055,47 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                     max_fields = v_fields.len();
                 }
             }
-            
+
             let mut class_fields = vec!["__variant__".to_string()];
             for i in 0..max_fields {
                 class_fields.push(format!("_{}", i));
             }
-            
+
             let class_idx = compiler.classes.len() as u16;
             compiler.classes.push(ClassInfo {
                 name: name.clone(),
                 fields: class_fields,
             });
             compiler.class_map.insert(name.clone(), class_idx);
-            
+
             // 2. Define Constructor Functions for each variant
             for (v_name, v_fields) in variants {
                 let mut ctx = FunctionContext::new(v_fields.clone());
-                
+
                 // Create new object
                 ctx.code.push(Opcode::NewObject as u8);
                 ctx.code.extend_from_slice(&class_idx.to_le_bytes());
-                
+
                 // Set __variant__
                 ctx.code.push(Opcode::Dup as u8);
                 ctx.code.push(Opcode::Push as u8);
                 let v_name_idx = compiler.add_string(v_name);
                 ctx.code.extend_from_slice(&v_name_idx.to_le_bytes());
-                
+
                 let variant_field_idx = compiler.add_string("__variant__");
                 ctx.code.push(Opcode::SetField as u8);
                 ctx.code.extend_from_slice(&variant_field_idx.to_le_bytes());
                 ctx.code.push(Opcode::Pop as u8);
-                
+
                 // Set fields
                 for (i, _) in v_fields.iter().enumerate() {
                     ctx.code.push(Opcode::Dup as u8);
-                    
+
                     // Load argument
                     ctx.code.push(Opcode::LoadLocal as u8);
                     // Arguments are locals 0..n
                     ctx.code.push(i as u8);
-                    
+
                     // Set field _i
                     let field_name = format!("_{}", i);
                     let f_idx = compiler.add_string(&field_name);
@@ -961,10 +1103,10 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                     ctx.code.extend_from_slice(&f_idx.to_le_bytes());
                     ctx.code.push(Opcode::Pop as u8);
                 }
-                
+
                 // Return object
                 ctx.code.push(Opcode::Return as u8);
-                
+
                 // Finalize chunk
                 let chunk = Chunk {
                     locals: ctx.locals.len() as u16,
@@ -973,16 +1115,20 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                     code: ctx.code,
                     handlers: vec![],
                 };
-                
+
                 let chunk_idx = (compiler.chunks.len() + 1) as u16;
                 compiler.chunks.push(chunk);
                 compiler.functions.insert(v_name.clone(), chunk_idx);
             }
         }
         Stmt::ImplDef(trait_name, class_name, methods) => {
-            let trait_idx = *compiler.trait_map.get(trait_name)
+            let trait_idx = *compiler
+                .trait_map
+                .get(trait_name)
                 .ok_or_else(|| Error::Compile(format!("undefined trait: {}", trait_name)))?;
-            let class_idx = *compiler.class_map.get(class_name)
+            let class_idx = *compiler
+                .class_map
+                .get(class_name)
                 .ok_or_else(|| Error::Compile(format!("undefined class: {}", class_name)))?;
 
             // Compile all methods in the impl block
@@ -992,7 +1138,9 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                     let chunk_idx = compile_func_to_chunk(compiler, args.clone(), body)?;
                     method_map.insert(name.clone(), chunk_idx);
                 } else {
-                    return Err(Error::Compile("impl block can only contain function definitions".into()));
+                    return Err(Error::Compile(
+                        "impl block can only contain function definitions".into(),
+                    ));
                 }
             }
 
@@ -1003,7 +1151,10 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                 if let Some(&chunk_idx) = method_map.get(method_name) {
                     impl_methods.push(chunk_idx);
                 } else {
-                    return Err(Error::Compile(format!("missing implementation for method '{}' of trait '{}'", method_name, trait_name)));
+                    return Err(Error::Compile(format!(
+                        "missing implementation for method '{}' of trait '{}'",
+                        method_name, trait_name
+                    )));
                 }
             }
 
@@ -1024,10 +1175,10 @@ pub fn compile(stmts: &[Stmt]) -> Result<NyarcModule, Error> {
     for s in stmts {
         compile_stmt(&mut compiler, &mut contexts, s)?;
     }
-    
+
     let mut main_ctx = contexts.pop().unwrap();
     main_ctx.code.push(Opcode::Halt as u8);
-    
+
     let main_chunk = Chunk {
         locals: main_ctx.locals.len() as u16,
         upvalues: 0,
@@ -1035,12 +1186,15 @@ pub fn compile(stmts: &[Stmt]) -> Result<NyarcModule, Error> {
         code: main_ctx.code,
         handlers: vec![],
     };
-    
+
     let mut all_chunks = vec![main_chunk];
     all_chunks.extend(compiler.chunks);
-    
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     Ok(NyarcModule {
         version: 1,
         flags: 0,

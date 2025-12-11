@@ -1,8 +1,8 @@
 pub use nyar_error::JvmAotError;
-pub use nyar_vm::bytecode::format::NyarcModule;
 use nyar_vm::aot::AotBackend;
 use nyar_vm::bytecode::decoder::{Decoder, Instruction};
-use nyar_vm::bytecode::format::{Constant, Chunk};
+pub use nyar_vm::bytecode::format::NyarcModule;
+use nyar_vm::bytecode::format::{Chunk, Constant};
 
 pub struct JvmBackend;
 
@@ -12,11 +12,19 @@ impl AotBackend for JvmBackend {
     fn compile(&self, module: &NyarcModule) -> Result<Vec<u8>, JvmAotError> {
         compile_module_to_jvm(module)
     }
-    fn compile_with_config(&self, module: &NyarcModule, _config: &Self::Config) -> Result<Vec<u8>, JvmAotError> { compile_module_to_jvm(module) }
+    fn compile_with_config(
+        &self,
+        module: &NyarcModule,
+        _config: &Self::Config,
+    ) -> Result<Vec<u8>, JvmAotError> {
+        compile_module_to_jvm(module)
+    }
 }
 
 pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotError> {
-    if module.chunks.is_empty() { return Err(JvmAotError::EmptyModule); }
+    if module.chunks.is_empty() {
+        return Err(JvmAotError::EmptyModule);
+    }
     let mut class = Vec::new();
     class.extend_from_slice(&0xCAFEBABE_u32.to_be_bytes());
     class.extend_from_slice(&0u16.to_be_bytes());
@@ -25,11 +33,40 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
     let mut cp = Vec::new();
     let mut cp_count: u16 = 1;
 
-    fn cp_utf8(cp: &mut Vec<u8>, s: &str, cp_count: &mut u16) -> u16 { cp.push(1); cp.extend_from_slice(&(s.len() as u16).to_be_bytes()); cp.extend_from_slice(s.as_bytes()); *cp_count += 1; *cp_count - 1 }
-    fn cp_class(cp: &mut Vec<u8>, name_idx: u16, cp_count: &mut u16) -> u16 { cp.push(7); cp.extend_from_slice(&name_idx.to_be_bytes()); *cp_count += 1; *cp_count - 1 }
-    fn cp_long(cp: &mut Vec<u8>, v: i64, cp_count: &mut u16) -> u16 { cp.push(5); cp.extend_from_slice(&(v as i64).to_be_bytes()); let idx = *cp_count; *cp_count += 2; idx }
-    fn cp_name_and_type(cp: &mut Vec<u8>, name_idx: u16, desc_idx: u16, cp_count: &mut u16) -> u16 { cp.push(12); cp.extend_from_slice(&name_idx.to_be_bytes()); cp.extend_from_slice(&desc_idx.to_be_bytes()); *cp_count += 1; *cp_count - 1 }
-    fn cp_methodref(cp: &mut Vec<u8>, class_idx: u16, nat_idx: u16, cp_count: &mut u16) -> u16 { cp.push(10); cp.extend_from_slice(&class_idx.to_be_bytes()); cp.extend_from_slice(&nat_idx.to_be_bytes()); *cp_count += 1; *cp_count - 1 }
+    fn cp_utf8(cp: &mut Vec<u8>, s: &str, cp_count: &mut u16) -> u16 {
+        cp.push(1);
+        cp.extend_from_slice(&(s.len() as u16).to_be_bytes());
+        cp.extend_from_slice(s.as_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+    fn cp_class(cp: &mut Vec<u8>, name_idx: u16, cp_count: &mut u16) -> u16 {
+        cp.push(7);
+        cp.extend_from_slice(&name_idx.to_be_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+    fn cp_long(cp: &mut Vec<u8>, v: i64, cp_count: &mut u16) -> u16 {
+        cp.push(5);
+        cp.extend_from_slice(&(v as i64).to_be_bytes());
+        let idx = *cp_count;
+        *cp_count += 2;
+        idx
+    }
+    fn cp_name_and_type(cp: &mut Vec<u8>, name_idx: u16, desc_idx: u16, cp_count: &mut u16) -> u16 {
+        cp.push(12);
+        cp.extend_from_slice(&name_idx.to_be_bytes());
+        cp.extend_from_slice(&desc_idx.to_be_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+    fn cp_methodref(cp: &mut Vec<u8>, class_idx: u16, nat_idx: u16, cp_count: &mut u16) -> u16 {
+        cp.push(10);
+        cp.extend_from_slice(&class_idx.to_be_bytes());
+        cp.extend_from_slice(&nat_idx.to_be_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
 
     let idx_main_utf8 = cp_utf8(&mut cp, "Main", &mut cp_count);
     let idx_class_main = cp_class(&mut cp, idx_main_utf8, &mut cp_count);
@@ -40,11 +77,17 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
     use std::collections::HashMap;
     let mut long_indices: HashMap<i64, u16> = HashMap::new();
     for ch in &module.chunks {
-        let instrs = Decoder::new(&ch.code).decode_all().map_err(|e| JvmAotError::Decode(format!("{:?}", e)))?;
+        let instrs = Decoder::new(&ch.code)
+            .decode_all()
+            .map_err(|e| JvmAotError::Decode(format!("{:?}", e)))?;
         for ins in &instrs {
             if let Instruction::Push(idx) = ins {
                 if let Some(Constant::Int(v)) = module.constants.get(*idx as usize) {
-                    if *v != 0 && *v != 1 { long_indices.entry(*v).or_insert_with(|| cp_long(&mut cp, *v, &mut cp_count)); }
+                    if *v != 0 && *v != 1 {
+                        long_indices
+                            .entry(*v)
+                            .or_insert_with(|| cp_long(&mut cp, *v, &mut cp_count));
+                    }
                 }
             }
         }
@@ -59,7 +102,9 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
         let name = format!("chunk_{}", i);
         let mut desc = String::new();
         desc.push('(');
-        for _ in 0..ch.locals { desc.push('J'); }
+        for _ in 0..ch.locals {
+            desc.push('J');
+        }
         desc.push_str("Ljava/lang/Object;");
         desc.push(')');
         desc.push('J');
@@ -93,59 +138,121 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
 
         // Code attribute
         class.extend_from_slice(&idx_code_utf8.to_be_bytes());
-        let instrs = Decoder::new(&ch.code).decode_all().map_err(|e| JvmAotError::Decode(format!("{:?}", e)))?;
+        let instrs = Decoder::new(&ch.code)
+            .decode_all()
+            .map_err(|e| JvmAotError::Decode(format!("{:?}", e)))?;
         let mut code: Vec<u8> = Vec::new();
         let mut ins_offsets: Vec<u32> = Vec::with_capacity(instrs.len());
         let mut branches: Vec<(usize, usize)> = Vec::new();
         for (i_idx, ins) in instrs.into_iter().enumerate() {
             ins_offsets.push(code.len() as u32);
             match ins {
-                Instruction::Push(idx) => {
-                    match module.constants.get(idx as usize) {
-                        Some(Constant::Int(v)) => {
-                            if *v == 0 { code.push(0x09); } else if *v == 1 { code.push(0x0A); } else { let cp_idx = *long_indices.get(v).unwrap(); code.push(0x14); code.extend_from_slice(&cp_idx.to_be_bytes()); }
+                Instruction::Push(idx) => match module.constants.get(idx as usize) {
+                    Some(Constant::Int(v)) => {
+                        if *v == 0 {
+                            code.push(0x09);
+                        } else if *v == 1 {
+                            code.push(0x0A);
+                        } else {
+                            let cp_idx = *long_indices.get(v).unwrap();
+                            code.push(0x14);
+                            code.extend_from_slice(&cp_idx.to_be_bytes());
                         }
-                        _ => return Err(JvmAotError::UnsupportedOpcode("Push-non-int".to_string())),
                     }
+                    _ => return Err(JvmAotError::UnsupportedOpcode("Push-non-int".to_string())),
+                },
+                Instruction::Pop => {
+                    code.push(0x58);
                 }
-                Instruction::Pop => { code.push(0x58); }
-                Instruction::LoadLocal(i) => {
-                    match i { 0 => code.push(0x1E), 1 => code.push(0x1F), 2 => code.push(0x20), 3 => code.push(0x21), _ => { code.push(0x16); code.push(i); } }
-                }
-                Instruction::StoreLocal(i) => {
-                    match i { 0 => code.push(0x3F), 1 => code.push(0x40), 2 => code.push(0x41), 3 => code.push(0x42), _ => { code.push(0x37); code.push(i); } }
-                }
+                Instruction::LoadLocal(i) => match i {
+                    0 => code.push(0x1E),
+                    1 => code.push(0x1F),
+                    2 => code.push(0x20),
+                    3 => code.push(0x21),
+                    _ => {
+                        code.push(0x16);
+                        code.push(i);
+                    }
+                },
+                Instruction::StoreLocal(i) => match i {
+                    0 => code.push(0x3F),
+                    1 => code.push(0x40),
+                    2 => code.push(0x41),
+                    3 => code.push(0x42),
+                    _ => {
+                        code.push(0x37);
+                        code.push(i);
+                    }
+                },
                 Instruction::Jump(off) => {
                     let target = (i_idx as isize + off as isize) as isize;
-                    if target < 0 { return Err(JvmAotError::UnsupportedOpcode("Jump-negative-target".to_string())); }
+                    if target < 0 {
+                        return Err(JvmAotError::UnsupportedOpcode(
+                            "Jump-negative-target".to_string(),
+                        ));
+                    }
                     code.push(0xA7);
-                    let pos = code.len(); code.extend_from_slice(&0i16.to_be_bytes()); branches.push((pos, target as usize));
+                    let pos = code.len();
+                    code.extend_from_slice(&0i16.to_be_bytes());
+                    branches.push((pos, target as usize));
                 }
                 Instruction::JumpIfFalse(off) | Instruction::JumpIfNull(off) => {
                     let target = (i_idx as isize + off as isize) as isize;
-                    if target < 0 { return Err(JvmAotError::UnsupportedOpcode("JumpIf-negative-target".to_string())); }
-                    code.push(0x09); code.push(0x94); code.push(0x99);
-                    let pos = code.len(); code.extend_from_slice(&0i16.to_be_bytes()); branches.push((pos, target as usize));
+                    if target < 0 {
+                        return Err(JvmAotError::UnsupportedOpcode(
+                            "JumpIf-negative-target".to_string(),
+                        ));
+                    }
+                    code.push(0x09);
+                    code.push(0x94);
+                    code.push(0x99);
+                    let pos = code.len();
+                    code.extend_from_slice(&0i16.to_be_bytes());
+                    branches.push((pos, target as usize));
                 }
                 Instruction::Call(target_idx, argc) => {
-                    let callee = module.chunks.get(target_idx as usize).ok_or_else(|| JvmAotError::Decode("callee out of range".to_string()))?;
-                    let need_pad = if (argc as u16) >= callee.locals { 0 } else { (callee.locals - argc as u16) as usize };
-                    for _ in 0..need_pad { code.push(0x09); }
+                    let callee = module
+                        .chunks
+                        .get(target_idx as usize)
+                        .ok_or_else(|| JvmAotError::Decode("callee out of range".to_string()))?;
+                    let need_pad = if (argc as u16) >= callee.locals {
+                        0
+                    } else {
+                        (callee.locals - argc as u16) as usize
+                    };
+                    for _ in 0..need_pad {
+                        code.push(0x09);
+                    }
                     code.push(0x01);
                     code.push(0xB8); // invokestatic
                     let mr = chunk_mref_idx[target_idx as usize];
                     code.extend_from_slice(&mr.to_be_bytes());
                 }
-                Instruction::Return | Instruction::Halt => { code.push(0xAD); }
-                other => { return Err(JvmAotError::UnsupportedOpcode(format!("{:?}", other))); }
+                Instruction::Return | Instruction::Halt => {
+                    code.push(0xAD);
+                }
+                other => {
+                    return Err(JvmAotError::UnsupportedOpcode(format!("{:?}", other)));
+                }
             }
         }
         for (pos, target_idx) in branches.iter().copied() {
-            if target_idx >= ins_offsets.len() { return Err(JvmAotError::Decode("branch target out of range".to_string())); }
-            let target_off = ins_offsets[target_idx] as i32; let next_off = (pos as i32) + 2; let rel = target_off - next_off; let rel16 = rel as i16; let bytes = rel16.to_be_bytes(); code[pos] = bytes[0]; code[pos + 1] = bytes[1];
+            if target_idx >= ins_offsets.len() {
+                return Err(JvmAotError::Decode(
+                    "branch target out of range".to_string(),
+                ));
+            }
+            let target_off = ins_offsets[target_idx] as i32;
+            let next_off = (pos as i32) + 2;
+            let rel = target_off - next_off;
+            let rel16 = rel as i16;
+            let bytes = rel16.to_be_bytes();
+            code[pos] = bytes[0];
+            code[pos + 1] = bytes[1];
         }
         let code_len = code.len() as u32;
-        let max_stack = ch.max_stack; let max_locals = ch.locals * 2 + 1;
+        let max_stack = ch.max_stack;
+        let max_locals = ch.locals * 2 + 1;
         let attr_len = 12 + code_len;
         class.extend_from_slice(&attr_len.to_be_bytes());
         class.extend_from_slice(&max_stack.to_be_bytes());

@@ -1,13 +1,16 @@
 pub mod aot;
 
-pub use aot::{compile_module_to_wasm, compile_module_to_wasm_with, WasmCompileOptions, ClosureTypeSelectionMode};
+pub use aot::{
+    compile_module_to_wasm, compile_module_to_wasm_with, ClosureTypeSelectionMode,
+    WasmCompileOptions,
+};
 pub use nyar_error::WasmAotError;
 
 #[cfg(test)]
 mod tests {
+    use crate::compile_module_to_wasm;
     use nyar_vm::bytecode::format::{minimal_module_with_chunk, Constant};
     use nyar_vm::bytecode::opcode::Opcode;
-    use crate::compile_module_to_wasm;
 
     #[test]
     fn compile_push_const_return_to_wasm() {

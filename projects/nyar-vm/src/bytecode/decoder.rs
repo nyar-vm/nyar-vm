@@ -1,7 +1,7 @@
-use crate::bytecode::opcode::{Opcode, I32Ext, I64Ext, F32Ext, F64Ext, BigIntExt, StringExt};
+use crate::bytecode::opcode::{BigIntExt, F32Ext, F64Ext, I32Ext, I64Ext, Opcode, StringExt};
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::Cursor;
 pub use nyar_error::DecodeError;
+use std::io::Cursor;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpvalueRef {
@@ -40,6 +40,13 @@ pub enum Instruction {
     NewArray(u16),
     GetElement,
     SetElement,
+    MakeTuple(u8),
+    HasKey,
+    MatchVariant(u16),
+    SizeOf,
+    NewDynObject,
+    RemoveKey,
+    NewList(u16),
     TypeOf,
     InstanceOf(u16),
     CheckCast(u16),
@@ -172,7 +179,6 @@ pub enum Instruction {
     StringLenChars,
 }
 
-
 pub struct Decoder<'a> {
     code: &'a [u8],
     cursor: Cursor<&'a [u8]>,
@@ -215,9 +221,13 @@ impl<'a> Decoder<'a> {
         loop {
             let b = self.read_u8()? as u64;
             result |= (b & 0x7F) << shift;
-            if (b & 0x80) == 0 { break; }
+            if (b & 0x80) == 0 {
+                break;
+            }
             shift += 7;
-            if shift > 63 { return None; }
+            if shift > 63 {
+                return None;
+            }
         }
         Some(result)
     }
@@ -252,6 +262,13 @@ impl<'a> Decoder<'a> {
             0x33 => Opcode::NewArray,
             0x34 => Opcode::GetElement,
             0x35 => Opcode::SetElement,
+            0x36 => Opcode::MakeTuple,
+            0x37 => Opcode::HasKey,
+            0x38 => Opcode::MatchVariant,
+            0x39 => Opcode::SizeOf,
+            0x3A => Opcode::NewDynObject,
+            0x3B => Opcode::RemoveKey,
+            0x3C => Opcode::NewList,
             0x40 => Opcode::TypeOf,
             0x41 => Opcode::InstanceOf,
             0x42 => Opcode::CheckCast,
@@ -279,7 +296,9 @@ impl<'a> Decoder<'a> {
             let sub = self.read_u8().ok_or(DecodeError::Truncated)?;
             let ins = match op {
                 x if x == 0xC1 => match sub {
-                    x if x == I32Ext::Const as u8 => Instruction::I32Const(self.read_i32().ok_or(DecodeError::Truncated)?),
+                    x if x == I32Ext::Const as u8 => {
+                        Instruction::I32Const(self.read_i32().ok_or(DecodeError::Truncated)?)
+                    }
                     x if x == I32Ext::Add as u8 => Instruction::I32Add,
                     x if x == I32Ext::Sub as u8 => Instruction::I32Sub,
                     x if x == I32Ext::Mul as u8 => Instruction::I32Mul,
@@ -310,7 +329,9 @@ impl<'a> Decoder<'a> {
                     _ => return Err(DecodeError::InvalidOpcode(sub)),
                 },
                 x if x == 0xC2 => match sub {
-                    x if x == I64Ext::Const as u8 => Instruction::I64Const(self.read_i64().ok_or(DecodeError::Truncated)?),
+                    x if x == I64Ext::Const as u8 => {
+                        Instruction::I64Const(self.read_i64().ok_or(DecodeError::Truncated)?)
+                    }
                     x if x == I64Ext::Add as u8 => Instruction::I64Add,
                     x if x == I64Ext::Sub as u8 => Instruction::I64Sub,
                     x if x == I64Ext::Mul as u8 => Instruction::I64Mul,
@@ -336,7 +357,9 @@ impl<'a> Decoder<'a> {
                     _ => return Err(DecodeError::InvalidOpcode(sub)),
                 },
                 x if x == 0xC3 => match sub {
-                    x if x == F32Ext::Const as u8 => Instruction::F32Const(self.read_f32().ok_or(DecodeError::Truncated)?),
+                    x if x == F32Ext::Const as u8 => {
+                        Instruction::F32Const(self.read_f32().ok_or(DecodeError::Truncated)?)
+                    }
                     x if x == F32Ext::Add as u8 => Instruction::F32Add,
                     x if x == F32Ext::Sub as u8 => Instruction::F32Sub,
                     x if x == F32Ext::Mul as u8 => Instruction::F32Mul,
@@ -356,7 +379,9 @@ impl<'a> Decoder<'a> {
                     _ => return Err(DecodeError::InvalidOpcode(sub)),
                 },
                 x if x == 0xC4 => match sub {
-                    x if x == F64Ext::Const as u8 => Instruction::F64Const(self.read_f64().ok_or(DecodeError::Truncated)?),
+                    x if x == F64Ext::Const as u8 => {
+                        Instruction::F64Const(self.read_f64().ok_or(DecodeError::Truncated)?)
+                    }
                     x if x == F64Ext::Add as u8 => Instruction::F64Add,
                     x if x == F64Ext::Sub as u8 => Instruction::F64Sub,
                     x if x == F64Ext::Mul as u8 => Instruction::F64Mul,
@@ -380,7 +405,9 @@ impl<'a> Decoder<'a> {
                         let sign = self.read_u8().ok_or(DecodeError::Truncated)?;
                         let len = self.read_varuint().ok_or(DecodeError::Truncated)? as usize;
                         let mut bytes = vec![0u8; len];
-                        for i in 0..len { bytes[i] = self.read_u8().ok_or(DecodeError::Truncated)?; }
+                        for i in 0..len {
+                            bytes[i] = self.read_u8().ok_or(DecodeError::Truncated)?;
+                        }
                         Instruction::BigIntConst { sign, bytes }
                     }
                     x if x == BigIntExt::Add as u8 => Instruction::BigIntAdd,
@@ -404,8 +431,11 @@ impl<'a> Decoder<'a> {
                     x if x == StringExt::Const as u8 => {
                         let len = self.read_varuint().ok_or(DecodeError::Truncated)? as usize;
                         let mut bytes = vec![0u8; len];
-                        for i in 0..len { bytes[i] = self.read_u8().ok_or(DecodeError::Truncated)?; }
-                        let s = String::from_utf8(bytes).map_err(|_| DecodeError::InvalidOpcode(sub))?;
+                        for i in 0..len {
+                            bytes[i] = self.read_u8().ok_or(DecodeError::Truncated)?;
+                        }
+                        let s = String::from_utf8(bytes)
+                            .map_err(|_| DecodeError::InvalidOpcode(sub))?;
                         Instruction::StringConst(s)
                     }
                     x if x == StringExt::Concat as u8 => Instruction::StringConcat,
@@ -503,6 +533,17 @@ impl<'a> Decoder<'a> {
             }
             Opcode::GetElement => Instruction::GetElement,
             Opcode::SetElement => Instruction::SetElement,
+            Opcode::NewDynObject => Instruction::NewDynObject,
+            Opcode::RemoveKey => Instruction::RemoveKey,
+            Opcode::NewList => Instruction::NewList(self.read_u16().ok_or(DecodeError::Truncated)?),
+            Opcode::MakeTuple => {
+                Instruction::MakeTuple(self.read_u8().ok_or(DecodeError::Truncated)?)
+            }
+            Opcode::HasKey => Instruction::HasKey,
+            Opcode::MatchVariant => {
+                Instruction::MatchVariant(self.read_u16().ok_or(DecodeError::Truncated)?)
+            }
+            Opcode::SizeOf => Instruction::SizeOf,
             Opcode::TypeOf => Instruction::TypeOf,
             Opcode::InstanceOf => {
                 Instruction::InstanceOf(self.read_u16().ok_or(DecodeError::Truncated)?)
@@ -541,7 +582,12 @@ impl<'a> Decoder<'a> {
                 self.read_u8().ok_or(DecodeError::Truncated)?,
             ),
             Opcode::Halt => Instruction::Halt,
-            Opcode::I32Ext | Opcode::I64Ext | Opcode::F32Ext | Opcode::F64Ext | Opcode::BigIntExt | Opcode::StringExt => return Err(DecodeError::InvalidOpcode(op)),
+            Opcode::I32Ext
+            | Opcode::I64Ext
+            | Opcode::F32Ext
+            | Opcode::F64Ext
+            | Opcode::BigIntExt
+            | Opcode::StringExt => return Err(DecodeError::InvalidOpcode(op)),
         };
         Ok(ins)
     }

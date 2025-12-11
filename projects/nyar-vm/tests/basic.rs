@@ -71,3 +71,366 @@ fn perform_throw_unhandled() {
         _ => panic!(),
     }
 }
+
+#[test]
+fn run_make_tuple_and_get_element() {
+    let mut code = Vec::new();
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&2i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&3i64.to_le_bytes());
+    code.push(Opcode::MakeTuple as u8);
+    code.push(3u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::GetElement as u8);
+    code.push(Opcode::Return as u8);
+    let module = minimal_module_with_chunk(code, vec![]);
+    let data = module.encode();
+    let parsed = NyarModule::parse(&data).unwrap();
+    let chunk = parsed.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let mut vm = NyarVM::new(
+        parsed.constants,
+        parsed.chunks.clone(),
+        parsed.classes,
+        parsed.traits,
+        parsed.impls,
+        parsed.effects,
+    );
+    let v = vm.execute(&program).unwrap();
+    unsafe {
+        assert_eq!(v.as_int(), 2);
+    }
+}
+
+#[test]
+fn run_has_key_object() {
+    let mut code = Vec::new();
+    code.push(Opcode::NewObject as u8);
+    code.extend_from_slice(&0u16.to_le_bytes());
+    code.push(Opcode::StringExt as u8);
+    code.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
+    code.push(1u8);
+    code.extend_from_slice(b"a");
+    code.push(Opcode::HasKey as u8);
+    code.push(Opcode::Return as u8);
+    let module = NyarModule {
+        version: 1,
+        flags: 0,
+        timestamp: 0,
+        constants: vec![],
+        effects: vec![],
+        chunks: vec![nyar_vm::bytecode::format::Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code,
+            handlers: vec![],
+        }],
+        classes: vec![nyar_vm::bytecode::format::ClassInfo {
+            name: "C".to_string(),
+            fields: vec!["a".to_string(), "b".to_string()],
+        }],
+        traits: vec![],
+        impls: vec![],
+    };
+    let mut vm = NyarVM::new(
+        module.constants.clone(),
+        module.chunks.clone(),
+        module.classes.clone(),
+        module.traits.clone(),
+        module.impls.clone(),
+        module.effects.clone(),
+    );
+    let chunk = module.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let v = vm.execute(&program).unwrap();
+    unsafe {
+        assert_eq!(v.as_bool(), true);
+    }
+}
+
+#[test]
+fn run_match_variant() {
+    let mut code = Vec::new();
+    code.push(Opcode::NewObject as u8);
+    code.extend_from_slice(&0u16.to_le_bytes());
+    code.push(Opcode::MatchVariant as u8);
+    code.extend_from_slice(&0u16.to_le_bytes());
+    code.push(Opcode::Return as u8);
+    let module = NyarModule {
+        version: 1,
+        flags: 0,
+        timestamp: 0,
+        constants: vec![],
+        effects: vec![],
+        chunks: vec![nyar_vm::bytecode::format::Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code,
+            handlers: vec![],
+        }],
+        classes: vec![
+            nyar_vm::bytecode::format::ClassInfo {
+                name: "V".to_string(),
+                fields: vec![],
+            },
+            nyar_vm::bytecode::format::ClassInfo {
+                name: "W".to_string(),
+                fields: vec![],
+            },
+        ],
+        traits: vec![],
+        impls: vec![],
+    };
+    let mut vm = NyarVM::new(
+        module.constants.clone(),
+        module.chunks.clone(),
+        module.classes.clone(),
+        module.traits.clone(),
+        module.impls.clone(),
+        module.effects.clone(),
+    );
+    let chunk = module.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let v = vm.execute(&program).unwrap();
+    unsafe {
+        assert_eq!(v.as_bool(), true);
+    }
+}
+
+#[test]
+fn run_sizeof_array_string_bigint_object() {
+    let psize = std::mem::size_of::<*mut ()>() as i64;
+    // Array
+    let mut code = Vec::new();
+    code.push(Opcode::NewArray as u8);
+    code.extend_from_slice(&3u16.to_le_bytes());
+    code.push(Opcode::SizeOf as u8);
+    code.push(Opcode::Return as u8);
+    let module = NyarModule {
+        version: 1,
+        flags: 0,
+        timestamp: 0,
+        constants: vec![],
+        effects: vec![],
+        chunks: vec![nyar_vm::bytecode::format::Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code,
+            handlers: vec![],
+        }],
+        classes: vec![],
+        traits: vec![],
+        impls: vec![],
+    };
+    let mut vm = NyarVM::new(
+        module.constants.clone(),
+        module.chunks.clone(),
+        module.classes.clone(),
+        module.traits.clone(),
+        module.impls.clone(),
+        module.effects.clone(),
+    );
+    let chunk = module.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let v = vm.execute(&program).unwrap();
+    unsafe {
+        assert_eq!(v.as_int(), psize);
+    }
+
+    // String
+    let mut code2 = Vec::new();
+    code2.push(Opcode::StringExt as u8);
+    code2.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
+    code2.push(3u8);
+    code2.extend_from_slice(b"abc");
+    code2.push(Opcode::SizeOf as u8);
+    code2.push(Opcode::Return as u8);
+    let module2 = minimal_module_with_chunk(code2, vec![]);
+    let data2 = module2.encode();
+    let parsed2 = NyarModule::parse(&data2).unwrap();
+    let chunk2 = parsed2.chunks[0].clone();
+    let program2 = Decoder::new(&chunk2.code).decode_all().unwrap();
+    let mut vm2 = NyarVM::new(
+        parsed2.constants,
+        parsed2.chunks.clone(),
+        parsed2.classes,
+        parsed2.traits,
+        parsed2.impls,
+        parsed2.effects,
+    );
+    let v2 = vm2.execute(&program2).unwrap();
+    unsafe {
+        assert_eq!(v2.as_int(), psize);
+    }
+
+    // BigInt
+    let mut code3 = Vec::new();
+    code3.push(Opcode::I64Ext as u8);
+    code3.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code3.extend_from_slice(&42i64.to_le_bytes());
+    code3.push(Opcode::BigIntExt as u8);
+    code3.push(nyar_vm::bytecode::opcode::BigIntExt::FromI64 as u8);
+    code3.push(Opcode::SizeOf as u8);
+    code3.push(Opcode::Return as u8);
+    let module3 = minimal_module_with_chunk(code3, vec![]);
+    let data3 = module3.encode();
+    let parsed3 = NyarModule::parse(&data3).unwrap();
+    let chunk3 = parsed3.chunks[0].clone();
+    let program3 = Decoder::new(&chunk3.code).decode_all().unwrap();
+    let mut vm3 = NyarVM::new(
+        parsed3.constants,
+        parsed3.chunks.clone(),
+        parsed3.classes,
+        parsed3.traits,
+        parsed3.impls,
+        parsed3.effects,
+    );
+    let v3 = vm3.execute(&program3).unwrap();
+    unsafe {
+        assert_eq!(v3.as_int(), psize);
+    }
+
+    // Object
+    let mut code4 = Vec::new();
+    code4.push(Opcode::NewObject as u8);
+    code4.extend_from_slice(&0u16.to_le_bytes());
+    code4.push(Opcode::SizeOf as u8);
+    code4.push(Opcode::Return as u8);
+    let module4 = NyarModule {
+        version: 1,
+        flags: 0,
+        timestamp: 0,
+        constants: vec![],
+        effects: vec![],
+        chunks: vec![nyar_vm::bytecode::format::Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code: code4,
+            handlers: vec![],
+        }],
+        classes: vec![nyar_vm::bytecode::format::ClassInfo {
+            name: "O".to_string(),
+            fields: vec!["x".to_string(), "y".to_string()],
+        }],
+        traits: vec![],
+        impls: vec![],
+    };
+    let mut vm4 = NyarVM::new(
+        module4.constants.clone(),
+        module4.chunks.clone(),
+        module4.classes.clone(),
+        module4.traits.clone(),
+        module4.impls.clone(),
+        module4.effects.clone(),
+    );
+    let chunk4 = module4.chunks[0].clone();
+    let program4 = Decoder::new(&chunk4.code).decode_all().unwrap();
+    let v4 = vm4.execute(&program4).unwrap();
+    unsafe {
+        assert_eq!(v4.as_int(), psize);
+    }
+}
+
+#[test]
+fn dynobject_get_set_remove_key() {
+    let mut code = Vec::new();
+    code.push(Opcode::NewDynObject as u8);
+    code.push(Opcode::StringExt as u8);
+    code.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
+    code.push(1u8);
+    code.extend_from_slice(b"a");
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&42i64.to_le_bytes());
+    code.push(Opcode::SetElement as u8);
+    code.push(Opcode::Dup as u8);
+    code.push(0u8);
+    code.push(Opcode::StringExt as u8);
+    code.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
+    code.push(1u8);
+    code.extend_from_slice(b"a");
+    code.push(Opcode::GetElement as u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&0i64.to_le_bytes());
+    code.push(Opcode::Swap as u8);
+    code.push(Opcode::RemoveKey as u8);
+    code.push(Opcode::HasKey as u8);
+    code.push(Opcode::Return as u8);
+    let module = minimal_module_with_chunk(code, vec![]);
+    let data = module.encode();
+    let parsed = NyarModule::parse(&data).unwrap();
+    let chunk = parsed.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let mut vm = NyarVM::new(
+        parsed.constants,
+        parsed.chunks.clone(),
+        parsed.classes,
+        parsed.traits,
+        parsed.impls,
+        parsed.effects,
+    );
+    let v = vm.execute(&program).unwrap();
+    unsafe {
+        assert_eq!(v.as_bool(), false);
+    }
+}
+
+#[test]
+fn list_set_get_remove() {
+    let mut code = Vec::new();
+    code.push(Opcode::NewList as u8);
+    code.extend_from_slice(&3u16.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&7i64.to_le_bytes());
+    code.push(Opcode::SetElement as u8);
+    code.push(Opcode::Dup as u8);
+    code.push(0u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::GetElement as u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::Swap as u8);
+    code.push(Opcode::RemoveKey as u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::HasKey as u8);
+    code.push(Opcode::Return as u8);
+    let module = minimal_module_with_chunk(code, vec![]);
+    let data = module.encode();
+    let parsed = NyarModule::parse(&data).unwrap();
+    let chunk = parsed.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let mut vm = NyarVM::new(
+        parsed.constants,
+        parsed.chunks.clone(),
+        parsed.classes,
+        parsed.traits,
+        parsed.impls,
+        parsed.effects,
+    );
+    let v = vm.execute(&program).unwrap();
+    unsafe {
+        assert_eq!(v.as_bool(), true);
+    }
+}

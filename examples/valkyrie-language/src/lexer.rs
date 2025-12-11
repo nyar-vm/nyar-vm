@@ -25,6 +25,7 @@ pub enum Token {
     Let,
     Micro,
     Return,
+    Yield,
     If,
     Else,
     While,
@@ -43,7 +44,7 @@ pub enum Token {
     // ADT & Pattern Matching
     Enum,
     Match,
-    Arrow, // =>
+    Arrow,      // =>
     Underscore, // _
     True,
     False,
@@ -76,90 +77,187 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
     let b = input.as_bytes();
     while i < b.len() {
         let c = b[i];
-        if c == b' ' || c == b'\n' || c == b'\r' || c == b'\t' { i += 1; continue; }
-        if c == b'#' { while i < b.len() && b[i] != b'\n' { i += 1; } continue; }
-        if c == b'/' {
-            if i + 1 < b.len() && b[i + 1] == b'/' { while i < b.len() && b[i] != b'\n' { i += 1; } continue; }
-            out.push(Token::Slash); i += 1; continue;
+        if c == b' ' || c == b'\n' || c == b'\r' || c == b'\t' {
+            i += 1;
+            continue;
         }
-        if c == b'*' { out.push(Token::Star); i += 1; continue; }
-        if c == b'(' { out.push(Token::LParen); i += 1; continue; }
-        if c == b')' { out.push(Token::RParen); i += 1; continue; }
-        if c == b'{' { out.push(Token::LBrace); i += 1; continue; }
-        if c == b'}' { out.push(Token::RBrace); i += 1; continue; }
-        if c == b',' { out.push(Token::Comma); i += 1; continue; }
-        if c == b'+' { out.push(Token::Plus); i += 1; continue; }
+        if c == b'#' {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c == b'/' {
+            if i + 1 < b.len() && b[i + 1] == b'/' {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            out.push(Token::Slash);
+            i += 1;
+            continue;
+        }
+        if c == b'*' {
+            out.push(Token::Star);
+            i += 1;
+            continue;
+        }
+        if c == b'(' {
+            out.push(Token::LParen);
+            i += 1;
+            continue;
+        }
+        if c == b')' {
+            out.push(Token::RParen);
+            i += 1;
+            continue;
+        }
+        if c == b'{' {
+            out.push(Token::LBrace);
+            i += 1;
+            continue;
+        }
+        if c == b'}' {
+            out.push(Token::RBrace);
+            i += 1;
+            continue;
+        }
+        if c == b',' {
+            out.push(Token::Comma);
+            i += 1;
+            continue;
+        }
+        if c == b'+' {
+            out.push(Token::Plus);
+            i += 1;
+            continue;
+        }
         if c == b'-' {
-             if i + 1 < b.len() && (b[i+1] as char).is_ascii_digit() {
-                 let start = i; i += 1; while i < b.len() && (b[i] as char).is_ascii_digit() { i += 1; }
-                 let s = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
-                 let v = s.parse::<i64>().map_err(|_| Error::Lex("int".to_string()))?;
-                 out.push(Token::Int(v)); continue;
-             }
-             out.push(Token::Minus); i += 1; continue;
+            if i + 1 < b.len() && (b[i + 1] as char).is_ascii_digit() {
+                let start = i;
+                i += 1;
+                while i < b.len() && (b[i] as char).is_ascii_digit() {
+                    i += 1;
+                }
+                let s = std::str::from_utf8(&b[start..i])
+                    .map_err(|_| Error::Lex("utf8".to_string()))?;
+                let v = s
+                    .parse::<i64>()
+                    .map_err(|_| Error::Lex("int".to_string()))?;
+                out.push(Token::Int(v));
+                continue;
+            }
+            out.push(Token::Minus);
+            i += 1;
+            continue;
         }
         if c == b'!' {
             if i + 1 < b.len() && b[i + 1] == b'=' {
-                out.push(Token::NotEq); i += 2; continue;
+                out.push(Token::NotEq);
+                i += 2;
+                continue;
             }
-            out.push(Token::Not); i += 1; continue;
+            out.push(Token::Not);
+            i += 1;
+            continue;
         }
         if c == b'<' {
             if i + 1 < b.len() && b[i + 1] == b'=' {
-                out.push(Token::Le); i += 2; continue;
+                out.push(Token::Le);
+                i += 2;
+                continue;
             }
-            out.push(Token::Lt); i += 1; continue;
+            out.push(Token::Lt);
+            i += 1;
+            continue;
         }
         if c == b'>' {
             if i + 1 < b.len() && b[i + 1] == b'=' {
-                out.push(Token::Ge); i += 2; continue;
+                out.push(Token::Ge);
+                i += 2;
+                continue;
             }
-            out.push(Token::Gt); i += 1; continue;
+            out.push(Token::Gt);
+            i += 1;
+            continue;
         }
         if c == b'&' {
             if i + 1 < b.len() && b[i + 1] == b'&' {
-                out.push(Token::And); i += 2; continue;
+                out.push(Token::And);
+                i += 2;
+                continue;
             }
             return Err(Error::Lex(format!("unexpected byte {}", c)));
         }
         if c == b'=' {
             if i + 1 < b.len() && b[i + 1] == b'>' {
-                out.push(Token::Arrow); i += 2; continue;
+                out.push(Token::Arrow);
+                i += 2;
+                continue;
             }
             if i + 1 < b.len() && b[i + 1] == b'=' {
-                out.push(Token::DoubleEq); i += 2; continue;
+                out.push(Token::DoubleEq);
+                i += 2;
+                continue;
             }
-            out.push(Token::Eq); i += 1; continue;
+            out.push(Token::Eq);
+            i += 1;
+            continue;
         }
-        if c == b'|' { 
+        if c == b'|' {
             if i + 1 < b.len() && b[i + 1] == b'|' {
-                out.push(Token::Or); i += 2; continue;
+                out.push(Token::Or);
+                i += 2;
+                continue;
             }
-            out.push(Token::Pipe); i += 1; continue; 
+            out.push(Token::Pipe);
+            i += 1;
+            continue;
         }
-        if c == b'.' { out.push(Token::Dot); i += 1; continue; }
+        if c == b'.' {
+            out.push(Token::Dot);
+            i += 1;
+            continue;
+        }
         if c == b'_' {
             // Check if it's a standalone underscore or start of identifier
-            if i + 1 < b.len() && ((b[i+1] as char).is_ascii_alphanumeric() || b[i+1] == b'_') {
-                 // It's an identifier starting with _, fall through to identifier parsing
+            if i + 1 < b.len() && ((b[i + 1] as char).is_ascii_alphanumeric() || b[i + 1] == b'_') {
+                // It's an identifier starting with _, fall through to identifier parsing
             } else {
-                 out.push(Token::Underscore); i += 1; continue;
+                out.push(Token::Underscore);
+                i += 1;
+                continue;
             }
         }
-        
+
         if (c as char).is_ascii_digit() {
-            let start = i; i += 1; while i < b.len() && (b[i] as char).is_ascii_digit() { i += 1; }
-            let s = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
-            let v = s.parse::<i64>().map_err(|_| Error::Lex("int".to_string()))?;
-            out.push(Token::Int(v)); continue;
+            let start = i;
+            i += 1;
+            while i < b.len() && (b[i] as char).is_ascii_digit() {
+                i += 1;
+            }
+            let s =
+                std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+            let v = s
+                .parse::<i64>()
+                .map_err(|_| Error::Lex("int".to_string()))?;
+            out.push(Token::Int(v));
+            continue;
         }
         if (c as char).is_ascii_alphabetic() || c == b'_' {
-            let start = i; i += 1; while i < b.len() && ((b[i] as char).is_ascii_alphanumeric() || b[i] == b'_') { i += 1; }
-            let s = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+            let start = i;
+            i += 1;
+            while i < b.len() && ((b[i] as char).is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
+            }
+            let s =
+                std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
             match s {
                 "let" => out.push(Token::Let),
                 "micro" => out.push(Token::Micro),
                 "return" => out.push(Token::Return),
+                "yield" => out.push(Token::Yield),
                 "if" => out.push(Token::If),
                 "else" => out.push(Token::Else),
                 "while" => out.push(Token::While),
@@ -170,8 +268,13 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
                 "new" => out.push(Token::New),
                 "is" => out.push(Token::Is),
                 "as" => {
-                    if i < b.len() && b[i] == b'?' { i += 1; out.push(Token::AsSafe); } else { out.push(Token::As); }
-                },
+                    if i < b.len() && b[i] == b'?' {
+                        i += 1;
+                        out.push(Token::AsSafe);
+                    } else {
+                        out.push(Token::As);
+                    }
+                }
                 "typeof" => out.push(Token::Typeof),
                 "trait" => out.push(Token::Trait),
                 "impl" => out.push(Token::Impl),

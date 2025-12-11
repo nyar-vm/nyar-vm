@@ -1,19 +1,25 @@
 use crate::bytecode::decoder::Instruction;
-use crate::bytecode::format::{Chunk, Constant, ClassInfo, TraitInfo, ImplInfo};
+use crate::bytecode::format::{Chunk, ClassInfo, Constant, ImplInfo, TraitInfo};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
-use crate::vm::value::{Value, ValueTag, Closure, Upvalue, BigInt};
+use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
 use std::ptr::null;
 
 fn normalize(mut v: Vec<u8>) -> Vec<u8> {
     while let Some(&last) = v.last() {
-        if last == 0 { v.pop(); } else { break; }
+        if last == 0 {
+            v.pop();
+        } else {
+            break;
+        }
     }
     v
 }
 
 fn to_u128(bytes: &[u8]) -> Option<u128> {
-    if bytes.len() > 16 { return None; }
+    if bytes.len() > 16 {
+        return None;
+    }
     let mut x: u128 = 0;
     let mut shift = 0u32;
     for &b in bytes {
@@ -32,22 +38,32 @@ fn from_u128(mut x: u128) -> Vec<u8> {
     out
 }
 
+fn key_is_string(v: &Value) -> bool {
+    v.tag == ValueTag::String
+}
+
 fn cmp_abs(a: &[u8], b: &[u8]) -> i8 {
     let la = a.len();
     let lb = b.len();
-    if la != lb { return if la < lb { -1 } else { 1 }; }
+    if la != lb {
+        return if la < lb { -1 } else { 1 };
+    }
     let mut i = la;
     while i > 0 {
         let aa = a[i - 1];
         let bb = b[i - 1];
-        if aa != bb { return if aa < bb { -1 } else { 1 }; }
+        if aa != bb {
+            return if aa < bb { -1 } else { 1 };
+        }
         i -= 1;
     }
     0
 }
 
 fn add_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
-    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) { return from_u128(x + y); }
+    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) {
+        return from_u128(x + y);
+    }
     let n = a.len().max(b.len());
     let mut out = Vec::with_capacity(n + 1);
     let mut carry = 0u16;
@@ -58,12 +74,16 @@ fn add_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
         out.push((s & 0xFF) as u8);
         carry = s >> 8;
     }
-    if carry != 0 { out.push(carry as u8); }
+    if carry != 0 {
+        out.push(carry as u8);
+    }
     normalize(out)
 }
 
 fn sub_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
-    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) { return from_u128(x.wrapping_sub(y)); }
+    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) {
+        return from_u128(x.wrapping_sub(y));
+    }
     let n = a.len();
     let mut out = Vec::with_capacity(n);
     let mut borrow = 0i16;
@@ -71,14 +91,21 @@ fn sub_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
         let ai = a[i] as i16;
         let bi = if i < b.len() { b[i] as i16 } else { 0 };
         let mut d = ai - bi - borrow;
-        if d < 0 { d += 256; borrow = 1; } else { borrow = 0; }
+        if d < 0 {
+            d += 256;
+            borrow = 1;
+        } else {
+            borrow = 0;
+        }
         out.push((d & 0xFF) as u8);
     }
     normalize(out)
 }
 
 fn mul_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
-    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) { return from_u128(x * y); }
+    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) {
+        return from_u128(x * y);
+    }
     let mut out = vec![0u8; a.len() + b.len()];
     for i in 0..a.len() {
         let mut carry = 0u16;
@@ -88,14 +115,22 @@ fn mul_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
             out[k] = (prod & 0xFF) as u8;
             carry = prod >> 8;
         }
-        if carry != 0 { out[i + b.len()] = (out[i + b.len()] as u16 + carry) as u8; }
+        if carry != 0 {
+            out[i + b.len()] = (out[i + b.len()] as u16 + carry) as u8;
+        }
     }
     normalize(out)
 }
 
 fn div_mod_abs(mut a: Vec<u8>, b: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    if b.is_empty() { return (Vec::new(), a); }
-    if let (Some(x), Some(y)) = (to_u128(&a), to_u128(b)) { if y != 0 { return (from_u128(x / y), from_u128(x % y)); } }
+    if b.is_empty() {
+        return (Vec::new(), a);
+    }
+    if let (Some(x), Some(y)) = (to_u128(&a), to_u128(b)) {
+        if y != 0 {
+            return (from_u128(x / y), from_u128(x % y));
+        }
+    }
     let mut q = 0u128;
     while cmp_abs(&a, b) >= 0 {
         a = sub_abs(&a, b);
@@ -128,7 +163,14 @@ pub struct NyarVM {
 }
 
 impl NyarVM {
-    pub fn new(constants: Vec<Constant>, chunks: Vec<Chunk>, classes: Vec<ClassInfo>, traits: Vec<TraitInfo>, impls: Vec<ImplInfo>, effects: Vec<String>) -> Self {
+    pub fn new(
+        constants: Vec<Constant>,
+        chunks: Vec<Chunk>,
+        classes: Vec<ClassInfo>,
+        traits: Vec<TraitInfo>,
+        impls: Vec<ImplInfo>,
+        effects: Vec<String>,
+    ) -> Self {
         Self {
             stack: Vec::with_capacity(64),
             sp: 0,
@@ -203,11 +245,25 @@ impl NyarVM {
                     let lhs = self.pop()?;
                     let l = unsafe { lhs.as_bigint().clone() };
                     let r = unsafe { rhs.as_bigint().clone() };
-                    let res = if l.sign == r.sign { BigInt { sign: l.sign, bytes: add_abs(&l.bytes, &r.bytes) } } else {
+                    let res = if l.sign == r.sign {
+                        BigInt {
+                            sign: l.sign,
+                            bytes: add_abs(&l.bytes, &r.bytes),
+                        }
+                    } else {
                         match cmp_abs(&l.bytes, &r.bytes) {
-                            0 => BigInt { sign: 0, bytes: Vec::new() },
-                            1 => BigInt { sign: l.sign, bytes: sub_abs(&l.bytes, &r.bytes) },
-                            _ => BigInt { sign: r.sign, bytes: sub_abs(&r.bytes, &l.bytes) },
+                            0 => BigInt {
+                                sign: 0,
+                                bytes: Vec::new(),
+                            },
+                            1 => BigInt {
+                                sign: l.sign,
+                                bytes: sub_abs(&l.bytes, &r.bytes),
+                            },
+                            _ => BigInt {
+                                sign: r.sign,
+                                bytes: sub_abs(&r.bytes, &l.bytes),
+                            },
                         }
                     };
                     self.push(Value::bigint(res.sign, res.bytes));
@@ -216,13 +272,29 @@ impl NyarVM {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let mut r = unsafe { rhs.as_bigint().clone() };
-                    if !r.bytes.is_empty() { r.sign ^= 1; }
+                    if !r.bytes.is_empty() {
+                        r.sign ^= 1;
+                    }
                     let l = unsafe { lhs.as_bigint().clone() };
-                    let res = if l.sign == r.sign { BigInt { sign: l.sign, bytes: add_abs(&l.bytes, &r.bytes) } } else {
+                    let res = if l.sign == r.sign {
+                        BigInt {
+                            sign: l.sign,
+                            bytes: add_abs(&l.bytes, &r.bytes),
+                        }
+                    } else {
                         match cmp_abs(&l.bytes, &r.bytes) {
-                            0 => BigInt { sign: 0, bytes: Vec::new() },
-                            1 => BigInt { sign: l.sign, bytes: sub_abs(&l.bytes, &r.bytes) },
-                            _ => BigInt { sign: r.sign, bytes: sub_abs(&r.bytes, &l.bytes) },
+                            0 => BigInt {
+                                sign: 0,
+                                bytes: Vec::new(),
+                            },
+                            1 => BigInt {
+                                sign: l.sign,
+                                bytes: sub_abs(&l.bytes, &r.bytes),
+                            },
+                            _ => BigInt {
+                                sign: r.sign,
+                                bytes: sub_abs(&r.bytes, &l.bytes),
+                            },
                         }
                     };
                     self.push(Value::bigint(res.sign, res.bytes));
@@ -232,7 +304,11 @@ impl NyarVM {
                     let lhs = self.pop()?;
                     let l = unsafe { lhs.as_bigint().clone() };
                     let r = unsafe { rhs.as_bigint().clone() };
-                    let sign = if l.bytes.is_empty() || r.bytes.is_empty() { 0 } else { l.sign ^ r.sign };
+                    let sign = if l.bytes.is_empty() || r.bytes.is_empty() {
+                        0
+                    } else {
+                        l.sign ^ r.sign
+                    };
                     let bytes = mul_abs(&l.bytes, &r.bytes);
                     self.push(Value::bigint(sign, bytes));
                 }
@@ -257,7 +333,11 @@ impl NyarVM {
                 Instruction::BigIntNeg => {
                     let v = self.pop()?;
                     let mut b = unsafe { v.as_bigint().clone() };
-                    if !b.bytes.is_empty() { b.sign ^= 1; } else { b.sign = 0; }
+                    if !b.bytes.is_empty() {
+                        b.sign ^= 1;
+                    } else {
+                        b.sign = 0;
+                    }
                     self.push(Value::bigint(b.sign, b.bytes));
                 }
                 Instruction::BigIntEq => {
@@ -281,9 +361,15 @@ impl NyarVM {
                     let lhs = self.pop()?;
                     let l = unsafe { lhs.as_bigint() };
                     let r = unsafe { rhs.as_bigint() };
-                    let res = if l.sign != r.sign { l.sign != 0 && r.sign == 0 } else {
+                    let res = if l.sign != r.sign {
+                        l.sign != 0 && r.sign == 0
+                    } else {
                         let c = cmp_abs(&l.bytes, &r.bytes);
-                        if l.sign == 0 { c < 0 } else { c > 0 }
+                        if l.sign == 0 {
+                            c < 0
+                        } else {
+                            c > 0
+                        }
                     };
                     self.push(Value::bool(res));
                 }
@@ -292,9 +378,15 @@ impl NyarVM {
                     let lhs = self.pop()?;
                     let l = unsafe { lhs.as_bigint() };
                     let r = unsafe { rhs.as_bigint() };
-                    let res = if l.sign != r.sign { l.sign != 0 && r.sign == 0 } else {
+                    let res = if l.sign != r.sign {
+                        l.sign != 0 && r.sign == 0
+                    } else {
                         let c = cmp_abs(&l.bytes, &r.bytes);
-                        if l.sign == 0 { c <= 0 } else { c >= 0 }
+                        if l.sign == 0 {
+                            c <= 0
+                        } else {
+                            c >= 0
+                        }
                     };
                     self.push(Value::bool(res));
                 }
@@ -303,9 +395,15 @@ impl NyarVM {
                     let lhs = self.pop()?;
                     let l = unsafe { lhs.as_bigint() };
                     let r = unsafe { rhs.as_bigint() };
-                    let res = if l.sign != r.sign { l.sign == 0 && r.sign != 0 } else {
+                    let res = if l.sign != r.sign {
+                        l.sign == 0 && r.sign != 0
+                    } else {
                         let c = cmp_abs(&l.bytes, &r.bytes);
-                        if l.sign == 0 { c > 0 } else { c < 0 }
+                        if l.sign == 0 {
+                            c > 0
+                        } else {
+                            c < 0
+                        }
                     };
                     self.push(Value::bool(res));
                 }
@@ -314,9 +412,15 @@ impl NyarVM {
                     let lhs = self.pop()?;
                     let l = unsafe { lhs.as_bigint() };
                     let r = unsafe { rhs.as_bigint() };
-                    let res = if l.sign != r.sign { l.sign == 0 && r.sign != 0 } else {
+                    let res = if l.sign != r.sign {
+                        l.sign == 0 && r.sign != 0
+                    } else {
                         let c = cmp_abs(&l.bytes, &r.bytes);
-                        if l.sign == 0 { c >= 0 } else { c <= 0 }
+                        if l.sign == 0 {
+                            c >= 0
+                        } else {
+                            c <= 0
+                        }
                     };
                     self.push(Value::bool(res));
                 }
@@ -343,43 +447,50 @@ impl NyarVM {
                 Instruction::I32DivS => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let (r, _) = unsafe { (lhs.as_int() as i32).overflowing_div(rhs.as_int() as i32) };
+                    let (r, _) =
+                        unsafe { (lhs.as_int() as i32).overflowing_div(rhs.as_int() as i32) };
                     self.push(Value::int(r as i64));
                 }
                 Instruction::I32DivU => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let (r, _) = unsafe { (lhs.as_int() as u32).overflowing_div(rhs.as_int() as u32) };
+                    let (r, _) =
+                        unsafe { (lhs.as_int() as u32).overflowing_div(rhs.as_int() as u32) };
                     self.push(Value::int(r as i64));
                 }
                 Instruction::I32RemS => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let (r, _) = unsafe { (lhs.as_int() as i32).overflowing_rem(rhs.as_int() as i32) };
+                    let (r, _) =
+                        unsafe { (lhs.as_int() as i32).overflowing_rem(rhs.as_int() as i32) };
                     self.push(Value::int(r as i64));
                 }
                 Instruction::I32RemU => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let (r, _) = unsafe { (lhs.as_int() as u32).overflowing_rem(rhs.as_int() as u32) };
+                    let (r, _) =
+                        unsafe { (lhs.as_int() as u32).overflowing_rem(rhs.as_int() as u32) };
                     self.push(Value::int(r as i64));
                 }
                 Instruction::I32Add => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i32).wrapping_add(rhs.as_int() as i32) } as i64;
+                    let r =
+                        unsafe { (lhs.as_int() as i32).wrapping_add(rhs.as_int() as i32) } as i64;
                     self.push(Value::int(r));
                 }
                 Instruction::I32Sub => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i32).wrapping_sub(rhs.as_int() as i32) } as i64;
+                    let r =
+                        unsafe { (lhs.as_int() as i32).wrapping_sub(rhs.as_int() as i32) } as i64;
                     self.push(Value::int(r));
                 }
                 Instruction::I32Mul => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i32).wrapping_mul(rhs.as_int() as i32) } as i64;
+                    let r =
+                        unsafe { (lhs.as_int() as i32).wrapping_mul(rhs.as_int() as i32) } as i64;
                     self.push(Value::int(r));
                 }
                 Instruction::I32Neg => {
@@ -517,25 +628,29 @@ impl NyarVM {
                 Instruction::I64DivS => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let (r, _) = unsafe { (lhs.as_int() as i64).overflowing_div(rhs.as_int() as i64) };
+                    let (r, _) =
+                        unsafe { (lhs.as_int() as i64).overflowing_div(rhs.as_int() as i64) };
                     self.push(Value::int(r));
                 }
                 Instruction::I64DivU => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let (r, _) = unsafe { (lhs.as_int() as u64).overflowing_div(rhs.as_int() as u64) };
+                    let (r, _) =
+                        unsafe { (lhs.as_int() as u64).overflowing_div(rhs.as_int() as u64) };
                     self.push(Value::int(r as i64));
                 }
                 Instruction::I64RemS => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let (r, _) = unsafe { (lhs.as_int() as i64).overflowing_rem(rhs.as_int() as i64) };
+                    let (r, _) =
+                        unsafe { (lhs.as_int() as i64).overflowing_rem(rhs.as_int() as i64) };
                     self.push(Value::int(r));
                 }
                 Instruction::I64RemU => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let (r, _) = unsafe { (lhs.as_int() as u64).overflowing_rem(rhs.as_int() as u64) };
+                    let (r, _) =
+                        unsafe { (lhs.as_int() as u64).overflowing_rem(rhs.as_int() as u64) };
                     self.push(Value::int(r as i64));
                 }
                 Instruction::I64Neg => {
@@ -873,7 +988,11 @@ impl NyarVM {
                     let len = unsafe { len_v.as_int() } as usize;
                     let end = start.saturating_add(len);
                     let end = end.min(s.len());
-                    let sub = if start <= end { s[start..end].to_string() } else { String::new() };
+                    let sub = if start <= end {
+                        s[start..end].to_string()
+                    } else {
+                        String::new()
+                    };
                     self.push(Value::string(sub));
                 }
                 Instruction::Push(idx) => {
@@ -961,7 +1080,9 @@ impl NyarVM {
                 }
                 Instruction::LoadUpvalue(idx) => {
                     let f = self.frames.last().unwrap();
-                    if f.closure.is_null() { return Err(VmError::InvalidOpcode); }
+                    if f.closure.is_null() {
+                        return Err(VmError::InvalidOpcode);
+                    }
                     let closure = unsafe { &*f.closure };
                     if (idx as usize) < closure.upvalues.len() {
                         self.push(closure.upvalues[idx as usize].0);
@@ -972,7 +1093,9 @@ impl NyarVM {
                 Instruction::StoreUpvalue(idx) => {
                     let val = self.pop()?;
                     let f = self.frames.last().unwrap();
-                    if f.closure.is_null() { return Err(VmError::InvalidOpcode); }
+                    if f.closure.is_null() {
+                        return Err(VmError::InvalidOpcode);
+                    }
                     // Upvalues are effectively immutable copies for now unless we implement interior mutability
                     // But if we want to update the copy in the closure:
                     // We need mutable access to the closure.
@@ -996,12 +1119,16 @@ impl NyarVM {
                     if callee.tag != ValueTag::Closure {
                         return Err(VmError::InvalidOpcode); // Expected closure
                     }
-                    
+
                     let closure_ptr = unsafe { callee.data.ptr as *mut crate::vm::value::Closure };
                     let closure = unsafe { &*closure_ptr };
                     let chunk_idx = closure.func;
-                    
-                    let chunk = self.chunks.get(chunk_idx).cloned().ok_or(VmError::IndexOutOfBounds)?;
+
+                    let chunk = self
+                        .chunks
+                        .get(chunk_idx)
+                        .cloned()
+                        .ok_or(VmError::IndexOutOfBounds)?;
                     use crate::bytecode::decoder::Decoder;
                     let decoder = Decoder::new(&chunk.code);
                     let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
@@ -1025,7 +1152,9 @@ impl NyarVM {
                 }
                 Instruction::InvokeMethod(name_idx, argc) => {
                     let mut args = Vec::with_capacity(argc as usize);
-                    for _ in 0..argc { args.push(self.pop()?); }
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
                     args.reverse();
 
                     let receiver = self.pop()?;
@@ -1044,12 +1173,18 @@ impl NyarVM {
                                     let lhs = receiver;
                                     unsafe {
                                         match (lhs.tag, rhs.tag) {
-                                            (ValueTag::Int, ValueTag::Int) => self.push(Value::int(lhs.as_int() + rhs.as_int())),
-                                            (ValueTag::Float, ValueTag::Float) => self.push(Value::float(lhs.as_float() + rhs.as_float())),
+                                            (ValueTag::Int, ValueTag::Int) => {
+                                                self.push(Value::int(lhs.as_int() + rhs.as_int()))
+                                            }
+                                            (ValueTag::Float, ValueTag::Float) => self.push(
+                                                Value::float(lhs.as_float() + rhs.as_float()),
+                                            ),
                                             _ => self.push(Value::null()),
                                         }
                                     }
-                                } else { self.push(Value::null()); }
+                                } else {
+                                    self.push(Value::null());
+                                }
                             }
                             "sub" => {
                                 if args.len() == 1 {
@@ -1057,12 +1192,18 @@ impl NyarVM {
                                     let lhs = receiver;
                                     unsafe {
                                         match (lhs.tag, rhs.tag) {
-                                            (ValueTag::Int, ValueTag::Int) => self.push(Value::int(lhs.as_int() - rhs.as_int())),
-                                            (ValueTag::Float, ValueTag::Float) => self.push(Value::float(lhs.as_float() - rhs.as_float())),
+                                            (ValueTag::Int, ValueTag::Int) => {
+                                                self.push(Value::int(lhs.as_int() - rhs.as_int()))
+                                            }
+                                            (ValueTag::Float, ValueTag::Float) => self.push(
+                                                Value::float(lhs.as_float() - rhs.as_float()),
+                                            ),
                                             _ => self.push(Value::null()),
                                         }
                                     }
-                                } else { self.push(Value::null()); }
+                                } else {
+                                    self.push(Value::null());
+                                }
                             }
                             "mul" => {
                                 if args.len() == 1 {
@@ -1070,12 +1211,18 @@ impl NyarVM {
                                     let lhs = receiver;
                                     unsafe {
                                         match (lhs.tag, rhs.tag) {
-                                            (ValueTag::Int, ValueTag::Int) => self.push(Value::int(lhs.as_int() * rhs.as_int())),
-                                            (ValueTag::Float, ValueTag::Float) => self.push(Value::float(lhs.as_float() * rhs.as_float())),
+                                            (ValueTag::Int, ValueTag::Int) => {
+                                                self.push(Value::int(lhs.as_int() * rhs.as_int()))
+                                            }
+                                            (ValueTag::Float, ValueTag::Float) => self.push(
+                                                Value::float(lhs.as_float() * rhs.as_float()),
+                                            ),
                                             _ => self.push(Value::null()),
                                         }
                                     }
-                                } else { self.push(Value::null()); }
+                                } else {
+                                    self.push(Value::null());
+                                }
                             }
                             "div" => {
                                 if args.len() == 1 {
@@ -1083,19 +1230,27 @@ impl NyarVM {
                                     let lhs = receiver;
                                     unsafe {
                                         match (lhs.tag, rhs.tag) {
-                                            (ValueTag::Int, ValueTag::Int) => self.push(Value::int(lhs.as_int() / rhs.as_int())),
-                                            (ValueTag::Float, ValueTag::Float) => self.push(Value::float(lhs.as_float() / rhs.as_float())),
+                                            (ValueTag::Int, ValueTag::Int) => {
+                                                self.push(Value::int(lhs.as_int() / rhs.as_int()))
+                                            }
+                                            (ValueTag::Float, ValueTag::Float) => self.push(
+                                                Value::float(lhs.as_float() / rhs.as_float()),
+                                            ),
                                             _ => self.push(Value::null()),
                                         }
                                     }
-                                } else { self.push(Value::null()); }
+                                } else {
+                                    self.push(Value::null());
+                                }
                             }
                             "eq" => {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
                                     let eq = unsafe {
-                                        if lhs.tag != rhs.tag { false } else {
+                                        if lhs.tag != rhs.tag {
+                                            false
+                                        } else {
                                             match lhs.tag {
                                                 ValueTag::Int => lhs.as_int() == rhs.as_int(),
                                                 ValueTag::Float => lhs.as_float() == rhs.as_float(),
@@ -1107,14 +1262,18 @@ impl NyarVM {
                                         }
                                     };
                                     self.push(Value::bool(eq));
-                                } else { self.push(Value::bool(false)); }
+                                } else {
+                                    self.push(Value::bool(false));
+                                }
                             }
                             "ne" => {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
                                     let eq = unsafe {
-                                        if lhs.tag != rhs.tag { false } else {
+                                        if lhs.tag != rhs.tag {
+                                            false
+                                        } else {
                                             match lhs.tag {
                                                 ValueTag::Int => lhs.as_int() == rhs.as_int(),
                                                 ValueTag::Float => lhs.as_float() == rhs.as_float(),
@@ -1126,9 +1285,15 @@ impl NyarVM {
                                         }
                                     };
                                     self.push(Value::bool(!eq));
-                                } else { self.push(Value::bool(true)); }
+                                } else {
+                                    self.push(Value::bool(true));
+                                }
                             }
-                            _ => return Err(VmError::RuntimeError("Receiver is not an object".into())),
+                            _ => {
+                                return Err(VmError::RuntimeError(
+                                    "Receiver is not an object".into(),
+                                ))
+                            }
                         }
                     } else {
                         let obj_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::Object };
@@ -1138,8 +1303,12 @@ impl NyarVM {
                         let mut chunk_idx = None;
                         for impl_info in &self.impls {
                             if impl_info.class_idx == class_idx {
-                                if let Some(trait_info) = self.traits.get(impl_info.trait_idx as usize) {
-                                    if let Some(idx) = trait_info.methods.iter().position(|m| m == name) {
+                                if let Some(trait_info) =
+                                    self.traits.get(impl_info.trait_idx as usize)
+                                {
+                                    if let Some(idx) =
+                                        trait_info.methods.iter().position(|m| m == name)
+                                    {
                                         if idx < impl_info.methods.len() {
                                             chunk_idx = Some(impl_info.methods[idx]);
                                             break;
@@ -1149,8 +1318,17 @@ impl NyarVM {
                             }
                         }
 
-                        let chunk_idx = chunk_idx.ok_or_else(|| VmError::RuntimeError(format!("Method {} not found for class {}", name, class_idx)))?;
-                        let chunk = self.chunks.get(chunk_idx as usize).cloned().ok_or(VmError::IndexOutOfBounds)?;
+                        let chunk_idx = chunk_idx.ok_or_else(|| {
+                            VmError::RuntimeError(format!(
+                                "Method {} not found for class {}",
+                                name, class_idx
+                            ))
+                        })?;
+                        let chunk = self
+                            .chunks
+                            .get(chunk_idx as usize)
+                            .cloned()
+                            .ok_or(VmError::IndexOutOfBounds)?;
 
                         let mut full_args = Vec::with_capacity(args.len() + 1);
                         full_args.push(receiver);
@@ -1160,17 +1338,30 @@ impl NyarVM {
                         let decoder = Decoder::new(&chunk.code);
                         let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
 
-                        if full_args.len() < chunk.locals as usize { full_args.resize(chunk.locals as usize, Value::null()); }
+                        if full_args.len() < chunk.locals as usize {
+                            full_args.resize(chunk.locals as usize, Value::null());
+                        }
 
-                        let new_frame = Frame { instrs, ip: 0, locals: full_args, closure: null() };
+                        let new_frame = Frame {
+                            instrs,
+                            ip: 0,
+                            locals: full_args,
+                            closure: null(),
+                        };
 
-                        if let Some(next) = next_ip { self.frames.last_mut().unwrap().ip = next; }
+                        if let Some(next) = next_ip {
+                            self.frames.last_mut().unwrap().ip = next;
+                        }
                         self.frames.push(new_frame);
                         next_ip = None;
                     }
                 }
                 Instruction::Call(idx, argc) => {
-                    let chunk = self.chunks.get(idx as usize).cloned().ok_or(VmError::IndexOutOfBounds)?;
+                    let chunk = self
+                        .chunks
+                        .get(idx as usize)
+                        .cloned()
+                        .ok_or(VmError::IndexOutOfBounds)?;
                     use crate::bytecode::decoder::Decoder;
                     let decoder = Decoder::new(&chunk.code);
                     let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
@@ -1222,7 +1413,9 @@ impl NyarVM {
                 }
                 Instruction::FFICall(desc, argc) => {
                     let mut args = Vec::with_capacity(argc as usize);
-                    for _ in 0..argc { args.push(self.pop()?); }
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
                     let name = match self.constants.get(desc as usize) {
                         Some(Constant::String(s)) => s.as_str(),
                         _ => "",
@@ -1245,10 +1438,32 @@ impl NyarVM {
                             }
                             self.push(Value::null());
                         }
+                        "yield" => {
+                            if let Some(v) = args.last() {
+                                let msg = match v.tag {
+                                    ValueTag::Int => format!("{}", unsafe { v.as_int() }),
+                                    ValueTag::Float => format!("{}", unsafe { v.as_float() }),
+                                    ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
+                                    ValueTag::Null => "null".to_string(),
+                                    _ => "<unsupported>".to_string(),
+                                };
+                                if let Some(cb) = &self.stdout {
+                                    cb(&msg);
+                                } else {
+                                    println!("{}", msg);
+                                }
+                            }
+                            self.push(Value::null());
+                        }
                         "add" => {
                             let mut acc = 0i64;
                             for v in args.iter().rev() {
-                                match v.tag { ValueTag::Int => { acc += unsafe { v.as_int() } }, _ => { acc += 0; } }
+                                match v.tag {
+                                    ValueTag::Int => acc += unsafe { v.as_int() },
+                                    _ => {
+                                        acc += 0;
+                                    }
+                                }
                             }
                             self.push(Value::int(acc));
                         }
@@ -1360,7 +1575,9 @@ impl NyarVM {
                                 if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
                                     self.push(Value::bool(unsafe { lhs.as_int() < rhs.as_int() }));
                                 } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
-                                    self.push(Value::bool(unsafe { lhs.as_float() < rhs.as_float() }));
+                                    self.push(Value::bool(unsafe {
+                                        lhs.as_float() < rhs.as_float()
+                                    }));
                                 } else {
                                     self.push(Value::bool(false));
                                 }
@@ -1375,7 +1592,9 @@ impl NyarVM {
                                 if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
                                     self.push(Value::bool(unsafe { lhs.as_int() <= rhs.as_int() }));
                                 } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
-                                    self.push(Value::bool(unsafe { lhs.as_float() <= rhs.as_float() }));
+                                    self.push(Value::bool(unsafe {
+                                        lhs.as_float() <= rhs.as_float()
+                                    }));
                                 } else {
                                     self.push(Value::bool(false));
                                 }
@@ -1390,7 +1609,9 @@ impl NyarVM {
                                 if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
                                     self.push(Value::bool(unsafe { lhs.as_int() > rhs.as_int() }));
                                 } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
-                                    self.push(Value::bool(unsafe { lhs.as_float() > rhs.as_float() }));
+                                    self.push(Value::bool(unsafe {
+                                        lhs.as_float() > rhs.as_float()
+                                    }));
                                 } else {
                                     self.push(Value::bool(false));
                                 }
@@ -1405,7 +1626,9 @@ impl NyarVM {
                                 if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
                                     self.push(Value::bool(unsafe { lhs.as_int() >= rhs.as_int() }));
                                 } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
-                                    self.push(Value::bool(unsafe { lhs.as_float() >= rhs.as_float() }));
+                                    self.push(Value::bool(unsafe {
+                                        lhs.as_float() >= rhs.as_float()
+                                    }));
                                 } else {
                                     self.push(Value::bool(false));
                                 }
@@ -1417,8 +1640,20 @@ impl NyarVM {
                             if args.len() == 2 {
                                 let rhs = args[0];
                                 let lhs = args[1];
-                                let ba = unsafe { if lhs.tag == ValueTag::Bool { lhs.as_bool() } else { false } };
-                                let bb = unsafe { if rhs.tag == ValueTag::Bool { rhs.as_bool() } else { false } };
+                                let ba = unsafe {
+                                    if lhs.tag == ValueTag::Bool {
+                                        lhs.as_bool()
+                                    } else {
+                                        false
+                                    }
+                                };
+                                let bb = unsafe {
+                                    if rhs.tag == ValueTag::Bool {
+                                        rhs.as_bool()
+                                    } else {
+                                        false
+                                    }
+                                };
                                 self.push(Value::bool(ba && bb));
                             } else {
                                 self.push(Value::bool(false));
@@ -1428,8 +1663,20 @@ impl NyarVM {
                             if args.len() == 2 {
                                 let rhs = args[0];
                                 let lhs = args[1];
-                                let ba = unsafe { if lhs.tag == ValueTag::Bool { lhs.as_bool() } else { false } };
-                                let bb = unsafe { if rhs.tag == ValueTag::Bool { rhs.as_bool() } else { false } };
+                                let ba = unsafe {
+                                    if lhs.tag == ValueTag::Bool {
+                                        lhs.as_bool()
+                                    } else {
+                                        false
+                                    }
+                                };
+                                let bb = unsafe {
+                                    if rhs.tag == ValueTag::Bool {
+                                        rhs.as_bool()
+                                    } else {
+                                        false
+                                    }
+                                };
                                 self.push(Value::bool(ba || bb));
                             } else {
                                 self.push(Value::bool(false));
@@ -1452,22 +1699,220 @@ impl NyarVM {
                     }
                 }
                 Instruction::NewObject(class_idx) => {
-                    let cls = self.classes.get(class_idx as usize).ok_or(VmError::IndexOutOfBounds)?;
+                    let cls = self
+                        .classes
+                        .get(class_idx as usize)
+                        .ok_or(VmError::IndexOutOfBounds)?;
                     let fields = vec![Value::null(); cls.fields.len()];
                     let obj = Value::object(class_idx, fields);
                     self.push(obj);
                 }
+                Instruction::NewDynObject => {
+                    self.push(Value::dyn_object());
+                }
+                Instruction::NewArray(len) => {
+                    let mut items = vec![Value::null(); len as usize];
+                    let arr = Value::array(items);
+                    self.push(arr);
+                }
+                Instruction::NewList(len) => {
+                    let mut items = vec![Value::null(); len as usize];
+                    let list = Value::list(items);
+                    self.push(list);
+                }
+                Instruction::GetElement => {
+                    let idx_v = self.pop()?;
+                    let arr_v = self.pop()?;
+                    if arr_v.tag == ValueTag::Array {
+                        let idx = unsafe { idx_v.as_int() };
+                        let arr_ref = unsafe { arr_v.as_array() };
+                        if idx < 0 || (idx as usize) >= arr_ref.items.len() {
+                            return Err(VmError::IndexOutOfBounds);
+                        }
+                        self.push(arr_ref.items[idx as usize]);
+                    } else if arr_v.tag == ValueTag::List {
+                        let idx = unsafe { idx_v.as_int() };
+                        let list_ref = unsafe { arr_v.as_list() };
+                        if idx < 0 || (idx as usize) >= list_ref.items.len() {
+                            return Err(VmError::IndexOutOfBounds);
+                        }
+                        self.push(list_ref.items[idx as usize]);
+                    } else if arr_v.tag == ValueTag::DynObject {
+                        if key_is_string(&idx_v) {
+                            let k = unsafe { idx_v.as_string() };
+                            let obj_ref = unsafe { arr_v.as_dyn_object() };
+                            if let Some(val) = obj_ref.entries.get(k) {
+                                self.push(*val);
+                            } else {
+                                return Err(VmError::RuntimeError("Key not found".into()));
+                            }
+                        } else {
+                            return Err(VmError::InvalidOpcode);
+                        }
+                    } else {
+                        return Err(VmError::InvalidOpcode);
+                    }
+                }
+                Instruction::SetElement => {
+                    let val = self.pop()?;
+                    let idx_v = self.pop()?;
+                    let arr_v = self.pop()?;
+                    if arr_v.tag == ValueTag::Array {
+                        let idx = unsafe { idx_v.as_int() };
+                        let arr_ptr = unsafe { arr_v.data.ptr as *mut crate::vm::value::Array };
+                        let arr_mut = unsafe { &mut *arr_ptr };
+                        if idx < 0 || (idx as usize) >= arr_mut.items.len() {
+                            return Err(VmError::IndexOutOfBounds);
+                        }
+                        arr_mut.items[idx as usize] = val;
+                        self.push(val);
+                    } else if arr_v.tag == ValueTag::List {
+                        let idx = unsafe { idx_v.as_int() };
+                        let list_ptr = unsafe { arr_v.data.ptr as *mut crate::vm::value::List };
+                        let list_mut = unsafe { &mut *list_ptr };
+                        if idx < 0 || (idx as usize) >= list_mut.items.len() {
+                            return Err(VmError::IndexOutOfBounds);
+                        }
+                        list_mut.items[idx as usize] = val;
+                        self.push(val);
+                    } else if arr_v.tag == ValueTag::DynObject {
+                        if key_is_string(&idx_v) {
+                            let k = unsafe { idx_v.as_string().clone() };
+                            let obj_ptr =
+                                unsafe { arr_v.data.ptr as *mut crate::vm::value::DynObject };
+                            let obj_mut = unsafe { &mut *obj_ptr };
+                            obj_mut.entries.insert(k, val);
+                            self.push(Value::null());
+                        } else {
+                            return Err(VmError::InvalidOpcode);
+                        }
+                    } else {
+                        return Err(VmError::InvalidOpcode);
+                    }
+                }
+                Instruction::RemoveKey => {
+                    let key_v = self.pop()?;
+                    let container = self.pop()?;
+                    if container.tag == ValueTag::DynObject {
+                        if key_is_string(&key_v) {
+                            let k = unsafe { key_v.as_string().clone() };
+                            let obj_ptr =
+                                unsafe { container.data.ptr as *mut crate::vm::value::DynObject };
+                            let obj_mut = unsafe { &mut *obj_ptr };
+                            let existed = obj_mut.entries.remove(&k).is_some();
+                            self.push(Value::bool(existed));
+                        } else {
+                            return Err(VmError::InvalidOpcode);
+                        }
+                    } else if container.tag == ValueTag::List {
+                        let idx = unsafe { key_v.as_int() };
+                        let list_ptr = unsafe { container.data.ptr as *mut crate::vm::value::List };
+                        let list_mut = unsafe { &mut *list_ptr };
+                        if idx < 0 || (idx as usize) >= list_mut.items.len() {
+                            self.push(Value::bool(false));
+                        } else {
+                            list_mut.items.remove(idx as usize);
+                            self.push(Value::bool(true));
+                        }
+                    } else if container.tag == ValueTag::Array {
+                        return Err(VmError::RuntimeError(
+                            "Cannot remove from static array".into(),
+                        ));
+                    } else {
+                        return Err(VmError::InvalidOpcode);
+                    }
+                }
+                Instruction::MakeTuple(count) => {
+                    let mut items = Vec::with_capacity(count as usize);
+                    for _ in 0..count {
+                        items.push(self.pop()?);
+                    }
+                    items.reverse();
+                    self.push(Value::array(items));
+                }
+                Instruction::HasKey => {
+                    let key = self.pop()?;
+                    let container = self.pop()?;
+                    let mut exists = false;
+                    if container.tag == ValueTag::Object {
+                        let obj_ptr =
+                            unsafe { container.data.ptr as *mut crate::vm::value::Object };
+                        let obj_ref = unsafe { &*obj_ptr };
+                        if let ValueTag::String = key.tag {
+                            let name = unsafe { key.as_string() };
+                            let cls = self
+                                .classes
+                                .get(obj_ref.class_idx as usize)
+                                .ok_or(VmError::IndexOutOfBounds)?;
+                            exists = cls.fields.iter().any(|f| f == name);
+                        }
+                    } else if container.tag == ValueTag::DynObject {
+                        if let ValueTag::String = key.tag {
+                            let k = unsafe { key.as_string() };
+                            let obj_ref = unsafe { container.as_dyn_object() };
+                            exists = obj_ref.entries.contains_key(k);
+                        }
+                    } else if container.tag == ValueTag::Array {
+                        if let ValueTag::Int = key.tag {
+                            let idx = unsafe { key.as_int() };
+                            let arr_ref = unsafe { container.as_array() };
+                            exists = idx >= 0 && (idx as usize) < arr_ref.items.len();
+                        }
+                    }
+                    self.push(Value::bool(exists));
+                }
+                Instruction::MatchVariant(class_idx) => {
+                    let val = self.pop()?;
+                    let is_match = if val.tag == ValueTag::Object {
+                        let obj_ptr = unsafe { val.data.ptr as *mut crate::vm::value::Object };
+                        let obj_ref = unsafe { &*obj_ptr };
+                        obj_ref.class_idx == class_idx
+                    } else {
+                        false
+                    };
+                    self.push(Value::bool(is_match));
+                }
+                Instruction::SizeOf => {
+                    use std::mem::size_of;
+                    let v = self.pop()?;
+                    let ptr_sz = size_of::<*mut ()>() as i64;
+                    let n = match v.tag {
+                        ValueTag::Int => size_of::<i64>() as i64,
+                        ValueTag::Float => size_of::<f64>() as i64,
+                        ValueTag::Bool => size_of::<u8>() as i64,
+                        ValueTag::Null => 0,
+                        ValueTag::String => ptr_sz,
+                        ValueTag::BigInt => ptr_sz,
+                        ValueTag::Array => ptr_sz,
+                        ValueTag::Object => ptr_sz,
+                        ValueTag::DynObject => ptr_sz,
+                        ValueTag::List => ptr_sz,
+                        ValueTag::Function => ptr_sz,
+                        ValueTag::Closure => ptr_sz,
+                        ValueTag::TraitObject => ptr_sz,
+                        ValueTag::Code => ptr_sz,
+                        ValueTag::Continuation => ptr_sz,
+                        ValueTag::Effect => ptr_sz,
+                        ValueTag::WitnessTable => ptr_sz,
+                    };
+                    self.push(Value::int(n));
+                }
                 Instruction::GetField(name_idx) => {
                     let obj = self.pop()?;
-                    if obj.tag != ValueTag::Object { return Err(VmError::InvalidOpcode); }
+                    if obj.tag != ValueTag::Object {
+                        return Err(VmError::InvalidOpcode);
+                    }
                     let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
                     let obj_ref = unsafe { &*obj_ptr };
-                    
+
                     let name = match self.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s,
                         _ => return Err(VmError::InvalidOpcode),
                     };
-                    let cls = self.classes.get(obj_ref.class_idx as usize).ok_or(VmError::IndexOutOfBounds)?;
+                    let cls = self
+                        .classes
+                        .get(obj_ref.class_idx as usize)
+                        .ok_or(VmError::IndexOutOfBounds)?;
                     if let Some(idx) = cls.fields.iter().position(|f| f == name) {
                         self.push(obj_ref.fields[idx]);
                     } else {
@@ -1477,15 +1922,20 @@ impl NyarVM {
                 Instruction::SetField(name_idx) => {
                     let val = self.pop()?;
                     let obj = self.pop()?;
-                    if obj.tag != ValueTag::Object { return Err(VmError::InvalidOpcode); }
+                    if obj.tag != ValueTag::Object {
+                        return Err(VmError::InvalidOpcode);
+                    }
                     let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
                     let obj_mut = unsafe { &mut *obj_ptr };
-                    
+
                     let name = match self.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s,
                         _ => return Err(VmError::InvalidOpcode),
                     };
-                    let cls = self.classes.get(obj_mut.class_idx as usize).ok_or(VmError::IndexOutOfBounds)?;
+                    let cls = self
+                        .classes
+                        .get(obj_mut.class_idx as usize)
+                        .ok_or(VmError::IndexOutOfBounds)?;
                     if let Some(idx) = cls.fields.iter().position(|f| f == name) {
                         obj_mut.fields[idx] = val;
                         self.push(val);
@@ -1519,16 +1969,19 @@ impl NyarVM {
                     }
                 }
                 Instruction::Cast(class_idx) => {
-                     let obj = self.peek_at(0)?;
-                     if obj.tag == ValueTag::Object {
+                    let obj = self.peek_at(0)?;
+                    if obj.tag == ValueTag::Object {
                         let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
                         let obj_ref = unsafe { &*obj_ptr };
                         if obj_ref.class_idx != class_idx {
-                             return Err(VmError::RuntimeError("Cast failed".into()));
+                            return Err(VmError::RuntimeError("Cast failed".into()));
                         }
-                     } else {
-                         return Err(VmError::RuntimeError(format!("Cast failed: not an object, found {:?}", obj.tag)));
-                     }
+                    } else {
+                        return Err(VmError::RuntimeError(format!(
+                            "Cast failed: not an object, found {:?}",
+                            obj.tag
+                        )));
+                    }
                 }
                 Instruction::Halt => break,
                 _ => {}

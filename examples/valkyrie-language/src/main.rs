@@ -1,8 +1,8 @@
+use nyar_vm::bytecode::decoder::Decoder;
+use nyar_vm::vm::interpreter::NyarVM;
 use std::env;
 use std::fs;
 use valkyrie_language::compile_text_to_module;
-use nyar_vm::vm::interpreter::NyarVM;
-use nyar_vm::bytecode::decoder::Decoder;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -36,7 +36,7 @@ fn main() {
                 eprintln!("No chunks generated");
                 return;
             }
-            
+
             let main_chunk = &module.chunks[0];
             let decoder = Decoder::new(&main_chunk.code);
             match decoder.decode_all() {

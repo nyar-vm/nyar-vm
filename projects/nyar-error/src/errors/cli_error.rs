@@ -1,4 +1,4 @@
-use crate::{DecodeError, FormatError, VmError, WasmAotError, JvmAotError};
+use crate::{DecodeError, FormatError, JvmAotError, VmError, WasmAotError};
 
 #[derive(Debug)]
 pub enum CliError {
@@ -44,8 +44,12 @@ impl std::fmt::Display for CliError {
                 write!(f, "aot error: constant out of bounds: {}", idx)
             }
             CliError::AotJvm(JvmAotError::EmptyModule) => write!(f, "jvm aot error: empty module"),
-            CliError::AotJvm(JvmAotError::Decode(msg)) => write!(f, "jvm aot error: decode: {}", msg),
-            CliError::AotJvm(JvmAotError::UnsupportedOpcode(op)) => write!(f, "jvm aot error: unsupported opcode {}", op),
+            CliError::AotJvm(JvmAotError::Decode(msg)) => {
+                write!(f, "jvm aot error: decode: {}", msg)
+            }
+            CliError::AotJvm(JvmAotError::UnsupportedOpcode(op)) => {
+                write!(f, "jvm aot error: unsupported opcode {}", op)
+            }
             CliError::NoChunk => write!(f, "no chunk to execute"),
         }
     }

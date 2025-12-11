@@ -14,7 +14,10 @@ pub fn compile(target: &str, input: &str, output: Option<String>) -> Result<(), 
     match target {
         t if t.eq_ignore_ascii_case("wasm") => compile_wasm(&module, input, output),
         t if t.eq_ignore_ascii_case("jvm") => compile_jvm(&module, input, output),
-        _ => Err(CliError::Format(FormatError::Text(format!("unknown target: {}", target)))),
+        _ => Err(CliError::Format(FormatError::Text(format!(
+            "unknown target: {}",
+            target
+        )))),
     }
 }
 

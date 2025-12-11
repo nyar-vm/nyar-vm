@@ -12,11 +12,19 @@ pub struct NyarCli {
 
 #[derive(Subcommand)]
 pub enum NyarCommand {
-    Run { file: String },
-    Dump { file: String },
+    Run {
+        file: String,
+    },
+    Dump {
+        file: String,
+    },
     Repl,
     Bench,
-    Compile { target: String, input: String, output: Option<String> },
+    Compile {
+        target: String,
+        input: String,
+        output: Option<String>,
+    },
 }
 
 impl NyarCli {
@@ -26,7 +34,11 @@ impl NyarCli {
             NyarCommand::Dump { file } => cmds::cmd_dump::dump(file),
             NyarCommand::Repl => cmds::cmd_repl::repl(),
             NyarCommand::Bench => cmds::cmd_bench::bench(),
-            NyarCommand::Compile { target, input, output } => cmds::cmd_compile::compile(target, input, output.clone()),
+            NyarCommand::Compile {
+                target,
+                input,
+                output,
+            } => cmds::cmd_compile::compile(target, input, output.clone()),
         }
     }
 }

@@ -1,6 +1,6 @@
 use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::{minimal_module_with_chunk, NyarModule};
-use nyar_vm::bytecode::opcode::{Opcode, I32Ext, I64Ext, F32Ext, F64Ext, StringExt, BigIntExt};
+use nyar_vm::bytecode::opcode::{BigIntExt, F32Ext, F64Ext, I32Ext, I64Ext, Opcode, StringExt};
 use nyar_vm::vm::interpreter::NyarVM;
 
 #[test]
@@ -29,7 +29,9 @@ fn run_i32_add_return() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_int(), 42); }
+    unsafe {
+        assert_eq!(v.as_int(), 42);
+    }
 }
 
 #[test]
@@ -58,7 +60,9 @@ fn run_i64_add_return() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_int(), 43); }
+    unsafe {
+        assert_eq!(v.as_int(), 43);
+    }
 }
 
 #[test]
@@ -87,7 +91,9 @@ fn run_f32_add_return() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert!((v.as_float() - 3.75).abs() < 1e-6); }
+    unsafe {
+        assert!((v.as_float() - 3.75).abs() < 1e-6);
+    }
 }
 
 #[test]
@@ -116,7 +122,9 @@ fn run_f64_add_return() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert!((v.as_float() - 3.75).abs() < 1e-12); }
+    unsafe {
+        assert!((v.as_float() - 3.75).abs() < 1e-12);
+    }
 }
 
 #[test]
@@ -145,7 +153,9 @@ fn run_i32_unsigned_cmp() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_bool(), false); }
+    unsafe {
+        assert_eq!(v.as_bool(), false);
+    }
 }
 
 #[test]
@@ -171,7 +181,9 @@ fn run_i32_to_f64s() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert!((v.as_float() + 2.0).abs() < 1e-12); }
+    unsafe {
+        assert!((v.as_float() + 2.0).abs() < 1e-12);
+    }
 }
 
 #[test]
@@ -197,7 +209,9 @@ fn run_f64_to_i32u() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_int(), 4294967295i64); }
+    unsafe {
+        assert_eq!(v.as_int(), 4294967295i64);
+    }
 }
 
 #[test]
@@ -228,7 +242,9 @@ fn run_string_concat_return() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_string(), &"ab".to_string()); }
+    unsafe {
+        assert_eq!(v.as_string(), &"ab".to_string());
+    }
 }
 
 #[test]
@@ -263,7 +279,9 @@ fn run_bigint_add_return() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_int(), 43); }
+    unsafe {
+        assert_eq!(v.as_int(), 43);
+    }
 }
 
 #[test]
@@ -296,7 +314,9 @@ fn run_bigint_cmp_lt_ge() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_bool(), true); }
+    unsafe {
+        assert_eq!(v.as_bool(), true);
+    }
 
     let mut code2 = Vec::new();
     code2.push(Opcode::I64Ext as u8);
@@ -326,7 +346,9 @@ fn run_bigint_cmp_lt_ge() {
         parsed2.effects,
     );
     let v2 = vm2.execute(&program2).unwrap();
-    unsafe { assert_eq!(v2.as_bool(), true); }
+    unsafe {
+        assert_eq!(v2.as_bool(), true);
+    }
 }
 
 #[test]
@@ -361,7 +383,9 @@ fn run_bigint_mod_to_i64() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_int(), 1i64); }
+    unsafe {
+        assert_eq!(v.as_int(), 1i64);
+    }
 }
 
 #[test]
@@ -389,5 +413,7 @@ fn run_bigint_to_string() {
         parsed.effects,
     );
     let v = vm.execute(&program).unwrap();
-    unsafe { assert_eq!(v.as_string(), &"-123".to_string()); }
+    unsafe {
+        assert_eq!(v.as_string(), &"-123".to_string());
+    }
 }

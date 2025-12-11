@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ptr::null_mut;
 
 #[repr(u8)]
@@ -18,6 +19,8 @@ pub enum ValueTag {
     Effect = 12,
     WitnessTable = 13,
     BigInt = 14,
+    DynObject = 15,
+    List = 16,
 }
 
 #[repr(C)]
@@ -67,12 +70,48 @@ impl Value {
         let b = Box::new(s);
         Self {
             tag: ValueTag::String,
-            data: ValueData { ptr: Box::into_raw(b) as *mut () },
+            data: ValueData {
+                ptr: Box::into_raw(b) as *mut (),
+            },
+        }
+    }
+    pub fn array(items: Vec<Value>) -> Self {
+        let a = Box::new(Array { items });
+        Self {
+            tag: ValueTag::Array,
+            data: ValueData {
+                ptr: Box::into_raw(a) as *mut (),
+            },
         }
     }
     pub fn bigint(sign: u8, bytes: Vec<u8>) -> Self {
         let b = Box::new(BigInt { sign, bytes });
-        Self { tag: ValueTag::BigInt, data: ValueData { ptr: Box::into_raw(b) as *mut () } }
+        Self {
+            tag: ValueTag::BigInt,
+            data: ValueData {
+                ptr: Box::into_raw(b) as *mut (),
+            },
+        }
+    }
+    pub fn dyn_object() -> Self {
+        let o = Box::new(DynObject {
+            entries: HashMap::new(),
+        });
+        Self {
+            tag: ValueTag::DynObject,
+            data: ValueData {
+                ptr: Box::into_raw(o) as *mut (),
+            },
+        }
+    }
+    pub fn list(items: Vec<Value>) -> Self {
+        let l = Box::new(List { items });
+        Self {
+            tag: ValueTag::List,
+            data: ValueData {
+                ptr: Box::into_raw(l) as *mut (),
+            },
+        }
     }
     pub fn bigint_from_i64(v: i64) -> Self {
         let mut bytes = Vec::new();
@@ -81,8 +120,16 @@ impl Value {
             bytes.push((u & 0xFF) as u8);
             u >>= 8;
         }
-        let b = Box::new(BigInt { sign: if v < 0 { 1 } else { 0 }, bytes });
-        Self { tag: ValueTag::BigInt, data: ValueData { ptr: Box::into_raw(b) as *mut () } }
+        let b = Box::new(BigInt {
+            sign: if v < 0 { 1 } else { 0 },
+            bytes,
+        });
+        Self {
+            tag: ValueTag::BigInt,
+            data: ValueData {
+                ptr: Box::into_raw(b) as *mut (),
+            },
+        }
     }
     pub fn closure(func_idx: u16, upvalues: Vec<Upvalue>) -> Self {
         let c = Box::new(Closure {
@@ -97,10 +144,7 @@ impl Value {
         }
     }
     pub fn object(class_idx: u16, fields: Vec<Value>) -> Self {
-        let o = Box::new(Object {
-            class_idx,
-            fields,
-        });
+        let o = Box::new(Object { class_idx, fields });
         Self {
             tag: ValueTag::Object,
             data: ValueData {
@@ -120,8 +164,17 @@ impl Value {
     pub unsafe fn as_string<'a>(&self) -> &'a String {
         &*(self.data.ptr as *const String)
     }
+    pub unsafe fn as_array<'a>(&self) -> &'a Array {
+        &*(self.data.ptr as *const Array)
+    }
     pub unsafe fn as_bigint<'a>(&self) -> &'a BigInt {
         &*(self.data.ptr as *const BigInt)
+    }
+    pub unsafe fn as_dyn_object<'a>(&self) -> &'a DynObject {
+        &*(self.data.ptr as *const DynObject)
+    }
+    pub unsafe fn as_list<'a>(&self) -> &'a List {
+        &*(self.data.ptr as *const List)
     }
 }
 
@@ -166,9 +219,15 @@ impl BigInt {
             let part = (b as u64) << shift;
             v = v.wrapping_add(part);
             shift += 8;
-            if shift >= 64 { break; }
+            if shift >= 64 {
+                break;
+            }
         }
-        if self.sign != 0 { -(v as i64) } else { v as i64 }
+        if self.sign != 0 {
+            -(v as i64)
+        } else {
+            v as i64
+        }
     }
     pub fn from_i64(v: i64) -> Self {
         let mut bytes = Vec::new();
@@ -177,6 +236,22 @@ impl BigInt {
             bytes.push((u & 0xFF) as u8);
             u >>= 8;
         }
-        BigInt { sign: if v < 0 { 1 } else { 0 }, bytes }
+        BigInt {
+            sign: if v < 0 { 1 } else { 0 },
+            bytes,
+        }
     }
+}
+#[derive(Clone)]
+pub struct DynObject {
+    pub entries: HashMap<String, Value>,
+}
+#[derive(Clone)]
+pub struct Array {
+    pub items: Vec<Value>,
+}
+
+#[derive(Clone)]
+pub struct List {
+    pub items: Vec<Value>,
 }
