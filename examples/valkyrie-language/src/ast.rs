@@ -49,6 +49,8 @@ pub enum Stmt {
     Let(String, Expr),
     Return(Expr),
     Yield(Expr),
+    Assert(Expr, Option<Expr>),
+    Debug(Expr),
     // micro name(args) { body }
     FuncDef(String, Vec<String>, Vec<Stmt>),
     // class Name { field1, field2 }

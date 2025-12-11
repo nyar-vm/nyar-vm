@@ -21,6 +21,7 @@ pub enum ValueTag {
     BigInt = 14,
     DynObject = 15,
     List = 16,
+    Tuple = 17,
 }
 
 #[repr(C)]
@@ -113,6 +114,24 @@ impl Value {
             },
         }
     }
+    pub fn tuple(items: Vec<Value>) -> Self {
+        let t = Box::new(Tuple { items });
+        Self {
+            tag: ValueTag::Tuple,
+            data: ValueData {
+                ptr: Box::into_raw(t) as *mut (),
+            },
+        }
+    }
+    pub fn effect(type_idx: u16, args: Vec<Value>) -> Self {
+        let e = Box::new(Effect { type_idx, args });
+        Self {
+            tag: ValueTag::Effect,
+            data: ValueData {
+                ptr: Box::into_raw(e) as *mut (),
+            },
+        }
+    }
     pub fn bigint_from_i64(v: i64) -> Self {
         let mut bytes = Vec::new();
         let mut u = if v < 0 { (-v) as u64 } else { v as u64 };
@@ -152,6 +171,15 @@ impl Value {
             },
         }
     }
+    pub fn continuation(ip: usize, stack_slice: Vec<Value>) -> Self {
+        let c = Box::new(Continuation { ip, stack_slice });
+        Self {
+            tag: ValueTag::Continuation,
+            data: ValueData {
+                ptr: Box::into_raw(c) as *mut (),
+            },
+        }
+    }
     pub unsafe fn as_int(&self) -> i64 {
         self.data.int
     }
@@ -175,6 +203,15 @@ impl Value {
     }
     pub unsafe fn as_list<'a>(&self) -> &'a List {
         &*(self.data.ptr as *const List)
+    }
+    pub unsafe fn as_tuple<'a>(&self) -> &'a Tuple {
+        &*(self.data.ptr as *const Tuple)
+    }
+    pub unsafe fn as_effect<'a>(&self) -> &'a Effect {
+        &*(self.data.ptr as *const Effect)
+    }
+    pub unsafe fn as_cont<'a>(&self) -> &'a Continuation {
+        &*(self.data.ptr as *const Continuation)
     }
 }
 
@@ -255,3 +292,16 @@ pub struct Array {
 pub struct List {
     pub items: Vec<Value>,
 }
+
+#[derive(Clone)]
+pub struct Tuple {
+    pub items: Vec<Value>,
+}
+
+#[derive(Clone)]
+pub struct Effect {
+    pub type_idx: u16,
+    pub args: Vec<Value>,
+}
+
+ 

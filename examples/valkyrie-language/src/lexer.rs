@@ -46,6 +46,8 @@ pub enum Token {
     Match,
     Arrow,      // =>
     Underscore, // _
+    Assert,
+    Debug,
     True,
     False,
     Int(i64),
@@ -281,6 +283,8 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
                 "for" => out.push(Token::For),
                 "enum" => out.push(Token::Enum),
                 "match" => out.push(Token::Match),
+                "assert" => out.push(Token::Assert),
+                "debug" => out.push(Token::Debug),
                 "true" => out.push(Token::True),
                 "false" => out.push(Token::False),
                 _ => out.push(Token::Ident(s.to_string())),

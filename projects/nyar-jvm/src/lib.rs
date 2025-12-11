@@ -1,12 +1,12 @@
 pub use nyar_error::JvmAotError;
-use nyar_vm::aot::AotBackend;
+use nyar_vm::aot::AotCompiler;
 use nyar_vm::bytecode::decoder::{Decoder, Instruction};
 pub use nyar_vm::bytecode::format::NyarcModule;
 use nyar_vm::bytecode::format::{Chunk, Constant};
 
 pub struct JvmBackend;
 
-impl AotBackend for JvmBackend {
+impl AotCompiler for JvmBackend {
     type Error = JvmAotError;
     type Config = ();
     fn compile(&self, module: &NyarcModule) -> Result<Vec<u8>, JvmAotError> {

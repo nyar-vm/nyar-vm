@@ -1,4 +1,5 @@
 use nyar_vm::bytecode::decoder::Decoder;
+use nyar_vm::bytecode::decoder::Instruction;
 use nyar_vm::vm::interpreter::NyarVM;
 use std::cell::RefCell;
 use std::fs;
@@ -89,4 +90,34 @@ fn run_test(path: &Path) {
             path
         );
     }
+}
+
+#[test]
+fn test_integer_ops_i64ext() {
+    let src = "print(1 + 2)";
+    let module = compile_text_to_module(src).expect("Failed to compile");
+    let main_chunk = &module.chunks[0];
+    let decoder = Decoder::new(&main_chunk.code);
+    let instrs = decoder.decode_all().expect("Failed to decode main chunk");
+    assert!(instrs.iter().any(|i| matches!(i, Instruction::I64Add)));
+}
+
+#[test]
+fn test_logic_ops_invokemethod() {
+    let src = "print((true && false) || !true)";
+    let module = compile_text_to_module(src).expect("Failed to compile");
+    let main_chunk = &module.chunks[0];
+    let decoder = Decoder::new(&main_chunk.code);
+    let instrs = decoder.decode_all().expect("Failed to decode main chunk");
+    assert!(instrs.iter().any(|i| matches!(i, Instruction::InvokeMethod(_, _))));
+}
+
+#[test]
+fn test_integer_mul_i64ext() {
+    let src = "print(2 * 3)";
+    let module = compile_text_to_module(src).expect("Failed to compile");
+    let main_chunk = &module.chunks[0];
+    let decoder = Decoder::new(&main_chunk.code);
+    let instrs = decoder.decode_all().expect("Failed to decode main chunk");
+    assert!(instrs.iter().any(|i| matches!(i, Instruction::I64Mul)));
 }

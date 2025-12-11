@@ -5,6 +5,22 @@ use nyar_vm::bytecode::opcode::Opcode;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TypeKind {
+    Int,
+    Bool,
+    Unknown,
+}
+
+impl TypeKind {
+    fn is_int(self) -> bool {
+        matches!(self, TypeKind::Int)
+    }
+    fn is_bool(self) -> bool {
+        matches!(self, TypeKind::Bool)
+    }
+}
+
 struct Compiler {
     constants: Vec<Constant>,
     chunks: Vec<Chunk>,
@@ -22,6 +38,7 @@ struct FunctionContext {
     locals: Vec<String>,
     upvalues: Vec<(bool, u8)>, // (is_local, index)
     loops: Vec<LoopContext>,
+    local_types: HashMap<String, TypeKind>,
 }
 
 #[derive(Clone)]
@@ -68,6 +85,7 @@ impl FunctionContext {
             locals: args, // Arguments are the first locals
             upvalues: Vec::new(),
             loops: Vec::new(),
+            local_types: HashMap::new(),
         }
     }
 
@@ -81,6 +99,14 @@ impl FunctionContext {
         i as u8
     }
 
+    fn set_local_type(&mut self, name: String, ty: TypeKind) {
+        self.local_types.insert(name, ty);
+    }
+
+    fn get_local_type(&self, name: &str) -> Option<TypeKind> {
+        self.local_types.get(name).copied()
+    }
+
     fn add_upvalue(&mut self, is_local: bool, index: u8) -> u8 {
         for (i, up) in self.upvalues.iter().enumerate() {
             if up.0 == is_local && up.1 == index {
@@ -90,6 +116,76 @@ impl FunctionContext {
         let i = self.upvalues.len();
         self.upvalues.push((is_local, index));
         i as u8
+    }
+}
+
+fn infer_expr_type(contexts: &[FunctionContext], e: &Expr) -> TypeKind {
+    match e {
+        Expr::Int(_) => TypeKind::Int,
+        Expr::Bool(_) => TypeKind::Bool,
+        Expr::Variable(name) => {
+            if let Some(ctx) = contexts.last() {
+                ctx.get_local_type(name).unwrap_or(TypeKind::Unknown)
+            } else {
+                TypeKind::Unknown
+            }
+        }
+        Expr::Add(a, b)
+        | Expr::Sub(a, b)
+        | Expr::Mul(a, b)
+        | Expr::Div(a, b) => {
+            let ta = infer_expr_type(contexts, a);
+            let tb = infer_expr_type(contexts, b);
+            if ta.is_int() && tb.is_int() {
+                TypeKind::Int
+            } else {
+                TypeKind::Unknown
+            }
+        }
+        Expr::Eq(a, b) | Expr::Ne(a, b) | Expr::Lt(a, b) | Expr::Le(a, b) | Expr::Gt(a, b) | Expr::Ge(a, b) => {
+            let ta = infer_expr_type(contexts, a);
+            let tb = infer_expr_type(contexts, b);
+            if ta.is_int() && tb.is_int() {
+                TypeKind::Bool
+            } else {
+                TypeKind::Unknown
+            }
+        }
+        Expr::And(a, b) | Expr::Or(a, b) => {
+            let ta = infer_expr_type(contexts, a);
+            let tb = infer_expr_type(contexts, b);
+            if ta.is_bool() && tb.is_bool() {
+                TypeKind::Bool
+            } else {
+                TypeKind::Unknown
+            }
+        }
+        Expr::Not(a) => {
+            let ta = infer_expr_type(contexts, a);
+            if ta.is_bool() {
+                TypeKind::Bool
+            } else {
+                TypeKind::Unknown
+            }
+        }
+        Expr::Neg(a) => {
+            let ta = infer_expr_type(contexts, a);
+            if ta.is_int() {
+                TypeKind::Int
+            } else {
+                TypeKind::Unknown
+            }
+        }
+        Expr::TypeOf(_) => TypeKind::Unknown,
+        Expr::Call(_, _) => TypeKind::Unknown,
+        Expr::Closure(_, _) => TypeKind::Unknown,
+        Expr::New(_) => TypeKind::Unknown,
+        Expr::GetField(_, _) => TypeKind::Unknown,
+        Expr::SetField(_, _, _) => TypeKind::Unknown,
+        Expr::InstanceOf(_, _) => TypeKind::Bool,
+        Expr::Cast(_, _) => TypeKind::Unknown,
+        Expr::CheckCast(_, _) => TypeKind::Unknown,
+        Expr::Match(_, _) => TypeKind::Unknown,
     }
 }
 
@@ -287,128 +383,194 @@ fn compile_expr(
             }
         }
         Expr::Add(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let idx = compiler.add_string("add");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::InvokeMethod as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(1u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::Add as u8);
+            } else {
+                let idx = compiler.add_string("add");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Sub(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let idx = compiler.add_string("sub");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::InvokeMethod as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(1u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::Sub as u8);
+            } else {
+                let idx = compiler.add_string("sub");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Mul(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let idx = compiler.add_string("mul");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::InvokeMethod as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(1u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::Mul as u8);
+            } else {
+                let idx = compiler.add_string("mul");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Div(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let idx = compiler.add_string("div");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::InvokeMethod as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(1u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::DivS as u8);
+            } else {
+                let idx = compiler.add_string("div");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::And(a, b) => {
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let idx = compiler.add_string("and");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.push(Opcode::InvokeMethod as u8);
             ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(2u8);
+            ctx.code.push(1u8);
         }
         Expr::Or(a, b) => {
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let idx = compiler.add_string("or");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.push(Opcode::InvokeMethod as u8);
             ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(2u8);
+            ctx.code.push(1u8);
         }
         Expr::Eq(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let name_idx = compiler.add_string("eq");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::InvokeMethod as u8);
-            ctx.code.extend_from_slice(&name_idx.to_le_bytes());
-            ctx.code.push(1u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::Eq as u8);
+            } else {
+                let name_idx = compiler.add_string("eq");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&name_idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Ne(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let name_idx = compiler.add_string("ne");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::InvokeMethod as u8);
-            ctx.code.extend_from_slice(&name_idx.to_le_bytes());
-            ctx.code.push(1u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::Ne as u8);
+            } else {
+                let name_idx = compiler.add_string("ne");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&name_idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Lt(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let idx = compiler.add_string("lt");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(2u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::LtS as u8);
+            } else {
+                let idx = compiler.add_string("lt");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Le(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let idx = compiler.add_string("le");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(2u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::LeS as u8);
+            } else {
+                let idx = compiler.add_string("le");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Gt(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let idx = compiler.add_string("gt");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(2u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::GtS as u8);
+            } else {
+                let idx = compiler.add_string("gt");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Ge(a, b) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
-            let idx = compiler.add_string("ge");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(2u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::GeS as u8);
+            } else {
+                let idx = compiler.add_string("ge");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(1u8);
+            }
         }
         Expr::Not(a) => {
             compile_expr(compiler, contexts, a)?;
             let idx = compiler.add_string("not");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.push(Opcode::InvokeMethod as u8);
             ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(1u8);
+            ctx.code.push(0u8);
         }
         Expr::Neg(a) => {
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
-            let idx = compiler.add_string("neg");
             let ctx = contexts.last_mut().unwrap();
-            ctx.code.push(Opcode::FFICall as u8);
-            ctx.code.extend_from_slice(&idx.to_le_bytes());
-            ctx.code.push(1u8);
+            if is_int {
+                ctx.code.push(Opcode::I64Ext as u8);
+                ctx.code.push(nyar_vm::bytecode::opcode::I64Ext::Neg as u8);
+            } else {
+                let idx = compiler.add_string("neg");
+                ctx.code.push(Opcode::InvokeMethod as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(0u8);
+            }
         }
         Expr::TypeOf(a) => {
             compile_expr(compiler, contexts, a)?;
@@ -798,6 +960,68 @@ fn compile_stmt(
     s: &Stmt,
 ) -> Result<(), Error> {
     match s {
+        Stmt::Assert(cond, msg) => {
+            compile_expr(compiler, contexts, cond)?;
+            let j_false = {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::JumpIfFalse as u8);
+                let idx = ctx.code.len();
+                ctx.code.extend_from_slice(&0i16.to_le_bytes());
+                idx
+            };
+            let j_end = {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::Jump as u8);
+                let idx = ctx.code.len();
+                ctx.code.extend_from_slice(&0i16.to_le_bytes());
+                idx
+            };
+            let fail_pos = {
+                let ctx = contexts.last().unwrap();
+                ctx.code.len()
+            };
+            {
+                let ctx = contexts.last_mut().unwrap();
+                if let Some(e) = msg {
+                    compile_expr(compiler, contexts, e)?;
+                    let didx = compiler.add_string("assert");
+                    ctx.code.push(Opcode::FFICall as u8);
+                    ctx.code.extend_from_slice(&didx.to_le_bytes());
+                    ctx.code.push(1u8);
+                } else {
+                    let didx = compiler.add_string("assert");
+                    ctx.code.push(Opcode::FFICall as u8);
+                    ctx.code.extend_from_slice(&didx.to_le_bytes());
+                    ctx.code.push(0u8);
+                }
+            }
+            let end_pos = {
+                let ctx = contexts.last().unwrap();
+                ctx.code.len()
+            };
+            {
+                let ctx = contexts.last_mut().unwrap();
+                let jump_pos = j_false - 1;
+                let off = count_instructions(&ctx.code, jump_pos, fail_pos) as i16;
+                let bytes = off.to_le_bytes();
+                ctx.code[j_false] = bytes[0];
+                ctx.code[j_false + 1] = bytes[1];
+                let jump_pos2 = j_end - 1;
+                let off2 = count_instructions(&ctx.code, jump_pos2, end_pos) as i16;
+                let b2 = off2.to_le_bytes();
+                ctx.code[j_end] = b2[0];
+                ctx.code[j_end + 1] = b2[1];
+            }
+        }
+        Stmt::Debug(e) => {
+            compile_expr(compiler, contexts, e)?;
+            let ctx = contexts.last_mut().unwrap();
+            let didx = compiler.add_string("print");
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&didx.to_le_bytes());
+            ctx.code.push(1u8);
+            ctx.code.push(Opcode::Pop as u8);
+        }
         Stmt::If(cond, then_body, else_body) => {
             compile_expr(compiler, contexts, cond)?;
             let j_false = {
@@ -1005,9 +1229,11 @@ fn compile_stmt(
             ctx.code.push(Opcode::Pop as u8);
         }
         Stmt::Let(name, val) => {
+            let ty = infer_expr_type(&contexts, val);
             compile_expr(compiler, contexts, val)?;
             let ctx = contexts.last_mut().unwrap();
             let idx = ctx.add_local(name.clone());
+            ctx.set_local_type(name.clone(), ty);
             ctx.code.push(Opcode::StoreLocal as u8);
             ctx.code.push(idx);
         }

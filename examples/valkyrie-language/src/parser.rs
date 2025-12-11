@@ -107,6 +107,46 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
 
 fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
     match tokens.get(*i) {
+        Some(Token::Assert) => {
+            *i += 1;
+            match tokens.get(*i) {
+                Some(Token::LParen) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect (".into())),
+            }
+            let cond = parse_expr(tokens, i)?;
+            let msg = if let Some(Token::Comma) = tokens.get(*i) {
+                *i += 1;
+                Some(parse_expr(tokens, i)?)
+            } else {
+                None
+            };
+            match tokens.get(*i) {
+                Some(Token::RParen) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect )".into())),
+            }
+            Ok(Stmt::Assert(cond, msg))
+        }
+        Some(Token::Debug) => {
+            *i += 1;
+            match tokens.get(*i) {
+                Some(Token::LParen) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect (".into())),
+            }
+            let e = parse_expr(tokens, i)?;
+            match tokens.get(*i) {
+                Some(Token::RParen) => {
+                    *i += 1;
+                }
+                _ => return Err(Error::Parse("expect )".into())),
+            }
+            Ok(Stmt::Debug(e))
+        }
         Some(Token::If) => parse_if(tokens, i),
         Some(Token::While) => {
             *i += 1;

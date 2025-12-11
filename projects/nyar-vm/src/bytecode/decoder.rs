@@ -55,6 +55,9 @@ pub enum Instruction {
     WithHandler(u16),
     ResumeWith,
     CaptureCont,
+    Await,
+    BlockOn,
+    MatchEffect(u16),
     GetWitnessTable(u16, u16),
     WitnessMethod(u16),
     OpenExistential,
@@ -277,6 +280,9 @@ impl<'a> Decoder<'a> {
             0x51 => Opcode::WithHandler,
             0x52 => Opcode::ResumeWith,
             0x53 => Opcode::CaptureCont,
+            0x54 => Opcode::Await,
+            0x55 => Opcode::BlockOn,
+            0x56 => Opcode::MatchEffect,
             0x60 => Opcode::GetWitnessTable,
             0x61 => Opcode::WitnessMethod,
             0x62 => Opcode::OpenExistential,
@@ -561,6 +567,11 @@ impl<'a> Decoder<'a> {
             }
             Opcode::ResumeWith => Instruction::ResumeWith,
             Opcode::CaptureCont => Instruction::CaptureCont,
+            Opcode::Await => Instruction::Await,
+            Opcode::BlockOn => Instruction::BlockOn,
+            Opcode::MatchEffect => {
+                Instruction::MatchEffect(self.read_u16().ok_or(DecodeError::Truncated)?)
+            }
             Opcode::GetWitnessTable => Instruction::GetWitnessTable(
                 self.read_u16().ok_or(DecodeError::Truncated)?,
                 self.read_u16().ok_or(DecodeError::Truncated)?,

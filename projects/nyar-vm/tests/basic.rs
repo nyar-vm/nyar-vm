@@ -111,6 +111,126 @@ fn run_make_tuple_and_get_element() {
 }
 
 #[test]
+fn run_has_key_tuple() {
+    let mut code = Vec::new();
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&2i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&3i64.to_le_bytes());
+    code.push(Opcode::MakeTuple as u8);
+    code.push(3u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::HasKey as u8);
+    code.push(Opcode::Return as u8);
+    let module = minimal_module_with_chunk(code, vec![]);
+    let data = module.encode();
+    let parsed = NyarModule::parse(&data).unwrap();
+    let chunk = parsed.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let mut vm = NyarVM::new(
+        parsed.constants,
+        parsed.chunks.clone(),
+        parsed.classes,
+        parsed.traits,
+        parsed.impls,
+        parsed.effects,
+    );
+    let v = vm.execute(&program).unwrap();
+    unsafe {
+        assert_eq!(v.as_bool(), true);
+    }
+}
+
+#[test]
+fn tuple_set_element_same_type_should_pass() {
+    let mut code = Vec::new();
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&10i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&20i64.to_le_bytes());
+    code.push(Opcode::MakeTuple as u8);
+    code.push(2u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&99i64.to_le_bytes());
+    code.push(Opcode::SetElement as u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::GetElement as u8);
+    code.push(Opcode::Return as u8);
+    let module = minimal_module_with_chunk(code, vec![]);
+    let data = module.encode();
+    let parsed = NyarModule::parse(&data).unwrap();
+    let chunk = parsed.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let mut vm = NyarVM::new(
+        parsed.constants,
+        parsed.chunks.clone(),
+        parsed.classes,
+        parsed.traits,
+        parsed.impls,
+        parsed.effects,
+    );
+    let v = vm.execute(&program).unwrap();
+    unsafe {
+        assert_eq!(v.as_int(), 99);
+    }
+}
+
+#[test]
+fn tuple_set_element_mismatch_should_fail() {
+    let mut code = Vec::new();
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&10i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&20i64.to_le_bytes());
+    code.push(Opcode::MakeTuple as u8);
+    code.push(2u8);
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::StringExt as u8);
+    code.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
+    code.push(2u8);
+    code.extend_from_slice(b"hi");
+    code.push(Opcode::SetElement as u8);
+    code.push(Opcode::Return as u8);
+    let module = minimal_module_with_chunk(code, vec![]);
+    let data = module.encode();
+    let parsed = NyarModule::parse(&data).unwrap();
+    let chunk = parsed.chunks[0].clone();
+    let program = Decoder::new(&chunk.code).decode_all().unwrap();
+    let mut vm = NyarVM::new(
+        parsed.constants,
+        parsed.chunks.clone(),
+        parsed.classes,
+        parsed.traits,
+        parsed.impls,
+        parsed.effects,
+    );
+    let err = vm.execute(&program).err().unwrap();
+    match err {
+        VmError::RuntimeError(_) => {}
+        _ => panic!(),
+    }
+}
+
+#[test]
 fn run_has_key_object() {
     let mut code = Vec::new();
     code.push(Opcode::NewObject as u8);
@@ -119,6 +239,12 @@ fn run_has_key_object() {
     code.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
     code.push(1u8);
     code.extend_from_slice(b"a");
+    code.push(Opcode::Swap as u8);
+    code.push(3u8);
+    code.push(Opcode::Swap as u8);
+    code.push(2u8);
+    code.push(Opcode::Swap as u8);
+    code.push(1u8);
     code.push(Opcode::HasKey as u8);
     code.push(Opcode::Return as u8);
     let module = NyarModule {
@@ -362,11 +488,19 @@ fn dynobject_get_set_remove_key() {
     code.push(1u8);
     code.extend_from_slice(b"a");
     code.push(Opcode::GetElement as u8);
-    code.push(Opcode::I64Ext as u8);
-    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
-    code.extend_from_slice(&0i64.to_le_bytes());
-    code.push(Opcode::Swap as u8);
+    code.push(Opcode::Pop as u8);
+    code.push(Opcode::Dup as u8);
+    code.push(0u8);
+    code.push(Opcode::StringExt as u8);
+    code.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
+    code.push(1u8);
+    code.extend_from_slice(b"a");
     code.push(Opcode::RemoveKey as u8);
+    code.push(Opcode::Pop as u8);
+    code.push(Opcode::StringExt as u8);
+    code.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
+    code.push(1u8);
+    code.extend_from_slice(b"a");
     code.push(Opcode::HasKey as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
@@ -405,12 +539,8 @@ fn list_set_get_remove() {
     code.push(Opcode::I64Ext as u8);
     code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
     code.extend_from_slice(&1i64.to_le_bytes());
-    code.push(Opcode::GetElement as u8);
-    code.push(Opcode::I64Ext as u8);
-    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
-    code.extend_from_slice(&1i64.to_le_bytes());
-    code.push(Opcode::Swap as u8);
     code.push(Opcode::RemoveKey as u8);
+    code.push(Opcode::Pop as u8);
     code.push(Opcode::I64Ext as u8);
     code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
     code.extend_from_slice(&1i64.to_le_bytes());

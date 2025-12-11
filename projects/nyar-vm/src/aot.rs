@@ -1,6 +1,6 @@
 use crate::bytecode::format::NyarcModule;
 
-pub trait AotBackend {
+pub trait AotCompiler {
     type Error;
     type Config: serde::de::DeserializeOwned;
     fn compile(&self, module: &NyarcModule) -> Result<Vec<u8>, Self::Error>;
