@@ -1,4 +1,3 @@
-use crate::ast::Stmt;
 use crate::lexer::{lex, Error};
 use crate::parser::parse;
 use nyar_vm::bytecode::format::NyarcModule;

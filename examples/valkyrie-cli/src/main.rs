@@ -1,34 +1,32 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use valkyrie_language::compile_text_to_module;
 
-#[derive(Parser)]
-#[command(name = "valkyrie", version, about = "Valkyrie language CLI")]
-struct Cli {
-    #[command(subcommand)]
-    cmd: Cmd,
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Input Valkyrie source file
+    input: PathBuf,
+
+    /// Output Nyar bytecode file
+    output: PathBuf,
 }
 
-#[derive(Subcommand)]
-enum Cmd {
-    Compile { file: String, #[arg(short, long)] out: Option<String> },
-}
+fn main() {
+    let args = Args::parse();
 
-fn main() -> std::process::ExitCode {
-    let cli = Cli::parse();
-    match cli.cmd {
-        Cmd::Compile { file, out } => {
-            let src = match std::fs::read_to_string(&file) { Ok(s) => s, Err(e) => { eprintln!("io error: {}", e); return std::process::ExitCode::from(1); } };
-            let m = match valkyrie_language::compile_text_to_module(&src) { Ok(m) => m, Err(e) => { eprintln!("{}", e); return std::process::ExitCode::from(1); } };
-            let data = m.encode();
-            let out_path = out.unwrap_or_else(|| {
-                let p = std::path::Path::new(&file);
-                let stem = p.file_stem().unwrap_or_default().to_string_lossy().into_owned();
-                let parent = p.parent().unwrap_or_else(|| std::path::Path::new("."));
-                parent.join(format!("{}.nyarc", stem)).to_string_lossy().into_owned()
-            });
-            if let Err(e) = std::fs::write(&out_path, &data) { eprintln!("write error: {}", e); return std::process::ExitCode::from(1); }
-            println!("compiled -> {} ({} bytes)", out_path, data.len());
-            std::process::ExitCode::SUCCESS
+    let src = fs::read_to_string(&args.input).expect("Failed to read input file");
+    match compile_text_to_module(&src) {
+        Ok(module) => {
+            let bytes = module.encode();
+            let mut file = fs::File::create(&args.output).expect("Failed to create output file");
+            file.write_all(&bytes).expect("Failed to write output file");
+        }
+        Err(e) => {
+            eprintln!("Error: {:?}", e);
+            std::process::exit(1);
         }
     }
 }
-

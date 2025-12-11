@@ -18,7 +18,7 @@ pub fn bench() -> Result<(), CliError> {
     };
     let program = Decoder::new(&chunk.code).decode_all().unwrap_or_default();
     let consts = vec![nyar_vm::bytecode::format::Constant::Int(1)];
-    let mut vm = NyarVM::new(consts, vec![chunk], vec![], vec![]);
+    let mut vm = NyarVM::new(consts, vec![chunk], vec![], vec![], vec![], vec![]);
     let mut acc = 0i64;
     for _ in 0..10000 {
         let _ = vm.execute(&program);

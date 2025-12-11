@@ -4,6 +4,12 @@ use std::io::Cursor;
 pub use nyar_error::DecodeError;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct UpvalueRef {
+    pub is_local: bool,
+    pub index: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     Nop,
     Push(u16),
@@ -21,12 +27,13 @@ pub enum Instruction {
     JumpIfFalse(i16),
     JumpIfNull(i16),
     Return,
-    MakeClosure(u16),
+    MakeClosure(u16, Vec<UpvalueRef>),
     TailCall,
     Call(u16, u8),
     CallVirtual(u16, u8),
     CallDynamic(u16, u8),
     CallClosure(u8),
+    InvokeMethod(u16, u8),
     GetField(u16),
     SetField(u16),
     NewObject(u16),
@@ -102,6 +109,7 @@ impl<'a> Decoder<'a> {
             0x21 => Opcode::CallVirtual,
             0x22 => Opcode::CallDynamic,
             0x23 => Opcode::CallClosure,
+            0x24 => Opcode::InvokeMethod,
             0x30 => Opcode::GetField,
             0x31 => Opcode::SetField,
             0x32 => Opcode::NewObject,
@@ -166,7 +174,15 @@ impl<'a> Decoder<'a> {
             }
             Opcode::Return => Instruction::Return,
             Opcode::MakeClosure => {
-                Instruction::MakeClosure(self.read_u16().ok_or(DecodeError::Truncated)?)
+                let func_idx = self.read_u16().ok_or(DecodeError::Truncated)?;
+                let count = self.read_u8().ok_or(DecodeError::Truncated)?;
+                let mut upvalues = Vec::with_capacity(count as usize);
+                for _ in 0..count {
+                    let is_local = self.read_u8().ok_or(DecodeError::Truncated)? != 0;
+                    let index = self.read_u8().ok_or(DecodeError::Truncated)?;
+                    upvalues.push(UpvalueRef { is_local, index });
+                }
+                Instruction::MakeClosure(func_idx, upvalues)
             }
             Opcode::TailCall => Instruction::TailCall,
             Opcode::Call => Instruction::Call(
@@ -184,6 +200,10 @@ impl<'a> Decoder<'a> {
             Opcode::CallClosure => {
                 Instruction::CallClosure(self.read_u8().ok_or(DecodeError::Truncated)?)
             }
+            Opcode::InvokeMethod => Instruction::InvokeMethod(
+                self.read_u16().ok_or(DecodeError::Truncated)?,
+                self.read_u8().ok_or(DecodeError::Truncated)?,
+            ),
             Opcode::GetField => {
                 Instruction::GetField(self.read_u16().ok_or(DecodeError::Truncated)?)
             }

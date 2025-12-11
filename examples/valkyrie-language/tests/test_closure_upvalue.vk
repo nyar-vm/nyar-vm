@@ -1,0 +1,39 @@
+
+# Test primitive capture (snapshot behavior for now)
+let x = 10
+let f = |y| {
+    return x + y
+}
+let res1 = f(5)
+print(res1) 
+# Expect: 15
+
+# Test nested capture
+let make_adder = |a| {
+    return |b| {
+        return a + b
+    }
+}
+let add5 = make_adder(5)
+let res2 = add5(10)
+print(res2)
+# Expect: 15
+
+# Test multiple upvalues
+let make_calc = |a, b| {
+    return |c| {
+        return a + b + c
+    }
+}
+let calc = make_calc(1, 2)
+let res3 = calc(3)
+print(res3)
+# Expect: 6
+
+# Test shadowing/scope
+let z = 100
+let g = |z| {
+    return z
+}
+print(g(200))
+# Expect: 200

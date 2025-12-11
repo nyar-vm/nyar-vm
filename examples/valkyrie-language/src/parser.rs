@@ -67,6 +67,47 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
             }
             Ok(Stmt::ClassDef(name, fields))
         }
+        Some(Token::Trait) => {
+            *i += 1;
+            let name = expect_ident(tokens, i)?;
+            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect {".into())) }
+            let mut methods = Vec::new();
+            loop {
+                match tokens.get(*i) {
+                    Some(Token::RBrace) => { *i += 1; break; }
+                    Some(Token::Ident(s)) => {
+                        methods.push(s.clone());
+                        *i += 1;
+                        match tokens.get(*i) {
+                            Some(Token::Comma) => { *i += 1; continue; }
+                            Some(Token::RBrace) => { *i += 1; break; }
+                            _ => return Err(Error::Parse("expect , or }".into())),
+                        }
+                    }
+                    _ => return Err(Error::Parse("expect method identifier or }".into())),
+                }
+            }
+            Ok(Stmt::TraitDef(name, methods))
+        }
+        Some(Token::Impl) => {
+            *i += 1;
+            let trait_name = expect_ident(tokens, i)?;
+            match tokens.get(*i) { Some(Token::For) => { *i += 1; } _ => return Err(Error::Parse("expect for".into())) }
+            let class_name = expect_ident(tokens, i)?;
+            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect {".into())) }
+            let mut methods = Vec::new();
+            loop {
+                match tokens.get(*i) {
+                    Some(Token::RBrace) => { *i += 1; break; }
+                    Some(Token::Micro) => {
+                        let stmt = parse_stmt(tokens, i)?;
+                        methods.push(stmt);
+                    }
+                    _ => return Err(Error::Parse("expect micro method definition or }".into())),
+                }
+            }
+            Ok(Stmt::ImplDef(trait_name, class_name, methods))
+        }
         Some(Token::Return) => {
             *i += 1;
             let val = parse_expr(tokens, i)?;
@@ -189,30 +230,7 @@ fn parse_postfix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
                     }
                 }
                 // Convert to Call
-                match left {
-                    Expr::Variable(name) => {
-                        left = Expr::Call(name, args);
-                    }
-                    _ => {
-                        // For now we don't have general Call Expr that takes Box<Expr>
-                        // But we can support it if we change AST or cheat
-                        // Current AST: Call(String, Vec<Expr>)
-                        // If left is not Variable, we can't use Call.
-                        // We need to upgrade AST or fail.
-                        // For this task, user wants OOP, so `obj.method()`?
-                        // If `obj.method` returns a closure, then `()` calls it.
-                        // But `GetField` returns value.
-                        // So `obj.method()` -> `(obj.method)()` -> call closure.
-                        // So we NEED general call.
-                        // But I don't want to break everything.
-                        // I'll leave it as Error for now unless it's a Variable.
-                        // Wait, previous code handled `Ident` then `(`.
-                        // Now I handle `Ident` then loop `.` then `(`.
-                        // If `Ident` -> `Variable`. Then `(` -> `Call`.
-                        // But if `Ident` -> `.` -> `GetField`. Then `(` -> ?
-                        return Err(Error::Parse("Only direct function calls are supported for now".into()));
-                    }
-                }
+                left = Expr::Call(Box::new(left), args);
             }
             _ => break,
         }

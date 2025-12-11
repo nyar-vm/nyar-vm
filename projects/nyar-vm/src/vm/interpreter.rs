@@ -1,14 +1,16 @@
 use crate::bytecode::decoder::Instruction;
-use crate::bytecode::format::{Chunk, Constant, ClassInfo};
+use crate::bytecode::format::{Chunk, Constant, ClassInfo, TraitInfo, ImplInfo};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
-use crate::vm::value::{Value, ValueTag};
+use crate::vm::value::{Value, ValueTag, Closure, Upvalue};
 use crate::vm::VmError;
+use std::ptr::null;
 
 #[derive(Clone)]
 struct Frame {
     instrs: Vec<Instruction>,
     ip: usize,
     locals: Vec<Value>,
+    closure: *const Closure,
 }
 
 pub struct NyarVM {
@@ -18,12 +20,14 @@ pub struct NyarVM {
     pub constants: Vec<Constant>,
     pub chunks: Vec<Chunk>,
     pub classes: Vec<ClassInfo>,
+    pub traits: Vec<TraitInfo>,
+    pub impls: Vec<ImplInfo>,
     pub effects: Vec<String>,
     pub handler_stack: Vec<HandlerFrame>,
 }
 
 impl NyarVM {
-    pub fn new(constants: Vec<Constant>, chunks: Vec<Chunk>, classes: Vec<ClassInfo>, effects: Vec<String>) -> Self {
+    pub fn new(constants: Vec<Constant>, chunks: Vec<Chunk>, classes: Vec<ClassInfo>, traits: Vec<TraitInfo>, impls: Vec<ImplInfo>, effects: Vec<String>) -> Self {
         Self {
             stack: Vec::with_capacity(64),
             sp: 0,
@@ -31,6 +35,8 @@ impl NyarVM {
             constants,
             chunks,
             classes,
+            traits,
+            impls,
             effects,
             handler_stack: Vec::new(),
         }
@@ -73,6 +79,7 @@ impl NyarVM {
             instrs: program.to_vec(),
             ip: 0,
             locals: vec![Value::null(); 32],
+            closure: null(),
         };
         self.frames.push(frame.clone());
         loop {
@@ -111,7 +118,6 @@ impl NyarVM {
                     let f = self.frames.last().unwrap();
                     if (idx as usize) < f.locals.len() {
                         let v = f.locals[idx as usize];
-                        println!("LoadLocal {} -> {:?}", idx, v.tag);
                         self.push(v);
                     } else {
                         return Err(VmError::StackUnderflow);
@@ -119,7 +125,6 @@ impl NyarVM {
                 }
                 Instruction::StoreLocal(idx) => {
                     let v = self.pop()?;
-                    println!("StoreLocal {} <- {:?}", idx, v.tag);
                     let f = self.frames.last_mut().unwrap();
                     if (idx as usize) >= f.locals.len() {
                         f.locals.resize((idx as usize) + 1, Value::null());
@@ -152,22 +157,62 @@ impl NyarVM {
                     self.push(v);
                     next_ip = None;
                 }
-                Instruction::MakeClosure(idx) => {
-                    // TODO: Capture upvalues
-                    let v = Value::closure(idx, vec![]);
+                Instruction::MakeClosure(idx, ref upvalues) => {
+                    let mut captured = Vec::with_capacity(upvalues.len());
+                    for up in upvalues {
+                        let val = if up.is_local {
+                            let f = self.frames.last().unwrap();
+                            f.locals[up.index as usize]
+                        } else {
+                            let f = self.frames.last().unwrap();
+                            if f.closure.is_null() {
+                                return Err(VmError::InvalidOpcode);
+                            }
+                            let closure = unsafe { &*f.closure };
+                            closure.upvalues[up.index as usize].0
+                        };
+                        captured.push(Upvalue(val));
+                    }
+                    let v = Value::closure(idx, captured);
                     self.push(v);
                 }
-                Instruction::CallClosure(argc) => {
-                    let callee = self.pop()?;
-                    if callee.tag != ValueTag::Closure {
-                        return Err(VmError::InvalidOpcode); // Expected closure
+                Instruction::LoadUpvalue(idx) => {
+                    let f = self.frames.last().unwrap();
+                    if f.closure.is_null() { return Err(VmError::InvalidOpcode); }
+                    let closure = unsafe { &*f.closure };
+                    if (idx as usize) < closure.upvalues.len() {
+                        self.push(closure.upvalues[idx as usize].0);
+                    } else {
+                        return Err(VmError::IndexOutOfBounds);
                     }
-                    
+                }
+                Instruction::StoreUpvalue(idx) => {
+                    let val = self.pop()?;
+                    let f = self.frames.last().unwrap();
+                    if f.closure.is_null() { return Err(VmError::InvalidOpcode); }
+                    // Upvalues are effectively immutable copies for now unless we implement interior mutability
+                    // But if we want to update the copy in the closure:
+                    // We need mutable access to the closure.
+                    // But `f.closure` is *const.
+                    // Since we own the VM and everything is single threaded here, we can cast to *mut.
+                    let closure = unsafe { &mut *(f.closure as *mut Closure) };
+                    if (idx as usize) < closure.upvalues.len() {
+                        closure.upvalues[idx as usize].0 = val;
+                    } else {
+                        return Err(VmError::IndexOutOfBounds);
+                    }
+                }
+                Instruction::CallClosure(argc) => {
                     let mut args = Vec::with_capacity(argc as usize);
                     for _ in 0..argc {
                         args.push(self.pop()?);
                     }
                     args.reverse();
+
+                    let callee = self.pop()?;
+                    if callee.tag != ValueTag::Closure {
+                        return Err(VmError::InvalidOpcode); // Expected closure
+                    }
                     
                     let closure_ptr = unsafe { callee.data.ptr as *mut crate::vm::value::Closure };
                     let closure = unsafe { &*closure_ptr };
@@ -186,6 +231,71 @@ impl NyarVM {
                         instrs,
                         ip: 0,
                         locals: args,
+                        closure: closure_ptr,
+                    };
+
+                    if let Some(next) = next_ip {
+                        self.frames.last_mut().unwrap().ip = next;
+                    }
+                    self.frames.push(new_frame);
+                    next_ip = None;
+                }
+                Instruction::InvokeMethod(name_idx, argc) => {
+                    let mut args = Vec::with_capacity(argc as usize);
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
+                    args.reverse();
+
+                    let receiver = self.pop()?;
+                    if receiver.tag != ValueTag::Object {
+                        return Err(VmError::RuntimeError("Receiver is not an object".into()));
+                    }
+                    
+                    let obj_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::Object };
+                    let obj_ref = unsafe { &*obj_ptr };
+                    let class_idx = obj_ref.class_idx;
+                    
+                    let name = match self.constants.get(name_idx as usize) {
+                        Some(Constant::String(s)) => s,
+                        _ => return Err(VmError::InvalidOpcode),
+                    };
+
+                    let mut chunk_idx = None;
+                    for impl_info in &self.impls {
+                        if impl_info.class_idx == class_idx {
+                            if let Some(trait_info) = self.traits.get(impl_info.trait_idx as usize) {
+                                if let Some(idx) = trait_info.methods.iter().position(|m| m == name) {
+                                    if idx < impl_info.methods.len() {
+                                        chunk_idx = Some(impl_info.methods[idx]);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    let chunk_idx = chunk_idx.ok_or_else(|| VmError::RuntimeError(format!("Method {} not found for class {}", name, class_idx)))?;
+                    
+                    let chunk = self.chunks.get(chunk_idx as usize).cloned().ok_or(VmError::IndexOutOfBounds)?;
+                    
+                    let mut full_args = Vec::with_capacity(args.len() + 1);
+                    full_args.push(receiver);
+                    full_args.extend(args);
+                    
+                    use crate::bytecode::decoder::Decoder;
+                    let decoder = Decoder::new(&chunk.code);
+                    let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+
+                    if full_args.len() < chunk.locals as usize {
+                        full_args.resize(chunk.locals as usize, Value::null());
+                    }
+
+                    let new_frame = Frame {
+                        instrs,
+                        ip: 0,
+                        locals: full_args,
+                        closure: null(),
                     };
 
                     if let Some(next) = next_ip {
@@ -214,6 +324,7 @@ impl NyarVM {
                         instrs,
                         ip: 0,
                         locals: args,
+                        closure: null(),
                     };
 
                     if let Some(next) = next_ip {

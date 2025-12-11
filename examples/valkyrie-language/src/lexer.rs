@@ -17,6 +17,9 @@ pub enum Token {
     New,
     Is,
     As,
+    Trait,
+    Impl,
+    For,
     Int(i64),
     Eof,
 }
@@ -76,6 +79,9 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
                 "new" => out.push(Token::New),
                 "is" => out.push(Token::Is),
                 "as" => out.push(Token::As),
+                "trait" => out.push(Token::Trait),
+                "impl" => out.push(Token::Impl),
+                "for" => out.push(Token::For),
                 _ => out.push(Token::Ident(s.to_string())),
             }
             continue;

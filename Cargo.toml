@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["projects/*"]
+members = ["projects/*", "examples/*"]
 default-members = [
     "projects/nyar-error",
     "projects/nyar-vm",

@@ -23,6 +23,7 @@ pub enum Opcode {
     CallVirtual = 0x21,
     CallDynamic = 0x22,
     CallClosure = 0x23,
+    InvokeMethod = 0x24,
     FFICall = 0xF0,
     TailCall = 0x14,
 

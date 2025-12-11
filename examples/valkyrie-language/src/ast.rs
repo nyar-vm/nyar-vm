@@ -2,7 +2,7 @@
 pub enum Expr {
     Int(i64),
     Variable(String),
-    Call(String, Vec<Expr>),
+    Call(Box<Expr>, Vec<Expr>),
     Add(Box<Expr>, Box<Expr>),
     // Closure: args, body
     Closure(Vec<String>, Vec<Stmt>),
@@ -23,4 +23,8 @@ pub enum Stmt {
     FuncDef(String, Vec<String>, Vec<Stmt>),
     // class Name { field1, field2 }
     ClassDef(String, Vec<String>),
+    // trait Name { method1, method2 }
+    TraitDef(String, Vec<String>),
+    // impl Trait for Class { methods }
+    ImplDef(String, String, Vec<Stmt>),
 }

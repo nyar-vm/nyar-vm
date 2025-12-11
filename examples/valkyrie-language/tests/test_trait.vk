@@ -1,0 +1,35 @@
+trait Greet {
+    hello
+}
+
+class Greeter {
+    name
+}
+
+impl Greet for Greeter {
+    micro hello(self) {
+        print(self.name)
+    }
+}
+
+let g = new Greeter
+g.name = 100
+g.hello()
+
+trait Adder {
+    add_val
+}
+
+class Calc {
+    base
+}
+
+impl Adder for Calc {
+    micro add_val(self, x) {
+        return self.base + x
+    }
+}
+
+let c = new Calc
+c.base = 10
+print(c.add_val(20))
