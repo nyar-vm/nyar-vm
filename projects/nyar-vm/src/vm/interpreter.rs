@@ -242,7 +242,9 @@ impl NyarVM {
             self.print_line(&format!("  ip={}", f.ip));
         }
         match err {
-            VmError::UnhandledEffect(name) => self.print_line(&format!("UnhandledEffect: {}", name)),
+            VmError::UnhandledEffect(name) => {
+                self.print_line(&format!("UnhandledEffect: {}", name))
+            }
             VmError::UnhandledError => self.print_line("UnhandledError"),
             VmError::RuntimeError(msg) => self.print_line(&format!("RuntimeError: {}", msg)),
             _ => self.print_line("Error"),
@@ -1048,7 +1050,11 @@ impl NyarVM {
                     if sp == 0 {
                         return Err(VmError::StackUnderflow);
                     }
-                    let eff = if (d as usize) >= sp { sp - 1 } else { d as usize };
+                    let eff = if (d as usize) >= sp {
+                        sp - 1
+                    } else {
+                        d as usize
+                    };
                     self.swap_with(eff)?;
                 }
                 Instruction::LoadLocal(idx) => {
@@ -1335,9 +1341,15 @@ impl NyarVM {
                                     let rhs = args[0];
                                     let lhs = receiver;
                                     if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
-                                        self.push(Value::bool(unsafe { lhs.as_int() < rhs.as_int() }));
-                                    } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
-                                        self.push(Value::bool(unsafe { lhs.as_float() < rhs.as_float() }));
+                                        self.push(Value::bool(unsafe {
+                                            lhs.as_int() < rhs.as_int()
+                                        }));
+                                    } else if lhs.tag == ValueTag::Float
+                                        && rhs.tag == ValueTag::Float
+                                    {
+                                        self.push(Value::bool(unsafe {
+                                            lhs.as_float() < rhs.as_float()
+                                        }));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1350,9 +1362,15 @@ impl NyarVM {
                                     let rhs = args[0];
                                     let lhs = receiver;
                                     if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
-                                        self.push(Value::bool(unsafe { lhs.as_int() <= rhs.as_int() }));
-                                    } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
-                                        self.push(Value::bool(unsafe { lhs.as_float() <= rhs.as_float() }));
+                                        self.push(Value::bool(unsafe {
+                                            lhs.as_int() <= rhs.as_int()
+                                        }));
+                                    } else if lhs.tag == ValueTag::Float
+                                        && rhs.tag == ValueTag::Float
+                                    {
+                                        self.push(Value::bool(unsafe {
+                                            lhs.as_float() <= rhs.as_float()
+                                        }));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1365,9 +1383,15 @@ impl NyarVM {
                                     let rhs = args[0];
                                     let lhs = receiver;
                                     if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
-                                        self.push(Value::bool(unsafe { lhs.as_int() > rhs.as_int() }));
-                                    } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
-                                        self.push(Value::bool(unsafe { lhs.as_float() > rhs.as_float() }));
+                                        self.push(Value::bool(unsafe {
+                                            lhs.as_int() > rhs.as_int()
+                                        }));
+                                    } else if lhs.tag == ValueTag::Float
+                                        && rhs.tag == ValueTag::Float
+                                    {
+                                        self.push(Value::bool(unsafe {
+                                            lhs.as_float() > rhs.as_float()
+                                        }));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1380,9 +1404,15 @@ impl NyarVM {
                                     let rhs = args[0];
                                     let lhs = receiver;
                                     if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
-                                        self.push(Value::bool(unsafe { lhs.as_int() >= rhs.as_int() }));
-                                    } else if lhs.tag == ValueTag::Float && rhs.tag == ValueTag::Float {
-                                        self.push(Value::bool(unsafe { lhs.as_float() >= rhs.as_float() }));
+                                        self.push(Value::bool(unsafe {
+                                            lhs.as_int() >= rhs.as_int()
+                                        }));
+                                    } else if lhs.tag == ValueTag::Float
+                                        && rhs.tag == ValueTag::Float
+                                    {
+                                        self.push(Value::bool(unsafe {
+                                            lhs.as_float() >= rhs.as_float()
+                                        }));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1394,8 +1424,20 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let ba = unsafe { if lhs.tag == ValueTag::Bool { lhs.as_bool() } else { false } };
-                                    let bb = unsafe { if rhs.tag == ValueTag::Bool { rhs.as_bool() } else { false } };
+                                    let ba = unsafe {
+                                        if lhs.tag == ValueTag::Bool {
+                                            lhs.as_bool()
+                                        } else {
+                                            false
+                                        }
+                                    };
+                                    let bb = unsafe {
+                                        if rhs.tag == ValueTag::Bool {
+                                            rhs.as_bool()
+                                        } else {
+                                            false
+                                        }
+                                    };
                                     self.push(Value::bool(ba && bb));
                                 } else {
                                     self.push(Value::bool(false));
@@ -1405,8 +1447,20 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let ba = unsafe { if lhs.tag == ValueTag::Bool { lhs.as_bool() } else { false } };
-                                    let bb = unsafe { if rhs.tag == ValueTag::Bool { rhs.as_bool() } else { false } };
+                                    let ba = unsafe {
+                                        if lhs.tag == ValueTag::Bool {
+                                            lhs.as_bool()
+                                        } else {
+                                            false
+                                        }
+                                    };
+                                    let bb = unsafe {
+                                        if rhs.tag == ValueTag::Bool {
+                                            rhs.as_bool()
+                                        } else {
+                                            false
+                                        }
+                                    };
                                     self.push(Value::bool(ba || bb));
                                 } else {
                                     self.push(Value::bool(false));
@@ -1548,7 +1602,8 @@ impl NyarVM {
                     if name == "await" {
                         if let Some(v) = args.get(0) {
                             if v.tag == ValueTag::Closure {
-                                let closure_ptr = unsafe { v.data.ptr as *mut crate::vm::value::Closure };
+                                let closure_ptr =
+                                    unsafe { v.data.ptr as *mut crate::vm::value::Closure };
                                 let closure = unsafe { &*closure_ptr };
                                 let chunk_idx = closure.func;
                                 let chunk = self
@@ -1558,7 +1613,8 @@ impl NyarVM {
                                     .ok_or(VmError::IndexOutOfBounds)?;
                                 use crate::bytecode::decoder::Decoder;
                                 let decoder = Decoder::new(&chunk.code);
-                                let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+                                let instrs =
+                                    decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
                                 let new_frame = Frame {
                                     instrs,
                                     ip: 0,
@@ -1585,16 +1641,22 @@ impl NyarVM {
                                     .ok_or(VmError::IndexOutOfBounds)?;
                                 use crate::bytecode::decoder::Decoder;
                                 let decoder = Decoder::new(&chunk.code);
-                                let instrs = decoder
-                                    .decode_all()
-                                    .map_err(|_| VmError::InvalidOpcode)?;
+                                let instrs =
+                                    decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
                                 let mut matches = true;
-                                if let Some(crate::bytecode::decoder::Instruction::MatchEffect(name_idx)) = instrs.get(0) {
+                                if let Some(crate::bytecode::decoder::Instruction::MatchEffect(
+                                    name_idx,
+                                )) = instrs.get(0)
+                                {
                                     let name0 = match self.constants.get(*name_idx as usize) {
                                         Some(Constant::String(s)) => s.as_str(),
                                         _ => "",
                                     };
-                                    let eff_name = self.effects.get(idx as usize).map(|s| s.as_str()).unwrap_or("");
+                                    let eff_name = self
+                                        .effects
+                                        .get(idx as usize)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("");
                                     matches = name0 == eff_name;
                                 }
                                 if matches {
@@ -1611,11 +1673,16 @@ impl NyarVM {
                                 .ok_or(VmError::IndexOutOfBounds)?;
                             use crate::bytecode::decoder::Decoder;
                             let decoder = Decoder::new(&chunk.code);
-                            let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+                            let instrs =
+                                decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
                             let mut locals = Vec::new();
                             locals.push(Value::effect(idx as u16, args.clone()));
                             locals.push(Value::list(args.clone()));
-                            let cont_ip = if let Some(next) = next_ip { next } else { cur_ip + 1 };
+                            let cont_ip = if let Some(next) = next_ip {
+                                next
+                            } else {
+                                cur_ip + 1
+                            };
                             let cont_slice = self.stack[..self.sp].to_vec();
                             let cont = Value::continuation(cont_ip, cont_slice);
                             locals.push(cont);
@@ -1730,9 +1797,15 @@ impl NyarVM {
                         "assert" => {
                             let msg = if let Some(v) = args.last() {
                                 match v.tag {
-                                    ValueTag::Int => format!("assertion failed: {}", unsafe { v.as_int() }),
-                                    ValueTag::Float => format!("assertion failed: {}", unsafe { v.as_float() }),
-                                    ValueTag::Bool => format!("assertion failed: {}", unsafe { v.as_bool() }),
+                                    ValueTag::Int => {
+                                        format!("assertion failed: {}", unsafe { v.as_int() })
+                                    }
+                                    ValueTag::Float => {
+                                        format!("assertion failed: {}", unsafe { v.as_float() })
+                                    }
+                                    ValueTag::Bool => {
+                                        format!("assertion failed: {}", unsafe { v.as_bool() })
+                                    }
                                     ValueTag::Null => "assertion failed".to_string(),
                                     _ => "assertion failed".to_string(),
                                 }
@@ -1901,9 +1974,7 @@ impl NyarVM {
                 Instruction::HasKey => {
                     let mut key = self.pop()?;
                     let mut container = self.pop()?;
-                    if container.tag != ValueTag::Object
-                        && key.tag == ValueTag::Object
-                    {
+                    if container.tag != ValueTag::Object && key.tag == ValueTag::Object {
                         let tmp = key;
                         key = container;
                         container = tmp;
@@ -2098,7 +2169,11 @@ impl NyarVM {
                     }
                 }
                 Instruction::CaptureCont => {
-                    let ip = if let Some(next) = next_ip { next } else { cur_ip + 1 };
+                    let ip = if let Some(next) = next_ip {
+                        next
+                    } else {
+                        cur_ip + 1
+                    };
                     let slice = self.stack[..self.sp].to_vec();
                     let cont = Value::continuation(ip, slice);
                     self.push(cont);

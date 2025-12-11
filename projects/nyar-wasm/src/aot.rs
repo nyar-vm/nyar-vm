@@ -553,8 +553,14 @@ fn compile_chunk(
             Instruction::Perform(_, _) => {
                 // degrade: ignore effects, do not produce a value
             }
-            Instruction::Await | Instruction::BlockOn | Instruction::ResumeWith | Instruction::CaptureCont | Instruction::MatchEffect(_) => {
-                return Err(WasmAotError::UnsupportedOpcode("Effect/Continuation not supported in AOT".to_string()));
+            Instruction::Await
+            | Instruction::BlockOn
+            | Instruction::ResumeWith
+            | Instruction::CaptureCont
+            | Instruction::MatchEffect(_) => {
+                return Err(WasmAotError::UnsupportedOpcode(
+                    "Effect/Continuation not supported in AOT".to_string(),
+                ));
             }
             other => {
                 return Err(WasmAotError::UnsupportedOpcode(format!("{:?}", other)));

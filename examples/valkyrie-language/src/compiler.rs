@@ -130,10 +130,7 @@ fn infer_expr_type(contexts: &[FunctionContext], e: &Expr) -> TypeKind {
                 TypeKind::Unknown
             }
         }
-        Expr::Add(a, b)
-        | Expr::Sub(a, b)
-        | Expr::Mul(a, b)
-        | Expr::Div(a, b) => {
+        Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => {
             let ta = infer_expr_type(contexts, a);
             let tb = infer_expr_type(contexts, b);
             if ta.is_int() && tb.is_int() {
@@ -142,7 +139,12 @@ fn infer_expr_type(contexts: &[FunctionContext], e: &Expr) -> TypeKind {
                 TypeKind::Unknown
             }
         }
-        Expr::Eq(a, b) | Expr::Ne(a, b) | Expr::Lt(a, b) | Expr::Le(a, b) | Expr::Gt(a, b) | Expr::Ge(a, b) => {
+        Expr::Eq(a, b)
+        | Expr::Ne(a, b)
+        | Expr::Lt(a, b)
+        | Expr::Le(a, b)
+        | Expr::Gt(a, b)
+        | Expr::Ge(a, b) => {
             let ta = infer_expr_type(contexts, a);
             let tb = infer_expr_type(contexts, b);
             if ta.is_int() && tb.is_int() {
@@ -383,7 +385,8 @@ fn compile_expr(
             }
         }
         Expr::Add(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -398,7 +401,8 @@ fn compile_expr(
             }
         }
         Expr::Sub(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -413,7 +417,8 @@ fn compile_expr(
             }
         }
         Expr::Mul(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -428,7 +433,8 @@ fn compile_expr(
             }
         }
         Expr::Div(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -461,7 +467,8 @@ fn compile_expr(
             ctx.code.push(1u8);
         }
         Expr::Eq(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -476,7 +483,8 @@ fn compile_expr(
             }
         }
         Expr::Ne(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -491,7 +499,8 @@ fn compile_expr(
             }
         }
         Expr::Lt(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -506,7 +515,8 @@ fn compile_expr(
             }
         }
         Expr::Le(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -521,7 +531,8 @@ fn compile_expr(
             }
         }
         Expr::Gt(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();
@@ -536,7 +547,8 @@ fn compile_expr(
             }
         }
         Expr::Ge(a, b) => {
-            let is_int = infer_expr_type(contexts, a) == TypeKind::Int && infer_expr_type(contexts, b) == TypeKind::Int;
+            let is_int = infer_expr_type(contexts, a) == TypeKind::Int
+                && infer_expr_type(contexts, b) == TypeKind::Int;
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let ctx = contexts.last_mut().unwrap();

@@ -1,8 +1,8 @@
+use nyar_error::VmError;
 use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::interpreter::NyarVM;
-use nyar_error::VmError;
 
 #[test]
 fn run_await_on_closure() {
@@ -368,8 +368,20 @@ fn run_effect_handler_resume_with_continuation() {
         ],
         effects: vec!["XXeffect".to_string()],
         chunks: vec![
-            Chunk { locals: 3, upvalues: 0, max_stack: 8, code: catch_x, handlers: vec![] },
-            Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] },
+            Chunk {
+                locals: 3,
+                upvalues: 0,
+                max_stack: 8,
+                code: catch_x,
+                handlers: vec![],
+            },
+            Chunk {
+                locals: 0,
+                upvalues: 0,
+                max_stack: 8,
+                code: main,
+                handlers: vec![],
+            },
         ],
         classes: vec![],
         traits: vec![],
@@ -476,9 +488,27 @@ fn run_effect_multi_layer_two_effects() {
         ],
         effects: vec!["XXeffect".to_string(), "YYeffect".to_string()],
         chunks: vec![
-            Chunk { locals: 3, upvalues: 0, max_stack: 8, code: catch_x, handlers: vec![] },
-            Chunk { locals: 3, upvalues: 0, max_stack: 8, code: catch_y, handlers: vec![] },
-            Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] },
+            Chunk {
+                locals: 3,
+                upvalues: 0,
+                max_stack: 8,
+                code: catch_x,
+                handlers: vec![],
+            },
+            Chunk {
+                locals: 3,
+                upvalues: 0,
+                max_stack: 8,
+                code: catch_y,
+                handlers: vec![],
+            },
+            Chunk {
+                locals: 0,
+                upvalues: 0,
+                max_stack: 8,
+                code: main,
+                handlers: vec![],
+            },
         ],
         classes: vec![],
         traits: vec![],
@@ -571,18 +601,36 @@ fn run_effect_propagates_to_next_handler() {
             Constant::String("XXeffect".to_string()), // 0
             Constant::String("YYeffect".to_string()), // 1
             Constant::String("add".to_string()),      // 2
-            Constant::Int(0),                          // 3 index 0
-            Constant::Int(3),                          // 4 +3
-            Constant::Int(2),                          // 5 +2
-            Constant::Int(7),                          // 6 arg
-            Constant::Int(0),                          // 7 unused
-            Constant::Int(0),                          // 8 fallback 0
+            Constant::Int(0),                         // 3 index 0
+            Constant::Int(3),                         // 4 +3
+            Constant::Int(2),                         // 5 +2
+            Constant::Int(7),                         // 6 arg
+            Constant::Int(0),                         // 7 unused
+            Constant::Int(0),                         // 8 fallback 0
         ],
         effects: vec!["XXeffect".to_string(), "YYeffect".to_string()],
         chunks: vec![
-            Chunk { locals: 3, upvalues: 0, max_stack: 8, code: catch_x, handlers: vec![] },
-            Chunk { locals: 3, upvalues: 0, max_stack: 8, code: catch_y, handlers: vec![] },
-            Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] },
+            Chunk {
+                locals: 3,
+                upvalues: 0,
+                max_stack: 8,
+                code: catch_x,
+                handlers: vec![],
+            },
+            Chunk {
+                locals: 3,
+                upvalues: 0,
+                max_stack: 8,
+                code: catch_y,
+                handlers: vec![],
+            },
+            Chunk {
+                locals: 0,
+                upvalues: 0,
+                max_stack: 8,
+                code: main,
+                handlers: vec![],
+            },
         ],
         classes: vec![],
         traits: vec![],
@@ -621,7 +669,13 @@ fn run_effect_unhandled_error_top_level() {
         timestamp: 0,
         constants: vec![Constant::Int(1)],
         effects: vec!["XXeffect".to_string()],
-        chunks: vec![Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] }],
+        chunks: vec![Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code: main,
+            handlers: vec![],
+        }],
         classes: vec![],
         traits: vec![],
         impls: vec![],
@@ -672,14 +726,26 @@ fn run_throw_effect_catch_returns() {
         timestamp: 0,
         constants: vec![
             Constant::String("throw".to_string()), // 0
-            Constant::Int(1),                       // 1 arg
-            Constant::Int(123),                     // 2 expected
-            Constant::Int(0),                       // 3 fallback
+            Constant::Int(1),                      // 1 arg
+            Constant::Int(123),                    // 2 expected
+            Constant::Int(0),                      // 3 fallback
         ],
         effects: vec!["throw".to_string()],
         chunks: vec![
-            Chunk { locals: 1, upvalues: 0, max_stack: 8, code: catch, handlers: vec![] },
-            Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] },
+            Chunk {
+                locals: 1,
+                upvalues: 0,
+                max_stack: 8,
+                code: catch,
+                handlers: vec![],
+            },
+            Chunk {
+                locals: 0,
+                upvalues: 0,
+                max_stack: 8,
+                code: main,
+                handlers: vec![],
+            },
         ],
         classes: vec![],
         traits: vec![],
@@ -718,7 +784,13 @@ fn run_throw_effect_uncaught_is_unhandled_error() {
         timestamp: 0,
         constants: vec![Constant::Int(1)],
         effects: vec!["throw".to_string()],
-        chunks: vec![Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] }],
+        chunks: vec![Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code: main,
+            handlers: vec![],
+        }],
         classes: vec![],
         traits: vec![],
         impls: vec![],
@@ -756,7 +828,13 @@ fn run_throw_effect_uncaught_prints_traceback() {
         timestamp: 0,
         constants: vec![Constant::Int(1)],
         effects: vec!["throw".to_string()],
-        chunks: vec![Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] }],
+        chunks: vec![Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code: main,
+            handlers: vec![],
+        }],
         classes: vec![],
         traits: vec![],
         impls: vec![],
@@ -806,8 +884,14 @@ fn run_logger_event_default_prints() {
         flags: 0,
         timestamp: 0,
         constants: vec![Constant::Int(0), Constant::Int(0)],
-    effects: vec!["LoggerEvent".to_string()],
-        chunks: vec![Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] }],
+        effects: vec!["LoggerEvent".to_string()],
+        chunks: vec![Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code: main,
+            handlers: vec![],
+        }],
         classes: vec![],
         traits: vec![],
         impls: vec![],
@@ -884,11 +968,27 @@ fn run_logger_event_handler_prints_and_resumes() {
         version: 1,
         flags: 0,
         timestamp: 0,
-        constants: vec![Constant::Int(0), Constant::Int(0), Constant::String("print".to_string())],
-    effects: vec!["LoggerEvent".to_string()],
+        constants: vec![
+            Constant::Int(0),
+            Constant::Int(0),
+            Constant::String("print".to_string()),
+        ],
+        effects: vec!["LoggerEvent".to_string()],
         chunks: vec![
-            Chunk { locals: 3, upvalues: 0, max_stack: 8, code: catch, handlers: vec![] },
-            Chunk { locals: 0, upvalues: 0, max_stack: 8, code: main, handlers: vec![] },
+            Chunk {
+                locals: 3,
+                upvalues: 0,
+                max_stack: 8,
+                code: catch,
+                handlers: vec![],
+            },
+            Chunk {
+                locals: 0,
+                upvalues: 0,
+                max_stack: 8,
+                code: main,
+                handlers: vec![],
+            },
         ],
         classes: vec![],
         traits: vec![],

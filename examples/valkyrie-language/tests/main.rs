@@ -109,7 +109,9 @@ fn test_logic_ops_invokemethod() {
     let main_chunk = &module.chunks[0];
     let decoder = Decoder::new(&main_chunk.code);
     let instrs = decoder.decode_all().expect("Failed to decode main chunk");
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::InvokeMethod(_, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::InvokeMethod(_, _))));
 }
 
 #[test]

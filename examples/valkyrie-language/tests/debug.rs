@@ -1,6 +1,6 @@
-use valkyrie_language::compile_text_to_module;
 use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::vm::interpreter::NyarVM;
+use valkyrie_language::compile_text_to_module;
 
 #[test]
 fn assert_true_ok() {

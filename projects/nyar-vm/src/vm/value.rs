@@ -303,5 +303,3 @@ pub struct Effect {
     pub type_idx: u16,
     pub args: Vec<Value>,
 }
-
- 
