@@ -1,0 +1,21 @@
+enum Shape {
+    Circle(r),
+    Rect(w, h)
+}
+
+micro area(s) {
+    match s {
+        Circle(r) => {
+            3 * r * r
+        },
+        Rect(w, h) => {
+            w * h
+        }
+    }
+}
+
+print(area(Circle(10)))
+# Expect: 300
+
+print(area(Rect(5, 4)))
+# Expect: 20

@@ -10,4 +10,7 @@ path = "src/main.rs"
 [dependencies]
 nyar-error = { path = "../nyar-error" }
 nyar-vm = { path = "../nyar-vm" }
+nyar-wasm = { path = "../nyar-wasm" }
+nyar-jvm = { path = "../nyar-jvm" }
 clap = { workspace = true }
+zip = "0.6"

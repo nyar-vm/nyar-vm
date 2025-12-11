@@ -1,13 +1,13 @@
 [package]
-name = "nyar-wasm"
+name = "nyar-jvm"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "nyar_wasm"
+name = "nyar_jvm"
 path = "src/lib.rs"
 
 [dependencies]
 nyar-vm = { path = "../nyar-vm" }
 nyar-error = { path = "../nyar-error" }
-wasm-encoder = "0.38"
+zip = "0.6"

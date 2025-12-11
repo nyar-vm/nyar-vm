@@ -26,6 +26,45 @@ fn expect_ident(tokens: &[Token], i: &mut usize) -> Result<String, Error> {
     }
 }
 
+fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
+    match tokens.get(*i) {
+        Some(Token::Int(v)) => { *i += 1; Ok(Pattern::Literal(*v)) }
+        Some(Token::Underscore) => { *i += 1; Ok(Pattern::Wildcard) }
+        Some(Token::Ident(name)) => {
+            *i += 1;
+            // Check if it starts with uppercase -> Constructor
+            if name.chars().next().unwrap().is_uppercase() {
+                // Constructor
+                 if let Some(Token::LParen) = tokens.get(*i) {
+                    *i += 1;
+                    let mut pats = Vec::new();
+                    loop {
+                        match tokens.get(*i) {
+                            Some(Token::RParen) => { *i += 1; break; }
+                            _ => {
+                                pats.push(parse_pattern(tokens, i)?);
+                                match tokens.get(*i) {
+                                    Some(Token::Comma) => { *i += 1; continue; }
+                                    Some(Token::RParen) => { *i += 1; break; }
+                                    _ => return Err(Error::Parse("expect , or ) in pattern".into())),
+                                }
+                            }
+                        }
+                    }
+                    Ok(Pattern::Constructor(name.clone(), pats))
+                 } else {
+                    // Unit variant
+                    Ok(Pattern::Constructor(name.clone(), vec![]))
+                 }
+            } else {
+                // Variable
+                Ok(Pattern::Variable(name.clone()))
+            }
+        }
+        _ => Err(Error::Parse("unexpected token in pattern".into())),
+    }
+}
+
 fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
     match tokens.get(*i) {
         Some(Token::Let) => {
@@ -139,16 +178,6 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
             }
             Ok(Stmt::EnumDef(name, variants))
         }
-        Some(Token::Return) => {                    Some(Token::RBrace) => { *i += 1; break; }
-                    Some(Token::Micro) => {
-                        let stmt = parse_stmt(tokens, i)?;
-                        methods.push(stmt);
-                    }
-                    _ => return Err(Error::Parse("expect micro method definition or }".into())),
-                }
-            }
-            Ok(Stmt::ImplDef(trait_name, class_name, methods))
-        }
         Some(Token::Return) => {
             *i += 1;
             let val = parse_expr(tokens, i)?;
@@ -197,8 +226,149 @@ fn parse_block(tokens: &[Token], i: &mut usize) -> Result<Vec<Stmt>, Error> {
     Ok(stmts)
 }
 
-fn parse_primary(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
+#[derive(PartialEq, PartialOrd, Copy, Clone)]
+enum Precedence {
+    None,
+    Assignment, // =
+    Or,
+    And,
+    Equality,   // ==, !=
+    Comparison, // <, >, <=, >=, is, as
+    Term,       // +, -
+    Factor,     // *, /
+    Unary,      // !, -
+    Call,       // ., ()
+    Primary,
+}
+
+impl Precedence {
+}
+
+fn get_precedence(token: &Token) -> Precedence {
+    match token {
+        Token::Eq => Precedence::Assignment,
+        Token::Plus | Token::Minus => Precedence::Term,
+        Token::Star | Token::Slash => Precedence::Factor,
+        Token::Is | Token::As => Precedence::Comparison,
+        Token::Dot | Token::LParen => Precedence::Call,
+        _ => Precedence::None,
+    }
+}
+
+fn parse_expr(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
+    parse_expr_pratt(tokens, i, Precedence::None)
+}
+
+fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Result<Expr, Error> {
+    let mut left = parse_prefix(tokens, i)?;
+
+    while let Some(token) = tokens.get(*i) {
+        let prec = get_precedence(token);
+        if prec <= min_prec {
+            break;
+        }
+
+        match token {
+            Token::Eq => {
+                *i += 1;
+                // Assignment is right-associative, so we pass a lower precedence (None) to allow chaining
+                let right = parse_expr_pratt(tokens, i, Precedence::None)?; 
+                match left {
+                    Expr::GetField(obj, field) => {
+                        left = Expr::SetField(obj, field, Box::new(right));
+                    }
+                    _ => return Err(Error::Parse("Invalid assignment target".into())),
+                }
+            }
+            Token::Plus => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Term)?;
+                left = Expr::Add(Box::new(left), Box::new(right));
+            }
+            Token::Minus => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Term)?;
+                left = Expr::Sub(Box::new(left), Box::new(right));
+            }
+            Token::Star => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Factor)?;
+                left = Expr::Mul(Box::new(left), Box::new(right));
+            }
+            Token::Slash => {
+                *i += 1;
+                let right = parse_expr_pratt(tokens, i, Precedence::Factor)?;
+                left = Expr::Div(Box::new(left), Box::new(right));
+            }
+            Token::Is => {
+                *i += 1;
+                let name = expect_ident(tokens, i)?;
+                left = Expr::InstanceOf(Box::new(left), name);
+            }
+            Token::As => {
+                *i += 1;
+                let name = expect_ident(tokens, i)?;
+                left = Expr::Cast(Box::new(left), name);
+            }
+            Token::Dot => {
+                *i += 1;
+                let field = expect_ident(tokens, i)?;
+                left = Expr::GetField(Box::new(left), field);
+            }
+            Token::LParen => {
+                *i += 1;
+                let mut args = Vec::new();
+                loop {
+                    match tokens.get(*i) {
+                        Some(Token::RParen) => { *i += 1; break; }
+                        _ => {
+                            let e = parse_expr(tokens, i)?;
+                            args.push(e);
+                            match tokens.get(*i) {
+                                Some(Token::Comma) => { *i += 1; continue; }
+                                Some(Token::RParen) => { *i += 1; break; }
+                                _ => return Err(Error::Parse("expect , or )".into())),
+                            }
+                        }
+                    }
+                }
+                left = Expr::Call(Box::new(left), args);
+            }
+            _ => break,
+        }
+    }
+    Ok(left)
+}
+
+fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
     match tokens.get(*i) {
+        Some(Token::Match) => {
+            *i += 1;
+            let target = parse_expr(tokens, i)?;
+            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect { after match target".into())) }
+            let mut branches = Vec::new();
+            loop {
+                match tokens.get(*i) {
+                    Some(Token::RBrace) => { *i += 1; break; }
+                    _ => {
+                        let pat = parse_pattern(tokens, i)?;
+                        match tokens.get(*i) { Some(Token::Arrow) => { *i += 1; } _ => return Err(Error::Parse("expect => after pattern".into())) }
+                        
+                        let body = if let Some(Token::LBrace) = tokens.get(*i) {
+                             parse_block(tokens, i)?
+                        } else {
+                             let stmt = parse_stmt(tokens, i)?;
+                             vec![stmt]
+                        };
+                        
+                        branches.push((pat, body));
+                        
+                        if let Some(Token::Comma) = tokens.get(*i) { *i += 1; }
+                    }
+                }
+            }
+            Ok(Expr::Match(Box::new(target), branches))
+        }
         Some(Token::Int(v)) => { *i += 1; Ok(Expr::Int(*v)) }
         Some(Token::Ident(name)) => {
             *i += 1;
@@ -207,7 +377,6 @@ fn parse_primary(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
         Some(Token::New) => {
             *i += 1;
             let name = expect_ident(tokens, i)?;
-            // Check for ()
             if let Some(Token::LParen) = tokens.get(*i) {
                 *i += 1;
                 match tokens.get(*i) { Some(Token::RParen) => { *i += 1; } _ => return Err(Error::Parse("expect )".into())) }
@@ -241,92 +410,5 @@ fn parse_primary(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
             Ok(Expr::Closure(args, body))
         }
         _ => Err(Error::Parse("unexpected token".into())),
-    }
-}
-
-fn parse_postfix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
-    let mut left = parse_primary(tokens, i)?;
-    loop {
-        match tokens.get(*i) {
-            Some(Token::Dot) => {
-                *i += 1;
-                let field = expect_ident(tokens, i)?;
-                left = Expr::GetField(Box::new(left), field);
-            }
-            Some(Token::LParen) => {
-                *i += 1;
-                let mut args = Vec::new();
-                loop {
-                    match tokens.get(*i) {
-                        Some(Token::RParen) => { *i += 1; break; }
-                        _ => {
-                            let e = parse_expr(tokens, i)?;
-                            args.push(e);
-                            match tokens.get(*i) {
-                                Some(Token::Comma) => { *i += 1; continue; }
-                                Some(Token::RParen) => { *i += 1; break; }
-                                _ => return Err(Error::Parse("expect , or )".into())),
-                            }
-                        }
-                    }
-                }
-                // Convert to Call
-                left = Expr::Call(Box::new(left), args);
-            }
-            _ => break,
-        }
-    }
-    Ok(left)
-}
-
-fn parse_additive(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
-    let mut left = parse_postfix(tokens, i)?;
-    loop {
-        match tokens.get(*i) {
-            Some(Token::Plus) => {
-                *i += 1;
-                let right = parse_postfix(tokens, i)?;
-                left = Expr::Add(Box::new(left), Box::new(right));
-            }
-            _ => break,
-        }
-    }
-    Ok(left)
-}
-
-fn parse_relational(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
-    let mut left = parse_additive(tokens, i)?;
-    loop {
-        match tokens.get(*i) {
-            Some(Token::Is) => {
-                *i += 1;
-                let name = expect_ident(tokens, i)?;
-                left = Expr::InstanceOf(Box::new(left), name);
-            }
-            Some(Token::As) => {
-                *i += 1;
-                let name = expect_ident(tokens, i)?;
-                left = Expr::Cast(Box::new(left), name);
-            }
-            _ => break,
-        }
-    }
-    Ok(left)
-}
-
-fn parse_expr(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
-    let left = parse_relational(tokens, i)?;
-    match tokens.get(*i) {
-        Some(Token::Eq) => {
-            *i += 1;
-            let right = parse_expr(tokens, i)?;
-            match left {
-                Expr::GetField(obj, field) => {
-                    Ok(Expr::SetField(obj, field, Box::new(right)))
-                }
-                _ => Err(Error::Parse("Invalid assignment target".into())),
-            }
-        }
-        _ => Ok(left)
     }
 }

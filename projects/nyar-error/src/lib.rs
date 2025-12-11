@@ -33,3 +33,10 @@ pub enum WasmAotError {
     UnsupportedConstantType,
     ConstantOutOfBounds(u16),
 }
+
+#[derive(Debug)]
+pub enum JvmAotError {
+    EmptyModule,
+    Decode(String),
+    UnsupportedOpcode(String),
+}

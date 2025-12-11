@@ -12,6 +12,9 @@ pub enum Expr {
     Variable(String),
     Call(Box<Expr>, Vec<Expr>),
     Add(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr>, Box<Expr>),
+    Mul(Box<Expr>, Box<Expr>),
+    Div(Box<Expr>, Box<Expr>),
     // Closure: args, body
     Closure(Vec<String>, Vec<Stmt>),
     // OOP

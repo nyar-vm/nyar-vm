@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, Stmt, Pattern};
 use crate::lexer::Error;
 use nyar_vm::bytecode::format::{Chunk, ClassInfo, TraitInfo, ImplInfo, Constant, NyarcModule};
 use nyar_vm::bytecode::opcode::Opcode;
@@ -108,16 +108,43 @@ fn resolve_upvalue(contexts: &mut [FunctionContext], name: &str) -> Option<u8> {
 
 fn compile_func_to_chunk(compiler: &mut Compiler, args: Vec<String>, body: &[Stmt]) -> Result<u16, Error> {
     let mut contexts = vec![FunctionContext::new(args)];
-    for stmt in body {
-        compile_stmt(compiler, &mut contexts, stmt)?;
+    
+    let len = body.len();
+    if len == 0 {
+        let func_ctx = contexts.last_mut().unwrap();
+        func_ctx.code.push(Opcode::Push as u8);
+        let null_idx = compiler.add_constant(Constant::Int(0));
+        func_ctx.code.extend_from_slice(&null_idx.to_le_bytes());
+        func_ctx.code.push(Opcode::Return as u8);
+    } else {
+        for (i, stmt) in body.iter().enumerate() {
+            if i == len - 1 {
+                match stmt {
+                    Stmt::Expr(e) => {
+                        compile_expr(compiler, &mut contexts, e)?;
+                        let func_ctx = contexts.last_mut().unwrap();
+                        func_ctx.code.push(Opcode::Return as u8);
+                    }
+                    Stmt::Return(_) => {
+                        compile_stmt(compiler, &mut contexts, stmt)?;
+                    }
+                    _ => {
+                        compile_stmt(compiler, &mut contexts, stmt)?;
+                        let func_ctx = contexts.last_mut().unwrap();
+                        func_ctx.code.push(Opcode::Push as u8);
+                        let null_idx = compiler.add_constant(Constant::Int(0));
+                        func_ctx.code.extend_from_slice(&null_idx.to_le_bytes());
+                        func_ctx.code.push(Opcode::Return as u8);
+                    }
+                }
+            } else {
+                compile_stmt(compiler, &mut contexts, stmt)?;
+            }
+        }
     }
+
     let mut func_ctx = contexts.pop().unwrap();
     
-    func_ctx.code.push(Opcode::Push as u8);
-    let null_idx = compiler.add_constant(Constant::Int(0));
-    func_ctx.code.extend_from_slice(&null_idx.to_le_bytes());
-    func_ctx.code.push(Opcode::Return as u8);
-
     let chunk = Chunk {
         locals: func_ctx.locals.len() as u16,
         upvalues: func_ctx.upvalues.len() as u16,
@@ -160,6 +187,33 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
             compile_expr(compiler, contexts, a)?;
             compile_expr(compiler, contexts, b)?;
             let didx = compiler.add_string("add");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&didx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Expr::Sub(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let didx = compiler.add_string("sub");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&didx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Expr::Mul(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let didx = compiler.add_string("mul");
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&didx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Expr::Div(a, b) => {
+            compile_expr(compiler, contexts, a)?;
+            compile_expr(compiler, contexts, b)?;
+            let didx = compiler.add_string("div");
             let ctx = contexts.last_mut().unwrap();
             ctx.code.push(Opcode::FFICall as u8);
             ctx.code.extend_from_slice(&didx.to_le_bytes());
@@ -224,15 +278,42 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
         }
         Expr::Closure(args, body) => {
             contexts.push(FunctionContext::new(args.clone()));
-            for stmt in body {
-                compile_stmt(compiler, contexts, stmt)?;
-            }
-            let mut func_ctx = contexts.pop().unwrap();
             
-            func_ctx.code.push(Opcode::Push as u8);
-            let null_idx = compiler.add_constant(Constant::Int(0));
-            func_ctx.code.extend_from_slice(&null_idx.to_le_bytes());
-            func_ctx.code.push(Opcode::Return as u8);
+            let len = body.len();
+            if len == 0 {
+                let func_ctx = contexts.last_mut().unwrap();
+                func_ctx.code.push(Opcode::Push as u8);
+                let null_idx = compiler.add_constant(Constant::Int(0));
+                func_ctx.code.extend_from_slice(&null_idx.to_le_bytes());
+                func_ctx.code.push(Opcode::Return as u8);
+            } else {
+                for (i, stmt) in body.iter().enumerate() {
+                    if i == len - 1 {
+                        match stmt {
+                            Stmt::Expr(e) => {
+                                compile_expr(compiler, contexts, e)?;
+                                let func_ctx = contexts.last_mut().unwrap();
+                                func_ctx.code.push(Opcode::Return as u8);
+                            }
+                            Stmt::Return(_) => {
+                                compile_stmt(compiler, contexts, stmt)?;
+                            }
+                            _ => {
+                                compile_stmt(compiler, contexts, stmt)?;
+                                let func_ctx = contexts.last_mut().unwrap();
+                                func_ctx.code.push(Opcode::Push as u8);
+                                let null_idx = compiler.add_constant(Constant::Int(0));
+                                func_ctx.code.extend_from_slice(&null_idx.to_le_bytes());
+                                func_ctx.code.push(Opcode::Return as u8);
+                            }
+                        }
+                    } else {
+                        compile_stmt(compiler, contexts, stmt)?;
+                    }
+                }
+            }
+            
+            let mut func_ctx = contexts.pop().unwrap();
 
             let chunk_idx = (compiler.chunks.len() + 1) as u16;
             let upvalues = func_ctx.upvalues.clone();
@@ -301,6 +382,196 @@ fn compile_expr(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, e:
                 return Err(Error::Compile(format!("undefined class: {}", class_name)));
             }
         }
+        Expr::Match(target, branches) => {
+            compile_expr(compiler, contexts, target)?;
+            
+            let mut end_jumps = Vec::new();
+            
+            for (pat, body) in branches {
+                let jump_idx = {
+                    let ctx = contexts.last_mut().unwrap();
+                    ctx.code.push(Opcode::Dup as u8);
+                    compile_pattern_check(compiler, ctx, pat)?;
+                    
+                    ctx.code.push(Opcode::JumpIfFalse as u8);
+                    let idx = ctx.code.len();
+                    ctx.code.extend_from_slice(&0u16.to_le_bytes());
+                    
+                    compile_pattern_binding(compiler, ctx, pat)?;
+                    ctx.code.push(Opcode::Pop as u8);
+                    idx
+                };
+                
+                let len = body.len();
+                if len == 0 {
+                    let ctx = contexts.last_mut().unwrap();
+                    ctx.code.push(Opcode::Push as u8);
+                    let null_idx = compiler.add_constant(Constant::Int(0));
+                    ctx.code.extend_from_slice(&null_idx.to_le_bytes());
+                } else {
+                    for (i, s) in body.iter().enumerate() {
+                        if i == len - 1 {
+                            match s {
+                                Stmt::Expr(e) => {
+                                    compile_expr(compiler, contexts, e)?;
+                                }
+                                _ => {
+                                    compile_stmt(compiler, contexts, s)?;
+                                    let ctx = contexts.last_mut().unwrap();
+                                    ctx.code.push(Opcode::Push as u8);
+                                    let null_idx = compiler.add_constant(Constant::Int(0));
+                                    ctx.code.extend_from_slice(&null_idx.to_le_bytes());
+                                }
+                            }
+                        } else {
+                            compile_stmt(compiler, contexts, s)?;
+                        }
+                    }
+                }
+                
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::Jump as u8);
+                let end_jump_idx = ctx.code.len();
+                ctx.code.extend_from_slice(&0u16.to_le_bytes());
+                end_jumps.push(end_jump_idx);
+                
+                let next_branch_offset = (ctx.code.len() - (jump_idx + 2)) as u16;
+                let bytes = next_branch_offset.to_le_bytes();
+                ctx.code[jump_idx] = bytes[0];
+                ctx.code[jump_idx+1] = bytes[1];
+            }
+            
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::Pop as u8);
+            ctx.code.push(Opcode::Push as u8);
+            let null_idx = compiler.add_constant(Constant::Int(0));
+            ctx.code.extend_from_slice(&null_idx.to_le_bytes());
+            
+            let end_pos = ctx.code.len();
+            for idx in end_jumps {
+                let offset = (end_pos - (idx + 2)) as u16;
+                let bytes = offset.to_le_bytes();
+                ctx.code[idx] = bytes[0];
+                ctx.code[idx+1] = bytes[1];
+            }
+        }
+    }
+    Ok(())
+}
+
+fn compile_pattern_check(compiler: &mut Compiler, ctx: &mut FunctionContext, pat: &Pattern) -> Result<(), Error> {
+    match pat {
+        Pattern::Literal(val) => {
+            ctx.code.push(Opcode::Push as u8);
+            let idx = compiler.add_constant(Constant::Int(*val));
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+            
+            let eq_idx = compiler.add_string("eq");
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&eq_idx.to_le_bytes());
+            ctx.code.push(2u8);
+        }
+        Pattern::Wildcard | Pattern::Variable(_) => {
+            ctx.code.push(Opcode::Pop as u8);
+            let t_idx = compiler.add_string("true");
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&t_idx.to_le_bytes());
+            ctx.code.push(0u8);
+        }
+        Pattern::Constructor(name, sub_pats) => {
+            ctx.code.push(Opcode::Dup as u8);
+            ctx.code.push(Opcode::GetField as u8);
+            let v_idx = compiler.add_string("__variant__");
+            ctx.code.extend_from_slice(&v_idx.to_le_bytes());
+            
+            ctx.code.push(Opcode::Push as u8);
+            let n_idx = compiler.add_string(name);
+            ctx.code.extend_from_slice(&n_idx.to_le_bytes());
+            
+            let eq_idx = compiler.add_string("eq");
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&eq_idx.to_le_bytes());
+            ctx.code.push(2u8);
+            
+            let mut jumps = Vec::new();
+            ctx.code.push(Opcode::JumpIfFalse as u8);
+            let j = ctx.code.len();
+            ctx.code.extend_from_slice(&0u16.to_le_bytes());
+            jumps.push(j);
+
+            for (i, p) in sub_pats.iter().enumerate() {
+                ctx.code.push(Opcode::Dup as u8);
+                ctx.code.push(Opcode::GetField as u8);
+                let field_name = format!("_{}", i);
+                let f_idx = compiler.add_string(&field_name);
+                ctx.code.extend_from_slice(&f_idx.to_le_bytes());
+                
+                compile_pattern_check(compiler, ctx, p)?;
+                
+                ctx.code.push(Opcode::JumpIfFalse as u8);
+                let j = ctx.code.len();
+                ctx.code.extend_from_slice(&0u16.to_le_bytes());
+                jumps.push(j);
+            }
+            
+            // Success path
+            ctx.code.push(Opcode::Pop as u8); // Pop target
+            let t_idx = compiler.add_string("true");
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&t_idx.to_le_bytes());
+            ctx.code.push(0u8);
+            
+            ctx.code.push(Opcode::Jump as u8);
+            let success_jump = ctx.code.len();
+            ctx.code.extend_from_slice(&0u16.to_le_bytes());
+            
+            // Fail path
+            let fail_pos = ctx.code.len();
+            for j in jumps {
+                 let offset = (fail_pos - (j + 2)) as u16;
+                 let bytes = offset.to_le_bytes();
+                 ctx.code[j] = bytes[0];
+                 ctx.code[j+1] = bytes[1];
+            }
+            
+            ctx.code.push(Opcode::Pop as u8); // Pop target
+            let f_idx = compiler.add_string("false");
+            ctx.code.push(Opcode::FFICall as u8);
+            ctx.code.extend_from_slice(&f_idx.to_le_bytes());
+            ctx.code.push(0u8);
+            
+            let success_pos = ctx.code.len();
+            let offset = (success_pos - (success_jump + 2)) as u16;
+            let bytes = offset.to_le_bytes();
+            ctx.code[success_jump] = bytes[0];
+            ctx.code[success_jump+1] = bytes[1];
+        }
+    }
+    Ok(())
+}
+
+fn compile_pattern_binding(compiler: &mut Compiler, ctx: &mut FunctionContext, pat: &Pattern) -> Result<(), Error> {
+    match pat {
+        Pattern::Variable(name) => {
+            ctx.code.push(Opcode::Dup as u8);
+            let idx = ctx.add_local(name.clone());
+            ctx.code.push(Opcode::StoreLocal as u8);
+            ctx.code.push(idx);
+        }
+        Pattern::Constructor(_name, sub_pats) => {
+            for (i, p) in sub_pats.iter().enumerate() {
+                ctx.code.push(Opcode::Dup as u8);
+                ctx.code.push(Opcode::GetField as u8);
+                let field_name = format!("_{}", i);
+                let f_idx = compiler.add_string(&field_name);
+                ctx.code.extend_from_slice(&f_idx.to_le_bytes());
+                
+                compile_pattern_binding(compiler, ctx, p)?;
+                
+                ctx.code.push(Opcode::Pop as u8);
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -343,6 +614,80 @@ fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s:
                 methods: methods.clone(),
             });
             compiler.trait_map.insert(name.clone(), idx);
+        }
+        Stmt::EnumDef(name, variants) => {
+            // 1. Define Class for the Enum
+            // Collect all possible field names (max count) to define the class structure
+            // We use positional fields _0, _1, etc.
+            let mut max_fields = 0;
+            for (_, v_fields) in variants {
+                if v_fields.len() > max_fields {
+                    max_fields = v_fields.len();
+                }
+            }
+            
+            let mut class_fields = vec!["__variant__".to_string()];
+            for i in 0..max_fields {
+                class_fields.push(format!("_{}", i));
+            }
+            
+            let class_idx = compiler.classes.len() as u16;
+            compiler.classes.push(ClassInfo {
+                name: name.clone(),
+                fields: class_fields,
+            });
+            compiler.class_map.insert(name.clone(), class_idx);
+            
+            // 2. Define Constructor Functions for each variant
+            for (v_name, v_fields) in variants {
+                let mut ctx = FunctionContext::new(v_fields.clone());
+                
+                // Create new object
+                ctx.code.push(Opcode::NewObject as u8);
+                ctx.code.extend_from_slice(&class_idx.to_le_bytes());
+                
+                // Set __variant__
+                ctx.code.push(Opcode::Dup as u8);
+                ctx.code.push(Opcode::Push as u8);
+                let v_name_idx = compiler.add_string(v_name);
+                ctx.code.extend_from_slice(&v_name_idx.to_le_bytes());
+                
+                let variant_field_idx = compiler.add_string("__variant__");
+                ctx.code.push(Opcode::SetField as u8);
+                ctx.code.extend_from_slice(&variant_field_idx.to_le_bytes());
+                
+                // Set fields
+                for (i, _) in v_fields.iter().enumerate() {
+                    ctx.code.push(Opcode::Dup as u8);
+                    
+                    // Load argument
+                    ctx.code.push(Opcode::LoadLocal as u8);
+                    // Arguments are locals 0..n
+                    ctx.code.push(i as u8);
+                    
+                    // Set field _i
+                    let field_name = format!("_{}", i);
+                    let f_idx = compiler.add_string(&field_name);
+                    ctx.code.push(Opcode::SetField as u8);
+                    ctx.code.extend_from_slice(&f_idx.to_le_bytes());
+                }
+                
+                // Return object
+                ctx.code.push(Opcode::Return as u8);
+                
+                // Finalize chunk
+                let chunk = Chunk {
+                    locals: ctx.locals.len() as u16,
+                    upvalues: 0,
+                    max_stack: 16,
+                    code: ctx.code,
+                    handlers: vec![],
+                };
+                
+                let chunk_idx = (compiler.chunks.len() + 1) as u16;
+                compiler.chunks.push(chunk);
+                compiler.functions.insert(v_name.clone(), chunk_idx);
+            }
         }
         Stmt::ImplDef(trait_name, class_name, methods) => {
             let trait_idx = *compiler.trait_map.get(trait_name)

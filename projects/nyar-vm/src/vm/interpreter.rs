@@ -144,7 +144,7 @@ impl NyarVM {
                         match v.tag {
                             ValueTag::Bool => v.as_bool(),
                             ValueTag::Null => false,
-                            _ => false,
+                            _ => true,
                         }
                     };
                     if !cond {
@@ -389,6 +389,107 @@ impl NyarVM {
                                 match v.tag { ValueTag::Int => { acc += unsafe { v.as_int() } }, _ => { acc += 0; } }
                             }
                             self.push(Value::int(acc));
+                        }
+                        "sub" => {
+                            if args.len() == 2 {
+                                let b = args[1];
+                                let a = args[0];
+                                if a.tag == ValueTag::Int && b.tag == ValueTag::Int {
+                                    self.push(Value::int(unsafe { a.as_int() - b.as_int() }));
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            } else {
+                                self.push(Value::null());
+                            }
+                        }
+                        "mul" => {
+                            if args.len() == 2 {
+                                let b = args[1];
+                                let a = args[0];
+                                if a.tag == ValueTag::Int && b.tag == ValueTag::Int {
+                                    self.push(Value::int(unsafe { a.as_int() * b.as_int() }));
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            } else {
+                                self.push(Value::null());
+                            }
+                        }
+                        "div" => {
+                            if args.len() == 2 {
+                                let b = args[1];
+                                let a = args[0];
+                                if a.tag == ValueTag::Int && b.tag == ValueTag::Int {
+                                    self.push(Value::int(unsafe { a.as_int() / b.as_int() }));
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            } else {
+                                self.push(Value::null());
+                            }
+                        }
+                        "true" => self.push(Value::bool(true)),
+                        "false" => self.push(Value::bool(false)),
+                        "not" => {
+                            if let Some(v) = args.first() {
+                                let b = unsafe {
+                                    match v.tag {
+                                        ValueTag::Bool => v.as_bool(),
+                                        ValueTag::Null => false,
+                                        _ => true,
+                                    }
+                                };
+                                self.push(Value::bool(!b));
+                            } else {
+                                self.push(Value::bool(true));
+                            }
+                        }
+                        "eq" => {
+                            if args.len() == 2 {
+                                let b = args[1];
+                                let a = args[0];
+                                let eq = if a.tag != b.tag {
+                                    false
+                                } else {
+                                    unsafe {
+                                        match a.tag {
+                                            ValueTag::Int => a.as_int() == b.as_int(),
+                                            ValueTag::Float => a.as_float() == b.as_float(),
+                                            ValueTag::Bool => a.as_bool() == b.as_bool(),
+                                            ValueTag::Null => true,
+                                            ValueTag::Object => a.data.ptr == b.data.ptr,
+                                            _ => false,
+                                        }
+                                    }
+                                };
+                                self.push(Value::bool(eq));
+                            } else {
+                                self.push(Value::bool(false));
+                            }
+                        }
+                        "ne" => {
+                            if args.len() == 2 {
+                                let b = args[1];
+                                let a = args[0];
+                                let eq = if a.tag != b.tag {
+                                    false
+                                } else {
+                                    unsafe {
+                                        match a.tag {
+                                            ValueTag::Int => a.as_int() == b.as_int(),
+                                            ValueTag::Float => a.as_float() == b.as_float(),
+                                            ValueTag::Bool => a.as_bool() == b.as_bool(),
+                                            ValueTag::Null => true,
+                                            ValueTag::Object => a.data.ptr == b.data.ptr,
+                                            _ => false,
+                                        }
+                                    }
+                                };
+                                self.push(Value::bool(!eq));
+                            } else {
+                                self.push(Value::bool(true));
+                            }
                         }
                         _ => return Err(VmError::UnhandledEffect(name.to_string())),
                     }

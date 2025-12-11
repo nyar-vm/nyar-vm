@@ -7,6 +7,9 @@ pub enum Token {
     RBrace,
     Comma,
     Plus,
+    Minus,
+    Star,
+    Slash,
     Eq,
     Pipe,
     Dot,
@@ -56,13 +59,26 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
         let c = b[i];
         if c == b' ' || c == b'\n' || c == b'\r' || c == b'\t' { i += 1; continue; }
         if c == b'#' { while i < b.len() && b[i] != b'\n' { i += 1; } continue; }
-        if c == b'/' && i + 1 < b.len() && b[i + 1] == b'/' { while i < b.len() && b[i] != b'\n' { i += 1; } continue; }
+        if c == b'/' {
+            if i + 1 < b.len() && b[i + 1] == b'/' { while i < b.len() && b[i] != b'\n' { i += 1; } continue; }
+            out.push(Token::Slash); i += 1; continue;
+        }
+        if c == b'*' { out.push(Token::Star); i += 1; continue; }
         if c == b'(' { out.push(Token::LParen); i += 1; continue; }
         if c == b')' { out.push(Token::RParen); i += 1; continue; }
         if c == b'{' { out.push(Token::LBrace); i += 1; continue; }
         if c == b'}' { out.push(Token::RBrace); i += 1; continue; }
         if c == b',' { out.push(Token::Comma); i += 1; continue; }
         if c == b'+' { out.push(Token::Plus); i += 1; continue; }
+        if c == b'-' {
+             if i + 1 < b.len() && (b[i+1] as char).is_ascii_digit() {
+                 let start = i; i += 1; while i < b.len() && (b[i] as char).is_ascii_digit() { i += 1; }
+                 let s = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+                 let v = s.parse::<i64>().map_err(|_| Error::Lex("int".to_string()))?;
+                 out.push(Token::Int(v)); continue;
+             }
+             out.push(Token::Minus); i += 1; continue;
+        }
         if c == b'=' {
             if i + 1 < b.len() && b[i + 1] == b'>' {
                 out.push(Token::Arrow); i += 2; continue;
@@ -80,7 +96,7 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
             }
         }
         
-        if (c as char).is_ascii_digit() || c == b'-' {
+        if (c as char).is_ascii_digit() {
             let start = i; i += 1; while i < b.len() && (b[i] as char).is_ascii_digit() { i += 1; }
             let s = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
             let v = s.parse::<i64>().map_err(|_| Error::Lex("int".to_string()))?;
