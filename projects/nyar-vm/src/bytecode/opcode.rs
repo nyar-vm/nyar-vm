@@ -64,10 +64,7 @@ pub enum Opcode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum I32Ext {
     Const = 0x00,
-    // add wrapping
     Add = 0x01,
-    // add sat
-    AddSat = 0x40,
     Sub = 0x02,
     Mul = 0x03,
     DivS = 0x04,
@@ -85,21 +82,16 @@ pub enum I32Ext {
     GtU = 0x17,
     GeS = 0x18,
     GeU = 0x19,
-    // as signed at low
-    Extend64SL = 0x20,
-    Extend64SH = 0x21,
-    Extend64UL = 0x20,
-    // as unsigned at high
-    Extend64UH = 0x21,
-    // 
-    Truncature64UL = 0x22,
-    TruncHigh64S = 0x23,
-    TruncLow64U = 0x24,
+    Extend64S = 0x20,
+    Extend64U = 0x21,
+    Trunc64SLow = 0x22,
+    Trunc64S = 0x23,
+    Trunc64U = 0x24,
     ToF32S = 0x30,
     ToF32U = 0x31,
     ToF64S = 0x32,
     ToF64U = 0x33,
-
+    AddSatS = 0x40,
     AddSatU = 0x41,
     SubSatS = 0x42,
     SubSatU = 0x43,

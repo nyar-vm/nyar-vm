@@ -21,6 +21,15 @@ struct FunctionContext {
     code: Vec<u8>,
     locals: Vec<String>,
     upvalues: Vec<(bool, u8)>, // (is_local, index)
+    loops: Vec<LoopContext>,
+}
+
+#[derive(Clone)]
+struct LoopContext {
+    start_pos: usize,
+    cond_pos: Option<usize>,
+    breaks: Vec<usize>,
+    continues: Vec<usize>,
 }
 
 impl Compiler {
@@ -58,6 +67,7 @@ impl FunctionContext {
             code: Vec::new(),
             locals: args, // Arguments are the first locals
             upvalues: Vec::new(),
+            loops: Vec::new(),
         }
     }
 
@@ -687,6 +697,175 @@ fn compile_pattern_binding(compiler: &mut Compiler, ctx: &mut FunctionContext, p
 
 fn compile_stmt(compiler: &mut Compiler, contexts: &mut Vec<FunctionContext>, s: &Stmt) -> Result<(), Error> {
     match s {
+        Stmt::If(cond, then_body, else_body) => {
+            compile_expr(compiler, contexts, cond)?;
+            let j_false = {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::JumpIfFalse as u8);
+                let idx = ctx.code.len();
+                ctx.code.extend_from_slice(&0i16.to_le_bytes());
+                idx
+            };
+
+            for stmt in then_body {
+                compile_stmt(compiler, contexts, stmt)?;
+            }
+
+            let j_end = {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::Jump as u8);
+                let idx = ctx.code.len();
+                ctx.code.extend_from_slice(&0i16.to_le_bytes());
+                let else_pos = ctx.code.len();
+                let off = (else_pos as isize - (j_false as isize + 2)) as i16;
+                let bytes = off.to_le_bytes();
+                ctx.code[j_false] = bytes[0];
+                ctx.code[j_false + 1] = bytes[1];
+                idx
+            };
+
+            if let Some(body) = else_body {
+                for stmt in body {
+                    compile_stmt(compiler, contexts, &stmt)?;
+                }
+            }
+
+            let ctx = contexts.last_mut().unwrap();
+            let end_pos = ctx.code.len();
+            let off = (end_pos as isize - (j_end as isize + 2)) as i16;
+            let bytes = off.to_le_bytes();
+            ctx.code[j_end] = bytes[0];
+            ctx.code[j_end + 1] = bytes[1];
+        }
+        Stmt::While(cond, body) => {
+            let start_pos = {
+                let ctx = contexts.last().unwrap();
+                ctx.code.len()
+            };
+            {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.loops.push(LoopContext { start_pos, cond_pos: Some(start_pos), breaks: Vec::new(), continues: Vec::new() });
+            }
+
+            compile_expr(compiler, contexts, cond)?;
+            let j_exit = {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::JumpIfFalse as u8);
+                let idx = ctx.code.len();
+                ctx.code.extend_from_slice(&0i16.to_le_bytes());
+                idx
+            };
+
+            for stmt in body {
+                compile_stmt(compiler, contexts, stmt)?;
+            }
+
+            {
+                let ctx = contexts.last_mut().unwrap();
+                let back_off = (start_pos as isize - (ctx.code.len() as isize + 2)) as i16;
+                ctx.code.push(Opcode::Jump as u8);
+                ctx.code.extend_from_slice(&back_off.to_le_bytes());
+            }
+
+            let end_pos = {
+                let ctx = contexts.last().unwrap();
+                ctx.code.len()
+            };
+            {
+                let ctx = contexts.last_mut().unwrap();
+                let bytes = ((end_pos as isize - (j_exit as isize + 2)) as i16).to_le_bytes();
+                ctx.code[j_exit] = bytes[0];
+                ctx.code[j_exit + 1] = bytes[1];
+            }
+
+            let lc = {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.loops.pop().unwrap()
+            };
+            {
+                let ctx = contexts.last_mut().unwrap();
+                for idx in lc.breaks {
+                    let off = (end_pos as isize - (idx as isize + 2)) as i16;
+                    let b = off.to_le_bytes();
+                    ctx.code[idx] = b[0];
+                    ctx.code[idx + 1] = b[1];
+                }
+                if let Some(cpos) = lc.cond_pos {
+                    for idx in lc.continues {
+                        let off = (cpos as isize - (idx as isize + 2)) as i16;
+                        let b = off.to_le_bytes();
+                        ctx.code[idx] = b[0];
+                        ctx.code[idx + 1] = b[1];
+                    }
+                }
+            }
+        }
+        Stmt::Loop(body) => {
+            let start_pos = {
+                let ctx = contexts.last().unwrap();
+                ctx.code.len()
+            };
+            {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.loops.push(LoopContext { start_pos, cond_pos: None, breaks: Vec::new(), continues: Vec::new() });
+            }
+
+            for stmt in body {
+                compile_stmt(compiler, contexts, stmt)?;
+            }
+
+            let end_pos = {
+                let ctx = contexts.last().unwrap();
+                ctx.code.len()
+            };
+            {
+                let ctx = contexts.last_mut().unwrap();
+                let back_off = (start_pos as isize - (ctx.code.len() as isize + 2)) as i16;
+                ctx.code.push(Opcode::Jump as u8);
+                ctx.code.extend_from_slice(&back_off.to_le_bytes());
+            }
+            let end_pos2 = {
+                let ctx = contexts.last().unwrap();
+                ctx.code.len()
+            };
+            let lc = {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.loops.pop().unwrap()
+            };
+            {
+                let ctx = contexts.last_mut().unwrap();
+                for idx in lc.breaks {
+                    let off = (end_pos2 as isize - (idx as isize + 2)) as i16;
+                    let b = off.to_le_bytes();
+                    ctx.code[idx] = b[0];
+                    ctx.code[idx + 1] = b[1];
+                }
+                for idx in lc.continues {
+                    let off = (start_pos as isize - (idx as isize + 2)) as i16;
+                    let b = off.to_le_bytes();
+                    ctx.code[idx] = b[0];
+                    ctx.code[idx + 1] = b[1];
+                }
+            }
+        }
+        Stmt::Break => {
+            let ctx = contexts.last_mut().unwrap();
+            if ctx.loops.is_empty() { return Err(Error::Compile("break outside loop".into())); }
+            ctx.code.push(Opcode::Jump as u8);
+            let idx = ctx.code.len();
+            ctx.code.extend_from_slice(&0i16.to_le_bytes());
+            let last = ctx.loops.len() - 1;
+            ctx.loops[last].breaks.push(idx);
+        }
+        Stmt::Continue => {
+            let ctx = contexts.last_mut().unwrap();
+            if ctx.loops.is_empty() { return Err(Error::Compile("continue outside loop".into())); }
+            ctx.code.push(Opcode::Jump as u8);
+            let idx = ctx.code.len();
+            ctx.code.extend_from_slice(&0i16.to_le_bytes());
+            let last = ctx.loops.len() - 1;
+            ctx.loops[last].continues.push(idx);
+        }
         Stmt::Expr(e) => {
             compile_expr(compiler, contexts, e)?;
             let ctx = contexts.last_mut().unwrap();

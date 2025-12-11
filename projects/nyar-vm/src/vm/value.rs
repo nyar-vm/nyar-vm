@@ -17,6 +17,7 @@ pub enum ValueTag {
     Continuation = 11,
     Effect = 12,
     WitnessTable = 13,
+    BigInt = 14,
 }
 
 #[repr(C)]
@@ -69,6 +70,20 @@ impl Value {
             data: ValueData { ptr: Box::into_raw(b) as *mut () },
         }
     }
+    pub fn bigint(sign: u8, bytes: Vec<u8>) -> Self {
+        let b = Box::new(BigInt { sign, bytes });
+        Self { tag: ValueTag::BigInt, data: ValueData { ptr: Box::into_raw(b) as *mut () } }
+    }
+    pub fn bigint_from_i64(v: i64) -> Self {
+        let mut bytes = Vec::new();
+        let mut u = if v < 0 { (-v) as u64 } else { v as u64 };
+        while u > 0 {
+            bytes.push((u & 0xFF) as u8);
+            u >>= 8;
+        }
+        let b = Box::new(BigInt { sign: if v < 0 { 1 } else { 0 }, bytes });
+        Self { tag: ValueTag::BigInt, data: ValueData { ptr: Box::into_raw(b) as *mut () } }
+    }
     pub fn closure(func_idx: u16, upvalues: Vec<Upvalue>) -> Self {
         let c = Box::new(Closure {
             func: func_idx as usize,
@@ -105,6 +120,9 @@ impl Value {
     pub unsafe fn as_string<'a>(&self) -> &'a String {
         &*(self.data.ptr as *const String)
     }
+    pub unsafe fn as_bigint<'a>(&self) -> &'a BigInt {
+        &*(self.data.ptr as *const BigInt)
+    }
 }
 
 #[derive(Clone)]
@@ -132,4 +150,33 @@ pub struct Object {
 pub struct Continuation {
     pub ip: usize,
     pub stack_slice: Vec<Value>,
+}
+
+#[derive(Clone)]
+pub struct BigInt {
+    pub sign: u8,
+    pub bytes: Vec<u8>,
+}
+
+impl BigInt {
+    pub fn to_i64(&self) -> i64 {
+        let mut v: u64 = 0;
+        let mut shift = 0u32;
+        for &b in &self.bytes {
+            let part = (b as u64) << shift;
+            v = v.wrapping_add(part);
+            shift += 8;
+            if shift >= 64 { break; }
+        }
+        if self.sign != 0 { -(v as i64) } else { v as i64 }
+    }
+    pub fn from_i64(v: i64) -> Self {
+        let mut bytes = Vec::new();
+        let mut u = if v < 0 { (-v) as u64 } else { v as u64 };
+        while u > 0 {
+            bytes.push((u & 0xFF) as u8);
+            u >>= 8;
+        }
+        BigInt { sign: if v < 0 { 1 } else { 0 }, bytes }
+    }
 }

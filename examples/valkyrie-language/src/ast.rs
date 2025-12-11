@@ -59,4 +59,9 @@ pub enum Stmt {
     TraitDef(String, Vec<String>),
     // impl Trait for Class { methods }
     ImplDef(String, String, Vec<Stmt>),
+    If(Expr, Vec<Stmt>, Option<Vec<Stmt>>),
+    While(Expr, Vec<Stmt>),
+    Loop(Vec<Stmt>),
+    Break,
+    Continue,
 }

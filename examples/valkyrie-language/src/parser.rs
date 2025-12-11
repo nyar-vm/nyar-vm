@@ -16,6 +16,22 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, Error> {
     Ok(out)
 }
 
+fn parse_if(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
+    match tokens.get(*i) { Some(Token::If) => { *i += 1; } _ => return Err(Error::Parse("expect if".into())) }
+    let cond = parse_expr(tokens, i)?;
+    let then_body = parse_block(tokens, i)?;
+    let else_body = if let Some(Token::Else) = tokens.get(*i) {
+        *i += 1;
+        if let Some(Token::If) = tokens.get(*i) {
+            let nested = parse_if(tokens, i)?;
+            Some(vec![nested])
+        } else {
+            Some(parse_block(tokens, i)?)
+        }
+    } else { None };
+    Ok(Stmt::If(cond, then_body, else_body))
+}
+
 fn expect_ident(tokens: &[Token], i: &mut usize) -> Result<String, Error> {
     match tokens.get(*i) {
         Some(Token::Ident(s)) => {
@@ -67,6 +83,28 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
 
 fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
     match tokens.get(*i) {
+        Some(Token::If) => {
+            parse_if(tokens, i)
+        }
+        Some(Token::While) => {
+            *i += 1;
+            let cond = parse_expr(tokens, i)?;
+            let body = parse_block(tokens, i)?;
+            Ok(Stmt::While(cond, body))
+        }
+        Some(Token::Loop) => {
+            *i += 1;
+            let body = parse_block(tokens, i)?;
+            Ok(Stmt::Loop(body))
+        }
+        Some(Token::Break) => {
+            *i += 1;
+            Ok(Stmt::Break)
+        }
+        Some(Token::Continue) => {
+            *i += 1;
+            Ok(Stmt::Continue)
+        }
         Some(Token::Let) => {
             *i += 1;
             let name = expect_ident(tokens, i)?;

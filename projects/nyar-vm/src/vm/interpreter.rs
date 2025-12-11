@@ -1,9 +1,108 @@
 use crate::bytecode::decoder::Instruction;
 use crate::bytecode::format::{Chunk, Constant, ClassInfo, TraitInfo, ImplInfo};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
-use crate::vm::value::{Value, ValueTag, Closure, Upvalue};
+use crate::vm::value::{Value, ValueTag, Closure, Upvalue, BigInt};
 use crate::vm::VmError;
 use std::ptr::null;
+
+fn normalize(mut v: Vec<u8>) -> Vec<u8> {
+    while let Some(&last) = v.last() {
+        if last == 0 { v.pop(); } else { break; }
+    }
+    v
+}
+
+fn to_u128(bytes: &[u8]) -> Option<u128> {
+    if bytes.len() > 16 { return None; }
+    let mut x: u128 = 0;
+    let mut shift = 0u32;
+    for &b in bytes {
+        x |= (b as u128) << shift;
+        shift += 8;
+    }
+    Some(x)
+}
+
+fn from_u128(mut x: u128) -> Vec<u8> {
+    let mut out = Vec::new();
+    while x > 0 {
+        out.push((x & 0xFF) as u8);
+        x >>= 8;
+    }
+    out
+}
+
+fn cmp_abs(a: &[u8], b: &[u8]) -> i8 {
+    let la = a.len();
+    let lb = b.len();
+    if la != lb { return if la < lb { -1 } else { 1 }; }
+    let mut i = la;
+    while i > 0 {
+        let aa = a[i - 1];
+        let bb = b[i - 1];
+        if aa != bb { return if aa < bb { -1 } else { 1 }; }
+        i -= 1;
+    }
+    0
+}
+
+fn add_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
+    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) { return from_u128(x + y); }
+    let n = a.len().max(b.len());
+    let mut out = Vec::with_capacity(n + 1);
+    let mut carry = 0u16;
+    for i in 0..n {
+        let ai = if i < a.len() { a[i] as u16 } else { 0 };
+        let bi = if i < b.len() { b[i] as u16 } else { 0 };
+        let s = ai + bi + carry;
+        out.push((s & 0xFF) as u8);
+        carry = s >> 8;
+    }
+    if carry != 0 { out.push(carry as u8); }
+    normalize(out)
+}
+
+fn sub_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
+    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) { return from_u128(x.wrapping_sub(y)); }
+    let n = a.len();
+    let mut out = Vec::with_capacity(n);
+    let mut borrow = 0i16;
+    for i in 0..n {
+        let ai = a[i] as i16;
+        let bi = if i < b.len() { b[i] as i16 } else { 0 };
+        let mut d = ai - bi - borrow;
+        if d < 0 { d += 256; borrow = 1; } else { borrow = 0; }
+        out.push((d & 0xFF) as u8);
+    }
+    normalize(out)
+}
+
+fn mul_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
+    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) { return from_u128(x * y); }
+    let mut out = vec![0u8; a.len() + b.len()];
+    for i in 0..a.len() {
+        let mut carry = 0u16;
+        for j in 0..b.len() {
+            let k = i + j;
+            let prod = (a[i] as u16) * (b[j] as u16) + (out[k] as u16) + carry;
+            out[k] = (prod & 0xFF) as u8;
+            carry = prod >> 8;
+        }
+        if carry != 0 { out[i + b.len()] = (out[i + b.len()] as u16 + carry) as u8; }
+    }
+    normalize(out)
+}
+
+fn div_mod_abs(mut a: Vec<u8>, b: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    if b.is_empty() { return (Vec::new(), a); }
+    if let (Some(x), Some(y)) = (to_u128(&a), to_u128(b)) { if y != 0 { return (from_u128(x / y), from_u128(x % y)); } }
+    let mut q = 0u128;
+    while cmp_abs(&a, b) >= 0 {
+        a = sub_abs(&a, b);
+        q = q.wrapping_add(1);
+    }
+    (from_u128(q), a)
+}
 
 #[derive(Clone)]
 struct Frame {
@@ -96,6 +195,687 @@ impl NyarVM {
             let mut next_ip = Some(cur_ip + 1);
             match ins {
                 Instruction::Nop => {}
+                Instruction::BigIntConst { sign, bytes } => {
+                    self.push(Value::bigint(sign, bytes));
+                }
+                Instruction::BigIntAdd => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint().clone() };
+                    let r = unsafe { rhs.as_bigint().clone() };
+                    let res = if l.sign == r.sign { BigInt { sign: l.sign, bytes: add_abs(&l.bytes, &r.bytes) } } else {
+                        match cmp_abs(&l.bytes, &r.bytes) {
+                            0 => BigInt { sign: 0, bytes: Vec::new() },
+                            1 => BigInt { sign: l.sign, bytes: sub_abs(&l.bytes, &r.bytes) },
+                            _ => BigInt { sign: r.sign, bytes: sub_abs(&r.bytes, &l.bytes) },
+                        }
+                    };
+                    self.push(Value::bigint(res.sign, res.bytes));
+                }
+                Instruction::BigIntSub => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let mut r = unsafe { rhs.as_bigint().clone() };
+                    if !r.bytes.is_empty() { r.sign ^= 1; }
+                    let l = unsafe { lhs.as_bigint().clone() };
+                    let res = if l.sign == r.sign { BigInt { sign: l.sign, bytes: add_abs(&l.bytes, &r.bytes) } } else {
+                        match cmp_abs(&l.bytes, &r.bytes) {
+                            0 => BigInt { sign: 0, bytes: Vec::new() },
+                            1 => BigInt { sign: l.sign, bytes: sub_abs(&l.bytes, &r.bytes) },
+                            _ => BigInt { sign: r.sign, bytes: sub_abs(&r.bytes, &l.bytes) },
+                        }
+                    };
+                    self.push(Value::bigint(res.sign, res.bytes));
+                }
+                Instruction::BigIntMul => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint().clone() };
+                    let r = unsafe { rhs.as_bigint().clone() };
+                    let sign = if l.bytes.is_empty() || r.bytes.is_empty() { 0 } else { l.sign ^ r.sign };
+                    let bytes = mul_abs(&l.bytes, &r.bytes);
+                    self.push(Value::bigint(sign, bytes));
+                }
+                Instruction::BigIntDiv => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint().clone() };
+                    let r = unsafe { rhs.as_bigint().clone() };
+                    let (q, _) = div_mod_abs(l.bytes.clone(), &r.bytes);
+                    let sign = if q.is_empty() { 0 } else { l.sign ^ r.sign };
+                    self.push(Value::bigint(sign, q));
+                }
+                Instruction::BigIntMod => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint().clone() };
+                    let r = unsafe { rhs.as_bigint().clone() };
+                    let (_, rem) = div_mod_abs(l.bytes.clone(), &r.bytes);
+                    let sign = if rem.is_empty() { 0 } else { l.sign };
+                    self.push(Value::bigint(sign, rem));
+                }
+                Instruction::BigIntNeg => {
+                    let v = self.pop()?;
+                    let mut b = unsafe { v.as_bigint().clone() };
+                    if !b.bytes.is_empty() { b.sign ^= 1; } else { b.sign = 0; }
+                    self.push(Value::bigint(b.sign, b.bytes));
+                }
+                Instruction::BigIntEq => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint() };
+                    let r = unsafe { rhs.as_bigint() };
+                    let eq = l.sign == r.sign && cmp_abs(&l.bytes, &r.bytes) == 0;
+                    self.push(Value::bool(eq));
+                }
+                Instruction::BigIntNe => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint() };
+                    let r = unsafe { rhs.as_bigint() };
+                    let ne = !(l.sign == r.sign && cmp_abs(&l.bytes, &r.bytes) == 0);
+                    self.push(Value::bool(ne));
+                }
+                Instruction::BigIntLt => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint() };
+                    let r = unsafe { rhs.as_bigint() };
+                    let res = if l.sign != r.sign { l.sign != 0 && r.sign == 0 } else {
+                        let c = cmp_abs(&l.bytes, &r.bytes);
+                        if l.sign == 0 { c < 0 } else { c > 0 }
+                    };
+                    self.push(Value::bool(res));
+                }
+                Instruction::BigIntLe => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint() };
+                    let r = unsafe { rhs.as_bigint() };
+                    let res = if l.sign != r.sign { l.sign != 0 && r.sign == 0 } else {
+                        let c = cmp_abs(&l.bytes, &r.bytes);
+                        if l.sign == 0 { c <= 0 } else { c >= 0 }
+                    };
+                    self.push(Value::bool(res));
+                }
+                Instruction::BigIntGt => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint() };
+                    let r = unsafe { rhs.as_bigint() };
+                    let res = if l.sign != r.sign { l.sign == 0 && r.sign != 0 } else {
+                        let c = cmp_abs(&l.bytes, &r.bytes);
+                        if l.sign == 0 { c > 0 } else { c < 0 }
+                    };
+                    self.push(Value::bool(res));
+                }
+                Instruction::BigIntGe => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let l = unsafe { lhs.as_bigint() };
+                    let r = unsafe { rhs.as_bigint() };
+                    let res = if l.sign != r.sign { l.sign == 0 && r.sign != 0 } else {
+                        let c = cmp_abs(&l.bytes, &r.bytes);
+                        if l.sign == 0 { c >= 0 } else { c <= 0 }
+                    };
+                    self.push(Value::bool(res));
+                }
+                Instruction::BigIntToI64 => {
+                    let v = self.pop()?;
+                    let b = unsafe { v.as_bigint() };
+                    let i = b.to_i64();
+                    self.push(Value::int(i));
+                }
+                Instruction::BigIntFromI64 => {
+                    let v = self.pop()?;
+                    let i = unsafe { v.as_int() };
+                    self.push(Value::bigint_from_i64(i));
+                }
+                Instruction::BigIntToString => {
+                    let v = self.pop()?;
+                    let b = unsafe { v.as_bigint() };
+                    let s = b.to_i64().to_string();
+                    self.push(Value::string(s));
+                }
+                Instruction::I32Const(v) => {
+                    self.push(Value::int(v as i64));
+                }
+                Instruction::I32DivS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let (r, _) = unsafe { (lhs.as_int() as i32).overflowing_div(rhs.as_int() as i32) };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I32DivU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let (r, _) = unsafe { (lhs.as_int() as u32).overflowing_div(rhs.as_int() as u32) };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I32RemS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let (r, _) = unsafe { (lhs.as_int() as i32).overflowing_rem(rhs.as_int() as i32) };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I32RemU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let (r, _) = unsafe { (lhs.as_int() as u32).overflowing_rem(rhs.as_int() as u32) };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I32Add => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32).wrapping_add(rhs.as_int() as i32) } as i64;
+                    self.push(Value::int(r));
+                }
+                Instruction::I32Sub => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32).wrapping_sub(rhs.as_int() as i32) } as i64;
+                    self.push(Value::int(r));
+                }
+                Instruction::I32Mul => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32).wrapping_mul(rhs.as_int() as i32) } as i64;
+                    self.push(Value::int(r));
+                }
+                Instruction::I32Neg => {
+                    let v = self.pop()?;
+                    let r = unsafe { (-(v.as_int() as i32)) } as i64;
+                    self.push(Value::int(r));
+                }
+                Instruction::I32Eq => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32) == (rhs.as_int() as i32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32Ne => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32) != (rhs.as_int() as i32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32LtS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32) < (rhs.as_int() as i32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32LtU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as u32) < (rhs.as_int() as u32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32LeS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32) <= (rhs.as_int() as i32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32LeU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as u32) <= (rhs.as_int() as u32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32GtS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32) > (rhs.as_int() as i32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32GtU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as u32) > (rhs.as_int() as u32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32GeS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i32) >= (rhs.as_int() as i32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32GeU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as u32) >= (rhs.as_int() as u32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I32ToF32S => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as i32) as f32 } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::I32ToF32U => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as u32) as f32 } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::I32ToF64S => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as i32) as f64 };
+                    self.push(Value::float(r));
+                }
+                Instruction::I32ToF64U => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as u32) as f64 };
+                    self.push(Value::float(r));
+                }
+                Instruction::I32Extend64S => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as i32) as i64 };
+                    self.push(Value::int(r));
+                }
+                Instruction::I32Extend64U => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as u32) as u64 } as i64;
+                    self.push(Value::int(r));
+                }
+                Instruction::I32Trunc64SLow => {
+                    let v = self.pop()?;
+                    let low = unsafe { (v.as_int() as u64) as u32 };
+                    let r = low as i32;
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I32Trunc64S => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as i64) as i32 };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I32Trunc64U => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as u64) as u32 };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I64Const(v) => {
+                    self.push(Value::int(v));
+                }
+                Instruction::I64Add => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64).wrapping_add(rhs.as_int() as i64) };
+                    self.push(Value::int(r));
+                }
+                Instruction::I64Sub => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64).wrapping_sub(rhs.as_int() as i64) };
+                    self.push(Value::int(r));
+                }
+                Instruction::I64Mul => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64).wrapping_mul(rhs.as_int() as i64) };
+                    self.push(Value::int(r));
+                }
+                Instruction::I64DivS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let (r, _) = unsafe { (lhs.as_int() as i64).overflowing_div(rhs.as_int() as i64) };
+                    self.push(Value::int(r));
+                }
+                Instruction::I64DivU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let (r, _) = unsafe { (lhs.as_int() as u64).overflowing_div(rhs.as_int() as u64) };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I64RemS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let (r, _) = unsafe { (lhs.as_int() as i64).overflowing_rem(rhs.as_int() as i64) };
+                    self.push(Value::int(r));
+                }
+                Instruction::I64RemU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let (r, _) = unsafe { (lhs.as_int() as u64).overflowing_rem(rhs.as_int() as u64) };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::I64Neg => {
+                    let v = self.pop()?;
+                    let r = unsafe { -(v.as_int() as i64) };
+                    self.push(Value::int(r));
+                }
+                Instruction::I64Eq => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64) == (rhs.as_int() as i64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64Ne => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64) != (rhs.as_int() as i64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64LtS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64) < (rhs.as_int() as i64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64LtU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as u64) < (rhs.as_int() as u64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64LeS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64) <= (rhs.as_int() as i64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64LeU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as u64) <= (rhs.as_int() as u64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64GtS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64) > (rhs.as_int() as i64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64GtU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as u64) > (rhs.as_int() as u64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64GeS => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as i64) >= (rhs.as_int() as i64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64GeU => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_int() as u64) >= (rhs.as_int() as u64) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::I64ToF32S => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as i64) as f32 } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::I64ToF32U => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as u64) as f32 } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::I64ToF64S => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as i64) as f64 };
+                    self.push(Value::float(r));
+                }
+                Instruction::I64ToF64U => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_int() as u64) as f64 };
+                    self.push(Value::float(r));
+                }
+                Instruction::F32Const(v) => {
+                    self.push(Value::float(v as f64));
+                }
+                Instruction::F32Add => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) + (rhs.as_float() as f32) } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::F32Sub => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) - (rhs.as_float() as f32) } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::F32Mul => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) * (rhs.as_float() as f32) } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::F32Div => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) / (rhs.as_float() as f32) } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::F32Neg => {
+                    let v = self.pop()?;
+                    let r = unsafe { -v.as_float() as f32 } as f64;
+                    self.push(Value::float(r));
+                }
+                Instruction::F32Eq => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) == (rhs.as_float() as f32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F32Ne => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) != (rhs.as_float() as f32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F32Lt => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) < (rhs.as_float() as f32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F32Le => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) <= (rhs.as_float() as f32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F32Gt => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) > (rhs.as_float() as f32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F32Ge => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { (lhs.as_float() as f32) >= (rhs.as_float() as f32) };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F32ToI32S => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() as i32 };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::F32ToI32U => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() as u32 };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::F32ToI64S => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() as i64 };
+                    self.push(Value::int(r));
+                }
+                Instruction::F32ToI64U => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() as u64 };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::F32ToF64 => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() };
+                    self.push(Value::float(r));
+                }
+                Instruction::F64Const(v) => {
+                    self.push(Value::float(v));
+                }
+                Instruction::F64Add => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() + rhs.as_float() };
+                    self.push(Value::float(r));
+                }
+                Instruction::F64Sub => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() - rhs.as_float() };
+                    self.push(Value::float(r));
+                }
+                Instruction::F64Mul => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() * rhs.as_float() };
+                    self.push(Value::float(r));
+                }
+                Instruction::F64Div => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() / rhs.as_float() };
+                    self.push(Value::float(r));
+                }
+                Instruction::F64Neg => {
+                    let v = self.pop()?;
+                    let r = unsafe { -v.as_float() };
+                    self.push(Value::float(r));
+                }
+                Instruction::F64Eq => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() == rhs.as_float() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F64Ne => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() != rhs.as_float() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F64Lt => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() < rhs.as_float() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F64Le => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() <= rhs.as_float() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F64Gt => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() > rhs.as_float() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F64Ge => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_float() >= rhs.as_float() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::F64ToI32S => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() as i32 };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::F64ToI32U => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() as u32 };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::F64ToI64S => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() as i64 };
+                    self.push(Value::int(r));
+                }
+                Instruction::F64ToI64U => {
+                    let v = self.pop()?;
+                    let r = unsafe { v.as_float() as u64 };
+                    self.push(Value::int(r as i64));
+                }
+                Instruction::F64ToF32 => {
+                    let v = self.pop()?;
+                    let r = unsafe { (v.as_float() as f32) as f64 };
+                    self.push(Value::float(r));
+                }
+                Instruction::StringConst(s) => {
+                    self.push(Value::string(s));
+                }
+                Instruction::StringConcat => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { format!("{}{}", lhs.as_string(), rhs.as_string()) };
+                    self.push(Value::string(r));
+                }
+                Instruction::StringLenBytes => {
+                    let v = self.pop()?;
+                    let n = unsafe { v.as_string().len() } as i64;
+                    self.push(Value::int(n));
+                }
+                Instruction::StringLenChars => {
+                    let v = self.pop()?;
+                    let n = unsafe { v.as_string().chars().count() } as i64;
+                    self.push(Value::int(n));
+                }
+                Instruction::StringEq => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_string() == rhs.as_string() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::StringNe => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_string() != rhs.as_string() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::StringLt => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_string() < rhs.as_string() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::StringLe => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_string() <= rhs.as_string() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::StringGt => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_string() > rhs.as_string() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::StringGe => {
+                    let rhs = self.pop()?;
+                    let lhs = self.pop()?;
+                    let r = unsafe { lhs.as_string() >= rhs.as_string() };
+                    self.push(Value::bool(r));
+                }
+                Instruction::StringSubstr => {
+                    let len_v = self.pop()?;
+                    let start_v = self.pop()?;
+                    let s_v = self.pop()?;
+                    let s = unsafe { s_v.as_string().clone() };
+                    let start = unsafe { start_v.as_int() } as usize;
+                    let len = unsafe { len_v.as_int() } as usize;
+                    let end = start.saturating_add(len);
+                    let end = end.min(s.len());
+                    let sub = if start <= end { s[start..end].to_string() } else { String::new() };
+                    self.push(Value::string(sub));
+                }
                 Instruction::Push(idx) => {
                     let c = self
                         .constants
