@@ -49,6 +49,11 @@ fn expect_ident(tokens: &[Token], i: &mut usize) -> Result<String, Error> {
     }
 }
 
+fn expect_path_string(tokens: &[Token], i: &mut usize) -> Result<String, Error> {
+    let segs = expect_path(tokens, i)?;
+    Ok(segs.join("::"))
+}
+
 fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
     match tokens.get(*i) {
         Some(Token::Int(v)) => {
@@ -107,6 +112,17 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
 
 fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
     match tokens.get(*i) {
+        Some(Token::Namespace) => {
+            *i += 1;
+            let name = expect_ident(tokens, i)?;
+            let body = parse_block(tokens, i)?;
+            Ok(Stmt::NamespaceDef(name, body))
+        }
+        Some(Token::Using) => {
+            *i += 1;
+            let path = expect_path(tokens, i)?;
+            Ok(Stmt::Using(path))
+        }
         Some(Token::Assert) => {
             *i += 1;
             match tokens.get(*i) {
@@ -188,7 +204,7 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         }
         Some(Token::Class) => {
             *i += 1;
-            let name = expect_ident(tokens, i)?;
+            let name = expect_path_string(tokens, i)?;
             match tokens.get(*i) {
                 Some(Token::LBrace) => {
                     *i += 1;
@@ -224,7 +240,7 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         }
         Some(Token::Trait) => {
             *i += 1;
-            let name = expect_ident(tokens, i)?;
+            let name = expect_path_string(tokens, i)?;
             match tokens.get(*i) {
                 Some(Token::LBrace) => {
                     *i += 1;
@@ -260,20 +276,20 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         }
         Some(Token::Impl) => {
             *i += 1;
-            let trait_name = expect_ident(tokens, i)?;
+            let trait_name = expect_path_string(tokens, i)?;
             match tokens.get(*i) {
                 Some(Token::For) => {
                     *i += 1;
                 }
                 _ => return Err(Error::Parse("expect for".into())),
             }
-            let class_name = expect_ident(tokens, i)?;
+            let class_name = expect_path_string(tokens, i)?;
             let body = parse_block(tokens, i)?;
             Ok(Stmt::ImplDef(trait_name, class_name, body))
         }
         Some(Token::Enum) => {
             *i += 1;
-            let name = expect_ident(tokens, i)?;
+            let name = expect_path_string(tokens, i)?;
             match tokens.get(*i) {
                 Some(Token::LBrace) => {
                     *i += 1;
@@ -359,6 +375,23 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
             Ok(Stmt::Expr(e))
         }
     }
+}
+
+fn expect_path(tokens: &[Token], i: &mut usize) -> Result<Vec<String>, Error> {
+    let mut path = Vec::new();
+    let first = expect_ident(tokens, i)?;
+    path.push(first);
+    loop {
+        match tokens.get(*i) {
+            Some(Token::DoubleColon) => {
+                *i += 1;
+                let seg = expect_ident(tokens, i)?;
+                path.push(seg);
+            }
+            _ => break,
+        }
+    }
+    Ok(path)
 }
 
 fn parse_args_decl(tokens: &[Token], i: &mut usize) -> Result<Vec<String>, Error> {
@@ -539,17 +572,17 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
             }
             Token::Is => {
                 *i += 1;
-                let name = expect_ident(tokens, i)?;
+                let name = expect_path_string(tokens, i)?;
                 left = Expr::InstanceOf(Box::new(left), name);
             }
             Token::As => {
                 *i += 1;
-                let name = expect_ident(tokens, i)?;
+                let name = expect_path_string(tokens, i)?;
                 left = Expr::Cast(Box::new(left), name);
             }
             Token::AsSafe => {
                 *i += 1;
-                let name = expect_ident(tokens, i)?;
+                let name = expect_path_string(tokens, i)?;
                 left = Expr::CheckCast(Box::new(left), name);
             }
             Token::Dot => {
@@ -654,6 +687,10 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
             *i += 1;
             Ok(Expr::Int(*v))
         }
+        Some(Token::String(s)) => {
+            *i += 1;
+            Ok(Expr::String(s.clone()))
+        }
         Some(Token::True) => {
             *i += 1;
             Ok(Expr::Bool(true))
@@ -662,13 +699,13 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
             *i += 1;
             Ok(Expr::Bool(false))
         }
-        Some(Token::Ident(name)) => {
-            *i += 1;
-            Ok(Expr::Variable(name.clone()))
+        Some(Token::Ident(_name)) => {
+            let path = expect_path(tokens, i)?;
+            Ok(Expr::Variable(path.join("::")))
         }
         Some(Token::New) => {
             *i += 1;
-            let name = expect_ident(tokens, i)?;
+            let name = expect_path_string(tokens, i)?;
             if let Some(Token::LParen) = tokens.get(*i) {
                 *i += 1;
                 match tokens.get(*i) {

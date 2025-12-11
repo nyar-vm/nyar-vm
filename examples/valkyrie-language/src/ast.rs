@@ -9,6 +9,7 @@ pub enum Pattern {
 #[derive(Clone, Debug)]
 pub enum Expr {
     Int(i64),
+    String(String),
     Bool(bool),
     Variable(String),
     Call(Box<Expr>, Vec<Expr>),
@@ -51,6 +52,8 @@ pub enum Stmt {
     Yield(Expr),
     Assert(Expr, Option<Expr>),
     Debug(Expr),
+    NamespaceDef(String, Vec<Stmt>),
+    Using(Vec<String>),
     // micro name(args) { body }
     FuncDef(String, Vec<String>, Vec<Stmt>),
     // class Name { field1, field2 }

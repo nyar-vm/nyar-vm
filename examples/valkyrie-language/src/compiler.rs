@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 enum TypeKind {
     Int,
     Bool,
+    String,
     Unknown,
 }
 
@@ -31,6 +32,8 @@ struct Compiler {
     traits: Vec<TraitInfo>,
     trait_map: HashMap<String, u16>,
     impls: Vec<ImplInfo>,
+    namespace_stack: Vec<String>,
+    use_prefixes: Vec<Vec<String>>, // list of namespace paths opened by `using`
 }
 
 struct FunctionContext {
@@ -60,6 +63,8 @@ impl Compiler {
             traits: Vec::new(),
             trait_map: HashMap::new(),
             impls: Vec::new(),
+            namespace_stack: Vec::new(),
+            use_prefixes: Vec::new(),
         }
     }
 
@@ -75,6 +80,73 @@ impl Compiler {
 
     fn add_string(&mut self, s: &str) -> u16 {
         self.add_constant(Constant::String(s.to_string()))
+    }
+
+    fn qualify(&self, name: &str) -> String {
+        if self.namespace_stack.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}::{name}", self.namespace_stack.join("::"))
+        }
+    }
+
+    fn def_name(&self, name: &str) -> String {
+        if name.contains("::") {
+            name.to_string()
+        } else {
+            self.qualify(name)
+        }
+    }
+
+    fn resolve_function(&self, name: &str) -> Option<u16> {
+        if let Some(&idx) = self.functions.get(name) {
+            return Some(idx);
+        }
+        let q = self.qualify(name);
+        if let Some(&idx) = self.functions.get(&q) {
+            return Some(idx);
+        }
+        for p in &self.use_prefixes {
+            let qname = format!("{}::{name}", p.join("::"));
+            if let Some(&idx) = self.functions.get(&qname) {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    fn resolve_class(&self, name: &str) -> Option<u16> {
+        if let Some(&idx) = self.class_map.get(name) {
+            return Some(idx);
+        }
+        let q = self.qualify(name);
+        if let Some(&idx) = self.class_map.get(&q) {
+            return Some(idx);
+        }
+        for p in &self.use_prefixes {
+            let qname = format!("{}::{name}", p.join("::"));
+            if let Some(&idx) = self.class_map.get(&qname) {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    fn resolve_trait(&self, name: &str) -> Option<u16> {
+        if let Some(&idx) = self.trait_map.get(name) {
+            return Some(idx);
+        }
+        let q = self.qualify(name);
+        if let Some(&idx) = self.trait_map.get(&q) {
+            return Some(idx);
+        }
+        for p in &self.use_prefixes {
+            let qname = format!("{}::{name}", p.join("::"));
+            if let Some(&idx) = self.trait_map.get(&qname) {
+                return Some(idx);
+            }
+        }
+        None
     }
 }
 
@@ -122,6 +194,7 @@ impl FunctionContext {
 fn infer_expr_type(contexts: &[FunctionContext], e: &Expr) -> TypeKind {
     match e {
         Expr::Int(_) => TypeKind::Int,
+        Expr::String(_) => TypeKind::String,
         Expr::Bool(_) => TypeKind::Bool,
         Expr::Variable(name) => {
             if let Some(ctx) = contexts.last() {
@@ -608,10 +681,8 @@ fn compile_expr(
 
             let mut is_static_or_ffi = false;
             if let Expr::Variable(name) = &**callee {
-                // Check for static function first
-                let static_func = compiler.functions.get(name).copied();
-
-                if let Some(idx) = static_func {
+                // Check for static function first with namespace/using resolution
+                if let Some(idx) = compiler.resolve_function(name) {
                     // Static function call
                     for arg in args {
                         compile_expr(compiler, contexts, arg)?;
@@ -711,7 +782,7 @@ fn compile_expr(
             }
         }
         Expr::New(name) => {
-            if let Some(&idx) = compiler.class_map.get(name) {
+            if let Some(idx) = compiler.resolve_class(name) {
                 let ctx = contexts.last_mut().unwrap();
                 ctx.code.push(Opcode::NewObject as u8);
                 ctx.code.extend_from_slice(&idx.to_le_bytes());
@@ -736,7 +807,7 @@ fn compile_expr(
         }
         Expr::InstanceOf(expr, class_name) => {
             compile_expr(compiler, contexts, expr)?;
-            if let Some(&idx) = compiler.class_map.get(class_name) {
+            if let Some(idx) = compiler.resolve_class(class_name) {
                 let ctx = contexts.last_mut().unwrap();
                 ctx.code.push(Opcode::InstanceOf as u8);
                 ctx.code.extend_from_slice(&idx.to_le_bytes());
@@ -746,7 +817,7 @@ fn compile_expr(
         }
         Expr::Cast(expr, class_name) => {
             compile_expr(compiler, contexts, expr)?;
-            if let Some(&idx) = compiler.class_map.get(class_name) {
+            if let Some(idx) = compiler.resolve_class(class_name) {
                 let ctx = contexts.last_mut().unwrap();
                 ctx.code.push(Opcode::Cast as u8);
                 ctx.code.extend_from_slice(&idx.to_le_bytes());
@@ -756,7 +827,7 @@ fn compile_expr(
         }
         Expr::CheckCast(expr, class_name) => {
             compile_expr(compiler, contexts, expr)?;
-            if let Some(&idx) = compiler.class_map.get(class_name) {
+            if let Some(idx) = compiler.resolve_class(class_name) {
                 let ctx = contexts.last_mut().unwrap();
                 ctx.code.push(Opcode::CheckCast as u8);
                 ctx.code.extend_from_slice(&idx.to_le_bytes());
@@ -773,6 +844,7 @@ fn compile_expr(
                 let jump_idx = {
                     let ctx = contexts.last_mut().unwrap();
                     ctx.code.push(Opcode::Dup as u8);
+                    ctx.code.push(0u8);
                     compile_pattern_check(compiler, ctx, pat)?;
 
                     ctx.code.push(Opcode::JumpIfFalse as u8);
@@ -866,6 +938,7 @@ fn compile_pattern_check(
         }
         Pattern::Constructor(name, sub_pats) => {
             ctx.code.push(Opcode::Dup as u8);
+            ctx.code.push(0u8);
             ctx.code.push(Opcode::GetField as u8);
             let v_idx = compiler.add_string("__variant__");
             ctx.code.extend_from_slice(&v_idx.to_le_bytes());
@@ -887,6 +960,7 @@ fn compile_pattern_check(
 
             for (i, p) in sub_pats.iter().enumerate() {
                 ctx.code.push(Opcode::Dup as u8);
+                ctx.code.push(0u8);
                 ctx.code.push(Opcode::GetField as u8);
                 let field_name = format!("_{}", i);
                 let f_idx = compiler.add_string(&field_name);
@@ -944,6 +1018,7 @@ fn compile_pattern_binding(
     match pat {
         Pattern::Variable(name) => {
             ctx.code.push(Opcode::Dup as u8);
+            ctx.code.push(0u8);
             let idx = ctx.add_local(name.clone());
             ctx.code.push(Opcode::StoreLocal as u8);
             ctx.code.push(idx);
@@ -951,6 +1026,7 @@ fn compile_pattern_binding(
         Pattern::Constructor(_name, sub_pats) => {
             for (i, p) in sub_pats.iter().enumerate() {
                 ctx.code.push(Opcode::Dup as u8);
+                ctx.code.push(0u8);
                 ctx.code.push(Opcode::GetField as u8);
                 let field_name = format!("_{}", i);
                 let f_idx = compiler.add_string(&field_name);
@@ -972,6 +1048,18 @@ fn compile_stmt(
     s: &Stmt,
 ) -> Result<(), Error> {
     match s {
+        Stmt::NamespaceDef(name, body) => {
+            let base_uses = compiler.use_prefixes.len();
+            compiler.namespace_stack.push(name.clone());
+            for stmt in body {
+                compile_stmt(compiler, contexts, stmt)?;
+            }
+            compiler.namespace_stack.pop();
+            compiler.use_prefixes.truncate(base_uses);
+        }
+        Stmt::Using(path) => {
+            compiler.use_prefixes.push(path.clone());
+        }
         Stmt::Assert(cond, msg) => {
             compile_expr(compiler, contexts, cond)?;
             let j_false = {
@@ -992,20 +1080,19 @@ fn compile_stmt(
                 let ctx = contexts.last().unwrap();
                 ctx.code.len()
             };
-            {
+            if let Some(e) = msg {
+                compile_expr(compiler, contexts, e)?;
+                let didx = compiler.add_string("assert");
                 let ctx = contexts.last_mut().unwrap();
-                if let Some(e) = msg {
-                    compile_expr(compiler, contexts, e)?;
-                    let didx = compiler.add_string("assert");
-                    ctx.code.push(Opcode::FFICall as u8);
-                    ctx.code.extend_from_slice(&didx.to_le_bytes());
-                    ctx.code.push(1u8);
-                } else {
-                    let didx = compiler.add_string("assert");
-                    ctx.code.push(Opcode::FFICall as u8);
-                    ctx.code.extend_from_slice(&didx.to_le_bytes());
-                    ctx.code.push(0u8);
-                }
+                ctx.code.push(Opcode::FFICall as u8);
+                ctx.code.extend_from_slice(&didx.to_le_bytes());
+                ctx.code.push(1u8);
+            } else {
+                let didx = compiler.add_string("assert");
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::FFICall as u8);
+                ctx.code.extend_from_slice(&didx.to_le_bytes());
+                ctx.code.push(0u8);
             }
             let end_pos = {
                 let ctx = contexts.last().unwrap();
@@ -1265,23 +1352,26 @@ fn compile_stmt(
         }
         Stmt::FuncDef(name, args, body) => {
             let chunk_idx = compile_func_to_chunk(compiler, args.clone(), body)?;
-            compiler.functions.insert(name.clone(), chunk_idx);
+            let key = compiler.def_name(&name);
+            compiler.functions.insert(key, chunk_idx);
         }
         Stmt::ClassDef(name, fields) => {
             let idx = compiler.classes.len() as u16;
             compiler.classes.push(ClassInfo {
-                name: name.clone(),
+                name: compiler.def_name(&name),
                 fields: fields.clone(),
             });
-            compiler.class_map.insert(name.clone(), idx);
+            let key = compiler.def_name(&name);
+            compiler.class_map.insert(key, idx);
         }
         Stmt::TraitDef(name, methods) => {
             let idx = compiler.traits.len() as u16;
             compiler.traits.push(TraitInfo {
-                name: name.clone(),
+                name: compiler.def_name(&name),
                 methods: methods.clone(),
             });
-            compiler.trait_map.insert(name.clone(), idx);
+            let key = compiler.def_name(&name);
+            compiler.trait_map.insert(key, idx);
         }
         Stmt::EnumDef(name, variants) => {
             // 1. Define Class for the Enum
@@ -1301,10 +1391,11 @@ fn compile_stmt(
 
             let class_idx = compiler.classes.len() as u16;
             compiler.classes.push(ClassInfo {
-                name: name.clone(),
+                name: compiler.def_name(&name),
                 fields: class_fields,
             });
-            compiler.class_map.insert(name.clone(), class_idx);
+            let class_key = compiler.def_name(&name);
+            compiler.class_map.insert(class_key.clone(), class_idx);
 
             // 2. Define Constructor Functions for each variant
             for (v_name, v_fields) in variants {
@@ -1316,6 +1407,7 @@ fn compile_stmt(
 
                 // Set __variant__
                 ctx.code.push(Opcode::Dup as u8);
+                ctx.code.push(0u8);
                 ctx.code.push(Opcode::Push as u8);
                 let v_name_idx = compiler.add_string(v_name);
                 ctx.code.extend_from_slice(&v_name_idx.to_le_bytes());
@@ -1328,6 +1420,7 @@ fn compile_stmt(
                 // Set fields
                 for (i, _) in v_fields.iter().enumerate() {
                     ctx.code.push(Opcode::Dup as u8);
+                    ctx.code.push(0u8);
 
                     // Load argument
                     ctx.code.push(Opcode::LoadLocal as u8);
@@ -1356,17 +1449,16 @@ fn compile_stmt(
 
                 let chunk_idx = (compiler.chunks.len() + 1) as u16;
                 compiler.chunks.push(chunk);
-                compiler.functions.insert(v_name.clone(), chunk_idx);
+                let v_key = format!("{}::{}", class_key, v_name);
+                compiler.functions.insert(v_key, chunk_idx);
             }
         }
         Stmt::ImplDef(trait_name, class_name, methods) => {
-            let trait_idx = *compiler
-                .trait_map
-                .get(trait_name)
+            let trait_idx = compiler
+                .resolve_trait(trait_name)
                 .ok_or_else(|| Error::Compile(format!("undefined trait: {}", trait_name)))?;
-            let class_idx = *compiler
-                .class_map
-                .get(class_name)
+            let class_idx = compiler
+                .resolve_class(class_name)
                 .ok_or_else(|| Error::Compile(format!("undefined class: {}", class_name)))?;
 
             // Compile all methods in the impl block

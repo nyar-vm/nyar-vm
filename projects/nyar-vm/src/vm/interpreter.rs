@@ -1035,7 +1035,7 @@ impl NyarVM {
                     match c {
                         Constant::Int(i) => self.push(Value::int(*i)),
                         Constant::Float(x) => self.push(Value::float(*x)),
-                        Constant::String(_) => self.push(Value::null()),
+                        Constant::String(s) => self.push(Value::string(s.clone())),
                     }
                 }
                 Instruction::Pop => {
@@ -1813,6 +1813,78 @@ impl NyarVM {
                                 "assertion failed".to_string()
                             };
                             return Err(VmError::RuntimeError(msg));
+                        }
+                        "len" => {
+                            if let Some(v) = args.last() {
+                                let len = match v.tag {
+                                    ValueTag::String => unsafe { v.as_string().len() },
+                                    ValueTag::Array => unsafe { v.as_array().items.len() },
+                                    ValueTag::List => unsafe { v.as_list().items.len() },
+                                    ValueTag::Tuple => unsafe { v.as_tuple().items.len() },
+                                    ValueTag::DynObject => unsafe { v.as_dyn_object().entries.len() },
+                                    _ => 0,
+                                };
+                                self.push(Value::int(len as i64));
+                            } else {
+                                self.push(Value::int(0));
+                            }
+                        }
+                        "ord" => {
+                            if let Some(v) = args.last() {
+                                let code = if v.tag == ValueTag::String {
+                                    let s = unsafe { v.as_string() };
+                                    if let Some(c) = s.chars().next() {
+                                        c as i64
+                                    } else {
+                                        0
+                                    }
+                                } else {
+                                    0
+                                };
+                                self.push(Value::int(code));
+                            } else {
+                                self.push(Value::int(0));
+                            }
+                        }
+                        "chr" => {
+                            if let Some(v) = args.last() {
+                                let c = if v.tag == ValueTag::Int {
+                                    let i = unsafe { v.as_int() };
+                                    std::char::from_u32(i as u32).unwrap_or('\0').to_string()
+                                } else {
+                                    "\0".to_string()
+                                };
+                                self.push(Value::string(c));
+                            } else {
+                                self.push(Value::string("".to_string()));
+                            }
+                        }
+                        "get" => {
+                            let idx_v = args.pop().unwrap_or(Value::int(0));
+                            let container = args.pop().unwrap_or(Value::null());
+                            if container.tag == ValueTag::String && idx_v.tag == ValueTag::Int {
+                                let s = unsafe { container.as_string() };
+                                let idx = unsafe { idx_v.as_int() } as usize;
+                                let c = s.chars().nth(idx).map(|c| c.to_string()).unwrap_or_default();
+                                self.push(Value::string(c));
+                            } else {
+                                self.push(Value::null());
+                            }
+                        }
+                        "str" => {
+                             if let Some(v) = args.last() {
+                                let s = match v.tag {
+                                    ValueTag::Int => format!("{}", unsafe { v.as_int() }),
+                                    ValueTag::Float => format!("{}", unsafe { v.as_float() }),
+                                    ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
+                                    ValueTag::Null => "null".to_string(),
+                                    ValueTag::String => unsafe { v.as_string().clone() },
+                                    _ => format!("{:?}", v.tag),
+                                };
+                                self.push(Value::string(s));
+                             } else {
+                                self.push(Value::string("".to_string()));
+                             }
                         }
                         _ => return Err(VmError::UnhandledEffect(name.to_string())),
                     }

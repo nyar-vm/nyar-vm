@@ -22,6 +22,9 @@ pub enum Token {
     Eq,
     Pipe,
     Dot,
+    DoubleColon,
+    Namespace,
+    Using,
     Let,
     Micro,
     Return,
@@ -51,6 +54,7 @@ pub enum Token {
     True,
     False,
     Int(i64),
+    String(String),
     Eof,
 }
 
@@ -104,6 +108,15 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
             out.push(Token::Star);
             i += 1;
             continue;
+        }
+        if c == b':' {
+            if i + 1 < b.len() && b[i + 1] == b':' {
+                out.push(Token::DoubleColon);
+                i += 2;
+                continue;
+            } else {
+                return Err(Error::Lex("unexpected ':'".to_string()));
+            }
         }
         if c == b'(' {
             out.push(Token::LParen);
@@ -233,6 +246,26 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
             }
         }
 
+        if c == b'"' {
+            i += 1;
+            let start = i;
+            while i < b.len() && b[i] != b'"' {
+                if b[i] == b'\\' && i + 1 < b.len() {
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            if i >= b.len() {
+                return Err(Error::Lex("unterminated string".to_string()));
+            }
+            let s_raw = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+            // Simple unescape
+            let s = s_raw.replace("\\\"", "\"").replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r").replace("\\0", "\0").replace("\\\\", "\\");
+            out.push(Token::String(s));
+            i += 1;
+            continue;
+        }
         if (c as char).is_ascii_digit() {
             let start = i;
             i += 1;
@@ -256,6 +289,8 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
             let s =
                 std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
             match s {
+                "namespace" => out.push(Token::Namespace),
+                "using" => out.push(Token::Using),
                 "let" => out.push(Token::Let),
                 "micro" => out.push(Token::Micro),
                 "return" => out.push(Token::Return),

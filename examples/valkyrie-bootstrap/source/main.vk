@@ -1,0 +1,177 @@
+
+enum Token {
+    EOF,
+    Identifier,
+    String,
+    Integer,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    Eq,
+    Semi,
+    KwLet,
+    KwPrint,
+    KwIf,
+    KwElse,
+    KwWhile,
+    KwMicro,
+    KwClass,
+    KwEnum,
+    KwReturn
+}
+
+class Lexer {
+    input,
+    pos,
+    len,
+    ch
+}
+
+micro Lexer::new(input) {
+    let l = new Lexer
+    l.input = input
+    l.pos = 0
+    l.len = len(input)
+    l.ch = "\0"
+    l.read_char()
+    return l
+}
+
+micro Lexer::read_char(self) {
+    if self.pos >= self.len {
+        self.ch = "\0"
+    } else {
+        self.ch = get(self.input, self.pos)
+    }
+    self.pos = self.pos + 1
+}
+
+micro Lexer::peek_char(self) {
+    if self.pos >= self.len {
+        return "\0"
+    } else {
+        return get(self.input, self.pos)
+    }
+}
+
+micro Lexer::is_digit(c) {
+    let o = ord(c)
+    return o >= 48 && o <= 57
+}
+
+micro Lexer::is_alpha(c) {
+    let o = ord(c)
+    return (o >= 97 && o <= 122) || (o >= 65 && o <= 90) || o == 95
+}
+
+micro Lexer::read_identifier(self) {
+    let start = self.pos - 1
+    let s = ""
+    s = s + self.ch
+    while Lexer::is_alpha(self.peek_char()) || Lexer::is_digit(self.peek_char()) {
+        self.read_char()
+        s = s + self.ch
+    }
+    return s
+}
+
+micro Lexer::read_number(self) {
+    let s = ""
+    s = s + self.ch
+    while Lexer::is_digit(self.peek_char()) {
+        self.read_char()
+        s = s + self.ch
+    }
+    return s
+}
+
+micro Lexer::skip_whitespace(self) {
+    while self.ch == " " || self.ch == "\t" || self.ch == "\n" || self.ch == "\r" {
+        self.read_char()
+    }
+}
+
+micro Lexer::next_token(self) {
+    self.skip_whitespace()
+    let t = Token::EOF()
+    let c = self.ch
+    
+    if c == "\0" {
+        t = Token::EOF()
+    } else if c == "+" {
+        t = Token::Plus()
+    } else if c == "-" {
+        t = Token::Minus()
+    } else if c == "*" {
+        t = Token::Star()
+    } else if c == "/" {
+        t = Token::Slash()
+    } else if c == "(" {
+        t = Token::LParen()
+    } else if c == ")" {
+        t = Token::RParen()
+    } else if c == "{" {
+        t = Token::LBrace()
+    } else if c == "}" {
+        t = Token::RBrace()
+    } else if c == "=" {
+        t = Token::Eq()
+    } else if c == ";" {
+        t = Token::Semi()
+    } else if Lexer::is_alpha(c) {
+        let lit = self.read_identifier()
+        if lit == "let" {
+            return Token::KwLet()
+        }
+        if lit == "print" {
+            return Token::KwPrint()
+        }
+        if lit == "if" {
+            return Token::KwIf()
+        }
+        if lit == "else" {
+            return Token::KwElse()
+        }
+        if lit == "while" {
+            return Token::KwWhile()
+        }
+        if lit == "micro" {
+            return Token::KwMicro()
+        }
+        if lit == "class" {
+            return Token::KwClass()
+        }
+        if lit == "enum" {
+            return Token::KwEnum()
+        }
+        if lit == "return" {
+            return Token::KwReturn()
+        }
+        return Token::Identifier(lit)
+    } else if Lexer::is_digit(c) {
+        let num = self.read_number()
+        return Token::Integer(num)
+    } else {
+        t = Token::Identifier(c)
+    }
+    
+    self.read_char()
+    return t
+}
+
+let source = "let x = 10 + 20; print(x);"
+let l = Lexer::new(source)
+
+loop {
+    let tok = l.next_token()
+    match tok {
+        Token::EOF => break,
+        _ => print(tok)
+    }
+}
+print("Lexing done")
