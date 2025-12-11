@@ -24,6 +24,8 @@ pub struct NyarVM {
     pub impls: Vec<ImplInfo>,
     pub effects: Vec<String>,
     pub handler_stack: Vec<HandlerFrame>,
+    #[allow(clippy::type_complexity)]
+    pub stdout: Option<Box<dyn Fn(&str)>>,
 }
 
 impl NyarVM {
@@ -39,6 +41,7 @@ impl NyarVM {
             impls,
             effects,
             handler_stack: Vec::new(),
+            stdout: None,
         }
     }
     fn push(&mut self, v: Value) {
@@ -365,12 +368,17 @@ impl NyarVM {
                     match name {
                         "print" => {
                             if let Some(v) = args.last() {
-                                match v.tag {
-                                    ValueTag::Int => println!("{}", unsafe { v.as_int() }),
-                                    ValueTag::Float => println!("{}", unsafe { v.as_float() }),
-                                    ValueTag::Bool => println!("{}", unsafe { v.as_bool() }),
-                                    ValueTag::Null => println!("null"),
-                                    _ => println!("<unsupported>"),
+                                let msg = match v.tag {
+                                    ValueTag::Int => format!("{}", unsafe { v.as_int() }),
+                                    ValueTag::Float => format!("{}", unsafe { v.as_float() }),
+                                    ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
+                                    ValueTag::Null => "null".to_string(),
+                                    _ => "<unsupported>".to_string(),
+                                };
+                                if let Some(cb) = &self.stdout {
+                                    cb(&msg);
+                                } else {
+                                    println!("{}", msg);
                                 }
                             }
                             self.push(Value::null());

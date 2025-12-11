@@ -15,7 +15,14 @@ fn run_push_const_return() {
     let parsed = NyarModule::parse(&data).unwrap();
     let chunk = parsed.chunks[0].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(parsed.constants, parsed.effects);
+    let mut vm = NyarVM::new(
+        parsed.constants,
+        parsed.chunks.clone(),
+        parsed.classes,
+        parsed.traits,
+        parsed.impls,
+        parsed.effects,
+    );
     let v = vm.execute(&program).unwrap();
     unsafe {
         assert_eq!(v.as_int(), 42);
@@ -44,8 +51,18 @@ fn perform_throw_unhandled() {
             code,
             handlers: vec![],
         }],
+        classes: vec![],
+        traits: vec![],
+        impls: vec![],
     };
-    let mut vm = NyarVM::new(module.constants.clone(), module.effects.clone());
+    let mut vm = NyarVM::new(
+        module.constants.clone(),
+        module.chunks.clone(),
+        module.classes.clone(),
+        module.traits.clone(),
+        module.impls.clone(),
+        module.effects.clone(),
+    );
     let chunk = module.chunks[0].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();
     let err = vm.execute(&program).err().unwrap();

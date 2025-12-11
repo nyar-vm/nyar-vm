@@ -1,4 +1,4 @@
-use crate::{DecodeError, FormatError, VmError};
+use crate::{DecodeError, FormatError, VmError, WasmAotError};
 
 #[derive(Debug)]
 pub enum CliError {
@@ -6,6 +6,7 @@ pub enum CliError {
     Format(FormatError),
     Decode(DecodeError),
     Vm(VmError),
+    Aot(WasmAotError),
     NoChunk,
 }
 
@@ -30,6 +31,17 @@ impl std::fmt::Display for CliError {
             }
             CliError::Vm(VmError::UnhandledError) => write!(f, "vm error: unhandled error"),
             CliError::Vm(VmError::RuntimeError(msg)) => write!(f, "vm error: {}", msg),
+            CliError::Aot(WasmAotError::EmptyModule) => write!(f, "aot error: empty module"),
+            CliError::Aot(WasmAotError::Decode(msg)) => write!(f, "aot error: decode: {}", msg),
+            CliError::Aot(WasmAotError::UnsupportedOpcode(op)) => {
+                write!(f, "aot error: unsupported opcode {}", op)
+            }
+            CliError::Aot(WasmAotError::UnsupportedConstantType) => {
+                write!(f, "aot error: unsupported constant type")
+            }
+            CliError::Aot(WasmAotError::ConstantOutOfBounds(idx)) => {
+                write!(f, "aot error: constant out of bounds: {}", idx)
+            }
             CliError::NoChunk => write!(f, "no chunk to execute"),
         }
     }
@@ -55,5 +67,10 @@ impl From<DecodeError> for CliError {
 impl From<VmError> for CliError {
     fn from(e: VmError) -> Self {
         CliError::Vm(e)
+    }
+}
+impl From<WasmAotError> for CliError {
+    fn from(e: WasmAotError) -> Self {
+        CliError::Aot(e)
     }
 }

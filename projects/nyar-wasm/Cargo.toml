@@ -1,0 +1,12 @@
+[package]
+name = "nyar-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "nyar_wasm"
+path = "src/lib.rs"
+
+[dependencies]
+nyar-vm = { path = "../nyar-vm" }
+nyar-error = { path = "../nyar-error" }

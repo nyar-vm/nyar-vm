@@ -12,6 +12,7 @@ nyar-error = { path = "../nyar-error" }
 serde = { workspace = true }
 toml = { workspace = true }
 byteorder = { workspace = true }
+wasm-encoder = "0.38"
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, Stmt, Pattern};
 use crate::lexer::{Error, Token};
 
 pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, Error> {
@@ -94,11 +94,52 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
             let trait_name = expect_ident(tokens, i)?;
             match tokens.get(*i) { Some(Token::For) => { *i += 1; } _ => return Err(Error::Parse("expect for".into())) }
             let class_name = expect_ident(tokens, i)?;
-            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect {".into())) }
-            let mut methods = Vec::new();
+            let body = parse_block(tokens, i)?;
+            Ok(Stmt::ImplDef(trait_name, class_name, body))
+        }
+        Some(Token::Enum) => {
+            *i += 1;
+            let name = expect_ident(tokens, i)?;
+            match tokens.get(*i) { Some(Token::LBrace) => { *i += 1; } _ => return Err(Error::Parse("expect { after enum name".into())) }
+            let mut variants = Vec::new();
             loop {
                 match tokens.get(*i) {
                     Some(Token::RBrace) => { *i += 1; break; }
+                    Some(Token::Ident(v_name)) => {
+                        let v_name = v_name.clone();
+                        *i += 1;
+                        let mut fields = Vec::new();
+                        if let Some(Token::LParen) = tokens.get(*i) {
+                            *i += 1;
+                            loop {
+                                match tokens.get(*i) {
+                                    Some(Token::RParen) => { *i += 1; break; }
+                                    Some(Token::Ident(f)) => {
+                                        fields.push(f.clone());
+                                        *i += 1;
+                                        match tokens.get(*i) {
+                                            Some(Token::Comma) => { *i += 1; continue; }
+                                            Some(Token::RParen) => { *i += 1; break; }
+                                            _ => return Err(Error::Parse("expect , or ) in variant fields".into())),
+                                        }
+                                    }
+                                    _ => return Err(Error::Parse("expect identifier in variant fields".into())),
+                                }
+                            }
+                        }
+                        variants.push((v_name, fields));
+                        match tokens.get(*i) {
+                            Some(Token::Comma) => { *i += 1; continue; }
+                            Some(Token::RBrace) => { *i += 1; break; }
+                            _ => return Err(Error::Parse("expect , or } after variant".into())),
+                        }
+                    }
+                    _ => return Err(Error::Parse("expect variant name or }".into())),
+                }
+            }
+            Ok(Stmt::EnumDef(name, variants))
+        }
+        Some(Token::Return) => {                    Some(Token::RBrace) => { *i += 1; break; }
                     Some(Token::Micro) => {
                         let stmt = parse_stmt(tokens, i)?;
                         methods.push(stmt);

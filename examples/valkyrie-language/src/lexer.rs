@@ -20,6 +20,11 @@ pub enum Token {
     Trait,
     Impl,
     For,
+    // ADT & Pattern Matching
+    Enum,
+    Match,
+    Arrow, // =>
+    Underscore, // _
     Int(i64),
     Eof,
 }
@@ -58,9 +63,22 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
         if c == b'}' { out.push(Token::RBrace); i += 1; continue; }
         if c == b',' { out.push(Token::Comma); i += 1; continue; }
         if c == b'+' { out.push(Token::Plus); i += 1; continue; }
-        if c == b'=' { out.push(Token::Eq); i += 1; continue; }
+        if c == b'=' {
+            if i + 1 < b.len() && b[i + 1] == b'>' {
+                out.push(Token::Arrow); i += 2; continue;
+            }
+            out.push(Token::Eq); i += 1; continue;
+        }
         if c == b'|' { out.push(Token::Pipe); i += 1; continue; }
         if c == b'.' { out.push(Token::Dot); i += 1; continue; }
+        if c == b'_' {
+            // Check if it's a standalone underscore or start of identifier
+            if i + 1 < b.len() && ((b[i+1] as char).is_ascii_alphanumeric() || b[i+1] == b'_') {
+                 // It's an identifier starting with _, fall through to identifier parsing
+            } else {
+                 out.push(Token::Underscore); i += 1; continue;
+            }
+        }
         
         if (c as char).is_ascii_digit() || c == b'-' {
             let start = i; i += 1; while i < b.len() && (b[i] as char).is_ascii_digit() { i += 1; }
@@ -82,6 +100,8 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
                 "trait" => out.push(Token::Trait),
                 "impl" => out.push(Token::Impl),
                 "for" => out.push(Token::For),
+                "enum" => out.push(Token::Enum),
+                "match" => out.push(Token::Match),
                 _ => out.push(Token::Ident(s.to_string())),
             }
             continue;

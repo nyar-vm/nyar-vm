@@ -24,3 +24,12 @@ pub enum DecodeError {
     InvalidOpcode(u8),
     Truncated,
 }
+
+#[derive(Debug)]
+pub enum WasmAotError {
+    EmptyModule,
+    Decode(String),
+    UnsupportedOpcode(String),
+    UnsupportedConstantType,
+    ConstantOutOfBounds(u16),
+}
