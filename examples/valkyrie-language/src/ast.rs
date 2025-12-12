@@ -37,6 +37,7 @@ pub enum Expr {
     New(String),
     GetField(Box<Expr>, String),
     SetField(Box<Expr>, String, Box<Expr>),
+    SetLocal(String, Box<Expr>),
     InstanceOf(Box<Expr>, String),
     Cast(Box<Expr>, String),
     CheckCast(Box<Expr>, String),

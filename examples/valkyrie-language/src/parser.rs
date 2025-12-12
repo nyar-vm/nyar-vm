@@ -64,11 +64,11 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
             *i += 1;
             Ok(Pattern::Wildcard)
         }
-        Some(Token::Ident(name)) => {
-            *i += 1;
-            // Check if it starts with uppercase -> Constructor
-            if name.chars().next().unwrap().is_uppercase() {
-                // Constructor
+        Some(Token::Ident(_)) => {
+            // Support constructor paths like Token::EOF
+            let name = expect_path_string(tokens, i)?;
+            let is_ctor = name.contains("::") || name.chars().next().unwrap().is_uppercase();
+            if is_ctor {
                 if let Some(Token::LParen) = tokens.get(*i) {
                     *i += 1;
                     let mut pats = Vec::new();
@@ -96,14 +96,12 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
                             }
                         }
                     }
-                    Ok(Pattern::Constructor(name.clone(), pats))
+                    Ok(Pattern::Constructor(name, pats))
                 } else {
-                    // Unit variant
-                    Ok(Pattern::Constructor(name.clone(), vec![]))
+                    Ok(Pattern::Constructor(name, vec![]))
                 }
             } else {
-                // Variable
-                Ok(Pattern::Variable(name.clone()))
+                Ok(Pattern::Variable(name))
             }
         }
         _ => Err(Error::Parse("unexpected token in pattern".into())),
@@ -197,7 +195,7 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
         }
         Some(Token::Micro) => {
             *i += 1;
-            let name = expect_ident(tokens, i)?;
+            let name = expect_path_string(tokens, i)?;
             let args = parse_args_decl(tokens, i)?;
             let body = parse_block(tokens, i)?;
             Ok(Stmt::FuncDef(name, args, body))
@@ -385,7 +383,17 @@ fn expect_path(tokens: &[Token], i: &mut usize) -> Result<Vec<String>, Error> {
         match tokens.get(*i) {
             Some(Token::DoubleColon) => {
                 *i += 1;
-                let seg = expect_ident(tokens, i)?;
+                let seg = match tokens.get(*i) {
+                    Some(Token::Ident(s)) => {
+                        *i += 1;
+                        s.clone()
+                    }
+                    Some(Token::New) => {
+                        *i += 1;
+                        "new".to_string()
+                    }
+                    _ => return Err(Error::Parse("expect identifier or new".into())),
+                };
                 path.push(seg);
             }
             _ => break,
@@ -501,11 +509,13 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
         match token {
             Token::Eq => {
                 *i += 1;
-                // Assignment is right-associative, so we pass a lower precedence (None) to allow chaining
                 let right = parse_expr_pratt(tokens, i, Precedence::None)?;
                 match left {
                     Expr::GetField(obj, field) => {
                         left = Expr::SetField(obj, field, Box::new(right));
+                    }
+                    Expr::Variable(name) => {
+                        left = Expr::SetLocal(name, Box::new(right));
                     }
                     _ => return Err(Error::Parse("Invalid assignment target".into())),
                 }

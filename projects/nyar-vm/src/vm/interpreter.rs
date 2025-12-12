@@ -1226,6 +1226,11 @@ impl NyarVM {
                                             (ValueTag::Float, ValueTag::Float) => self.push(
                                                 Value::float(lhs.as_float() + rhs.as_float()),
                                             ),
+                                            (ValueTag::String, ValueTag::String) => {
+                                                let mut s = lhs.as_string().clone();
+                                                s.push_str(rhs.as_string());
+                                                self.push(Value::string(s));
+                                            }
                                             _ => self.push(Value::null()),
                                         }
                                     }
@@ -1751,6 +1756,26 @@ impl NyarVM {
                                     ValueTag::Float => format!("{}", unsafe { v.as_float() }),
                                     ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
                                     ValueTag::Null => "null".to_string(),
+                                    ValueTag::String => unsafe { v.as_string().clone() },
+                                    ValueTag::Object => {
+                                        let obj_ptr = unsafe { v.data.ptr as *mut crate::vm::value::Object };
+                                        let obj_ref = unsafe { &*obj_ptr };
+                                        let cls_name = self
+                                            .classes
+                                            .get(obj_ref.class_idx as usize)
+                                            .map(|c| c.name.clone())
+                                            .unwrap_or_else(|| "Object".to_string());
+                                        let variant = obj_ref
+                                            .fields
+                                            .get(0)
+                                            .and_then(|f| if f.tag == ValueTag::String { Some(unsafe { f.as_string().clone() }) } else { None })
+                                            .unwrap_or_else(|| "".to_string());
+                                        if variant.is_empty() {
+                                            format!("{}", cls_name)
+                                        } else {
+                                            format!("{}::{}", cls_name, variant)
+                                        }
+                                    }
                                     _ => "<unsupported>".to_string(),
                                 };
                                 if let Some(cb) = &self.stdout {
@@ -1885,6 +1910,19 @@ impl NyarVM {
                              } else {
                                 self.push(Value::string("".to_string()));
                              }
+                        }
+                        "eq" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            let r = match (a.tag, b.tag) {
+                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() == b.as_int() },
+                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() == b.as_float() },
+                                (ValueTag::Bool, ValueTag::Bool) => unsafe { a.as_bool() == b.as_bool() },
+                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() == b.as_string() },
+                                (ValueTag::Null, ValueTag::Null) => true,
+                                _ => false,
+                            };
+                            self.push(Value::bool(r));
                         }
                         _ => return Err(VmError::UnhandledEffect(name.to_string())),
                     }

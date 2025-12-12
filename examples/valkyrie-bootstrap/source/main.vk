@@ -100,7 +100,8 @@ micro Lexer::next_token(self) {
     self.skip_whitespace()
     let t = Token::EOF()
     let c = self.ch
-    
+    let advanced = false
+
     if c == "\0" {
         t = Token::EOF()
     } else if c == "+" {
@@ -125,42 +126,43 @@ micro Lexer::next_token(self) {
         t = Token::Semi()
     } else if Lexer::is_alpha(c) {
         let lit = self.read_identifier()
+        advanced = true
         if lit == "let" {
-            return Token::KwLet()
+            t = Token::KwLet()
+        } else if lit == "print" {
+            t = Token::KwPrint()
+        } else if lit == "if" {
+            t = Token::KwIf()
+        } else if lit == "else" {
+            t = Token::KwElse()
+        } else if lit == "while" {
+            t = Token::KwWhile()
+        } else if lit == "micro" {
+            t = Token::KwMicro()
+        } else if lit == "class" {
+            t = Token::KwClass()
+        } else if lit == "enum" {
+            t = Token::KwEnum()
+        } else if lit == "return" {
+            t = Token::KwReturn()
+        } else {
+            t = Token::Identifier(lit)
         }
-        if lit == "print" {
-            return Token::KwPrint()
-        }
-        if lit == "if" {
-            return Token::KwIf()
-        }
-        if lit == "else" {
-            return Token::KwElse()
-        }
-        if lit == "while" {
-            return Token::KwWhile()
-        }
-        if lit == "micro" {
-            return Token::KwMicro()
-        }
-        if lit == "class" {
-            return Token::KwClass()
-        }
-        if lit == "enum" {
-            return Token::KwEnum()
-        }
-        if lit == "return" {
-            return Token::KwReturn()
-        }
-        return Token::Identifier(lit)
+        self.pos = self.pos - 1
+        self.read_char()
     } else if Lexer::is_digit(c) {
         let num = self.read_number()
-        return Token::Integer(num)
+        advanced = true
+        t = Token::Integer(num)
+        self.pos = self.pos - 1
+        self.read_char()
     } else {
         t = Token::Identifier(c)
     }
-    
-    self.read_char()
+
+    if !advanced {
+        self.read_char()
+    }
     return t
 }
 

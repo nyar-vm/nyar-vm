@@ -257,6 +257,7 @@ fn infer_expr_type(contexts: &[FunctionContext], e: &Expr) -> TypeKind {
         Expr::New(_) => TypeKind::Unknown,
         Expr::GetField(_, _) => TypeKind::Unknown,
         Expr::SetField(_, _, _) => TypeKind::Unknown,
+        Expr::SetLocal(_, v) => infer_expr_type(contexts, v),
         Expr::InstanceOf(_, _) => TypeKind::Bool,
         Expr::Cast(_, _) => TypeKind::Unknown,
         Expr::CheckCast(_, _) => TypeKind::Unknown,
@@ -432,6 +433,12 @@ fn compile_expr(
     match e {
         Expr::Int(v) => {
             let idx = compiler.add_constant(Constant::Int(*v));
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::Push as u8);
+            ctx.code.extend_from_slice(&idx.to_le_bytes());
+        }
+        Expr::String(s) => {
+            let idx = compiler.add_constant(Constant::String(s.clone()));
             let ctx = contexts.last_mut().unwrap();
             ctx.code.push(Opcode::Push as u8);
             ctx.code.extend_from_slice(&idx.to_le_bytes());
@@ -796,6 +803,28 @@ fn compile_expr(
             let ctx = contexts.last_mut().unwrap();
             ctx.code.push(Opcode::GetField as u8);
             ctx.code.extend_from_slice(&idx.to_le_bytes());
+        }
+        Expr::SetLocal(name, val) => {
+            // Evaluate right-hand side
+            compile_expr(compiler, contexts, val)?;
+            // Duplicate the value so the assignment expression yields the value
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::Dup as u8);
+            ctx.code.push(0u8);
+            // Store into local or upvalue
+            if let Some(idx) = ctx.find_local(name) {
+                ctx.code.push(Opcode::StoreLocal as u8);
+                ctx.code.push(idx);
+            } else if let Some(idx) = resolve_upvalue(contexts, name) {
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::StoreUpvalue as u8);
+                ctx.code.push(idx);
+            } else {
+                return Err(Error::Compile(format!(
+                    "undefined variable for assignment: {}",
+                    name
+                )));
+            }
         }
         Expr::SetField(obj, field, val) => {
             compile_expr(compiler, contexts, obj)?;
@@ -1504,6 +1533,42 @@ pub fn compile(stmts: &[Stmt]) -> Result<NyarcModule, Error> {
 
     for s in stmts {
         compile_stmt(&mut compiler, &mut contexts, s)?;
+    }
+
+    // Auto-build method tables for class-qualified micro functions: ClassPath::method
+    {
+        use std::collections::BTreeMap;
+        let mut grouped: BTreeMap<u16, Vec<(String, u16)>> = BTreeMap::new();
+        for (fname, &chunk_idx) in &compiler.functions {
+            if let Some(pos) = fname.rfind("::") {
+                let class_name = &fname[..pos];
+                let method_name = &fname[pos + 2..];
+                if let Some(&class_idx) = compiler.class_map.get(class_name) {
+                    grouped
+                        .entry(class_idx)
+                        .or_default()
+                        .push((method_name.to_string(), chunk_idx));
+                }
+            }
+        }
+        for (class_idx, methods) in grouped {
+            let trait_name = format!(
+                "{}::__methods__",
+                compiler.classes[class_idx as usize].name
+            );
+            let trait_info = TraitInfo {
+                name: trait_name,
+                methods: methods.iter().map(|(n, _)| n.clone()).collect(),
+            };
+            let trait_idx = compiler.traits.len() as u16;
+            compiler.traits.push(trait_info);
+            let impl_info = ImplInfo {
+                class_idx,
+                trait_idx,
+                methods: methods.iter().map(|(_, c)| *c).collect(),
+            };
+            compiler.impls.push(impl_info);
+        }
     }
 
     let mut main_ctx = contexts.pop().unwrap();
