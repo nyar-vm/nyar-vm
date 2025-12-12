@@ -53,6 +53,7 @@ pub enum Stmt {
     Yield(Expr),
     Assert(Expr, Option<Expr>),
     Debug(Expr),
+    NamespaceSet(Vec<String>),
     NamespaceDef(String, Vec<Stmt>),
     Using(Vec<String>),
     // micro name(args) { body }
@@ -66,6 +67,8 @@ pub enum Stmt {
     TraitDef(String, Vec<String>),
     // impl Trait for Class { methods }
     ImplDef(String, String, Vec<Stmt>),
+    // imply ClassPath { micro method(args) { body }* }
+    ImplyDef(String, Vec<Stmt>),
     If(Expr, Vec<Stmt>, Option<Vec<Stmt>>),
     While(Expr, Vec<Stmt>),
     Loop(Vec<Stmt>),

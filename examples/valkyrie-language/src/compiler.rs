@@ -1077,6 +1077,9 @@ fn compile_stmt(
     s: &Stmt,
 ) -> Result<(), Error> {
     match s {
+        Stmt::NamespaceSet(path) => {
+            compiler.namespace_stack = path.clone();
+        }
         Stmt::NamespaceDef(name, body) => {
             let base_uses = compiler.use_prefixes.len();
             compiler.namespace_stack.push(name.clone());
@@ -1088,6 +1091,17 @@ fn compile_stmt(
         }
         Stmt::Using(path) => {
             compiler.use_prefixes.push(path.clone());
+        }
+        Stmt::ImplyDef(class_name, methods) => {
+            for m in methods {
+                match m {
+                    Stmt::FuncDef(name, args, body) => {
+                        let qname = format!("{}::{}", class_name, name);
+                        compile_stmt(compiler, contexts, &Stmt::FuncDef(qname, args.clone(), body.clone()))?;
+                    }
+                    _ => return Err(Error::Compile("imply block can only contain function definitions".into())),
+                }
+            }
         }
         Stmt::Assert(cond, msg) => {
             compile_expr(compiler, contexts, cond)?;
@@ -1543,7 +1557,16 @@ pub fn compile(stmts: &[Stmt]) -> Result<NyarcModule, Error> {
             if let Some(pos) = fname.rfind("::") {
                 let class_name = &fname[..pos];
                 let method_name = &fname[pos + 2..];
-                if let Some(&class_idx) = compiler.class_map.get(class_name) {
+                let mut found = compiler.class_map.get(class_name).copied();
+                if found.is_none() {
+                    for (k, &v) in &compiler.class_map {
+                        if k.ends_with(&format!("::{}", class_name)) || k == class_name {
+                            found = Some(v);
+                            break;
+                        }
+                    }
+                }
+                if let Some(class_idx) = found {
                     grouped
                         .entry(class_idx)
                         .or_default()

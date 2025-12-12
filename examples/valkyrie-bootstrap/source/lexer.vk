@@ -1,0 +1,164 @@
+namespace package::lexer;
+
+enum Token {
+  EOF,
+  Identifier(x),
+  String(x),
+  Integer(x),
+  Plus,
+  Minus,
+  Star,
+  Slash,
+  LParen,
+  RParen,
+  LBrace,
+  RBrace,
+  Eq,
+  Semi,
+  KwLet,
+  KwPrint,
+  KwIf,
+  KwElse,
+  KwWhile,
+  KwMicro,
+  KwClass,
+  KwEnum,
+  KwReturn
+}
+
+class Lexer { input, pos, len, ch }
+
+imply Lexer {
+  micro new(input) {
+    let l = new Lexer
+    l.input = input
+    l.pos = 0
+    l.len = len(input)
+    l.ch = "\0"
+    l.read_char()
+    return l
+  }
+
+  micro read_char(self) {
+    if self.pos >= self.len {
+      self.ch = "\0"
+    } else {
+      self.ch = get(self.input, self.pos)
+    }
+    self.pos = self.pos + 1
+  }
+
+  micro peek_char(self) {
+    if self.pos >= self.len {
+      return "\0"
+    } else {
+      return get(self.input, self.pos)
+    }
+  }
+
+  micro is_digit(c) {
+    let o = ord(c)
+    return o >= 48 && o <= 57
+  }
+
+  micro is_alpha(c) {
+    let o = ord(c)
+    return (o >= 97 && o <= 122) || (o >= 65 && o <= 90) || o == 95
+  }
+
+  micro read_identifier(self) {
+    let s = ""
+    s = s + self.ch
+    while Lexer::is_alpha(self.peek_char()) || Lexer::is_digit(self.peek_char()) {
+      self.read_char()
+      s = s + self.ch
+    }
+    return s
+  }
+
+  micro read_number(self) {
+    let s = ""
+    s = s + self.ch
+    while Lexer::is_digit(self.peek_char()) {
+      self.read_char()
+      s = s + self.ch
+    }
+    return s
+  }
+
+  micro skip_whitespace(self) {
+    while self.ch == " " || self.ch == "\t" || self.ch == "\n" || self.ch == "\r" {
+      self.read_char()
+    }
+  }
+
+  micro next_token(self) {
+    self.skip_whitespace()
+    let t = Token::EOF()
+    let c = self.ch
+    let advanced = false
+
+    if c == "\0" {
+      t = Token::EOF()
+    } else if c == "+" {
+      t = Token::Plus()
+    } else if c == "-" {
+      t = Token::Minus()
+    } else if c == "*" {
+      t = Token::Star()
+    } else if c == "/" {
+      t = Token::Slash()
+    } else if c == "(" {
+      t = Token::LParen()
+    } else if c == ")" {
+      t = Token::RParen()
+    } else if c == "{" {
+      t = Token::LBrace()
+    } else if c == "}" {
+      t = Token::RBrace()
+    } else if c == "=" {
+      t = Token::Eq()
+    } else if c == ";" {
+      t = Token::Semi()
+    } else if Lexer::is_alpha(c) {
+      let lit = self.read_identifier()
+      advanced = true
+      if lit == "let" {
+        t = Token::KwLet()
+      } else if lit == "print" {
+        t = Token::KwPrint()
+      } else if lit == "if" {
+        t = Token::KwIf()
+      } else if lit == "else" {
+        t = Token::KwElse()
+      } else if lit == "while" {
+        t = Token::KwWhile()
+      } else if lit == "micro" {
+        t = Token::KwMicro()
+      } else if lit == "class" {
+        t = Token::KwClass()
+      } else if lit == "enum" {
+        t = Token::KwEnum()
+      } else if lit == "return" {
+        t = Token::KwReturn()
+      } else {
+        t = Token::Identifier(lit)
+      }
+      self.pos = self.pos - 1
+      self.read_char()
+    } else if Lexer::is_digit(c) {
+      let num = self.read_number()
+      advanced = true
+      t = Token::Integer(num)
+      self.pos = self.pos - 1
+      self.read_char()
+    } else {
+      t = Token::Identifier(c)
+    }
+
+    if !advanced {
+      self.read_char()
+    }
+    return t
+  }
+}

@@ -6,6 +6,7 @@ pub enum Token {
     LBrace,
     RBrace,
     Comma,
+    Semi,
     Plus,
     Minus,
     Star,
@@ -42,6 +43,7 @@ pub enum Token {
     AsSafe,
     Typeof,
     Trait,
+    Imply,
     Impl,
     For,
     // ADT & Pattern Matching
@@ -140,6 +142,11 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
         }
         if c == b',' {
             out.push(Token::Comma);
+            i += 1;
+            continue;
+        }
+        if c == b';' {
+            out.push(Token::Semi);
             i += 1;
             continue;
         }
@@ -314,6 +321,7 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
                 }
                 "typeof" => out.push(Token::Typeof),
                 "trait" => out.push(Token::Trait),
+                "imply" => out.push(Token::Imply),
                 "impl" => out.push(Token::Impl),
                 "for" => out.push(Token::For),
                 "enum" => out.push(Token::Enum),

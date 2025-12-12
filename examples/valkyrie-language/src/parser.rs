@@ -7,6 +7,9 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, Error> {
     while let Some(tok) = tokens.get(i) {
         match tok {
             Token::Eof => break,
+            Token::Semi => {
+                i += 1;
+            }
             _ => {
                 let stmt = parse_stmt(tokens, &mut i)?;
                 out.push(stmt);
@@ -112,14 +115,32 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
     match tokens.get(*i) {
         Some(Token::Namespace) => {
             *i += 1;
-            let name = expect_ident(tokens, i)?;
-            let body = parse_block(tokens, i)?;
-            Ok(Stmt::NamespaceDef(name, body))
+            // Support both: namespace Name { ... } and namespace path::to::ns;
+            let path = expect_path(tokens, i)?;
+            match tokens.get(*i) {
+                Some(Token::Semi) => {
+                    *i += 1;
+                    Ok(Stmt::NamespaceSet(path))
+                }
+                Some(Token::LBrace) => {
+                    // For block form, only the last segment acts as this block's namespace
+                    let body = parse_block(tokens, i)?;
+                    let name = path.last().cloned().ok_or_else(|| Error::Parse("expect namespace name".into()))?;
+                    Ok(Stmt::NamespaceDef(name, body))
+                }
+                _ => Err(Error::Parse("expect ; or { after namespace".into())),
+            }
         }
         Some(Token::Using) => {
             *i += 1;
             let path = expect_path(tokens, i)?;
             Ok(Stmt::Using(path))
+        }
+        Some(Token::Imply) => {
+            *i += 1;
+            let class_name = expect_path_string(tokens, i)?;
+            let body = parse_block(tokens, i)?;
+            Ok(Stmt::ImplyDef(class_name, body))
         }
         Some(Token::Assert) => {
             *i += 1;
@@ -452,6 +473,10 @@ fn parse_block(tokens: &[Token], i: &mut usize) -> Result<Vec<Stmt>, Error> {
                 break;
             }
             Some(Token::Eof) | None => return Err(Error::Parse("unexpected eof in block".into())),
+            Some(Token::Semi) => {
+                *i += 1;
+                continue;
+            }
             _ => {
                 stmts.push(parse_stmt(tokens, i)?);
             }

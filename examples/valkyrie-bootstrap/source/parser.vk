@@ -1,0 +1,57 @@
+namespace package::parser;
+
+using package::lexer::Lexer
+
+namespace Lang {
+  namespace AST {
+    enum Expr { Int, Ident, Add }
+    enum Stmt { Let, Print }
+  }
+}
+
+namespace Lang {
+  namespace Parser {
+    class Parser { lex, cur }
+
+    imply Parser {
+      micro new(lex) {
+        let p = new Parser
+        p.lex = lex
+        p.cur = p.lex.next_token()
+        return p
+      }
+
+      micro advance(self) {
+        self.cur = self.lex.next_token()
+      }
+
+      micro parse_number(self) {
+        return AST::Expr::Int()
+      }
+
+      micro parse_ident(self) {
+        return AST::Expr::Ident()
+      }
+
+      micro parse_expr(self) {
+        return AST::Expr::Ident()
+      }
+
+      micro parse_stmt(self) {
+        return AST::Stmt::Print()
+      }
+
+      micro parse_all(self) {
+        loop {
+          match self.cur {
+            Token::EOF => break,
+            _ => {
+              self.advance()
+            }
+          }
+        }
+        return AST::Stmt::Print()
+      }
+    }
+  }
+}
