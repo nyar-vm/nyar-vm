@@ -1,13 +1,7 @@
 namespace package::compiler;
 
-using Lang::AST
+class Compiler {}
 
-namespace Lang {
-  namespace Compiler {
-    imply Compiler {
-      micro compile(stmt) {
-        print("compile ok")
-      }
-    }
-  }
+imply Compiler {
+  micro compile(stmt) { print("compile ok") }
 }

@@ -1,6 +1,6 @@
 namespace package::parser;
 
-using package::lexer::Lexer
+using package::lexer
 
 namespace Lang {
   namespace AST {

@@ -1,0 +1,22 @@
+namespace package::ast;
+
+class List { head, tail }
+
+enum Expr {
+  Int(val),
+  String(val),
+  Bool(val),
+  Variable(name),
+  Add(lhs, rhs),
+  Sub(lhs, rhs),
+  Mul(lhs, rhs),
+  Div(lhs, rhs),
+  Call(callee, args),
+}
+
+enum Stmt {
+  Let(name, val),
+  Print(val),
+  Expr(val),
+  Block(stmts),
+}

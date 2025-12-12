@@ -398,8 +398,17 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
 
 fn expect_path(tokens: &[Token], i: &mut usize) -> Result<Vec<String>, Error> {
     let mut path = Vec::new();
-    let first = expect_ident(tokens, i)?;
-    path.push(first);
+    match tokens.get(*i) {
+        Some(Token::Ident(s)) => {
+            *i += 1;
+            path.push(s.clone());
+        }
+        Some(Token::New) => {
+            *i += 1;
+            path.push("new".to_string());
+        }
+        _ => return Err(Error::Parse("expect identifier".into())),
+    }
     loop {
         match tokens.get(*i) {
             Some(Token::DoubleColon) => {

@@ -96,12 +96,6 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
             continue;
         }
         if c == b'/' {
-            if i + 1 < b.len() && b[i + 1] == b'/' {
-                while i < b.len() && b[i] != b'\n' {
-                    i += 1;
-                }
-                continue;
-            }
             out.push(Token::Slash);
             i += 1;
             continue;

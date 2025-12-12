@@ -38,15 +38,17 @@ imply Lexer {
     l.read_char()
     return l
   }
-
   micro read_char(self) {
-    if self.pos >= self.len {
-      self.ch = "\0"
-    } else {
-      self.ch = get(self.input, self.pos)
+      if self.pos >= self.len {
+        self.ch = "\0"
+      } else {
+        self.ch = get(self.input, self.pos)
+      }
+      # Debug prints
+      # print("DEBUG: pos=" + self.pos + " ch=" + self.ch)
+      
+      self.pos = self.pos + 1
     }
-    self.pos = self.pos + 1
-  }
 
   micro peek_char(self) {
     if self.pos >= self.len {
@@ -94,7 +96,7 @@ imply Lexer {
 
   micro next_token(self) {
     self.skip_whitespace()
-    let t = Token::EOF()
+    let t = Token::EOF
     let c = self.ch
     let advanced = false
 
@@ -144,14 +146,16 @@ imply Lexer {
       } else {
         t = Token::Identifier(lit)
       }
-      self.pos = self.pos - 1
-      self.read_char()
+      # self.read_char() - read_identifier already consumed chars, but we might need to verify logic
+      # The original code had self.read_char() after block. 
+      # read_identifier ends when it sees non-alpha. So current char is non-alpha.
+      # If we don't consume it, next loop will process it.
+      # advanced = true prevents extra read_char at end.
     } else if Lexer::is_digit(c) {
       let num = self.read_number()
       advanced = true
       t = Token::Integer(num)
-      self.pos = self.pos - 1
-      self.read_char()
+      # same for number
     } else {
       t = Token::Identifier(c)
     }
