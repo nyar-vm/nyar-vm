@@ -42,11 +42,8 @@ imply Lexer {
       if self.pos >= self.len {
         self.ch = "\0"
       } else {
-        self.ch = get(self.input, self.pos)
+        self.ch = get(self.pos, self.input)
       }
-      # Debug prints
-      # print("DEBUG: pos=" + self.pos + " ch=" + self.ch)
-      
       self.pos = self.pos + 1
     }
 
@@ -54,8 +51,12 @@ imply Lexer {
     if self.pos >= self.len {
       return "\0"
     } else {
-      return get(self.input, self.pos)
+      return get(self.pos, self.input)
     }
+  }
+
+  micro is_eof(self) {
+    return ord(self.ch) == 0
   }
 
   micro is_digit(c) {
@@ -67,6 +68,7 @@ imply Lexer {
     let o = ord(c)
     return (o >= 97 && o <= 122) || (o >= 65 && o <= 90) || o == 95
   }
+
 
   micro read_identifier(self) {
     let s = ""
@@ -95,74 +97,127 @@ imply Lexer {
   }
 
   micro next_token(self) {
-    self.skip_whitespace()
-    let t = Token::EOF
+    loop {
+      self.skip_whitespace()
+      if self.ch == "#" {
+        self.skip_comment()
+        continue
+      }
+      break
+    }
     let c = self.ch
-    let advanced = false
-
     if c == "\0" {
-      t = Token::EOF()
+      return Token::EOF
     } else if c == "+" {
-      t = Token::Plus()
+      let t = Token::Plus
+      self.read_char()
+      return t
     } else if c == "-" {
-      t = Token::Minus()
+      let t = Token::Minus
+      self.read_char()
+      return t
     } else if c == "*" {
-      t = Token::Star()
+      let t = Token::Star
+      self.read_char()
+      return t
     } else if c == "/" {
-      t = Token::Slash()
+      let t = Token::Slash
+      self.read_char()
+      return t
     } else if c == "(" {
-      t = Token::LParen()
+      let t = Token::LParen
+      self.read_char()
+      return t
     } else if c == ")" {
-      t = Token::RParen()
+      let t = Token::RParen
+      self.read_char()
+      return t
     } else if c == "{" {
-      t = Token::LBrace()
+      let t = Token::LBrace
+      self.read_char()
+      return t
     } else if c == "}" {
-      t = Token::RBrace()
+      let t = Token::RBrace
+      self.read_char()
+      return t
     } else if c == "=" {
-      t = Token::Eq()
+      let t = Token::Eq
+      self.read_char()
+      return t
     } else if c == ";" {
-      t = Token::Semi()
+      let t = Token::Semi
+      self.read_char()
+      return t
+    } else if c == "\"" {
+      let s = self.read_string()
+      self.read_char()
+      return Token::String(s)
     } else if Lexer::is_alpha(c) {
       let lit = self.read_identifier()
-      advanced = true
       if lit == "let" {
-        t = Token::KwLet()
+        let t = Token::KwLet
+        self.read_char()
+        return t
       } else if lit == "print" {
-        t = Token::KwPrint()
+        let t = Token::KwPrint
+        self.read_char()
+        return t
       } else if lit == "if" {
-        t = Token::KwIf()
+        let t = Token::KwIf
+        self.read_char()
+        return t
       } else if lit == "else" {
-        t = Token::KwElse()
+        let t = Token::KwElse
+        self.read_char()
+        return t
       } else if lit == "while" {
-        t = Token::KwWhile()
+        let t = Token::KwWhile
+        self.read_char()
+        return t
       } else if lit == "micro" {
-        t = Token::KwMicro()
+        let t = Token::KwMicro
+        self.read_char()
+        return t
       } else if lit == "class" {
-        t = Token::KwClass()
+        let t = Token::KwClass
+        self.read_char()
+        return t
       } else if lit == "enum" {
-        t = Token::KwEnum()
+        let t = Token::KwEnum
+        self.read_char()
+        return t
       } else if lit == "return" {
-        t = Token::KwReturn()
+        let t = Token::KwReturn
+        self.read_char()
+        return t
       } else {
-        t = Token::Identifier(lit)
+        let t = Token::Identifier(lit)
+        self.read_char()
+        return t
       }
-      # self.read_char() - read_identifier already consumed chars, but we might need to verify logic
-      # The original code had self.read_char() after block. 
-      # read_identifier ends when it sees non-alpha. So current char is non-alpha.
-      # If we don't consume it, next loop will process it.
-      # advanced = true prevents extra read_char at end.
     } else if Lexer::is_digit(c) {
       let num = self.read_number()
-      advanced = true
-      t = Token::Integer(num)
-      # same for number
+      let t = Token::Integer(num)
+      self.read_char()
+      return t
     } else {
-      t = Token::Identifier(c)
+      let t = Token::Identifier(c)
+      self.read_char()
+      return t
     }
-
-    if !advanced {
+  }
+  micro skip_comment(self) {
+    while self.ch != "\n" && self.ch != "\r" && self.ch != "\0" {
       self.read_char()
     }
-    return t
+  }
+  micro read_string(self) {
+    self.read_char()
+    let s = ""
+    while self.ch != "\"" && self.ch != "\0" {
+      s = s + self.ch
+      self.read_char()
+    }
+    return s
   }
 }

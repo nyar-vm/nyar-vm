@@ -460,6 +460,20 @@ fn compile_expr(
                 let ctx = contexts.last_mut().unwrap();
                 ctx.code.push(Opcode::LoadUpvalue as u8);
                 ctx.code.push(idx);
+            } else if let Some(idx) = compiler.resolve_function(name) {
+                // Resolved as a global function (possibly enum variant constructor)
+                // We should treat it as a function call with 0 arguments if it is a unit variant,
+                // OR return a closure.
+                // For now, assuming unit variants are called immediately if used as variable.
+                // But wait, if I use it as `let x = Token::EOF`, x becomes the token.
+                // If I use it as `let f = Token::Int`, f becomes the constructor.
+                // Since we don't have type info here easily, let's assume we call it with 0 args.
+                // If it expects args, runtime will fail or stack underflow.
+                // But for Token::EOF it is correct.
+                let ctx = contexts.last_mut().unwrap();
+                ctx.code.push(Opcode::Call as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
+                ctx.code.push(0u8);
             } else {
                 return Err(Error::Compile(format!("undefined variable: {}", name)));
             }

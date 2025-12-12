@@ -1,13 +1,8 @@
 using package::lexer::Lexer
+using package::parser::Parser
 
-let source = "let x = 10 + 20; print(x);"
+let source = "let x = 10 + 20; # comment\n print(x);"
 let l = Lexer::new(source)
-
-loop {
-  let tok = l.next_token()
-  match tok {
-    Token::EOF => break,
-    _ => print(tok)
-  }
-}
-print("Lexing done")
+let p = Parser::new(l)
+let program = p.parse_all()
+print(program)
