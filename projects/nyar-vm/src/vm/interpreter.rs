@@ -1765,6 +1765,52 @@ impl NyarVM {
                         _ => "",
                     };
                     match name {
+                        "write_file" => {
+                            let data_v = args.pop().unwrap_or(Value::string("".to_string()));
+                            let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                            let mut ok = false;
+                            unsafe {
+                                use std::fs;
+                                use std::path::Path;
+                                if path_v.tag == ValueTag::String && data_v.tag == ValueTag::String {
+                                    let path = path_v.as_string().clone();
+                                    let bytes = data_v.as_string().as_bytes().to_vec();
+                                    if let Some(dir) = Path::new(&path).parent() {
+                                        let _ = fs::create_dir_all(dir);
+                                    }
+                                    ok = fs::write(&path, &bytes).is_ok();
+                                }
+                            }
+                            self.push(Value::bool(ok));
+                        }
+                        "write_bytes" => {
+                            let bytes_v = args.pop().unwrap_or(Value::list(vec![]));
+                            let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                            let mut ok = false;
+                            unsafe {
+                                use std::fs;
+                                use std::path::Path;
+                                if path_v.tag == ValueTag::String && bytes_v.tag == ValueTag::List {
+                                    let path = path_v.as_string().clone();
+                                    let list_ref = bytes_v.as_list();
+                                    let mut data = Vec::with_capacity(list_ref.items.len());
+                                    for item in &list_ref.items {
+                                        if item.tag == ValueTag::Int {
+                                            let v = item.as_int();
+                                            let b = (v & 0xFF) as u8;
+                                            data.push(b);
+                                        } else {
+                                            data.push(0u8);
+                                        }
+                                    }
+                                    if let Some(dir) = Path::new(&path).parent() {
+                                        let _ = fs::create_dir_all(dir);
+                                    }
+                                    ok = fs::write(&path, &data).is_ok();
+                                }
+                            }
+                            self.push(Value::bool(ok));
+                        }
                         "print" => {
                             if let Some(v) = args.last() {
                                 let msg = match v.tag {
