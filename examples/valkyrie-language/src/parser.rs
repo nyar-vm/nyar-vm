@@ -92,9 +92,10 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
                                         *i += 1;
                                         break;
                                     }
-                                    _ => {
-                                        return Err(Error::Parse("expect , or ) in pattern".into()))
-                                    }
+                        _ => {
+                            let tok = tokens.get(*i);
+                            return Err(Error::Parse(format!("expect , or ) in pattern, found {:?}", tok)));
+                        }
                                 }
                             }
                         }
@@ -249,13 +250,19 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
                                 *i += 1;
                                 break;
                             }
-                            _ => return Err(Error::Parse("expect , or }".into())),
-                        }
+                    _ => {
+                        let tok = tokens.get(*i);
+                        return Err(Error::Parse(format!("expect , or }} in class fields, found {:?}", tok)));
                     }
-                    _ => return Err(Error::Parse("expect field identifier or }".into())),
                 }
             }
-            Ok(Stmt::ClassDef(name, fields))
+            _ => {
+                let tok = tokens.get(*i);
+                return Err(Error::Parse(format!("expect field identifier or }}; found {:?}", tok)));
+            }
+        }
+    }
+    Ok(Stmt::ClassDef(name, fields))
         }
         Some(Token::Trait) => {
             *i += 1;
@@ -458,7 +465,10 @@ fn parse_args_decl(tokens: &[Token], i: &mut usize) -> Result<Vec<String>, Error
                         *i += 1;
                         break;
                     }
-                    _ => return Err(Error::Parse("expect , or )".into())),
+                    _ => {
+                        let tok = tokens.get(*i);
+                        return Err(Error::Parse(format!("expect , or ) in args decl, found {:?}", tok)));
+                    }
                 }
             }
             _ => return Err(Error::Parse("expect identifier or )".into())),

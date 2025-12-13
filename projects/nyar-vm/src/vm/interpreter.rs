@@ -1765,6 +1765,20 @@ impl NyarVM {
                         _ => "",
                     };
                     match name {
+                        "read_file" => {
+                             let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                             let mut res = Value::string("".to_string());
+                             unsafe {
+                                 use std::fs;
+                                 if path_v.tag == ValueTag::String {
+                                     let path = path_v.as_string().clone();
+                                     if let Ok(content) = fs::read_to_string(&path) {
+                                         res = Value::string(content);
+                                     }
+                                 }
+                             }
+                             self.push(res);
+                         }
                         "write_file" => {
                             let data_v = args.pop().unwrap_or(Value::string("".to_string()));
                             let path_v = args.pop().unwrap_or(Value::string("".to_string()));

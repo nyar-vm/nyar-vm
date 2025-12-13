@@ -1,0 +1,859 @@
+namespace package::compiler;
+
+using package::ast
+using package::hir
+using package::lir
+using package::backend::wasm
+using package::backend::jvm
+using package::backend::clr
+using package::backend::llvm
+using package::backend::native
+
+class Compiler { constants, chunks, classes, method_tables, functions, lir_functions }
+
+imply Compiler {
+  micro new() {
+    let c = new Compiler
+    c.constants = new List
+    c.chunks = new List
+    c.classes = new List
+    c.method_tables = new List
+    c.functions = new List
+    c.lir_functions = new List
+    return c
+  }
+
+  micro compile(self, program) {
+    let hir = self.build_hir(program)
+    self.lower_hir_to_mir(hir)
+    self.finalize_inherent_impls()
+    let all_chunks = self.collect_all_chunks()
+    let module_bytes = self.encode_module(all_chunks)
+    let out_path = "examples/valkyrie-bootstrap/target/vcc.nyarc"
+    let ok = self.write_file(out_path, module_bytes)
+    if ok {
+      print("vcc written")
+    } else {
+      print("vcc write failed")
+    }
+    self.emit_backends()
+  }
+
+  micro collect_all_chunks(self) {
+    let all = new List
+    let main = self.build_main_chunk()
+    all.push(main)
+    let i = 0
+    let n = self.chunks.len()
+    while i < n {
+      all.push(self.chunks.get(i))
+      i = i + 1
+    }
+    return all
+  }
+
+  micro build_main_chunk(self) {
+    let code = new List
+    let locals = new List
+    Compiler::emit_u8(code, 0xFF)
+    let chunk = new List
+    chunk.push(locals.len())
+    chunk.push(0)
+    chunk.push(32)
+    chunk.push(code)
+    return chunk
+  }
+
+  micro fq(ns, name) {
+    if len(name) == 0 { return name }
+    let i = 0
+    let has_colon = false
+    let n = len(name)
+    while i < n {
+      if eq(get(i, name), ":") {
+        if i + 1 < n {
+          if eq(get(i + 1, name), ":") { has_colon = true }
+        }
+      }
+      i = i + 1
+    }
+    if has_colon { return name }
+    if len(ns) == 0 { return name }
+    return ns + "::" + name
+  }
+
+  micro build_hir(self, program) {
+    let m = Module::new()
+    if program.__variant__ == "Block" {
+      let stmts = program._0
+      let i = 0
+      let n = stmts.len()
+      while i < n {
+        let s = stmts.get(i)
+        let tag = s.__variant__
+        if tag == "Namespace" {
+          m.ns = s._0
+        } else {
+          if tag == "Using" {
+            m.imports.push(s._0)
+          } else {
+            if tag == "Class" {
+              let qn = Compiler::fq(m.ns, s._0)
+              let cls = HIRClass::new(qn, s._1)
+              m.class_list.push(cls)
+            } else {
+              if tag == "Imply" {
+                let cname = Compiler::fq(m.ns, s._0)
+                let ms = s._1
+                let j = 0
+                let k = ms.len()
+                let impl_methods = new List
+                while j < k {
+                  let mi = ms.get(j)
+                  if mi.__variant__ == "Micro" {
+                    let mname = cname + "::" + mi._0
+                    let f = HIRFunc::new(mname, mi._1, mi._2)
+                    impl_methods.push(f)
+                  }
+                  j = j + 1
+                }
+                let x = HIRImpl::new(cname, impl_methods)
+                m.impl_list.push(x)
+              } else {
+                if tag == "Micro" {
+                  let qn = Compiler::fq(m.ns, s._0)
+                  let f = HIRFunc::new(qn, s._1, s._2)
+                  m.funcs.push(f)
+                } else {
+                  m.init_stmts.push(s)
+                }
+              }
+            }
+          }
+        }
+        i = i + 1
+      }
+    }
+    return m
+  }
+
+  micro lower_hir_to_mir(self, m) {
+    let init_code = new List
+    let init_locals = new List
+    Compiler::add_int(self.constants, 0)
+    let i = 0
+    let ni = m.init_stmts.len()
+    while i < ni {
+      let s = m.init_stmts.get(i)
+      Compiler::compile_stmt(self.constants, init_code, init_locals, s)
+      i = i + 1
+    }
+    Compiler::emit_u8(init_code, 0xFF)
+    let main_chunk = new List
+    main_chunk.push(init_locals.len())
+    main_chunk.push(0)
+    main_chunk.push(32)
+    main_chunk.push(init_code)
+    let nc = m.class_list.len()
+    let j = 0
+    while j < nc {
+      let c = m.class_list.get(j)
+      let cls = new List
+      cls.push(c.name)
+      cls.push(c.fields)
+      self.classes.push(cls)
+      j = j + 1
+    }
+    let ni2 = m.funcs.len()
+    let k = 0
+    while k < ni2 {
+      let f = m.funcs.get(k)
+      self.compile_micro(f.name, f.args, f.body)
+      k = k + 1
+    }
+    let nim = m.impl_list.len()
+    let p = 0
+    while p < nim {
+      let im = m.impl_list.get(p)
+      let cname = im.class_name
+      let q = 0
+      let nm = im.methods.len()
+      while q < nm {
+        let mf = im.methods.get(q)
+        self.compile_micro(mf.name, mf.args, mf.body)
+        q = q + 1
+      }
+      p = p + 1
+    }
+    let all_chunks = new List
+    all_chunks.push(main_chunk)
+    let t = 0
+    let nt = self.chunks.len()
+    while t < nt {
+      all_chunks.push(self.chunks.get(t))
+      t = t + 1
+    }
+    self.chunks = all_chunks.tail
+    return true
+  }
+
+  micro compile_top_level(self, code, locals, stmt) {
+      let tag = stmt.__variant__
+      if tag == "Class" {
+         self.compile_class(stmt._0, stmt._1)
+      } else {
+         if tag == "Imply" {
+            self.compile_imply(stmt._0, stmt._1)
+         } else {
+            if tag == "Micro" {
+               self.compile_micro(stmt._0, stmt._1, stmt._2)
+            } else {
+               if tag == "Namespace" || tag == "Using" {
+               } else {
+                  Compiler::compile_stmt(self.constants, code, locals, stmt)
+               }
+            }
+         }
+      }
+  }
+
+  micro compile_class(self, name, fields) {
+     let cls = new List
+     cls.push(name)
+     cls.push(fields)
+     self.classes.push(cls)
+  }
+
+  micro compile_imply(self, class_name, methods) {
+     let i = 0
+     let n = methods.len()
+     while i < n {
+        let m = methods.get(i)
+        if m.__variant__ == "Micro" {
+           let m_name = m._0
+           let q_name = class_name + "::" + m_name
+           self.compile_micro(q_name, m._1, m._2)
+        }
+        i = i + 1
+     }
+  }
+
+  micro compile_micro(self, name, args, body) {
+     let code = new List
+     let locals = new List
+     let i = 0
+     let n = args.len()
+     while i < n {
+        locals.push(args.get(i))
+        i = i + 1
+     }
+     Compiler::compile_stmt(self.constants, code, locals, body)
+     Compiler::emit_u8(code, 0x01)
+     let idx = Compiler::add_int(self.constants, 0)
+     Compiler::emit_u16(code, idx)
+     Compiler::emit_u8(code, 0x12)
+     let chunk = new List
+     chunk.push(locals.len())
+     chunk.push(0)
+     chunk.push(32)
+     chunk.push(code)
+     self.chunks.push(chunk)
+     let idx2 = self.chunks.len()
+     let func = new List
+     func.push(name)
+     func.push(idx2)
+     self.functions.push(func)
+     let lir_func = LIRFunction::new(name, args)
+     let bb = BasicBlock::new()
+     Compiler::lower_stmt_to_lir(bb, body)
+     bb.push(LIRInstr::Return(0))
+     lir_func.add_block(bb)
+     self.lir_functions.push(lir_func)
+  }
+
+  micro resolve_class_idx(self, name) {
+     let i = 0
+     let n = self.classes.len()
+     while i < n {
+        let c = self.classes.get(i)
+        if eq(c.head, name) { return i }
+        i = i + 1
+     }
+     return -1
+  }
+
+  micro finalize_inherent_impls(self) {
+    let i = 0
+    let n = self.classes.len()
+    while i < n {
+       let cls = self.classes.get(i)
+       let c_name = cls.head
+       let methods = new List
+       let method_chunks = new List
+       let j = 0
+       let m = self.functions.len()
+       while j < m {
+          let f = self.functions.get(j)
+          let f_name = f.head
+          let prefix = c_name + "::"
+          let p_len = len(prefix)
+          if len(f_name) > p_len {
+             let match = true
+             let k = 0
+             while k < p_len {
+                if get(k, f_name) != get(k, prefix) { match = false }
+                k = k + 1
+             }
+             if match {
+                let m_name = ""
+                let k2 = p_len
+                while k2 < len(f_name) {
+                   m_name = m_name + chr(ord(get(k2, f_name)))
+                   k2 = k2 + 1
+                }
+                methods.push(m_name)
+                method_chunks.push(f.tail.head)
+             }
+          }
+          j = j + 1
+       }
+       if methods.len() > 0 {
+          let mt = new List
+          mt.push(i)
+          mt.push(methods)
+          mt.push(method_chunks)
+          self.method_tables.push(mt)
+       }
+       i = i + 1
+    }
+  }
+
+  micro write_file(path, bytes_str) {
+    let res = eq(true, write_file(path, bytes_str))
+    return res
+  }
+
+  micro resolve_local(locals, name) {
+    let i = 0
+    let n = locals.len()
+    while i < n {
+       let v = locals.get(i)
+       if eq(v, name) { return i }
+       i = i + 1
+    }
+    return -1
+  }
+
+  micro declare_local(locals, name) {
+     let idx = Compiler::resolve_local(locals, name)
+     if idx != -1 { return idx }
+     locals.push(name)
+     return locals.len() - 1
+  }
+
+  micro add_string(constants, s) {
+    let i = 0
+    let n = constants.len()
+    while i < n {
+      let cur = constants.get(i)
+      let tag = cur.__variant__
+      if tag == "String" {
+        if eq(cur._0, s) { return i }
+      }
+      i = i + 1
+    }
+    constants.push(Expr::String(s))
+    return i
+  }
+
+  micro add_int(constants, v) {
+    let i = 0
+    let n = constants.len()
+    while i < n {
+      let cur = constants.get(i)
+      let tag = cur.__variant__
+      if tag == "Int" {
+        if eq(cur._0, v) { return i }
+      }
+      i = i + 1
+    }
+    constants.push(Expr::Int(v))
+    return i
+  }
+
+  micro emit_u8(code, b) {
+    code.push(b)
+  }
+  micro emit_u16(code, n) {
+    let b0 = Compiler::mod256(n)
+    let q = Compiler::div256(n)
+    let b1 = Compiler::mod256(q)
+    Compiler::emit_u8(code, b0)
+    Compiler::emit_u8(code, b1)
+  }
+  micro emit_u32(code, n) {
+    let b0 = Compiler::mod256(n)
+    let q1 = Compiler::div256(n)
+    let b1 = Compiler::mod256(q1)
+    let q2 = Compiler::div256(q1)
+    let b2 = Compiler::mod256(q2)
+    let q3 = Compiler::div256(q2)
+    let b3 = Compiler::mod256(q3)
+    Compiler::emit_u8(code, b0)
+    Compiler::emit_u8(code, b1)
+    Compiler::emit_u8(code, b2)
+    Compiler::emit_u8(code, b3)
+  }
+  micro emit_bytes(code, s) {
+    let i = 0
+    let n = len(s)
+    while i < n {
+      Compiler::emit_u8(code, ord(get(i, s)))
+      i = i + 1
+    }
+  }
+  micro div256(n) {
+    let q = 0
+    let t = n
+    loop {
+      if t < 256 { break }
+      t = t - 256
+      q = q + 1
+    }
+    return q
+  }
+  micro mod256(n) {
+    let t = n
+    loop {
+      if t < 256 { break }
+      t = t - 256
+    }
+    return t
+  }
+  micro to_string_from_bytes(code) {
+    let s = ""
+    let i = 0
+    let n = code.len()
+    while i < n {
+      let v = code.get(i)
+      s = s + chr(v)
+      i = i + 1
+    }
+    return s
+  }
+
+  micro encode_u16(n) {
+    let buf = new List
+    Compiler::emit_u16(buf, n)
+    return Compiler::to_string_from_bytes(buf)
+  }
+  micro encode_u32(n) {
+    let buf = new List
+    Compiler::emit_u32(buf, n)
+    return Compiler::to_string_from_bytes(buf)
+  }
+  micro encode_string(s) {
+    let len_s = Compiler::encode_u32(len(s))
+    return len_s + s
+  }
+
+  micro encode_module(self, chunks) {
+    let header = "NYAR" + chr(1) + chr(0) + chr(0) + chr(0)
+    let version = Compiler::encode_u16(1)
+    let flags = Compiler::encode_u32(0)
+    let timestamp = Compiler::encode_u32(0) + Compiler::encode_u32(0)
+    let const_count = Compiler::encode_u32(self.constants.len())
+    let const_bytes = Compiler::encode_constants(self.constants)
+    let eff_count = Compiler::encode_u32(0)
+    let chunks_count = Compiler::encode_u32(chunks.len())
+    let chunks_bytes = Compiler::encode_chunks(chunks)
+    let classes_bytes = Compiler::encode_classes(self.classes)
+    let traits_list = self.build_trait_list()
+    let impls_list = self.build_impl_list(traits_list)
+    let traits_bytes = Compiler::encode_traits(traits_list)
+    let impls_bytes = Compiler::encode_impls(impls_list)
+    return header + version + flags + timestamp + const_count + const_bytes + eff_count + chunks_count + chunks_bytes + classes_bytes + traits_bytes + impls_bytes
+  }
+
+  micro emit_backends(self) {
+    let lir_mod = LIRModule::from_compiler(self)
+    let w = new WasmBackend
+    let wb = w.emit(lir_mod)
+    self.write_file(w.output_path(), wb)
+    let j = new JVMBackend
+    let jb = j.emit(lir_mod)
+    self.write_file(j.output_path(), jb)
+    let c = new CLRBackend
+    let cb = c.emit(lir_mod)
+    self.write_file(c.output_path(), cb)
+    let l = new LLVMBackend
+    let lb = l.emit(lir_mod)
+    self.write_file(l.output_path(), lb)
+    let n = new NativeBackend
+    let nb = n.emit(lir_mod)
+    self.write_file(n.output_path(), nb)
+  }
+
+  micro encode_chunks(chunks) {
+     let s = ""
+     let i = 0
+     let n = chunks.len()
+     while i < n {
+        let chunk = chunks.get(i)
+        let locals = chunk.get(0)
+        let upvalues = chunk.get(1)
+        let max_stack = chunk.get(2)
+        let code = chunk.get(3)
+        s = s + Compiler::encode_u16(locals)
+        s = s + Compiler::encode_u16(upvalues)
+        s = s + Compiler::encode_u16(max_stack)
+        let code_str = Compiler::to_string_from_bytes(code)
+        s = s + Compiler::encode_u32(len(code_str))
+        s = s + code_str
+        i = i + 1
+     }
+     return s
+  }
+
+  micro encode_classes(classes) {
+     if classes.len() == 0 { return "" }
+     let s = Compiler::encode_u32(classes.len())
+     let i = 0
+     let n = classes.len()
+     while i < n {
+        let cls = classes.get(i)
+        let name = cls.get(0)
+        let fields = cls.get(1)
+        s = s + Compiler::encode_string(name)
+        s = s + Compiler::encode_u16(fields.len())
+        let j = 0
+        let m = fields.len()
+        while j < m {
+           s = s + Compiler::encode_string(fields.get(j))
+           j = j + 1
+        }
+        i = i + 1
+     }
+     return s
+  }
+
+  micro encode_traits(traits) {
+     if traits.len() == 0 { return "" }
+     let s = Compiler::encode_u32(traits.len())
+     let i = 0
+     let n = traits.len()
+     while i < n {
+        let tr = traits.get(i)
+        let name = tr.get(0)
+        let methods = tr.get(1)
+        s = s + Compiler::encode_string(name)
+        s = s + Compiler::encode_u16(methods.len())
+        let j = 0
+        let m = methods.len()
+        while j < m {
+           s = s + Compiler::encode_string(methods.get(j))
+           j = j + 1
+        }
+        i = i + 1
+     }
+     return s
+  }
+
+  micro encode_impls(impls) {
+     if impls.len() == 0 { return "" }
+     let s = Compiler::encode_u32(impls.len())
+     let i = 0
+     let n = impls.len()
+     while i < n {
+        let imp = impls.get(i)
+        let c_idx = imp.get(0)
+        let t_idx = imp.get(1)
+        let methods = imp.get(2)
+        s = s + Compiler::encode_u16(c_idx)
+        s = s + Compiler::encode_u16(t_idx)
+        s = s + Compiler::encode_u16(methods.len())
+        let j = 0
+        let m = methods.len()
+        while j < m {
+           s = s + Compiler::encode_u16(methods.get(j))
+           j = j + 1
+        }
+        i = i + 1
+     }
+     return s
+  }
+
+  micro build_trait_list(self) {
+     let out = new List
+     let i = 0
+     let n = self.method_tables.len()
+     while i < n {
+        let mt = self.method_tables.get(i)
+        let c_idx = mt.get(0)
+        let methods = mt.get(1)
+        let cls = self.classes.get(c_idx)
+        let c_name = cls.get(0)
+        let trait_name = c_name + "::__methods__"
+        let t = new List
+        t.push(trait_name)
+        t.push(methods)
+        out.push(t)
+        i = i + 1
+     }
+     return out
+  }
+
+  micro build_impl_list(self, traits_list) {
+     let out = new List
+     let i = 0
+     let n = self.method_tables.len()
+     while i < n {
+        let mt = self.method_tables.get(i)
+        let c_idx = mt.get(0)
+        let methods_chunks = mt.get(2)
+        let trait_idx = i
+        let imp = new List
+        imp.push(c_idx)
+        imp.push(trait_idx)
+        imp.push(methods_chunks)
+        out.push(imp)
+        i = i + 1
+     }
+     return out
+  }
+
+  micro encode_constants(constants) {
+    let s = ""
+    let i = 0
+    let n = constants.len()
+    while i < n {
+      let c = constants.get(i)
+      let tag = c.__variant__
+      if tag == "Int" {
+        s = s + chr(0)
+        let v = c._0
+        let u = v
+        if v < 0 { u = 0 }
+        let b0 = Compiler::encode_u32(u)
+        let b1 = Compiler::encode_u32(0)
+        s = s + b0 + b1
+      } else {
+        if tag == "String" {
+          s = s + chr(2)
+          s = s + Compiler::encode_string(c._0)
+        } else {
+          s = s + chr(0) + Compiler::encode_u32(0) + Compiler::encode_u32(0)
+        }
+      }
+      i = i + 1
+    }
+    return s
+  }
+
+  micro patch_u16(code, idx, n) {
+    let b0 = Compiler::mod256(n)
+    let q = Compiler::div256(n)
+    let b1 = Compiler::mod256(q)
+    code.set(idx, b0)
+    code.set(idx + 1, b1)
+  }
+
+  micro compile_stmt(constants, code, locals, stmt) {
+    let tag = stmt.__variant__
+    if tag == "Block" {
+      let stmts = stmt._0
+      let i = 0
+      let n = stmts.len()
+      while i < n {
+        let s = stmts.get(i)
+        Compiler::compile_stmt(constants, code, locals, s)
+        i = i + 1
+      }
+    } else {
+      if tag == "Print" {
+        Compiler::compile_expr(constants, code, locals, stmt._0)
+        let didx = Compiler::add_string(constants, "print")
+        Compiler::emit_u8(code, 0xF0)
+        Compiler::emit_u16(code, didx)
+        Compiler::emit_u8(code, 1)
+      } else {
+        if tag == "Expr" {
+          Compiler::compile_expr(constants, code, locals, stmt._0)
+          Compiler::emit_u8(code, 0x02)
+        } else {
+          if tag == "Let" {
+             let name = stmt._0
+             let val = stmt._1
+             Compiler::compile_expr(constants, code, locals, val)
+             let idx = Compiler::declare_local(locals, name)
+             Compiler::emit_u8(code, 0x06)
+             Compiler::emit_u8(code, idx)
+          } else {
+             if tag == "If" {
+               let cond = stmt._0
+               let then_b = stmt._1
+               let else_b = stmt._2
+               Compiler::compile_expr(constants, code, locals, cond)
+               Compiler::emit_u8(code, 0x11)
+               let jump_false_idx = code.len()
+               Compiler::emit_u16(code, 0)
+               Compiler::compile_stmt(constants, code, locals, then_b)
+               Compiler::emit_u8(code, 0x10)
+               let jump_end_idx = code.len()
+               Compiler::emit_u16(code, 0)
+               let else_start = code.len()
+               let offset_false = else_start - jump_false_idx - 2
+               Compiler::patch_u16(code, jump_false_idx, offset_false)
+               Compiler::compile_stmt(constants, code, locals, else_b)
+               let end = code.len()
+               let offset_end = end - jump_end_idx - 2
+               Compiler::patch_u16(code, jump_end_idx, offset_end)
+             }
+          }
+        }
+      }
+    }
+  }
+  
+  micro compile_expr(constants, code, locals, expr) {
+    let tag = expr.__variant__
+    if tag == "Int" {
+      let idx = Compiler::add_int(constants, expr._0)
+      Compiler::emit_u8(code, 0x01)
+      Compiler::emit_u16(code, idx)
+    } else {
+      if tag == "String" {
+        let idx = Compiler::add_string(constants, expr._0)
+        Compiler::emit_u8(code, 0x01)
+        Compiler::emit_u16(code, idx)
+      } else {
+        if tag == "Variable" {
+           let name = expr._0
+           let idx = Compiler::resolve_local(locals, name)
+           if idx != -1 {
+              Compiler::emit_u8(code, 0x05)
+              Compiler::emit_u8(code, idx)
+           } else {
+              let idx0 = Compiler::add_int(constants, 0)
+              Compiler::emit_u8(code, 0x01)
+              Compiler::emit_u16(code, idx0)
+           }
+        } else {
+            if tag == "Add" {
+              Compiler::compile_expr(constants, code, locals, expr._0)
+              Compiler::compile_expr(constants, code, locals, expr._1)
+              Compiler::emit_u8(code, 0xC2)
+              Compiler::emit_u8(code, 0x01)
+            } else {
+            }
+        }
+      }
+    }
+  }
+
+  micro lower_expr_to_lir(block, expr) {
+    let tag = expr.__variant__
+    if tag == "Int" {
+      block.push(LIRInstr::ConstInt(expr._0))
+    } else {
+      if tag == "String" {
+        block.push(LIRInstr::ConstString(expr._0))
+      } else {
+        if tag == "Variable" {
+          block.push(LIRInstr::LoadLocal(expr._0))
+        } else {
+          if tag == "Add" {
+            Compiler::lower_expr_to_lir(block, expr._0)
+            Compiler::lower_expr_to_lir(block, expr._1)
+            block.push(LIRInstr::AddI64(0))
+          } else {
+            if tag == "Sub" {
+              Compiler::lower_expr_to_lir(block, expr._0)
+              Compiler::lower_expr_to_lir(block, expr._1)
+              block.push(LIRInstr::SubI64(0))
+            } else {
+              if tag == "Mul" {
+                Compiler::lower_expr_to_lir(block, expr._0)
+                Compiler::lower_expr_to_lir(block, expr._1)
+                block.push(LIRInstr::MulI64(0))
+              } else {
+                if tag == "Div" {
+                  Compiler::lower_expr_to_lir(block, expr._0)
+                  Compiler::lower_expr_to_lir(block, expr._1)
+                  block.push(LIRInstr::DivI64(0))
+                } else {
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  micro lower_stmt_to_lir(block, stmt) {
+    let tag = stmt.__variant__
+    if tag == "Block" {
+      let stmts = stmt._0
+      let i = 0
+      let n = stmts.len()
+      while i < n {
+        let s = stmts.get(i)
+        Compiler::lower_stmt_to_lir(block, s)
+        i = i + 1
+      }
+    } else {
+      if tag == "Print" {
+        Compiler::lower_expr_to_lir(block, stmt._0)
+        block.push(LIRInstr::CallFFI("print", 1))
+        block.push(LIRInstr::Pop(0))
+      } else {
+        if tag == "Expr" {
+          Compiler::lower_expr_to_lir(block, stmt._0)
+          block.push(LIRInstr::Pop(0))
+        } else {
+          if tag == "Let" {
+            let name = stmt._0
+            let val = stmt._1
+            Compiler::lower_expr_to_lir(block, val)
+            block.push(LIRInstr::StoreLocal(name))
+          } else {
+            if tag == "Return" {
+              Compiler::lower_expr_to_lir(block, stmt._0)
+              block.push(LIRInstr::Return(0))
+            } else {
+              if tag == "If" {
+                let cond = stmt._0
+                let then_b = stmt._1
+                let else_b = stmt._2
+                let l_else = 1
+                let l_end = 2
+                Compiler::lower_expr_to_lir(block, cond)
+                block.push(LIRInstr::JumpIfFalse(l_else))
+                Compiler::lower_stmt_to_lir(block, then_b)
+                block.push(LIRInstr::Jump(l_end))
+                block.push(LIRInstr::Label(l_else))
+                Compiler::lower_stmt_to_lir(block, else_b)
+                block.push(LIRInstr::Label(l_end))
+              } else {
+                if tag == "While" {
+                  let cond = stmt._0
+                  let body = stmt._1
+                  let l_start = 3
+                  let l_exit = 4
+                  block.push(LIRInstr::Label(l_start))
+                  Compiler::lower_expr_to_lir(block, cond)
+                  block.push(LIRInstr::JumpIfFalse(l_exit))
+                  Compiler::lower_stmt_to_lir(block, body)
+                  block.push(LIRInstr::Jump(l_start))
+                  block.push(LIRInstr::Label(l_exit))
+                } else {
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

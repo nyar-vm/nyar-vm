@@ -13,16 +13,13 @@ imply Parser {
     return p
   }
   micro advance(self) {
-    # print("DEBUG: Advancing token")
     self.cur = self.lex.next_token()
   }
   micro expect_semi(self) {
-    # print("DEBUG: expect_semi checking")
     let tag = self.cur.__variant__
     if tag == "Semi" {
         self.advance()
     } else {
-        print("Expected semi, found: " + tag)
     }
   }
   micro expect_rparen(self) {
@@ -30,11 +27,82 @@ imply Parser {
     if tag == "RParen" {
         self.advance()
     } else {
-        print("Expected ), found: " + tag)
     }
   }
+  micro parse_path(self) {
+    let path = ""
+    if self.cur.__variant__ == "Identifier" {
+       path = self.cur._0
+       self.advance()
+       while self.cur.__variant__ == "Colon" {
+          self.advance()
+          if self.cur.__variant__ == "Colon" {
+             self.advance()
+             path = path + "::"
+             if self.cur.__variant__ == "Identifier" {
+                path = path + self.cur._0
+                self.advance()
+             }
+          }
+       }
+    }
+    return path
+  }
+
+  micro parse_fields(self) {
+     let fields = new List
+     if self.cur.__variant__ == "LBrace" {
+        self.advance()
+        while self.cur.__variant__ != "RBrace" && self.cur.__variant__ != "EOF" {
+           if self.cur.__variant__ == "Identifier" {
+              fields.push(self.cur._0)
+              self.advance()
+           }
+           if self.cur.__variant__ == "Comma" {
+              self.advance()
+           }
+        }
+        if self.cur.__variant__ == "RBrace" { self.advance() }
+     }
+     return fields
+  }
+
+  micro parse_args(self) {
+     let args = new List
+     if self.cur.__variant__ == "LParen" {
+        self.advance()
+        while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
+           if self.cur.__variant__ == "Identifier" {
+              args.push(self.cur._0)
+              self.advance()
+           }
+           if self.cur.__variant__ == "Comma" {
+              self.advance()
+           }
+        }
+        if self.cur.__variant__ == "RParen" { self.advance() }
+     }
+     return args
+  }
+
+  micro parse_impl_body(self) {
+     let methods = new List
+     if self.cur.__variant__ == "LBrace" {
+        self.advance()
+        while self.cur.__variant__ != "RBrace" && self.cur.__variant__ != "EOF" {
+           if self.cur.__variant__ == "KwMicro" {
+              let m = self.parse_stmt()
+              methods.push(m)
+           } else {
+              self.advance()
+           }
+        }
+        if self.cur.__variant__ == "RBrace" { self.advance() }
+     }
+     return methods
+  }
+
   micro parse_primary(self) {
-    # print("DEBUG: parsing primary, current token: " + self.cur.__variant__)
     let tag = self.cur.__variant__
     if tag == "Integer" {
         let v = self.cur._0
@@ -57,7 +125,6 @@ imply Parser {
                     self.expect_rparen()
                     return e
                 } else {
-                    # print("DEBUG: parse_primary default case: " + tag)
                     self.advance()
                     return Expr::Int(0)
                 }
@@ -66,12 +133,9 @@ imply Parser {
     }
   }
   micro parse_term(self) {
-    # print("DEBUG: parsing term")
     let left = self.parse_primary()
     loop {
-      # print("DEBUG: parse_term loop")
       let tag = self.cur.__variant__
-      # print("DEBUG: parse_term tag: " + tag)
       if tag == "Star" {
           self.advance()
           let right = self.parse_primary()
@@ -89,11 +153,9 @@ imply Parser {
     return left
   }
   micro parse_expr(self) {
-    # print("DEBUG: parsing expr")
     let left = self.parse_term()
     loop {
       let tag = self.cur.__variant__
-      # print("DEBUG: parse_expr loop tag: " + tag)
       if tag == "Plus" {
           self.advance()
           let right = self.parse_term()
@@ -104,7 +166,6 @@ imply Parser {
               let right = self.parse_term()
               left = Expr::Sub(left, right)
           } else {
-              # print("DEBUG: parse_expr break")
               break
           }
       }
@@ -112,15 +173,58 @@ imply Parser {
     return left
   }
   micro parse_stmt(self) {
-    # print("DEBUG: parsing stmt start")
     let tag = self.cur.__variant__
-    # print("DEBUG: current token variant: " + tag)
     
-    if tag == "KwLet" {
-        # print("DEBUG: parsing Let")
+    if tag == "KwNamespace" {
+        self.advance()
+        let name = self.parse_path()
+        self.expect_semi()
+        return Stmt::Namespace(name)
+    } else if tag == "KwUsing" {
+        self.advance()
+        let path = self.parse_path()
+        self.expect_semi()
+        return Stmt::Using(path)
+    } else if tag == "KwClass" {
+        self.advance()
+        let name = ""
+        if self.cur.__variant__ == "Identifier" {
+            name = self.cur._0
+            self.advance()
+        }
+        let fields = self.parse_fields()
+        return Stmt::Class(name, fields)
+    } else if tag == "KwImply" {
+        self.advance()
+        let name = ""
+        if self.cur.__variant__ == "Identifier" {
+            name = self.cur._0
+            self.advance()
+        }
+        let methods = self.parse_impl_body()
+        return Stmt::Imply(name, methods)
+    } else if tag == "KwMicro" {
+        self.advance()
+        let name = ""
+        if self.cur.__variant__ == "Identifier" {
+            name = self.cur._0
+            self.advance()
+        }
+        let args = self.parse_args()
+        let body = self.parse_block()
+        return Stmt::Micro(name, args, body)
+    } else if tag == "KwEnum" {
+        self.advance()
+        let name = ""
+        if self.cur.__variant__ == "Identifier" {
+            name = self.cur._0
+            self.advance()
+        }
+        let variants = self.parse_fields()
+        return Stmt::Enum(name, variants)
+    } else if tag == "KwLet" {
         self.advance()
         let t = self.cur.__variant__
-        # print("DEBUG: parse_stmt Let expected Identifier, got: '" + t + "'")
         if t == "Identifier" {
             let name = self.cur._0
             self.advance()
@@ -200,7 +304,6 @@ imply Parser {
                break
            } else {
                let s = self.parse_stmt()
-               # print("Parsed block stmt")
                acc.push(s)
            }
        }
@@ -208,20 +311,13 @@ imply Parser {
     return Stmt::Block(acc)
   }
   micro parse_all(self) {
-    # print("DEBUG: Inside parse_all")
     let acc = new List
-    # print("DEBUG: List created")
     loop {
-      # print("DEBUG: Loop start")
       let tag = self.cur.__variant__
       if tag == "EOF" {
-        # print("DEBUG: Token EOF")
         break
       }
-
-      # print("DEBUG: Parsing stmt")
       let s = self.parse_stmt()
-      # print("DEBUG: Parsed stmt")
       acc.push(s)
     }
     return Stmt::Block(acc)

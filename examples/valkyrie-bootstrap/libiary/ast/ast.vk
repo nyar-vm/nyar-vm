@@ -1,0 +1,83 @@
+namespace package::ast;
+
+class List { head, tail }
+
+imply List {
+  micro push(self, val) {
+    if self.head {
+      let cur = self
+      while cur.tail {
+        cur = cur.tail
+      }
+      let node = new List
+      node.head = val
+      cur.tail = node
+    } else {
+      self.head = val
+    }
+  }
+
+  micro get(self, idx) {
+    let cur = self
+    let i = 0
+    while cur {
+       if i == idx { return cur.head }
+        cur = cur.tail
+        i = i + 1
+    }
+    return null
+  }
+
+  micro len(self) {
+    if !self.head { return 0 }
+    let n = 1
+    let cur = self
+    while cur.tail {
+       n = n + 1
+       cur = cur.tail
+    }
+    return n
+  }
+
+  micro set(self, idx, val) {
+    let cur = self
+    let i = 0
+    while cur {
+       if i == idx {
+         cur.head = val
+         return true
+       }
+       cur = cur.tail
+       i = i + 1
+    }
+    return false
+  }
+}
+
+enum Expr {
+  Int(val),
+  String(val),
+  Bool(val),
+  Variable(name),
+  Add(lhs, rhs),
+  Sub(lhs, rhs),
+  Mul(lhs, rhs),
+  Div(lhs, rhs),
+  Call(callee, args),
+}
+
+enum Stmt {
+  Let(name, val),
+  Print(val),
+  Expr(val),
+  Block(stmts),
+  If(cond, then_branch, else_branch),
+  While(cond, body),
+  Return(val),
+  Namespace(name),
+  Using(path),
+  Class(name, fields),
+  Imply(name, methods),
+  Micro(name, args, body),
+  Enum(name, variants)
+}

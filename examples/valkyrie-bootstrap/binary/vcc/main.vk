@@ -1,0 +1,41 @@
+using package::lexer::Lexer
+using package::parser::Parser
+using package::compiler::Compiler
+using package::ast::Stmt
+
+print("vcc bootstrap started...")
+
+let files = new List
+files.push("examples/valkyrie-bootstrap/source/ast/ast.vk")
+files.push("examples/valkyrie-bootstrap/source/lexer/lexer.vk")
+files.push("examples/valkyrie-bootstrap/source/parser/parser.vk")
+files.push("examples/valkyrie-bootstrap/source/hir/hir.vk")
+files.push("examples/valkyrie-bootstrap/source/mir/compiler.vk")
+
+let combined_source = ""
+let i = 0
+let n = files.len()
+while i < n {
+    let path = files.get(i)
+    print("Reading " + path)
+    let code = read_file(path)
+    if eq(code, "") {
+        print("Error: Could not read file (or empty): " + path)
+    } else {
+        combined_source = combined_source + "\n" + code
+    }
+    i = i + 1
+}
+
+print("Total source length: " + len(combined_source))
+
+let lexer = Lexer::new(combined_source)
+let parser = Parser::new(lexer)
+let program = parser.parse_all()
+
+print("Parsing complete. Compiling...")
+
+let compiler = Compiler::new()
+compiler.compile(program)
+
+print("vcc compilation finished.")

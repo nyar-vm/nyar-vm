@@ -23,7 +23,12 @@ enum Token {
   KwMicro(u),
   KwClass(u),
   KwEnum(u),
-  KwReturn(u)
+  KwReturn(u),
+  KwNamespace(u),
+  KwUsing(u),
+  KwImply(u),
+  Comma(u),
+  Colon(u)
 }
 
 class Lexer { input, pos, len, ch }
@@ -61,7 +66,6 @@ imply Lexer {
 
   micro is_digit(c) {
     let o = ord(c)
-    # print("DEBUG: is_digit char: '" + c + "' ord: " + o)
     return o >= 48 && o <= 57
   }
 
@@ -69,7 +73,6 @@ imply Lexer {
     let o = ord(c)
     return (o >= 97 && o <= 122) || (o >= 65 && o <= 90) || o == 95
   }
-
 
   micro read_identifier(self) {
     let s = ""
@@ -109,13 +112,11 @@ imply Lexer {
       break
     }
     let token = self._next_token_impl()
-    # print("DEBUG: Lexer token: " + token.__variant__)
     return token
   }
 
   micro _next_token_impl(self) {
     let c = self.ch
-    # print("DEBUG: next_token char: '" + c + "' ord: " + ord(c))
     if c == "\0" {
       return Token::EOF(0)
     } else if c == "+" {
@@ -145,6 +146,12 @@ imply Lexer {
     } else if c == "=" {
       self.read_char()
       return Token::Eq(0)
+    } else if c == "," {
+      self.read_char()
+      return Token::Comma(0)
+    } else if c == ":" {
+      self.read_char()
+      return Token::Colon(0)
     } else if c == ";" {
       self.read_char()
       return Token::Semi(0)
@@ -154,9 +161,7 @@ imply Lexer {
       return Token::String(s)
     } else if Lexer::is_alpha(c) {
       let lit = self.read_identifier()
-      # print("DEBUG: read_identifier result='" + lit + "' len=" + len(lit))
       if lit == "let" {
-        # print("DEBUG: matched let")
         return Token::KwLet(0)
       } else if lit == "print" {
         return Token::KwPrint(0)
@@ -174,6 +179,12 @@ imply Lexer {
         return Token::KwEnum(0)
       } else if lit == "return" {
         return Token::KwReturn(0)
+      } else if lit == "namespace" {
+        return Token::KwNamespace(0)
+      } else if lit == "using" {
+        return Token::KwUsing(0)
+      } else if lit == "imply" {
+        return Token::KwImply(0)
       } else {
         return Token::Identifier(lit)
       }

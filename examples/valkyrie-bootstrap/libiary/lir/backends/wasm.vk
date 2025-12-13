@@ -1,0 +1,37 @@
+namespace package::backend::wasm;
+
+using package::lir
+
+class WasmBackend { }
+
+imply WasmBackend {
+  micro emit(self, lir) {
+    let s = "(module\n"
+    let i = 0
+    let n = lir.functions.len()
+    while i < n {
+      let f = lir.functions.get(i)
+      s = s + "  (func $" + f.name + "\n"
+      let j = 0
+      let nb = f.blocks.len()
+      while j < nb {
+        let b = f.blocks.get(j)
+        let k = 0
+        let ni = b.instrs.len()
+        while k < ni {
+          let inst = b.instrs.get(k)
+          s = s + "    ;; " + inst.__variant__ + "\n"
+          k = k + 1
+        }
+        j = j + 1
+      }
+      s = s + "  )\n"
+      i = i + 1
+    }
+    s = s + ")\n"
+    return s
+  }
+  micro output_path(self) {
+    return "examples/valkyrie-bootstrap/target/vcc.wasm"
+  }
+}
