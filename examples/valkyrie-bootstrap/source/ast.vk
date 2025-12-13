@@ -2,6 +2,22 @@ namespace package::ast;
 
 class List { head, tail }
 
+imply List {
+  micro push(self, val) {
+    if self.head {
+      let cur = self
+      while cur.tail {
+        cur = cur.tail
+      }
+      let node = new List
+      node.head = val
+      cur.tail = node
+    } else {
+      self.head = val
+    }
+  }
+}
+
 enum Expr {
   Int(val),
   String(val),
@@ -19,4 +35,7 @@ enum Stmt {
   Print(val),
   Expr(val),
   Block(stmts),
+  If(cond, then_branch, else_branch),
+  While(cond, body),
+  Return(val)
 }

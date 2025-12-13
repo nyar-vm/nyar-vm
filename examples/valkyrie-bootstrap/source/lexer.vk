@@ -1,29 +1,29 @@
 namespace package::lexer;
 
 enum Token {
-  EOF,
+  EOF(u),
   Identifier(x),
   String(x),
   Integer(x),
-  Plus,
-  Minus,
-  Star,
-  Slash,
-  LParen,
-  RParen,
-  LBrace,
-  RBrace,
-  Eq,
-  Semi,
-  KwLet,
-  KwPrint,
-  KwIf,
-  KwElse,
-  KwWhile,
-  KwMicro,
-  KwClass,
-  KwEnum,
-  KwReturn
+  Plus(u),
+  Minus(u),
+  Star(u),
+  Slash(u),
+  LParen(u),
+  RParen(u),
+  LBrace(u),
+  RBrace(u),
+  Eq(u),
+  Semi(u),
+  KwLet(u),
+  KwPrint(u),
+  KwIf(u),
+  KwElse(u),
+  KwWhile(u),
+  KwMicro(u),
+  KwClass(u),
+  KwEnum(u),
+  KwReturn(u)
 }
 
 class Lexer { input, pos, len, ch }
@@ -56,11 +56,12 @@ imply Lexer {
   }
 
   micro is_eof(self) {
-    return ord(self.ch) == 0
+    return self.ch == "\0"
   }
 
   micro is_digit(c) {
     let o = ord(c)
+    # print("DEBUG: is_digit char: '" + c + "' ord: " + o)
     return o >= 48 && o <= 57
   }
 
@@ -77,6 +78,7 @@ imply Lexer {
       self.read_char()
       s = s + self.ch
     }
+    self.read_char()
     return s
   }
 
@@ -87,6 +89,7 @@ imply Lexer {
       self.read_char()
       s = s + self.ch
     }
+    self.read_char()
     return s
   }
 
@@ -105,105 +108,81 @@ imply Lexer {
       }
       break
     }
+    let token = self._next_token_impl()
+    # print("DEBUG: Lexer token: " + token.__variant__)
+    return token
+  }
+
+  micro _next_token_impl(self) {
     let c = self.ch
+    # print("DEBUG: next_token char: '" + c + "' ord: " + ord(c))
     if c == "\0" {
-      return Token::EOF
+      return Token::EOF(0)
     } else if c == "+" {
-      let t = Token::Plus
       self.read_char()
-      return t
+      return Token::Plus(0)
     } else if c == "-" {
-      let t = Token::Minus
       self.read_char()
-      return t
+      return Token::Minus(0)
     } else if c == "*" {
-      let t = Token::Star
       self.read_char()
-      return t
+      return Token::Star(0)
     } else if c == "/" {
-      let t = Token::Slash
       self.read_char()
-      return t
+      return Token::Slash(0)
     } else if c == "(" {
-      let t = Token::LParen
       self.read_char()
-      return t
+      return Token::LParen(0)
     } else if c == ")" {
-      let t = Token::RParen
       self.read_char()
-      return t
+      return Token::RParen(0)
     } else if c == "{" {
-      let t = Token::LBrace
       self.read_char()
-      return t
+      return Token::LBrace(0)
     } else if c == "}" {
-      let t = Token::RBrace
       self.read_char()
-      return t
+      return Token::RBrace(0)
     } else if c == "=" {
-      let t = Token::Eq
       self.read_char()
-      return t
+      return Token::Eq(0)
     } else if c == ";" {
-      let t = Token::Semi
       self.read_char()
-      return t
+      return Token::Semi(0)
     } else if c == "\"" {
       let s = self.read_string()
       self.read_char()
       return Token::String(s)
     } else if Lexer::is_alpha(c) {
       let lit = self.read_identifier()
+      # print("DEBUG: read_identifier result='" + lit + "' len=" + len(lit))
       if lit == "let" {
-        let t = Token::KwLet
-        self.read_char()
-        return t
+        # print("DEBUG: matched let")
+        return Token::KwLet(0)
       } else if lit == "print" {
-        let t = Token::KwPrint
-        self.read_char()
-        return t
+        return Token::KwPrint(0)
       } else if lit == "if" {
-        let t = Token::KwIf
-        self.read_char()
-        return t
+        return Token::KwIf(0)
       } else if lit == "else" {
-        let t = Token::KwElse
-        self.read_char()
-        return t
+        return Token::KwElse(0)
       } else if lit == "while" {
-        let t = Token::KwWhile
-        self.read_char()
-        return t
+        return Token::KwWhile(0)
       } else if lit == "micro" {
-        let t = Token::KwMicro
-        self.read_char()
-        return t
+        return Token::KwMicro(0)
       } else if lit == "class" {
-        let t = Token::KwClass
-        self.read_char()
-        return t
+        return Token::KwClass(0)
       } else if lit == "enum" {
-        let t = Token::KwEnum
-        self.read_char()
-        return t
+        return Token::KwEnum(0)
       } else if lit == "return" {
-        let t = Token::KwReturn
-        self.read_char()
-        return t
+        return Token::KwReturn(0)
       } else {
-        let t = Token::Identifier(lit)
-        self.read_char()
-        return t
+        return Token::Identifier(lit)
       }
     } else if Lexer::is_digit(c) {
       let num = self.read_number()
-      let t = Token::Integer(num)
-      self.read_char()
-      return t
+      return Token::Integer(num)
     } else {
-      let t = Token::Identifier(c)
       self.read_char()
-      return t
+      return Token::Identifier(c)
     }
   }
   micro skip_comment(self) {

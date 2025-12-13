@@ -267,6 +267,7 @@ impl NyarVM {
                 (f.instrs[f.ip].clone(), f.ip)
             };
             let mut next_ip = Some(cur_ip + 1);
+            // self.log(&format!("ip={} {:?}", cur_ip, ins));
             match ins {
                 Instruction::Nop => {}
                 Instruction::BigIntConst { sign, bytes } => {
@@ -1211,6 +1212,10 @@ impl NyarVM {
                         Some(Constant::String(s)) => s.as_str(),
                         _ => return Err(VmError::InvalidOpcode),
                     };
+                    // self.log(&format!(
+                    //    "InvokeMethod: name={}, argc={}, receiver_tag={:?}",
+                    //    name, argc, receiver.tag
+                    // ));
 
                     if receiver.tag != ValueTag::Object {
                         match name {
@@ -1308,6 +1313,7 @@ impl NyarVM {
                                                 ValueTag::Float => lhs.as_float() == rhs.as_float(),
                                                 ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
                                                 ValueTag::Null => true,
+                                                ValueTag::String => lhs.as_string() == rhs.as_string(),
                                                 ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
                                                 _ => false,
                                             }
@@ -1331,6 +1337,7 @@ impl NyarVM {
                                                 ValueTag::Float => lhs.as_float() == rhs.as_float(),
                                                 ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
                                                 ValueTag::Null => true,
+                                                ValueTag::String => lhs.as_string() == rhs.as_string(),
                                                 ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
                                                 _ => false,
                                             }
@@ -1507,6 +1514,11 @@ impl NyarVM {
                         let obj_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::Object };
                         let obj_ref = unsafe { &*obj_ptr };
                         let class_idx = obj_ref.class_idx;
+                        let class_name = self
+                            .classes
+                            .get(class_idx as usize)
+                            .map(|c| c.name.clone())
+                            .unwrap_or_else(|| "<unknown>".to_string());
 
                         let mut chunk_idx = None;
                         for impl_info in &self.impls {
@@ -1532,6 +1544,10 @@ impl NyarVM {
                                 name, class_idx
                             ))
                         })?;
+                        // self.log(&format!(
+                        //    "InvokeMethod: dispatch class={}({}), chunk_idx={}",
+                        //    class_name, class_idx, chunk_idx
+                        // ));
                         let chunk = self
                             .chunks
                             .get(chunk_idx as usize)
@@ -2194,15 +2210,35 @@ impl NyarVM {
                 }
                 Instruction::GetField(name_idx) => {
                     let obj = self.pop()?;
+                    // self.log(&format!("GetField: obj_tag={:?}, name_idx={}", obj.tag, name_idx));
+                    match self.constants.get(name_idx as usize) {
+                        Some(Constant::String(s)) => {
+                            // self.log(&format!("GetField: name_const=String({})", s));
+                        }
+                        Some(c) => {
+                            // self.log(&format!("GetField: name_const_non_string={:?}", c));
+                        }
+                        None => {
+                            // self.log("GetField: name_const_missing");
+                        }
+                    }
                     if obj.tag != ValueTag::Object {
-                        return Err(VmError::InvalidOpcode);
+                        return Err(VmError::RuntimeError(format!(
+                            "GetField on non-object: found {:?}",
+                            obj.tag
+                        )));
                     }
                     let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
                     let obj_ref = unsafe { &*obj_ptr };
 
                     let name = match self.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s,
-                        _ => return Err(VmError::InvalidOpcode),
+                        _ => {
+                            return Err(VmError::RuntimeError(format!(
+                                "GetField with non-string field name at constant {}",
+                                name_idx
+                            )))
+                        }
                     };
                     let cls = self
                         .classes
@@ -2217,15 +2253,36 @@ impl NyarVM {
                 Instruction::SetField(name_idx) => {
                     let val = self.pop()?;
                     let obj = self.pop()?;
+                    // self.log(&format!("SetField: obj_tag={:?}, name_idx={}", obj.tag, name_idx));
+                    match self.constants.get(name_idx as usize) {
+                        Some(Constant::String(s)) => {
+                            // self.log(&format!("SetField: name_const=String({})", s));
+                        }
+                        Some(c) => {
+                            // self.log(&format!("SetField: name_const_non_string={:?}", c));
+                        }
+                        None => {
+                            // self.log("SetField: name_const_missing");
+                        }
+                    }
+                    // self.log(&format!("SetField: value_tag={:?}", val.tag));
                     if obj.tag != ValueTag::Object {
-                        return Err(VmError::InvalidOpcode);
+                        return Err(VmError::RuntimeError(format!(
+                            "SetField on non-object: found {:?}",
+                            obj.tag
+                        )));
                     }
                     let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
                     let obj_mut = unsafe { &mut *obj_ptr };
 
                     let name = match self.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s,
-                        _ => return Err(VmError::InvalidOpcode),
+                        _ => {
+                            return Err(VmError::RuntimeError(format!(
+                                "SetField with non-string field name at constant {}",
+                                name_idx
+                            )))
+                        }
                     };
                     let cls = self
                         .classes

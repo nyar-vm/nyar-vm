@@ -13,111 +13,216 @@ imply Parser {
     return p
   }
   micro advance(self) {
+    # print("DEBUG: Advancing token")
     self.cur = self.lex.next_token()
   }
   micro expect_semi(self) {
-    match self.cur {
-      Token::Semi => self.advance(),
-      _ => {}
+    # print("DEBUG: expect_semi checking")
+    let tag = self.cur.__variant__
+    if tag == "Semi" {
+        self.advance()
+    } else {
+        print("Expected semi, found: " + tag)
     }
   }
   micro expect_rparen(self) {
-    match self.cur {
-      Token::RParen => self.advance(),
-      _ => {}
+    let tag = self.cur.__variant__
+    if tag == "RParen" {
+        self.advance()
+    } else {
+        print("Expected ), found: " + tag)
     }
   }
   micro parse_primary(self) {
-    match self.cur {
-      Token::Integer(v) => {
+    # print("DEBUG: parsing primary, current token: " + self.cur.__variant__)
+    let tag = self.cur.__variant__
+    if tag == "Integer" {
+        let v = self.cur._0
         self.advance()
         return Expr::Int(v)
-      },
-      Token::Identifier(name) => {
-        self.advance()
-        return Expr::Variable(name)
-      },
-      Token::LParen => {
-        self.advance()
-        let e = self.parse_expr()
-        self.expect_rparen()
-        return e
-      },
-      _ => {
-        return Expr::Int("0")
-      }
+    } else {
+        if tag == "String" {
+            let v = self.cur._0
+            self.advance()
+            return Expr::String(v)
+        } else {
+            if tag == "Identifier" {
+                let name = self.cur._0
+                self.advance()
+                return Expr::Variable(name)
+            } else {
+                if tag == "LParen" {
+                    self.advance()
+                    let e = self.parse_expr()
+                    self.expect_rparen()
+                    return e
+                } else {
+                    # print("DEBUG: parse_primary default case: " + tag)
+                    self.advance()
+                    return Expr::Int(0)
+                }
+            }
+        }
     }
   }
-  micro parse_expr(self) {
+  micro parse_term(self) {
+    # print("DEBUG: parsing term")
     let left = self.parse_primary()
     loop {
-      match self.cur {
-        Token::Plus => {
+      # print("DEBUG: parse_term loop")
+      let tag = self.cur.__variant__
+      # print("DEBUG: parse_term tag: " + tag)
+      if tag == "Star" {
           self.advance()
           let right = self.parse_primary()
+          left = Expr::Mul(left, right)
+      } else {
+         if tag == "Slash" {
+            self.advance()
+            let right = self.parse_primary()
+            left = Expr::Div(left, right)
+         } else {
+            break
+         }
+      }
+    }
+    return left
+  }
+  micro parse_expr(self) {
+    # print("DEBUG: parsing expr")
+    let left = self.parse_term()
+    loop {
+      let tag = self.cur.__variant__
+      # print("DEBUG: parse_expr loop tag: " + tag)
+      if tag == "Plus" {
+          self.advance()
+          let right = self.parse_term()
           left = Expr::Add(left, right)
-        },
-        _ => break
+      } else {
+          if tag == "Minus" {
+              self.advance()
+              let right = self.parse_term()
+              left = Expr::Sub(left, right)
+          } else {
+              # print("DEBUG: parse_expr break")
+              break
+          }
       }
     }
     return left
   }
   micro parse_stmt(self) {
-    match self.cur {
-      Token::KwLet => {
+    # print("DEBUG: parsing stmt start")
+    let tag = self.cur.__variant__
+    # print("DEBUG: current token variant: " + tag)
+    
+    if tag == "KwLet" {
+        # print("DEBUG: parsing Let")
         self.advance()
-        match self.cur {
-          Token::Identifier(name) => {
+        let t = self.cur.__variant__
+        # print("DEBUG: parse_stmt Let expected Identifier, got: '" + t + "'")
+        if t == "Identifier" {
+            let name = self.cur._0
             self.advance()
-            match self.cur {
-              Token::Eq => self.advance(),
-              _ => {}
-            }
+            let t2 = self.cur.__variant__
+            if t2 == "Eq" { self.advance() }
             let val = self.parse_expr()
             self.expect_semi()
             return Stmt::Let(name, val)
-          },
-          _ => {
+        } else {
             let v = self.parse_expr()
             self.expect_semi()
             return Stmt::Expr(v)
-          }
         }
-      },
-      Token::KwPrint => {
-        self.advance()
-        match self.cur {
-          Token::LParen => {
+    } else {
+        if tag == "KwPrint" {
             self.advance()
-            let e = self.parse_expr()
-            self.expect_rparen()
-            self.expect_semi()
-            return Stmt::Print(e)
-          },
-          _ => {
-            let e = self.parse_expr()
-            self.expect_semi()
-            return Stmt::Print(e)
-          }
+            let t = self.cur.__variant__
+            if t == "LParen" {
+                self.advance()
+                let e = self.parse_expr()
+                self.expect_rparen()
+                self.expect_semi()
+                return Stmt::Print(e)
+            } else {
+                let e = self.parse_expr()
+                self.expect_semi()
+                return Stmt::Print(e)
+            }
+        } else {
+            if tag == "KwIf" {
+                self.advance()
+                let cond = self.parse_expr()
+                let then_branch = self.parse_stmt()
+                let else_branch = Stmt::Block(new List)
+                let tag2 = self.cur.__variant__
+                if tag2 == "KwElse" {
+                    self.advance()
+                    else_branch = self.parse_stmt()
+                }
+                return Stmt::If(cond, then_branch, else_branch)
+            } else {
+                if tag == "KwWhile" {
+                    self.advance()
+                    let cond = self.parse_expr()
+                    let body = self.parse_stmt()
+                    return Stmt::While(cond, body)
+                } else {
+                    if tag == "KwReturn" {
+                         self.advance()
+                         let val = self.parse_expr()
+                         self.expect_semi()
+                         return Stmt::Return(val)
+                    } else {
+                        if tag == "LBrace" {
+                            return self.parse_block()
+                        } else {
+                            let e = self.parse_expr()
+                            self.expect_semi()
+                            return Stmt::Expr(e)
+                        }
+                    }
+                }
+            }
         }
-      },
-      _ => {
-        let e = self.parse_expr()
-        self.expect_semi()
-        return Stmt::Expr(e)
-      }
     }
   }
-  micro parse_all(self) {
+  micro parse_block(self) {
+    self.advance()
     let acc = new List
     loop {
-      match self.cur {
-        Token::EOF => break,
-        _ => {
-          let s = self.parse_stmt()
-          print(s)
-        }
+       let tag = self.cur.__variant__
+       if tag == "RBrace" {
+           self.advance()
+           break
+       } else {
+           if tag == "EOF" {
+               break
+           } else {
+               let s = self.parse_stmt()
+               # print("Parsed block stmt")
+               acc.push(s)
+           }
+       }
+    }
+    return Stmt::Block(acc)
+  }
+  micro parse_all(self) {
+    # print("DEBUG: Inside parse_all")
+    let acc = new List
+    # print("DEBUG: List created")
+    loop {
+      # print("DEBUG: Loop start")
+      let tag = self.cur.__variant__
+      if tag == "EOF" {
+        # print("DEBUG: Token EOF")
+        break
       }
+
+      # print("DEBUG: Parsing stmt")
+      let s = self.parse_stmt()
+      # print("DEBUG: Parsed stmt")
+      acc.push(s)
     }
     return Stmt::Block(acc)
   }
