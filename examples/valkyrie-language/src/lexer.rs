@@ -268,18 +268,33 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
             continue;
         }
         if (c as char).is_ascii_digit() {
-            let start = i;
-            i += 1;
-            while i < b.len() && (b[i] as char).is_ascii_digit() {
+            if c == b'0' && i + 1 < b.len() && (b[i + 1] == b'x' || b[i + 1] == b'X') {
+                i += 2;
+                let start = i;
+                while i < b.len() && (b[i] as char).is_ascii_hexdigit() {
+                    i += 1;
+                }
+                if start == i {
+                    return Err(Error::Lex("expected hex digits after 0x".to_string()));
+                }
+                let s = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+                let v = i64::from_str_radix(s, 16).map_err(|_| Error::Lex("int".to_string()))?;
+                out.push(Token::Int(v));
+                continue;
+            } else {
+                let start = i;
                 i += 1;
+                while i < b.len() && (b[i] as char).is_ascii_digit() {
+                    i += 1;
+                }
+                let s =
+                    std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+                let v = s
+                    .parse::<i64>()
+                    .map_err(|_| Error::Lex("int".to_string()))?;
+                out.push(Token::Int(v));
+                continue;
             }
-            let s =
-                std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
-            let v = s
-                .parse::<i64>()
-                .map_err(|_| Error::Lex("int".to_string()))?;
-            out.push(Token::Int(v));
-            continue;
         }
         if (c as char).is_ascii_alphabetic() || c == b'_' {
             let start = i;

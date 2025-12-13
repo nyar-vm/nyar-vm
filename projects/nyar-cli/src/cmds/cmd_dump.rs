@@ -18,6 +18,7 @@ pub fn dump(path: &str) -> Result<(), CliError> {
         out.push_str(&format!("{}:{:?}\n", i, c));
     }
     for (i, ch) in module.chunks.iter().enumerate() {
+        println!("DEBUG: chunk {} len: {}", i, ch.code.len());
         out.push_str(&format!("chunk{}:{} bytes\n", i, ch.code.len()));
         let decoder = Decoder::new(&ch.code);
         if let Ok(instrs) = decoder.decode_all() {

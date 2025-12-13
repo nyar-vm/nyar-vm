@@ -330,13 +330,13 @@ imply Compiler {
           let prefix = c_name + "::"
           let p_len = len(prefix)
           if len(f_name) > p_len {
-             let match = true
+             let prefix_match = true
              let k = 0
              while k < p_len {
-                if get(k, f_name) != get(k, prefix) { match = false }
+                if get(k, f_name) != get(k, prefix) { prefix_match = false }
                 k = k + 1
              }
-             if match {
+             if prefix_match {
                 let m_name = ""
                 let k2 = p_len
                 while k2 < len(f_name) {

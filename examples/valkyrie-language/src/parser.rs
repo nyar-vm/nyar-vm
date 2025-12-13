@@ -48,7 +48,14 @@ fn expect_ident(tokens: &[Token], i: &mut usize) -> Result<String, Error> {
             *i += 1;
             Ok(s.clone())
         }
-        _ => Err(Error::Parse("expect identifier".into())),
+        Some(Token::Match) => {
+            *i += 1;
+            Ok("match".into())
+        }
+        _ => {
+            let tok = tokens.get(*i);
+            Err(Error::Parse(format!("expect identifier, found {:?}", tok)))
+        }
     }
 }
 
@@ -665,7 +672,10 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
                                     *i += 1;
                                     break;
                                 }
-                                _ => return Err(Error::Parse("expect , or )".into())),
+                                _ => {
+                                    let tok = tokens.get(*i);
+                                    return Err(Error::Parse(format!("expect , or ) in call args, found {:?}", tok)));
+                                }
                             }
                         }
                     }
@@ -812,6 +822,13 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
             let body = parse_block(tokens, i)?;
             Ok(Expr::Closure(args, body))
         }
-        _ => Err(Error::Parse("unexpected token".into())),
+        _ => {
+            let tok = tokens.get(*i);
+            let start = if *i >= 3 { *i - 3 } else { 0 };
+            let end = (*i + 3).min(tokens.len());
+            let window = &tokens[start..end];
+            eprintln!("parse_prefix error at {}: {:?}", *i, window);
+            Err(Error::Parse(format!("unexpected token {:?}", tok)))
+        }
     }
 }

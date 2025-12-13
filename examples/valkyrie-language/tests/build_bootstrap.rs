@@ -8,14 +8,22 @@ fn build_bootstrap_nyarc() {
     let base = Path::new(manifest_dir)
         .parent()
         .unwrap()
-        .join("valkyrie-bootstrap")
-        .join("source");
+        .join("valkyrie-bootstrap");
     let files = [
-        "ast.vk",
-        "lexer.vk",
-        "parser.vk",
-        "compiler.vk",
-        "main.vk",
+        "library/ast/ast.vk",
+        "library/ast/lexer.vk",
+        "library/ast/parser.vk",
+        "library/hir/hir.vk",
+        "library/hir/transformer.vk",
+        "library/mir/mir.vk",
+        "library/mir/compiler.vk",
+        "library/lir/lir.vk",
+        "library/lir/backends/wasm.vk",
+        "library/lir/backends/jvm.vk",
+        "library/lir/backends/clr.vk",
+        "library/lir/backends/llvm.vk",
+        "library/lir/backends/native.vk",
+        "binary/vcc/main.vk",
     ];
     let mut src = String::new();
     for f in files.iter() {
@@ -26,8 +34,8 @@ fn build_bootstrap_nyarc() {
     }
     let module = compile_text_to_module(&src).expect("compile vk to module");
     let bytes = module.encode();
-    let out_dir = Path::new("examples/valkyrie-bootstrap/target");
-    let _ = fs::create_dir_all(out_dir);
+    let out_dir = base.join("target");
+    let _ = fs::create_dir_all(&out_dir);
     let out_path = out_dir.join("bootstrap.nyarc");
     fs::write(&out_path, &bytes).expect("write nyarc");
     println!("Wrote {:?}", out_path);

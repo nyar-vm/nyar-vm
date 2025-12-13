@@ -34,6 +34,43 @@ pub fn perform_effect_internal(
     if name == "await" {
         return Ok(None);
     }
+    if name == "add" {
+        let a = args.get(0).cloned().unwrap_or(Value::null());
+        let b = args.get(1).cloned().unwrap_or(Value::null());
+        let res = unsafe {
+            match (a.tag, b.tag) {
+                (crate::vm::value::ValueTag::Int, crate::vm::value::ValueTag::Int) => {
+                     Value::int(a.as_int() + b.as_int())
+                }
+                (crate::vm::value::ValueTag::Float, crate::vm::value::ValueTag::Float) => {
+                     Value::float(a.as_float() + b.as_float())
+                }
+                (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => {
+                     let mut s = a.as_string().clone();
+                     s.push_str(b.as_string());
+                     Value::string(s)
+                }
+                _ => Value::null(),
+            }
+        };
+        return Ok(Some(res));
+    }
+    if name.contains("Token::") {
+        let variant_name = name.split("::").last().unwrap_or("");
+        // Find Token class
+        let class_idx = vm.classes.iter().position(|c| c.name.ends_with("::Token") || c.name == "Token");
+        if let Some(idx) = class_idx {
+             let idx = idx as u16;
+             let val = args.get(0).cloned().unwrap_or(Value::null());
+             // Token enum has __variant__ and one field (u or x) mapped to _0
+             let fields = vec![
+                 Value::string(variant_name.to_string()),
+                 val
+             ];
+             let obj = Value::object(idx, fields);
+             return Ok(Some(obj));
+        }
+    }
     vm.log("Traceback (most recent call last):");
     vm.log(&format!("UnhandledEffect: {}", name));
     Err(VmError::UnhandledEffect(name))

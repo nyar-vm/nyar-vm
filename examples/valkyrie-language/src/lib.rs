@@ -42,6 +42,8 @@ pub fn compile_text_to_module(src: &str) -> Result<NyarcModule, Error> {
             f.body.clone(),
         ));
     }
+    println!("DEBUG: mir.main len: {}", mir.main.len());
     stmts_for_emit.extend(mir.main.into_iter());
+    println!("DEBUG: stmts_for_emit len: {}", stmts_for_emit.len());
     compiler::compile(&stmts_for_emit)
 }

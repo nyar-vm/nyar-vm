@@ -2000,7 +2000,174 @@ impl NyarVM {
                             };
                             self.push(Value::bool(r));
                         }
-                        _ => return Err(VmError::UnhandledEffect(name.to_string())),
+                        "ne" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            let r = match (a.tag, b.tag) {
+                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() != b.as_int() },
+                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() != b.as_float() },
+                                (ValueTag::Bool, ValueTag::Bool) => unsafe { a.as_bool() != b.as_bool() },
+                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() != b.as_string() },
+                                (ValueTag::Null, ValueTag::Null) => false,
+                                _ => true,
+                            };
+                            self.push(Value::bool(r));
+                        }
+                        "lt" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            let r = match (a.tag, b.tag) {
+                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() < b.as_int() },
+                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() < b.as_float() },
+                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() < b.as_string() },
+                                _ => false,
+                            };
+                            self.push(Value::bool(r));
+                        }
+                        "le" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            let r = match (a.tag, b.tag) {
+                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() <= b.as_int() },
+                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() <= b.as_float() },
+                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() <= b.as_string() },
+                                _ => false,
+                            };
+                            self.push(Value::bool(r));
+                        }
+                        "gt" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            let r = match (a.tag, b.tag) {
+                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() > b.as_int() },
+                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() > b.as_float() },
+                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() > b.as_string() },
+                                _ => false,
+                            };
+                            self.push(Value::bool(r));
+                        }
+                        "ge" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            let r = match (a.tag, b.tag) {
+                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() >= b.as_int() },
+                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() >= b.as_float() },
+                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() >= b.as_string() },
+                                _ => false,
+                            };
+                            self.push(Value::bool(r));
+                        }
+                        "add" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            unsafe {
+                                match (a.tag, b.tag) {
+                                    (ValueTag::Int, ValueTag::Int) => self.push(Value::int(a.as_int() + b.as_int())),
+                                    (ValueTag::Float, ValueTag::Float) => self.push(Value::float(a.as_float() + b.as_float())),
+                                    (ValueTag::String, ValueTag::String) => {
+                                        let mut s = a.as_string().clone();
+                                        s.push_str(b.as_string());
+                                        self.push(Value::string(s));
+                                    }
+                                    _ => self.push(Value::null()),
+                                }
+                            }
+                        }
+                        "sub" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            unsafe {
+                                match (a.tag, b.tag) {
+                                    (ValueTag::Int, ValueTag::Int) => self.push(Value::int(a.as_int() - b.as_int())),
+                                    (ValueTag::Float, ValueTag::Float) => self.push(Value::float(a.as_float() - b.as_float())),
+                                    _ => self.push(Value::null()),
+                                }
+                            }
+                        }
+                        "mul" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            unsafe {
+                                match (a.tag, b.tag) {
+                                    (ValueTag::Int, ValueTag::Int) => self.push(Value::int(a.as_int() * b.as_int())),
+                                    (ValueTag::Float, ValueTag::Float) => self.push(Value::float(a.as_float() * b.as_float())),
+                                    _ => self.push(Value::null()),
+                                }
+                            }
+                        }
+                        "div" => {
+                            let b = args.pop().unwrap_or(Value::null());
+                            let a = args.pop().unwrap_or(Value::null());
+                            unsafe {
+                                match (a.tag, b.tag) {
+                                    (ValueTag::Int, ValueTag::Int) => self.push(Value::int(a.as_int() / b.as_int())),
+                                    (ValueTag::Float, ValueTag::Float) => self.push(Value::float(a.as_float() / b.as_float())),
+                                    _ => self.push(Value::null()),
+                                }
+                            }
+                        }
+                        _ => {
+                            if name.contains("::") {
+                                let parts: Vec<&str> = name.split("::").collect();
+                                let variant_name = parts.last().unwrap();
+                                let class_name = parts[parts.len() - 2];
+                                
+                                // Find class by name suffix
+                                let class_idx = self.classes.iter().position(|c| 
+                                    c.name.ends_with(&format!("::{}", class_name)) || c.name == class_name
+                                );
+
+                                if let Some(idx) = class_idx {
+                                     let idx = idx as u16;
+                                     // Check if we have enough args. 
+                                     // For now, assume single arg constructor if args.len() > 0?
+                                     // Actually, EnumDef variants can have multiple fields.
+                                     // But FFICall doesn't tell us how many fields the variant EXPECTS unless we look it up.
+                                     // But we have `args` from FFICall.
+                                     // FFICall pops args.
+                                     // We need to pop ALL args.
+                                     // FFICall logic already popped args into `args` vec.
+                                     // So we just use `args`.
+                                     // But `args` are popped in reverse order (LIFO).
+                                     // Wait, FFICall pops:
+                                     // for _ in 0..argc { args.push(pop()) }
+                                     // If I call C(a, b). Stack: [a, b].
+                                     // pop -> b. pop -> a.
+                                     // args = [b, a].
+                                     // NewObject expects fields in order.
+                                     // fields = [__variant__, _0, _1...]
+                                     // _0 should be a. _1 should be b.
+                                     // So we need to REVERSE args to get [a, b].
+                                     
+                                     let mut fields = Vec::new();
+                                     fields.push(Value::string(variant_name.to_string()));
+                                     
+                                     // args is [last_arg, ..., first_arg]
+                                     // We want [first_arg, ..., last_arg]
+                                     // So we iterate args in reverse.
+                                     for arg in args.iter().rev() {
+                                         fields.push(*arg);
+                                     }
+                                     
+                                     // We might need to pad with nulls if the class has more fields?
+                                     // Enum classes have fields _0, _1... up to max fields of any variant.
+                                     // If this variant has fewer fields, the remaining should be null?
+                                     // Or assume `args` matches the variant fields count?
+                                     // The VM class definition has `fields` count.
+                                     let cls = &self.classes[idx as usize];
+                                     while fields.len() < cls.fields.len() {
+                                         fields.push(Value::null());
+                                     }
+                                     
+                                     let obj = Value::object(idx, fields);
+                                     self.push(obj);
+                                } else {
+                                     return Err(VmError::UnhandledEffect(name.to_string()));
+                                }
+                            } else {
+                                return Err(VmError::UnhandledEffect(name.to_string()));
+                            }
+                        }
                     }
                 }
                 Instruction::NewObject(class_idx) => {

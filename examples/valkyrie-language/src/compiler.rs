@@ -99,15 +99,24 @@ impl Compiler {
     }
 
     fn resolve_function(&self, name: &str) -> Option<u16> {
+        if name.contains("Token") {
+             println!("DEBUG: Resolving function: {}", name);
+        }
         if let Some(&idx) = self.functions.get(name) {
             return Some(idx);
         }
         let q = self.qualify(name);
+        if name.contains("Token") {
+             println!("DEBUG: Resolving function qualified: {}", q);
+        }
         if let Some(&idx) = self.functions.get(&q) {
             return Some(idx);
         }
         for p in &self.use_prefixes {
             let qname = format!("{}::{name}", p.join("::"));
+            if name.contains("Token") {
+                 println!("DEBUG: Resolving function imported: {}", qname);
+            }
             if let Some(&idx) = self.functions.get(&qname) {
                 return Some(idx);
             }
@@ -127,6 +136,11 @@ impl Compiler {
             let qname = format!("{}::{name}", p.join("::"));
             if let Some(&idx) = self.class_map.get(&qname) {
                 return Some(idx);
+            }
+        }
+        for (k, &v) in &self.class_map {
+            if k.ends_with(&format!("::{}", name)) || k == name {
+                return Some(v);
             }
         }
         None
@@ -460,6 +474,11 @@ fn compile_expr(
                 let ctx = contexts.last_mut().unwrap();
                 ctx.code.push(Opcode::LoadUpvalue as u8);
                 ctx.code.push(idx);
+            } else if name == "null" {
+                let ctx = contexts.last_mut().unwrap();
+                let idx = compiler.add_constant(Constant::Int(0));
+                ctx.code.push(Opcode::Push as u8);
+                ctx.code.extend_from_slice(&idx.to_le_bytes());
             } else if let Some(idx) = compiler.resolve_function(name) {
                 // Resolved as a global function (possibly enum variant constructor)
                 // We should treat it as a function call with 0 arguments if it is a unit variant,
@@ -1090,6 +1109,7 @@ fn compile_stmt(
     contexts: &mut Vec<FunctionContext>,
     s: &Stmt,
 ) -> Result<(), Error> {
+    println!("DEBUG: compile_stmt {:?}", s);
     match s {
         Stmt::NamespaceSet(path) => {
             compiler.namespace_stack = path.clone();
@@ -1107,10 +1127,12 @@ fn compile_stmt(
             compiler.use_prefixes.push(path.clone());
         }
         Stmt::ImplyDef(class_name, methods) => {
+            println!("DEBUG: compiling ImplyDef for {}", class_name);
             for m in methods {
                 match m {
                     Stmt::FuncDef(name, args, body) => {
                         let qname = format!("{}::{}", class_name, name);
+                        println!("DEBUG: compiling method {}", qname);
                         compile_stmt(compiler, contexts, &Stmt::FuncDef(qname, args.clone(), body.clone()))?;
                     }
                     _ => return Err(Error::Compile("imply block can only contain function definitions".into())),
@@ -1504,9 +1526,10 @@ fn compile_stmt(
                     handlers: vec![],
                 };
 
-                let chunk_idx = (compiler.chunks.len() + 1) as u16;
+                let chunk_idx = compiler.chunks.len() as u16;
                 compiler.chunks.push(chunk);
                 let v_key = format!("{}::{}", class_key, v_name);
+                println!("DEBUG: Registered function: {}", v_key);
                 compiler.functions.insert(v_key, chunk_idx);
             }
         }
@@ -1609,6 +1632,7 @@ pub fn compile(stmts: &[Stmt]) -> Result<NyarcModule, Error> {
     }
 
     let mut main_ctx = contexts.pop().unwrap();
+    println!("DEBUG: main_ctx code len before Halt: {}", main_ctx.code.len());
     main_ctx.code.push(Opcode::Halt as u8);
 
     let main_chunk = Chunk {
