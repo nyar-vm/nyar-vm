@@ -118,6 +118,9 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
         chunk_mref_idx.push(mref);
     }
 
+    // Add entries for bootstrap main method before emitting CP
+    let idx_main_name = cp_utf8(&mut cp, "main", &mut cp_count);
+    let idx_main_desc = cp_utf8(&mut cp, "([Ljava/lang/String;)V", &mut cp_count);
     class.extend_from_slice(&cp_count.to_be_bytes());
     class.extend_from_slice(&cp);
 
@@ -127,7 +130,7 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
     class.extend_from_slice(&idx_class_obj.to_be_bytes());
     class.extend_from_slice(&0u16.to_be_bytes());
     class.extend_from_slice(&0u16.to_be_bytes());
-    class.extend_from_slice(&(module.chunks.len() as u16).to_be_bytes());
+    class.extend_from_slice(&(module.chunks.len() as u16 + 1).to_be_bytes());
 
     // Emit methods per chunk
     for (i, ch) in module.chunks.iter().enumerate() {
@@ -262,6 +265,39 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
         class.extend_from_slice(&0u16.to_be_bytes()); // exception_table_length
         class.extend_from_slice(&0u16.to_be_bytes()); // attributes_count within Code
     }
+    // Emit static void main(String[] args) calling chunk_0
+    {
+        class.extend_from_slice(&0x0009u16.to_be_bytes()); // public static
+        class.extend_from_slice(&idx_main_name.to_be_bytes());
+        class.extend_from_slice(&idx_main_desc.to_be_bytes());
+        class.extend_from_slice(&1u16.to_be_bytes()); // attributes_count
+        class.extend_from_slice(&idx_code_utf8.to_be_bytes());
+        let mut code: Vec<u8> = Vec::new();
+        // Push default args for chunk_0: longs + null object
+        let main_chunk = &module.chunks[0];
+        for _ in 0..main_chunk.locals {
+            code.push(0x09); // lconst_0
+        }
+        code.push(0x01); // aconst_null for Object
+        // invokestatic Main.chunk_0
+        code.push(0xB8);
+        let mr = chunk_mref_idx[0];
+        code.extend_from_slice(&mr.to_be_bytes());
+        // drop returned long and return void
+        code.push(0x57); // pop
+        code.push(0xB1); // return
+        let code_len = code.len() as u32;
+        let max_stack = main_chunk.max_stack.max(4);
+        let max_locals = 1; // args array
+        let attr_len = 12 + code_len;
+        class.extend_from_slice(&attr_len.to_be_bytes());
+        class.extend_from_slice(&(max_stack as u16).to_be_bytes());
+        class.extend_from_slice(&(max_locals as u16).to_be_bytes());
+        class.extend_from_slice(&code_len.to_be_bytes());
+        class.extend_from_slice(&code);
+        class.extend_from_slice(&0u16.to_be_bytes()); // exception_table_length
+        class.extend_from_slice(&0u16.to_be_bytes()); // attributes_count within Code
+    }
 
     class.extend_from_slice(&0u16.to_be_bytes()); // class attributes_count
     Ok(class)
@@ -275,7 +311,7 @@ pub fn write_jar(path: &str, class_bytes: &[u8]) -> std::io::Result<()> {
     let mut zip = zip::ZipWriter::new(file);
     let opts = FileOptions::default();
     zip.start_file("META-INF/MANIFEST.MF", opts)?;
-    zip.write_all(b"Manifest-Version: 1.0\n")?;
+    zip.write_all(b"Manifest-Version: 1.0\nMain-Class: Main\n")?;
     zip.start_file("Main.class", opts)?;
     zip.write_all(class_bytes)?;
     zip.finish()?;

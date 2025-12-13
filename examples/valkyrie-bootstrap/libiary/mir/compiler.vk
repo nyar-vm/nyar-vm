@@ -9,7 +9,7 @@ using package::backend::clr
 using package::backend::llvm
 using package::backend::native
 
-class Compiler { constants, chunks, classes, method_tables, functions, lir_functions }
+class Compiler { constants, chunks, classes, method_tables, functions, lir_functions, type_env, warnings }
 
 imply Compiler {
   micro new() {
@@ -20,6 +20,8 @@ imply Compiler {
     c.method_tables = new List
     c.functions = new List
     c.lir_functions = new List
+    c.type_env = new List
+    c.warnings = new List
     return c
   }
 
@@ -37,6 +39,19 @@ imply Compiler {
       print("vcc write failed")
     }
     self.emit_backends()
+    Compiler::print_warnings(self)
+  }
+
+  micro add_warning(self, msg) {
+    self.warnings.push(msg)
+  }
+  micro print_warnings(self) {
+    let i = 0
+    let n = self.warnings.len()
+    while i < n {
+      print(self.warnings.get(i))
+      i = i + 1
+    }
   }
 
   micro collect_all_chunks(self) {
@@ -244,7 +259,24 @@ imply Compiler {
      let i = 0
      let n = args.len()
      while i < n {
-        locals.push(args.get(i))
+        let a = args.get(i)
+        if a.__variant__ == "Arg" {
+          locals.push(a.name)
+          let ty = a.type
+          if ty.__variant__ == "Name" {
+            if len(ty._0) == 0 {
+              let anyt = Type::Name("any")
+              Compiler::set_type(self, a.name, anyt)
+              Compiler::add_warning(self, "[any] arg " + a.name + " in " + name + " missing type")
+            } else {
+              Compiler::set_type(self, a.name, ty)
+            }
+          } else {
+            Compiler::set_type(self, a.name, ty)
+          }
+        } else {
+          locals.push(a)
+        }
         i = i + 1
      }
      Compiler::compile_stmt(self.constants, code, locals, body)
@@ -265,7 +297,7 @@ imply Compiler {
      self.functions.push(func)
      let lir_func = LIRFunction::new(name, args)
      let bb = BasicBlock::new()
-     Compiler::lower_stmt_to_lir(bb, body)
+     Compiler::lower_stmt_to_lir(self, bb, body)
      bb.push(LIRInstr::Return(0))
      lir_func.add_block(bb)
      self.lir_functions.push(lir_func)
@@ -478,8 +510,10 @@ imply Compiler {
   micro emit_backends(self) {
     let lir_mod = LIRModule::from_compiler(self)
     let w = new WasmBackend
-    let wb = w.emit(lir_mod)
-    self.write_file(w.output_path(), wb)
+    let wm = w.emit_core(lir_mod)
+    self.write_file(w.output_path(), wm)
+    let wc = w.emit_component(lir_mod)
+    self.write_file(w.component_output_path(), wc)
     let j = new JVMBackend
     let jb = j.emit(lir_mod)
     self.write_file(j.output_path(), jb)
@@ -669,21 +703,21 @@ imply Compiler {
         Compiler::compile_stmt(constants, code, locals, s)
         i = i + 1
       }
-    } else {
-      if tag == "Print" {
-        Compiler::compile_expr(constants, code, locals, stmt._0)
-        let didx = Compiler::add_string(constants, "print")
-        Compiler::emit_u8(code, 0xF0)
-        Compiler::emit_u16(code, didx)
-        Compiler::emit_u8(code, 1)
       } else {
-        if tag == "Expr" {
+        if tag == "Print" {
           Compiler::compile_expr(constants, code, locals, stmt._0)
-          Compiler::emit_u8(code, 0x02)
+          let didx = Compiler::add_string(constants, "print")
+          Compiler::emit_u8(code, 0xF0)
+          Compiler::emit_u16(code, didx)
+          Compiler::emit_u8(code, 1)
         } else {
+          if tag == "Expr" {
+            Compiler::compile_expr(constants, code, locals, stmt._0)
+            Compiler::emit_u8(code, 0x02)
+          } else {
           if tag == "Let" {
              let name = stmt._0
-             let val = stmt._1
+             let val = stmt._2
              Compiler::compile_expr(constants, code, locals, val)
              let idx = Compiler::declare_local(locals, name)
              Compiler::emit_u8(code, 0x06)
@@ -708,6 +742,19 @@ imply Compiler {
                let end = code.len()
                let offset_end = end - jump_end_idx - 2
                Compiler::patch_u16(code, jump_end_idx, offset_end)
+             } else {
+               if tag == "Match" {
+                 Compiler::compile_expr(constants, code, locals, stmt._0)
+                 Compiler::emit_u8(code, 0x02)
+                 let arms = stmt._1
+                 let j = 0
+                 let m = arms.len()
+                 while j < m {
+                   let arm = arms.get(j)
+                   Compiler::compile_stmt(constants, code, locals, arm.body)
+                   j = j + 1
+                 }
+               }
              }
           }
         }
@@ -751,37 +798,214 @@ imply Compiler {
     }
   }
 
-  micro lower_expr_to_lir(block, expr) {
+  micro lower_expr_to_lir(self, block, expr) {
     let tag = expr.__variant__
     if tag == "Int" {
       block.push(LIRInstr::ConstInt(expr._0))
     } else {
+      if tag == "Bool" {
+        block.push(LIRInstr::ConstInt(expr._0))
+      } else {
       if tag == "String" {
         block.push(LIRInstr::ConstString(expr._0))
+      } else {
+        if tag == "Call" {
+          let callee = expr._0
+          let args = expr._1
+          let i0 = 0
+          let n0 = args.len()
+          while i0 < n0 {
+            Compiler::lower_expr_to_lir(self, block, args.get(i0))
+            i0 = i0 + 1
+          }
+          if callee.__variant__ == "Variable" {
+            block.push(LIRInstr::Call(callee._0, n0))
+          } else {
+            block.push(LIRInstr::Call("", n0))
+          }
       } else {
         if tag == "Variable" {
           block.push(LIRInstr::LoadLocal(expr._0))
         } else {
           if tag == "Add" {
-            Compiler::lower_expr_to_lir(block, expr._0)
-            Compiler::lower_expr_to_lir(block, expr._1)
-            block.push(LIRInstr::AddI64(0))
+            let t0 = Compiler::resolve_expr_type(self, expr._0)
+            let t1 = Compiler::resolve_expr_type(self, expr._1)
+            if Compiler::type_is_string(t0) && Compiler::type_is_string(t1) {
+              Compiler::lower_expr_to_lir(self, block, expr._0)
+              Compiler::lower_expr_to_lir(self, block, expr._1)
+              block.push(LIRInstr::CallFFI("__str_concat", 2))
+            } else {
+              Compiler::lower_expr_to_lir(self, block, expr._0)
+              Compiler::lower_expr_to_lir(self, block, expr._1)
+              block.push(LIRInstr::AddI64(0))
+            }
           } else {
+            if tag == "Eq" {
+              let t0e = Compiler::resolve_expr_type(self, expr._0)
+              let t1e = Compiler::resolve_expr_type(self, expr._1)
+              Compiler::lower_expr_to_lir(self, block, expr._0)
+              Compiler::lower_expr_to_lir(self, block, expr._1)
+              if Compiler::type_is_string(t0e) && Compiler::type_is_string(t1e) {
+                block.push(LIRInstr::EqStr(0))
+              } else {
+                block.push(LIRInstr::EqI64(0))
+              }
+            } else {
             if tag == "Sub" {
-              Compiler::lower_expr_to_lir(block, expr._0)
-              Compiler::lower_expr_to_lir(block, expr._1)
+              Compiler::lower_expr_to_lir(self, block, expr._0)
+              Compiler::lower_expr_to_lir(self, block, expr._1)
               block.push(LIRInstr::SubI64(0))
             } else {
               if tag == "Mul" {
-                Compiler::lower_expr_to_lir(block, expr._0)
-                Compiler::lower_expr_to_lir(block, expr._1)
+                Compiler::lower_expr_to_lir(self, block, expr._0)
+                Compiler::lower_expr_to_lir(self, block, expr._1)
                 block.push(LIRInstr::MulI64(0))
               } else {
                 if tag == "Div" {
-                  Compiler::lower_expr_to_lir(block, expr._0)
-                  Compiler::lower_expr_to_lir(block, expr._1)
+                  Compiler::lower_expr_to_lir(self, block, expr._0)
+                  Compiler::lower_expr_to_lir(self, block, expr._1)
                   block.push(LIRInstr::DivI64(0))
                 } else {
+                }
+              }
+            }
+            }
+          }
+        }
+        }
+      }
+      }
+    }
+  }
+
+  micro lower_stmt_to_lir(self, block, stmt) {
+    let tag = stmt.__variant__
+    if tag == "Block" {
+      let stmts = stmt._0
+      let i = 0
+      let n = stmts.len()
+      while i < n {
+        let s = stmts.get(i)
+        Compiler::lower_stmt_to_lir(self, block, s)
+        i = i + 1
+      }
+    } else {
+      if tag == "Print" {
+        Compiler::lower_expr_to_lir(self, block, stmt._0)
+        block.push(LIRInstr::CallFFI("print", 1))
+        block.push(LIRInstr::Pop(0))
+      } else {
+        if tag == "Expr" {
+          Compiler::lower_expr_to_lir(self, block, stmt._0)
+          block.push(LIRInstr::Pop(0))
+        } else {
+          if tag == "Let" {
+            let name = stmt._0
+            let val = stmt._2
+            let ty = stmt._1
+            if ty.__variant__ == "Name" && len(ty._0) == 0 {
+              let anyt2 = Type::Name("any")
+              Compiler::set_type(self, name, anyt2)
+              Compiler::add_warning(self, "[any] let " + name + " missing type")
+            } else {
+              Compiler::set_type(self, name, ty)
+              Compiler::validate_container_on_let(self, name, ty)
+            }
+            Compiler::lower_expr_to_lir(self, block, val)
+            block.push(LIRInstr::StoreLocal(name))
+          } else {
+            if tag == "Return" {
+              Compiler::lower_expr_to_lir(self, block, stmt._0)
+              block.push(LIRInstr::Return(0))
+            } else {
+              if tag == "If" {
+                let ok_match = Compiler::try_lower_if_chain_as_match(self, block, stmt)
+                if !ok_match {
+                  let cond = stmt._0
+                  let then_b = stmt._1
+                  let else_b = stmt._2
+                  let l_else = 1
+                  let l_end = 2
+                  Compiler::lower_expr_to_lir(self, block, cond)
+                  block.push(LIRInstr::JumpIfFalse(l_else))
+                  Compiler::lower_stmt_to_lir(self, block, then_b)
+                  block.push(LIRInstr::Jump(l_end))
+                  block.push(LIRInstr::Label(l_else))
+                  Compiler::lower_stmt_to_lir(self, block, else_b)
+                  block.push(LIRInstr::Label(l_end))
+                }
+              } else {
+                if tag == "Match" {
+                  let scrutinee = stmt._0
+                  let arms = stmt._1
+                  Compiler::lower_expr_to_lir(self, block, scrutinee)
+                  block.push(LIRInstr::StoreLocal("match_tmp"))
+                  let end_label = 9
+                  let i2 = 0
+                  let n2 = arms.len()
+                  while i2 < n2 {
+                    let arm = arms.get(i2)
+                    let pat = arm.pat
+                    let next_label = 10 + i2
+                    let ptag = pat.__variant__
+                    if ptag == "Wildcard" {
+                      Compiler::lower_stmt_to_lir(self, block, arm.body)
+                      block.push(LIRInstr::Jump(end_label))
+                    } else {
+                      if ptag == "Type" {
+                        let ts = Compiler::resolve_expr_type(self, scrutinee)
+                        let match_ok = Compiler::type_equals_string(ts, Compiler::type_to_string(pat._0))
+                        if match_ok {
+                          block.push(LIRInstr::ConstInt(1))
+                        } else {
+                          block.push(LIRInstr::ConstInt(0))
+                        }
+                      } else {
+                        if ptag == "Tuple" {
+                          let ts2 = Compiler::resolve_expr_type(self, scrutinee)
+                          let ok2 = Compiler::type_is_tuple(ts2)
+                          if ok2 {
+                            block.push(LIRInstr::ConstInt(1))
+                          } else {
+                            block.push(LIRInstr::ConstInt(0))
+                          }
+                        } else {
+                          block.push(LIRInstr::LoadLocal("match_tmp"))
+                          if ptag == "Int" || ptag == "Bool" {
+                            block.push(LIRInstr::ConstInt(pat._0))
+                            block.push(LIRInstr::EqI64(0))
+                          } else {
+                            if ptag == "String" {
+                              block.push(LIRInstr::ConstString(pat._0))
+                              block.push(LIRInstr::EqStr(0))
+                            } else {
+                              block.push(LIRInstr::ConstInt(0))
+                            }
+                          }
+                        }
+                      }
+                      block.push(LIRInstr::JumpIfFalse(next_label))
+                      Compiler::lower_stmt_to_lir(self, block, arm.body)
+                      block.push(LIRInstr::Jump(end_label))
+                      block.push(LIRInstr::Label(next_label))
+                    }
+                    i2 = i2 + 1
+                  }
+                  block.push(LIRInstr::Label(end_label))
+                } else {
+                  if tag == "While" {
+                    let cond = stmt._0
+                    let body = stmt._1
+                    let l_start = 3
+                    let l_exit = 4
+                    block.push(LIRInstr::Label(l_start))
+                    Compiler::lower_expr_to_lir(self, block, cond)
+                    block.push(LIRInstr::JumpIfFalse(l_exit))
+                    Compiler::lower_stmt_to_lir(self, block, body)
+                    block.push(LIRInstr::Jump(l_start))
+                    block.push(LIRInstr::Label(l_exit))
+                  } else {
+                  }
                 }
               }
             }
@@ -790,70 +1014,199 @@ imply Compiler {
       }
     }
   }
-
-  micro lower_stmt_to_lir(block, stmt) {
-    let tag = stmt.__variant__
-    if tag == "Block" {
-      let stmts = stmt._0
-      let i = 0
-      let n = stmts.len()
-      while i < n {
-        let s = stmts.get(i)
-        Compiler::lower_stmt_to_lir(block, s)
-        i = i + 1
+  micro try_lower_if_chain_as_match(self, block, stmt) {
+    if stmt.__variant__ != "If" { return false }
+    let scr = ""
+    let arms = new List
+    let default_body = null
+    let cur = stmt
+    loop {
+      if cur.__variant__ != "If" { break }
+      let cond = cur._0
+      let then_b = cur._1
+      let else_b = cur._2
+      if cond.__variant__ != "Eq" { return false }
+      let lhs = cond._0
+      let rhs = cond._1
+      if lhs.__variant__ != "Variable" { return false }
+      if len(scr) == 0 { scr = lhs._0 }
+      if !eq(scr, lhs._0) { return false }
+      let pat = Pattern::Wildcard(0)
+      if rhs.__variant__ == "Int" { pat = Pattern::Int(rhs._0) }
+      else {
+        if rhs.__variant__ == "String" { pat = Pattern::String(rhs._0) }
+        else {
+          if rhs.__variant__ == "Bool" { pat = Pattern::Bool(rhs._0) }
+          else { return false }
+        }
       }
-    } else {
-      if tag == "Print" {
-        Compiler::lower_expr_to_lir(block, stmt._0)
-        block.push(LIRInstr::CallFFI("print", 1))
-        block.push(LIRInstr::Pop(0))
+      let arm = new MatchArm
+      arm.pat = pat
+      arm.body = then_b
+      arms.push(arm)
+      if else_b.__variant__ == "If" {
+        cur = else_b
       } else {
-        if tag == "Expr" {
-          Compiler::lower_expr_to_lir(block, stmt._0)
-          block.push(LIRInstr::Pop(0))
+        default_body = else_b
+        break
+      }
+    }
+    if arms.len() < 3 { return false }
+    let scr_expr = Expr::Variable(scr)
+    Compiler::lower_expr_to_lir(self, block, scr_expr)
+    block.push(LIRInstr::StoreLocal("match_tmp"))
+    let end_label = 19
+    let i3 = 0
+    let n3 = arms.len()
+    while i3 < n3 {
+      let arm2 = arms.get(i3)
+      let next_label2 = 20 + i3
+      let pt = arm2.pat.__variant__
+      block.push(LIRInstr::LoadLocal("match_tmp"))
+      if pt == "Int" || pt == "Bool" {
+        block.push(LIRInstr::ConstInt(arm2.pat._0))
+        block.push(LIRInstr::EqI64(0))
+      } else {
+        if pt == "String" {
+          block.push(LIRInstr::ConstString(arm2.pat._0))
+          block.push(LIRInstr::EqStr(0))
         } else {
-          if tag == "Let" {
-            let name = stmt._0
-            let val = stmt._1
-            Compiler::lower_expr_to_lir(block, val)
-            block.push(LIRInstr::StoreLocal(name))
+          block.push(LIRInstr::ConstInt(0))
+        }
+      }
+      block.push(LIRInstr::JumpIfFalse(next_label2))
+      Compiler::lower_stmt_to_lir(self, block, arm2.body)
+      block.push(LIRInstr::Jump(end_label))
+      block.push(LIRInstr::Label(next_label2))
+      i3 = i3 + 1
+    }
+    if default_body {
+      Compiler::lower_stmt_to_lir(self, block, default_body)
+    }
+    block.push(LIRInstr::Label(end_label))
+    return true
+  }
+  micro validate_container_on_let(self, name, ty) {
+    if ty.__variant__ != "Apply" { return true }
+    let cname = ty._0
+    let args = ty._1
+    if eq(cname, "array") {
+      if args.len() < 2 { Compiler::add_warning(self, "[container] array requires elem type and length for " + name); return false }
+      let a0 = args.get(0)
+      let a1 = args.get(1)
+      if a0.__variant__ != "Ty" { Compiler::add_warning(self, "[container] array first arg must be type for " + name); return false }
+      if a1.__variant__ != "Int" { Compiler::add_warning(self, "[container] array second arg must be length int for " + name); return false }
+      return true
+    } else {
+      if eq(cname, "vector") {
+        if args.len() < 1 { Compiler::add_warning(self, "[container] vector requires elem type for " + name); return false }
+        let b0 = args.get(0)
+        if b0.__variant__ != "Ty" { Compiler::add_warning(self, "[container] vector first arg must be type for " + name); return false }
+        return true
+      } else {
+        if eq(cname, "list") {
+          if args.len() > 0 {
+            let c0 = args.get(0)
+            if c0.__variant__ != "Ty" { Compiler::add_warning(self, "[container] list arg must be type if provided for " + name); return false }
+          }
+          return true
+        } else {
+          if eq(cname, "record") {
+            if args.len() == 0 { Compiler::add_warning(self, "[container] record requires fields for " + name); return false }
+            let i = 0
+            let n = args.len()
+            while i < n {
+              let f = args.get(i)
+              if f.__variant__ != "Field" { Compiler::add_warning(self, "[container] record args must be Field(name:type) for " + name); return false }
+              i = i + 1
+            }
+            return true
           } else {
-            if tag == "Return" {
-              Compiler::lower_expr_to_lir(block, stmt._0)
-              block.push(LIRInstr::Return(0))
+            if eq(cname, "object") {
+              return true
             } else {
-              if tag == "If" {
-                let cond = stmt._0
-                let then_b = stmt._1
-                let else_b = stmt._2
-                let l_else = 1
-                let l_end = 2
-                Compiler::lower_expr_to_lir(block, cond)
-                block.push(LIRInstr::JumpIfFalse(l_else))
-                Compiler::lower_stmt_to_lir(block, then_b)
-                block.push(LIRInstr::Jump(l_end))
-                block.push(LIRInstr::Label(l_else))
-                Compiler::lower_stmt_to_lir(block, else_b)
-                block.push(LIRInstr::Label(l_end))
-              } else {
-                if tag == "While" {
-                  let cond = stmt._0
-                  let body = stmt._1
-                  let l_start = 3
-                  let l_exit = 4
-                  block.push(LIRInstr::Label(l_start))
-                  Compiler::lower_expr_to_lir(block, cond)
-                  block.push(LIRInstr::JumpIfFalse(l_exit))
-                  Compiler::lower_stmt_to_lir(block, body)
-                  block.push(LIRInstr::Jump(l_start))
-                  block.push(LIRInstr::Label(l_exit))
-                } else {
-                }
-              }
+              return true
             }
           }
         }
       }
     }
+  }
+  micro set_type(self, name, ty) {
+    let pair = new List
+    pair.push(name)
+    pair.push(ty)
+    self.type_env.push(pair)
+  }
+  micro get_type(self, name) {
+    let i = 0
+    let n = self.type_env.len()
+    while i < n {
+      let p = self.type_env.get(i)
+      if eq(p.get(0), name) { return p.get(1) }
+      i = i + 1
+    }
+    return Type::Name("")
+  }
+  micro type_to_string(t) {
+    if t.__variant__ == "Name" { return t._0 }
+    if t.__variant__ == "Nullable" { return Compiler::type_to_string(t._0) + "?" }
+    if t.__variant__ == "Union" { return Compiler::type_to_string(t._0) + "|" + Compiler::type_to_string(t._1) }
+    if t.__variant__ == "Intersect" { return Compiler::type_to_string(t._0) + "&" + Compiler::type_to_string(t._1) }
+    if t.__variant__ == "Tuple" { return "tuple" }
+    if t.__variant__ == "Apply" {
+      let name = t._0
+      let args = t._1
+      let s = name + "("
+      let i = 0
+      let n = args.len()
+      while i < n {
+        let a = args.get(i)
+        if a.__variant__ == "Ty" {
+          s = s + Compiler::type_to_string(a._0)
+        } else {
+          if a.__variant__ == "Int" {
+            s = s + a._0
+          } else {
+            if a.__variant__ == "Field" {
+              s = s + a._0 + ":" + Compiler::type_to_string(a._1)
+            }
+          }
+        }
+        if i + 1 < n { s = s + "," }
+        i = i + 1
+      }
+      s = s + ")"
+      return s
+    }
+    return ""
+  }
+  micro type_is_string(t) {
+    return eq(Compiler::type_to_string(t), "string")
+  }
+  micro type_is_tuple(t) {
+    return eq(Compiler::type_to_string(t), "tuple")
+  }
+  micro type_equals_string(t, s) {
+    return eq(Compiler::type_to_string(t), s)
+  }
+  micro resolve_expr_type(self, expr) {
+    let tag = expr.__variant__
+    if tag == "Int" { return Type::Name("i64") }
+    if tag == "String" { return Type::Name("string") }
+    if tag == "Bool" { return Type::Name("bool") }
+    if tag == "Variable" {
+      return Compiler::get_type(self, expr._0)
+    }
+    if tag == "Add" {
+      let t0 = Compiler::resolve_expr_type(self, expr._0)
+      let t1 = Compiler::resolve_expr_type(self, expr._1)
+      if Compiler::type_is_string(t0) && Compiler::type_is_string(t1) { return Type::Name("string") }
+      return Type::Name("i64")
+    }
+    if tag == "Sub" { return Type::Name("i64") }
+    if tag == "Mul" { return Type::Name("i64") }
+    if tag == "Div" { return Type::Name("i64") }
+    return Type::Name("")
   }
 }

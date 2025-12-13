@@ -6,11 +6,11 @@ using package::ast::Stmt
 print("vcc bootstrap started...")
 
 let files = new List
-files.push("examples/valkyrie-bootstrap/source/ast/ast.vk")
-files.push("examples/valkyrie-bootstrap/source/lexer/lexer.vk")
-files.push("examples/valkyrie-bootstrap/source/parser/parser.vk")
-files.push("examples/valkyrie-bootstrap/source/hir/hir.vk")
-files.push("examples/valkyrie-bootstrap/source/mir/compiler.vk")
+files.push("examples/valkyrie-bootstrap/libiary/ast/ast.vk")
+files.push("examples/valkyrie-bootstrap/libiary/ast/lexer.vk")
+files.push("examples/valkyrie-bootstrap/libiary/ast/parser.vk")
+files.push("examples/valkyrie-bootstrap/libiary/hir/hir.vk")
+files.push("examples/valkyrie-bootstrap/libiary/mir/compiler.vk")
 
 let combined_source = ""
 let i = 0

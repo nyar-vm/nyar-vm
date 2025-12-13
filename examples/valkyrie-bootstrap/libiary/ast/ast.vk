@@ -59,6 +59,7 @@ enum Expr {
   String(val),
   Bool(val),
   Variable(name),
+  Eq(lhs, rhs),
   Add(lhs, rhs),
   Sub(lhs, rhs),
   Mul(lhs, rhs),
@@ -66,12 +67,39 @@ enum Expr {
   Call(callee, args),
 }
 
+enum Type {
+  Name(path),
+  Nullable(inner),
+  Union(lhs, rhs),
+  Intersect(lhs, rhs),
+  Tuple(types),
+  Apply(name, args)
+}
+enum TypeArg {
+  Ty(t),
+  Int(n),
+  Field(name, t)
+}
+
+class Arg { name, type }
+class MatchArm { pat, body }
+
+enum Pattern {
+  Wildcard(u),
+  Int(val),
+  String(val),
+  Bool(val),
+  Type(t),
+  Tuple(elems)
+}
+
 enum Stmt {
-  Let(name, val),
+  Let(name, type, val),
   Print(val),
   Expr(val),
   Block(stmts),
   If(cond, then_branch, else_branch),
+  Match(scrutinee, arms),
   While(cond, body),
   Return(val),
   Namespace(name),

@@ -114,6 +114,14 @@ imply Parser {
             self.advance()
             return Expr::String(v)
         } else {
+            if tag == "KwTrue" {
+                self.advance()
+                return Expr::Bool(1)
+            } else {
+            if tag == "KwFalse" {
+                self.advance()
+                return Expr::Bool(0)
+            } else {
             if tag == "Identifier" {
                 let name = self.cur._0
                 self.advance()
@@ -128,6 +136,8 @@ imply Parser {
                     self.advance()
                     return Expr::Int(0)
                 }
+            }
+            }
             }
         }
     }
@@ -152,7 +162,7 @@ imply Parser {
     }
     return left
   }
-  micro parse_expr(self) {
+  micro parse_add(self) {
     let left = self.parse_term()
     loop {
       let tag = self.cur.__variant__
@@ -168,6 +178,20 @@ imply Parser {
           } else {
               break
           }
+      }
+    }
+    return left
+  }
+  micro parse_expr(self) {
+    let left = self.parse_add()
+    loop {
+      let tag = self.cur.__variant__
+      if tag == "EqEq" {
+        self.advance()
+        let right = self.parse_add()
+        left = Expr::Eq(left, right)
+      } else {
+        break
       }
     }
     return left
@@ -210,7 +234,7 @@ imply Parser {
             name = self.cur._0
             self.advance()
         }
-        let args = self.parse_args()
+        let args = self.parse_args_typed()
         let body = self.parse_block()
         return Stmt::Micro(name, args, body)
     } else if tag == "KwEnum" {
@@ -228,11 +252,11 @@ imply Parser {
         if t == "Identifier" {
             let name = self.cur._0
             self.advance()
-            let t2 = self.cur.__variant__
-            if t2 == "Eq" { self.advance() }
+            let ty = Parser::parse_optional_type(self)
+            if self.cur.__variant__ == "Eq" { self.advance() }
             let val = self.parse_expr()
             self.expect_semi()
-            return Stmt::Let(name, val)
+            return Stmt::Let(name, ty, val)
         } else {
             let v = self.parse_expr()
             self.expect_semi()
@@ -265,6 +289,11 @@ imply Parser {
                     else_branch = self.parse_stmt()
                 }
                 return Stmt::If(cond, then_branch, else_branch)
+            } else if tag == "KwMatch" {
+                self.advance()
+                let scrutinee = self.parse_expr()
+                let arms = Parser::parse_match_arms(self)
+                return Stmt::Match(scrutinee, arms)
             } else {
                 if tag == "KwWhile" {
                     self.advance()
@@ -321,5 +350,175 @@ imply Parser {
       acc.push(s)
     }
     return Stmt::Block(acc)
+  }
+  micro parse_type_primary(self) {
+    if self.cur.__variant__ == "Identifier" {
+      let path = self.parse_path()
+      if self.cur.__variant__ == "LParen" {
+        let args = Parser::parse_type_args(self)
+        return Type::Apply(path, args)
+      }
+      return Type::Name(path)
+    } else {
+      if self.cur.__variant__ == "LParen" {
+        self.advance()
+        let elems = new List
+        while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
+          let t = Parser::parse_type_expr(self)
+          elems.push(t)
+          if self.cur.__variant__ == "Comma" { self.advance() }
+        }
+        if self.cur.__variant__ == "RParen" { self.advance() }
+        return Type::Tuple(elems)
+      } else {
+        return Type::Name("")
+      }
+    }
+  }
+  micro parse_type_args(self) {
+    let args = new List
+    if self.cur.__variant__ == "LParen" {
+      self.advance()
+      while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
+        if self.cur.__variant__ == "Identifier" {
+          let save = self.cur._0
+          self.advance()
+          if self.cur.__variant__ == "Colon" {
+            self.advance()
+            let ty = Parser::parse_type_expr(self)
+            args.push(TypeArg::Field(save, ty))
+          } else {
+            let ty = Type::Name(save)
+            args.push(TypeArg::Ty(ty))
+          }
+        } else {
+          if self.cur.__variant__ == "Integer" {
+            let v = self.cur._0
+            self.advance()
+            args.push(TypeArg::Int(v))
+          } else {
+            let ty2 = Parser::parse_type_expr(self)
+            args.push(TypeArg::Ty(ty2))
+          }
+        }
+        if self.cur.__variant__ == "Comma" { self.advance() }
+      }
+      if self.cur.__variant__ == "RParen" { self.advance() }
+    }
+    return args
+  }
+  micro parse_type_expr(self) {
+    let left = Parser::parse_type_primary(self)
+    loop {
+      if self.cur.__variant__ == "Question" {
+        self.advance()
+        left = Type::Nullable(left)
+        continue
+      }
+      if self.cur.__variant__ == "Pipe" {
+        self.advance()
+        let right = Parser::parse_type_primary(self)
+        left = Type::Union(left, right)
+        continue
+      }
+      if self.cur.__variant__ == "Amp" {
+        self.advance()
+        let right = Parser::parse_type_primary(self)
+        left = Type::Intersect(left, right)
+        continue
+      }
+      break
+    }
+    return left
+  }
+  micro parse_optional_type(self) {
+    if self.cur.__variant__ == "Colon" {
+      self.advance()
+      return Parser::parse_type_expr(self)
+    }
+    return Type::Name("")
+  }
+  micro parse_args_typed(self) {
+    let args = new List
+    if self.cur.__variant__ == "LParen" {
+      self.advance()
+      while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
+        let name = ""
+        if self.cur.__variant__ == "Identifier" {
+          name = self.cur._0
+          self.advance()
+        }
+        let ty = Parser::parse_optional_type(self)
+        let a = new Arg
+        a.name = name
+        a.type = ty
+        args.push(a)
+        if self.cur.__variant__ == "Comma" { self.advance() }
+      }
+      if self.cur.__variant__ == "RParen" { self.advance() }
+    }
+    return args
+  }
+  micro parse_pattern(self) {
+    let tag = self.cur.__variant__
+    if tag == "Identifier" {
+      if self.cur._0 == "_" {
+        self.advance()
+        return Pattern::Wildcard(0)
+      } else {
+        let ty = Parser::parse_type_expr(self)
+        return Pattern::Type(ty)
+      }
+    }
+    if tag == "Integer" {
+      let v = self.cur._0
+      self.advance()
+      return Pattern::Int(v)
+    }
+    if tag == "String" {
+      let v = self.cur._0
+      self.advance()
+      return Pattern::String(v)
+    }
+    if tag == "KwTrue" {
+      self.advance()
+      return Pattern::Bool(1)
+    }
+    if tag == "KwFalse" {
+      self.advance()
+      return Pattern::Bool(0)
+    }
+    if tag == "LParen" {
+      self.advance()
+      let elems = new List
+      while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
+        let p = Parser::parse_pattern(self)
+        elems.push(p)
+        if self.cur.__variant__ == "Comma" { self.advance() }
+      }
+      if self.cur.__variant__ == "RParen" { self.advance() }
+      return Pattern::Tuple(elems)
+    }
+    return Pattern::Wildcard(0)
+  }
+  micro parse_match_arms(self) {
+    let arms = new List
+    if self.cur.__variant__ == "LBrace" {
+      self.advance()
+      while self.cur.__variant__ != "RBrace" && self.cur.__variant__ != "EOF" {
+        let pat = Parser::parse_pattern(self)
+        if self.cur.__variant__ == "Arrow" || self.cur.__variant__ == "Colon" {
+          self.advance()
+        }
+        let body = self.parse_stmt()
+        let arm = new MatchArm
+        arm.pat = pat
+        arm.body = body
+        arms.push(arm)
+        if self.cur.__variant__ == "Comma" { self.advance() }
+      }
+      if self.cur.__variant__ == "RBrace" { self.advance() }
+    }
+    return arms
   }
 }

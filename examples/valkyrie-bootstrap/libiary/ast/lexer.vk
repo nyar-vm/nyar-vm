@@ -5,6 +5,8 @@ enum Token {
   Identifier(x),
   String(x),
   Integer(x),
+  KwTrue(u),
+  KwFalse(u),
   Plus(u),
   Minus(u),
   Star(u),
@@ -14,6 +16,8 @@ enum Token {
   LBrace(u),
   RBrace(u),
   Eq(u),
+  EqEq(u),
+  Arrow(u),
   Semi(u),
   KwLet(u),
   KwPrint(u),
@@ -28,7 +32,11 @@ enum Token {
   KwUsing(u),
   KwImply(u),
   Comma(u),
-  Colon(u)
+  Colon(u),
+  Pipe(u),
+  Amp(u),
+  Question(u),
+  KwMatch(u)
 }
 
 class Lexer { input, pos, len, ch }
@@ -144,14 +152,36 @@ imply Lexer {
       self.read_char()
       return Token::RBrace(0)
     } else if c == "=" {
-      self.read_char()
-      return Token::Eq(0)
+      let p = self.peek_char()
+      if p == "=" {
+        self.read_char()
+        self.read_char()
+        return Token::EqEq(0)
+      } else {
+        if p == ">" {
+          self.read_char()
+          self.read_char()
+          return Token::Arrow(0)
+        } else {
+          self.read_char()
+          return Token::Eq(0)
+        }
+      }
     } else if c == "," {
       self.read_char()
       return Token::Comma(0)
     } else if c == ":" {
       self.read_char()
       return Token::Colon(0)
+    } else if c == "|" {
+      self.read_char()
+      return Token::Pipe(0)
+    } else if c == "&" {
+      self.read_char()
+      return Token::Amp(0)
+    } else if c == "?" {
+      self.read_char()
+      return Token::Question(0)
     } else if c == ";" {
       self.read_char()
       return Token::Semi(0)
@@ -185,6 +215,12 @@ imply Lexer {
         return Token::KwUsing(0)
       } else if lit == "imply" {
         return Token::KwImply(0)
+      } else if lit == "match" {
+        return Token::KwMatch(0)
+      } else if lit == "true" {
+        return Token::KwTrue(0)
+      } else if lit == "false" {
+        return Token::KwFalse(0)
       } else {
         return Token::Identifier(lit)
       }
