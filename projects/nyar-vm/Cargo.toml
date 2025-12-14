@@ -20,3 +20,5 @@ criterion = { workspace = true }
 [[bench]]
 name = "bench"
 harness = false
+
+# Force rebuild

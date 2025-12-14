@@ -7,16 +7,72 @@ class Parser { lex, cur }
 
 imply Parser {
   micro new(lex) {
+    print("DEBUG: Parser::new called")
+    if lex is Lexer {
+        print("DEBUG: arg lex is Lexer")
+    } else {
+        print("DEBUG: arg lex is NOT Lexer")
+    }
     let p = new Parser
+    print("DEBUG: Parser instance created")
     p.lex = lex
-    p.cur = p.lex.next_token()
-    return p
+    print("DEBUG: p.lex set")
+    if p.lex is Lexer {
+        print("DEBUG: p.lex is Lexer")
+    } else {
+        print("DEBUG: p.lex is NOT Lexer")
+    }
+    print("DEBUG: calling next_token on lex")
+    let l = p.lex
+     print("DEBUG: l type probe:")
+     print(l)
+     if l {
+         print("DEBUG: local l is valid")
+     } else {
+         print("DEBUG: local l is null")
+     }
+     print("DEBUG: accessing l.pos")
+      let pos = l.pos
+      print("DEBUG: l.pos is " + str(pos))
+      print("DEBUG: calling is_eof")
+      let eof = l.is_eof()
+      print("DEBUG: is_eof returned " + str(eof))
+      print("DEBUG: invoking next_token")
+      let tok = l.next_token()
+     print("DEBUG: first token fetched")
+     p.cur = tok
+     return p
   }
   micro advance(self) {
     self.cur = self.lex.next_token()
   }
   micro current_kind(self) {
-    return self.cur.kind
+    if self.cur {
+        return self.cur.kind
+    } else {
+        print("DEBUG: current_kind self.cur is null")
+        return TokenKind::EOF
+    }
+  }
+
+  micro parse_all(self) {
+    print("DEBUG: parse_all start")
+    let stmts = new List
+    while true {
+      print("DEBUG: parse_all loop")
+      let t = self.current_kind()
+      if t == null {
+          print("DEBUG: current_kind is null in parse_all")
+          break
+      }
+      let variant = t.__variant__
+      print("DEBUG: current token variant: " + variant)
+      if variant == "EOF" { break }
+      let s = self.parse_stmt()
+      stmts.push(s)
+    }
+    print("DEBUG: parse_all done")
+    return stmts
   }
   micro expect_semi(self) {
     match self.current_kind() {
@@ -265,8 +321,14 @@ imply Parser {
   }
 
   micro parse_stmt(self) {
+    print("DEBUG: parse_stmt start")
     let kind = self.current_kind()
-    let span = self.cur.span
+    let span = null
+    if self.cur {
+        span = self.cur.span
+    } else {
+        print("DEBUG: self.cur is null in parse_stmt")
+    }
     match kind {
        case TokenKind::At: {
            let decorators = self.parse_decorators()
@@ -449,21 +511,6 @@ imply Parser {
                acc.push(s)
            }
        }
-    }
-    return Stmt::Block(acc, span)
-  }
-  micro parse_all(self) {
-    let span = self.cur.span
-    let acc = new List
-    loop {
-      let tag = self.current_kind().__variant__
-      match tag {
-          case "EOF": { break }
-          case _: {
-              let s = self.parse_stmt()
-              acc.push(s)
-          }
-      }
     }
     return Stmt::Block(acc, span)
   }

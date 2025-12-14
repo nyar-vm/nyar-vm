@@ -19,6 +19,10 @@ while i < n {
     let path = files.get(i)
     print("Reading " + path)
     let code = read_file(path)
+    if code == null {
+        print("DEBUG: read_file returned null for " + path)
+        code = ""
+    }
     if eq(code, "") {
         print("Error: Could not read file (or empty): " + path)
     } else {
@@ -27,15 +31,38 @@ while i < n {
     i = i + 1
 }
 
-print("Total source length: " + len(combined_source))
+if combined_source == null {
+    print("DEBUG: combined_source is null")
+} else {
+    print("DEBUG: combined_source is not null")
+    let l_src = len(combined_source)
+    print("DEBUG: len(combined_source) raw: ")
+    print(l_src)
+    print("DEBUG: combined_source length: " + str(l_src))
+    let c = chars(combined_source)
+    let l_c = len(c)
+    print("DEBUG: len(chars) raw: ")
+    print(l_c)
+    print("DEBUG: chars(combined_source) length: " + str(l_c))
+}
 
+print("Creating Lexer...")
 let lexer = Lexer::new(combined_source)
-let parser = Parser::new(lexer)
-let program = parser.parse_all()
+print("Lexer created.")
+print("DEBUG: Lexer pos in main: " + lexer.pos)
 
+print("Creating Parser...")
+let parser = Parser::new(lexer)
+print("Parser created.")
+
+print("Parsing...")
+let program = parser.parse_all()
 print("Parsing complete. Compiling...")
 
 let compiler = Compiler::new()
 compiler.compile(program)
 
 print("vcc compilation finished.")
+
+lexer.skip_whitespace()
+print("Skip whitespace done")

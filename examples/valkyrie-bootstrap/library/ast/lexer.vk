@@ -50,21 +50,46 @@ class Lexer { input, pos, len, ch, line, col }
 
 imply Lexer {
   micro new(input) {
+    print("DEBUG: Lexer::new start")
     let l = new Lexer
-    l.input = chars(input)
+    print("DEBUG: Lexer object allocated")
+    l.input = input
+    print("DEBUG: using input string directly")
+    if l.input {
+        print("DEBUG: l.input is valid")
+        l.len = len(l.input)
+        print("DEBUG: l.len raw: ")
+        print(l.len)
+        print("DEBUG: l.len calculated: " + str(l.len))
+    } else {
+        print("DEBUG: l.input is null!")
+        l.len = 0
+    }
     l.pos = 0
-    l.len = len(l.input)
     l.ch = "\0"
     l.line = 1
     l.col = 1
     l.read_char()
+    print("DEBUG: Lexer::new returning")
+    print("DEBUG: Lexer pos inside new: " + l.pos)
+    if l is Lexer {
+        print("DEBUG: l is Lexer")
+    } else {
+        print("DEBUG: l is NOT Lexer")
+    }
     return l
   }
   micro read_char(self) {
       if self.pos >= self.len {
         self.ch = ""
       } else {
-        self.ch = get(self.pos, self.input)
+        let c = get(self.input, self.pos)
+        print("DEBUG: read_char get(" + str(self.pos) + ") returned: '" + str(c) + "'")
+        self.ch = c
+        if self.ch == null {
+           print("DEBUG: read_char got null. pos=" + str(self.pos) + ", len=" + str(self.len))
+           self.ch = ""
+        }
       }
       self.pos = self.pos + 1
       if self.ch == "\n" {
@@ -79,7 +104,7 @@ imply Lexer {
     if self.pos >= self.len {
       return ""
     } else {
-      return get(self.pos, self.input)
+      return get(self.input, self.pos)
     }
   }
 
@@ -120,13 +145,22 @@ imply Lexer {
   }
 
   micro skip_whitespace(self) {
+    print("DEBUG: inside skip_whitespace")
+    print(self)
+    if self.ch == " " {
+        print("DEBUG: if self.ch works")
+    }
     while self.ch == " " || self.ch == "\t" || self.ch == "\n" || self.ch == "\r" {
       self.read_char()
     }
   }
 
   micro next_token(self) {
+    print("DEBUG: inside next_token, checking self")
+    print(self)
     loop {
+      print("DEBUG: inside loop, checking self")
+      print(self)
       self.skip_whitespace()
       if self.ch == "#" {
         self.skip_comment()
@@ -134,6 +168,8 @@ imply Lexer {
       }
       break
     }
+    print("DEBUG: after loop")
+    print(self)
     let start_pos = self.pos
     let start_line = self.line
     let start_col = self.col
@@ -153,7 +189,14 @@ imply Lexer {
   }
 
   micro _next_token_impl(self) {
+    print("DEBUG: inside _next_token_impl")
+    print(self)
+    if self.ch == null {
+        print("DEBUG: self.ch is null in _next_token_impl, fixing it")
+        self.ch = ""
+    }
     let c = self.ch
+    print("DEBUG: c is " + c)
     match c {
        case "": { return TokenKind::EOF }
        case "+": { self.read_char(); return TokenKind::Plus }
@@ -191,6 +234,13 @@ imply Lexer {
           return TokenKind::String(s)
        }
        case _: {
+          print("DEBUG: inside case _")
+          print("DEBUG: c is " + c)
+          if self {
+             print("DEBUG: self is valid in case _")
+          } else {
+             print("DEBUG: self is NULL in case _")
+          }
           if Lexer::is_alpha(c) {
              let lit = self.read_identifier()
              match lit {

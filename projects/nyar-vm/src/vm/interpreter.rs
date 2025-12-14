@@ -2258,6 +2258,7 @@ impl NyarVM {
                     for _ in 0..argc {
                         args.push(self.pop()?);
                     }
+                    args.reverse();
                     let name = match self.constants.get(desc as usize) {
                         Some(Constant::String(s)) => s.as_str(),
                         _ => "",
