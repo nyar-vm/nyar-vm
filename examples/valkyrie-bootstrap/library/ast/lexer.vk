@@ -25,6 +25,7 @@ enum Token {
   KwElse(u),
   KwWhile(u),
   KwMicro(u),
+  KwMacro(u),
   KwClass(u),
   KwEnum(u),
   KwReturn(u),
@@ -36,6 +37,8 @@ enum Token {
   Pipe(u),
   Amp(u),
   Question(u),
+  At(u),
+  Dot(u),
   KwMatch(u)
 }
 
@@ -44,9 +47,9 @@ class Lexer { input, pos, len, ch }
 imply Lexer {
   micro new(input) {
     let l = new Lexer
-    l.input = input
+    l.input = chars(input)
     l.pos = 0
-    l.len = len(input)
+    l.len = len(l.input)
     l.ch = "\0"
     l.read_char()
     return l
@@ -182,6 +185,12 @@ imply Lexer {
     } else if c == "?" {
       self.read_char()
       return Token::Question(0)
+    } else if c == "@" {
+      self.read_char()
+      return Token::At(0)
+    } else if c == "." {
+      self.read_char()
+      return Token::Dot(0)
     } else if c == ";" {
       self.read_char()
       return Token::Semi(0)
@@ -203,6 +212,8 @@ imply Lexer {
         return Token::KwWhile(0)
       } else if lit == "micro" {
         return Token::KwMicro(0)
+      } else if lit == "macro" {
+        return Token::KwMacro(0)
       } else if lit == "class" {
         return Token::KwClass(0)
       } else if lit == "enum" {

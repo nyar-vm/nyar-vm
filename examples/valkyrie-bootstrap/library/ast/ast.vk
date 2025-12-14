@@ -65,6 +65,8 @@ enum Expr {
   Mul(lhs, rhs),
   Div(lhs, rhs),
   Call(callee, args),
+  Field(obj, key),
+  Index(obj, key)
 }
 
 enum Type {
@@ -107,5 +109,10 @@ enum Stmt {
   Class(name, fields),
   Imply(name, methods),
   Micro(name, args, body),
-  Enum(name, variants)
+  Macro(name, args, body),
+  Enum(name, variants),
+  Decorated(decorators, stmt)
 }
+
+class Decorator { kind, name, args }
+

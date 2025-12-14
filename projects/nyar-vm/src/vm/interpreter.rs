@@ -1,8 +1,9 @@
 use crate::bytecode::decoder::Instruction;
-use crate::bytecode::format::{Chunk, ClassInfo, Constant, ImplInfo, TraitInfo};
+use crate::bytecode::format::{Chunk, ClassInfo, Constant, ImplInfo, TraitInfo, NyarcModule};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
+use nyar_error::JvmAotError;
 use std::ptr::null;
 
 fn normalize(mut v: Vec<u8>) -> Vec<u8> {
@@ -36,6 +37,503 @@ fn from_u128(mut x: u128) -> Vec<u8> {
         x >>= 8;
     }
     out
+}
+
+fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotError> {
+    if module.chunks.is_empty() {
+        return Err(JvmAotError::EmptyModule);
+    }
+    let mut class = Vec::new();
+    class.extend_from_slice(&0xCAFEBABE_u32.to_be_bytes());
+    class.extend_from_slice(&0u16.to_be_bytes());
+    class.extend_from_slice(&52u16.to_be_bytes());
+
+    let mut cp = Vec::new();
+    let mut cp_count: u16 = 1;
+
+    fn cp_utf8(cp: &mut Vec<u8>, s: &str, cp_count: &mut u16) -> u16 {
+        cp.push(1);
+        cp.extend_from_slice(&(s.len() as u16).to_be_bytes());
+        cp.extend_from_slice(s.as_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+    fn cp_class(cp: &mut Vec<u8>, name_idx: u16, cp_count: &mut u16) -> u16 {
+        cp.push(7);
+        cp.extend_from_slice(&name_idx.to_be_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+    fn cp_long(cp: &mut Vec<u8>, v: i64, cp_count: &mut u16) -> u16 {
+        cp.push(5);
+        cp.extend_from_slice(&(v as i64).to_be_bytes());
+        let idx = *cp_count;
+        *cp_count += 2;
+        idx
+    }
+    fn cp_name_and_type(cp: &mut Vec<u8>, name_idx: u16, desc_idx: u16, cp_count: &mut u16) -> u16 {
+        cp.push(12);
+        cp.extend_from_slice(&name_idx.to_be_bytes());
+        cp.extend_from_slice(&desc_idx.to_be_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+    fn cp_methodref(cp: &mut Vec<u8>, class_idx: u16, nat_idx: u16, cp_count: &mut u16) -> u16 {
+        cp.push(10);
+        cp.extend_from_slice(&class_idx.to_be_bytes());
+        cp.extend_from_slice(&nat_idx.to_be_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+    fn cp_string(cp: &mut Vec<u8>, utf8_idx: u16, cp_count: &mut u16) -> u16 {
+        cp.push(8);
+        cp.extend_from_slice(&utf8_idx.to_be_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+    fn cp_fieldref(cp: &mut Vec<u8>, class_idx: u16, nat_idx: u16, cp_count: &mut u16) -> u16 {
+        cp.push(9);
+        cp.extend_from_slice(&class_idx.to_be_bytes());
+        cp.extend_from_slice(&nat_idx.to_be_bytes());
+        *cp_count += 1;
+        *cp_count - 1
+    }
+
+    let idx_main_utf8 = cp_utf8(&mut cp, "Main", &mut cp_count);
+    let idx_class_main = cp_class(&mut cp, idx_main_utf8, &mut cp_count);
+    let idx_obj_utf8 = cp_utf8(&mut cp, "java/lang/Object", &mut cp_count);
+    let idx_class_obj = cp_class(&mut cp, idx_obj_utf8, &mut cp_count);
+    let idx_code_utf8 = cp_utf8(&mut cp, "Code", &mut cp_count);
+
+    let idx_str_utf8 = cp_utf8(&mut cp, "java/lang/String", &mut cp_count);
+    let idx_cls_str = cp_class(&mut cp, idx_str_utf8, &mut cp_count);
+    let idx_ps_utf8 = cp_utf8(&mut cp, "java/io/PrintStream", &mut cp_count);
+    let idx_cls_ps = cp_class(&mut cp, idx_ps_utf8, &mut cp_count);
+    let idx_sys_utf8 = cp_utf8(&mut cp, "java/lang/System", &mut cp_count);
+    let idx_cls_sys = cp_class(&mut cp, idx_sys_utf8, &mut cp_count);
+    let idx_paths_utf8 = cp_utf8(&mut cp, "java/nio/file/Paths", &mut cp_count);
+    let idx_cls_paths = cp_class(&mut cp, idx_paths_utf8, &mut cp_count);
+    let idx_files_utf8 = cp_utf8(&mut cp, "java/nio/file/Files", &mut cp_count);
+    let idx_cls_files = cp_class(&mut cp, idx_files_utf8, &mut cp_count);
+    let idx_path_utf8 = cp_utf8(&mut cp, "java/nio/file/Path", &mut cp_count);
+    let _idx_cls_path = cp_class(&mut cp, idx_path_utf8, &mut cp_count);
+    let idx_openopt_utf8 = cp_utf8(&mut cp, "java/nio/file/OpenOption", &mut cp_count);
+    let idx_cls_openopt = cp_class(&mut cp, idx_openopt_utf8, &mut cp_count);
+
+    let idx_out_utf8 = cp_utf8(&mut cp, "out", &mut cp_count);
+    let idx_out_desc_utf8 = cp_utf8(&mut cp, "Ljava/io/PrintStream;", &mut cp_count);
+    let idx_out_nat = cp_name_and_type(&mut cp, idx_out_utf8, idx_out_desc_utf8, &mut cp_count);
+    let idx_out_fref = cp_fieldref(&mut cp, idx_cls_sys, idx_out_nat, &mut cp_count);
+
+    let idx_println_utf8 = cp_utf8(&mut cp, "println", &mut cp_count);
+    let idx_println_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/String;)V", &mut cp_count);
+    let idx_println_nat =
+        cp_name_and_type(&mut cp, idx_println_utf8, idx_println_desc_utf8, &mut cp_count);
+    let idx_println_mref = cp_methodref(&mut cp, idx_cls_ps, idx_println_nat, &mut cp_count);
+
+    let idx_concat_utf8 = cp_utf8(&mut cp, "concat", &mut cp_count);
+    let idx_concat_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/String;)Ljava/lang/String;", &mut cp_count);
+    let idx_concat_nat =
+        cp_name_and_type(&mut cp, idx_concat_utf8, idx_concat_desc_utf8, &mut cp_count);
+    let idx_concat_mref = cp_methodref(&mut cp, idx_cls_str, idx_concat_nat, &mut cp_count);
+
+    let idx_length_utf8 = cp_utf8(&mut cp, "length", &mut cp_count);
+    let idx_length_desc_utf8 = cp_utf8(&mut cp, "()I", &mut cp_count);
+    let idx_length_nat =
+        cp_name_and_type(&mut cp, idx_length_utf8, idx_length_desc_utf8, &mut cp_count);
+    let idx_length_mref = cp_methodref(&mut cp, idx_cls_str, idx_length_nat, &mut cp_count);
+
+    let idx_getbytes_utf8 = cp_utf8(&mut cp, "getBytes", &mut cp_count);
+    let idx_getbytes_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/String;)[B", &mut cp_count);
+    let idx_getbytes_nat =
+        cp_name_and_type(&mut cp, idx_getbytes_utf8, idx_getbytes_desc_utf8, &mut cp_count);
+    let idx_getbytes_mref = cp_methodref(&mut cp, idx_cls_str, idx_getbytes_nat, &mut cp_count);
+
+    let idx_paths_get_utf8 = cp_utf8(&mut cp, "get", &mut cp_count);
+    let idx_paths_get_desc_utf8 =
+        cp_utf8(&mut cp, "(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;", &mut cp_count);
+    let idx_paths_get_nat =
+        cp_name_and_type(&mut cp, idx_paths_get_utf8, idx_paths_get_desc_utf8, &mut cp_count);
+    let idx_paths_get_mref = cp_methodref(&mut cp, idx_cls_paths, idx_paths_get_nat, &mut cp_count);
+
+    let idx_files_read_utf8 = cp_utf8(&mut cp, "readAllBytes", &mut cp_count);
+    let idx_files_read_desc_utf8 =
+        cp_utf8(&mut cp, "(Ljava/nio/file/Path;)[B", &mut cp_count);
+    let idx_files_read_nat =
+        cp_name_and_type(&mut cp, idx_files_read_utf8, idx_files_read_desc_utf8, &mut cp_count);
+    let idx_files_read_mref = cp_methodref(&mut cp, idx_cls_files, idx_files_read_nat, &mut cp_count);
+
+    let idx_files_write_utf8 = cp_utf8(&mut cp, "write", &mut cp_count);
+    let idx_files_write_desc_utf8 =
+        cp_utf8(&mut cp, "(Ljava/nio/file/Path;[B[Ljava/nio/file/OpenOption;)Ljava/nio/file/Path;", &mut cp_count);
+    let idx_files_write_nat =
+        cp_name_and_type(&mut cp, idx_files_write_utf8, idx_files_write_desc_utf8, &mut cp_count);
+    let idx_files_write_mref = cp_methodref(&mut cp, idx_cls_files, idx_files_write_nat, &mut cp_count);
+
+    let idx_init_utf8 = cp_utf8(&mut cp, "<init>", &mut cp_count);
+    let idx_init_desc_utf8 = cp_utf8(&mut cp, "([BLjava/lang/String;)V", &mut cp_count);
+    let idx_init_nat =
+        cp_name_and_type(&mut cp, idx_init_utf8, idx_init_desc_utf8, &mut cp_count);
+    let idx_init_mref = cp_methodref(&mut cp, idx_cls_str, idx_init_nat, &mut cp_count);
+
+    let idx_utf8_utf8 = cp_utf8(&mut cp, "UTF-8", &mut cp_count);
+    let idx_utf8_str = cp_string(&mut cp, idx_utf8_utf8, &mut cp_count);
+
+    use std::collections::HashMap;
+    let mut long_indices: HashMap<i64, u16> = HashMap::new();
+    let mut string_indices: HashMap<String, u16> = HashMap::new();
+    for ch in &module.chunks {
+        use crate::bytecode::decoder::Decoder;
+        let instrs = Decoder::new(&ch.code)
+            .decode_all()
+            .map_err(|e| JvmAotError::Decode(format!("{:?}", e)))?;
+        for ins in &instrs {
+            if let Instruction::Push(idx) = ins {
+                if let Some(Constant::Int(v)) = module.constants.get(*idx as usize) {
+                    if *v != 0 && *v != 1 {
+                        long_indices
+                            .entry(*v)
+                            .or_insert_with(|| cp_long(&mut cp, *v, &mut cp_count));
+                    }
+                } else if let Some(Constant::String(s)) = module.constants.get(*idx as usize) {
+                    let key = s.clone();
+                    string_indices.entry(key.clone()).or_insert_with(|| {
+                        let u = cp_utf8(&mut cp, &key, &mut cp_count);
+                        cp_string(&mut cp, u, &mut cp_count)
+                    });
+                }
+            } else if let Instruction::StringConst(s) = ins {
+                let key = s.clone();
+                string_indices.entry(key.clone()).or_insert_with(|| {
+                    let u = cp_utf8(&mut cp, &key, &mut cp_count);
+                    cp_string(&mut cp, u, &mut cp_count)
+                });
+            }
+        }
+    }
+
+    let mut chunk_name_idx: Vec<u16> = Vec::new();
+    let mut chunk_desc_idx: Vec<u16> = Vec::new();
+    let mut chunk_nat_idx: Vec<u16> = Vec::new();
+    let mut chunk_mref_idx: Vec<u16> = Vec::new();
+    for (i, ch) in module.chunks.iter().enumerate() {
+        let name = format!("chunk_{}", i);
+        let mut desc = String::new();
+        desc.push('(');
+        for _ in 0..ch.locals {
+            desc.push('J');
+        }
+        desc.push_str("Ljava/lang/Object;");
+        desc.push(')');
+        desc.push('J');
+        let nidx = cp_utf8(&mut cp, &name, &mut cp_count);
+        let didx = cp_utf8(&mut cp, &desc, &mut cp_count);
+        let nat = cp_name_and_type(&mut cp, nidx, didx, &mut cp_count);
+        let mref = cp_methodref(&mut cp, idx_class_main, nat, &mut cp_count);
+        chunk_name_idx.push(nidx);
+        chunk_desc_idx.push(didx);
+        chunk_nat_idx.push(nat);
+        chunk_mref_idx.push(mref);
+    }
+
+    let idx_main_name = cp_utf8(&mut cp, "main", &mut cp_count);
+    let idx_main_desc = cp_utf8(&mut cp, "([Ljava/lang/String;)V", &mut cp_count);
+    class.extend_from_slice(&cp_count.to_be_bytes());
+    class.extend_from_slice(&cp);
+
+    let access = 0x0021u16;
+    class.extend_from_slice(&access.to_be_bytes());
+    class.extend_from_slice(&idx_class_main.to_be_bytes());
+    class.extend_from_slice(&idx_class_obj.to_be_bytes());
+    class.extend_from_slice(&0u16.to_be_bytes());
+    class.extend_from_slice(&0u16.to_be_bytes());
+    class.extend_from_slice(&(module.chunks.len() as u16 + 1).to_be_bytes());
+
+    for (i, ch) in module.chunks.iter().enumerate() {
+        class.extend_from_slice(&0x0009u16.to_be_bytes());
+        class.extend_from_slice(&chunk_name_idx[i].to_be_bytes());
+        class.extend_from_slice(&chunk_desc_idx[i].to_be_bytes());
+        class.extend_from_slice(&1u16.to_be_bytes());
+
+        class.extend_from_slice(&idx_code_utf8.to_be_bytes());
+        use crate::bytecode::decoder::Decoder;
+        let instrs = Decoder::new(&ch.code)
+            .decode_all()
+            .map_err(|e| JvmAotError::Decode(format!("{:?}", e)))?;
+        let mut code: Vec<u8> = Vec::new();
+        let mut ins_offsets: Vec<u32> = Vec::with_capacity(instrs.len());
+        let mut branches: Vec<(usize, usize)> = Vec::new();
+        for (i_idx, ins) in instrs.into_iter().enumerate() {
+            ins_offsets.push(code.len() as u32);
+            match ins {
+                Instruction::Push(idx) => match module.constants.get(idx as usize) {
+                    Some(Constant::Int(v)) => {
+                        if *v == 0 {
+                            code.push(0x09);
+                        } else if *v == 1 {
+                            code.push(0x0A);
+                        } else {
+                            let cp_idx = *long_indices.get(v).unwrap();
+                            code.push(0x14);
+                            code.extend_from_slice(&cp_idx.to_be_bytes());
+                        }
+                    }
+                    Some(c) => {
+                        if let Constant::String(ref s) = c {
+                            let cp_idx = *string_indices.get(s).unwrap();
+                            code.push(0x13);
+                            code.extend_from_slice(&cp_idx.to_be_bytes());
+                        } else {
+                            return Err(JvmAotError::UnsupportedOpcode(
+                                "Push-non-int".to_string(),
+                            ));
+                        }
+                    }
+                    None => {
+                        return Err(JvmAotError::Decode("const out of range".to_string()));
+                    }
+                },
+                Instruction::Pop => {
+                    code.push(0x57);
+                }
+                Instruction::StringConst(s) => {
+                    let cp_idx = *string_indices.get(&s).unwrap();
+                    code.push(0x13);
+                    code.extend_from_slice(&cp_idx.to_be_bytes());
+                }
+                Instruction::StringConcat => {
+                    code.push(0xB6);
+                    code.extend_from_slice(&idx_concat_mref.to_be_bytes());
+                }
+                Instruction::StringLenBytes | Instruction::StringLenChars => {
+                    code.push(0xB6);
+                    code.extend_from_slice(&idx_length_mref.to_be_bytes());
+                    code.push(0x85);
+                }
+                Instruction::LoadLocal(i) => match i {
+                    0 => code.push(0x1E),
+                    1 => code.push(0x1F),
+                    2 => code.push(0x20),
+                    3 => code.push(0x21),
+                    _ => {
+                        code.push(0x16);
+                        code.push(i);
+                    }
+                },
+                Instruction::StoreLocal(i) => match i {
+                    0 => code.push(0x3F),
+                    1 => code.push(0x40),
+                    2 => code.push(0x41),
+                    3 => code.push(0x42),
+                    _ => {
+                        code.push(0x37);
+                        code.push(i);
+                    }
+                },
+                Instruction::Jump(off) => {
+                    let target = (i_idx as isize + off as isize) as isize;
+                    if target < 0 {
+                        return Err(JvmAotError::UnsupportedOpcode(
+                            "Jump-negative-target".to_string(),
+                        ));
+                    }
+                    code.push(0xA7);
+                    let pos = code.len();
+                    code.extend_from_slice(&0i16.to_be_bytes());
+                    branches.push((pos, target as usize));
+                }
+                Instruction::JumpIfFalse(off) | Instruction::JumpIfNull(off) => {
+                    let target = (i_idx as isize + off as isize) as isize;
+                    if target < 0 {
+                        return Err(JvmAotError::UnsupportedOpcode(
+                            "JumpIf-negative-target".to_string(),
+                        ));
+                    }
+                    code.push(0x09);
+                    code.push(0x94);
+                    code.push(0x99);
+                    let pos = code.len();
+                    code.extend_from_slice(&0i16.to_be_bytes());
+                    branches.push((pos, target as usize));
+                }
+                Instruction::FFICall(desc, argc) => {
+                    let name = module
+                        .constants
+                        .get(desc as usize)
+                        .and_then(|c| if let Constant::String(s) = c { Some(s.as_str()) } else { None })
+                        .ok_or_else(|| JvmAotError::Decode("ffi name".to_string()))?;
+                    match (name, argc) {
+                        ("print", 1) => {
+                            code.push(0xB2);
+                            code.extend_from_slice(&idx_out_fref.to_be_bytes());
+                            code.push(0x5F);
+                            code.push(0xB6);
+                            code.extend_from_slice(&idx_println_mref.to_be_bytes());
+                            code.push(0x09);
+                        }
+                        ("read_file", 1) => {
+                            code.push(0x03);
+                            code.push(0xBD);
+                            code.extend_from_slice(&idx_cls_str.to_be_bytes());
+                            code.push(0xB8);
+                            code.extend_from_slice(&idx_paths_get_mref.to_be_bytes());
+                            code.push(0xB8);
+                            code.extend_from_slice(&idx_files_read_mref.to_be_bytes());
+                            code.push(0x13);
+                            code.extend_from_slice(&idx_utf8_str.to_be_bytes());
+                            code.push(0xBB);
+                            code.extend_from_slice(&idx_cls_str.to_be_bytes());
+                            code.push(0x5C);
+                            code.push(0x57);
+                            code.push(0xB7);
+                            code.extend_from_slice(&idx_init_mref.to_be_bytes());
+                        }
+                        ("write_file", 2) => {
+                            code.push(0x13);
+                            code.extend_from_slice(&idx_utf8_str.to_be_bytes());
+                            code.push(0xB6);
+                            code.extend_from_slice(&idx_getbytes_mref.to_be_bytes());
+                            code.push(0x03);
+                            code.push(0xBD);
+                            code.extend_from_slice(&idx_cls_str.to_be_bytes());
+                            code.push(0xB8);
+                            code.extend_from_slice(&idx_paths_get_mref.to_be_bytes());
+                            code.push(0x5F);
+                            code.push(0x03);
+                            code.push(0xBD);
+                            code.extend_from_slice(&idx_cls_openopt.to_be_bytes());
+                            code.push(0xB8);
+                            code.extend_from_slice(&idx_files_write_mref.to_be_bytes());
+                            code.push(0x57);
+                            code.push(0x0A);
+                        }
+                        ("len", 1) => {
+                            code.push(0xB6);
+                            code.extend_from_slice(&idx_length_mref.to_be_bytes());
+                            code.push(0x85);
+                        }
+                        ("eq", 2) => {
+                            let idx_eq_utf8 = cp_utf8(&mut cp, "equals", &mut cp_count);
+                            let idx_eq_desc_utf8 =
+                                cp_utf8(&mut cp, "(Ljava/lang/Object;)Z", &mut cp_count);
+                            let idx_eq_nat =
+                                cp_name_and_type(&mut cp, idx_eq_utf8, idx_eq_desc_utf8, &mut cp_count);
+                            let idx_eq_mref = cp_methodref(&mut cp, idx_cls_str, idx_eq_nat, &mut cp_count);
+                            code.push(0xB6);
+                            code.extend_from_slice(&idx_eq_mref.to_be_bytes());
+                            code.push(0x85);
+                        }
+                        ("add", 2) => {
+                            code.push(0x61);
+                        }
+                        _ => {
+                            return Err(JvmAotError::UnsupportedOpcode(format!("FFICall({},{})", name, argc)));
+                        }
+                    }
+                }
+                Instruction::Call(target_idx, argc) => {
+                    let callee = module
+                        .chunks
+                        .get(target_idx as usize)
+                        .ok_or_else(|| JvmAotError::Decode("callee out of range".to_string()))?;
+                    let need_pad = if (argc as u16) >= callee.locals {
+                        0
+                    } else {
+                        (callee.locals - argc as u16) as usize
+                    };
+                    for _ in 0..need_pad {
+                        code.push(0x09);
+                    }
+                    code.push(0x01);
+                    code.push(0xB8);
+                    let mr = chunk_mref_idx[target_idx as usize];
+                    code.extend_from_slice(&mr.to_be_bytes());
+                }
+                Instruction::Return => {
+                    code.push(0xAD);
+                }
+                Instruction::Halt => {
+                    code.push(0x09);
+                    code.push(0xAD);
+                }
+                other => {
+                    return Err(JvmAotError::UnsupportedOpcode(format!("{:?}", other)));
+                }
+            }
+        }
+        for (pos, target_idx) in branches.iter().copied() {
+            if target_idx >= ins_offsets.len() {
+                return Err(JvmAotError::Decode(
+                    "branch target out of range".to_string(),
+                ));
+            }
+            let target_off = ins_offsets[target_idx] as i32;
+            let next_off = (pos as i32) + 2;
+            let rel = target_off - next_off;
+            let rel16 = rel as i16;
+            let bytes = rel16.to_be_bytes();
+            code[pos] = bytes[0];
+            code[pos + 1] = bytes[1];
+        }
+        let code_len = code.len() as u32;
+        let max_stack = ch.max_stack;
+        let max_locals = ch.locals * 2 + 1;
+        let attr_len = 12 + code_len;
+        class.extend_from_slice(&attr_len.to_be_bytes());
+        class.extend_from_slice(&max_stack.to_be_bytes());
+        class.extend_from_slice(&max_locals.to_be_bytes());
+        class.extend_from_slice(&code_len.to_be_bytes());
+        class.extend_from_slice(&code);
+        class.extend_from_slice(&0u16.to_be_bytes());
+        class.extend_from_slice(&0u16.to_be_bytes());
+    }
+    {
+        class.extend_from_slice(&0x0009u16.to_be_bytes());
+        class.extend_from_slice(&idx_main_name.to_be_bytes());
+        class.extend_from_slice(&idx_main_desc.to_be_bytes());
+        class.extend_from_slice(&1u16.to_be_bytes());
+        class.extend_from_slice(&idx_code_utf8.to_be_bytes());
+        let mut code: Vec<u8> = Vec::new();
+        let main_chunk = &module.chunks[0];
+        for _ in 0..main_chunk.locals {
+            code.push(0x09);
+        }
+        code.push(0x01);
+        code.push(0xB8);
+        let mr = chunk_mref_idx[0];
+        code.extend_from_slice(&mr.to_be_bytes());
+        code.push(0x58);
+        code.push(0xB1);
+        let code_len = code.len() as u32;
+        let max_stack = main_chunk.max_stack.max(4);
+        let max_locals = 1;
+        let attr_len = 12 + code_len;
+        class.extend_from_slice(&attr_len.to_be_bytes());
+        class.extend_from_slice(&(max_stack as u16).to_be_bytes());
+        class.extend_from_slice(&(max_locals as u16).to_be_bytes());
+        class.extend_from_slice(&code_len.to_be_bytes());
+        class.extend_from_slice(&code);
+        class.extend_from_slice(&0u16.to_be_bytes());
+        class.extend_from_slice(&0u16.to_be_bytes());
+    }
+
+    class.extend_from_slice(&0u16.to_be_bytes());
+    Ok(class)
+}
+
+fn write_jar_for_vm(path: &str, class_bytes: &[u8]) -> std::io::Result<()> {
+    use std::fs;
+    use std::io::Write;
+    use zip::write::FileOptions;
+    let file = fs::File::create(path)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = FileOptions::default();
+    zip.start_file("META-INF/MANIFEST.MF", opts)?;
+    zip.write_all(b"Manifest-Version: 1.0\nMain-Class: Main\n")?;
+    zip.start_file("Main.class", opts)?;
+    zip.write_all(class_bytes)?;
+    zip.finish()?;
+    Ok(())
 }
 
 fn key_is_string(v: &Value) -> bool {
@@ -1825,6 +2323,39 @@ impl NyarVM {
                             }
                             self.push(Value::bool(ok));
                         }
+                        "compile_jvm" => {
+                            let mut nyarc_path = String::new();
+                            let mut jar_path = String::new();
+                            for v in &args {
+                                if v.tag == ValueTag::String {
+                                    let s = unsafe { v.as_string().clone() };
+                                    if s.ends_with(".nyarc") && nyarc_path.is_empty() {
+                                        nyarc_path = s;
+                                    } else if s.ends_with(".jar") && jar_path.is_empty() {
+                                        jar_path = s;
+                                    }
+                                }
+                            }
+                            let mut ok = false;
+                            unsafe {
+                                use std::fs;
+                                if !nyarc_path.is_empty() && !jar_path.is_empty() {
+                                    if let Ok(data) = fs::read(&nyarc_path) {
+                                        if let Ok(module) = NyarcModule::parse(&data) {
+                                            if let Ok(class_bytes) =
+                                                compile_module_to_jvm_for_vm(&module)
+                                            {
+                                                if write_jar_for_vm(&jar_path, &class_bytes).is_ok()
+                                                {
+                                                    ok = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            self.push(Value::bool(ok));
+                        }
                         "print" => {
                             if let Some(v) = args.last() {
                                 let msg = match v.tag {
@@ -1968,8 +2499,37 @@ impl NyarVM {
                                 let idx = unsafe { idx_v.as_int() } as usize;
                                 let c = s.chars().nth(idx).map(|c| c.to_string()).unwrap_or_default();
                                 self.push(Value::string(c));
+                            } else if container.tag == ValueTag::List && idx_v.tag == ValueTag::Int {
+                                let list = unsafe { container.as_list() };
+                                let idx = unsafe { idx_v.as_int() } as usize;
+                                if idx < list.items.len() {
+                                    self.push(list.items[idx]);
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            } else if container.tag == ValueTag::Array && idx_v.tag == ValueTag::Int {
+                                let arr = unsafe { container.as_array() };
+                                let idx = unsafe { idx_v.as_int() } as usize;
+                                if idx < arr.items.len() {
+                                    self.push(arr.items[idx]);
+                                } else {
+                                    self.push(Value::null());
+                                }
                             } else {
                                 self.push(Value::null());
+                            }
+                        }
+                        "chars" => {
+                            if let Some(v) = args.last() {
+                                if v.tag == ValueTag::String {
+                                    let s = unsafe { v.as_string() };
+                                    let items: Vec<Value> = s.chars().map(|c| Value::string(c.to_string())).collect();
+                                    self.push(Value::list(items));
+                                } else {
+                                    self.push(Value::list(vec![]));
+                                }
+                            } else {
+                                self.push(Value::list(vec![]));
                             }
                         }
                         "str" => {

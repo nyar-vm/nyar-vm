@@ -515,8 +515,7 @@ imply Compiler {
     let wc = w.emit_component(lir_mod)
     self.write_file(w.component_output_path(), wc)
     let j = new JVMBackend
-    let jb = j.emit(lir_mod)
-    self.write_file(j.output_path(), jb)
+    j.emit(lir_mod)
     let c = new CLRBackend
     let cb = c.emit(lir_mod)
     self.write_file(c.output_path(), cb)

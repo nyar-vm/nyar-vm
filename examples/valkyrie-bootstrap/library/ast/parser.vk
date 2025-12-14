@@ -142,8 +142,47 @@ imply Parser {
         }
     }
   }
-  micro parse_term(self) {
+  micro parse_args_expr(self) {
+     let args = new List
+     if self.cur.__variant__ == "LParen" {
+        self.advance()
+        while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
+           let e = self.parse_expr()
+           args.push(e)
+           if self.cur.__variant__ == "Comma" {
+              self.advance()
+           }
+        }
+        if self.cur.__variant__ == "RParen" { self.advance() }
+     }
+     return args
+  }
+
+  micro parse_postfix(self) {
     let left = self.parse_primary()
+    loop {
+      let tag = self.cur.__variant__
+      if tag == "Dot" {
+         self.advance()
+         if self.cur.__variant__ == "Identifier" {
+            let name = self.cur._0
+            self.advance()
+            left = Expr::Field(left, name)
+         }
+      } else {
+         if tag == "LParen" {
+            let args = self.parse_args_expr()
+            left = Expr::Call(left, args)
+         } else {
+            break
+         }
+      }
+    }
+    return left
+  }
+
+  micro parse_term(self) {
+    let left = self.parse_postfix()
     loop {
       let tag = self.cur.__variant__
       if tag == "Star" {
@@ -196,9 +235,42 @@ imply Parser {
     }
     return left
   }
+  micro parse_decorators(self) {
+     let acc = new List
+     while self.cur.__variant__ == "At" {
+        self.advance()
+        let kind = "Macro"
+        if self.cur.__variant__ == "Dot" {
+           self.advance()
+           kind = "Annotation"
+        }
+        let name = ""
+        if self.cur.__variant__ == "Identifier" {
+           name = self.cur._0
+           self.advance()
+        }
+        let args = new List
+        if self.cur.__variant__ == "LParen" {
+           args = self.parse_args_expr()
+        }
+        let d = new Decorator
+        d.kind = kind
+        d.name = name
+        d.args = args
+        acc.push(d)
+     }
+     return acc
+  }
+
   micro parse_stmt(self) {
     let tag = self.cur.__variant__
     
+    if tag == "At" {
+        let decorators = self.parse_decorators()
+        let stmt = self.parse_stmt()
+        return Stmt::Decorated(decorators, stmt)
+    }
+
     if tag == "KwNamespace" {
         self.advance()
         let name = self.parse_path()
@@ -237,6 +309,16 @@ imply Parser {
         let args = self.parse_args_typed()
         let body = self.parse_block()
         return Stmt::Micro(name, args, body)
+    } else if tag == "KwMacro" {
+        self.advance()
+        let name = ""
+        if self.cur.__variant__ == "Identifier" {
+            name = self.cur._0
+            self.advance()
+        }
+        let args = self.parse_args_typed()
+        let body = self.parse_block()
+        return Stmt::Macro(name, args, body)
     } else if tag == "KwEnum" {
         self.advance()
         let name = ""
