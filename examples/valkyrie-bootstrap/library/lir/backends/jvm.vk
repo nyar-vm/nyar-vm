@@ -6,7 +6,7 @@ class JVMBackend { }
 
 imply JVMBackend {
   micro emit(self, lir) {
-    let in_path = "examples/valkyrie-bootstrap/target/vcc.nyarc"
+    let in_path = "examples/valkyrie-bootstrap/target/vcc_new.nyarc"
     let out_path = self.output_path()
     let ok = compile_jvm(in_path, out_path)
     if ok {
@@ -17,6 +17,6 @@ imply JVMBackend {
     return ""
   }
   micro output_path(self) {
-    return "examples/valkyrie-bootstrap/target/vcc.jar"
+    return "examples/valkyrie-bootstrap/target/vcc_new.jar"
   }
 }

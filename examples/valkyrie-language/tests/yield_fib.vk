@@ -1,0 +1,21 @@
+class Fib { a, b, i }
+let f = new Fib
+f.a = 0
+f.b = 1
+f.i = 0
+let n = 8
+while f.i < n {
+  yield f.a
+  let t = f.a + f.b
+  f.a = f.b
+  f.b = t
+  f.i = f.i + 1
+}
+# Expect: 0
+# Expect: 1
+# Expect: 1
+# Expect: 2
+# Expect: 3
+# Expect: 5
+# Expect: 8
+# Expect: 13

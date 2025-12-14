@@ -31,7 +31,7 @@ imply Compiler {
     self.finalize_inherent_impls()
     let all_chunks = self.collect_all_chunks()
     let module_bytes = self.encode_module(all_chunks)
-    let out_path = "examples/valkyrie-bootstrap/target/vcc.nyarc"
+    let out_path = "examples/valkyrie-bootstrap/target/vcc_new.nyarc"
     let ok = self.write_file(out_path, module_bytes)
     if ok {
       print("vcc written")
