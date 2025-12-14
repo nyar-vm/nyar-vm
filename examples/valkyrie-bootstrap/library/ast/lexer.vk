@@ -1,48 +1,52 @@
 namespace package::lexer;
 
-enum Token {
-  EOF(u),
-  Identifier(x),
-  String(x),
-  Integer(x),
-  KwTrue(u),
-  KwFalse(u),
-  Plus(u),
-  Minus(u),
-  Star(u),
-  Slash(u),
-  LParen(u),
-  RParen(u),
-  LBrace(u),
-  RBrace(u),
-  Eq(u),
-  EqEq(u),
-  Arrow(u),
-  Semi(u),
-  KwLet(u),
-  KwPrint(u),
-  KwIf(u),
-  KwElse(u),
-  KwWhile(u),
-  KwMicro(u),
-  KwMacro(u),
-  KwClass(u),
-  KwEnum(u),
-  KwReturn(u),
-  KwNamespace(u),
-  KwUsing(u),
-  KwImply(u),
-  Comma(u),
-  Colon(u),
-  Pipe(u),
-  Amp(u),
-  Question(u),
-  At(u),
-  Dot(u),
-  KwMatch(u)
+enum TokenKind {
+  EOF,
+  Identifier(name),
+  String(content),
+  Integer(literal),
+  KwTrue,
+  KwFalse,
+  Plus,
+  Minus,
+  Star,
+  Slash,
+  LParen,
+  RParen,
+  LBrace,
+  RBrace,
+  Eq,
+  EqEq,
+  Arrow,
+  Semi,
+  KwLet,
+  KwPrint,
+  KwIf,
+  KwElse,
+  KwWhile,
+  KwMicro,
+  KwMacro,
+  KwClass,
+  KwEnum,
+  KwReturn,
+  KwNamespace,
+  KwUsing,
+  KwImply,
+  Comma,
+  Colon,
+  Pipe,
+  Amp,
+  Question,
+  At,
+  Dot,
+  KwMatch,
+  KwCase
 }
 
-class Lexer { input, pos, len, ch }
+class Span { file, start, end, line, col }
+class Token { kind, span }
+
+class Lexer { input, pos, len, ch, line, col }
 
 imply Lexer {
   micro new(input) {
@@ -51,28 +55,36 @@ imply Lexer {
     l.pos = 0
     l.len = len(l.input)
     l.ch = "\0"
+    l.line = 1
+    l.col = 1
     l.read_char()
     return l
   }
   micro read_char(self) {
       if self.pos >= self.len {
-        self.ch = "\0"
+        self.ch = ""
       } else {
         self.ch = get(self.pos, self.input)
       }
       self.pos = self.pos + 1
+      if self.ch == "\n" {
+         self.line = self.line + 1
+         self.col = 1
+      } else {
+         self.col = self.col + 1
+      }
     }
 
   micro peek_char(self) {
     if self.pos >= self.len {
-      return "\0"
+      return ""
     } else {
       return get(self.pos, self.input)
     }
   }
 
   micro is_eof(self) {
-    return self.ch == "\0"
+    return self.ch == ""
   }
 
   micro is_digit(c) {
@@ -122,136 +134,106 @@ imply Lexer {
       }
       break
     }
-    let token = self._next_token_impl()
-    return token
+    let start_pos = self.pos
+    let start_line = self.line
+    let start_col = self.col
+    
+    let kind = self._next_token_impl()
+    
+    let span = new Span
+    span.start = start_pos
+    span.end = self.pos
+    span.line = start_line
+    span.col = start_col
+    
+    let tok = new Token
+    tok.kind = kind
+    tok.span = span
+    return tok
   }
 
   micro _next_token_impl(self) {
     let c = self.ch
-    if c == "\0" {
-      return Token::EOF(0)
-    } else if c == "+" {
-      self.read_char()
-      return Token::Plus(0)
-    } else if c == "-" {
-      self.read_char()
-      return Token::Minus(0)
-    } else if c == "*" {
-      self.read_char()
-      return Token::Star(0)
-    } else if c == "/" {
-      self.read_char()
-      return Token::Slash(0)
-    } else if c == "(" {
-      self.read_char()
-      return Token::LParen(0)
-    } else if c == ")" {
-      self.read_char()
-      return Token::RParen(0)
-    } else if c == "{" {
-      self.read_char()
-      return Token::LBrace(0)
-    } else if c == "}" {
-      self.read_char()
-      return Token::RBrace(0)
-    } else if c == "=" {
-      let p = self.peek_char()
-      if p == "=" {
-        self.read_char()
-        self.read_char()
-        return Token::EqEq(0)
-      } else {
-        if p == ">" {
+    match c {
+       case "": { return TokenKind::EOF }
+       case "+": { self.read_char(); return TokenKind::Plus }
+       case "-": { self.read_char(); return TokenKind::Minus }
+       case "*": { self.read_char(); return TokenKind::Star }
+       case "/": { self.read_char(); return TokenKind::Slash }
+       case "(": { self.read_char(); return TokenKind::LParen }
+       case ")": { self.read_char(); return TokenKind::RParen }
+       case "{": { self.read_char(); return TokenKind::LBrace }
+       case "}": { self.read_char(); return TokenKind::RBrace }
+       case ",": { self.read_char(); return TokenKind::Comma }
+       case ":": { self.read_char(); return TokenKind::Colon }
+       case "|": { self.read_char(); return TokenKind::Pipe }
+       case "&": { self.read_char(); return TokenKind::Amp }
+       case "?": { self.read_char(); return TokenKind::Question }
+       case "@": { self.read_char(); return TokenKind::At }
+       case ".": { self.read_char(); return TokenKind::Dot }
+       case ";": { self.read_char(); return TokenKind::Semi }
+       case "=": {
+          let p = self.peek_char()
+          if p == "=" {
+             self.read_char(); self.read_char()
+             return TokenKind::EqEq
+          } else if p == ">" {
+             self.read_char(); self.read_char()
+             return TokenKind::Arrow
+          } else {
+             self.read_char()
+             return TokenKind::Eq
+          }
+       }
+       case "\"": {
+          let s = self.read_string()
           self.read_char()
-          self.read_char()
-          return Token::Arrow(0)
-        } else {
-          self.read_char()
-          return Token::Eq(0)
-        }
-      }
-    } else if c == "," {
-      self.read_char()
-      return Token::Comma(0)
-    } else if c == ":" {
-      self.read_char()
-      return Token::Colon(0)
-    } else if c == "|" {
-      self.read_char()
-      return Token::Pipe(0)
-    } else if c == "&" {
-      self.read_char()
-      return Token::Amp(0)
-    } else if c == "?" {
-      self.read_char()
-      return Token::Question(0)
-    } else if c == "@" {
-      self.read_char()
-      return Token::At(0)
-    } else if c == "." {
-      self.read_char()
-      return Token::Dot(0)
-    } else if c == ";" {
-      self.read_char()
-      return Token::Semi(0)
-    } else if c == "\"" {
-      let s = self.read_string()
-      self.read_char()
-      return Token::String(s)
-    } else if Lexer::is_alpha(c) {
-      let lit = self.read_identifier()
-      if lit == "let" {
-        return Token::KwLet(0)
-      } else if lit == "print" {
-        return Token::KwPrint(0)
-      } else if lit == "if" {
-        return Token::KwIf(0)
-      } else if lit == "else" {
-        return Token::KwElse(0)
-      } else if lit == "while" {
-        return Token::KwWhile(0)
-      } else if lit == "micro" {
-        return Token::KwMicro(0)
-      } else if lit == "macro" {
-        return Token::KwMacro(0)
-      } else if lit == "class" {
-        return Token::KwClass(0)
-      } else if lit == "enum" {
-        return Token::KwEnum(0)
-      } else if lit == "return" {
-        return Token::KwReturn(0)
-      } else if lit == "namespace" {
-        return Token::KwNamespace(0)
-      } else if lit == "using" {
-        return Token::KwUsing(0)
-      } else if lit == "imply" {
-        return Token::KwImply(0)
-      } else if lit == "match" {
-        return Token::KwMatch(0)
-      } else if lit == "true" {
-        return Token::KwTrue(0)
-      } else if lit == "false" {
-        return Token::KwFalse(0)
-      } else {
-        return Token::Identifier(lit)
-      }
-    } else if Lexer::is_digit(c) {
-      let num = self.read_number()
-      return Token::Integer(num)
-    } else {
-      self.read_char()
-      return Token::Identifier(c)
+          return TokenKind::String(s)
+       }
+       case _: {
+          if Lexer::is_alpha(c) {
+             let lit = self.read_identifier()
+             match lit {
+                case "let": { return TokenKind::KwLet }
+                case "print": { return TokenKind::KwPrint }
+                case "if": { return TokenKind::KwIf }
+                case "else": { return TokenKind::KwElse }
+                case "while": { return TokenKind::KwWhile }
+                case "micro": { return TokenKind::KwMicro }
+                case "macro": { return TokenKind::KwMacro }
+                case "class": { return TokenKind::KwClass }
+                case "enum": { return TokenKind::KwEnum }
+                case "return": { return TokenKind::KwReturn }
+                case "namespace": { return TokenKind::KwNamespace }
+                case "using": { return TokenKind::KwUsing }
+                case "imply": { return TokenKind::KwImply }
+                case "match": { return TokenKind::KwMatch }
+                case "case": { return TokenKind::KwCase }
+                case "true": { return TokenKind::KwTrue }
+                case "false": { return TokenKind::KwFalse }
+                case _: { return TokenKind::Identifier(lit) }
+             }
+          } else {
+             if Lexer::is_digit(c) {
+                let num = self.read_number()
+                return TokenKind::Integer(num)
+             } else {
+                self.read_char()
+                return TokenKind::Identifier(c)
+             }
+          }
+       }
     }
   }
   micro skip_comment(self) {
-    while self.ch != "\n" && self.ch != "\r" && self.ch != "\0" {
+    while self.ch != "\n" && self.ch != "\r" && self.ch != "" {
       self.read_char()
     }
   }
   micro read_string(self) {
     self.read_char()
     let s = ""
-    while self.ch != "\"" && self.ch != "\0" {
+    while self.ch != "\"" && self.ch != "" {
       s = s + self.ch
       self.read_char()
     }

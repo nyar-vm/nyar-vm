@@ -1,8 +1,9 @@
 namespace package::hir;
 
-class Module { ns, imports, funcs, class_list, impl_list, init_stmts }
+class Module { ns, imports, funcs, macros, class_list, impl_list, init_stmts }
 
 class HIRFunc { name, args, body }
+class HIRMacro { name, args, body }
 class HIRClass { name, fields }
 class HIRImpl { class_name, methods }
 
@@ -12,6 +13,7 @@ imply Module {
     m.ns = ""
     m.imports = new List
     m.funcs = new List
+    m.macros = new List
     m.class_list = new List
     m.impl_list = new List
     m.init_stmts = new List
@@ -22,6 +24,16 @@ imply Module {
 imply HIRFunc {
   micro new(name, args, body) {
     let f = new HIRFunc
+    f.name = name
+    f.args = args
+    f.body = body
+    return f
+  }
+}
+
+imply HIRMacro {
+  micro new(name, args, body) {
+    let f = new HIRMacro
     f.name = name
     f.args = args
     f.body = body

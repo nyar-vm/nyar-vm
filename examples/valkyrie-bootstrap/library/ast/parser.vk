@@ -15,32 +15,33 @@ imply Parser {
   micro advance(self) {
     self.cur = self.lex.next_token()
   }
+  micro current_kind(self) {
+    return self.cur.kind
+  }
   micro expect_semi(self) {
-    let tag = self.cur.__variant__
-    if tag == "Semi" {
-        self.advance()
-    } else {
+    match self.current_kind() {
+       case TokenKind::Semi: { self.advance() }
+       case _: { }
     }
   }
   micro expect_rparen(self) {
-    let tag = self.cur.__variant__
-    if tag == "RParen" {
-        self.advance()
-    } else {
+    match self.current_kind() {
+       case TokenKind::RParen: { self.advance() }
+       case _: { }
     }
   }
   micro parse_path(self) {
     let path = ""
-    if self.cur.__variant__ == "Identifier" {
-       path = self.cur._0
+    if self.current_kind().__variant__ == "Identifier" {
+       path = self.current_kind()._0
        self.advance()
-       while self.cur.__variant__ == "Colon" {
+       while self.current_kind().__variant__ == "Colon" {
           self.advance()
-          if self.cur.__variant__ == "Colon" {
+          if self.current_kind().__variant__ == "Colon" {
              self.advance()
              path = path + "::"
-             if self.cur.__variant__ == "Identifier" {
-                path = path + self.cur._0
+             if self.current_kind().__variant__ == "Identifier" {
+                path = path + self.current_kind()._0
                 self.advance()
              }
           }
@@ -51,109 +52,105 @@ imply Parser {
 
   micro parse_fields(self) {
      let fields = new List
-     if self.cur.__variant__ == "LBrace" {
+     if self.current_kind().__variant__ == "LBrace" {
         self.advance()
-        while self.cur.__variant__ != "RBrace" && self.cur.__variant__ != "EOF" {
-           if self.cur.__variant__ == "Identifier" {
-              fields.push(self.cur._0)
+        while self.current_kind().__variant__ != "RBrace" && self.current_kind().__variant__ != "EOF" {
+           if self.current_kind().__variant__ == "Identifier" {
+              fields.push(self.current_kind()._0)
               self.advance()
            }
-           if self.cur.__variant__ == "Comma" {
+           if self.current_kind().__variant__ == "Comma" {
               self.advance()
            }
         }
-        if self.cur.__variant__ == "RBrace" { self.advance() }
+        if self.current_kind().__variant__ == "RBrace" { self.advance() }
      }
      return fields
   }
 
   micro parse_args(self) {
      let args = new List
-     if self.cur.__variant__ == "LParen" {
+     if self.current_kind().__variant__ == "LParen" {
         self.advance()
-        while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
-           if self.cur.__variant__ == "Identifier" {
-              args.push(self.cur._0)
+        while self.current_kind().__variant__ != "RParen" && self.current_kind().__variant__ != "EOF" {
+           if self.current_kind().__variant__ == "Identifier" {
+              args.push(self.current_kind()._0)
               self.advance()
            }
-           if self.cur.__variant__ == "Comma" {
+           if self.current_kind().__variant__ == "Comma" {
               self.advance()
            }
         }
-        if self.cur.__variant__ == "RParen" { self.advance() }
+        if self.current_kind().__variant__ == "RParen" { self.advance() }
      }
      return args
   }
 
   micro parse_impl_body(self) {
      let methods = new List
-     if self.cur.__variant__ == "LBrace" {
+     if self.current_kind().__variant__ == "LBrace" {
         self.advance()
-        while self.cur.__variant__ != "RBrace" && self.cur.__variant__ != "EOF" {
-           if self.cur.__variant__ == "KwMicro" {
+        while self.current_kind().__variant__ != "RBrace" && self.current_kind().__variant__ != "EOF" {
+           if self.current_kind().__variant__ == "KwMicro" {
               let m = self.parse_stmt()
               methods.push(m)
            } else {
               self.advance()
            }
         }
-        if self.cur.__variant__ == "RBrace" { self.advance() }
+        if self.current_kind().__variant__ == "RBrace" { self.advance() }
      }
      return methods
   }
 
   micro parse_primary(self) {
-    let tag = self.cur.__variant__
-    if tag == "Integer" {
-        let v = self.cur._0
-        self.advance()
-        return Expr::Int(v)
-    } else {
-        if tag == "String" {
-            let v = self.cur._0
-            self.advance()
-            return Expr::String(v)
-        } else {
-            if tag == "KwTrue" {
-                self.advance()
-                return Expr::Bool(1)
-            } else {
-            if tag == "KwFalse" {
-                self.advance()
-                return Expr::Bool(0)
-            } else {
-            if tag == "Identifier" {
-                let name = self.cur._0
-                self.advance()
-                return Expr::Variable(name)
-            } else {
-                if tag == "LParen" {
-                    self.advance()
-                    let e = self.parse_expr()
-                    self.expect_rparen()
-                    return e
-                } else {
-                    self.advance()
-                    return Expr::Int(0)
-                }
-            }
-            }
-            }
-        }
+    let kind = self.current_kind()
+    let span = self.cur.span
+    match kind {
+       case TokenKind::Integer(v): {
+          self.advance()
+          return Expr::Int(v, span)
+       }
+       case TokenKind::String(v): {
+          self.advance()
+          return Expr::String(v, span)
+       }
+       case TokenKind::KwTrue: {
+          self.advance()
+          return Expr::Bool(1, span)
+       }
+       case TokenKind::KwFalse: {
+          self.advance()
+          return Expr::Bool(0, span)
+       }
+       case TokenKind::Identifier(name): {
+          self.advance()
+          return Expr::Variable(name, span)
+       }
+       case TokenKind::LParen: {
+          self.advance()
+          let e = self.parse_expr()
+          self.expect_rparen()
+          return e
+       }
+       case _: {
+          self.advance()
+          return Expr::Int(0, span)
+       }
     }
   }
   micro parse_args_expr(self) {
      let args = new List
-     if self.cur.__variant__ == "LParen" {
+     if self.current_kind().__variant__ == "LParen" {
         self.advance()
-        while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
+        while self.current_kind().__variant__ != "RParen" && self.current_kind().__variant__ != "EOF" {
            let e = self.parse_expr()
            args.push(e)
-           if self.cur.__variant__ == "Comma" {
+           if self.current_kind().__variant__ == "Comma" {
               self.advance()
            }
         }
-        if self.cur.__variant__ == "RParen" { self.advance() }
+        if self.current_kind().__variant__ == "RParen" { self.advance() }
      }
      return args
   }
@@ -161,21 +158,22 @@ imply Parser {
   micro parse_postfix(self) {
     let left = self.parse_primary()
     loop {
-      let tag = self.cur.__variant__
-      if tag == "Dot" {
-         self.advance()
-         if self.cur.__variant__ == "Identifier" {
-            let name = self.cur._0
-            self.advance()
-            left = Expr::Field(left, name)
+      let tag = self.current_kind().__variant__
+      let span = self.cur.span
+      match tag {
+         "Dot" => {
+             self.advance()
+             if self.current_kind().__variant__ == "Identifier" {
+                let name = self.current_kind()._0
+                self.advance()
+                left = Expr::Field(left, name, span)
+             }
          }
-      } else {
-         if tag == "LParen" {
-            let args = self.parse_args_expr()
-            left = Expr::Call(left, args)
-         } else {
-            break
+         "LParen" => {
+             let args = self.parse_args_expr()
+             left = Expr::Call(left, args, span)
          }
+         _ => { break }
       }
     }
     return left
@@ -184,19 +182,20 @@ imply Parser {
   micro parse_term(self) {
     let left = self.parse_postfix()
     loop {
-      let tag = self.cur.__variant__
-      if tag == "Star" {
-          self.advance()
-          let right = self.parse_primary()
-          left = Expr::Mul(left, right)
-      } else {
-         if tag == "Slash" {
-            self.advance()
-            let right = self.parse_primary()
-            left = Expr::Div(left, right)
-         } else {
-            break
+      let tag = self.current_kind().__variant__
+      let span = self.cur.span
+      match tag {
+         "Star" => {
+             self.advance()
+             let right = self.parse_primary()
+             left = Expr::Mul(left, right, span)
          }
+         "Slash" => {
+             self.advance()
+             let right = self.parse_primary()
+             left = Expr::Div(left, right, span)
+         }
+         _ => { break }
       }
     }
     return left
@@ -204,19 +203,20 @@ imply Parser {
   micro parse_add(self) {
     let left = self.parse_term()
     loop {
-      let tag = self.cur.__variant__
-      if tag == "Plus" {
-          self.advance()
-          let right = self.parse_term()
-          left = Expr::Add(left, right)
-      } else {
-          if tag == "Minus" {
-              self.advance()
-              let right = self.parse_term()
-              left = Expr::Sub(left, right)
-          } else {
-              break
-          }
+      let tag = self.current_kind().__variant__
+      let span = self.cur.span
+      match tag {
+         "Plus" => {
+             self.advance()
+             let right = self.parse_term()
+             left = Expr::Add(left, right, span)
+         }
+         "Minus" => {
+             self.advance()
+             let right = self.parse_term()
+             left = Expr::Sub(left, right, span)
+         }
+         _ => { break }
       }
     }
     return left
@@ -224,33 +224,35 @@ imply Parser {
   micro parse_expr(self) {
     let left = self.parse_add()
     loop {
-      let tag = self.cur.__variant__
-      if tag == "EqEq" {
-        self.advance()
-        let right = self.parse_add()
-        left = Expr::Eq(left, right)
-      } else {
-        break
+      let tag = self.current_kind().__variant__
+      let span = self.cur.span
+      match tag {
+         "EqEq" => {
+             self.advance()
+             let right = self.parse_add()
+             left = Expr::Eq(left, right, span)
+         }
+         _ => { break }
       }
     }
     return left
   }
   micro parse_decorators(self) {
      let acc = new List
-     while self.cur.__variant__ == "At" {
+     while self.current_kind().__variant__ == "At" {
         self.advance()
         let kind = "Macro"
-        if self.cur.__variant__ == "Dot" {
+        if self.current_kind().__variant__ == "Dot" {
            self.advance()
            kind = "Annotation"
         }
         let name = ""
-        if self.cur.__variant__ == "Identifier" {
-           name = self.cur._0
+        if self.current_kind().__variant__ == "Identifier" {
+           name = self.current_kind()._0
            self.advance()
         }
         let args = new List
-        if self.cur.__variant__ == "LParen" {
+        if self.current_kind().__variant__ == "LParen" {
            args = self.parse_args_expr()
         }
         let d = new Decorator
@@ -263,343 +265,504 @@ imply Parser {
   }
 
   micro parse_stmt(self) {
-    let tag = self.cur.__variant__
-    
-    if tag == "At" {
-        let decorators = self.parse_decorators()
-        let stmt = self.parse_stmt()
-        return Stmt::Decorated(decorators, stmt)
-    }
-
-    if tag == "KwNamespace" {
-        self.advance()
-        let name = self.parse_path()
-        self.expect_semi()
-        return Stmt::Namespace(name)
-    } else if tag == "KwUsing" {
-        self.advance()
-        let path = self.parse_path()
-        self.expect_semi()
-        return Stmt::Using(path)
-    } else if tag == "KwClass" {
-        self.advance()
-        let name = ""
-        if self.cur.__variant__ == "Identifier" {
-            name = self.cur._0
+    let kind = self.current_kind()
+    let span = self.cur.span
+    match kind {
+       case TokenKind::At: {
+           let decorators = self.parse_decorators()
+           let stmt = self.parse_stmt()
+           return Stmt::Decorated(decorators, stmt, span)
+       }
+       case TokenKind::KwNamespace: {
+           self.advance()
+           let name = self.parse_path()
+           self.expect_semi()
+           return Stmt::Namespace(name, span)
+       }
+       case TokenKind::KwUsing: {
+           self.advance()
+           let path = self.parse_path()
+           self.expect_semi()
+           return Stmt::Using(path, span)
+       }
+       case TokenKind::KwClass: {
+           self.advance()
+           let name = ""
+           match self.current_kind() {
+               case TokenKind::Identifier(n): {
+                   name = n
+                   self.advance()
+               }
+               case _: {}
+           }
+           let fields = self.parse_fields()
+           return Stmt::Class(name, fields, span)
+       }
+       case TokenKind::KwImply: {
+           self.advance()
+           let name = ""
+           match self.current_kind() {
+               case TokenKind::Identifier(n): {
+                   name = n
+                   self.advance()
+               }
+               case _: {}
+           }
+           let methods = self.parse_impl_body()
+           return Stmt::Imply(name, methods, span)
+       }
+       case TokenKind::KwMicro: {
+           self.advance()
+           let name = ""
+           match self.current_kind() {
+               case TokenKind::Identifier(n): {
+                   name = n
+                   self.advance()
+               }
+               case _: {}
+           }
+           let args = self.parse_args_typed()
+           let body = self.parse_block()
+           return Stmt::Micro(name, args, body, span)
+       }
+       case TokenKind::KwMacro: {
+           self.advance()
+           let name = ""
+           match self.current_kind() {
+               case TokenKind::Identifier(n): {
+                   name = n
+                   self.advance()
+               }
+               case _: {}
+           }
+           let args = self.parse_args_typed()
+           let body = self.parse_block()
+           return Stmt::Macro(name, args, body, span)
+       }
+       case TokenKind::KwEnum: {
+           self.advance()
+           let name = ""
+           match self.current_kind() {
+               case TokenKind::Identifier(n): {
+                   name = n
+                   self.advance()
+               }
+               case _: {}
+           }
+           let variants = self.parse_fields()
+           return Stmt::Enum(name, variants, span)
+       }
+       case TokenKind::KwLet: {
+           self.advance()
+           match self.current_kind() {
+               case TokenKind::Identifier(name): {
+                   self.advance()
+                   let ty = Parser::parse_optional_type(self)
+                   match self.current_kind() {
+                       case TokenKind::Eq: { self.advance() }
+                       case _: {}
+                   }
+                   let val = self.parse_expr()
+                   self.expect_semi()
+                   return Stmt::Let(name, ty, val, span)
+               }
+               case _: {
+                   let v = self.parse_expr()
+                   self.expect_semi()
+                   return Stmt::Expr(v, span)
+               }
+           }
+       }
+       case TokenKind::KwPrint: {
+           self.advance()
+           match self.current_kind() {
+               case TokenKind::LParen: {
+                   self.advance()
+                   let e = self.parse_expr()
+                   self.expect_rparen()
+                   self.expect_semi()
+                   return Stmt::Print(e, span)
+               }
+               case _: {
+                   let e = self.parse_expr()
+                   self.expect_semi()
+                   return Stmt::Print(e, span)
+               }
+           }
+       }
+       case TokenKind::KwIf: {
+           self.advance()
+           let cond = self.parse_expr()
+           let then_branch = self.parse_stmt()
+           let else_branch = Stmt::Block(new List, span)
+           match self.current_kind() {
+               case TokenKind::KwElse: {
+                   self.advance()
+                   else_branch = self.parse_stmt()
+               }
+               case _: {}
+           }
+           return Stmt::If(cond, then_branch, else_branch, span)
+       }
+       case TokenKind::KwMatch: {
+           self.advance()
+           let scrutinee = self.parse_expr()
+           let arms = Parser::parse_match_arms(self)
+           return Stmt::Match(scrutinee, arms, span)
+       }
+       case TokenKind::KwWhile: {
+           self.advance()
+           let cond = self.parse_expr()
+           let body = self.parse_stmt()
+           return Stmt::While(cond, body, span)
+       }
+       case TokenKind::KwReturn: {
             self.advance()
-        }
-        let fields = self.parse_fields()
-        return Stmt::Class(name, fields)
-    } else if tag == "KwImply" {
-        self.advance()
-        let name = ""
-        if self.cur.__variant__ == "Identifier" {
-            name = self.cur._0
-            self.advance()
-        }
-        let methods = self.parse_impl_body()
-        return Stmt::Imply(name, methods)
-    } else if tag == "KwMicro" {
-        self.advance()
-        let name = ""
-        if self.cur.__variant__ == "Identifier" {
-            name = self.cur._0
-            self.advance()
-        }
-        let args = self.parse_args_typed()
-        let body = self.parse_block()
-        return Stmt::Micro(name, args, body)
-    } else if tag == "KwMacro" {
-        self.advance()
-        let name = ""
-        if self.cur.__variant__ == "Identifier" {
-            name = self.cur._0
-            self.advance()
-        }
-        let args = self.parse_args_typed()
-        let body = self.parse_block()
-        return Stmt::Macro(name, args, body)
-    } else if tag == "KwEnum" {
-        self.advance()
-        let name = ""
-        if self.cur.__variant__ == "Identifier" {
-            name = self.cur._0
-            self.advance()
-        }
-        let variants = self.parse_fields()
-        return Stmt::Enum(name, variants)
-    } else if tag == "KwLet" {
-        self.advance()
-        let t = self.cur.__variant__
-        if t == "Identifier" {
-            let name = self.cur._0
-            self.advance()
-            let ty = Parser::parse_optional_type(self)
-            if self.cur.__variant__ == "Eq" { self.advance() }
             let val = self.parse_expr()
             self.expect_semi()
-            return Stmt::Let(name, ty, val)
-        } else {
-            let v = self.parse_expr()
-            self.expect_semi()
-            return Stmt::Expr(v)
-        }
-    } else {
-        if tag == "KwPrint" {
-            self.advance()
-            let t = self.cur.__variant__
-            if t == "LParen" {
-                self.advance()
-                let e = self.parse_expr()
-                self.expect_rparen()
-                self.expect_semi()
-                return Stmt::Print(e)
-            } else {
-                let e = self.parse_expr()
-                self.expect_semi()
-                return Stmt::Print(e)
-            }
-        } else {
-            if tag == "KwIf" {
-                self.advance()
-                let cond = self.parse_expr()
-                let then_branch = self.parse_stmt()
-                let else_branch = Stmt::Block(new List)
-                let tag2 = self.cur.__variant__
-                if tag2 == "KwElse" {
-                    self.advance()
-                    else_branch = self.parse_stmt()
-                }
-                return Stmt::If(cond, then_branch, else_branch)
-            } else if tag == "KwMatch" {
-                self.advance()
-                let scrutinee = self.parse_expr()
-                let arms = Parser::parse_match_arms(self)
-                return Stmt::Match(scrutinee, arms)
-            } else {
-                if tag == "KwWhile" {
-                    self.advance()
-                    let cond = self.parse_expr()
-                    let body = self.parse_stmt()
-                    return Stmt::While(cond, body)
-                } else {
-                    if tag == "KwReturn" {
-                         self.advance()
-                         let val = self.parse_expr()
-                         self.expect_semi()
-                         return Stmt::Return(val)
-                    } else {
-                        if tag == "LBrace" {
-                            return self.parse_block()
-                        } else {
-                            let e = self.parse_expr()
-                            self.expect_semi()
-                            return Stmt::Expr(e)
-                        }
-                    }
-                }
-            }
-        }
+            return Stmt::Return(val, span)
+       }
+       case TokenKind::LBrace: {
+           return self.parse_block()
+       }
+       case _: {
+           let e = self.parse_expr()
+           self.expect_semi()
+           return Stmt::Expr(e, span)
+       }
     }
   }
   micro parse_block(self) {
+    let span = self.cur.span
     self.advance()
     let acc = new List
     loop {
-       let tag = self.cur.__variant__
-       if tag == "RBrace" {
-           self.advance()
-           break
-       } else {
-           if tag == "EOF" {
+       let tag = self.current_kind().__variant__
+       match tag {
+           case "RBrace": {
+               self.advance()
                break
-           } else {
+           }
+           case "EOF": { break }
+           case _: {
                let s = self.parse_stmt()
                acc.push(s)
            }
        }
     }
-    return Stmt::Block(acc)
+    return Stmt::Block(acc, span)
   }
   micro parse_all(self) {
+    let span = self.cur.span
     let acc = new List
     loop {
-      let tag = self.cur.__variant__
-      if tag == "EOF" {
-        break
+      let tag = self.current_kind().__variant__
+      match tag {
+          case "EOF": { break }
+          case _: {
+              let s = self.parse_stmt()
+              acc.push(s)
+          }
       }
-      let s = self.parse_stmt()
-      acc.push(s)
     }
-    return Stmt::Block(acc)
+    return Stmt::Block(acc, span)
   }
   micro parse_type_primary(self) {
-    if self.cur.__variant__ == "Identifier" {
-      let path = self.parse_path()
-      if self.cur.__variant__ == "LParen" {
-        let args = Parser::parse_type_args(self)
-        return Type::Apply(path, args)
-      }
-      return Type::Name(path)
-    } else {
-      if self.cur.__variant__ == "LParen" {
-        self.advance()
-        let elems = new List
-        while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
-          let t = Parser::parse_type_expr(self)
-          elems.push(t)
-          if self.cur.__variant__ == "Comma" { self.advance() }
+    let kind = self.current_kind()
+    let span = self.cur.span
+    match kind {
+        case TokenKind::Identifier(path): {
+            let path_str = self.parse_path()
+            match self.current_kind() {
+                case TokenKind::LParen: {
+                    let args = Parser::parse_type_args(self)
+                    return Type::Apply(path_str, args, span)
+                }
+                case _: {}
+            }
+            return Type::Name(path_str, span)
         }
-        if self.cur.__variant__ == "RParen" { self.advance() }
-        return Type::Tuple(elems)
-      } else {
-        return Type::Name("")
-      }
+        case TokenKind::LParen: {
+            self.advance()
+            match self.current_kind() {
+                case TokenKind::RParen: {
+                    self.advance()
+                    return Type::Unit(0, span)
+                }
+                case _: {}
+            }
+            let elems = new List
+            while self.current_kind().__variant__ != "RParen" && self.current_kind().__variant__ != "EOF" {
+                let t = Parser::parse_type_expr(self)
+                elems.push(t)
+                if self.current_kind().__variant__ == "Comma" { self.advance() }
+            }
+            if self.current_kind().__variant__ == "RParen" { self.advance() }
+            if elems.len() == 1 {
+                return elems.get(0)
+            }
+            return Type::Tuple(elems, span)
+        }
+        case _: {
+            return Type::Name("", span)
+        }
     }
   }
   micro parse_type_args(self) {
     let args = new List
-    if self.cur.__variant__ == "LParen" {
+    if self.current_kind().__variant__ == "LParen" {
       self.advance()
-      while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
-        if self.cur.__variant__ == "Identifier" {
-          let save = self.cur._0
-          self.advance()
-          if self.cur.__variant__ == "Colon" {
-            self.advance()
-            let ty = Parser::parse_type_expr(self)
-            args.push(TypeArg::Field(save, ty))
-          } else {
-            let ty = Type::Name(save)
-            args.push(TypeArg::Ty(ty))
-          }
-        } else {
-          if self.cur.__variant__ == "Integer" {
-            let v = self.cur._0
-            self.advance()
-            args.push(TypeArg::Int(v))
-          } else {
-            let ty2 = Parser::parse_type_expr(self)
-            args.push(TypeArg::Ty(ty2))
-          }
+      while self.current_kind().__variant__ != "RParen" && self.current_kind().__variant__ != "EOF" {
+        let kind = self.current_kind()
+        let span = self.cur.span
+        match kind {
+            case TokenKind::Identifier(save): {
+                self.advance()
+                match self.current_kind() {
+                    case TokenKind::Colon: {
+                        self.advance()
+                        let ty = Parser::parse_type_expr(self)
+                        args.push(TypeArg::Field(save, ty, span))
+                    }
+                    case _: {
+                        let ty = Type::Name(save, span)
+                        args.push(TypeArg::Ty(ty, span))
+                    }
+                }
+            }
+            case TokenKind::Integer(v): {
+                self.advance()
+                args.push(TypeArg::Int(v, span))
+            }
+            case _: {
+                let ty2 = Parser::parse_type_expr(self)
+                args.push(TypeArg::Ty(ty2, span))
+            }
         }
-        if self.cur.__variant__ == "Comma" { self.advance() }
+        if self.current_kind().__variant__ == "Comma" { self.advance() }
       }
-      if self.cur.__variant__ == "RParen" { self.advance() }
+      if self.current_kind().__variant__ == "RParen" { self.advance() }
     }
     return args
   }
-  micro parse_type_expr(self) {
-    let left = Parser::parse_type_primary(self)
-    loop {
-      if self.cur.__variant__ == "Question" {
+  micro parse_type_bp(self, min_bp) {
+     let left = self.parse_type_primary()
+     
+     loop {
+        let kind = self.current_kind()
+        let span = self.cur.span
+        
+        # Postfix operators (Highest binding power)
+        match kind {
+            case TokenKind::Question: {
+               self.advance()
+               left = Type::Nullable(left, span)
+               continue
+            }
+            case _: {}
+        }
+        
+        # Infix operators
+        let lbp = 0
+        let rbp = 0
+        
+        match kind {
+            case TokenKind::Amp: {
+               lbp = 60
+               rbp = 61
+            }
+            case TokenKind::Pipe: {
+               lbp = 50
+               rbp = 51
+            }
+            case TokenKind::Arrow: {
+               lbp = 40
+               rbp = 41
+            }
+            case _: { break }
+        }
+        
+        if lbp < min_bp {
+           break
+        }
+        
         self.advance()
-        left = Type::Nullable(left)
-        continue
-      }
-      if self.cur.__variant__ == "Pipe" {
-        self.advance()
-        let right = Parser::parse_type_primary(self)
-        left = Type::Union(left, right)
-        continue
-      }
-      if self.cur.__variant__ == "Amp" {
-        self.advance()
-        let right = Parser::parse_type_primary(self)
-        left = Type::Intersect(left, right)
-        continue
-      }
-      break
-    }
-    return left
+        let right = self.parse_type_bp(rbp)
+        
+        match kind {
+            case TokenKind::Amp: {
+               left = Type::Intersect(left, right, span)
+            }
+            case TokenKind::Pipe: {
+               left = Type::Union(left, right, span)
+            }
+            case TokenKind::Arrow: {
+               # Function type support: A -> B
+               # Convert left to args list if not already
+               let args = new List
+               args.push(left)
+               left = Type::Function(args, right, span)
+            }
+            case _: {}
+        }
+     }
+     return left
   }
+
+  micro parse_type_expr(self) {
+    return self.parse_type_bp(0)
+  }
+
   micro parse_optional_type(self) {
-    if self.cur.__variant__ == "Colon" {
-      self.advance()
-      return Parser::parse_type_expr(self)
+    let span = self.cur.span
+    match self.current_kind() {
+        case TokenKind::Colon: {
+          self.advance()
+          return Parser::parse_type_expr(self)
+        }
+        case _: {}
     }
-    return Type::Name("")
+    return Type::Name("", span)
   }
   micro parse_args_typed(self) {
     let args = new List
-    if self.cur.__variant__ == "LParen" {
-      self.advance()
-      while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
-        let name = ""
-        if self.cur.__variant__ == "Identifier" {
-          name = self.cur._0
+    match self.current_kind() {
+        case TokenKind::LParen: {
           self.advance()
+          while self.current_kind().__variant__ != "RParen" && self.current_kind().__variant__ != "EOF" {
+            let name = ""
+            let span = self.cur.span
+            match self.current_kind() {
+                case TokenKind::Identifier(n): {
+                  name = n
+                  self.advance()
+                }
+                case _: {}
+            }
+            let ty = Parser::parse_optional_type(self)
+            let a = new Arg
+            a.name = name
+            a.type = ty
+            a.span = span
+            args.push(a)
+            if self.current_kind().__variant__ == "Comma" { self.advance() }
+          }
+          if self.current_kind().__variant__ == "RParen" { self.advance() }
         }
-        let ty = Parser::parse_optional_type(self)
-        let a = new Arg
-        a.name = name
-        a.type = ty
-        args.push(a)
-        if self.cur.__variant__ == "Comma" { self.advance() }
-      }
-      if self.cur.__variant__ == "RParen" { self.advance() }
+        case _: {}
     }
     return args
   }
   micro parse_pattern(self) {
-    let tag = self.cur.__variant__
-    if tag == "Identifier" {
-      if self.cur._0 == "_" {
-        self.advance()
-        return Pattern::Wildcard(0)
-      } else {
-        let ty = Parser::parse_type_expr(self)
-        return Pattern::Type(ty)
-      }
+    let kind = self.current_kind()
+    let span = self.cur.span
+    match kind {
+        case TokenKind::Identifier(name): {
+            if name == "_" {
+                self.advance()
+                return Pattern::Wildcard(0, span)
+            } else {
+                self.advance()
+                match self.current_kind() {
+                    case TokenKind::LParen: {
+                        let args = self.parse_pattern_tuple()
+                        return Pattern::Variant(name, args, span)
+                    }
+                    case _: {}
+                }
+                return Pattern::Type(Type::Name(name, span), span)
+            }
+        }
+        case TokenKind::Integer(v): {
+            self.advance()
+            return Pattern::Int(v, span)
+        }
+        case TokenKind::String(v): {
+            self.advance()
+            return Pattern::String(v, span)
+        }
+        case TokenKind::KwTrue: {
+            self.advance()
+            return Pattern::Bool(1, span)
+        }
+        case TokenKind::KwFalse: {
+            self.advance()
+            return Pattern::Bool(0, span)
+        }
+        case TokenKind::LParen: {
+            let elems = self.parse_pattern_tuple()
+            return Pattern::Tuple(elems, span)
+        }
+        case _: {
+            return Pattern::Wildcard(0, span)
+        }
     }
-    if tag == "Integer" {
-      let v = self.cur._0
-      self.advance()
-      return Pattern::Int(v)
-    }
-    if tag == "String" {
-      let v = self.cur._0
-      self.advance()
-      return Pattern::String(v)
-    }
-    if tag == "KwTrue" {
-      self.advance()
-      return Pattern::Bool(1)
-    }
-    if tag == "KwFalse" {
-      self.advance()
-      return Pattern::Bool(0)
-    }
-    if tag == "LParen" {
+  }
+
+  micro parse_pattern_tuple(self) {
       self.advance()
       let elems = new List
-      while self.cur.__variant__ != "RParen" && self.cur.__variant__ != "EOF" {
+      while self.current_kind().__variant__ != "RParen" && self.current_kind().__variant__ != "EOF" {
         let p = Parser::parse_pattern(self)
         elems.push(p)
-        if self.cur.__variant__ == "Comma" { self.advance() }
+        match self.current_kind() {
+            case TokenKind::Comma: { self.advance() }
+            case _: {}
+        }
       }
-      if self.cur.__variant__ == "RParen" { self.advance() }
-      return Pattern::Tuple(elems)
-    }
-    return Pattern::Wildcard(0)
+      match self.current_kind() {
+          case TokenKind::RParen: { self.advance() }
+          case _: {}
+      }
+      return elems
   }
+
   micro parse_match_arms(self) {
     let arms = new List
-    if self.cur.__variant__ == "LBrace" {
-      self.advance()
-      while self.cur.__variant__ != "RBrace" && self.cur.__variant__ != "EOF" {
-        let pat = Parser::parse_pattern(self)
-        if self.cur.__variant__ == "Arrow" || self.cur.__variant__ == "Colon" {
+    match self.current_kind() {
+        case TokenKind::LBrace: {
           self.advance()
+          while self.current_kind().__variant__ != "RBrace" && self.current_kind().__variant__ != "EOF" {
+            let span = self.cur.span
+            
+            # Expect 'case'
+            match self.current_kind() {
+               case TokenKind::KwCase: { self.advance() }
+               case _: { 
+                   # Should error here in full compiler
+               }
+            }
+            
+            let pat = Parser::parse_pattern(self)
+            
+            # Expect ':'
+            match self.current_kind() {
+                case TokenKind::Colon: { self.advance() }
+                case _: { }
+            }
+            
+            let body = self.parse_stmt()
+            let arm = new MatchArm
+            arm.pat = pat
+            arm.body = body
+            arm.span = span
+            arms.push(arm)
+            # Optional comma? User example didn't show comma, but previous code had it.
+            # Assuming comma might be optional or not present in new syntax, but let's keep it optional for robust parsing if needed, 
+            # OR remove it if new syntax relies on 'case' keyword as separator.
+            # The 'case' keyword acts as a separator, so comma is not strictly needed.
+            # But let's check if there is a comma and consume it if so.
+            match self.current_kind() {
+                case TokenKind::Comma: { self.advance() }
+                case _: {}
+            }
+          }
+          match self.current_kind() {
+              case TokenKind::RBrace: { self.advance() }
+              case _: {}
+          }
         }
-        let body = self.parse_stmt()
-        let arm = new MatchArm
-        arm.pat = pat
-        arm.body = body
-        arms.push(arm)
-        if self.cur.__variant__ == "Comma" { self.advance() }
-      }
-      if self.cur.__variant__ == "RBrace" { self.advance() }
+        case _: {}
     }
     return arms
   }

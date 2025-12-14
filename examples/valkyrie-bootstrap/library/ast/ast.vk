@@ -55,64 +55,70 @@ imply List {
 }
 
 enum Expr {
-  Int(val),
-  String(val),
-  Bool(val),
-  Variable(name),
-  Eq(lhs, rhs),
-  Add(lhs, rhs),
-  Sub(lhs, rhs),
-  Mul(lhs, rhs),
-  Div(lhs, rhs),
-  Call(callee, args),
-  Field(obj, key),
-  Index(obj, key)
+  Int(val, span),
+  String(val, span),
+  Bool(val, span),
+  Variable(name, span),
+  Eq(lhs, rhs, span),
+  Add(lhs, rhs, span),
+  Sub(lhs, rhs, span),
+  Mul(lhs, rhs, span),
+  Div(lhs, rhs, span),
+  Call(callee, args, span),
+  Field(obj, key, span),
+  Index(obj, key, span)
 }
 
 enum Type {
-  Name(path),
-  Nullable(inner),
-  Union(lhs, rhs),
-  Intersect(lhs, rhs),
-  Tuple(types),
-  Apply(name, args)
+  Name(path, span),
+  Nullable(inner, span),
+  Union(lhs, rhs, span),
+  Intersect(lhs, rhs, span),
+  Tuple(types, span),
+  Apply(name, args, span),
+  Function(args, ret, span),
+  Unit(u, span),
+  Never(u, span),
+  Object(u, span),
+  List(u, span)
 }
 enum TypeArg {
-  Ty(t),
-  Int(n),
-  Field(name, t)
+  Ty(t, span),
+  Int(n, span),
+  Field(name, t, span)
 }
 
-class Arg { name, type }
-class MatchArm { pat, body }
+class Arg { name, type, span }
+class MatchArm { pat, body, span }
 
 enum Pattern {
-  Wildcard(u),
-  Int(val),
-  String(val),
-  Bool(val),
-  Type(t),
-  Tuple(elems)
+  Wildcard(u, span),
+  Int(val, span),
+  String(val, span),
+  Bool(val, span),
+  Type(t, span),
+  Tuple(elems, span),
+  Variant(name, args, span)
 }
 
 enum Stmt {
-  Let(name, type, val),
-  Print(val),
-  Expr(val),
-  Block(stmts),
-  If(cond, then_branch, else_branch),
-  Match(scrutinee, arms),
-  While(cond, body),
-  Return(val),
-  Namespace(name),
-  Using(path),
-  Class(name, fields),
-  Imply(name, methods),
-  Micro(name, args, body),
-  Macro(name, args, body),
-  Enum(name, variants),
-  Decorated(decorators, stmt)
+  Let(name, type, val, span),
+  Print(val, span),
+  Expr(val, span),
+  Block(stmts, span),
+  If(cond, then_branch, else_branch, span),
+  Match(scrutinee, arms, span),
+  While(cond, body, span),
+  Return(val, span),
+  Namespace(name, span),
+  Using(path, span),
+  Class(name, fields, span),
+  Imply(name, methods, span),
+  Micro(name, args, body, span),
+  Macro(name, args, body, span),
+  Enum(name, variants, span),
+  Decorated(decorators, stmt, span)
 }
 
-class Decorator { kind, name, args }
+class Decorator { kind, name, args, span }
 

@@ -24,27 +24,27 @@ imply Transformer {
 
     micro visit_stmt(self, stmt) {
         match stmt {
-            ast::Stmt::Namespace(name) => {
+            case ast::Stmt::Namespace(name, _): {
                 self.module.ns = name;
             }
-            ast::Stmt::Using(path) => {
+            case ast::Stmt::Using(path, _): {
                 self.module.imports.push(path);
             }
-            ast::Stmt::Class(name, fields) => {
+            case ast::Stmt::Class(name, fields, _): {
                 let c = HIRClass::new(name, fields);
                 self.module.class_list.push(c);
             }
-            ast::Stmt::Imply(name, methods) => {
+            case ast::Stmt::Imply(name, methods, _): {
                 let hir_methods = new ast::List;
                 let cur = methods;
                 while cur {
                     if cur.head {
                         match cur.head {
-                            ast::Stmt::Micro(n, a, b) => {
+                            case ast::Stmt::Micro(n, a, b, _): {
                                 let f = HIRFunc::new(n, a, b);
                                 hir_methods.push(f);
                             }
-                            _ => {}
+                            case _: {}
                         }
                     }
                     cur = cur.tail;
@@ -52,11 +52,15 @@ imply Transformer {
                 let imp = HIRImpl::new(name, hir_methods);
                 self.module.impl_list.push(imp);
             }
-            ast::Stmt::Micro(name, args, body) => {
+            case ast::Stmt::Micro(name, args, body, _): {
                 let f = HIRFunc::new(name, args, body);
                 self.module.funcs.push(f);
             }
-            _ => {
+            case ast::Stmt::Macro(name, args, body, _): {
+                let f = HIRMacro::new(name, args, body);
+                self.module.macros.push(f);
+            }
+            case _: {
                 self.module.init_stmts.push(stmt);
             }
         }

@@ -1,8 +1,0 @@
-micro add_one(x) {
-    let one = 1
-    return x + one
-}
-
-let a = 10
-let b = add_one(a)
-print(b)

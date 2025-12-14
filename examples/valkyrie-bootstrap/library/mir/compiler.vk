@@ -140,7 +140,13 @@ imply Compiler {
                   let f = HIRFunc::new(qn, s._1, s._2)
                   m.funcs.push(f)
                 } else {
-                  m.init_stmts.push(s)
+                  if tag == "Macro" {
+                    let qn = Compiler::fq(m.ns, s._0)
+                    let f = HIRMacro::new(qn, s._1, s._2)
+                    m.macros.push(f)
+                  } else {
+                    m.init_stmts.push(s)
+                  }
                 }
               }
             }
@@ -185,6 +191,13 @@ imply Compiler {
       let f = m.funcs.get(k)
       self.compile_micro(f.name, f.args, f.body)
       k = k + 1
+    }
+    let ni3 = m.macros.len()
+    let l = 0
+    while l < ni3 {
+      let f = m.macros.get(l)
+      self.compile_micro(f.name, f.args, f.body)
+      l = l + 1
     }
     let nim = m.impl_list.len()
     let p = 0
@@ -265,7 +278,7 @@ imply Compiler {
           let ty = a.type
           if ty.__variant__ == "Name" {
             if len(ty._0) == 0 {
-              let anyt = Type::Name("any")
+              let anyt = Type::Name("any", null)
               Compiler::set_type(self, a.name, anyt)
               Compiler::add_warning(self, "[any] arg " + a.name + " in " + name + " missing type")
             } else {
@@ -394,7 +407,7 @@ imply Compiler {
       }
       i = i + 1
     }
-    constants.push(Expr::String(s))
+    constants.push(Expr::String(s, null))
     return i
   }
 
@@ -409,7 +422,7 @@ imply Compiler {
       }
       i = i + 1
     }
-    constants.push(Expr::Int(v))
+    constants.push(Expr::Int(v, null))
     return i
   }
 
@@ -743,15 +756,93 @@ imply Compiler {
                Compiler::patch_u16(code, jump_end_idx, offset_end)
              } else {
                if tag == "Match" {
+                 # Store scrutinee in a temporary local
                  Compiler::compile_expr(constants, code, locals, stmt._0)
-                 Compiler::emit_u8(code, 0x02)
+                 let tmp_name = "__match_tmp_" + Compiler::encode_u32(code.len()) # Unique-ish name? No, just reuse.
+                 # Actually, locals are managed by list, so declaring a new local is fine.
+                 let tmp_idx = Compiler::declare_local(locals, "match_scrutinee")
+                 Compiler::emit_u8(code, 0x06) # StoreLocal
+                 Compiler::emit_u8(code, tmp_idx)
+                 
                  let arms = stmt._1
                  let j = 0
                  let m = arms.len()
+                 
+                 let jump_ends = new List
+                 
                  while j < m {
                    let arm = arms.get(j)
+                   let pat = arm.pat
+                   let ptag = pat.__variant__
+                   
+                   let jump_next_arm = -1
+                   
+                   # Pattern Match Check
+                   if ptag == "Wildcard" {
+                      # Always matches
+                   } else {
+                      # Load scrutinee
+                      Compiler::emit_u8(code, 0x05) # LoadLocal
+                      Compiler::emit_u8(code, tmp_idx)
+                      
+                      if ptag == "String" {
+                         let s_idx = Compiler::add_string(constants, pat._0)
+                         Compiler::emit_u8(code, 0x01) # Push Const
+                         Compiler::emit_u16(code, s_idx)
+                         Compiler::emit_u8(code, 0xC6) # StringExt
+                         Compiler::emit_u8(code, 0x10) # Eq
+                      } else {
+                         if ptag == "Int" {
+                            let i_idx = Compiler::add_int(constants, pat._0)
+                            Compiler::emit_u8(code, 0x01) # Push Const
+                            Compiler::emit_u16(code, i_idx)
+                            Compiler::emit_u8(code, 0xC2) # I64Ext
+                            Compiler::emit_u8(code, 0x10) # Eq
+                         } else {
+                             # Fallback / TODO: Other patterns
+                             Compiler::emit_u8(code, 0x02) # Pop scrutinee
+                             Compiler::emit_u8(code, 0x01) # Push false
+                             let f_idx = Compiler::add_int(constants, 0)
+                             Compiler::emit_u16(code, f_idx)
+                             # Or use Eq(0)
+                         }
+                      }
+                      
+                      # Jump if false to next arm
+                      Compiler::emit_u8(code, 0x11) # JumpIfFalse
+                      jump_next_arm = code.len()
+                      Compiler::emit_u16(code, 0)
+                   }
+                   
+                   # Arm Body
                    Compiler::compile_stmt(constants, code, locals, arm.body)
+                   
+                   # Jump to end (if not last arm or if wildcard?)
+                   # Actually, after body, jump to end.
+                   Compiler::emit_u8(code, 0x10) # Jump
+                   let je = code.len()
+                   Compiler::emit_u16(code, 0)
+                   jump_ends.push(je)
+                   
+                   # Patch JumpIfFalse
+                   if jump_next_arm != -1 {
+                      let next_start = code.len()
+                      let off = next_start - jump_next_arm - 2
+                      Compiler::patch_u16(code, jump_next_arm, off)
+                   }
+                   
                    j = j + 1
+                 }
+                 
+                 # Patch all jumps to end
+                 let end_pos = code.len()
+                 let k = 0
+                 let n_ends = jump_ends.len()
+                 while k < n_ends {
+                    let je = jump_ends.get(k)
+                    let off = end_pos - je - 2
+                    Compiler::patch_u16(code, je, off)
+                    k = k + 1
                  }
                }
              }
@@ -903,7 +994,7 @@ imply Compiler {
             let val = stmt._2
             let ty = stmt._1
             if ty.__variant__ == "Name" && len(ty._0) == 0 {
-              let anyt2 = Type::Name("any")
+              let anyt2 = Type::Name("any", null)
               Compiler::set_type(self, name, anyt2)
               Compiler::add_warning(self, "[any] let " + name + " missing type")
             } else {
@@ -1030,18 +1121,19 @@ imply Compiler {
       if lhs.__variant__ != "Variable" { return false }
       if len(scr) == 0 { scr = lhs._0 }
       if !eq(scr, lhs._0) { return false }
-      let pat = Pattern::Wildcard(0)
-      if rhs.__variant__ == "Int" { pat = Pattern::Int(rhs._0) }
+      let pat = Pattern::Wildcard(0, null)
+      if rhs.__variant__ == "Int" { pat = Pattern::Int(rhs._0, null) }
       else {
-        if rhs.__variant__ == "String" { pat = Pattern::String(rhs._0) }
+        if rhs.__variant__ == "String" { pat = Pattern::String(rhs._0, null) }
         else {
-          if rhs.__variant__ == "Bool" { pat = Pattern::Bool(rhs._0) }
+          if rhs.__variant__ == "Bool" { pat = Pattern::Bool(rhs._0, null) }
           else { return false }
         }
       }
       let arm = new MatchArm
       arm.pat = pat
       arm.body = then_b
+      arm.span = null
       arms.push(arm)
       if else_b.__variant__ == "If" {
         cur = else_b
@@ -1051,7 +1143,7 @@ imply Compiler {
       }
     }
     if arms.len() < 3 { return false }
-    let scr_expr = Expr::Variable(scr)
+    let scr_expr = Expr::Variable(scr, null)
     Compiler::lower_expr_to_lir(self, block, scr_expr)
     block.push(LIRInstr::StoreLocal("match_tmp"))
     let end_label = 19
@@ -1145,7 +1237,7 @@ imply Compiler {
       if eq(p.get(0), name) { return p.get(1) }
       i = i + 1
     }
-    return Type::Name("")
+    return Type::Name("", null)
   }
   micro type_to_string(t) {
     if t.__variant__ == "Name" { return t._0 }
@@ -1191,21 +1283,21 @@ imply Compiler {
   }
   micro resolve_expr_type(self, expr) {
     let tag = expr.__variant__
-    if tag == "Int" { return Type::Name("i64") }
-    if tag == "String" { return Type::Name("string") }
-    if tag == "Bool" { return Type::Name("bool") }
+    if tag == "Int" { return Type::Name("i64", null) }
+    if tag == "String" { return Type::Name("string", null) }
+    if tag == "Bool" { return Type::Name("bool", null) }
     if tag == "Variable" {
       return Compiler::get_type(self, expr._0)
     }
     if tag == "Add" {
       let t0 = Compiler::resolve_expr_type(self, expr._0)
       let t1 = Compiler::resolve_expr_type(self, expr._1)
-      if Compiler::type_is_string(t0) && Compiler::type_is_string(t1) { return Type::Name("string") }
-      return Type::Name("i64")
+      if Compiler::type_is_string(t0) && Compiler::type_is_string(t1) { return Type::Name("string", null) }
+      return Type::Name("i64", null)
     }
-    if tag == "Sub" { return Type::Name("i64") }
-    if tag == "Mul" { return Type::Name("i64") }
-    if tag == "Div" { return Type::Name("i64") }
-    return Type::Name("")
+    if tag == "Sub" { return Type::Name("i64", null) }
+    if tag == "Mul" { return Type::Name("i64", null) }
+    if tag == "Div" { return Type::Name("i64", null) }
+    return Type::Name("", null)
   }
 }
