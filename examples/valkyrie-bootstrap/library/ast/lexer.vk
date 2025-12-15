@@ -20,7 +20,6 @@ enum TokenKind {
   Arrow,
   Semi,
   KwLet,
-  KwPrint,
   KwIf,
   KwElse,
   KwWhile,

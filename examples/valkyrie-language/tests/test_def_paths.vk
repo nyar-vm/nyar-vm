@@ -1,0 +1,18 @@
+class Foo::Bar::Baz { x }
+let bb = new Foo::Bar::Baz
+bb.x = 42
+print(bb.x)              # Expect: 42
+
+trait A::Hello { hi }
+class A::Greeter { name }
+impl A::Hello for A::Greeter {
+  micro hi(self) { print(self.name) }
+}
+let g = new A::Greeter
+g.name = 100
+g.hi()                   # Expect: 100
+
+enum E::Num { One, Two }
+let v = E::Num::One()
+let check = v is E::Num
+print(check)             # Expect: true

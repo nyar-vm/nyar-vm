@@ -411,20 +411,6 @@ imply Parser {
                    self.expect_semi()
                    return Stmt::Expr(v, span)
            }
-       case TokenKind::KwPrint:
-           self.advance()
-           match self.current_kind() {
-               case TokenKind::LParen:
-                   self.advance()
-                   let e = self.parse_expr()
-                   self.expect_rparen()
-                   self.expect_semi()
-                   return Stmt::Print(e, span)
-               case _:
-                   let e = self.parse_expr()
-                   self.expect_semi()
-                   return Stmt::Print(e, span)
-           }
        case TokenKind::KwIf:
            self.advance()
            let cond = self.parse_expr()

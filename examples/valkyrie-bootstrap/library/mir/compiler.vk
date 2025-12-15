@@ -64,16 +64,7 @@ imply Compiler {
   }
 
   micro collect_all_chunks(self) {
-    let all = new List
-    let main = self.build_main_chunk()
-    all.push(main)
-    let i = 0
-    let n = self.chunks.len()
-    while i < n {
-      all.push(self.chunks.get(i))
-      i = i + 1
-    }
-    return all
+    return self.chunks
   }
 
   micro build_main_chunk(self) {
@@ -369,7 +360,7 @@ imply Compiler {
       all_chunks.push(self.chunks.get(t))
       t = t + 1
     }
-    self.chunks = all_chunks.tail
+    self.chunks = all_chunks
     return true
   }
 
@@ -1025,6 +1016,36 @@ imply Compiler {
               Compiler::emit_u16(code, idx0)
            }
         } else {
+            if tag == "Call" {
+              let callee = expr._0
+              let args = expr._1
+              let argc = args.len()
+              let i = 0
+              while i < argc {
+                let ai = args.get(i)
+                Compiler::compile_expr(constants, code, locals, ai)
+                i = i + 1
+              }
+              if callee.__variant__ == "Variable" {
+                let cname = callee._0
+                if eq(cname, "print") {
+                  let didx = Compiler::add_string(constants, "print")
+                  Compiler::emit_u8(code, 0xF0)
+                  Compiler::emit_u16(code, didx)
+                  Compiler::emit_u8(code, argc)
+                } else {
+                  # Fallback: no direct call encoding at MIR level for non-builtin
+                  # Push null to keep stack balanced
+                  Compiler::emit_u8(code, 0x01)
+                  let idxn = Compiler::add_int(constants, 0)
+                  Compiler::emit_u16(code, idxn)
+                }
+              } else {
+                Compiler::emit_u8(code, 0x01)
+                let idxn2 = Compiler::add_int(constants, 0)
+                Compiler::emit_u16(code, idxn2)
+              }
+            } else {
             if tag == "Add" {
               Compiler::compile_expr(constants, code, locals, expr._0)
               Compiler::compile_expr(constants, code, locals, expr._1)
