@@ -533,6 +533,24 @@ fn parse_block(tokens: &[Token], i: &mut usize) -> Result<Vec<Stmt>, Error> {
     Ok(stmts)
 }
 
+fn parse_case_block(tokens: &[Token], i: &mut usize) -> Result<Vec<Stmt>, Error> {
+    let mut stmts = Vec::new();
+    loop {
+        match tokens.get(*i) {
+            Some(Token::RBrace) | Some(Token::Case) | Some(Token::Eof) => break,
+            Some(Token::Else) => break,
+            Some(Token::Semi) => {
+                *i += 1;
+                continue;
+            }
+            _ => {
+                stmts.push(parse_stmt(tokens, i)?);
+            }
+        }
+    }
+    Ok(stmts)
+}
+
 #[derive(PartialEq, PartialOrd, Copy, Clone)]
 enum Precedence {
     None,
@@ -733,33 +751,45 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
                         *i += 1;
                         break;
                     }
-                    _ => {
-                        if let Some(Token::Case) = tokens.get(*i) {
-                            *i += 1;
-                        }
+                    Some(Token::Case) => {
+                        *i += 1;
                         let pat = parse_pattern(tokens, i)?;
                         match tokens.get(*i) {
-                            Some(Token::Arrow) => {
+                            Some(Token::Arrow) | Some(Token::Colon) => {
                                 *i += 1;
                             }
-                            Some(Token::Colon) => {
-                                *i += 1;
+                            _ => {
+                                return Err(Error::Parse(
+                                    "expect => or : after pattern".into(),
+                                ))
                             }
-                            _ => return Err(Error::Parse("expect => or : after pattern".into())),
                         }
-
-                        let body = if let Some(Token::LBrace) = tokens.get(*i) {
-                            parse_block(tokens, i)?
-                        } else {
-                            let stmt = parse_stmt(tokens, i)?;
-                            vec![stmt]
-                        };
-
+                        let body = parse_case_block(tokens, i)?;
                         branches.push((pat, body));
-
                         if let Some(Token::Comma) = tokens.get(*i) {
                             *i += 1;
                         }
+                    }
+                    Some(Token::Else) => {
+                        *i += 1;
+                        match tokens.get(*i) {
+                            Some(Token::Arrow) | Some(Token::Colon) => {
+                                *i += 1;
+                            }
+                            _ => {
+                                return Err(Error::Parse(
+                                    "expect => or : after else".into(),
+                                ))
+                            }
+                        }
+                        let body = parse_case_block(tokens, i)?;
+                        branches.push((Pattern::Wildcard, body));
+                        if let Some(Token::Comma) = tokens.get(*i) {
+                            *i += 1;
+                        }
+                    }
+                    _ => {
+                        return Err(Error::Parse("expect case or } in match".into()));
                     }
                 }
             }

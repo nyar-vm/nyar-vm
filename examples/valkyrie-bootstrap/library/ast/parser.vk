@@ -452,6 +452,27 @@ imply Parser {
     }
     return Stmt::Block(acc, span)
   }
+  micro parse_case_block(self) {
+    let span = self.cur.span
+    let acc = new List
+    loop {
+       let tag = self.current_kind().__variant__
+       match tag {
+           case "KwCase":
+               break
+           case "KwElse":
+               break
+           case "RBrace":
+               break
+           case "EOF":
+               break
+           case _:
+               let s = self.parse_stmt()
+               acc.push(s)
+       }
+    }
+    return Stmt::Block(acc, span)
+  }
   micro parse_type_primary(self) {
     let kind = self.current_kind()
     let span = self.cur.span
@@ -506,7 +527,7 @@ imply Parser {
                         self.advance()
                         let ty = Parser::parse_type_expr(self)
                         args.push(TypeArg::Field(save, ty, span))
-                    case _:
+                    else:
                         let ty = Type::Name(save, span)
                         args.push(TypeArg::Ty(ty, span))
                 }
@@ -514,7 +535,7 @@ imply Parser {
             case TokenKind::Integer(v):
                 self.advance()
                 args.push(TypeArg::Int(v, span))
-            case _:
+            else:
                 let ty2 = Parser::parse_type_expr(self)
                 args.push(TypeArg::Ty(ty2, span))
         }
@@ -689,25 +710,22 @@ imply Parser {
           self.advance()
           while self.current_kind().__variant__ != "RBrace" && self.current_kind().__variant__ != "EOF" {
             let span = self.cur.span
-            
-            # Expect 'case'
+            let pat = Pattern::Wildcard(0, span)
             match self.current_kind() {
                case TokenKind::KwCase:
                     self.advance()
+                    let p2 = Parser::parse_pattern(self)
+                    pat = p2
+               case TokenKind::KwElse:
+                    self.advance()
                case _:
-                   # Should error here in full compiler
-
-
-            let pat = Parser::parse_pattern(self)
-            
-            # Expect ':'
+            }
             match self.current_kind() {
                 case TokenKind::Colon:
                     self.advance()
                 case _:
-                    # Should error here in full compiler
             }
-            let body = self.parse_stmt()
+            let body = self.parse_case_block()
             let arm = new MatchArm
             arm.pat = pat
             arm.body = body
