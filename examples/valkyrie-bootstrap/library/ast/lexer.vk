@@ -50,40 +50,18 @@ class Lexer { input, pos, len, ch, line, col }
 
 imply Lexer {
   micro new(input) {
-    print("DEBUG: Lexer::new start")
     let l = new Lexer
-    print("DEBUG: Lexer object allocated")
     l.input = input
-    print("DEBUG: using input string directly")
     if l.input {
-        print("DEBUG: l.input is valid")
         l.len = len(l.input)
-        print("DEBUG: l.len raw: ")
-        print(l.len)
-        print("DEBUG: l.len calculated: " + str(l.len))
     } else {
-        print("DEBUG: l.input is null!")
         l.len = 0
     }
     l.pos = 0
     l.ch = "\0"
     l.line = 1
     l.col = 1
-    print("DEBUG: calling l.read_char() in new")
-    if l {
-       print("DEBUG: l is valid")
-    }
     l.read_char()
-    print("DEBUG: Lexer::new returning")
-    print("DEBUG: Lexer pos inside new: " + l.pos)
-    if l is Lexer {
-        print("DEBUG: l is Lexer")
-    } else {
-        print("DEBUG: l is NOT Lexer")
-    }
-    print("DEBUG: Lexer::new returning type: " + str(typeof(l)))
-    let test_tok = TokenKind::Identifier("test")
-    print("DEBUG: TokenKind::Identifier('test') variant: " + test_tok.__variant__)
     return l
   }
   micro read_char(self) {
@@ -189,6 +167,8 @@ imply Lexer {
         self.ch = ""
     }
     let c = self.ch
+    if c == "" { return TokenKind::EOF }
+    
     if c == "(" {
           self.read_char()
           return TokenKind::LParen
@@ -293,8 +273,7 @@ imply Lexer {
                 let num = self.read_number()
                 return TokenKind::Integer(num)
              } else {
-                print("DEBUG: skipping self.read_char() in else block to test")
-                # self.read_char()
+                self.read_char()
                 return TokenKind::Identifier(c)
              }
            }
@@ -306,9 +285,6 @@ imply Lexer {
     }
   }
   micro read_string(self) {
-    print("DEBUG: inside read_string")
-    let t = typeof(self)
-    print("DEBUG: typeof(self) in read_string = " + str(t))
     self.read_char()
     let s = ""
     while self.ch != "\"" && self.ch != "" {

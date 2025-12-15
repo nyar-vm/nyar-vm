@@ -643,6 +643,7 @@ struct Frame {
     ip: usize,
     locals: Vec<Value>,
     closure: *const Closure,
+    chunk_idx: Option<usize>,
 }
 
 pub struct NyarVM {
@@ -736,8 +737,12 @@ impl NyarVM {
     }
     pub fn print_traceback(&self, err: &VmError) {
         self.print_line("Traceback (most recent call last):");
-        for f in &self.frames {
-            self.print_line(&format!("  ip={}", f.ip));
+        for (i, f) in self.frames.iter().enumerate() {
+            let info = match f.chunk_idx {
+                Some(ci) => format!("frame {}: chunk={}, ip={}", i, ci, f.ip),
+                None => format!("frame {}: chunk=<entry>, ip={}", i, f.ip),
+            };
+            self.print_line(&info);
         }
         match err {
             VmError::UnhandledEffect(name) => {
@@ -749,14 +754,24 @@ impl NyarVM {
         }
     }
     pub fn execute(&mut self, program: &[Instruction]) -> Result<Value, VmError> {
+        let mut loop_count = 0u64;
         let frame = Frame {
             instrs: program.to_vec(),
             ip: 0,
             locals: vec![Value::null(); 32],
             closure: null(),
+            chunk_idx: None,
         };
         self.frames.push(frame.clone());
         loop {
+            loop_count += 1;
+            if loop_count > 10_000_000 {
+                let err = VmError::RuntimeError(
+                    "Maximum instruction limit exceeded (potential infinite loop)".to_string(),
+                );
+                self.print_traceback(&err);
+                return Err(err);
+            }
             let (ins, cur_ip) = {
                 let f = self.frames.last().unwrap();
                 if f.ip >= f.instrs.len() {
@@ -764,6 +779,9 @@ impl NyarVM {
                 }
                 (f.instrs[f.ip].clone(), f.ip)
             };
+            if loop_count % 1_000_000 == 0 {
+                println!("DEBUG: Executed {} instrs, current: {:?}", loop_count, ins);
+            }
             let mut next_ip = Some(cur_ip + 1);
             // self.log(&format!("ip={} {:?}", cur_ip, ins));
             match ins {
@@ -1689,6 +1707,7 @@ impl NyarVM {
                         ip: 0,
                         locals: args,
                         closure: closure_ptr,
+                        chunk_idx: Some(chunk_idx),
                     };
 
                     if let Some(next) = next_ip {
@@ -2069,6 +2088,7 @@ impl NyarVM {
                             ip: 0,
                             locals: full_args,
                             closure: null(),
+                            chunk_idx: Some(chunk_idx as usize),
                         };
 
                         if let Some(next) = next_ip {
@@ -2103,6 +2123,7 @@ impl NyarVM {
                         ip: 0,
                         locals: args,
                         closure: null(),
+                        chunk_idx: Some(idx as usize),
                     };
 
                     if let Some(next) = next_ip {
@@ -2139,6 +2160,7 @@ impl NyarVM {
                                     ip: 0,
                                     locals: Vec::new(),
                                     closure: closure_ptr,
+                                    chunk_idx: Some(chunk_idx),
                                 };
                                 if let Some(next) = next_ip {
                                     self.frames.last_mut().unwrap().ip = next;
@@ -2213,6 +2235,7 @@ impl NyarVM {
                                 ip: 0,
                                 locals,
                                 closure: null(),
+                                chunk_idx: Some(hf.catch_chunk),
                             };
                             if let Some(next) = next_ip {
                                 self.frames.last_mut().unwrap().ip = next;
@@ -3236,6 +3259,7 @@ impl NyarVM {
                             ip: 0,
                             locals: args,
                             closure: closure_ptr,
+                            chunk_idx: Some(chunk_idx),
                         };
                         if let Some(next) = next_ip {
                             self.frames.last_mut().unwrap().ip = next;
@@ -3266,6 +3290,7 @@ impl NyarVM {
                             ip: 0,
                             locals: args,
                             closure: closure_ptr,
+                            chunk_idx: Some(chunk_idx),
                         };
                         if let Some(next) = next_ip {
                             self.frames.last_mut().unwrap().ip = next;

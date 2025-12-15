@@ -1,0 +1,24 @@
+class Lexer { ch }
+imply Lexer {
+  micro new() {
+     let l = new Lexer
+     l.ch = "n"
+     return l
+  }
+  micro read_char(self) {
+     print("read_char called")
+  }
+  micro test(self) {
+     let c = self.ch
+     print("c is " + c)
+     match c {
+        case "+": { self.read_char() }
+        case _: { print("wildcard") }
+     }
+  }
+}
+micro main() {
+   let l = Lexer::new()
+   l.test()
+}
+main()

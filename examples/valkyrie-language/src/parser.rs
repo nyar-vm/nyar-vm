@@ -127,7 +127,10 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
         }
         _ => {
             let tok = tokens.get(*i);
-            Err(Error::Parse(format!("unexpected token in pattern: {:?}", tok)))
+            let start = if *i >= 3 { *i - 3 } else { 0 };
+            let end = (*i + 3).min(tokens.len());
+            let window = &tokens[start..end];
+            Err(Error::Parse(format!("unexpected token in pattern: {:?} at index {} window {:?}", tok, *i, window)))
         }
     }
 }

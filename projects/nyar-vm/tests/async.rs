@@ -126,18 +126,18 @@ fn run_try_raise_catch_effect() {
     catch.push(Opcode::LoadLocal as u8);
     catch.push(1u8);
     catch.push(Opcode::Push as u8);
-    catch.extend_from_slice(&0u16.to_le_bytes());
+    catch.extend_from_slice(&1u16.to_le_bytes());
     catch.push(Opcode::GetElement as u8);
     catch.push(Opcode::Return as u8);
     catch.push(Opcode::Push as u8);
-    catch.extend_from_slice(&0u16.to_le_bytes());
+    catch.extend_from_slice(&2u16.to_le_bytes());
     catch.push(Opcode::Return as u8);
 
     let mut main = Vec::new();
     main.push(Opcode::WithHandler as u8);
     main.extend_from_slice(&0u16.to_le_bytes());
     main.push(Opcode::Push as u8);
-    main.extend_from_slice(&1u16.to_le_bytes());
+    main.extend_from_slice(&3u16.to_le_bytes());
     main.push(Opcode::Perform as u8);
     main.extend_from_slice(&0u16.to_le_bytes());
     main.push(1u8);
@@ -147,7 +147,12 @@ fn run_try_raise_catch_effect() {
         version: 1,
         flags: 0,
         timestamp: 0,
-        constants: vec![Constant::String("boom".to_string()), Constant::Int(1)],
+        constants: vec![
+            Constant::String("boom".to_string()),
+            Constant::Int(0),
+            Constant::Int(0),
+            Constant::Int(1),
+        ],
         effects: vec!["boom".to_string()],
         chunks: vec![
             Chunk {

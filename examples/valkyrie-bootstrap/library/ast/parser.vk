@@ -28,12 +28,22 @@ imply Parser {
 
   micro parse_all(self) {
     let stmts = new List
+    let loop_count = 0
     while true {
       let t = self.current_kind()
       let variant = t.__variant__
+      # print("DEBUG: parse_all loop " + str(loop_count) + " variant: " + variant)
+      if loop_count > 5000 {
+         print("DEBUG: parse_all loop " + str(loop_count) + " variant: " + variant)
+      }
       if variant == "EOF" { break }
       let s = self.parse_stmt()
       stmts.push(s)
+      loop_count = loop_count + 1
+      if loop_count > 1000000 {
+         print("ERROR: Infinite loop in parse_all?")
+         break
+      }
     }
     return stmts
   }
@@ -285,6 +295,8 @@ imply Parser {
 
   micro parse_stmt(self) {
     let kind = self.current_kind()
+    let variant = kind.__variant__
+    # print("DEBUG: parse_stmt kind: " + variant)
     let span = null
     if self.cur {
         span = self.cur.span
@@ -295,18 +307,21 @@ imply Parser {
            let stmt = self.parse_stmt()
            return Stmt::Decorated(decorators, stmt, span)
        }
+       
        case TokenKind::KwNamespace: {
            self.advance()
            let name = self.parse_path()
            self.expect_semi()
            return Stmt::Namespace(name, span)
        }
+       
        case TokenKind::KwUsing: {
            self.advance()
            let path = self.parse_path()
            self.expect_semi()
            return Stmt::Using(path, span)
        }
+       
        case TokenKind::KwClass: {
            self.advance()
            let name = ""
@@ -320,6 +335,7 @@ imply Parser {
            let fields = self.parse_fields()
            return Stmt::Class(name, fields, span)
        }
+       
        case TokenKind::KwImply: {
            self.advance()
            let name = ""
@@ -333,6 +349,7 @@ imply Parser {
            let methods = self.parse_impl_body()
            return Stmt::Imply(name, methods, span)
        }
+       
        case TokenKind::KwMicro: {
            self.advance()
            let name = ""
@@ -347,6 +364,7 @@ imply Parser {
            let body = self.parse_block()
            return Stmt::Micro(name, args, body, span)
        }
+       
        case TokenKind::KwMacro: {
            self.advance()
            let name = ""
@@ -361,6 +379,7 @@ imply Parser {
            let body = self.parse_block()
            return Stmt::Macro(name, args, body, span)
        }
+       
        case TokenKind::KwEnum: {
            self.advance()
            let name = ""
@@ -374,6 +393,7 @@ imply Parser {
            let variants = self.parse_fields()
            return Stmt::Enum(name, variants, span)
        }
+       
        case TokenKind::KwLet: {
            self.advance()
            match self.current_kind() {
@@ -395,6 +415,7 @@ imply Parser {
                }
            }
        }
+       
        case TokenKind::KwPrint: {
            self.advance()
            match self.current_kind() {
@@ -412,6 +433,7 @@ imply Parser {
                }
            }
        }
+       
        case TokenKind::KwIf: {
            self.advance()
            let cond = self.parse_expr()
@@ -426,32 +448,37 @@ imply Parser {
            }
            return Stmt::If(cond, then_branch, else_branch, span)
        }
+       
        case TokenKind::KwMatch: {
            self.advance()
            let scrutinee = self.parse_expr()
            let arms = Parser::parse_match_arms(self)
            return Stmt::Match(scrutinee, arms, span)
        }
+       
        case TokenKind::KwWhile: {
            self.advance()
            let cond = self.parse_expr()
            let body = self.parse_stmt()
            return Stmt::While(cond, body, span)
        }
+       
        case TokenKind::KwReturn: {
             self.advance()
             let val = self.parse_expr()
             self.expect_semi()
             return Stmt::Return(val, span)
        }
-       case TokenKind::LBrace: {
+       
+       case TokenKind::LBrace: 
            return self.parse_block()
-       }
+       
        case _: {
            let e = self.parse_expr()
            self.expect_semi()
            return Stmt::Expr(e, span)
        }
+       
     }
   }
   micro parse_block(self) {
