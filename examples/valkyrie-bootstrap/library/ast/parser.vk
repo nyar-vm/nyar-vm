@@ -138,6 +138,23 @@ imply Parser {
     let kind = self.current_kind()
     let span = self.cur.span
     match kind {
+       case TokenKind::At:
+          self.advance()
+          match self.current_kind() {
+             case TokenKind::Identifier(name):
+                self.advance()
+                if eq(name, "location") {
+                   return Expr::Variable("__macro_location", span)
+                } else {
+                   if eq(name, "type_of") {
+                      return Expr::Variable("__macro_type_of", span)
+                   } else {
+                      return Expr::Variable(name, span)
+                   }
+                }
+             case _:
+                return Expr::Int(0, span)
+          }
        case TokenKind::Integer(v):
           self.advance()
           return Expr::Int(v, span)

@@ -20,6 +20,7 @@ files.push("examples/valkyrie-bootstrap/library/lir/backends/llvm.vk")
 files.push("examples/valkyrie-bootstrap/library/lir/backends/native.vk")
 files.push("examples/valkyrie-bootstrap/library/mir/mir.vk")
 files.push("examples/valkyrie-bootstrap/library/mir/compiler.vk")
+files.push("examples/valkyrie-bootstrap/test/call_macro.vk")
 files.push("examples/valkyrie-bootstrap/binary/vcc/main.vk")
 
 let all_stmts = new List

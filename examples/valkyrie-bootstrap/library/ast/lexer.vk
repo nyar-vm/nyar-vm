@@ -226,48 +226,43 @@ imply Lexer {
        else {
            if Lexer::is_alpha(c) {
              let lit = self.read_identifier()
-             
-             # match lit replacement
-             # print("DEBUG: lit='" + lit + "' len=" + str(len(lit)))
-             
-             if lit == "let" { return TokenKind::KwLet }
-             else {
-             if lit == "print" { return TokenKind::KwPrint }
-             else {
-             if lit == "if" { return TokenKind::KwIf }
-             else {
-             if lit == "else" { return TokenKind::KwElse }
-             else {
-             if lit == "while" { return TokenKind::KwWhile }
-             else {
-             if lit == "micro" { return TokenKind::KwMicro }
-             else {
-             if lit == "macro" { return TokenKind::KwMacro }
-             else {
-             if lit == "class" { return TokenKind::KwClass }
-             else {
-             if lit == "enum" { return TokenKind::KwEnum }
-             else {
-             if lit == "return" { return TokenKind::KwReturn }
-             else {
-             if lit == "namespace" { return TokenKind::KwNamespace }
-             else {
-             if lit == "using" { return TokenKind::KwUsing }
-             else {
-             if lit == "imply" { return TokenKind::KwImply }
-             else {
-             if lit == "match" { return TokenKind::KwMatch }
-             else {
-             if lit == "case" { return TokenKind::KwCase }
-             else {
-             if lit == "true" { return TokenKind::KwTrue }
-             else {
-             if lit == "false" { return TokenKind::KwFalse }
-             else {
-                  let res = TokenKind::Identifier(lit)
-                  # print("DEBUG: returning token kind variant: " + res.__variant__)
-                  return res
-             }}}}}}}}}}}}}}}}}
+              match lit {
+                 case "let":
+                    return TokenKind::KwLet
+                 case "if":
+                    return TokenKind::KwIf
+                 case "else":
+                    return TokenKind::KwElse
+                 case "while":
+                    return TokenKind::KwWhile
+                 case "micro":
+                    return TokenKind::KwMicro
+                 case "macro":
+                    return TokenKind::KwMacro
+                 case "class":
+                    return TokenKind::KwClass
+                 case "enum":
+                    return TokenKind::KwEnum
+                 case "return":
+                    return TokenKind::KwReturn
+                 case "namespace":
+                    return TokenKind::KwNamespace
+                 case "using":
+                    return TokenKind::KwUsing
+                 case "imply":
+                    return TokenKind::KwImply
+                 case "match":
+                    return TokenKind::KwMatch
+                 case "case":
+                    return TokenKind::KwCase
+                 case "true":
+                    return TokenKind::KwTrue
+                 case "false":
+                    return TokenKind::KwFalse
+                 case _:
+                    let res = TokenKind::Identifier(lit)
+                    return res
+              }
            } else {
              if Lexer::is_digit(c) {
                 let num = self.read_number()

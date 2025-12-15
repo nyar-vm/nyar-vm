@@ -136,7 +136,8 @@ imply Compiler {
                   let mi = ms.get(j)
                   if mi.__variant__ == "Micro" {
                     let mname = cname + "::" + mi._0
-                    let f = HIRFunc::new(mname, mi._1, mi._2)
+                    let expanded = Compiler::expand_stmt_macros(self, mi._2)
+                    let f = HIRFunc::new(mname, mi._1, expanded)
                     impl_methods.push(f)
                   }
                   j = j + 1
@@ -146,7 +147,8 @@ imply Compiler {
               } else {
                 if tag == "Micro" {
                   let qn = Compiler::fq(m.ns, s._0)
-                  let f = HIRFunc::new(qn, s._1, s._2)
+                  let expanded = Compiler::expand_stmt_macros(self, s._2)
+                  let f = HIRFunc::new(qn, s._1, expanded)
                   m.funcs.push(f)
                 } else {
                   if tag == "Macro" {
@@ -154,7 +156,38 @@ imply Compiler {
                     let f = HIRMacro::new(qn, s._1, s._2)
                     m.macros.push(f)
                   } else {
-                    m.init_stmts.push(s)
+                    if tag == "Decorated" {
+                      let decs = s._0
+                      let inner = s._1
+                      let is_test = false
+                      let dcur = decs
+                      while dcur {
+                        if dcur.head {
+                          let d = dcur.head
+                          if eq(d.kind, "Annotation") && eq(d.name, "test") { is_test = true }
+                        }
+                        dcur = dcur.tail
+                      }
+                      if inner.__variant__ == "Micro" {
+                        let qn = Compiler::fq(m.ns, inner._0)
+                       let expanded = Compiler::expand_stmt_macros(self, inner._2)
+                       let f = HIRFunc::new(qn, inner._1, expanded)
+                       m.funcs.push(f)
+                       if is_test {
+                          m.init_stmts.push(expanded)
+                       }
+                      } else {
+                        if inner.__variant__ == "Macro" {
+                          let qn = Compiler::fq(m.ns, inner._0)
+                          let f = HIRMacro::new(qn, inner._1, inner._2)
+                          m.macros.push(f)
+                        } else {
+                          m.init_stmts.push(s)
+                        }
+                      }
+                    } else {
+                      m.init_stmts.push(s)
+                    }
                   }
                 }
               }
@@ -165,6 +198,112 @@ imply Compiler {
       }
     }
     return m
+  }
+
+  micro expand_stmt_macros(self, stmt) {
+    let tag = stmt.__variant__
+    if tag == "Block" {
+      let stmts = stmt._0
+      let i = 0
+      let n = stmts.len()
+      while i < n {
+        let s = stmts.get(i)
+        let e = Compiler::expand_stmt_macros(self, s)
+        stmts.set(i, e)
+        i = i + 1
+      }
+      return Stmt::Block(stmts, stmt._1)
+    } else {
+      if tag == "Print" {
+        let v = Compiler::expand_expr_macros(self, stmt._0)
+        return Stmt::Print(v, stmt._1)
+      } else {
+        if tag == "Expr" {
+          let v2 = Compiler::expand_expr_macros(self, stmt._0)
+          return Stmt::Expr(v2, stmt._1)
+        } else {
+          if tag == "Let" {
+            let name = stmt._0
+            let ty = stmt._1
+            let val = Compiler::expand_expr_macros(self, stmt._2)
+            return Stmt::Let(name, ty, val, stmt._3)
+          } else {
+            if tag == "Return" {
+              let v3 = Compiler::expand_expr_macros(self, stmt._0)
+              return Stmt::Return(v3, stmt._1)
+            } else {
+              if tag == "If" {
+                let c = Compiler::expand_expr_macros(self, stmt._0)
+                let t = Compiler::expand_stmt_macros(self, stmt._1)
+                let e = Compiler::expand_stmt_macros(self, stmt._2)
+                return Stmt::If(c, t, e, stmt._3)
+              } else {
+                if tag == "While" {
+                  let c2 = Compiler::expand_expr_macros(self, stmt._0)
+                  let b = Compiler::expand_stmt_macros(self, stmt._1)
+                  return Stmt::While(c2, b, stmt._2)
+                } else {
+                  return stmt
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  micro expand_expr_macros(self, expr) {
+    let tag = expr.__variant__
+    if tag == "Field" {
+      let obj = expr._0
+      let key = expr._1
+      let span = expr._2
+      if obj.__variant__ == "Variable" && eq(obj._0, "__macro_location") {
+        if eq(key, "line_number") {
+          let ln = 0
+          if span { ln = span.line }
+          return Expr::Int(ln, span)
+        }
+      }
+      return expr
+    } else {
+      if tag == "Call" {
+        let callee = expr._0
+        let args = expr._1
+        let span = expr._2
+        if callee.__variant__ == "Variable" && eq(callee._0, "__macro_type_of") {
+          if args.len() >= 1 {
+            let a0 = args.get(0)
+            if a0.__variant__ == "Int" { return Expr::String("i64", span) }
+            if a0.__variant__ == "String" { return Expr::String("string", span) }
+            if a0.__variant__ == "Bool" { return Expr::String("bool", span) }
+          }
+          return Expr::String("", span)
+        } else {
+          let i = 0
+          let n = args.len()
+          while i < n {
+            let ai = args.get(i)
+            args.set(i, Compiler::expand_expr_macros(self, ai))
+            i = i + 1
+          }
+          return Expr::Call(callee, args, span)
+        }
+      } else {
+        if tag == "Add" || tag == "Sub" || tag == "Mul" || tag == "Div" || tag == "Eq" {
+          let a = Compiler::expand_expr_macros(self, expr._0)
+          let b = Compiler::expand_expr_macros(self, expr._1)
+          if tag == "Add" { return Expr::Add(a, b, expr._2) }
+          if tag == "Sub" { return Expr::Sub(a, b, expr._2) }
+          if tag == "Mul" { return Expr::Mul(a, b, expr._2) }
+          if tag == "Div" { return Expr::Div(a, b, expr._2) }
+          return Expr::Eq(a, b, expr._2)
+        } else {
+          return expr
+        }
+      }
+    }
   }
 
   micro lower_hir_to_mir(self, m) {
@@ -919,7 +1058,12 @@ imply Compiler {
             i0 = i0 + 1
           }
           if callee.__variant__ == "Variable" {
-            block.push(LIRInstr::Call(callee._0, n0))
+            let name = callee._0
+            if eq(name, "print") {
+              block.push(LIRInstr::CallFFI("print", n0))
+            } else {
+              block.push(LIRInstr::Call(name, n0))
+            }
           } else {
             block.push(LIRInstr::Call("", n0))
           }
