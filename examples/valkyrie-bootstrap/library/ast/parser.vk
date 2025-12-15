@@ -49,14 +49,16 @@ imply Parser {
   }
   micro expect_semi(self) {
     match self.current_kind() {
-       case TokenKind::Semi: { self.advance() }
-       case _: { }
+       case TokenKind::Semi:
+            self.advance()
+       case _:
     }
   }
   micro expect_rparen(self) {
     match self.current_kind() {
-       case TokenKind::RParen: { self.advance() }
-       case _: { }
+       case TokenKind::RParen:
+            self.advance()
+       case _:
     }
   }
   micro parse_path(self) {
@@ -136,36 +138,29 @@ imply Parser {
     let kind = self.current_kind()
     let span = self.cur.span
     match kind {
-       case TokenKind::Integer(v): {
+       case TokenKind::Integer(v):
           self.advance()
           return Expr::Int(v, span)
-       }
-       case TokenKind::String(v): {
+       case TokenKind::String(v):
           self.advance()
           return Expr::String(v, span)
-       }
-       case TokenKind::KwTrue: {
+       case TokenKind::KwTrue:
           self.advance()
           return Expr::Bool(1, span)
-       }
-       case TokenKind::KwFalse: {
+       case TokenKind::KwFalse:
           self.advance()
           return Expr::Bool(0, span)
-       }
-       case TokenKind::Identifier(name): {
+       case TokenKind::Identifier(name):
           self.advance()
           return Expr::Variable(name, span)
-       }
-       case TokenKind::LParen: {
+       case TokenKind::LParen:
           self.advance()
           let e = self.parse_expr()
           self.expect_rparen()
           return e
-       }
-       case _: {
+       case _:
           self.advance()
           return Expr::Int(0, span)
-       }
     }
   }
   micro parse_args_expr(self) {
@@ -320,11 +315,10 @@ imply Parser {
            self.advance()
            let name = ""
            match self.current_kind() {
-               case TokenKind::Identifier(n): {
+               case TokenKind::Identifier(n):
                    name = n
                    self.advance()
-               }
-               case _: {}
+               case _:
            }
            let fields = self.parse_fields()
            return Stmt::Class(name, fields, span)
@@ -332,11 +326,10 @@ imply Parser {
            self.advance()
            let name = ""
            match self.current_kind() {
-               case TokenKind::Identifier(n): {
+               case TokenKind::Identifier(n):
                    name = n
                    self.advance()
-               }
-               case _: {}
+               case _:
            }
            let methods = self.parse_impl_body()
            return Stmt::Imply(name, methods, span)
@@ -344,11 +337,10 @@ imply Parser {
            self.advance()
            let name = ""
            match self.current_kind() {
-               case TokenKind::Identifier(n): {
+               case TokenKind::Identifier(n):
                    name = n
                    self.advance()
-               }
-               case _: {}
+               case _:
            }
            let args = self.parse_args_typed()
            let body = self.parse_block()
@@ -357,11 +349,10 @@ imply Parser {
            self.advance()
            let name = ""
            match self.current_kind() {
-               case TokenKind::Identifier(n): {
+               case TokenKind::Identifier(n):
                    name = n
                    self.advance()
-               }
-               case _: {}
+               case _:
            }
            let args = self.parse_args_typed()
            let body = self.parse_block()
@@ -370,11 +361,10 @@ imply Parser {
            self.advance()
            let name = ""
            match self.current_kind() {
-               case TokenKind::Identifier(n): {
+               case TokenKind::Identifier(n):
                    name = n
                    self.advance()
-               }
-               case _: {}
+               case _:
            }
            let variants = self.parse_fields()
            return Stmt::Enum(name, variants, span)
@@ -385,8 +375,9 @@ imply Parser {
                    self.advance()
                    let ty = Parser::parse_optional_type(self)
                    match self.current_kind() {
-                       case TokenKind::Eq: { self.advance() }
-                       case _: {}
+                       case TokenKind::Eq:
+                           self.advance()
+                       case _:
                    }
                    let val = self.parse_expr()
                    self.expect_semi()
@@ -399,18 +390,16 @@ imply Parser {
        case TokenKind::KwPrint:
            self.advance()
            match self.current_kind() {
-               case TokenKind::LParen: {
+               case TokenKind::LParen:
                    self.advance()
                    let e = self.parse_expr()
                    self.expect_rparen()
                    self.expect_semi()
                    return Stmt::Print(e, span)
-               }
-               case _: {
+               case _:
                    let e = self.parse_expr()
                    self.expect_semi()
                    return Stmt::Print(e, span)
-               }
            }
        case TokenKind::KwIf:
            self.advance()
@@ -418,11 +407,10 @@ imply Parser {
            let then_branch = self.parse_stmt()
            let else_branch = Stmt::Block(new List, span)
            match self.current_kind() {
-               case TokenKind::KwElse: {
+               case TokenKind::KwElse:
                    self.advance()
                    else_branch = self.parse_stmt()
-               }
-               case _: {}
+               case _:
            }
            return Stmt::If(cond, then_branch, else_branch, span)
        case TokenKind::KwMatch:
@@ -455,15 +443,14 @@ imply Parser {
     loop {
        let tag = self.current_kind().__variant__
        match tag {
-           case "RBrace": {
+           case "RBrace":
                self.advance()
                break
-           }
-           case "EOF": { break }
-           case _: {
+           case "EOF":
+               break
+           case _:
                let s = self.parse_stmt()
                acc.push(s)
-           }
        }
     }
     return Stmt::Block(acc, span)
@@ -472,25 +459,24 @@ imply Parser {
     let kind = self.current_kind()
     let span = self.cur.span
     match kind {
-        case TokenKind::Identifier(path): {
+        case TokenKind::Identifier(path):
             let path_str = self.parse_path()
             match self.current_kind() {
-                case TokenKind::LParen: {
+                case TokenKind::LParen:
                     let args = Parser::parse_type_args(self)
                     return Type::Apply(path_str, args, span)
-                }
-                case _: {}
+                case _:
+                    let ty = Type::Name(path_str, span)
+                    return ty
             }
             return Type::Name(path_str, span)
-        }
-        case TokenKind::LParen: {
+        case TokenKind::LParen:
             self.advance()
             match self.current_kind() {
-                case TokenKind::RParen: {
+                case TokenKind::RParen:
                     self.advance()
                     return Type::Unit(0, span)
-                }
-                case _: {}
+                case _:
             }
             let elems = new List
             while self.current_kind().__variant__ != "RParen" && self.current_kind().__variant__ != "EOF" {
@@ -504,9 +490,8 @@ imply Parser {
             }
             return Type::Tuple(elems, span)
         }
-        case _: {
+        case _:
             return Type::Name("", span)
-        }
     }
   }
   micro parse_type_args(self) {
@@ -517,28 +502,24 @@ imply Parser {
         let kind = self.current_kind()
         let span = self.cur.span
         match kind {
-            case TokenKind::Identifier(save): {
+            case TokenKind::Identifier(save):
                 self.advance()
                 match self.current_kind() {
-                    case TokenKind::Colon: {
+                    case TokenKind::Colon:
                         self.advance()
                         let ty = Parser::parse_type_expr(self)
                         args.push(TypeArg::Field(save, ty, span))
-                    }
-                    case _: {
+                    case _:
                         let ty = Type::Name(save, span)
                         args.push(TypeArg::Ty(ty, span))
-                    }
                 }
             }
-            case TokenKind::Integer(v): {
+            case TokenKind::Integer(v):
                 self.advance()
                 args.push(TypeArg::Int(v, span))
-            }
-            case _: {
+            case _:
                 let ty2 = Parser::parse_type_expr(self)
                 args.push(TypeArg::Ty(ty2, span))
-            }
         }
         if self.current_kind().__variant__ == "Comma" { self.advance() }
       }
@@ -555,12 +536,11 @@ imply Parser {
         
         # Postfix operators (Highest binding power)
         match kind {
-            case TokenKind::Question: {
+            case TokenKind::Question:
                self.advance()
                left = Type::Nullable(left, span)
                continue
-            }
-            case _: {}
+            case _:
         }
         
         # Infix operators
@@ -568,19 +548,17 @@ imply Parser {
         let rbp = 0
         
         match kind {
-            case TokenKind::Amp: {
+            case TokenKind::Amp:
                lbp = 60
                rbp = 61
-            }
-            case TokenKind::Pipe: {
+            case TokenKind::Pipe:
                lbp = 50
                rbp = 51
-            }
-            case TokenKind::Arrow: {
+            case TokenKind::Arrow:
                lbp = 40
                rbp = 41
-            }
-            case _: { break }
+            case _:
+               break
         }
         
         if lbp < min_bp {
@@ -591,20 +569,17 @@ imply Parser {
         let right = self.parse_type_bp(rbp)
         
         match kind {
-            case TokenKind::Amp: {
+            case TokenKind::Amp:
                left = Type::Intersect(left, right, span)
-            }
-            case TokenKind::Pipe: {
+            case TokenKind::Pipe:
                left = Type::Union(left, right, span)
-            }
-            case TokenKind::Arrow: {
+            case TokenKind::Arrow:
                # Function type support: A -> B
                # Convert left to args list if not already
                let args = new List
                args.push(left)
                left = Type::Function(args, right, span)
-            }
-            case _: {}
+            case _:
         }
      }
      return left
@@ -617,28 +592,26 @@ imply Parser {
   micro parse_optional_type(self) {
     let span = self.cur.span
     match self.current_kind() {
-        case TokenKind::Colon: {
+        case TokenKind::Colon:
           self.advance()
           return Parser::parse_type_expr(self)
-        }
-        case _: {}
+        case _:
     }
     return Type::Name("", span)
   }
   micro parse_args_typed(self) {
     let args = new List
     match self.current_kind() {
-        case TokenKind::LParen: {
+        case TokenKind::LParen:
           self.advance()
           while self.current_kind().__variant__ != "RParen" && self.current_kind().__variant__ != "EOF" {
             let name = ""
             let span = self.cur.span
             match self.current_kind() {
-                case TokenKind::Identifier(n): {
+                case TokenKind::Identifier(n):
                   name = n
                   self.advance()
-                }
-                case _: {}
+                case _:
             }
             let ty = Parser::parse_optional_type(self)
             let a = new Arg
@@ -649,8 +622,7 @@ imply Parser {
             if self.current_kind().__variant__ == "Comma" { self.advance() }
           }
           if self.current_kind().__variant__ == "RParen" { self.advance() }
-        }
-        case _: {}
+        case _:
     }
     return args
   }
@@ -658,45 +630,38 @@ imply Parser {
     let kind = self.current_kind()
     let span = self.cur.span
     match kind {
-        case TokenKind::Identifier(name): {
+        case TokenKind::Identifier(name):
             if name == "_" {
                 self.advance()
                 return Pattern::Wildcard(0, span)
             } else {
                 self.advance()
                 match self.current_kind() {
-                    case TokenKind::LParen: {
+                    case TokenKind::LParen:
                         let args = self.parse_pattern_tuple()
                         return Pattern::Variant(name, args, span)
-                    }
-                    case _: {}
+                    case _:
                 }
                 return Pattern::Type(Type::Name(name, span), span)
             }
         }
-        case TokenKind::Integer(v): {
+        case TokenKind::Integer(v):
             self.advance()
             return Pattern::Int(v, span)
-        }
-        case TokenKind::String(v): {
+        case TokenKind::String(v):
             self.advance()
             return Pattern::String(v, span)
-        }
-        case TokenKind::KwTrue: {
+        case TokenKind::KwTrue:
             self.advance()
             return Pattern::Bool(1, span)
-        }
-        case TokenKind::KwFalse: {
+        case TokenKind::KwFalse:
             self.advance()
             return Pattern::Bool(0, span)
-        }
-        case TokenKind::LParen: {
+        case TokenKind::LParen:
             let elems = self.parse_pattern_tuple()
             return Pattern::Tuple(elems, span)
-        }
-        case _: {
+        case _:
             return Pattern::Wildcard(0, span)
-        }
     }
   }
 
@@ -707,13 +672,15 @@ imply Parser {
         let p = Parser::parse_pattern(self)
         elems.push(p)
         match self.current_kind() {
-            case TokenKind::Comma: { self.advance() }
-            case _: {}
+            case TokenKind::Comma:
+                self.advance()
+            case _:
         }
       }
       match self.current_kind() {
-          case TokenKind::RParen: { self.advance() }
-          case _: {}
+          case TokenKind::RParen:
+                self.advance()
+          case _:
       }
       return elems
   }
@@ -721,27 +688,28 @@ imply Parser {
   micro parse_match_arms(self) {
     let arms = new List
     match self.current_kind() {
-        case TokenKind::LBrace: {
+        case TokenKind::LBrace:
           self.advance()
           while self.current_kind().__variant__ != "RBrace" && self.current_kind().__variant__ != "EOF" {
             let span = self.cur.span
             
             # Expect 'case'
             match self.current_kind() {
-               case TokenKind::KwCase: { self.advance() }
-               case _: { 
+               case TokenKind::KwCase:
+                    self.advance()
+               case _:
                    # Should error here in full compiler
-               }
-            }
-            
+
+
             let pat = Parser::parse_pattern(self)
             
             # Expect ':'
             match self.current_kind() {
-                case TokenKind::Colon: { self.advance() }
-                case _: { }
+                case TokenKind::Colon:
+                    self.advance()
+                case _:
+                    # Should error here in full compiler
             }
-            
             let body = self.parse_stmt()
             let arm = new MatchArm
             arm.pat = pat
@@ -754,16 +722,18 @@ imply Parser {
             # The 'case' keyword acts as a separator, so comma is not strictly needed.
             # But let's check if there is a comma and consume it if so.
             match self.current_kind() {
-                case TokenKind::Comma: { self.advance() }
-                case _: {}
+                case TokenKind::Comma:
+                    self.advance()
+                case _:
             }
           }
           match self.current_kind() {
-              case TokenKind::RBrace: { self.advance() }
-              case _: {}
+              case TokenKind::RBrace:
+                    self.advance()
+              case _:
           }
         }
-        case _: {}
+        case _:
     }
     return arms
   }

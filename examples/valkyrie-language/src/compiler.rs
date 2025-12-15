@@ -1451,6 +1451,7 @@ fn compile_stmt(
         Stmt::FuncDef(name, args, body) => {
             let chunk_idx = compile_func_to_chunk(compiler, args.clone(), body)?;
             let key = compiler.def_name(&name);
+            println!("DEBUG: Registered function: {} -> chunk {}", key, chunk_idx);
             compiler.functions.insert(key, chunk_idx);
         }
         Stmt::ClassDef(name, fields) => {
