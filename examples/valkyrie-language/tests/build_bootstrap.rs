@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use valkyrie_language::compile_text_to_module;
+use valkyrie_language::compile_text_to_module_with_timestamp;
 
 #[test]
 fn build_bootstrap_nyarc() {
@@ -32,7 +32,8 @@ fn build_bootstrap_nyarc() {
         src.push_str(&content);
         src.push_str("\n");
     }
-    let module = compile_text_to_module(&src).expect("compile vk to module");
+    let module =
+        compile_text_to_module_with_timestamp(&src, 0).expect("compile vk to module");
     let bytes = module.encode();
     let out_dir = base.join("target");
     let _ = fs::create_dir_all(&out_dir);

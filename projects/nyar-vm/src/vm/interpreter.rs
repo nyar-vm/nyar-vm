@@ -3,6 +3,7 @@ use crate::bytecode::format::{Chunk, ClassInfo, Constant, ImplInfo, NyarcModule,
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
+#[cfg(test)]
 use nyar_error::JvmAotError;
 use std::ptr::null;
 
@@ -39,6 +40,7 @@ fn from_u128(mut x: u128) -> Vec<u8> {
     out
 }
 
+#[cfg(test)]
 fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotError> {
     if module.chunks.is_empty() {
         return Err(JvmAotError::EmptyModule);
@@ -1440,6 +1442,7 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
     Ok(class)
 }
 
+#[cfg(test)]
 fn write_jar_for_vm(path: &str, class_bytes: &[u8]) -> std::io::Result<()> {
     use std::fs;
     use std::io::Write;
