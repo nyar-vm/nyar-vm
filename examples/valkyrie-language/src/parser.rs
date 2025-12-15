@@ -67,6 +67,10 @@ fn expect_path_string(tokens: &[Token], i: &mut usize) -> Result<String, Error> 
 
 fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
     match tokens.get(*i) {
+        Some(Token::Let) => {
+            *i += 1;
+            parse_pattern(tokens, i)
+        }
         Some(Token::Int(v)) => {
             *i += 1;
             Ok(Pattern::Literal(*v))

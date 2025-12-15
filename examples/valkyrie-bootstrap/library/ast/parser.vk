@@ -185,19 +185,18 @@ imply Parser {
       let tag = self.current_kind().__variant__
       let span = self.cur.span
       match tag {
-         "Dot" => {
+         case "Dot":
              self.advance()
              if self.current_kind().__variant__ == "Identifier" {
                 let name = self.current_kind()._0
                 self.advance()
                 left = Expr::Field(left, name, span)
              }
-         }
-         "LParen" => {
+         case "LParen":
              let args = self.parse_args_expr()
              left = Expr::Call(left, args, span)
-         }
-         _ => { break }
+         case _:
+            break
       }
     }
     return left
@@ -209,17 +208,16 @@ imply Parser {
       let tag = self.current_kind().__variant__
       let span = self.cur.span
       match tag {
-         "Star" => {
+         case "Star":
              self.advance()
              let right = self.parse_primary()
              left = Expr::Mul(left, right, span)
-         }
-         "Slash" => {
+         case "Slash":
              self.advance()
              let right = self.parse_primary()
              left = Expr::Div(left, right, span)
-         }
-         _ => { break }
+         case _:
+            break
       }
     }
     return left
@@ -230,17 +228,16 @@ imply Parser {
       let tag = self.current_kind().__variant__
       let span = self.cur.span
       match tag {
-         "Plus" => {
+         case "Plus":
              self.advance()
              let right = self.parse_term()
              left = Expr::Add(left, right, span)
-         }
-         "Minus" => {
+         case "Minus":
              self.advance()
              let right = self.parse_term()
              left = Expr::Sub(left, right, span)
-         }
-         _ => { break }
+         case _:
+            break
       }
     }
     return left
@@ -251,12 +248,12 @@ imply Parser {
       let tag = self.current_kind().__variant__
       let span = self.cur.span
       match tag {
-         "EqEq" => {
+         case "EqEq":
              self.advance()
              let right = self.parse_add()
              left = Expr::Eq(left, right, span)
-         }
-         _ => { break }
+         case _:
+            break
       }
     }
     return left
