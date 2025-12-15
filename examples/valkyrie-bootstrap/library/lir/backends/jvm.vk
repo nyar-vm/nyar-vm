@@ -8,13 +8,7 @@ imply JVMBackend {
   micro emit(self, lir) {
     let in_path = "examples/valkyrie-bootstrap/target/vcc_new.nyarc"
     let out_path = self.output_path()
-    let ok = compile_jvm(in_path, out_path)
-    if ok {
-      print("jvm jar written: " + out_path)
-    } else {
-      print("jvm jar write failed")
-    }
-    return ""
+    return out_path
   }
   micro output_path(self) {
     return "examples/valkyrie-bootstrap/target/vcc_new.jar"

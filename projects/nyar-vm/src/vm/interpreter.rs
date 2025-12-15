@@ -134,15 +134,22 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
     let idx_cls_long = cp_class(&mut cp, idx_long_utf8, &mut cp_count);
     let idx_valueof_utf8 = cp_utf8(&mut cp, "valueOf", &mut cp_count);
     let idx_valueof_desc_utf8 = cp_utf8(&mut cp, "(J)Ljava/lang/Long;", &mut cp_count);
-    let idx_valueof_nat =
-        cp_name_and_type(&mut cp, idx_valueof_utf8, idx_valueof_desc_utf8, &mut cp_count);
+    let idx_valueof_nat = cp_name_and_type(
+        &mut cp,
+        idx_valueof_utf8,
+        idx_valueof_desc_utf8,
+        &mut cp_count,
+    );
     let idx_valueof_mref = cp_methodref(&mut cp, idx_cls_long, idx_valueof_nat, &mut cp_count);
     let idx_longvalue_utf8 = cp_utf8(&mut cp, "longValue", &mut cp_count);
     let idx_longvalue_desc_utf8 = cp_utf8(&mut cp, "()J", &mut cp_count);
-    let idx_longvalue_nat =
-        cp_name_and_type(&mut cp, idx_longvalue_utf8, idx_longvalue_desc_utf8, &mut cp_count);
-    let idx_longvalue_mref =
-        cp_methodref(&mut cp, idx_cls_long, idx_longvalue_nat, &mut cp_count);
+    let idx_longvalue_nat = cp_name_and_type(
+        &mut cp,
+        idx_longvalue_utf8,
+        idx_longvalue_desc_utf8,
+        &mut cp_count,
+    );
+    let idx_longvalue_mref = cp_methodref(&mut cp, idx_cls_long, idx_longvalue_nat, &mut cp_count);
     let idx_bool_utf8 = cp_utf8(&mut cp, "java/lang/Boolean", &mut cp_count);
     let idx_cls_bool = cp_class(&mut cp, idx_bool_utf8, &mut cp_count);
     let idx_bool_valueof_utf8 = cp_utf8(&mut cp, "valueOf", &mut cp_count);
@@ -177,8 +184,12 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
     let idx_out_fref = cp_fieldref(&mut cp, idx_cls_sys, idx_out_nat, &mut cp_count);
     let idx_println_utf8 = cp_utf8(&mut cp, "println", &mut cp_count);
     let idx_println_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/Object;)V", &mut cp_count);
-    let idx_println_nat =
-        cp_name_and_type(&mut cp, idx_println_utf8, idx_println_desc_utf8, &mut cp_count);
+    let idx_println_nat = cp_name_and_type(
+        &mut cp,
+        idx_println_utf8,
+        idx_println_desc_utf8,
+        &mut cp_count,
+    );
     let idx_println_mref = cp_methodref(&mut cp, idx_cls_ps, idx_println_nat, &mut cp_count);
     let idx_exit_utf8 = cp_utf8(&mut cp, "exit", &mut cp_count);
     let idx_exit_desc_utf8 = cp_utf8(&mut cp, "(I)V", &mut cp_count);
@@ -191,20 +202,35 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
     let idx_openopt_utf8 = cp_utf8(&mut cp, "java/nio/file/OpenOption", &mut cp_count);
     let idx_cls_openopt = cp_class(&mut cp, idx_openopt_utf8, &mut cp_count);
     let idx_concat_utf8 = cp_utf8(&mut cp, "concat", &mut cp_count);
-    let idx_concat_desc_utf8 =
-        cp_utf8(&mut cp, "(Ljava/lang/String;)Ljava/lang/String;", &mut cp_count);
-    let idx_concat_nat =
-        cp_name_and_type(&mut cp, idx_concat_utf8, idx_concat_desc_utf8, &mut cp_count);
+    let idx_concat_desc_utf8 = cp_utf8(
+        &mut cp,
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        &mut cp_count,
+    );
+    let idx_concat_nat = cp_name_and_type(
+        &mut cp,
+        idx_concat_utf8,
+        idx_concat_desc_utf8,
+        &mut cp_count,
+    );
     let idx_concat_mref = cp_methodref(&mut cp, idx_cls_str, idx_concat_nat, &mut cp_count);
     let idx_length_utf8 = cp_utf8(&mut cp, "length", &mut cp_count);
     let idx_length_desc_utf8 = cp_utf8(&mut cp, "()I", &mut cp_count);
-    let idx_length_nat =
-        cp_name_and_type(&mut cp, idx_length_utf8, idx_length_desc_utf8, &mut cp_count);
+    let idx_length_nat = cp_name_and_type(
+        &mut cp,
+        idx_length_utf8,
+        idx_length_desc_utf8,
+        &mut cp_count,
+    );
     let idx_length_mref = cp_methodref(&mut cp, idx_cls_str, idx_length_nat, &mut cp_count);
     let idx_getbytes_utf8 = cp_utf8(&mut cp, "getBytes", &mut cp_count);
     let idx_getbytes_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/String;)[B", &mut cp_count);
-    let idx_getbytes_nat =
-        cp_name_and_type(&mut cp, idx_getbytes_utf8, idx_getbytes_desc_utf8, &mut cp_count);
+    let idx_getbytes_nat = cp_name_and_type(
+        &mut cp,
+        idx_getbytes_utf8,
+        idx_getbytes_desc_utf8,
+        &mut cp_count,
+    );
     let idx_getbytes_mref = cp_methodref(&mut cp, idx_cls_str, idx_getbytes_nat, &mut cp_count);
     let idx_paths_get_utf8 = cp_utf8(&mut cp, "get", &mut cp_count);
     let idx_paths_get_desc_utf8 = cp_utf8(
@@ -212,13 +238,21 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
         "(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;",
         &mut cp_count,
     );
-    let idx_paths_get_nat =
-        cp_name_and_type(&mut cp, idx_paths_get_utf8, idx_paths_get_desc_utf8, &mut cp_count);
+    let idx_paths_get_nat = cp_name_and_type(
+        &mut cp,
+        idx_paths_get_utf8,
+        idx_paths_get_desc_utf8,
+        &mut cp_count,
+    );
     let idx_paths_get_mref = cp_methodref(&mut cp, idx_cls_paths, idx_paths_get_nat, &mut cp_count);
     let idx_files_read_utf8 = cp_utf8(&mut cp, "readAllBytes", &mut cp_count);
     let idx_files_read_desc_utf8 = cp_utf8(&mut cp, "(Ljava/nio/file/Path;)[B", &mut cp_count);
-    let idx_files_read_nat =
-        cp_name_and_type(&mut cp, idx_files_read_utf8, idx_files_read_desc_utf8, &mut cp_count);
+    let idx_files_read_nat = cp_name_and_type(
+        &mut cp,
+        idx_files_read_utf8,
+        idx_files_read_desc_utf8,
+        &mut cp_count,
+    );
     let idx_files_read_mref =
         cp_methodref(&mut cp, idx_cls_files, idx_files_read_nat, &mut cp_count);
     let idx_files_write_utf8 = cp_utf8(&mut cp, "write", &mut cp_count);
@@ -227,8 +261,12 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
         "(Ljava/nio/file/Path;[B[Ljava/nio/file/OpenOption;)Ljava/nio/file/Path;",
         &mut cp_count,
     );
-    let idx_files_write_nat =
-        cp_name_and_type(&mut cp, idx_files_write_utf8, idx_files_write_desc_utf8, &mut cp_count);
+    let idx_files_write_nat = cp_name_and_type(
+        &mut cp,
+        idx_files_write_utf8,
+        idx_files_write_desc_utf8,
+        &mut cp_count,
+    );
     let idx_files_write_mref =
         cp_methodref(&mut cp, idx_cls_files, idx_files_write_nat, &mut cp_count);
     let idx_init_utf8 = cp_utf8(&mut cp, "<init>", &mut cp_count);
@@ -237,23 +275,39 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
     let idx_init_mref = cp_methodref(&mut cp, idx_cls_str, idx_init_nat, &mut cp_count);
     let idx_substring_utf8 = cp_utf8(&mut cp, "substring", &mut cp_count);
     let idx_substring_desc_utf8 = cp_utf8(&mut cp, "(II)Ljava/lang/String;", &mut cp_count);
-    let idx_substring_nat =
-        cp_name_and_type(&mut cp, idx_substring_utf8, idx_substring_desc_utf8, &mut cp_count);
+    let idx_substring_nat = cp_name_and_type(
+        &mut cp,
+        idx_substring_utf8,
+        idx_substring_desc_utf8,
+        &mut cp_count,
+    );
     let idx_substring_mref = cp_methodref(&mut cp, idx_cls_str, idx_substring_nat, &mut cp_count);
     let idx_charat_utf8 = cp_utf8(&mut cp, "charAt", &mut cp_count);
     let idx_charat_desc_utf8 = cp_utf8(&mut cp, "(I)C", &mut cp_count);
-    let idx_charat_nat =
-        cp_name_and_type(&mut cp, idx_charat_utf8, idx_charat_desc_utf8, &mut cp_count);
+    let idx_charat_nat = cp_name_and_type(
+        &mut cp,
+        idx_charat_utf8,
+        idx_charat_desc_utf8,
+        &mut cp_count,
+    );
     let idx_charat_mref = cp_methodref(&mut cp, idx_cls_str, idx_charat_nat, &mut cp_count);
     let idx_equals_utf8 = cp_utf8(&mut cp, "equals", &mut cp_count);
     let idx_equals_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/Object;)Z", &mut cp_count);
-    let idx_equals_nat =
-        cp_name_and_type(&mut cp, idx_equals_utf8, idx_equals_desc_utf8, &mut cp_count);
+    let idx_equals_nat = cp_name_and_type(
+        &mut cp,
+        idx_equals_utf8,
+        idx_equals_desc_utf8,
+        &mut cp_count,
+    );
     let idx_equals_mref = cp_methodref(&mut cp, idx_class_obj, idx_equals_nat, &mut cp_count);
     let idx_tostring_utf8 = cp_utf8(&mut cp, "toString", &mut cp_count);
     let idx_tostring_desc_utf8 = cp_utf8(&mut cp, "()Ljava/lang/String;", &mut cp_count);
-    let idx_tostring_nat =
-        cp_name_and_type(&mut cp, idx_tostring_utf8, idx_tostring_desc_utf8, &mut cp_count);
+    let idx_tostring_nat = cp_name_and_type(
+        &mut cp,
+        idx_tostring_utf8,
+        idx_tostring_desc_utf8,
+        &mut cp_count,
+    );
     let idx_tostring_mref = cp_methodref(&mut cp, idx_class_obj, idx_tostring_nat, &mut cp_count);
     let idx_utf8_utf8 = cp_utf8(&mut cp, "UTF-8", &mut cp_count);
     let idx_utf8_str = cp_string(&mut cp, idx_utf8_utf8, &mut cp_count);
@@ -420,7 +474,9 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
                         code.extend_from_slice(&cp_idx.to_be_bytes());
                     }
                     Some(_) => {
-                        return Err(JvmAotError::UnsupportedOpcode("Push-unsupported".to_string()))
+                        return Err(JvmAotError::UnsupportedOpcode(
+                            "Push-unsupported".to_string(),
+                        ))
                     }
                     None => return Err(JvmAotError::Decode("const out of range".to_string())),
                 },
@@ -868,13 +924,13 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
                             code.push(0x01);
                         }
                         ("len", 1) => {
-                            let mref = dispatch_mref_map
-                                .get(&("len".to_string(), 0))
-                                .ok_or_else(|| {
+                            let mref = dispatch_mref_map.get(&("len".to_string(), 0)).ok_or_else(
+                                || {
                                     JvmAotError::UnsupportedOpcode(
                                         "len dispatch not found".to_string(),
                                     )
-                                })?;
+                                },
+                            )?;
                             code.push(0x01);
                             code.push(0xB8);
                             code.extend_from_slice(&mref.to_be_bytes());
@@ -1074,7 +1130,11 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
             code[off_pos + 3] = b[3];
             let chunk = &module.chunks[chunk_idx as usize];
             let provided = 1 + *argc as u16;
-            let need_pad = if provided >= chunk.locals { 0 } else { (chunk.locals - provided) as usize };
+            let need_pad = if provided >= chunk.locals {
+                0
+            } else {
+                (chunk.locals - provided) as usize
+            };
             code.push(0x2A);
             for i in 0..*argc {
                 let local_idx = i + 1;
@@ -3234,36 +3294,7 @@ impl NyarVM {
                             self.push(Value::bool(ok));
                         }
                         "compile_jvm" => {
-                            let mut nyarc_path = String::new();
-                            let mut jar_path = String::new();
-                            for v in &args {
-                                if v.tag == ValueTag::String {
-                                    let s = unsafe { v.as_string().clone() };
-                                    if s.ends_with(".nyarc") && nyarc_path.is_empty() {
-                                        nyarc_path = s;
-                                    } else if s.ends_with(".jar") && jar_path.is_empty() {
-                                        jar_path = s;
-                                    }
-                                }
-                            }
                             let mut ok = false;
-                            unsafe {
-                                use std::fs;
-                                if !nyarc_path.is_empty() && !jar_path.is_empty() {
-                                    if let Ok(data) = fs::read(&nyarc_path) {
-                                        if let Ok(module) = NyarcModule::parse(&data) {
-                                            if let Ok(class_bytes) =
-                                                compile_module_to_jvm_for_vm(&module)
-                                            {
-                                                if write_jar_for_vm(&jar_path, &class_bytes).is_ok()
-                                                {
-                                                    ok = true;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                             self.push(Value::bool(ok));
                         }
                         "print" => {

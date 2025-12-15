@@ -567,9 +567,9 @@ fn list_set_get_remove() {
 
 #[test]
 fn run_bootstrap_nyarc_module() {
+    use nyar_vm::bytecode::decoder::Decoder;
     use std::fs;
     use std::path::Path;
-    use nyar_vm::bytecode::decoder::Decoder;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let workspace = Path::new(manifest_dir)
