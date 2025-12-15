@@ -737,7 +737,13 @@ impl NyarVM {
     }
     pub fn print_traceback(&self, err: &VmError) {
         self.print_line("Traceback (most recent call last):");
-        for (i, f) in self.frames.iter().enumerate() {
+        let start = if self.frames.len() > 20 {
+            self.print_line(&format!("... ({} frames omitted)", self.frames.len() - 20));
+            self.frames.len() - 20
+        } else {
+            0
+        };
+        for (i, f) in self.frames.iter().enumerate().skip(start) {
             let info = match f.chunk_idx {
                 Some(ci) => format!("frame {}: chunk={}, ip={}", i, ci, f.ip),
                 None => format!("frame {}: chunk=<entry>, ip={}", i, f.ip),
