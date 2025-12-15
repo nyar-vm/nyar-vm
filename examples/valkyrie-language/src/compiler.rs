@@ -73,6 +73,7 @@ impl Compiler {
             i as u16
         } else {
             let i = self.constants.len() as u16;
+            println!("DEBUG: Added constant {}: {:?}", i, c);
             self.constants.push(c);
             i
         }
@@ -103,6 +104,9 @@ impl Compiler {
              println!("DEBUG: Resolving function: {}", name);
         }
         if let Some(&idx) = self.functions.get(name) {
+            if name.contains("Token") {
+                println!("DEBUG: Found exact: {} -> {}", name, idx);
+            }
             return Some(idx);
         }
         let q = self.qualify(name);
@@ -110,6 +114,9 @@ impl Compiler {
              println!("DEBUG: Resolving function qualified: {}", q);
         }
         if let Some(&idx) = self.functions.get(&q) {
+            if name.contains("Token") {
+                println!("DEBUG: Found qualified: {} -> {}", q, idx);
+            }
             return Some(idx);
         }
         for p in &self.use_prefixes {
@@ -723,6 +730,7 @@ fn compile_expr(
             if let Expr::Variable(name) = &**callee {
                 // Check for static function first with namespace/using resolution
                 if let Some(idx) = compiler.resolve_function(name) {
+                    println!("DEBUG: resolving call {} -> function idx {}", name, idx);
                     // Static function call
                     for arg in args {
                         compile_expr(compiler, contexts, arg)?;
@@ -1016,7 +1024,8 @@ fn compile_pattern_check(
             ctx.code.extend_from_slice(&v_idx.to_le_bytes());
 
             ctx.code.push(Opcode::Push as u8);
-            let n_idx = compiler.add_string(name);
+            let short_name = name.split("::").last().unwrap_or(name);
+            let n_idx = compiler.add_string(short_name);
             ctx.code.extend_from_slice(&n_idx.to_le_bytes());
 
             let eq_idx = compiler.add_string("eq");
@@ -1463,6 +1472,7 @@ fn compile_stmt(
             compiler.trait_map.insert(key, idx);
         }
         Stmt::EnumDef(name, variants) => {
+            println!("DEBUG: compiling EnumDef {} with variants {:?}", name, variants.iter().map(|(v, _)| v).collect::<Vec<_>>());
             // 1. Define Class for the Enum
             // Collect all possible field names (max count) to define the class structure
             // We use positional fields _0, _1, etc.
@@ -1489,6 +1499,16 @@ fn compile_stmt(
             // 2. Define Constructor Functions for each variant
             for (v_name, v_fields) in variants {
                 let mut ctx = FunctionContext::new(v_fields.clone());
+
+                // Debug print
+                ctx.code.push(Opcode::Push as u8);
+                let msg_idx = compiler.add_string(&format!("DEBUG: Constructing {}", v_name));
+                ctx.code.extend_from_slice(&msg_idx.to_le_bytes());
+                let print_idx = compiler.add_string("print");
+                ctx.code.push(Opcode::FFICall as u8);
+                ctx.code.extend_from_slice(&print_idx.to_le_bytes());
+                ctx.code.push(1u8);
+                ctx.code.push(Opcode::Pop as u8);
 
                 // Create new object
                 ctx.code.push(Opcode::NewObject as u8);
@@ -1536,10 +1556,13 @@ fn compile_stmt(
                     handlers: vec![],
                 };
 
-                let chunk_idx = compiler.chunks.len() as u16;
+                let chunk_idx = (compiler.chunks.len() + 1) as u16;
                 compiler.chunks.push(chunk);
                 let v_key = format!("{}::{}", class_key, v_name);
-                println!("DEBUG: Registered function: {}", v_key);
+                println!("DEBUG: Registered function: {} -> chunk {}", v_key, chunk_idx);
+                // println!("DEBUG: Chunk {} code: {:?}", chunk_idx, chunk.code); // Cannot use chunk here as it moved
+                // Use compiler.chunks[chunk_idx]
+                println!("DEBUG: Chunk {} code: {:?}", chunk_idx, compiler.chunks.last().unwrap().code);
                 compiler.functions.insert(v_key, chunk_idx);
             }
         }

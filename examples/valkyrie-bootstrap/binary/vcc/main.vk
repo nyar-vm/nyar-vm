@@ -2,6 +2,7 @@ using package::lexer::Lexer
 using package::parser::Parser
 using package::compiler::Compiler
 using package::ast::Stmt
+using package::ast::List
 
 print("vcc bootstrap started...")
 
@@ -10,59 +11,43 @@ files.push("examples/valkyrie-bootstrap/library/ast/ast.vk")
 files.push("examples/valkyrie-bootstrap/library/ast/lexer.vk")
 files.push("examples/valkyrie-bootstrap/library/ast/parser.vk")
 files.push("examples/valkyrie-bootstrap/library/hir/hir.vk")
+files.push("examples/valkyrie-bootstrap/library/hir/transformer.vk")
+files.push("examples/valkyrie-bootstrap/library/lir/lir.vk")
+files.push("examples/valkyrie-bootstrap/library/lir/backends/wasm.vk")
+files.push("examples/valkyrie-bootstrap/library/lir/backends/jvm.vk")
+files.push("examples/valkyrie-bootstrap/library/lir/backends/clr.vk")
+files.push("examples/valkyrie-bootstrap/library/lir/backends/llvm.vk")
+files.push("examples/valkyrie-bootstrap/library/lir/backends/native.vk")
+files.push("examples/valkyrie-bootstrap/library/mir/mir.vk")
 files.push("examples/valkyrie-bootstrap/library/mir/compiler.vk")
+files.push("examples/valkyrie-bootstrap/binary/vcc/main.vk")
 
-let combined_source = ""
+let all_stmts = new List
 let i = 0
 let n = files.len()
+
 while i < n {
     let path = files.get(i)
-    print("Reading " + path)
+    print("Compiling " + path + "...")
     let code = read_file(path)
-    if code == null {
-        print("DEBUG: read_file returned null for " + path)
-        code = ""
-    }
-    if eq(code, "") {
-        print("Error: Could not read file (or empty): " + path)
+    if code == "" {
+        print("Failed to read file (or empty): " + path)
     } else {
-        combined_source = combined_source + "\n" + code
+        let lexer = Lexer::new(code)
+        let parser = Parser::new(lexer)
+        let stmts = parser.parse_all()
+        let j = 0
+        let m = stmts.len()
+        while j < m {
+            all_stmts.push(stmts.get(j))
+            j = j + 1
+        }
     }
     i = i + 1
 }
 
-if combined_source == null {
-    print("DEBUG: combined_source is null")
-} else {
-    print("DEBUG: combined_source is not null")
-    let l_src = len(combined_source)
-    print("DEBUG: len(combined_source) raw: ")
-    print(l_src)
-    print("DEBUG: combined_source length: " + str(l_src))
-    let c = chars(combined_source)
-    let l_c = len(c)
-    print("DEBUG: len(chars) raw: ")
-    print(l_c)
-    print("DEBUG: chars(combined_source) length: " + str(l_c))
-}
-
-print("Creating Lexer...")
-let lexer = Lexer::new(combined_source)
-print("Lexer created.")
-print("DEBUG: Lexer pos in main: " + lexer.pos)
-
-print("Creating Parser...")
-let parser = Parser::new(lexer)
-print("Parser created.")
-
-print("Parsing...")
-let program = parser.parse_all()
-print("Parsing complete. Compiling...")
-
+let program = Stmt::Block(all_stmts, null)
+print("Parsing complete. Starting compilation...")
 let compiler = Compiler::new()
 compiler.compile(program)
-
-print("vcc compilation finished.")
-
-lexer.skip_whitespace()
-print("Skip whitespace done")
+print("Bootstrap compilation finished.")

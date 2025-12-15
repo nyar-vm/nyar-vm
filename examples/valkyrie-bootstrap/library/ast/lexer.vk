@@ -69,6 +69,10 @@ imply Lexer {
     l.ch = "\0"
     l.line = 1
     l.col = 1
+    print("DEBUG: calling l.read_char() in new")
+    if l {
+       print("DEBUG: l is valid")
+    }
     l.read_char()
     print("DEBUG: Lexer::new returning")
     print("DEBUG: Lexer pos inside new: " + l.pos)
@@ -77,6 +81,9 @@ imply Lexer {
     } else {
         print("DEBUG: l is NOT Lexer")
     }
+    print("DEBUG: Lexer::new returning type: " + str(typeof(l)))
+    let test_tok = TokenKind::Identifier("test")
+    print("DEBUG: TokenKind::Identifier('test') variant: " + test_tok.__variant__)
     return l
   }
   micro read_char(self) {
@@ -84,10 +91,8 @@ imply Lexer {
         self.ch = ""
       } else {
         let c = get(self.input, self.pos)
-        print("DEBUG: read_char get(" + str(self.pos) + ") returned: '" + str(c) + "'")
         self.ch = c
         if self.ch == null {
-           print("DEBUG: read_char got null. pos=" + str(self.pos) + ", len=" + str(self.len))
            self.ch = ""
         }
       }
@@ -123,8 +128,9 @@ imply Lexer {
   }
 
   micro read_identifier(self) {
+    let c = self.ch
     let s = ""
-    s = s + self.ch
+    s = s + c
     while Lexer::is_alpha(self.peek_char()) || Lexer::is_digit(self.peek_char()) {
       self.read_char()
       s = s + self.ch
@@ -145,22 +151,13 @@ imply Lexer {
   }
 
   micro skip_whitespace(self) {
-    print("DEBUG: inside skip_whitespace")
-    print(self)
-    if self.ch == " " {
-        print("DEBUG: if self.ch works")
-    }
     while self.ch == " " || self.ch == "\t" || self.ch == "\n" || self.ch == "\r" {
       self.read_char()
     }
   }
 
   micro next_token(self) {
-    print("DEBUG: inside next_token, checking self")
-    print(self)
     loop {
-      print("DEBUG: inside loop, checking self")
-      print(self)
       self.skip_whitespace()
       if self.ch == "#" {
         self.skip_comment()
@@ -168,8 +165,7 @@ imply Lexer {
       }
       break
     }
-    print("DEBUG: after loop")
-    print(self)
+    
     let start_pos = self.pos
     let start_line = self.line
     let start_col = self.col
@@ -189,98 +185,130 @@ imply Lexer {
   }
 
   micro _next_token_impl(self) {
-    print("DEBUG: inside _next_token_impl")
-    print(self)
     if self.ch == null {
-        print("DEBUG: self.ch is null in _next_token_impl, fixing it")
         self.ch = ""
     }
     let c = self.ch
-    print("DEBUG: c is " + c)
-    match c {
-       case "": { return TokenKind::EOF }
-       case "+": { self.read_char(); return TokenKind::Plus }
-       case "-": { self.read_char(); return TokenKind::Minus }
-       case "*": { self.read_char(); return TokenKind::Star }
-       case "/": { self.read_char(); return TokenKind::Slash }
-       case "(": { self.read_char(); return TokenKind::LParen }
-       case ")": { self.read_char(); return TokenKind::RParen }
-       case "{": { self.read_char(); return TokenKind::LBrace }
-       case "}": { self.read_char(); return TokenKind::RBrace }
-       case ",": { self.read_char(); return TokenKind::Comma }
-       case ":": { self.read_char(); return TokenKind::Colon }
-       case "|": { self.read_char(); return TokenKind::Pipe }
-       case "&": { self.read_char(); return TokenKind::Amp }
-       case "?": { self.read_char(); return TokenKind::Question }
-       case "@": { self.read_char(); return TokenKind::At }
-       case ".": { self.read_char(); return TokenKind::Dot }
-       case ";": { self.read_char(); return TokenKind::Semi }
-       case "=": {
-          let p = self.peek_char()
-          if p == "=" {
-             self.read_char(); self.read_char()
-             return TokenKind::EqEq
-          } else if p == ">" {
-             self.read_char(); self.read_char()
-             return TokenKind::Arrow
-          } else {
-             self.read_char()
-             return TokenKind::Eq
-          }
-       }
-       case "\"": {
-          let s = self.read_string()
+    if c == "(" {
           self.read_char()
-          return TokenKind::String(s)
-       }
-       case _: {
-          print("DEBUG: inside case _")
-          print("DEBUG: c is " + c)
-          if self {
-             print("DEBUG: self is valid in case _")
-          } else {
-             print("DEBUG: self is NULL in case _")
-          }
-          if Lexer::is_alpha(c) {
+          return TokenKind::LParen
+     }
+     
+     if c == "\"" {
+            let s = self.read_string()
+            return TokenKind::String(s)
+     } else {
+       if c == "+" { self.read_char(); return TokenKind::Plus }
+       else {
+       if c == "-" { 
+            self.read_char()
+            if self.ch == ">" {
+                self.read_char()
+                return TokenKind::Arrow
+            }
+            return TokenKind::Minus 
+       } else {
+       if c == "*" { self.read_char(); return TokenKind::Star }
+       else {
+       if c == "/" { self.read_char(); return TokenKind::Slash }
+       else {
+       if c == "(" { self.read_char(); return TokenKind::LParen }
+       else {
+       if c == ")" { self.read_char(); return TokenKind::RParen }
+       else {
+       if c == "{" { self.read_char(); return TokenKind::LBrace }
+       else {
+       if c == "}" { self.read_char(); return TokenKind::RBrace }
+       else {
+       if c == "=" { 
+            self.read_char()
+            if self.ch == "=" {
+                self.read_char()
+                return TokenKind::EqEq
+            }
+            return TokenKind::Eq 
+       } else {
+       if c == ";" { self.read_char(); return TokenKind::Semi }
+       else {
+       if c == "," { self.read_char(); return TokenKind::Comma }
+       else {
+       if c == ":" { self.read_char(); return TokenKind::Colon }
+       else {
+       if c == "|" { self.read_char(); return TokenKind::Pipe }
+       else {
+       if c == "&" { self.read_char(); return TokenKind::Amp }
+       else {
+       if c == "?" { self.read_char(); return TokenKind::Question }
+       else {
+       if c == "@" { self.read_char(); return TokenKind::At }
+       else {
+       if c == "." { self.read_char(); return TokenKind::Dot }
+       else {
+           if Lexer::is_alpha(c) {
              let lit = self.read_identifier()
-             match lit {
-                case "let": { return TokenKind::KwLet }
-                case "print": { return TokenKind::KwPrint }
-                case "if": { return TokenKind::KwIf }
-                case "else": { return TokenKind::KwElse }
-                case "while": { return TokenKind::KwWhile }
-                case "micro": { return TokenKind::KwMicro }
-                case "macro": { return TokenKind::KwMacro }
-                case "class": { return TokenKind::KwClass }
-                case "enum": { return TokenKind::KwEnum }
-                case "return": { return TokenKind::KwReturn }
-                case "namespace": { return TokenKind::KwNamespace }
-                case "using": { return TokenKind::KwUsing }
-                case "imply": { return TokenKind::KwImply }
-                case "match": { return TokenKind::KwMatch }
-                case "case": { return TokenKind::KwCase }
-                case "true": { return TokenKind::KwTrue }
-                case "false": { return TokenKind::KwFalse }
-                case _: { return TokenKind::Identifier(lit) }
-             }
-          } else {
+             
+             # match lit replacement
+             # print("DEBUG: lit='" + lit + "' len=" + str(len(lit)))
+             
+             if lit == "let" { return TokenKind::KwLet }
+             else {
+             if lit == "print" { return TokenKind::KwPrint }
+             else {
+             if lit == "if" { return TokenKind::KwIf }
+             else {
+             if lit == "else" { return TokenKind::KwElse }
+             else {
+             if lit == "while" { return TokenKind::KwWhile }
+             else {
+             if lit == "micro" { return TokenKind::KwMicro }
+             else {
+             if lit == "macro" { return TokenKind::KwMacro }
+             else {
+             if lit == "class" { return TokenKind::KwClass }
+             else {
+             if lit == "enum" { return TokenKind::KwEnum }
+             else {
+             if lit == "return" { return TokenKind::KwReturn }
+             else {
+             if lit == "namespace" { return TokenKind::KwNamespace }
+             else {
+             if lit == "using" { return TokenKind::KwUsing }
+             else {
+             if lit == "imply" { return TokenKind::KwImply }
+             else {
+             if lit == "match" { return TokenKind::KwMatch }
+             else {
+             if lit == "case" { return TokenKind::KwCase }
+             else {
+             if lit == "true" { return TokenKind::KwTrue }
+             else {
+             if lit == "false" { return TokenKind::KwFalse }
+             else {
+                  let res = TokenKind::Identifier(lit)
+                  # print("DEBUG: returning token kind variant: " + res.__variant__)
+                  return res
+             }}}}}}}}}}}}}}}}}
+           } else {
              if Lexer::is_digit(c) {
                 let num = self.read_number()
                 return TokenKind::Integer(num)
              } else {
-                self.read_char()
+                print("DEBUG: skipping self.read_char() in else block to test")
+                # self.read_char()
                 return TokenKind::Identifier(c)
              }
-          }
-       }
-    }
-  }
-  micro skip_comment(self) {
+           }
+       }}}}}}}}}}}}}}}}}}
+   }
+   micro skip_comment(self) {
     while self.ch != "\n" && self.ch != "\r" && self.ch != "" {
       self.read_char()
     }
   }
   micro read_string(self) {
+    print("DEBUG: inside read_string")
+    let t = typeof(self)
+    print("DEBUG: typeof(self) in read_string = " + str(t))
     self.read_char()
     let s = ""
     while self.ch != "\"" && self.ch != "" {

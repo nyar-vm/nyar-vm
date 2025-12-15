@@ -9,7 +9,7 @@ using package::backend::clr
 using package::backend::llvm
 using package::backend::native
 
-class Compiler { constants, chunks, classes, method_tables, functions, lir_functions, type_env, warnings }
+class Compiler { constants, chunks, classes, method_tables, functions, lir_functions, type_env, warnings, label_counter }
 
 imply Compiler {
   micro new() {
@@ -22,7 +22,14 @@ imply Compiler {
     c.lir_functions = new List
     c.type_env = new List
     c.warnings = new List
+    c.label_counter = 0
     return c
+  }
+
+  micro next_label(self) {
+    let l = self.label_counter
+    self.label_counter = l + 1
+    return l
   }
 
   micro compile(self, program) {
@@ -293,6 +300,7 @@ imply Compiler {
         i = i + 1
      }
      Compiler::compile_stmt(self.constants, code, locals, body)
+     print("DEBUG: compiled " + name + " size: " + str(code.len()))
      Compiler::emit_u8(code, 0x01)
      let idx = Compiler::add_int(self.constants, 0)
      Compiler::emit_u16(code, idx)
@@ -1014,10 +1022,10 @@ imply Compiler {
                   let cond = stmt._0
                   let then_b = stmt._1
                   let else_b = stmt._2
-                  let l_else = 1
-                  let l_end = 2
-                  Compiler::lower_expr_to_lir(self, block, cond)
-                  block.push(LIRInstr::JumpIfFalse(l_else))
+                  let l_else = self.next_label()
+                  let l_end = self.next_label()
+                  Compiler::lower_expr_to_lir(self, block, cond) 
+                  block.push(LIRInstr::JumpIfFalse(l_else))      
                   Compiler::lower_stmt_to_lir(self, block, then_b)
                   block.push(LIRInstr::Jump(l_end))
                   block.push(LIRInstr::Label(l_else))
@@ -1029,14 +1037,14 @@ imply Compiler {
                   let scrutinee = stmt._0
                   let arms = stmt._1
                   Compiler::lower_expr_to_lir(self, block, scrutinee)
-                  block.push(LIRInstr::StoreLocal("match_tmp"))
-                  let end_label = 9
+                  block.push(LIRInstr::StoreLocal("match_tmp"))  
+                  let end_label = self.next_label()
                   let i2 = 0
                   let n2 = arms.len()
                   while i2 < n2 {
                     let arm = arms.get(i2)
                     let pat = arm.pat
-                    let next_label = 10 + i2
+                    let next_label = self.next_label()
                     let ptag = pat.__variant__
                     if ptag == "Wildcard" {
                       Compiler::lower_stmt_to_lir(self, block, arm.body)
@@ -1069,7 +1077,15 @@ imply Compiler {
                               block.push(LIRInstr::ConstString(pat._0))
                               block.push(LIRInstr::EqStr(0))
                             } else {
-                              block.push(LIRInstr::ConstInt(0))
+                              if ptag == "Variant" {
+                                 block.push(LIRInstr::LoadLocal("match_tmp"))
+                                 block.push(LIRInstr::GetField("__variant__"))
+                                 let vname = Compiler::get_variant_short_name(pat._0)
+                                 block.push(LIRInstr::ConstString(vname))
+                                 block.push(LIRInstr::EqStr(0))
+                              } else {
+                                 block.push(LIRInstr::ConstInt(0))
+                              }
                             }
                           }
                         }
@@ -1086,8 +1102,8 @@ imply Compiler {
                   if tag == "While" {
                     let cond = stmt._0
                     let body = stmt._1
-                    let l_start = 3
-                    let l_exit = 4
+                    let l_start = self.next_label()
+                    let l_exit = self.next_label()
                     block.push(LIRInstr::Label(l_start))
                     Compiler::lower_expr_to_lir(self, block, cond)
                     block.push(LIRInstr::JumpIfFalse(l_exit))
@@ -1146,12 +1162,12 @@ imply Compiler {
     let scr_expr = Expr::Variable(scr, null)
     Compiler::lower_expr_to_lir(self, block, scr_expr)
     block.push(LIRInstr::StoreLocal("match_tmp"))
-    let end_label = 19
+    let end_label = self.next_label()
     let i3 = 0
     let n3 = arms.len()
     while i3 < n3 {
       let arm2 = arms.get(i3)
-      let next_label2 = 20 + i3
+      let next_label2 = self.next_label()
       let pt = arm2.pat.__variant__
       block.push(LIRInstr::LoadLocal("match_tmp"))
       if pt == "Int" || pt == "Bool" {
@@ -1299,5 +1315,23 @@ imply Compiler {
     if tag == "Mul" { return Type::Name("i64", null) }
     if tag == "Div" { return Type::Name("i64", null) }
     return Type::Name("", null)
+  }
+  micro get_variant_short_name(s) {
+    let l = len(s)
+    let i = l - 1
+    while i >= 0 {
+       let c = get(s, i)
+       if c == ":" {
+          let res = ""
+          let j = i + 1
+          while j < l {
+             res = res + get(s, j)
+             j = j + 1
+          }
+          return res
+       }
+       i = i - 1
+    }
+    return s
   }
 }

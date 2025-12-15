@@ -2004,7 +2004,7 @@ impl NyarVM {
                             }
                             _ => {
                                 return Err(VmError::RuntimeError(
-                                    "Receiver is not an object".into(),
+                                    format!("Receiver is not an object. tag={:?}, method={}", receiver.tag, name),
                                 ))
                             }
                         }
@@ -2394,6 +2394,12 @@ impl NyarVM {
                             }
                             self.push(Value::null());
                         }
+                        "true" => {
+                            self.push(Value::bool(true));
+                        }
+                        "false" => {
+                            self.push(Value::bool(false));
+                        }
                         "yield" => {
                             if let Some(v) = args.last() {
                                 let msg = match v.tag {
@@ -2494,7 +2500,13 @@ impl NyarVM {
                         }
                         "get" => {
                             let idx_v = args.pop().unwrap_or(Value::int(0));
+                            // Since this is FFICall, there is no separate 'receiver'.
+                            // Everything is in 'args'.
+                            // If user called get(obj, idx), args is [obj, idx] (after reversal).
+                            // We popped idx_v. args is now [obj].
+                            // So container is next pop.
                             let container = args.pop().unwrap_or(Value::null());
+                            
                             if container.tag == ValueTag::String && idx_v.tag == ValueTag::Int {
                                 let s = unsafe { container.as_string() };
                                 let idx = unsafe { idx_v.as_int() } as usize;
@@ -2518,6 +2530,60 @@ impl NyarVM {
                                 }
                             } else {
                                 self.push(Value::null());
+                            }
+                        }
+                        "push" => {
+                            if args.len() == 2 {
+                                let val = args.pop().unwrap_or(Value::null()); // val is last arg
+                                let container = args.pop().unwrap_or(Value::null()); // container is first arg
+                                if container.tag == ValueTag::List {
+                                    let list_ptr = unsafe { container.data.ptr as *mut crate::vm::value::List };
+                                    let list_mut = unsafe { &mut *list_ptr };
+                                    list_mut.items.push(val);
+                                    self.push(Value::null()); 
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            } else {
+                                self.push(Value::null());
+                            }
+                        }
+                        "set" => {
+                            // set(container, idx, val) -> args: [container, idx, val]
+                            // reversed args: [container, idx, val] (wait, reverse() on [val, idx, container] -> [container, idx, val])
+                            // pop() -> val
+                            // pop() -> idx
+                            // pop() -> container
+                            if args.len() == 3 {
+                                let val_v = args.pop().unwrap_or(Value::null());
+                                let idx_v = args.pop().unwrap_or(Value::int(0));
+                                let container = args.pop().unwrap_or(Value::null());
+                                
+                                if container.tag == ValueTag::List && idx_v.tag == ValueTag::Int {
+                                    let idx = unsafe { idx_v.as_int() } as usize;
+                                    let list_ptr = unsafe { container.data.ptr as *mut crate::vm::value::List };
+                                    let list_mut = unsafe { &mut *list_ptr };
+                                    if idx < list_mut.items.len() {
+                                        list_mut.items[idx] = val_v;
+                                        self.push(Value::bool(true));
+                                    } else {
+                                        self.push(Value::bool(false));
+                                    }
+                                } else if container.tag == ValueTag::Array && idx_v.tag == ValueTag::Int {
+                                    let idx = unsafe { idx_v.as_int() } as usize;
+                                    let arr_ptr = unsafe { container.data.ptr as *mut crate::vm::value::Array };
+                                    let arr_mut = unsafe { &mut *arr_ptr };
+                                    if idx < arr_mut.items.len() {
+                                        arr_mut.items[idx] = val_v;
+                                        self.push(Value::bool(true));
+                                    } else {
+                                        self.push(Value::bool(false));
+                                    }
+                                } else {
+                                    self.push(Value::bool(false));
+                                }
+                            } else {
+                                self.push(Value::bool(false));
                             }
                         }
                         "chars" => {
