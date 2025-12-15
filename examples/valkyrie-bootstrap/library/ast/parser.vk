@@ -507,7 +507,6 @@ imply Parser {
                 return elems.get(0)
             }
             return Type::Tuple(elems, span)
-        }
         case _:
             return Type::Name("", span)
     }
@@ -662,7 +661,6 @@ imply Parser {
                 }
                 return Pattern::Type(Type::Name(name, span), span)
             }
-        }
         case TokenKind::Integer(v):
             self.advance()
             return Pattern::Int(v, span)

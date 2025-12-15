@@ -41,14 +41,23 @@ fn main() {
         files.sort_by(|a, b| {
             let priority = |p: &PathBuf| {
                 let name = p.file_name().unwrap().to_str().unwrap();
-                if name.contains("lexer") { 0 }
-                else if name.contains("ast") { 1 }
-                else if name.contains("parser") { 2 }
-                else if name.contains("hir") { 3 }
-                else if name.contains("mir") { 4 }
-                else if name.contains("compiler") { 5 }
-                else if name.contains("main") { 100 }
-                else { 50 }
+                if name.contains("lexer") {
+                    0
+                } else if name.contains("ast") {
+                    1
+                } else if name.contains("parser") {
+                    2
+                } else if name.contains("hir") {
+                    3
+                } else if name.contains("mir") {
+                    4
+                } else if name.contains("compiler") {
+                    5
+                } else if name.contains("main") {
+                    100
+                } else {
+                    50
+                }
             };
             let pa = priority(a);
             let pb = priority(b);

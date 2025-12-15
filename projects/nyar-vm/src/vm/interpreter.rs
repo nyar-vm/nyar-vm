@@ -1,5 +1,5 @@
 use crate::bytecode::decoder::Instruction;
-use crate::bytecode::format::{Chunk, ClassInfo, Constant, ImplInfo, TraitInfo, NyarcModule};
+use crate::bytecode::format::{Chunk, ClassInfo, Constant, ImplInfo, NyarcModule, TraitInfo};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
@@ -127,53 +127,91 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
 
     let idx_println_utf8 = cp_utf8(&mut cp, "println", &mut cp_count);
     let idx_println_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/String;)V", &mut cp_count);
-    let idx_println_nat =
-        cp_name_and_type(&mut cp, idx_println_utf8, idx_println_desc_utf8, &mut cp_count);
+    let idx_println_nat = cp_name_and_type(
+        &mut cp,
+        idx_println_utf8,
+        idx_println_desc_utf8,
+        &mut cp_count,
+    );
     let idx_println_mref = cp_methodref(&mut cp, idx_cls_ps, idx_println_nat, &mut cp_count);
 
     let idx_concat_utf8 = cp_utf8(&mut cp, "concat", &mut cp_count);
-    let idx_concat_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/String;)Ljava/lang/String;", &mut cp_count);
-    let idx_concat_nat =
-        cp_name_and_type(&mut cp, idx_concat_utf8, idx_concat_desc_utf8, &mut cp_count);
+    let idx_concat_desc_utf8 = cp_utf8(
+        &mut cp,
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        &mut cp_count,
+    );
+    let idx_concat_nat = cp_name_and_type(
+        &mut cp,
+        idx_concat_utf8,
+        idx_concat_desc_utf8,
+        &mut cp_count,
+    );
     let idx_concat_mref = cp_methodref(&mut cp, idx_cls_str, idx_concat_nat, &mut cp_count);
 
     let idx_length_utf8 = cp_utf8(&mut cp, "length", &mut cp_count);
     let idx_length_desc_utf8 = cp_utf8(&mut cp, "()I", &mut cp_count);
-    let idx_length_nat =
-        cp_name_and_type(&mut cp, idx_length_utf8, idx_length_desc_utf8, &mut cp_count);
+    let idx_length_nat = cp_name_and_type(
+        &mut cp,
+        idx_length_utf8,
+        idx_length_desc_utf8,
+        &mut cp_count,
+    );
     let idx_length_mref = cp_methodref(&mut cp, idx_cls_str, idx_length_nat, &mut cp_count);
 
     let idx_getbytes_utf8 = cp_utf8(&mut cp, "getBytes", &mut cp_count);
     let idx_getbytes_desc_utf8 = cp_utf8(&mut cp, "(Ljava/lang/String;)[B", &mut cp_count);
-    let idx_getbytes_nat =
-        cp_name_and_type(&mut cp, idx_getbytes_utf8, idx_getbytes_desc_utf8, &mut cp_count);
+    let idx_getbytes_nat = cp_name_and_type(
+        &mut cp,
+        idx_getbytes_utf8,
+        idx_getbytes_desc_utf8,
+        &mut cp_count,
+    );
     let idx_getbytes_mref = cp_methodref(&mut cp, idx_cls_str, idx_getbytes_nat, &mut cp_count);
 
     let idx_paths_get_utf8 = cp_utf8(&mut cp, "get", &mut cp_count);
-    let idx_paths_get_desc_utf8 =
-        cp_utf8(&mut cp, "(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;", &mut cp_count);
-    let idx_paths_get_nat =
-        cp_name_and_type(&mut cp, idx_paths_get_utf8, idx_paths_get_desc_utf8, &mut cp_count);
+    let idx_paths_get_desc_utf8 = cp_utf8(
+        &mut cp,
+        "(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;",
+        &mut cp_count,
+    );
+    let idx_paths_get_nat = cp_name_and_type(
+        &mut cp,
+        idx_paths_get_utf8,
+        idx_paths_get_desc_utf8,
+        &mut cp_count,
+    );
     let idx_paths_get_mref = cp_methodref(&mut cp, idx_cls_paths, idx_paths_get_nat, &mut cp_count);
 
     let idx_files_read_utf8 = cp_utf8(&mut cp, "readAllBytes", &mut cp_count);
-    let idx_files_read_desc_utf8 =
-        cp_utf8(&mut cp, "(Ljava/nio/file/Path;)[B", &mut cp_count);
-    let idx_files_read_nat =
-        cp_name_and_type(&mut cp, idx_files_read_utf8, idx_files_read_desc_utf8, &mut cp_count);
-    let idx_files_read_mref = cp_methodref(&mut cp, idx_cls_files, idx_files_read_nat, &mut cp_count);
+    let idx_files_read_desc_utf8 = cp_utf8(&mut cp, "(Ljava/nio/file/Path;)[B", &mut cp_count);
+    let idx_files_read_nat = cp_name_and_type(
+        &mut cp,
+        idx_files_read_utf8,
+        idx_files_read_desc_utf8,
+        &mut cp_count,
+    );
+    let idx_files_read_mref =
+        cp_methodref(&mut cp, idx_cls_files, idx_files_read_nat, &mut cp_count);
 
     let idx_files_write_utf8 = cp_utf8(&mut cp, "write", &mut cp_count);
-    let idx_files_write_desc_utf8 =
-        cp_utf8(&mut cp, "(Ljava/nio/file/Path;[B[Ljava/nio/file/OpenOption;)Ljava/nio/file/Path;", &mut cp_count);
-    let idx_files_write_nat =
-        cp_name_and_type(&mut cp, idx_files_write_utf8, idx_files_write_desc_utf8, &mut cp_count);
-    let idx_files_write_mref = cp_methodref(&mut cp, idx_cls_files, idx_files_write_nat, &mut cp_count);
+    let idx_files_write_desc_utf8 = cp_utf8(
+        &mut cp,
+        "(Ljava/nio/file/Path;[B[Ljava/nio/file/OpenOption;)Ljava/nio/file/Path;",
+        &mut cp_count,
+    );
+    let idx_files_write_nat = cp_name_and_type(
+        &mut cp,
+        idx_files_write_utf8,
+        idx_files_write_desc_utf8,
+        &mut cp_count,
+    );
+    let idx_files_write_mref =
+        cp_methodref(&mut cp, idx_cls_files, idx_files_write_nat, &mut cp_count);
 
     let idx_init_utf8 = cp_utf8(&mut cp, "<init>", &mut cp_count);
     let idx_init_desc_utf8 = cp_utf8(&mut cp, "([BLjava/lang/String;)V", &mut cp_count);
-    let idx_init_nat =
-        cp_name_and_type(&mut cp, idx_init_utf8, idx_init_desc_utf8, &mut cp_count);
+    let idx_init_nat = cp_name_and_type(&mut cp, idx_init_utf8, idx_init_desc_utf8, &mut cp_count);
     let idx_init_mref = cp_methodref(&mut cp, idx_cls_str, idx_init_nat, &mut cp_count);
 
     let idx_utf8_utf8 = cp_utf8(&mut cp, "UTF-8", &mut cp_count);
@@ -284,9 +322,7 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
                             code.push(0x13);
                             code.extend_from_slice(&cp_idx.to_be_bytes());
                         } else {
-                            return Err(JvmAotError::UnsupportedOpcode(
-                                "Push-non-int".to_string(),
-                            ));
+                            return Err(JvmAotError::UnsupportedOpcode("Push-non-int".to_string()));
                         }
                     }
                     None => {
@@ -360,7 +396,13 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
                     let name = module
                         .constants
                         .get(desc as usize)
-                        .and_then(|c| if let Constant::String(s) = c { Some(s.as_str()) } else { None })
+                        .and_then(|c| {
+                            if let Constant::String(s) = c {
+                                Some(s.as_str())
+                            } else {
+                                None
+                            }
+                        })
                         .ok_or_else(|| JvmAotError::Decode("ffi name".to_string()))?;
                     match (name, argc) {
                         ("print", 1) => {
@@ -416,9 +458,14 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
                             let idx_eq_utf8 = cp_utf8(&mut cp, "equals", &mut cp_count);
                             let idx_eq_desc_utf8 =
                                 cp_utf8(&mut cp, "(Ljava/lang/Object;)Z", &mut cp_count);
-                            let idx_eq_nat =
-                                cp_name_and_type(&mut cp, idx_eq_utf8, idx_eq_desc_utf8, &mut cp_count);
-                            let idx_eq_mref = cp_methodref(&mut cp, idx_cls_str, idx_eq_nat, &mut cp_count);
+                            let idx_eq_nat = cp_name_and_type(
+                                &mut cp,
+                                idx_eq_utf8,
+                                idx_eq_desc_utf8,
+                                &mut cp_count,
+                            );
+                            let idx_eq_mref =
+                                cp_methodref(&mut cp, idx_cls_str, idx_eq_nat, &mut cp_count);
                             code.push(0xB6);
                             code.extend_from_slice(&idx_eq_mref.to_be_bytes());
                             code.push(0x85);
@@ -427,7 +474,10 @@ fn compile_module_to_jvm_for_vm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotE
                             code.push(0x61);
                         }
                         _ => {
-                            return Err(JvmAotError::UnsupportedOpcode(format!("FFICall({},{})", name, argc)));
+                            return Err(JvmAotError::UnsupportedOpcode(format!(
+                                "FFICall({},{})",
+                                name, argc
+                            )));
                         }
                     }
                 }
@@ -1836,7 +1886,9 @@ impl NyarVM {
                                                 ValueTag::Float => lhs.as_float() == rhs.as_float(),
                                                 ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
                                                 ValueTag::Null => true,
-                                                ValueTag::String => lhs.as_string() == rhs.as_string(),
+                                                ValueTag::String => {
+                                                    lhs.as_string() == rhs.as_string()
+                                                }
                                                 ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
                                                 _ => false,
                                             }
@@ -1860,7 +1912,9 @@ impl NyarVM {
                                                 ValueTag::Float => lhs.as_float() == rhs.as_float(),
                                                 ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
                                                 ValueTag::Null => true,
-                                                ValueTag::String => lhs.as_string() == rhs.as_string(),
+                                                ValueTag::String => {
+                                                    lhs.as_string() == rhs.as_string()
+                                                }
                                                 ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
                                                 _ => false,
                                             }
@@ -2028,9 +2082,10 @@ impl NyarVM {
                                 }
                             }
                             _ => {
-                                return Err(VmError::RuntimeError(
-                                    format!("Receiver is not an object. tag={:?}, method={}", receiver.tag, name),
-                                ))
+                                return Err(VmError::RuntimeError(format!(
+                                    "Receiver is not an object. tag={:?}, method={}",
+                                    receiver.tag, name
+                                )))
                             }
                         }
                     } else {
@@ -2294,19 +2349,19 @@ impl NyarVM {
                     };
                     match name {
                         "read_file" => {
-                             let path_v = args.pop().unwrap_or(Value::string("".to_string()));
-                             let mut res = Value::string("".to_string());
-                             unsafe {
-                                 use std::fs;
-                                 if path_v.tag == ValueTag::String {
-                                     let path = path_v.as_string().clone();
-                                     if let Ok(content) = fs::read_to_string(&path) {
-                                         res = Value::string(content);
-                                     }
-                                 }
-                             }
-                             self.push(res);
-                         }
+                            let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                            let mut res = Value::string("".to_string());
+                            unsafe {
+                                use std::fs;
+                                if path_v.tag == ValueTag::String {
+                                    let path = path_v.as_string().clone();
+                                    if let Ok(content) = fs::read_to_string(&path) {
+                                        res = Value::string(content);
+                                    }
+                                }
+                            }
+                            self.push(res);
+                        }
                         "write_file" => {
                             let data_v = args.pop().unwrap_or(Value::string("".to_string()));
                             let path_v = args.pop().unwrap_or(Value::string("".to_string()));
@@ -2314,7 +2369,8 @@ impl NyarVM {
                             unsafe {
                                 use std::fs;
                                 use std::path::Path;
-                                if path_v.tag == ValueTag::String && data_v.tag == ValueTag::String {
+                                if path_v.tag == ValueTag::String && data_v.tag == ValueTag::String
+                                {
                                     let path = path_v.as_string().clone();
                                     let bytes = data_v.as_string().as_bytes().to_vec();
                                     if let Some(dir) = Path::new(&path).parent() {
@@ -2395,7 +2451,8 @@ impl NyarVM {
                                     ValueTag::Null => "null".to_string(),
                                     ValueTag::String => unsafe { v.as_string().clone() },
                                     ValueTag::Object => {
-                                        let obj_ptr = unsafe { v.data.ptr as *mut crate::vm::value::Object };
+                                        let obj_ptr =
+                                            unsafe { v.data.ptr as *mut crate::vm::value::Object };
                                         let obj_ref = unsafe { &*obj_ptr };
                                         let cls_name = self
                                             .classes
@@ -2405,7 +2462,13 @@ impl NyarVM {
                                         let variant = obj_ref
                                             .fields
                                             .get(0)
-                                            .and_then(|f| if f.tag == ValueTag::String { Some(unsafe { f.as_string().clone() }) } else { None })
+                                            .and_then(|f| {
+                                                if f.tag == ValueTag::String {
+                                                    Some(unsafe { f.as_string().clone() })
+                                                } else {
+                                                    None
+                                                }
+                                            })
                                             .unwrap_or_else(|| "".to_string());
                                         if variant.is_empty() {
                                             format!("{}", cls_name)
@@ -2489,7 +2552,9 @@ impl NyarVM {
                                     ValueTag::Array => unsafe { v.as_array().items.len() },
                                     ValueTag::List => unsafe { v.as_list().items.len() },
                                     ValueTag::Tuple => unsafe { v.as_tuple().items.len() },
-                                    ValueTag::DynObject => unsafe { v.as_dyn_object().entries.len() },
+                                    ValueTag::DynObject => unsafe {
+                                        v.as_dyn_object().entries.len()
+                                    },
                                     _ => 0,
                                 };
                                 self.push(Value::int(len as i64));
@@ -2535,13 +2600,18 @@ impl NyarVM {
                             // We popped idx_v. args is now [obj].
                             // So container is next pop.
                             let container = args.pop().unwrap_or(Value::null());
-                            
+
                             if container.tag == ValueTag::String && idx_v.tag == ValueTag::Int {
                                 let s = unsafe { container.as_string() };
                                 let idx = unsafe { idx_v.as_int() } as usize;
-                                let c = s.chars().nth(idx).map(|c| c.to_string()).unwrap_or_default();
+                                let c = s
+                                    .chars()
+                                    .nth(idx)
+                                    .map(|c| c.to_string())
+                                    .unwrap_or_default();
                                 self.push(Value::string(c));
-                            } else if container.tag == ValueTag::List && idx_v.tag == ValueTag::Int {
+                            } else if container.tag == ValueTag::List && idx_v.tag == ValueTag::Int
+                            {
                                 let list = unsafe { container.as_list() };
                                 let idx = unsafe { idx_v.as_int() } as usize;
                                 if idx < list.items.len() {
@@ -2549,7 +2619,8 @@ impl NyarVM {
                                 } else {
                                     self.push(Value::null());
                                 }
-                            } else if container.tag == ValueTag::Array && idx_v.tag == ValueTag::Int {
+                            } else if container.tag == ValueTag::Array && idx_v.tag == ValueTag::Int
+                            {
                                 let arr = unsafe { container.as_array() };
                                 let idx = unsafe { idx_v.as_int() } as usize;
                                 if idx < arr.items.len() {
@@ -2566,10 +2637,12 @@ impl NyarVM {
                                 let val = args.pop().unwrap_or(Value::null()); // val is last arg
                                 let container = args.pop().unwrap_or(Value::null()); // container is first arg
                                 if container.tag == ValueTag::List {
-                                    let list_ptr = unsafe { container.data.ptr as *mut crate::vm::value::List };
+                                    let list_ptr = unsafe {
+                                        container.data.ptr as *mut crate::vm::value::List
+                                    };
                                     let list_mut = unsafe { &mut *list_ptr };
                                     list_mut.items.push(val);
-                                    self.push(Value::null()); 
+                                    self.push(Value::null());
                                 } else {
                                     self.push(Value::null());
                                 }
@@ -2587,10 +2660,12 @@ impl NyarVM {
                                 let val_v = args.pop().unwrap_or(Value::null());
                                 let idx_v = args.pop().unwrap_or(Value::int(0));
                                 let container = args.pop().unwrap_or(Value::null());
-                                
+
                                 if container.tag == ValueTag::List && idx_v.tag == ValueTag::Int {
                                     let idx = unsafe { idx_v.as_int() } as usize;
-                                    let list_ptr = unsafe { container.data.ptr as *mut crate::vm::value::List };
+                                    let list_ptr = unsafe {
+                                        container.data.ptr as *mut crate::vm::value::List
+                                    };
                                     let list_mut = unsafe { &mut *list_ptr };
                                     if idx < list_mut.items.len() {
                                         list_mut.items[idx] = val_v;
@@ -2598,9 +2673,13 @@ impl NyarVM {
                                     } else {
                                         self.push(Value::bool(false));
                                     }
-                                } else if container.tag == ValueTag::Array && idx_v.tag == ValueTag::Int {
+                                } else if container.tag == ValueTag::Array
+                                    && idx_v.tag == ValueTag::Int
+                                {
                                     let idx = unsafe { idx_v.as_int() } as usize;
-                                    let arr_ptr = unsafe { container.data.ptr as *mut crate::vm::value::Array };
+                                    let arr_ptr = unsafe {
+                                        container.data.ptr as *mut crate::vm::value::Array
+                                    };
                                     let arr_mut = unsafe { &mut *arr_ptr };
                                     if idx < arr_mut.items.len() {
                                         arr_mut.items[idx] = val_v;
@@ -2619,7 +2698,8 @@ impl NyarVM {
                             if let Some(v) = args.last() {
                                 if v.tag == ValueTag::String {
                                     let s = unsafe { v.as_string() };
-                                    let items: Vec<Value> = s.chars().map(|c| Value::string(c.to_string())).collect();
+                                    let items: Vec<Value> =
+                                        s.chars().map(|c| Value::string(c.to_string())).collect();
                                     self.push(Value::list(items));
                                 } else {
                                     self.push(Value::list(vec![]));
@@ -2629,7 +2709,7 @@ impl NyarVM {
                             }
                         }
                         "str" => {
-                             if let Some(v) = args.last() {
+                            if let Some(v) = args.last() {
                                 let s = match v.tag {
                                     ValueTag::Int => format!("{}", unsafe { v.as_int() }),
                                     ValueTag::Float => format!("{}", unsafe { v.as_float() }),
@@ -2639,18 +2719,26 @@ impl NyarVM {
                                     _ => format!("{:?}", v.tag),
                                 };
                                 self.push(Value::string(s));
-                             } else {
+                            } else {
                                 self.push(Value::string("".to_string()));
-                             }
+                            }
                         }
                         "eq" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
                             let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() == b.as_int() },
-                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() == b.as_float() },
-                                (ValueTag::Bool, ValueTag::Bool) => unsafe { a.as_bool() == b.as_bool() },
-                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() == b.as_string() },
+                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                                    a.as_int() == b.as_int()
+                                },
+                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                    a.as_float() == b.as_float()
+                                },
+                                (ValueTag::Bool, ValueTag::Bool) => unsafe {
+                                    a.as_bool() == b.as_bool()
+                                },
+                                (ValueTag::String, ValueTag::String) => unsafe {
+                                    a.as_string() == b.as_string()
+                                },
                                 (ValueTag::Null, ValueTag::Null) => true,
                                 _ => false,
                             };
@@ -2660,10 +2748,18 @@ impl NyarVM {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
                             let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() != b.as_int() },
-                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() != b.as_float() },
-                                (ValueTag::Bool, ValueTag::Bool) => unsafe { a.as_bool() != b.as_bool() },
-                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() != b.as_string() },
+                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                                    a.as_int() != b.as_int()
+                                },
+                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                    a.as_float() != b.as_float()
+                                },
+                                (ValueTag::Bool, ValueTag::Bool) => unsafe {
+                                    a.as_bool() != b.as_bool()
+                                },
+                                (ValueTag::String, ValueTag::String) => unsafe {
+                                    a.as_string() != b.as_string()
+                                },
                                 (ValueTag::Null, ValueTag::Null) => false,
                                 _ => true,
                             };
@@ -2673,9 +2769,15 @@ impl NyarVM {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
                             let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() < b.as_int() },
-                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() < b.as_float() },
-                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() < b.as_string() },
+                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                                    a.as_int() < b.as_int()
+                                },
+                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                    a.as_float() < b.as_float()
+                                },
+                                (ValueTag::String, ValueTag::String) => unsafe {
+                                    a.as_string() < b.as_string()
+                                },
                                 _ => false,
                             };
                             self.push(Value::bool(r));
@@ -2684,9 +2786,15 @@ impl NyarVM {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
                             let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() <= b.as_int() },
-                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() <= b.as_float() },
-                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() <= b.as_string() },
+                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                                    a.as_int() <= b.as_int()
+                                },
+                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                    a.as_float() <= b.as_float()
+                                },
+                                (ValueTag::String, ValueTag::String) => unsafe {
+                                    a.as_string() <= b.as_string()
+                                },
                                 _ => false,
                             };
                             self.push(Value::bool(r));
@@ -2695,9 +2803,15 @@ impl NyarVM {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
                             let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() > b.as_int() },
-                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() > b.as_float() },
-                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() > b.as_string() },
+                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                                    a.as_int() > b.as_int()
+                                },
+                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                    a.as_float() > b.as_float()
+                                },
+                                (ValueTag::String, ValueTag::String) => unsafe {
+                                    a.as_string() > b.as_string()
+                                },
                                 _ => false,
                             };
                             self.push(Value::bool(r));
@@ -2706,9 +2820,15 @@ impl NyarVM {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
                             let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe { a.as_int() >= b.as_int() },
-                                (ValueTag::Float, ValueTag::Float) => unsafe { a.as_float() >= b.as_float() },
-                                (ValueTag::String, ValueTag::String) => unsafe { a.as_string() >= b.as_string() },
+                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                                    a.as_int() >= b.as_int()
+                                },
+                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                    a.as_float() >= b.as_float()
+                                },
+                                (ValueTag::String, ValueTag::String) => unsafe {
+                                    a.as_string() >= b.as_string()
+                                },
                                 _ => false,
                             };
                             self.push(Value::bool(r));
@@ -2718,8 +2838,12 @@ impl NyarVM {
                             let a = args.pop().unwrap_or(Value::null());
                             unsafe {
                                 match (a.tag, b.tag) {
-                                    (ValueTag::Int, ValueTag::Int) => self.push(Value::int(a.as_int() + b.as_int())),
-                                    (ValueTag::Float, ValueTag::Float) => self.push(Value::float(a.as_float() + b.as_float())),
+                                    (ValueTag::Int, ValueTag::Int) => {
+                                        self.push(Value::int(a.as_int() + b.as_int()))
+                                    }
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        self.push(Value::float(a.as_float() + b.as_float()))
+                                    }
                                     (ValueTag::String, ValueTag::String) => {
                                         let mut s = a.as_string().clone();
                                         s.push_str(b.as_string());
@@ -2734,8 +2858,12 @@ impl NyarVM {
                             let a = args.pop().unwrap_or(Value::null());
                             unsafe {
                                 match (a.tag, b.tag) {
-                                    (ValueTag::Int, ValueTag::Int) => self.push(Value::int(a.as_int() - b.as_int())),
-                                    (ValueTag::Float, ValueTag::Float) => self.push(Value::float(a.as_float() - b.as_float())),
+                                    (ValueTag::Int, ValueTag::Int) => {
+                                        self.push(Value::int(a.as_int() - b.as_int()))
+                                    }
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        self.push(Value::float(a.as_float() - b.as_float()))
+                                    }
                                     _ => self.push(Value::null()),
                                 }
                             }
@@ -2745,8 +2873,12 @@ impl NyarVM {
                             let a = args.pop().unwrap_or(Value::null());
                             unsafe {
                                 match (a.tag, b.tag) {
-                                    (ValueTag::Int, ValueTag::Int) => self.push(Value::int(a.as_int() * b.as_int())),
-                                    (ValueTag::Float, ValueTag::Float) => self.push(Value::float(a.as_float() * b.as_float())),
+                                    (ValueTag::Int, ValueTag::Int) => {
+                                        self.push(Value::int(a.as_int() * b.as_int()))
+                                    }
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        self.push(Value::float(a.as_float() * b.as_float()))
+                                    }
                                     _ => self.push(Value::null()),
                                 }
                             }
@@ -2756,8 +2888,12 @@ impl NyarVM {
                             let a = args.pop().unwrap_or(Value::null());
                             unsafe {
                                 match (a.tag, b.tag) {
-                                    (ValueTag::Int, ValueTag::Int) => self.push(Value::int(a.as_int() / b.as_int())),
-                                    (ValueTag::Float, ValueTag::Float) => self.push(Value::float(a.as_float() / b.as_float())),
+                                    (ValueTag::Int, ValueTag::Int) => {
+                                        self.push(Value::int(a.as_int() / b.as_int()))
+                                    }
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        self.push(Value::float(a.as_float() / b.as_float()))
+                                    }
                                     _ => self.push(Value::null()),
                                 }
                             }
@@ -2767,58 +2903,59 @@ impl NyarVM {
                                 let parts: Vec<&str> = name.split("::").collect();
                                 let variant_name = parts.last().unwrap();
                                 let class_name = parts[parts.len() - 2];
-                                
+
                                 // Find class by name suffix
-                                let class_idx = self.classes.iter().position(|c| 
-                                    c.name.ends_with(&format!("::{}", class_name)) || c.name == class_name
-                                );
+                                let class_idx = self.classes.iter().position(|c| {
+                                    c.name.ends_with(&format!("::{}", class_name))
+                                        || c.name == class_name
+                                });
 
                                 if let Some(idx) = class_idx {
-                                     let idx = idx as u16;
-                                     // Check if we have enough args. 
-                                     // For now, assume single arg constructor if args.len() > 0?
-                                     // Actually, EnumDef variants can have multiple fields.
-                                     // But FFICall doesn't tell us how many fields the variant EXPECTS unless we look it up.
-                                     // But we have `args` from FFICall.
-                                     // FFICall pops args.
-                                     // We need to pop ALL args.
-                                     // FFICall logic already popped args into `args` vec.
-                                     // So we just use `args`.
-                                     // But `args` are popped in reverse order (LIFO).
-                                     // Wait, FFICall pops:
-                                     // for _ in 0..argc { args.push(pop()) }
-                                     // If I call C(a, b). Stack: [a, b].
-                                     // pop -> b. pop -> a.
-                                     // args = [b, a].
-                                     // NewObject expects fields in order.
-                                     // fields = [__variant__, _0, _1...]
-                                     // _0 should be a. _1 should be b.
-                                     // So we need to REVERSE args to get [a, b].
-                                     
-                                     let mut fields = Vec::new();
-                                     fields.push(Value::string(variant_name.to_string()));
-                                     
-                                     // args is [last_arg, ..., first_arg]
-                                     // We want [first_arg, ..., last_arg]
-                                     // So we iterate args in reverse.
-                                     for arg in args.iter().rev() {
-                                         fields.push(*arg);
-                                     }
-                                     
-                                     // We might need to pad with nulls if the class has more fields?
-                                     // Enum classes have fields _0, _1... up to max fields of any variant.
-                                     // If this variant has fewer fields, the remaining should be null?
-                                     // Or assume `args` matches the variant fields count?
-                                     // The VM class definition has `fields` count.
-                                     let cls = &self.classes[idx as usize];
-                                     while fields.len() < cls.fields.len() {
-                                         fields.push(Value::null());
-                                     }
-                                     
-                                     let obj = Value::object(idx, fields);
-                                     self.push(obj);
+                                    let idx = idx as u16;
+                                    // Check if we have enough args.
+                                    // For now, assume single arg constructor if args.len() > 0?
+                                    // Actually, EnumDef variants can have multiple fields.
+                                    // But FFICall doesn't tell us how many fields the variant EXPECTS unless we look it up.
+                                    // But we have `args` from FFICall.
+                                    // FFICall pops args.
+                                    // We need to pop ALL args.
+                                    // FFICall logic already popped args into `args` vec.
+                                    // So we just use `args`.
+                                    // But `args` are popped in reverse order (LIFO).
+                                    // Wait, FFICall pops:
+                                    // for _ in 0..argc { args.push(pop()) }
+                                    // If I call C(a, b). Stack: [a, b].
+                                    // pop -> b. pop -> a.
+                                    // args = [b, a].
+                                    // NewObject expects fields in order.
+                                    // fields = [__variant__, _0, _1...]
+                                    // _0 should be a. _1 should be b.
+                                    // So we need to REVERSE args to get [a, b].
+
+                                    let mut fields = Vec::new();
+                                    fields.push(Value::string(variant_name.to_string()));
+
+                                    // args is [last_arg, ..., first_arg]
+                                    // We want [first_arg, ..., last_arg]
+                                    // So we iterate args in reverse.
+                                    for arg in args.iter().rev() {
+                                        fields.push(*arg);
+                                    }
+
+                                    // We might need to pad with nulls if the class has more fields?
+                                    // Enum classes have fields _0, _1... up to max fields of any variant.
+                                    // If this variant has fewer fields, the remaining should be null?
+                                    // Or assume `args` matches the variant fields count?
+                                    // The VM class definition has `fields` count.
+                                    let cls = &self.classes[idx as usize];
+                                    while fields.len() < cls.fields.len() {
+                                        fields.push(Value::null());
+                                    }
+
+                                    let obj = Value::object(idx, fields);
+                                    self.push(obj);
                                 } else {
-                                     return Err(VmError::UnhandledEffect(name.to_string()));
+                                    return Err(VmError::UnhandledEffect(name.to_string()));
                                 }
                             } else {
                                 return Err(VmError::UnhandledEffect(name.to_string()));

@@ -101,7 +101,7 @@ impl Compiler {
 
     fn resolve_function(&self, name: &str) -> Option<u16> {
         if name.contains("Token") {
-             println!("DEBUG: Resolving function: {}", name);
+            println!("DEBUG: Resolving function: {}", name);
         }
         if let Some(&idx) = self.functions.get(name) {
             if name.contains("Token") {
@@ -111,7 +111,7 @@ impl Compiler {
         }
         let q = self.qualify(name);
         if name.contains("Token") {
-             println!("DEBUG: Resolving function qualified: {}", q);
+            println!("DEBUG: Resolving function qualified: {}", q);
         }
         if let Some(&idx) = self.functions.get(&q) {
             if name.contains("Token") {
@@ -122,7 +122,7 @@ impl Compiler {
         for p in &self.use_prefixes {
             let qname = format!("{}::{name}", p.join("::"));
             if name.contains("Token") {
-                 println!("DEBUG: Resolving function imported: {}", qname);
+                println!("DEBUG: Resolving function imported: {}", qname);
             }
             if let Some(&idx) = self.functions.get(&qname) {
                 return Some(idx);
@@ -1152,9 +1152,17 @@ fn compile_stmt(
                     Stmt::FuncDef(name, args, body) => {
                         let qname = format!("{}::{}", class_name, name);
                         println!("DEBUG: compiling method {}", qname);
-                        compile_stmt(compiler, contexts, &Stmt::FuncDef(qname, args.clone(), body.clone()))?;
+                        compile_stmt(
+                            compiler,
+                            contexts,
+                            &Stmt::FuncDef(qname, args.clone(), body.clone()),
+                        )?;
                     }
-                    _ => return Err(Error::Compile("imply block can only contain function definitions".into())),
+                    _ => {
+                        return Err(Error::Compile(
+                            "imply block can only contain function definitions".into(),
+                        ))
+                    }
                 }
             }
         }
@@ -1473,7 +1481,11 @@ fn compile_stmt(
             compiler.trait_map.insert(key, idx);
         }
         Stmt::EnumDef(name, variants) => {
-            println!("DEBUG: compiling EnumDef {} with variants {:?}", name, variants.iter().map(|(v, _)| v).collect::<Vec<_>>());
+            println!(
+                "DEBUG: compiling EnumDef {} with variants {:?}",
+                name,
+                variants.iter().map(|(v, _)| v).collect::<Vec<_>>()
+            );
             // 1. Define Class for the Enum
             // Collect all possible field names (max count) to define the class structure
             // We use positional fields _0, _1, etc.
@@ -1560,10 +1572,17 @@ fn compile_stmt(
                 let chunk_idx = (compiler.chunks.len() + 1) as u16;
                 compiler.chunks.push(chunk);
                 let v_key = format!("{}::{}", class_key, v_name);
-                println!("DEBUG: Registered function: {} -> chunk {}", v_key, chunk_idx);
+                println!(
+                    "DEBUG: Registered function: {} -> chunk {}",
+                    v_key, chunk_idx
+                );
                 // println!("DEBUG: Chunk {} code: {:?}", chunk_idx, chunk.code); // Cannot use chunk here as it moved
                 // Use compiler.chunks[chunk_idx]
-                println!("DEBUG: Chunk {} code: {:?}", chunk_idx, compiler.chunks.last().unwrap().code);
+                println!(
+                    "DEBUG: Chunk {} code: {:?}",
+                    chunk_idx,
+                    compiler.chunks.last().unwrap().code
+                );
                 compiler.functions.insert(v_key, chunk_idx);
             }
         }
@@ -1646,10 +1665,7 @@ pub fn compile(stmts: &[Stmt]) -> Result<NyarcModule, Error> {
             }
         }
         for (class_idx, methods) in grouped {
-            let trait_name = format!(
-                "{}::__methods__",
-                compiler.classes[class_idx as usize].name
-            );
+            let trait_name = format!("{}::__methods__", compiler.classes[class_idx as usize].name);
             let trait_info = TraitInfo {
                 name: trait_name,
                 methods: methods.iter().map(|(n, _)| n.clone()).collect(),
@@ -1666,7 +1682,10 @@ pub fn compile(stmts: &[Stmt]) -> Result<NyarcModule, Error> {
     }
 
     let mut main_ctx = contexts.pop().unwrap();
-    println!("DEBUG: main_ctx code len before Halt: {}", main_ctx.code.len());
+    println!(
+        "DEBUG: main_ctx code len before Halt: {}",
+        main_ctx.code.len()
+    );
     main_ctx.code.push(Opcode::Halt as u8);
 
     let main_chunk = Chunk {

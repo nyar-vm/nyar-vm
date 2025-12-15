@@ -228,15 +228,15 @@ pub fn build_hir(stmts: &[Stmt]) -> Result<HIRModule, Error> {
         impls,
         main,
     };
-    
+
     resolve_hir(&mut module)?;
-    
+
     Ok(module)
 }
 
 fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
     let mut definitions = HashSet::new();
-    
+
     // Collect all definitions
     for f in &module.functions {
         definitions.insert(f.name.clone());
@@ -253,7 +253,7 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
             }
         }
     }
-    
+
     // Helper to resolve a name
     let resolve_name = |name: &str, scope: &Scope| -> Option<String> {
         if definitions.contains(name) {
@@ -268,19 +268,16 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
         }
         // Try imports
         for imp in &scope.imports {
-             let q = format!("{}::{}", imp.join("::"), name);
-             if definitions.contains(&q) {
-                 return Some(q);
-             }
+            let q = format!("{}::{}", imp.join("::"), name);
+            if definitions.contains(&q) {
+                return Some(q);
+            }
         }
         None
     };
 
     // Recursive resolution functions
-    fn resolve_pattern(
-        pat: &mut Pattern,
-        resolve: &dyn Fn(&str) -> Option<String>,
-    ) {
+    fn resolve_pattern(pat: &mut Pattern, resolve: &dyn Fn(&str) -> Option<String>) {
         match pat {
             Pattern::Constructor(name, args) => {
                 if let Some(q) = resolve(name) {
@@ -301,10 +298,7 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
         }
     }
 
-    fn resolve_expr(
-        expr: &mut Expr,
-        resolve: &dyn Fn(&str) -> Option<String>,
-    ) {
+    fn resolve_expr(expr: &mut Expr, resolve: &dyn Fn(&str) -> Option<String>) {
         match expr {
             Expr::Variable(name) => {
                 if let Some(q) = resolve(name) {
@@ -340,9 +334,18 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
                     resolve_expr(arg, resolve);
                 }
             }
-            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) |
-            Expr::And(a, b) | Expr::Or(a, b) | Expr::Eq(a, b) | Expr::Ne(a, b) |
-            Expr::Lt(a, b) | Expr::Le(a, b) | Expr::Gt(a, b) | Expr::Ge(a, b) => {
+            Expr::Add(a, b)
+            | Expr::Sub(a, b)
+            | Expr::Mul(a, b)
+            | Expr::Div(a, b)
+            | Expr::And(a, b)
+            | Expr::Or(a, b)
+            | Expr::Eq(a, b)
+            | Expr::Ne(a, b)
+            | Expr::Lt(a, b)
+            | Expr::Le(a, b)
+            | Expr::Gt(a, b)
+            | Expr::Ge(a, b) => {
                 resolve_expr(a, resolve);
                 resolve_expr(b, resolve);
             }
@@ -362,7 +365,7 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
             Expr::Closure(_, body) => {
                 // Closure has its own scope? Or inherits?
                 // Inherits.
-                 for stmt in body {
+                for stmt in body {
                     resolve_stmt(stmt, resolve);
                 }
             }
@@ -370,7 +373,7 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
                 resolve_expr(target, resolve);
                 for (pat, body) in branches {
                     resolve_pattern(pat, resolve);
-                     for stmt in body {
+                    for stmt in body {
                         resolve_stmt(stmt, resolve);
                     }
                 }
@@ -379,10 +382,7 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
         }
     }
 
-    fn resolve_stmt(
-        stmt: &mut Stmt,
-        resolve: &dyn Fn(&str) -> Option<String>,
-    ) {
+    fn resolve_stmt(stmt: &mut Stmt, resolve: &dyn Fn(&str) -> Option<String>) {
         match stmt {
             Stmt::Expr(e) => resolve_expr(e, resolve),
             Stmt::Let(_, e) => resolve_expr(e, resolve),
@@ -401,19 +401,19 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
                     resolve_stmt(s, resolve);
                 }
                 if let Some(el) = e {
-                     for s in el {
+                    for s in el {
                         resolve_stmt(s, resolve);
                     }
                 }
             }
             Stmt::While(c, b) => {
                 resolve_expr(c, resolve);
-                 for s in b {
+                for s in b {
                     resolve_stmt(s, resolve);
                 }
             }
             Stmt::Loop(b) => {
-                 for s in b {
+                for s in b {
                     resolve_stmt(s, resolve);
                 }
             }
@@ -421,7 +421,7 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
             // They are not HirFunc, they are Stmt::FuncDef.
             // They should also be resolved using CURRENT scope.
             Stmt::FuncDef(_, _, body) => {
-                 for s in body {
+                for s in body {
                     resolve_stmt(s, resolve);
                 }
             }
@@ -436,10 +436,10 @@ fn resolve_hir(module: &mut HIRModule) -> Result<(), Error> {
             resolve_stmt(stmt, &resolve);
         }
     }
-    
+
     // Resolve impl methods
     for im in &mut module.impls {
-         for f in &mut im.methods {
+        for f in &mut im.methods {
             let resolve = |name: &str| resolve_name(name, &f.scope);
             for stmt in &mut f.body {
                 resolve_stmt(stmt, &resolve);

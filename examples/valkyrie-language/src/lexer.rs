@@ -264,9 +264,16 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
             if i >= b.len() {
                 return Err(Error::Lex("unterminated string".to_string()));
             }
-            let s_raw = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+            let s_raw =
+                std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
             // Simple unescape
-            let s = s_raw.replace("\\\"", "\"").replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r").replace("\\0", "\0").replace("\\\\", "\\");
+            let s = s_raw
+                .replace("\\\"", "\"")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\\r", "\r")
+                .replace("\\0", "\0")
+                .replace("\\\\", "\\");
             out.push(Token::String(s));
             i += 1;
             continue;
@@ -281,7 +288,8 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
                 if start == i {
                     return Err(Error::Lex("expected hex digits after 0x".to_string()));
                 }
-                let s = std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+                let s = std::str::from_utf8(&b[start..i])
+                    .map_err(|_| Error::Lex("utf8".to_string()))?;
                 let v = i64::from_str_radix(s, 16).map_err(|_| Error::Lex("int".to_string()))?;
                 out.push(Token::Int(v));
                 continue;
@@ -291,8 +299,8 @@ pub fn lex(input: &str) -> Result<Vec<Token>, Error> {
                 while i < b.len() && (b[i] as char).is_ascii_digit() {
                     i += 1;
                 }
-                let s =
-                    std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
+                let s = std::str::from_utf8(&b[start..i])
+                    .map_err(|_| Error::Lex("utf8".to_string()))?;
                 let v = s
                     .parse::<i64>()
                     .map_err(|_| Error::Lex("int".to_string()))?;

@@ -113,10 +113,13 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
                                         *i += 1;
                                         break;
                                     }
-                        _ => {
-                            let tok = tokens.get(*i);
-                            return Err(Error::Parse(format!("expect , or ) in pattern, found {:?}", tok)));
-                        }
+                                    _ => {
+                                        let tok = tokens.get(*i);
+                                        return Err(Error::Parse(format!(
+                                            "expect , or ) in pattern, found {:?}",
+                                            tok
+                                        )));
+                                    }
                                 }
                             }
                         }
@@ -134,7 +137,10 @@ fn parse_pattern(tokens: &[Token], i: &mut usize) -> Result<Pattern, Error> {
             let start = if *i >= 3 { *i - 3 } else { 0 };
             let end = (*i + 3).min(tokens.len());
             let window = &tokens[start..end];
-            Err(Error::Parse(format!("unexpected token in pattern: {:?} at index {} window {:?}", tok, *i, window)))
+            Err(Error::Parse(format!(
+                "unexpected token in pattern: {:?} at index {} window {:?}",
+                tok, *i, window
+            )))
         }
     }
 }
@@ -153,7 +159,10 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
                 Some(Token::LBrace) => {
                     // For block form, only the last segment acts as this block's namespace
                     let body = parse_block(tokens, i)?;
-                    let name = path.last().cloned().ok_or_else(|| Error::Parse("expect namespace name".into()))?;
+                    let name = path
+                        .last()
+                        .cloned()
+                        .ok_or_else(|| Error::Parse("expect namespace name".into()))?;
                     Ok(Stmt::NamespaceDef(name, body))
                 }
                 _ => Err(Error::Parse("expect ; or { after namespace".into())),
@@ -277,19 +286,25 @@ fn parse_stmt(tokens: &[Token], i: &mut usize) -> Result<Stmt, Error> {
                                 *i += 1;
                                 break;
                             }
+                            _ => {
+                                let tok = tokens.get(*i);
+                                return Err(Error::Parse(format!(
+                                    "expect , or }} in class fields, found {:?}",
+                                    tok
+                                )));
+                            }
+                        }
+                    }
                     _ => {
                         let tok = tokens.get(*i);
-                        return Err(Error::Parse(format!("expect , or }} in class fields, found {:?}", tok)));
+                        return Err(Error::Parse(format!(
+                            "expect field identifier or }}; found {:?}",
+                            tok
+                        )));
                     }
                 }
             }
-            _ => {
-                let tok = tokens.get(*i);
-                return Err(Error::Parse(format!("expect field identifier or }}; found {:?}", tok)));
-            }
-        }
-    }
-    Ok(Stmt::ClassDef(name, fields))
+            Ok(Stmt::ClassDef(name, fields))
         }
         Some(Token::Trait) => {
             *i += 1;
@@ -496,7 +511,10 @@ fn parse_args_decl(tokens: &[Token], i: &mut usize) -> Result<Vec<String>, Error
                     }
                     _ => {
                         let tok = tokens.get(*i);
-                        return Err(Error::Parse(format!("expect , or ) in args decl, found {:?}", tok)));
+                        return Err(Error::Parse(format!(
+                            "expect , or ) in args decl, found {:?}",
+                            tok
+                        )));
                     }
                 }
             }
@@ -714,7 +732,10 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
                                 }
                                 _ => {
                                     let tok = tokens.get(*i);
-                                    return Err(Error::Parse(format!("expect , or ) in call args, found {:?}", tok)));
+                                    return Err(Error::Parse(format!(
+                                        "expect , or ) in call args, found {:?}",
+                                        tok
+                                    )));
                                 }
                             }
                         }
@@ -758,11 +779,7 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
                             Some(Token::Arrow) | Some(Token::Colon) => {
                                 *i += 1;
                             }
-                            _ => {
-                                return Err(Error::Parse(
-                                    "expect => or : after pattern".into(),
-                                ))
-                            }
+                            _ => return Err(Error::Parse("expect => or : after pattern".into())),
                         }
                         let body = parse_case_block(tokens, i)?;
                         branches.push((pat, body));
@@ -776,11 +793,7 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
                             Some(Token::Arrow) | Some(Token::Colon) => {
                                 *i += 1;
                             }
-                            _ => {
-                                return Err(Error::Parse(
-                                    "expect => or : after else".into(),
-                                ))
-                            }
+                            _ => return Err(Error::Parse("expect => or : after else".into())),
                         }
                         let body = parse_case_block(tokens, i)?;
                         branches.push((Pattern::Wildcard, body));
