@@ -286,18 +286,28 @@ imply Parser {
   }
 
   micro parse_stmt(self) {
+    let span = null
+    if self.cur {
+        span = self.cur.span
+    }
+    match self.current_kind() {
+       case TokenKind::At:
+           let decorators = self.parse_decorators()
+           let stmt = self.parse_stmt_plain()
+           return Stmt::Decorated(decorators, stmt, span)
+       case _:
+           return self.parse_stmt_plain()
+    }
+  }
+
+  micro parse_stmt_plain(self) {
     let kind = self.current_kind()
     let variant = kind.__variant__
-    # print("DEBUG: parse_stmt kind: " + variant)
     let span = null
     if self.cur {
         span = self.cur.span
     }
     match kind {
-       case TokenKind::At:
-           let decorators = self.parse_decorators()
-           let stmt = self.parse_stmt()
-           return Stmt::Decorated(decorators, stmt, span)
        case TokenKind::KwNamespace:
            self.advance()
            let name = self.parse_path()
@@ -530,7 +540,6 @@ imply Parser {
                         let ty = Type::Name(save, span)
                         args.push(TypeArg::Ty(ty, span))
                 }
-            }
             case TokenKind::Integer(v):
                 self.advance()
                 args.push(TypeArg::Int(v, span))
@@ -745,7 +754,6 @@ imply Parser {
                     self.advance()
               case _:
           }
-        }
         case _:
     }
     return arms

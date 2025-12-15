@@ -47,7 +47,6 @@ imply Transformer {
                 }
                 let imp = HIRImpl::new(name, hir_methods);
                 self.module.impl_list.push(imp);
-            }
             case ast::Stmt::Micro(name, args, body, _):
                 let f = HIRFunc::new(name, args, body);
                 self.module.funcs.push(f);

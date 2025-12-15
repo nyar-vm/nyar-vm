@@ -1625,11 +1625,14 @@ pub fn write_jar(path: &str, class_bytes: &[u8]) -> std::io::Result<()> {
     use std::fs;
     use std::io::Write;
     use zip::write::FileOptions;
+    use zip::DateTime;
     let file = fs::File::create(path)?;
     let mut zip = zip::ZipWriter::new(file);
-    let opts = FileOptions::default();
+    let time = DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0).unwrap();
+    let opts = FileOptions::default().last_modified_time(time);
     zip.start_file("META-INF/MANIFEST.MF", opts)?;
     zip.write_all(b"Manifest-Version: 1.0\nMain-Class: Main\n")?;
+    let opts = FileOptions::default().last_modified_time(time);
     zip.start_file("Main.class", opts)?;
     zip.write_all(class_bytes)?;
     zip.finish()?;

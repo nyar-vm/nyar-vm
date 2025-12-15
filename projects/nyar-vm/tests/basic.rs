@@ -564,3 +564,83 @@ fn list_set_get_remove() {
         assert_eq!(v.as_bool(), true);
     }
 }
+
+#[test]
+fn run_bootstrap_nyarc_module() {
+    use std::fs;
+    use std::path::Path;
+    use nyar_vm::bytecode::decoder::Decoder;
+
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let workspace = Path::new(manifest_dir)
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap();
+    let path = workspace
+        .join("examples")
+        .join("valkyrie-bootstrap")
+        .join("target")
+        .join("bootstrap.nyarc");
+    if !path.exists() {
+        println!("bootstrap.nyarc not found at {:?}", path);
+        return;
+    }
+    println!("running bootstrap.nyarc at {:?}", path);
+    let data = fs::read(&path).unwrap();
+    let module = NyarModule::parse(&data).unwrap();
+    let main_chunk = &module.chunks[0];
+    let instrs = Decoder::new(&main_chunk.code).decode_all().unwrap();
+    println!(
+        "bootstrap main chunk: locals={} code_bytes={} instrs={}",
+        main_chunk.locals,
+        main_chunk.code.len(),
+        instrs.len()
+    );
+    for (i, ins) in instrs.iter().enumerate().take(24) {
+        println!("  {:04}: {:?}", i, ins);
+    }
+
+    // Scan for FFICall names and pushed file paths
+    for (i, ins) in instrs.iter().enumerate() {
+        match ins {
+            nyar_vm::bytecode::decoder::Instruction::Push(ci) => {
+                if let Some(c) = module.constants.get(*ci as usize) {
+                    if let nyar_vm::bytecode::format::Constant::String(s) = c {
+                        if s.ends_with(".vk") || s.contains("vcc bootstrap started") {
+                            println!("  push@{:04}: {}", i, s);
+                        }
+                    }
+                }
+            }
+            nyar_vm::bytecode::decoder::Instruction::FFICall(desc, argc) => {
+                let name = module
+                    .constants
+                    .get(*desc as usize)
+                    .and_then(|c| match c {
+                        nyar_vm::bytecode::format::Constant::String(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+                    .unwrap_or("<non-string>");
+                println!("  ffical@{:04}: {} argc={}", i, name, argc);
+            }
+            nyar_vm::bytecode::decoder::Instruction::InvokeMethod(mid, argc) => {
+                println!("  invoke@{:04}: mid={} argc={}", i, mid, argc);
+            }
+            _ => {}
+        }
+    }
+
+    for imp in &module.impls {
+        for (mi, &chunk_idx) in imp.methods.iter().enumerate() {
+            if chunk_idx as usize == 143 {
+                let class = &module.classes[imp.class_idx as usize];
+                let tr = &module.traits[imp.trait_idx as usize];
+                let method_name = &tr.methods[mi];
+                println!(
+                    "chunk 143 = impl {} for {}::{}",
+                    tr.name, class.name, method_name
+                );
+            }
+        }
+    }
+}

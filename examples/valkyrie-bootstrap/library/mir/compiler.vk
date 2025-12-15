@@ -39,6 +39,8 @@ imply Compiler {
     let all_chunks = self.collect_all_chunks()
     let module_bytes = self.encode_module(all_chunks)
     let out_path = "examples/valkyrie-bootstrap/target/vcc_new.nyarc"
+    print("writing nyarc to: " + out_path)
+    print("nyarc size: " + len(module_bytes))
     let ok = self.write_file(out_path, module_bytes)
     if ok {
       print("vcc written")
