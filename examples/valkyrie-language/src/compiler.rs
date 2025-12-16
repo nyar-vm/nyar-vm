@@ -42,6 +42,7 @@ struct FunctionContext {
     upvalues: Vec<(bool, u8)>, // (is_local, index)
     loops: Vec<LoopContext>,
     local_types: HashMap<String, TypeKind>,
+    lines: Vec<(u32, u32)>, // offset, line
 }
 
 #[derive(Clone)]
@@ -179,6 +180,7 @@ impl FunctionContext {
             upvalues: Vec::new(),
             loops: Vec::new(),
             local_types: HashMap::new(),
+            lines: Vec::new(),
         }
     }
 
@@ -435,6 +437,7 @@ fn compile_func_to_chunk(
         max_stack: 16,
         code: func_ctx.code,
         handlers: vec![],
+        lines: func_ctx.lines,
     };
 
     // Chunk index in the final module will be (existing chunks) + 1 (for main) + 1 (this new one)?
@@ -815,6 +818,7 @@ fn compile_expr(
                 max_stack: 16,
                 code: func_ctx.code,
                 handlers: vec![],
+                lines: func_ctx.lines,
             };
             compiler.chunks.push(chunk);
 
@@ -1227,6 +1231,12 @@ fn compile_stmt(
             ctx.code.push(1u8);
             ctx.code.push(Opcode::Pop as u8);
         }
+        Stmt::Line(line) => {
+            if let Some(ctx) = contexts.last_mut() {
+                let offset = ctx.code.len() as u32;
+                ctx.lines.push((offset, *line));
+            }
+        }
         Stmt::If(cond, then_body, else_body) => {
             compile_expr(compiler, contexts, cond)?;
             let j_false = {
@@ -1567,6 +1577,7 @@ fn compile_stmt(
                     max_stack: 16,
                     code: ctx.code,
                     handlers: vec![],
+                    lines: ctx.lines,
                 };
 
                 let chunk_idx = (compiler.chunks.len() + 1) as u16;
@@ -1694,6 +1705,7 @@ pub fn compile(stmts: &[Stmt]) -> Result<NyarcModule, Error> {
         max_stack: 16,
         code: main_ctx.code,
         handlers: vec![],
+        lines: main_ctx.lines,
     };
 
     let mut all_chunks = vec![main_chunk];

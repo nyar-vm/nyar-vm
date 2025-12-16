@@ -117,7 +117,8 @@ enum Stmt {
   Micro(name, args, body, span),
   Macro(name, args, body, span),
   Enum(name, variants, span),
-  Decorated(decorators, stmt, span)
+  Decorated(decorators, stmt, span),
+  Line(line)
 }
 
 class Decorator { kind, name, args, span }

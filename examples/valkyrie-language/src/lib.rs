@@ -12,7 +12,8 @@ pub mod mir;
 pub mod parser;
 
 fn build_stmts_for_emit(src: &str) -> Result<Vec<Stmt>, Error> {
-    let toks = lex(src)?;
+    let toks_with_line = lex(src)?;
+    let toks: Vec<crate::lexer::Token> = toks_with_line.into_iter().map(|(t, _)| t).collect();
     let ast = parse(&toks)?;
     let hir = hir::build_hir(&ast)?;
     let mir = mir::lower_hir_to_mir(&hir);

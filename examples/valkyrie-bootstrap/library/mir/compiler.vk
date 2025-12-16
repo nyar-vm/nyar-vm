@@ -76,6 +76,7 @@ imply Compiler {
     chunk.push(0)
     chunk.push(32)
     chunk.push(code)
+    chunk.push(new List)
     return chunk
   }
 
@@ -300,12 +301,13 @@ imply Compiler {
   micro lower_hir_to_mir(self, m) {
     let init_code = new List
     let init_locals = new List
+    let init_lines = new List
     Compiler::add_int(self.constants, 0)
     let i = 0
     let ni = m.init_stmts.len()
     while i < ni {
       let s = m.init_stmts.get(i)
-      Compiler::compile_stmt(self.constants, init_code, init_locals, s)
+      Compiler::compile_stmt(self.constants, init_code, init_locals, init_lines, s)
       i = i + 1
     }
     Compiler::emit_u8(init_code, 0xFF)
@@ -314,6 +316,7 @@ imply Compiler {
     main_chunk.push(0)
     main_chunk.push(32)
     main_chunk.push(init_code)
+    main_chunk.push(init_lines)
     let nc = m.class_list.len()
     let j = 0
     while j < nc {
@@ -364,7 +367,7 @@ imply Compiler {
     return true
   }
 
-  micro compile_top_level(self, code, locals, stmt) {
+  micro compile_top_level(self, code, locals, lines, stmt) {
       let tag = stmt.__variant__
       if tag == "Class" {
          self.compile_class(stmt._0, stmt._1)
@@ -377,7 +380,7 @@ imply Compiler {
             } else {
                if tag == "Namespace" || tag == "Using" {
                } else {
-                  Compiler::compile_stmt(self.constants, code, locals, stmt)
+                  Compiler::compile_stmt(self.constants, code, locals, lines, stmt)
                }
             }
          }
@@ -408,6 +411,7 @@ imply Compiler {
   micro compile_micro(self, name, args, body) {
      let code = new List
      let locals = new List
+     let lines = new List
      let i = 0
      let n = args.len()
      while i < n {
@@ -431,7 +435,7 @@ imply Compiler {
         }
         i = i + 1
      }
-     Compiler::compile_stmt(self.constants, code, locals, body)
+     Compiler::compile_stmt(self.constants, code, locals, lines, body)
      print("DEBUG: compiled " + name + " size: " + str(code.len()))
      Compiler::emit_u8(code, 0x01)
      let idx = Compiler::add_int(self.constants, 0)
@@ -442,6 +446,7 @@ imply Compiler {
      chunk.push(0)
      chunk.push(32)
      chunk.push(code)
+     chunk.push(lines)
      self.chunks.push(chunk)
      let idx2 = self.chunks.len()
      let func = new List
@@ -690,12 +695,29 @@ imply Compiler {
         let upvalues = chunk.get(1)
         let max_stack = chunk.get(2)
         let code = chunk.get(3)
+        let lines = chunk.get(4)
         s = s + Compiler::encode_u16(locals)
         s = s + Compiler::encode_u16(upvalues)
         s = s + Compiler::encode_u16(max_stack)
         let code_str = Compiler::to_string_from_bytes(code)
         s = s + Compiler::encode_u32(len(code_str))
         s = s + code_str
+        
+        let n_lines = 0
+        if lines {
+            n_lines = lines.len() / 2
+        }
+        s = s + Compiler::encode_u32(n_lines)
+        if lines {
+            let j = 0
+            while j < lines.len() {
+                let off = lines.get(j)
+                let ln = lines.get(j+1)
+                s = s + Compiler::encode_u32(off)
+                s = s + Compiler::encode_u32(ln)
+                j = j + 2
+            }
+        }
         i = i + 1
      }
      return s
@@ -844,15 +866,20 @@ imply Compiler {
     code.set(idx + 1, b1)
   }
 
-  micro compile_stmt(constants, code, locals, stmt) {
+  micro compile_stmt(constants, code, locals, lines, stmt) {
     let tag = stmt.__variant__
+    if tag == "Line" {
+        lines.push(code.len())
+        lines.push(stmt._0)
+        return null
+    }
     if tag == "Block" {
       let stmts = stmt._0
       let i = 0
       let n = stmts.len()
       while i < n {
         let s = stmts.get(i)
-        Compiler::compile_stmt(constants, code, locals, s)
+        Compiler::compile_stmt(constants, code, locals, lines, s)
         i = i + 1
       }
       } else {
@@ -883,14 +910,14 @@ imply Compiler {
                Compiler::emit_u8(code, 0x11)
                let jump_false_idx = code.len()
                Compiler::emit_u16(code, 0)
-               Compiler::compile_stmt(constants, code, locals, then_b)
+               Compiler::compile_stmt(constants, code, locals, lines, then_b)
                Compiler::emit_u8(code, 0x10)
                let jump_end_idx = code.len()
                Compiler::emit_u16(code, 0)
                let else_start = code.len()
                let offset_false = else_start - jump_false_idx - 2
                Compiler::patch_u16(code, jump_false_idx, offset_false)
-               Compiler::compile_stmt(constants, code, locals, else_b)
+               Compiler::compile_stmt(constants, code, locals, lines, else_b)
                let end = code.len()
                let offset_end = end - jump_end_idx - 2
                Compiler::patch_u16(code, jump_end_idx, offset_end)
@@ -955,7 +982,7 @@ imply Compiler {
                    }
                    
                    # Arm Body
-                   Compiler::compile_stmt(constants, code, locals, arm.body)
+                   Compiler::compile_stmt(constants, code, locals, lines, arm.body)
                    
                    # Jump to end (if not last arm or if wildcard?)
                    # Actually, after body, jump to end.

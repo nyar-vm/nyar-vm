@@ -21,6 +21,8 @@ pub struct Chunk {
     pub max_stack: u16,
     pub code: Vec<u8>,
     pub handlers: Vec<Handler>,
+    #[serde(default)]
+    pub lines: Vec<(u32, u32)>, // offset, line
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -151,12 +153,24 @@ impl NyarcModule {
             let mut code = vec![0u8; code_size];
             cur.read_exact(&mut code)
                 .map_err(|_| FormatError::Truncated)?;
+            
+            let line_count = cur
+                .read_u32::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)? as usize;
+            let mut lines = Vec::with_capacity(line_count);
+            for _ in 0..line_count {
+                let off = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
+                let line = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
+                lines.push((off, line));
+            }
+
             chunks.push(Chunk {
                 locals,
                 upvalues,
                 max_stack,
                 code,
                 handlers: vec![],
+                lines,
             });
         }
 
@@ -296,6 +310,11 @@ impl NyarcModule {
             buf.extend_from_slice(&ch.max_stack.to_le_bytes());
             buf.extend_from_slice(&(ch.code.len() as u32).to_le_bytes());
             buf.extend_from_slice(&ch.code);
+            buf.extend_from_slice(&(ch.lines.len() as u32).to_le_bytes());
+            for (off, line) in &ch.lines {
+                buf.extend_from_slice(&off.to_le_bytes());
+                buf.extend_from_slice(&line.to_le_bytes());
+            }
         }
 
         if !self.classes.is_empty() || !self.traits.is_empty() || !self.impls.is_empty() {
@@ -356,6 +375,7 @@ pub fn minimal_module_with_chunk(code: Vec<u8>, constants: Vec<Constant>) -> Nya
             max_stack: 8,
             code,
             handlers: vec![],
+            lines: vec![],
         }],
         classes: vec![],
         traits: vec![],

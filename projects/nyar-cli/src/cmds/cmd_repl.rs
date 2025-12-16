@@ -56,6 +56,7 @@ pub fn repl() -> Result<(), CliError> {
                 max_stack: 8,
                 code,
                 handlers: vec![],
+                lines: vec![],
             };
             if let Ok(program) = Decoder::new(&chunk.code).decode_all() {
                 let mut vm = NyarVM::new(vec![], vec![chunk], vec![], vec![], vec![], vec![]);

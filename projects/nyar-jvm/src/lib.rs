@@ -116,6 +116,7 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
     let idx_obj_arr_utf8 = cp_utf8(&mut cp, "[Ljava/lang/Object;", &mut cp_count);
     let idx_class_obj_arr = cp_class(&mut cp, idx_obj_arr_utf8, &mut cp_count);
     let idx_code_utf8 = cp_utf8(&mut cp, "Code", &mut cp_count);
+    let idx_linenum_utf8 = cp_utf8(&mut cp, "LineNumberTable", &mut cp_count);
 
     // Boxed Long support
     let idx_long_utf8 = cp_utf8(&mut cp, "java/lang/Long", &mut cp_count);
@@ -483,9 +484,18 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
         class.extend_from_slice(&1u16.to_be_bytes());
 
         class.extend_from_slice(&idx_code_utf8.to_be_bytes());
-        let instrs = Decoder::new(&ch.code)
-            .decode_all()
-            .map_err(|e| JvmAotError::Decode(format!("{:?}", e)))?;
+        let mut decoder = Decoder::new(&ch.code);
+        let mut instrs = Vec::new();
+        let mut nyar_offsets = Vec::new();
+        while decoder.position() < ch.code.len() as u64 {
+            nyar_offsets.push(decoder.position() as u32);
+            instrs.push(
+                decoder
+                    .next_result()
+                    .map_err(|e| JvmAotError::Decode(format!("{:?}", e)))?,
+            );
+        }
+
         let mut code: Vec<u8> = Vec::new();
         let mut ins_offsets: Vec<u32> = Vec::with_capacity(instrs.len());
         let mut branches: Vec<(usize, usize)> = Vec::new();
@@ -1182,14 +1192,53 @@ pub fn compile_module_to_jvm(module: &NyarcModule) -> Result<Vec<u8>, JvmAotErro
         let code_len = code.len() as u32;
         let max_stack = 128;
         let max_locals = ch.locals * 2 + 2;
-        let attr_len = 12 + code_len;
+
+        // Generate LineNumberTable
+        let mut line_number_table = Vec::new();
+        let mut last_line = 0;
+        for (i, &jvm_pc) in ins_offsets.iter().enumerate() {
+            let nyar_pc = nyar_offsets[i];
+            let mut line = 0;
+            for (off, l) in &ch.lines {
+                if *off <= nyar_pc {
+                    line = *l;
+                } else {
+                    break;
+                }
+            }
+            if line != 0 && line != last_line {
+                line_number_table.push((jvm_pc, line));
+                last_line = line;
+            }
+        }
+
+        let mut attributes_count = 0u16;
+        let mut attributes_len = 0u32;
+        let mut line_number_table_bytes = Vec::new();
+
+        if !line_number_table.is_empty() {
+            attributes_count += 1;
+            line_number_table_bytes.extend_from_slice(&idx_linenum_utf8.to_be_bytes());
+            let lnt_len = 2 + line_number_table.len() as u32 * 4;
+            line_number_table_bytes.extend_from_slice(&lnt_len.to_be_bytes());
+            line_number_table_bytes
+                .extend_from_slice(&(line_number_table.len() as u16).to_be_bytes());
+            for (start_pc, line) in line_number_table {
+                line_number_table_bytes.extend_from_slice(&(start_pc as u16).to_be_bytes());
+                line_number_table_bytes.extend_from_slice(&(line as u16).to_be_bytes());
+            }
+            attributes_len += 6 + lnt_len;
+        }
+
+        let attr_len = 12 + code_len + attributes_len;
         class.extend_from_slice(&attr_len.to_be_bytes());
         class.extend_from_slice(&(max_stack as u16).to_be_bytes());
         class.extend_from_slice(&(max_locals as u16).to_be_bytes());
         class.extend_from_slice(&code_len.to_be_bytes());
         class.extend_from_slice(&code);
         class.extend_from_slice(&0u16.to_be_bytes());
-        class.extend_from_slice(&0u16.to_be_bytes());
+        class.extend_from_slice(&attributes_count.to_be_bytes());
+        class.extend_from_slice(&line_number_table_bytes);
     }
 
     // Emit dispatch methods

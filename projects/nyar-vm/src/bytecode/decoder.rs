@@ -194,6 +194,9 @@ impl<'a> Decoder<'a> {
             cursor: Cursor::new(code),
         }
     }
+    pub fn position(&self) -> u64 {
+        self.cursor.position()
+    }
     fn read_u8(&mut self) -> Option<u8> {
         self.cursor.read_u8().ok()
     }

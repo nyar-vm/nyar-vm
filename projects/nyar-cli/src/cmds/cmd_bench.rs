@@ -15,6 +15,7 @@ pub fn bench() -> Result<(), CliError> {
         max_stack: 8,
         code,
         handlers: vec![],
+        lines: vec![],
     };
     let program = Decoder::new(&chunk.code).decode_all().unwrap_or_default();
     let consts = vec![nyar_vm::bytecode::format::Constant::Int(1)];

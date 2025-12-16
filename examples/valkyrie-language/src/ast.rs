@@ -75,4 +75,5 @@ pub enum Stmt {
     Loop(Vec<Stmt>),
     Break,
     Continue,
+    Line(u32),
 }

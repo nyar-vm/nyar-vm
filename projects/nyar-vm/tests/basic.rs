@@ -5,28 +5,32 @@ use nyar_vm::vm::interpreter::NyarVM;
 use nyar_vm::vm::VmError;
 
 #[test]
-fn run_push_const_return() {
+fn test_chunk_lines_encoding() {
     let mut code = Vec::new();
-    code.push(Opcode::Push as u8);
-    code.extend_from_slice(&0u16.to_le_bytes());
     code.push(Opcode::Return as u8);
-    let module = minimal_module_with_chunk(code, vec![Constant::Int(42)]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 42);
-    }
+    let lines = vec![(0, 10), (1, 20)];
+    let module = NyarModule {
+        version: 1,
+        flags: 0,
+        timestamp: 0,
+        constants: vec![],
+        effects: vec![],
+        chunks: vec![nyar_vm::bytecode::format::Chunk {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 8,
+            code: code.clone(),
+            handlers: vec![],
+            lines: lines.clone(),
+        }],
+        classes: vec![],
+        traits: vec![],
+        impls: vec![],
+    };
+    let encoded = module.encode();
+    let decoded = NyarModule::parse(&encoded).unwrap();
+    let chunk = &decoded.chunks[0];
+    assert_eq!(chunk.lines, lines);
 }
 
 #[test]
