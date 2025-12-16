@@ -11,6 +11,7 @@ imply Parser {
     p.lex = lex
     let l = p.lex
     let tok = l.next_token()
+    # print("DEBUG: Parser::new tok variant: " + tok.__variant__)
     p.cur = tok
     return p
   }
@@ -18,8 +19,11 @@ imply Parser {
     self.cur = self.lex.next_token()
   }
   micro current_kind(self) {
+    print("DEBUG: current_kind check")
     if self.cur {
-        return self.cur.kind
+        let k = self.cur.kind
+        # print("DEBUG: current_kind kind=" + k)
+        return k
     } else {
         print("DEBUG: current_kind self.cur is null")
         return TokenKind::EOF
@@ -32,28 +36,15 @@ imply Parser {
     let last_line = 0
     while true {
       let t = self.current_kind()
-      let variant = t.__variant__
-      # print("DEBUG: parse_all loop " + str(loop_count) + " variant: " + variant)
-      if loop_count > 5000 {
-         print("DEBUG: parse_all loop " + str(loop_count) + " variant: " + variant)
+      match t {
+         case TokenKind::EOF:
+            break
+         case _:
       }
-      if variant == "EOF" { break }
       
-      if self.cur {
-         let ln = self.cur.span.line
-         if ln > last_line {
-            stmts.push(Stmt::Line(ln))
-            last_line = ln
-         }
-      }
-
       let s = self.parse_stmt()
       stmts.push(s)
       loop_count = loop_count + 1
-      if loop_count > 1000000 {
-         print("ERROR: Infinite loop in parse_all?")
-         break
-      }
     }
     return stmts
   }
@@ -73,8 +64,11 @@ imply Parser {
   }
   micro parse_path(self) {
     let path = ""
-    if self.current_kind().__variant__ == "Identifier" {
-       path = self.current_kind()._0
+    print("DEBUG: parse_path start")
+    let k = self.current_kind()
+    print("DEBUG: parse_path kind variant: " + k.__variant__)
+    if k.__variant__ == "Identifier" {
+       path = k._0
        self.advance()
        while self.current_kind().__variant__ == "Colon" {
           self.advance()
@@ -460,55 +454,39 @@ imply Parser {
     let span = self.cur.span
     self.advance()
     let acc = new List
-    let last_line = 0
     loop {
-       let tag = self.current_kind().__variant__
-       match tag {
-           case "RBrace":
-               self.advance()
-               break
-           case "EOF":
-               break
-           case _:
-               if self.cur {
-                  let ln = self.cur.span.line
-                  if ln > last_line {
-                     acc.push(Stmt::Line(ln))
-                     last_line = ln
-                  }
-               }
-               let s = self.parse_stmt()
-               acc.push(s)
-       }
+      let tag = self.current_kind().__variant__
+      match tag {
+        case "RBrace":
+            self.advance()
+            break
+        case "EOF":
+            break
+        case _:
+            let s = self.parse_stmt()
+            acc.push(s)
+      }
     }
     return Stmt::Block(acc, span)
   }
   micro parse_case_block(self) {
     let span = self.cur.span
     let acc = new List
-    let last_line = 0
     loop {
-       let tag = self.current_kind().__variant__
-       match tag {
-           case "KwCase":
-               break
-           case "KwElse":
-               break
-           case "RBrace":
-               break
-           case "EOF":
-               break
-           case _:
-               if self.cur {
-                  let ln = self.cur.span.line
-                  if ln > last_line {
-                     acc.push(Stmt::Line(ln))
-                     last_line = ln
-                  }
-               }
-               let s = self.parse_stmt()
-               acc.push(s)
-       }
+      let tag = self.current_kind().__variant__
+      match tag {
+        case "KwCase":
+            break
+        case "KwElse":
+            break
+        case "RBrace":
+            break
+        case "EOF":
+            break
+        case _:
+            let s = self.parse_stmt()
+            acc.push(s)
+      }
     }
     return Stmt::Block(acc, span)
   }

@@ -1,0 +1,11 @@
+
+
+@.test
+micro this_line() {
+    print(@location.line_number)
+}
+
+@.test
+micro which_type() {
+    print(@type_of(0))
+}

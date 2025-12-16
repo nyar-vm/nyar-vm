@@ -731,6 +731,23 @@ fn compile_expr(
 
             let mut is_static_or_ffi = false;
             if let Expr::Variable(name) = &**callee {
+                if name == "__macro_type_of" {
+                     if let Some(arg) = args.first() {
+                         let ty = infer_expr_type(contexts, arg);
+                         let s = match ty {
+                             TypeKind::Int => "i64",
+                             TypeKind::String => "string",
+                             TypeKind::Bool => "bool",
+                             _ => "any",
+                         };
+                         let idx = compiler.add_constant(Constant::String(s.to_string()));
+                         let ctx = contexts.last_mut().unwrap();
+                         ctx.code.push(Opcode::Push as u8);
+                         ctx.code.extend_from_slice(&idx.to_le_bytes());
+                         return Ok(());
+                     }
+                }
+
                 // Check for static function first with namespace/using resolution
                 if let Some(idx) = compiler.resolve_function(name) {
                     println!("DEBUG: resolving call {} -> function idx {}", name, idx);
@@ -843,6 +860,17 @@ fn compile_expr(
             }
         }
         Expr::GetField(obj, field) => {
+            if let Expr::Variable(name) = &**obj {
+                if name == "__macro_location" {
+                    if field == "line_number" {
+                         let idx = compiler.add_constant(Constant::Int(0));
+                         let ctx = contexts.last_mut().unwrap();
+                         ctx.code.push(Opcode::Push as u8);
+                         ctx.code.extend_from_slice(&idx.to_le_bytes());
+                         return Ok(());
+                    }
+                }
+            }
             compile_expr(compiler, contexts, obj)?;
             let idx = compiler.add_string(field);
             let ctx = contexts.last_mut().unwrap();
@@ -1134,6 +1162,9 @@ fn compile_stmt(
 ) -> Result<(), Error> {
     println!("DEBUG: compile_stmt {:?}", s);
     match s {
+        Stmt::Decorated(_decorators, stmt) => {
+             compile_stmt(compiler, contexts, stmt)?;
+        }
         Stmt::NamespaceSet(path) => {
             compiler.namespace_stack = path.clone();
         }
@@ -1231,12 +1262,7 @@ fn compile_stmt(
             ctx.code.push(1u8);
             ctx.code.push(Opcode::Pop as u8);
         }
-        Stmt::Line(line) => {
-            if let Some(ctx) = contexts.last_mut() {
-                let offset = ctx.code.len() as u32;
-                ctx.lines.push((offset, *line));
-            }
-        }
+
         Stmt::If(cond, then_body, else_body) => {
             compile_expr(compiler, contexts, cond)?;
             let j_false = {

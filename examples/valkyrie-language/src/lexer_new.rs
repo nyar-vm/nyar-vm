@@ -1,86 +1,5 @@
-#[derive(Debug, Clone, PartialEq)]
-pub enum Token {
-    Ident(String),
-    LParen,
-    RParen,
-    LBrace,
-    RBrace,
-    Comma,
-    Semi,
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    DoubleEq, // ==
-    NotEq,    // !=
-    Lt,       // <
-    Le,       // <=
-    Gt,       // >
-    Ge,       // >=
-    And,      // &&
-    Or,       // ||
-    Not,      // !
-    Eq,
-    Pipe,
-    Dot,
-    At,
-    Colon,
-    DoubleColon,
-    Namespace,
-    Using,
-    Let,
-    Micro,
-    Return,
-    Yield,
-    If,
-    Else,
-    While,
-    Loop,
-    Break,
-    Continue,
-    Class,
-    New,
-    Is,
-    As,
-    AsSafe,
-    Typeof,
-    Trait,
-    Imply,
-    Impl,
-    For,
-    // ADT & Pattern Matching
-    Enum,
-    Match,
-    Case,
-    Arrow,      // =>
-    Underscore, // _
-    Assert,
-    Debug,
-    True,
-    False,
-    Int(i64),
-    String(String),
-    Eof,
-}
 
-#[derive(Debug)]
-pub enum Error {
-    Lex(String),
-    Parse(String),
-    Compile(String),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Lex(s) => write!(f, "lex error: {}", s),
-            Error::Parse(s) => write!(f, "parse error: {}", s),
-            Error::Compile(s) => write!(f, "compile error: {}", s),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
+use crate::lexer::{Error, Token};
 
 pub fn lex(input: &str) -> Result<Vec<(Token, u32)>, Error> {
     let mut out = Vec::new();
@@ -247,11 +166,6 @@ pub fn lex(input: &str) -> Result<Vec<(Token, u32)>, Error> {
             i += 1;
             continue;
         }
-        if c == b'@' {
-            out.push((Token::At, line));
-            i += 1;
-            continue;
-        }
         if c == b'_' {
             // Check if it's a standalone underscore or start of identifier
             if i + 1 < b.len() && ((b[i + 1] as char).is_ascii_alphanumeric() || b[i + 1] == b'_') {
@@ -328,44 +242,45 @@ pub fn lex(input: &str) -> Result<Vec<(Token, u32)>, Error> {
             }
             let s =
                 std::str::from_utf8(&b[start..i]).map_err(|_| Error::Lex("utf8".to_string()))?;
-            match s {
-                "namespace" => out.push((Token::Namespace, line)),
-                "using" => out.push((Token::Using, line)),
-                "let" => out.push((Token::Let, line)),
-                "micro" => out.push((Token::Micro, line)),
-                "return" => out.push((Token::Return, line)),
-                "yield" => out.push((Token::Yield, line)),
-                "if" => out.push((Token::If, line)),
-                "else" => out.push((Token::Else, line)),
-                "while" => out.push((Token::While, line)),
-                "loop" => out.push((Token::Loop, line)),
-                "break" => out.push((Token::Break, line)),
-                "continue" => out.push((Token::Continue, line)),
-                "class" => out.push((Token::Class, line)),
-                "new" => out.push((Token::New, line)),
-                "is" => out.push((Token::Is, line)),
+            let t = match s {
+                "namespace" => Token::Namespace,
+                "using" => Token::Using,
+                "let" => Token::Let,
+                "micro" => Token::Micro,
+                "return" => Token::Return,
+                "yield" => Token::Yield,
+                "if" => Token::If,
+                "else" => Token::Else,
+                "while" => Token::While,
+                "loop" => Token::Loop,
+                "break" => Token::Break,
+                "continue" => Token::Continue,
+                "class" => Token::Class,
+                "new" => Token::New,
+                "is" => Token::Is,
                 "as" => {
                     if i < b.len() && b[i] == b'?' {
                         i += 1;
-                        out.push((Token::AsSafe, line));
+                        Token::AsSafe
                     } else {
-                        out.push((Token::As, line));
+                        Token::As
                     }
                 }
-                "typeof" => out.push((Token::Typeof, line)),
-                "trait" => out.push((Token::Trait, line)),
-                "imply" => out.push((Token::Imply, line)),
-                "impl" => out.push((Token::Impl, line)),
-                "for" => out.push((Token::For, line)),
-                "enum" => out.push((Token::Enum, line)),
-                "match" => out.push((Token::Match, line)),
-                "case" => out.push((Token::Case, line)),
-                "assert" => out.push((Token::Assert, line)),
-                "debug" => out.push((Token::Debug, line)),
-                "true" => out.push((Token::True, line)),
-                "false" => out.push((Token::False, line)),
-                _ => out.push((Token::Ident(s.to_string()), line)),
-            }
+                "typeof" => Token::Typeof,
+                "trait" => Token::Trait,
+                "imply" => Token::Imply,
+                "impl" => Token::Impl,
+                "for" => Token::For,
+                "enum" => Token::Enum,
+                "match" => Token::Match,
+                "case" => Token::Case,
+                "assert" => Token::Assert,
+                "debug" => Token::Debug,
+                "true" => Token::True,
+                "false" => Token::False,
+                _ => Token::Ident(s.to_string()),
+            };
+            out.push((t, line));
             continue;
         }
         return Err(Error::Lex(format!("unexpected byte {}", c)));

@@ -149,7 +149,12 @@ pub fn build_hir(stmts: &[Stmt]) -> Result<HIRModule, Error> {
                 Stmt::ImplDef(trait_name, class_name, methods) => {
                     let mut mfuncs = Vec::new();
                     for m in methods {
-                        match m {
+                        let mut inner_stmt = m;
+                        while let Stmt::Decorated(_, inner) = inner_stmt {
+                            inner_stmt = inner;
+                        }
+
+                        match inner_stmt {
                             Stmt::FuncDef(name, args, body) => {
                                 let qname = def_name(namespace_stack, name);
                                 mfuncs.push(HirFunc::new(
@@ -164,7 +169,7 @@ pub fn build_hir(stmts: &[Stmt]) -> Result<HIRModule, Error> {
                             }
                             _ => {
                                 return Err(Error::Compile(
-                                    "impl block can only contain function definitions".into(),
+                                    format!("impl block can only contain function definitions, found: {:?}", inner_stmt)
                                 ))
                             }
                         }
@@ -177,7 +182,12 @@ pub fn build_hir(stmts: &[Stmt]) -> Result<HIRModule, Error> {
                 }
                 Stmt::ImplyDef(class_name, methods) => {
                     for m in methods {
-                        if let Stmt::FuncDef(name, args, body) = m {
+                        let mut inner_stmt = m;
+                        while let Stmt::Decorated(_, inner) = inner_stmt {
+                            inner_stmt = inner;
+                        }
+                        
+                        if let Stmt::FuncDef(name, args, body) = inner_stmt {
                             let qname = format!("{class_name}::{name}");
                             let qname = def_name(namespace_stack, &qname);
                             functions.push(HirFunc::new(
@@ -191,7 +201,7 @@ pub fn build_hir(stmts: &[Stmt]) -> Result<HIRModule, Error> {
                             ));
                         } else {
                             return Err(Error::Compile(
-                                "imply block can only contain function definitions".into(),
+                                format!("imply block can only contain function definitions, found: {:?}", inner_stmt)
                             ));
                         }
                     }

@@ -247,16 +247,19 @@ imply Compiler {
 
   micro expand_expr_macros(self, expr) {
     let tag = expr.__variant__
+    # print("DEBUG: expand_expr_macros tag=" + tag)
     if tag == "Field" {
       let obj = expr._0
       let key = expr._1
       let span = expr._2
-      if obj.__variant__ == "Variable" && eq(obj._0, "__macro_location") {
-        if eq(key, "line_number") {
-          let ln = 0
-          if span { ln = span.line }
-          return Expr::Int(ln, span)
-        }
+      if obj.__variant__ == "Variable" {
+          if eq(obj._0, "__macro_location") {
+             if eq(key, "line_number") {
+                let ln = 0
+                if span { ln = span.line }
+                return Expr::Int(ln, span)
+             }
+          }
       }
       return expr
     } else {
@@ -868,11 +871,23 @@ imply Compiler {
 
   micro compile_stmt(constants, code, locals, lines, stmt) {
     let tag = stmt.__variant__
-    if tag == "Line" {
+    # Extract line info from span if available
+    let span = null
+    if tag == "Let" { span = stmt._3 }
+    else { if tag == "Print" { span = stmt._1 }
+    else { if tag == "Expr" { span = stmt._1 }
+    else { if tag == "Block" { span = stmt._1 }
+    else { if tag == "If" { span = stmt._3 }
+    else { if tag == "Match" { span = stmt._2 }
+    else { if tag == "While" { span = stmt._2 }
+    else { if tag == "Return" { span = stmt._1 }
+    }}}}}}}
+    
+    if span {
         lines.push(code.len())
-        lines.push(stmt._0)
-        return null
+        lines.push(span.line)
     }
+
     if tag == "Block" {
       let stmts = stmt._0
       let i = 0
@@ -1079,6 +1094,12 @@ imply Compiler {
               Compiler::emit_u8(code, 0xC2)
               Compiler::emit_u8(code, 0x01)
             } else {
+              if tag == "Field" {
+                  Compiler::compile_expr(constants, code, locals, expr._0)
+                  let idx = Compiler::add_string(constants, expr._1)
+                  Compiler::emit_u8(code, 0x30)
+                  Compiler::emit_u16(code, idx)
+              }
             }
         }
       }
@@ -1528,4 +1549,5 @@ imply Compiler {
     }
     return s
   }
+}
 }

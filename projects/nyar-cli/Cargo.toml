@@ -12,5 +12,6 @@ nyar-error = { path = "../nyar-error" }
 nyar-vm = { path = "../nyar-vm" }
 nyar-wasm = { path = "../nyar-wasm" }
 nyar-jvm = { path = "../nyar-jvm" }
+valkyrie-language = { path = "../../examples/valkyrie-language" }
 clap = { workspace = true }
 zip = "0.6"

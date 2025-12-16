@@ -166,98 +166,98 @@ imply Lexer {
         self.ch = ""
     }
     let c = self.ch
-    if c == "" { return TokenKind::EOF }
+    if c == "" { return TokenKind::EOF() }
     
     if c == "(" {
           self.read_char()
-          return TokenKind::LParen
+          return TokenKind::LParen()
      }
      
      if c == "\"" {
             let s = self.read_string()
             return TokenKind::String(s)
      } else {
-       if c == "+" { self.read_char(); return TokenKind::Plus }
+       if c == "+" { self.read_char(); return TokenKind::Plus() }
        else {
        if c == "-" { 
             self.read_char()
             if self.ch == ">" {
                 self.read_char()
-                return TokenKind::Arrow
+                return TokenKind::Arrow()
             }
-            return TokenKind::Minus 
+            return TokenKind::Minus() 
        } else {
-       if c == "*" { self.read_char(); return TokenKind::Star }
+       if c == "*" { self.read_char(); return TokenKind::Star() }
        else {
-       if c == "/" { self.read_char(); return TokenKind::Slash }
+       if c == "/" { self.read_char(); return TokenKind::Slash() }
        else {
-       if c == "(" { self.read_char(); return TokenKind::LParen }
+       if c == "(" { self.read_char(); return TokenKind::LParen() }
        else {
-       if c == ")" { self.read_char(); return TokenKind::RParen }
+       if c == ")" { self.read_char(); return TokenKind::RParen() }
        else {
-       if c == "{" { self.read_char(); return TokenKind::LBrace }
+       if c == "{" { self.read_char(); return TokenKind::LBrace() }
        else {
-       if c == "}" { self.read_char(); return TokenKind::RBrace }
+       if c == "}" { self.read_char(); return TokenKind::RBrace() }
        else {
        if c == "=" { 
             self.read_char()
             if self.ch == "=" {
                 self.read_char()
-                return TokenKind::EqEq
+                return TokenKind::EqEq()
             }
-            return TokenKind::Eq 
+            return TokenKind::Eq() 
        } else {
-       if c == ";" { self.read_char(); return TokenKind::Semi }
+       if c == ";" { self.read_char(); return TokenKind::Semi() }
        else {
-       if c == "," { self.read_char(); return TokenKind::Comma }
+       if c == "," { self.read_char(); return TokenKind::Comma() }
        else {
-       if c == ":" { self.read_char(); return TokenKind::Colon }
+       if c == ":" { self.read_char(); return TokenKind::Colon() }
        else {
-       if c == "|" { self.read_char(); return TokenKind::Pipe }
+       if c == "|" { self.read_char(); return TokenKind::Pipe() }
        else {
-       if c == "&" { self.read_char(); return TokenKind::Amp }
+       if c == "&" { self.read_char(); return TokenKind::Amp() }
        else {
-       if c == "?" { self.read_char(); return TokenKind::Question }
+       if c == "?" { self.read_char(); return TokenKind::Question() }
        else {
-       if c == "@" { self.read_char(); return TokenKind::At }
+       if c == "@" { self.read_char(); return TokenKind::At() }
        else {
-       if c == "." { self.read_char(); return TokenKind::Dot }
+       if c == "." { self.read_char(); return TokenKind::Dot() }
        else {
            if Lexer::is_alpha(c) {
              let lit = self.read_identifier()
               match lit {
                  case "let":
-                    return TokenKind::KwLet
+                    return TokenKind::KwLet()
                  case "if":
-                    return TokenKind::KwIf
+                    return TokenKind::KwIf()
                  case "else":
-                    return TokenKind::KwElse
+                    return TokenKind::KwElse()
                  case "while":
-                    return TokenKind::KwWhile
+                    return TokenKind::KwWhile()
                  case "micro":
-                    return TokenKind::KwMicro
+                    return TokenKind::KwMicro()
                  case "macro":
-                    return TokenKind::KwMacro
+                    return TokenKind::KwMacro()
                  case "class":
-                    return TokenKind::KwClass
+                    return TokenKind::KwClass()
                  case "enum":
-                    return TokenKind::KwEnum
+                    return TokenKind::KwEnum()
                  case "return":
-                    return TokenKind::KwReturn
+                    return TokenKind::KwReturn()
                  case "namespace":
-                    return TokenKind::KwNamespace
+                    return TokenKind::KwNamespace()
                  case "using":
-                    return TokenKind::KwUsing
+                    return TokenKind::KwUsing()
                  case "imply":
-                    return TokenKind::KwImply
+                    return TokenKind::KwImply()
                  case "match":
-                    return TokenKind::KwMatch
+                    return TokenKind::KwMatch()
                  case "case":
-                    return TokenKind::KwCase
+                    return TokenKind::KwCase()
                  case "true":
-                    return TokenKind::KwTrue
+                    return TokenKind::KwTrue()
                  case "false":
-                    return TokenKind::KwFalse
+                    return TokenKind::KwFalse()
                  case _:
                     let res = TokenKind::Identifier(lit)
                     return res
