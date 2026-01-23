@@ -1,6 +1,25 @@
 use nyar_gc::Trace;
 use std::collections::HashMap;
+use std::fmt::{self, Display, Formatter};
 use std::ptr::null_mut;
+
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.tag {
+            ValueTag::Int => write!(f, "{}", unsafe { self.data.int }),
+            ValueTag::Float => write!(f, "{}", unsafe { self.data.float }),
+            ValueTag::Bool => write!(f, "{}", unsafe { self.data.bool_ != 0 }),
+            ValueTag::Null => write!(f, "null"),
+            ValueTag::String => write!(f, "{}", unsafe { &*(self.data.ptr as *const String) }),
+            ValueTag::BigInt => write!(f, "{}", unsafe { (*(self.data.ptr as *const BigInt)).to_i64() }),
+            ValueTag::Array => write!(f, "[...]"),
+            ValueTag::Object => write!(f, "{{...}}"),
+            ValueTag::Closure => write!(f, "<closure>"),
+            ValueTag::DynObject => write!(f, "<dyn_object>"),
+            _ => write!(f, "<value>"),
+        }
+    }
+}
 
 impl Trace for Value {
     fn trace(&self) {
@@ -106,6 +125,9 @@ pub struct Value {
 }
 
 impl Value {
+    pub fn to_string(&self) -> String {
+        format!("{}", self)
+    }
     pub unsafe fn as_closure<'a>(&self) -> &'a Closure {
         &*(self.data.ptr as *const Closure)
     }

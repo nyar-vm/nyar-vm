@@ -44,6 +44,7 @@ fn main() {
     let mut main_chunk = None;
     for (i, m) in vm.modules.iter().enumerate() {
         for export in &m.exports {
+            println!("Found export: symbol={}, chunk_idx={}", export.symbol, export.chunk_idx);
             if export.symbol == "main" {
                 main_chunk = Some((i, export.chunk_idx as usize));
                 break;

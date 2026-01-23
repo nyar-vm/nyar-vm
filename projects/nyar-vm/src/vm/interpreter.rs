@@ -2,7 +2,7 @@ use crate::bytecode::decoder::Instruction;
 use crate::bytecode::format::{Constant, NyarcModule};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::ffi::FFIRegistry;
-use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
+use crate::vm::value::{BigInt, Closure, DynObject, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
 use nyar_gc::{NyarGc, Trace};
 use std::ptr::null;
@@ -204,14 +204,14 @@ impl NyarVM {
     }
 
     fn register_java_builtins(&mut self) {
-        let mut out = Value::dyn_object();
+        let out = Value::dyn_object();
         let out_ptr = unsafe { out.data.ptr as *mut DynObject };
-        let out_mut = unsafe { &mut *out_ptr };
+        let _out_mut = unsafe { &mut *out_ptr };
 
         // System.out.println
         // For now, System.out is just a DynObject
 
-        let mut system = Value::dyn_object();
+        let system = Value::dyn_object();
         let system_ptr = unsafe { system.data.ptr as *mut DynObject };
         let system_mut = unsafe { &mut *system_ptr };
         system_mut.entries.insert("out".to_string(), out);
@@ -307,6 +307,7 @@ impl NyarVM {
     }
 
     pub fn execute(&mut self, module_idx: usize, chunk_idx: usize) -> Result<Value, VmError> {
+        println!("VM: Executing module {}, chunk {}", module_idx, chunk_idx);
         let module = &self.modules[module_idx];
         let chunk = &module.chunks[chunk_idx];
         
@@ -330,6 +331,37 @@ impl NyarVM {
         self.run_loop()
     }
 
+    pub fn execute_symbol(&mut self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
+        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
+            let chunk = &self.modules[m_idx].chunks[chunk_idx as usize];
+            
+            let mut decoder = crate::bytecode::decoder::Decoder::new(&chunk.code);
+            let mut instructions = Vec::new();
+            while let Ok(ins) = decoder.next_result() {
+                instructions.push(ins);
+            }
+
+            let mut locals = args;
+            if locals.len() < 32 {
+                locals.resize(32, Value::null());
+            }
+
+            let frame = Frame {
+                instrs: instructions,
+                ip: 0,
+                locals,
+                closure: std::ptr::null(),
+                module_idx: m_idx,
+                chunk_idx: Some(chunk_idx as usize),
+            };
+            
+            self.frames.push(frame);
+            self.run_loop()
+        } else {
+            Err(VmError::RuntimeError(format!("Symbol not found: {}", name)))
+        }
+    }
+
     fn run_loop(&mut self) -> Result<Value, VmError> {
         let mut loop_count = 0u64;
         loop {
@@ -351,6 +383,8 @@ impl NyarVM {
             };
 
             let mut next_ip = Some(cur_ip + 1);
+            
+            println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
             
             match ins {
                 Instruction::Nop => {}
@@ -1159,6 +1193,31 @@ impl NyarVM {
                     }
                     f.locals[idx as usize] = v;
                 }
+                Instruction::LoadGlobal(name_idx) => {
+                    let module = &self.modules[module_idx];
+                    let name = match module.constants.get(name_idx as usize) {
+                        Some(Constant::String(s)) => s,
+                        _ => return Err(VmError::InvalidOpcode),
+                    };
+                    if let Some(v) = self.builtins.get(name) {
+                        self.push(*v);
+                    } else if let Some(&(_m_idx, _c_idx)) = self.symbol_table.get(name) {
+                        // If it's a function symbol, we might want to push a closure or handle it in CallSymbol
+                        // For now, let's just push a null or handle it as a special case
+                        self.push(Value::null());
+                    } else {
+                        return Err(VmError::RuntimeError(format!("Global not found: {}", name)));
+                    }
+                }
+                Instruction::StoreGlobal(name_idx) => {
+                    let v = self.pop()?;
+                    let module = &self.modules[module_idx];
+                    let name = match module.constants.get(name_idx as usize) {
+                        Some(Constant::String(s)) => s.clone(),
+                        _ => return Err(VmError::InvalidOpcode),
+                    };
+                    self.builtins.insert(name, v);
+                }
                 Instruction::Jump(off) => {
                     let target = (cur_ip as isize + off as isize) as usize;
                     next_ip = Some(target);
@@ -1177,7 +1236,8 @@ impl NyarVM {
                     }
                 }
                 Instruction::Return => {
-                    let v = self.pop()?;
+                    println!("VM: Return from frame {}, stack size {}", self.frames.len(), self.sp);
+                    let val = self.pop()?;
                     self.frames.pop();
                     while let Some(hf) = self.handler_stack.last() {
                         if hf.frame_depth > self.frames.len() {
@@ -1187,9 +1247,9 @@ impl NyarVM {
                         }
                     }
                     if self.frames.is_empty() {
-                        return Ok(v);
+                        return Ok(val);
                     }
-                    self.push(v);
+                    self.push(val);
                     next_ip = None;
                 }
                 Instruction::MakeClosure(idx, ref upvalues) => {
@@ -1327,6 +1387,7 @@ impl NyarVM {
                         Some(Constant::String(s)) => s.as_str(),
                         _ => return Err(VmError::IndexOutOfBounds),
                     };
+                    println!("VM: CallSymbol {} with {} args", name, argc);
 
                     if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
                         let mut args = Vec::with_capacity(argc as usize);
@@ -2943,32 +3004,51 @@ impl NyarVM {
                             // self.log("GetField: name_const_missing");
                         }
                     }
-                    if obj.tag != ValueTag::Object {
+                    if obj.tag == ValueTag::Object {
+                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
+                        let obj_ref = unsafe { &*obj_ptr };
+
+                        let name = match module.constants.get(name_idx as usize) {
+                            Some(Constant::String(s)) => s,
+                            _ => {
+                                return Err(VmError::RuntimeError(format!(
+                                    "GetField with non-string field name at constant {}",
+                                    name_idx
+                                )))
+                            }
+                        };
+                        let cls = module
+                            .classes
+                            .get(obj_ref.class_idx as usize)
+                            .ok_or(VmError::IndexOutOfBounds)?;
+                        if let Some(idx) = cls.fields.iter().position(|f| f == name) {
+                            self.push(obj_ref.fields[idx]);
+                        } else {
+                            return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
+                        }
+                    } else if obj.tag == ValueTag::DynObject {
+                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::DynObject };
+                        let obj_ref = unsafe { &*obj_ptr };
+
+                        let name = match module.constants.get(name_idx as usize) {
+                            Some(Constant::String(s)) => s,
+                            _ => {
+                                return Err(VmError::RuntimeError(format!(
+                                    "GetField with non-string field name at constant {}",
+                                    name_idx
+                                )))
+                            }
+                        };
+                        if let Some(val) = obj_ref.entries.get(name) {
+                            self.push(*val);
+                        } else {
+                            return Err(VmError::RuntimeError(format!("Field not found in DynObject: {}", name)));
+                        }
+                    } else {
                         return Err(VmError::RuntimeError(format!(
                             "GetField on non-object: found {:?}",
                             obj.tag
                         )));
-                    }
-                    let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
-                    let obj_ref = unsafe { &*obj_ptr };
-
-                    let name = match module.constants.get(name_idx as usize) {
-                        Some(Constant::String(s)) => s,
-                        _ => {
-                            return Err(VmError::RuntimeError(format!(
-                                "GetField with non-string field name at constant {}",
-                                name_idx
-                            )))
-                        }
-                    };
-                    let cls = module
-                        .classes
-                        .get(obj_ref.class_idx as usize)
-                        .ok_or(VmError::IndexOutOfBounds)?;
-                    if let Some(idx) = cls.fields.iter().position(|f| f == name) {
-                        self.push(obj_ref.fields[idx]);
-                    } else {
-                        return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
                     }
                 }
                 Instruction::SetField(name_idx) => {

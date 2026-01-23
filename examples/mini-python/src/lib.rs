@@ -10,7 +10,7 @@ use codegen::GaiaTranslator;
 use gaia_assembler::program::GaiaModule;
 use gaia_types::GaiaError;
 use pyc_codegen::{Marshal, PycTranslator};
-use oak_core::{Lexer, Parser, OakError, ParseSession, lexer::LexerCache, source::SourceText};
+use oak_core::{Lexer, OakError, ParseSession, source::SourceText};
 use chomsky_uir::Id;
 use chomsky_cost::DefaultCostModel;
 use chomsky_full::optimizer::UniversalOptimizer;

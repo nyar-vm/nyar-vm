@@ -48,17 +48,9 @@ fn run_await_on_closure() {
         imports: vec![],
         exports: vec![],
     };
-    let chunk = module.chunks[1].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 1).unwrap();
     unsafe {
         assert_eq!(v.as_int(), 42);
     }
@@ -108,17 +100,9 @@ fn run_block_on_closure() {
         imports: vec![],
         exports: vec![],
     };
-    let chunk = module.chunks[1].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 1).unwrap();
     unsafe {
         assert_eq!(v.as_int(), 7);
     }

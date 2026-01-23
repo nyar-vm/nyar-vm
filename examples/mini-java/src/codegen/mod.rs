@@ -46,11 +46,14 @@ impl NyarBackend {
                     code.extend(self.lower_tree(item)?);
                 }
             }
-            IKunTree::Extension(name, args) => match name.as_str() {
+            IKunTree::Extension(name, args) => {
+                println!("Processing extension: {}", name);
+                match name.as_str() {
                 "class" => {
                     // 类处理：通常不需要生成代码，而是填充元数据
                     // args[0] 是类名, args[1] 是成员序列
                     if let IKunTree::StringConstant(class_name) = &args[0] {
+                        println!("Found class: {}", class_name);
                         if let IKunTree::Seq(members) = &args[1] {
                             for member in members {
                                 self.lower_tree(member)?;
@@ -60,22 +63,59 @@ impl NyarBackend {
                 }
                 "method" => {
                     // 方法处理：生成 Chunk 并添加导出
-                    if let (IKunTree::StringConstant(name), IKunTree::StringConstant(_ret), body) = (&args[0], &args[1], &args[2]) {
-                        let body_code = self.lower_tree(body)?;
-                        let chunk_idx = self.module.chunks.len() as u16;
-                        self.module.chunks.push(Chunk {
-                            locals: 0,
-                            upvalues: 0,
-                            max_stack: 10,
-                            code: body_code,
-                            handlers: vec![],
-                            lines: vec![],
-                        });
-                        self.module.exports.push(ExportInfo {
-                            symbol: name.clone(),
-                            chunk_idx,
-                        });
+                    // args: [name, ret, params, body]
+                    println!("Found method extension with {} args", args.len());
+                    if args.len() == 4 {
+                        if let (IKunTree::StringConstant(name), IKunTree::StringConstant(_ret), _params, body) = (&args[0], &args[1], &args[2], &args[3]) {
+                            println!("Compiling method: {}", name);
+                            let body_code = self.lower_tree(body)?;
+                            let chunk_idx = self.module.chunks.len() as u16;
+                            self.module.chunks.push(Chunk {
+                                locals: 0,
+                                upvalues: 0,
+                                max_stack: 10,
+                                code: body_code,
+                                handlers: vec![],
+                                lines: vec![],
+                            });
+                            self.module.exports.push(ExportInfo {
+                                symbol: name.clone(),
+                                chunk_idx,
+                            });
+                        }
+                    } else if args.len() == 3 {
+                         if let (IKunTree::StringConstant(name), IKunTree::StringConstant(_ret), body) = (&args[0], &args[1], &args[2]) {
+                            println!("Compiling method (3 args): {}", name);
+                            let body_code = self.lower_tree(body)?;
+                            let chunk_idx = self.module.chunks.len() as u16;
+                            self.module.chunks.push(Chunk {
+                                locals: 0,
+                                upvalues: 0,
+                                max_stack: 10,
+                                code: body_code,
+                                handlers: vec![],
+                                lines: vec![],
+                            });
+                            self.module.exports.push(ExportInfo {
+                                symbol: name.clone(),
+                                chunk_idx,
+                            });
+                        }
                     }
+                }
+                "field" => {
+                    // 字段处理：目前仅作为占位
+                }
+                "parameter" => {
+                    // 参数处理：目前仅作为占位
+                }
+                "return" => {
+                    // args[0] 是返回值
+                    code.extend(self.lower_tree(&args[0])?);
+                    code.push(Opcode::Return as u8);
+                }
+                "package" | "import" | "interface" => {
+                    // 忽略元数据
                 }
                 "call" => {
                     // 调用处理
@@ -102,6 +142,7 @@ impl NyarBackend {
                         let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
                         code.extend_from_slice(&(idx as u16).to_le_bytes());
                         
+                        // 获取参数数量
                         let arg_count = match &args[1] {
                             IKunTree::Seq(list) => list.len() as u8,
                             _ => 1,
@@ -110,18 +151,16 @@ impl NyarBackend {
                     }
                 }
                 "get_field" => {
-                    // 字段访问处理
-                    if args.len() == 2 {
-                        // target, name
-                        code.extend(self.lower_tree(&args[0])?); // push target
-                        code.push(Opcode::GetField as u8);
-                        let name_str = if let IKunTree::Symbol(s) = &args[1] { s } else { "unknown" };
-                        let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
-                        code.extend_from_slice(&(idx as u16).to_le_bytes());
-                    }
+                    // target, name
+                    code.extend(self.lower_tree(&args[0])?); // push target
+                    code.push(Opcode::GetField as u8);
+                    let name_str = if let IKunTree::Symbol(s) = &args[1] { s } else { "unknown" };
+                    let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
+                    code.extend_from_slice(&(idx as u16).to_le_bytes());
                 }
                 _ => {}
-            },
+                }
+            }
             IKunTree::Module(_, items) => {
                 for item in items {
                     self.lower_tree(item)?;
@@ -150,12 +189,15 @@ impl Backend for NyarBackend {
         "nyar"
     }
 
-    fn generate(&self, _tree: &IKunTree) -> chomsky_types::ChomskyResult<BackendArtifact> {
-        // 这里实际上我们需要一个能修改 self 的版本，
-        // 或者在 generate 中完成所有工作。
-        // 由于 trait 定义是 &self，我们需要内部可变性或者重新设计。
-        // 为了简单起见，我们在这里手动调用 lower_tree。
-        Err(chomsky_types::ChomskyError::backend_error("Use NyarTranslator::translate instead"))
+    fn generate(&self, tree: &IKunTree) -> chomsky_types::ChomskyResult<BackendArtifact> {
+        let mut this = Self::new();
+        match this.lower_tree(tree) {
+            Ok(_) => {
+                let data = this.module.encode();
+                Ok(BackendArtifact::Binary(data))
+            }
+            Err(e) => Err(chomsky_types::ChomskyError::backend_error(e.to_string())),
+        }
     }
 }
 
@@ -223,7 +265,7 @@ impl NyarTranslator {
         for member in &class.members {
             let member_id = match member {
                 Member::Method(m) => self.translate_method(builder, m)?,
-                Member::Field(_) => continue, // 暂不支持字段
+                Member::Field(f) => self.translate_field(builder, f)?,
             };
             members.push(member_id);
         }
@@ -232,10 +274,27 @@ impl NyarTranslator {
         Ok(builder.extension("class", vec![name_id, members_id], loc))
     }
 
+    fn translate_field(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, field: &FieldDeclaration) -> Result<Id> {
+        let loc = Loc::new(0, field.span.start as u32, field.span.end as u32);
+        let name_id = builder.string(&field.name, loc.clone());
+        let type_id = builder.string(&field.r#type, loc.clone());
+
+        Ok(builder.extension("field", vec![name_id, type_id], loc))
+    }
+
     fn translate_method(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, method: &MethodDeclaration) -> Result<Id> {
         let loc = Loc::new(0, method.span.start as u32, method.span.end as u32);
         let name_id = builder.string(&method.name, loc.clone());
         let ret_id = builder.string(&method.return_type, loc.clone());
+
+        let mut params = Vec::new();
+        for param in &method.parameters {
+            let p_loc = Loc::new(0, 0, 0);
+            let p_name = builder.string(&param.name, p_loc.clone());
+            let p_type = builder.string(&param.r#type, p_loc.clone());
+            params.push(builder.extension("parameter", vec![p_name, p_type], p_loc));
+        }
+        let params_id = builder.seq(params, loc.clone());
 
         let mut body = Vec::new();
         for stmt in &method.body {
@@ -243,7 +302,7 @@ impl NyarTranslator {
         }
 
         let body_id = builder.seq(body, loc.clone());
-        Ok(builder.extension("method", vec![name_id, ret_id, body_id], loc))
+        Ok(builder.extension("method", vec![name_id, ret_id, params_id, body_id], loc))
     }
 
     fn translate_statement(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, stmt: &Statement) -> Result<Id> {

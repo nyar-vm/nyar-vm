@@ -41,7 +41,7 @@ impl MiniCRuntime {
         if let Some(export) = self.vm.modules[module_idx].exports.iter().find(|e| e.symbol == "main").or(self.vm.modules[module_idx].exports.first()) {
             match self.vm.execute(module_idx, export.chunk_idx as usize) {
                 Ok(val) => {
-                    println!("Execution result: {:?}", val);
+                    println!("Execution result: {}", val);
                 }
                 Err(e) => {
                     println!("Nyar VM execution failed: {:?}", e);
@@ -170,12 +170,12 @@ impl MiniCRuntime {
                 self.translate_expr(cond, insts, symbols)?;
                 
                 let jump_if_false_idx = insts.len();
-                insts.push(Instruction::Nop); 
+                insts.push(Instruction::JumpIfFalse(0)); 
                 
                 self.translate_expr(then_br, insts, symbols)?;
                 
                 let jump_idx = insts.len();
-                insts.push(Instruction::Nop); 
+                insts.push(Instruction::Jump(0)); 
                 
                 let then_start = jump_if_false_idx + 1;
                 let then_end = jump_idx;
@@ -192,18 +192,26 @@ impl MiniCRuntime {
             }
             IKunTree::Repeat(cond, body) => {
                 let start_pos = self.calculate_code_size(insts);
-                
                 self.translate_expr(cond, insts, symbols)?;
-                
                 let jump_if_false_idx = insts.len();
-                insts.push(Instruction::Nop);
-                
+                insts.push(Instruction::JumpIfFalse(0));
                 self.translate_expr(body, insts, symbols)?;
-                
                 let body_end_pos = self.calculate_code_size(insts);
                 let jump_back_offset = -( (body_end_pos - start_pos) as i16 + 3 );
                 insts.push(Instruction::Jump(jump_back_offset));
-                
+                let final_pos = self.calculate_code_size(insts);
+                let jump_forward_offset = (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx+1])) as i16;
+                insts[jump_if_false_idx] = Instruction::JumpIfFalse(jump_forward_offset);
+            }
+            IKunTree::Extension(name, args) if name == "while" && args.len() == 2 => {
+                let start_pos = self.calculate_code_size(insts);
+                self.translate_expr(&args[0], insts, symbols)?;
+                let jump_if_false_idx = insts.len();
+                insts.push(Instruction::JumpIfFalse(0));
+                self.translate_expr(&args[1], insts, symbols)?;
+                let body_end_pos = self.calculate_code_size(insts);
+                let jump_back_offset = -( (body_end_pos - start_pos) as i16 + 3 );
+                insts.push(Instruction::Jump(jump_back_offset));
                 let final_pos = self.calculate_code_size(insts);
                 let jump_forward_offset = (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx+1])) as i16;
                 insts[jump_if_false_idx] = Instruction::JumpIfFalse(jump_forward_offset);
@@ -212,6 +220,13 @@ impl MiniCRuntime {
                 for stmt in stmts {
                     self.translate_expr(stmt, insts, symbols)?;
                 }
+            }
+            IKunTree::Apply(func, args) => {
+                for arg in args {
+                    self.translate_expr(arg, insts, symbols)?;
+                }
+                self.translate_expr(func, insts, symbols)?;
+                insts.push(Instruction::CallClosure(args.len() as u8));
             }
             IKunTree::Extension(name, args) if name == "return" && args.len() == 1 => {
                 self.translate_expr(&args[0], insts, symbols)?;

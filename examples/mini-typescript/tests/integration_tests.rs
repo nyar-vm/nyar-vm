@@ -35,6 +35,12 @@ fn test_multi_file_project() {
         vm.load_module(module.into());
     }
     
-    // Run the main module (index 0)
+    // Run the main module (index 0) to initialize globals
     vm.execute(0, 0).expect("Failed to run main module");
+    
+    // Call the main function
+    let result = vm.execute_symbol("main", vec![]).expect("Failed to call main function");
+    
+    // index.ts: sum + prod = (10+20) + (10*20) = 30 + 200 = 230
+    assert_eq!(unsafe { result.as_int() }, 230);
 }

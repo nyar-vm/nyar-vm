@@ -128,11 +128,13 @@ impl<'a> UirConverter<'a> {
                 self.builder.assign(&var.name, value, loc)
             }
             ast::Statement::FunctionDeclaration(func) => {
+                let loc = self.to_loc(func.span.clone());
                 let mut body_ids = Vec::new();
                 for s in func.body {
                     body_ids.push(self.convert_statement(s));
                 }
-                self.builder.function(&func.name, func.params, body_ids)
+                let lambda = self.builder.function(&func.name, func.params, body_ids);
+                self.builder.assign(&func.name, lambda, loc)
             }
             ast::Statement::ExpressionStatement(expr) => {
                 self.convert_expression(expr)

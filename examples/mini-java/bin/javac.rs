@@ -1,6 +1,8 @@
 use clap::Parser;
 use std::fs;
+use std::path::Path;
 use mini_java::MiniJavaFrontend;
+use chomsky_full::extract::Backend;
 
 #[derive(Parser, Debug)]
 #[command(name = "javac", version = "0.1.0", author = "Nyar Project", about = "Mini Java Compiler")]
@@ -9,16 +11,16 @@ struct Args {
     #[arg(index = 1)]
     input: String,
 
-    /// Output Nyar Binary file
-    #[arg(short, long, value_name = "FILE")]
-    output: Option<String>,
+    /// The output Nyar Binary file
+    #[arg(short, long, default_value = "out.nyar")]
+    output: String,
 }
 
 fn main() {
     let args = Args::parse();
 
     // Read input file
-    let source_code = match fs::read_to_string(&args.input) {
+    let source = match fs::read_to_string(&args.input) {
         Ok(content) => content,
         Err(e) => {
             eprintln!("Error: Could not read file '{}': {}", args.input, e);
@@ -26,27 +28,29 @@ fn main() {
         }
     };
 
-    // Create frontend instance
+    // Initialize frontend
     let frontend = MiniJavaFrontend::new();
 
-    // Compile to Nyar instructions
-    match frontend.compile_to_nyar(&source_code) {
-        Ok(module) => {
-            let data = module.encode();
-            let out_path = args.output.unwrap_or_else(|| {
-                let mut path = std::path::PathBuf::from(&args.input);
-                path.set_extension("nb"); // Nyar Binary
-                path.to_str().unwrap().to_string()
-            });
-
-            if let Err(e) = fs::write(&out_path, data) {
-                eprintln!("Error: Could not write to output file '{}': {}", out_path, e);
-                std::process::exit(1);
-            }
-            println!("Compiled successfully to '{}'", out_path);
-        }
+    // Compile
+    println!("Compiling {}...", args.input);
+    let artifact = match frontend.generate_from_source(&source) {
+        Ok(a) => a,
         Err(e) => {
-            eprintln!("Compilation error: {:?}", e);
+            eprintln!("Error: Compilation failed: {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Save output
+    let data = match artifact {
+        chomsky_full::extract::BackendArtifact::Binary(data) => data,
+        chomsky_full::extract::BackendArtifact::Source(s) => s.into_bytes(),
+    };
+
+    match fs::write(&args.output, data) {
+        Ok(_) => println!("Successfully compiled to {}", args.output),
+        Err(e) => {
+            eprintln!("Error: Could not write output file '{}': {}", args.output, e);
             std::process::exit(1);
         }
     }

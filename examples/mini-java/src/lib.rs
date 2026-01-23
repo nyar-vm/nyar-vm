@@ -48,10 +48,15 @@ impl MiniJavaFrontend {
     /// 编译到 Nyar 字节码
     pub fn compile_to_nyar(&self, source: &str) -> Result<NyarModule> {
         let ast = self.parse(source)?;
-        let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let translator = codegen::NyarTranslator::new();
-        translator.translate_to_graph(&ast, &mut egraph)?;
         translator.translate(&ast)
+    }
+
+    /// 从源代码生成后端产物
+    pub fn generate_from_source(&self, source: &str) -> Result<chomsky_extract::BackendArtifact> {
+        let module = self.compile_to_nyar(source)?;
+        let data = module.encode();
+        Ok(chomsky_extract::BackendArtifact::Binary(data))
     }
 }
 

@@ -2,7 +2,7 @@
 //!
 //! 将 UIR (Universal Intermediate Representation) 转换为 Gaia 指令
 
-use chomsky_uir::{EGraph, Id, IKun, IKunTree};
+use chomsky_uir::{EGraph, Id, IKunTree};
 use gaia_assembler::{
     instruction::{CmpCondition, CoreInstruction, GaiaInstruction, ManagedInstruction},
     program::{GaiaBlock, GaiaConstant, GaiaFunction, GaiaModule, GaiaTerminator},
@@ -171,7 +171,7 @@ impl GaiaTranslator {
         })
     }
 
-    fn generate_tree_node(&mut self, tree: &IKunTree, is_statement: bool) -> Result<(), GaiaError> {
+    fn generate_tree_node(&mut self, tree: &IKunTree, _is_statement: bool) -> Result<(), GaiaError> {
         match tree {
             IKunTree::Constant(v) => {
                 self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::I64(*v))));
@@ -318,7 +318,7 @@ impl GaiaTranslator {
     }
 
     /// 生成 GaiaModule (Legacy)
-    pub fn generate(&mut self, egraph: &EGraph<chomsky_uir::IKun>, root: Id) -> Result<GaiaModule, GaiaError> {
+    pub fn generate(&mut self, _egraph: &EGraph<chomsky_uir::IKun>, _root: Id) -> Result<GaiaModule, GaiaError> {
         // ... (existing implementation or delegate to tree-based one if possible)
         // For simplicity, I'll just leave it or remove it since I'm refactoring.
         // I'll keep it for now but it's not the preferred way.

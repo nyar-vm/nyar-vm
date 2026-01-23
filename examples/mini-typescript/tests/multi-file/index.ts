@@ -7,3 +7,8 @@ export function main() {
     let prod = multiply(x, y);
     return sum + prod;
 }
+
+let result = main();
+// In our mini-ts, we might not have console.log yet, 
+// but let's assume top-level code is executed.
+result; 

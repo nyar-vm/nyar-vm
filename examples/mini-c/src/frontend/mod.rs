@@ -196,8 +196,31 @@ impl MiniCFrontend {
                             }
                         }).collect();
                         
-                        // Handle binary operations: [left, op, right]
+                        // Handle binary operations or function calls
                         if filtered_children.len() >= 3 {
+                            let mut is_call = false;
+                            if let RedTree::Leaf(l) = &filtered_children[1] {
+                                let kind: CElementType = l.kind.into();
+                                if let CElementType::Token(CTokenType::LeftParen) = kind {
+                                    is_call = true;
+                                }
+                            }
+
+                            if is_call {
+                                let func = self.convert_tree_to_uir(builder, filtered_children[0].clone(), source, source_id);
+                                let mut args = vec![];
+                                for i in 2..filtered_children.len() {
+                                    if let RedTree::Leaf(l) = &filtered_children[i] {
+                                        let kind: CElementType = l.kind.into();
+                                        if matches!(kind, CElementType::Token(CTokenType::RightParen) | CElementType::Token(CTokenType::Comma)) {
+                                            continue;
+                                        }
+                                    }
+                                    args.push(self.convert_tree_to_uir(builder, filtered_children[i].clone(), source, source_id));
+                                }
+                                return builder.call(func, args, loc);
+                            }
+
                             let mut op_idx = None;
                             for (i, child) in filtered_children.iter().enumerate() {
                                 if let RedTree::Leaf(l) = child {
@@ -234,8 +257,35 @@ impl MiniCFrontend {
                                     let left_id = self.convert_tree_to_uir(builder, left.clone(), source, source_id);
                                     let right_id = self.convert_tree_to_uir(builder, right.clone(), source, source_id);
                                     let op_span = op_leaf.span;
-                                    let op_text = &source[op_span.start..op_span.end];
+                                    let op_text = source[op_span.start..op_span.end].trim();
                                     
+                                    if op_text.is_empty() {
+                                        let kind: CElementType = op_leaf.kind.into();
+                                        let fallback_op = match kind {
+                                            CElementType::Token(CTokenType::Plus) => "+",
+                                            CElementType::Token(CTokenType::Minus) => "-",
+                                            CElementType::Token(CTokenType::Star) => "*",
+                                            CElementType::Token(CTokenType::Slash) => "/",
+                                            CElementType::Token(CTokenType::Assign) => "=",
+                                            CElementType::Token(CTokenType::Equal) => "==",
+                                            CElementType::Token(CTokenType::NotEqual) => "!=",
+                                            CElementType::Token(CTokenType::Less) => "<",
+                                            CElementType::Token(CTokenType::LessEqual) => "<=",
+                                            CElementType::Token(CTokenType::Greater) => ">",
+                                            CElementType::Token(CTokenType::GreaterEqual) => ">=",
+                                            _ => "",
+                                        };
+                                        
+                                        if fallback_op.is_empty() {
+                                            println!("DEBUG: Empty operator text at span {:?} with kind {:?}", op_span, kind);
+                                        }
+
+                                        return match fallback_op {
+                                            "=" => builder.assign_to_id(left_id, right_id, loc),
+                                            _ => builder.binary_op(fallback_op, left_id, right_id, loc),
+                                        };
+                                    }
+
                                     return match op_text {
                                         "=" => builder.assign_to_id(left_id, right_id, loc),
                                         _ => builder.binary_op(op_text, left_id, right_id, loc),

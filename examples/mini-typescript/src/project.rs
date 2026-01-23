@@ -12,14 +12,12 @@ struct PackageJson {
 
 pub struct ProjectLoader {
     frontend: MiniTypescriptFrontend,
-    base_dir: PathBuf,
 }
 
 impl ProjectLoader {
-    pub fn new(base_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(_base_dir: impl Into<PathBuf>) -> Self {
         Self {
             frontend: MiniTypescriptFrontend::new(),
-            base_dir: base_dir.into(),
         }
     }
 
@@ -77,7 +75,9 @@ impl ProjectLoader {
         let parent_dir = canonical_path.parent().unwrap_or(Path::new("."));
         
         let imports = modules[module_idx].imports.clone();
+        println!("Loaded file {:?}, found {} imports", canonical_path, imports.len());
         for import in imports {
+            println!("  Import provider: {}", import.provider);
             if import.provider.starts_with(".") {
                 // Relative import
                 let mut dep_path = parent_dir.join(&import.provider);
