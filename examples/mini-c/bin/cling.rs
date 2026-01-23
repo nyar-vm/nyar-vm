@@ -1,8 +1,9 @@
 use clap::Parser;
 use std::fs;
-use virtual_c::MiniCFrontend;
-use gaia_jit::GaiaJit;
+use mini_c::frontend::MiniCFrontend;
+// use gaia_jit::JitMemory;
 use oak_repl::{OakRepl, ReplHandler, HandleResult};
+// use oak_highlight::{OakHighlighter, Theme, HighlightResult};
 
 #[derive(Parser, Debug)]
 #[command(name = "cling", version = "0.1.0", author = "Gaia Project", about = "Mini C Interpreter (Simulating Cling)")]
@@ -18,11 +19,10 @@ struct CReplHandler {
 
 impl CReplHandler {
     fn run_code_internal(frontend: &mut MiniCFrontend, source: &str) -> anyhow::Result<()> {
-        match frontend.compile_to_gaia(source) {
-            Ok(module) => {
-                let mut jit = GaiaJit::new();
-                jit.load_module(module)?;
-                jit.run("main")?;
+        match frontend.parse(source) {
+            Ok(uast) => {
+                println!("{:#?}", uast);
+                // TODO: 接入后端执行
             }
             Err(e) => eprintln!("cling: compilation error: {:?}", e),
         }
@@ -31,10 +31,6 @@ impl CReplHandler {
 }
 
 impl ReplHandler for CReplHandler {
-    fn language_name(&self) -> Option<&str> {
-        Some("c")
-    }
-
     fn prompt(&self, is_continuation: bool) -> &str {
         if is_continuation { "  ... " } else { "[cling]$ " }
     }

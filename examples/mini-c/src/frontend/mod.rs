@@ -38,6 +38,7 @@ impl MiniCFrontend {
     }
 
     fn convert_red_to_uast(&self, node: RedNode<CLanguage>, source: &str) -> UastNode {
+        println!("Converting node: {:?}", node.green.kind);
         match node.green.kind {
             CElementType::Root => {
                 let mut items = Vec::new();

@@ -4,7 +4,6 @@ use mini_typescript::MiniTypescriptFrontend;
 use nyar_vm::NyarVM;
 use nyar_vm::bytecode::decoder::Decoder;
 use oak_repl::{OakRepl, ReplHandler, HandleResult};
-use oak_highlight::{OakHighlighter, Theme, HighlightResult};
 
 #[derive(Parser, Debug)]
 #[command(name = "tsx", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Executor (Simulating tsx)")]
@@ -57,12 +56,6 @@ impl TsReplHandler {
 }
 
 impl ReplHandler for TsReplHandler {
-    fn highlight<'a>(&self, code: &'a str) -> Option<HighlightResult<'a>> {
-        let highlighter = OakHighlighter::new();
-        // TypeScript 尚未在 oak-highlight 中注册，暂时使用 javascript 或 fallback
-        highlighter.highlight(code, "javascript", Theme::OneDarkPro).ok()
-    }
-
     fn prompt(&self, is_continuation: bool) -> &str {
         if is_continuation { "  ... " } else { "tsx> " }
     }

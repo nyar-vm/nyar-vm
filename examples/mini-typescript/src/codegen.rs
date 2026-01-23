@@ -3,12 +3,12 @@
 //! 将 UAST (Universal Abstract Syntax Tree) 转换为 Nyar 字节码
 //! 这里的实现将作为 Chomsky 的一部分或与其紧密集成
 
-use chomsky_types::Intent;
-use chomsky_uast::UastNode;
-use nyar_vm::bytecode::format::{Constant, NyarModule, Chunk, ClassInfo, TraitInfo, ImplInfo};
-use nyar_vm::bytecode::opcode::{Opcode, I32Ext, I64Ext, F32Ext, F64Ext, StringExt};
-use nyar_error::FormatError;
 use std::collections::HashMap;
+
+use chomsky_uast::UastNode;
+use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
+use nyar_vm::bytecode::opcode::{I32Ext, Opcode};
+use nyar_error::FormatError;
 
 /// Nyar 翻译器，将 UAST 转换为 Nyar 字节码
 pub struct NyarTranslator {
@@ -63,21 +63,6 @@ impl NyarTranslator {
     /// 发射 i32 (小端序)
     fn emit_i32(&mut self, v: i32) {
         self.code.extend_from_slice(&v.to_le_bytes());
-    }
-
-    /// 发射 i64 (小端序)
-    fn emit_i64(&mut self, v: i64) {
-        self.code.extend_from_slice(&v.to_le_bytes());
-    }
-
-    /// 发射 f32 (小端序)
-    fn emit_f32(&mut self, v: f32) {
-        self.code.extend_from_slice(&v.to_bits().to_le_bytes());
-    }
-
-    /// 发射 f64 (小端序)
-    fn emit_f64(&mut self, v: f64) {
-        self.code.extend_from_slice(&v.to_bits().to_le_bytes());
     }
 
     /// 定义标签
@@ -144,7 +129,7 @@ impl NyarTranslator {
                 }
             }
         } else {
-             self.generate_main_chunk(&vec![root])?;
+             self.generate_main_chunk(&[root])?;
         }
 
         Ok(NyarModule {

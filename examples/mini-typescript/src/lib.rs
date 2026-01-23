@@ -31,7 +31,7 @@ impl MiniTypescriptFrontend {
     /// 将 TypeScript 源代码编译为 Nyar 程序
     pub fn compile_to_nyar(&mut self, source: &str) -> Result<NyarModule, FormatError> {
         // 解析为 UAST
-        let uast = self.parse(source).map_err(|e| {
+        let uast = self.parse(source).map_err(|_e| {
             // 这里我们暂时简单地返回一个 FormatError
             // 实际上应该有更好的错误转换
             FormatError::InvalidHeader
