@@ -20,7 +20,7 @@ struct CReplHandler {
 }
 
 impl CReplHandler {
-    fn run_code_internal(frontend: &mut MiniCFrontend, source: &str) -> anyhow::Result<()> {
+    fn run_code_internal(frontend: &mut MiniCFrontend, source: &str) -> Result<(), Box<dyn std::error::Error>> {
         match frontend.parse(source) {
             Ok((egraph, root)) => {
                 println!("EGraph nodes: {}", egraph.memo.len());
@@ -71,7 +71,7 @@ impl ReplHandler for CReplHandler {
         false
     }
 
-    fn handle_line(&mut self, line: &str) -> anyhow::Result<HandleResult> {
+    fn handle_line(&mut self, line: &str) -> Result<HandleResult, Box<dyn std::error::Error>> {
         let trimmed = line.trim();
         if trimmed == ".q" || trimmed == "exit()" {
             return Ok(HandleResult::Exit);
@@ -91,7 +91,7 @@ impl ReplHandler for CReplHandler {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     // 假设 mini-c 导出了 MiniCFrontend
     // 注意：如果 mini-c 的库名不是 virtual_c，请根据实际情况调整

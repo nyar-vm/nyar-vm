@@ -230,6 +230,7 @@ impl NyarVM {
 
     fn pop(&mut self) -> Result<Value, VmError> {
         if self.sp == 0 {
+            println!("VM: STACK UNDERFLOW!");
             Err(VmError::StackUnderflow)
         } else {
             self.sp -= 1;

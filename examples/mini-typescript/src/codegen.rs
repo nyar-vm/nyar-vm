@@ -135,6 +135,7 @@ impl NyarTranslator {
         for &item in items {
             let node_class = egraph.get_class(item);
             let node = &node_class.nodes[0];
+            println!("Codegen: Processing item {:?} (class {})", node, item);
             match node {
                 IKun::StateUpdate(target, value) => {
                     let value_class = egraph.get_class(*value);
@@ -201,7 +202,7 @@ impl NyarTranslator {
                 }
                 _ => {}
             }
-            
+            println!("Codegen: Adding to main_stmts: {:?}", node);
             main_stmts.push(item);
         }
 

@@ -32,7 +32,7 @@ struct PythonReplHandler {
 }
 
 impl PythonReplHandler {
-    fn run_code_internal(frontend: &mut MiniPythonFrontend, source: &str, show_ast: bool) -> anyhow::Result<()> {
+    fn run_code_internal(frontend: &mut MiniPythonFrontend, source: &str, show_ast: bool) -> Result<(), Box<dyn std::error::Error>> {
         if show_ast {
             match frontend.parse_to_ast(source) {
                 Ok(program) => println!("{:#?}", program),
