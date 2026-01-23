@@ -1,10 +1,6 @@
 use crate::bytecode::format::NyarcModule;
 
-mod jvm_backend;
-mod clr_backend;
-mod x86_backend;
-mod wasm32_backend;
-
+#[deprecated(note = "AOT compilation should be handled by ProjectChomsky and Project Gaia")]
 pub trait AotCompiler {
     type Error;
     type Config: serde::de::DeserializeOwned;

@@ -1,10 +1,10 @@
 [package]
-name = "mini-c"
+name = "mini-python"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-oak-c = { path = "../../../oaks/examples/oak-c" }
+oak-python = { path = "../../../oaks/examples/oak-python" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uast = { path = "../../../ProjectChomsky/packages/chomsky-uast" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
