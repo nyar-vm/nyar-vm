@@ -1,0 +1,65 @@
+//! Mini TypeScript 语言前端
+//!
+//! 这个库提供了 Mini TypeScript 语言的解析和 Gaia 翻译功能。
+//! 遵循 Project Chomsky Whitebook 规范。
+
+pub mod codegen;
+
+use oak_typescript::TypeScriptParser;
+use codegen::GaiaTranslator;
+use gaia_assembler::program::GaiaModule;
+use gaia_types::GaiaError;
+use chomsky_uast::UastNode;
+
+/// Mini TypeScript 前端
+pub struct MiniTypescriptFrontend {
+    translator: GaiaTranslator,
+}
+
+impl MiniTypescriptFrontend {
+    /// 创建新的前端实例
+    pub fn new() -> Self {
+        Self { translator: GaiaTranslator::new() }
+    }
+
+    /// 解析 TypeScript 源代码为 UAST
+    pub fn parse(&mut self, source: &str) -> Result<UastNode, String> {
+        let mut parser = TypeScriptParser::new(source);
+        parser.parse_module().map_err(|e| format!("Parse error: {:?}", e))
+    }
+
+    /// 将 TypeScript 源代码编译为 Gaia 程序
+    pub fn compile_to_gaia(&mut self, source: &str) -> Result<GaiaModule, GaiaError> {
+        // 解析为 UAST
+        let uast = self.parse(source).map_err(|e| {
+            GaiaError::syntax_error(&e, gaia_types::SourceLocation::default())
+        })?;
+
+        // 翻译为 Gaia 程序
+        self.translator.generate(&uast)
+    }
+
+    /// 仅进行词法分析
+    pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_typescript::TokenInfo>, String> {
+        let mut lexer = oak_typescript::TypeScriptLexer::new(source);
+        let mut tokens = Vec::new();
+        loop {
+            let token_info = lexer.next_token();
+            if token_info.token == oak_typescript::Token::EOF {
+                break;
+            }
+            tokens.push(token_info);
+        }
+        Ok(tokens)
+    }
+
+    /// 获取翻译器的可变引用
+    pub fn translator_mut(&mut self) -> &mut GaiaTranslator {
+        &mut self.translator
+    }
+
+    /// 获取翻译器的不可变引用
+    pub fn translator(&self) -> &GaiaTranslator {
+        &self.translator
+    }
+}

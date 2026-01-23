@@ -1,10 +1,10 @@
 [package]
-name = "mini-python"
+name = "mini-typescript"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-oak-python = { path = "../../../oaks/examples/oak-python" }
+oak-typescript = { path = "../../../oaks/examples/oak-typescript" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uast = { path = "../../../ProjectChomsky/packages/chomsky-uast" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
