@@ -20,7 +20,7 @@ pe-assembler = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
-rustyline = "14.0"
+oak-repl = { path = "../../../oaks/projects/oak-repl" }
 
 [[bin]]
 name = "python"

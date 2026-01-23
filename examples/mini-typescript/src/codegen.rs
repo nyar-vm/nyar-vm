@@ -1,71 +1,109 @@
-//! Gaia 指令生成器
+//! Nyar 指令生成器
 //!
-//! 将 UAST (Universal Abstract Syntax Tree) 转换为 Gaia 指令
+//! 将 UAST (Universal Abstract Syntax Tree) 转换为 Nyar 字节码
 //! 这里的实现将作为 Chomsky 的一部分或与其紧密集成
 
 use chomsky_types::Intent;
 use chomsky_uast::UastNode;
-use gaia_assembler::{
-    instruction::{CmpCondition, CoreInstruction, GaiaInstruction},
-    program::{GaiaBlock, GaiaConstant, GaiaFunction, GaiaModule, GaiaTerminator},
-    types::{GaiaSignature, GaiaType},
-};
-use gaia_types::GaiaError;
+use nyar_vm::bytecode::format::{Constant, NyarModule, Chunk, ClassInfo, TraitInfo, ImplInfo};
+use nyar_vm::bytecode::opcode::{Opcode, I32Ext, I64Ext, F32Ext, F64Ext, StringExt};
+use nyar_error::FormatError;
 use std::collections::HashMap;
 
-/// Gaia 翻译器，将 UAST 转换为 Gaia 指令
-pub struct GaiaTranslator {
+/// Nyar 翻译器，将 UAST 转换为 Nyar 字节码
+pub struct NyarTranslator {
     /// 局部变量映射
-    locals: HashMap<String, u32>,
+    locals: HashMap<String, u8>,
     /// 局部变量索引计数器
-    local_index: u32,
-    /// 局部变量类型列表
-    local_types: Vec<GaiaType>,
-    /// 字符串常量池
-    string_constants: Vec<(String, GaiaConstant)>,
+    local_index: u8,
+    /// 常量池
+    constants: Vec<Constant>,
     /// 标签计数器
     label_counter: u32,
-    /// 当前正在生成的块的指令
-    current_instructions: Vec<GaiaInstruction>,
-    /// 当前正在生成的块的标签
-    current_label: String,
-    /// 已完成的块
-    blocks: Vec<GaiaBlock>,
+    /// 当前正在生成的代码
+    code: Vec<u8>,
+    /// 标签位置映射 (标签名 -> 代码偏移)
+    labels: HashMap<String, usize>,
+    /// 重定位信息 (待修补的偏移 -> 目标标签名, 跳转指令大小)
+    relocations: Vec<(usize, String, bool)>, // offset, label, is_conditional
+    /// 已完成的 Chunk
+    chunks: Vec<Chunk>,
 }
 
-impl GaiaTranslator {
-    /// 创建新的 Gaia 翻译器
+impl NyarTranslator {
+    /// 创建新的 Nyar 翻译器
     pub fn new() -> Self {
         Self {
             locals: HashMap::new(),
             local_index: 0,
-            local_types: Vec::new(),
-            string_constants: Vec::new(),
+            constants: Vec::new(),
             label_counter: 0,
-            current_instructions: Vec::new(),
-            current_label: "entry".to_string(),
-            blocks: Vec::new(),
+            code: Vec::new(),
+            labels: HashMap::new(),
+            relocations: Vec::new(),
+            chunks: Vec::new(),
         }
     }
 
-    /// 开始一个新块
-    fn start_block(&mut self, label: String) {
-        self.current_label = label;
-        self.current_instructions = Vec::new();
+    /// 发射单个字节
+    fn emit_u8(&mut self, b: u8) {
+        self.code.push(b);
     }
 
-    /// 结束当前块并添加到列表中
-    fn finish_block(&mut self, terminator: GaiaTerminator) {
-        if self.current_instructions.is_empty() && self.blocks.iter().any(|b| b.label == self.current_label) {
-            // 如果块已经结束（由于 return），则不执行任何操作
-            return;
+    /// 发射 u16 (小端序)
+    fn emit_u16(&mut self, v: u16) {
+        self.code.extend_from_slice(&v.to_le_bytes());
+    }
+
+    /// 发射 i16 (小端序)
+    fn emit_i16(&mut self, v: i16) {
+        self.code.extend_from_slice(&v.to_le_bytes());
+    }
+
+    /// 发射 i32 (小端序)
+    fn emit_i32(&mut self, v: i32) {
+        self.code.extend_from_slice(&v.to_le_bytes());
+    }
+
+    /// 发射 i64 (小端序)
+    fn emit_i64(&mut self, v: i64) {
+        self.code.extend_from_slice(&v.to_le_bytes());
+    }
+
+    /// 发射 f32 (小端序)
+    fn emit_f32(&mut self, v: f32) {
+        self.code.extend_from_slice(&v.to_bits().to_le_bytes());
+    }
+
+    /// 发射 f64 (小端序)
+    fn emit_f64(&mut self, v: f64) {
+        self.code.extend_from_slice(&v.to_bits().to_le_bytes());
+    }
+
+    /// 定义标签
+    fn define_label(&mut self, name: &str) {
+        self.labels.insert(name.to_string(), self.code.len());
+    }
+
+    /// 记录重定位
+    fn emit_jump(&mut self, label: &str, is_conditional: bool) {
+        let op = if is_conditional { Opcode::JumpIfFalse } else { Opcode::Jump };
+        self.emit_u8(op as u8);
+        let offset = self.code.len();
+        self.emit_i16(0); // 占位符
+        self.relocations.push((offset, label.to_string(), is_conditional));
+    }
+
+    /// 修补所有跳转偏移
+    fn patch_jumps(&mut self) {
+        for (offset, label, _) in std::mem::take(&mut self.relocations) {
+            if let Some(&target) = self.labels.get(&label) {
+                let jump_offset = (target as isize - (offset + 2) as isize) as i16;
+                let bytes = jump_offset.to_le_bytes();
+                self.code[offset] = bytes[0];
+                self.code[offset + 1] = bytes[1];
+            }
         }
-        let block = GaiaBlock {
-            label: self.current_label.clone(),
-            instructions: std::mem::take(&mut self.current_instructions),
-            terminator,
-        };
-        self.blocks.push(block);
     }
 
     /// 生成一个新的唯一标签
@@ -79,56 +117,50 @@ impl GaiaTranslator {
     fn reset_for_function(&mut self) {
         self.locals.clear();
         self.local_index = 0;
-        self.local_types.clear();
-        self.blocks.clear();
+        self.code.clear();
+        self.labels.clear();
+        self.relocations.clear();
         self.label_counter = 0;
-        self.start_block("entry".to_string());
     }
 
-    /// 生成 GaiaModule
-    pub fn generate(&mut self, root: &UastNode) -> Result<GaiaModule, GaiaError> {
-        let mut functions = Vec::new();
+    /// 生成 NyarModule
+    pub fn generate(&mut self, root: &UastNode) -> Result<NyarModule, FormatError> {
+        let mut functions_info = Vec::new();
 
         // 假设 root 是一个 Module
         if let UastNode::Module { items, .. } = root {
-            // 生成主函数（包含所有顶级语句，除了函数定义）
-            let main_stmts: Vec<&UastNode> = items.iter().filter(|item| !matches!(item, UastNode::Function { .. })).collect();
-            if !main_stmts.is_empty() {
-                let main_function = self.generate_main_function(&main_stmts)?;
-                functions.push(main_function);
-            }
+            // 1. 先收集所有函数定义，以便处理调用
+            // (这里简化处理，假设所有函数都在 Chunk 中按顺序排列)
 
-            // 生成其他函数定义
+            // 2. 生成主 Chunk (包含顶级语句)
+            let main_stmts: Vec<&UastNode> = items.iter().filter(|item| !matches!(item, UastNode::Function { .. })).collect();
+            self.generate_main_chunk(&main_stmts)?;
+
+            // 3. 生成其他函数的 Chunk
             for item in items {
                 if let UastNode::Function { name, params, body, .. } = item {
-                    let function = self.generate_function(name, params, body)?;
-                    functions.push(function);
+                    functions_info.push((name.clone(), params.len()));
+                    self.generate_function_chunk(name, params, body)?;
                 }
             }
         } else {
-             // 如果 root 不是 Module，尝试将其作为单个语句/表达式处理
-             let main_function = self.generate_main_function(&vec![root])?;
-             functions.push(main_function);
+             self.generate_main_chunk(&vec![root])?;
         }
 
-        // 添加字符串常量
-        let mut constants = Vec::new();
-        for (s, c) in &self.string_constants {
-            constants.push((s.clone(), c.clone()));
-        }
-
-        Ok(GaiaModule {
-            name: "mini_typescript_module".to_string(),
-            functions,
-            structs: Vec::new(),
+        Ok(NyarModule {
+            version: 1,
+            flags: 0,
+            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            constants: std::mem::take(&mut self.constants),
+            effects: Vec::new(),
+            chunks: std::mem::take(&mut self.chunks),
             classes: Vec::new(),
-            constants,
-            globals: Vec::new(),
-            imports: Vec::new(),
+            traits: Vec::new(),
+            impls: Vec::new(),
         })
     }
 
-    fn generate_main_function(&mut self, statements: &[&UastNode]) -> Result<GaiaFunction, GaiaError> {
+    fn generate_main_chunk(&mut self, statements: &[&UastNode]) -> Result<(), FormatError> {
         self.reset_for_function();
 
         for stmt in statements {
@@ -136,39 +168,37 @@ impl GaiaTranslator {
         }
 
         // 默认返回 0
-        self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::I32(0))));
-        self.finish_block(GaiaTerminator::Return);
+        self.emit_u8(Opcode::I32Ext as u8);
+        self.emit_u8(I32Ext::Const as u8);
+        self.emit_i32(0);
+        self.emit_u8(Opcode::Return as u8);
 
-        Ok(GaiaFunction {
-            name: "main".to_string(),
-            signature: GaiaSignature {
-                params: Vec::new(),
-                return_type: GaiaType::I32,
-            },
-            blocks: std::mem::take(&mut self.blocks),
-            is_external: false,
-        })
+        self.patch_jumps();
+        
+        self.chunks.push(Chunk {
+            locals: self.local_index as u16,
+            upvalues: 0,
+            max_stack: 16, // 简化处理
+            code: std::mem::take(&mut self.code),
+            handlers: Vec::new(),
+            lines: Vec::new(),
+        });
+
+        Ok(())
     }
 
-    fn generate_function(
+    fn generate_function_chunk(
         &mut self,
-        name: &str,
+        _name: &str,
         parameters: &[UastNode],
         body: &[UastNode],
-    ) -> Result<GaiaFunction, GaiaError> {
+    ) -> Result<(), FormatError> {
         self.reset_for_function();
 
         // 处理参数
-        let mut param_types = Vec::new();
         for (i, param) in parameters.iter().enumerate() {
             if let UastNode::Literal(param_name, _) = param {
-                // 假设所有参数都是 I32 (简化处理)
-                let param_type = GaiaType::I32;
-                param_types.push(param_type.clone());
-                
-                // 将参数映射到局部变量
-                self.locals.insert(param_name.clone(), i as u32);
-                self.local_types.push(param_type);
+                self.locals.insert(param_name.clone(), i as u8);
                 self.local_index += 1;
             }
         }
@@ -178,42 +208,44 @@ impl GaiaTranslator {
             self.generate_statement(stmt)?;
         }
 
-        // 确保最后一个块有终止符
-        if self.current_instructions.is_empty() || !matches!(self.blocks.last().map(|b| &b.terminator), Some(GaiaTerminator::Return)) {
-             self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::I32(0))));
-             self.finish_block(GaiaTerminator::Return);
+        // 确保有 Return
+        if self.code.last() != Some(&(Opcode::Return as u8)) {
+            self.emit_u8(Opcode::I32Ext as u8);
+            self.emit_u8(I32Ext::Const as u8);
+            self.emit_i32(0);
+            self.emit_u8(Opcode::Return as u8);
         }
 
-        Ok(GaiaFunction {
-            name: name.to_string(),
-            signature: GaiaSignature {
-                params: param_types,
-                return_type: GaiaType::I32, // 假设返回 I32
-            },
-            blocks: std::mem::take(&mut self.blocks),
-            is_external: false,
-        })
+        self.patch_jumps();
+
+        self.chunks.push(Chunk {
+            locals: self.local_index as u16,
+            upvalues: 0,
+            max_stack: 16,
+            code: std::mem::take(&mut self.code),
+            handlers: Vec::new(),
+            lines: Vec::new(),
+        });
+
+        Ok(())
     }
 
-    fn generate_statement(&mut self, statement: &UastNode) -> Result<(), GaiaError> {
+    fn generate_statement(&mut self, statement: &UastNode) -> Result<(), FormatError> {
         match statement {
             UastNode::Assign { name, value, .. } => {
-                // 计算值
                 self.generate_expression(value)?;
                 
-                // 获取或创建局部变量
                 let index = if let Some(&idx) = self.locals.get(name) {
                     idx
                 } else {
                     let idx = self.local_index;
                     self.locals.insert(name.clone(), idx);
-                    self.local_types.push(GaiaType::I32); // 默认 I32
                     self.local_index += 1;
                     idx
                 };
 
-                // 存储到局部变量
-                self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::StoreLocal(index, GaiaType::I32)));
+                self.emit_u8(Opcode::StoreLocal as u8);
+                self.emit_u8(index);
             }
             UastNode::List(items, _) => {
                 for item in items {
@@ -222,45 +254,39 @@ impl GaiaTranslator {
             }
             UastNode::Intent(intent_node, _) => {
                 match intent_node.intent {
-                    Intent::Branch => {
-                        // 这是一个简单的分支，由 oak-typescript 产生
-                        // 实际上 UAST 应该包含 condition, true_body, false_body
-                        // 但 oak-typescript 里的 parse_statement 对于 If 的实现非常简化
-                        // 它只是消费了 tokens 然后返回一个空的 Intent::Branch
-                        // 我们在这里只能推测或者改进 oak-typescript
-                    }
                     _ => {}
                 }
             }
-            // 简单的表达式语句
             _ => {
                 self.generate_expression(statement)?;
-                // 如果表达式产生结果但未被使用，可能需要 Drop (但在 Gaia 中如果栈平衡则不需要显式 Drop)
-                // 这里假设 generate_expression 会将结果留在栈顶
-                // 对于语句级表达式，我们通常应该 pop 掉结果，除非是特定指令
-                self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Pop));
+                self.emit_u8(Opcode::Pop as u8);
             }
         }
         Ok(())
     }
 
-    fn generate_expression(&mut self, expression: &UastNode) -> Result<(), GaiaError> {
+    fn generate_expression(&mut self, expression: &UastNode) -> Result<(), FormatError> {
         match expression {
             UastNode::Literal(val, _) => {
                 if let Ok(num) = val.parse::<i32>() {
-                    self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::I32(num))));
+                    self.emit_u8(Opcode::I32Ext as u8);
+                    self.emit_u8(I32Ext::Const as u8);
+                    self.emit_i32(num);
                 } else if val.starts_with('"') || val.starts_with('\'') {
-                    // String literal (simplified)
-                     let content = val.trim_matches('"').trim_matches('\'').to_string();
-                     // Add to constants pool (simplified, just placeholder index)
-                     self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::String(content)))); 
+                    let content = val.trim_matches('"').trim_matches('\'').to_string();
+                    let idx = self.constants.len() as u16;
+                    self.constants.push(Constant::String(content));
+                    self.emit_u8(Opcode::Push as u8);
+                    self.emit_u16(idx);
                 } else {
                     // Identifier (Variable load)
                     if let Some(&index) = self.locals.get(val) {
-                         self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::LoadLocal(index, GaiaType::I32)));
+                        self.emit_u8(Opcode::LoadLocal as u8);
+                        self.emit_u8(index);
                     } else {
-                        // Undefined variable, push 0 or error (simplified)
-                         self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::I32(0))));
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        self.emit_u8(I32Ext::Const as u8);
+                        self.emit_i32(0);
                     }
                 }
             }
@@ -268,91 +294,117 @@ impl GaiaTranslator {
                 match callee.as_str() {
                     "__if" => {
                         if args.len() < 2 { return Ok(()); }
-                        let true_label = self.new_label("if_true");
                         let false_label = self.new_label("if_false");
                         let end_label = self.new_label("if_end");
 
                         // 1. Evaluate condition
                         self.generate_expression(&args[0])?;
                         
-                        // 2. Branch
-                        self.finish_block(GaiaTerminator::Branch {
-                            true_label: true_label.clone(),
-                            false_label: false_label.clone(),
-                        });
+                        // 2. Jump if false
+                        self.emit_jump(&false_label, true);
 
                         // 3. True block
-                        self.start_block(true_label);
                         self.generate_statement(&args[1])?;
-                        self.finish_block(GaiaTerminator::Jump(end_label.clone()));
+                        self.emit_jump(&end_label, false);
 
                         // 4. False block
-                        self.start_block(false_label);
+                        self.define_label(&false_label);
                         if args.len() > 2 {
                             self.generate_statement(&args[2])?;
                         }
-                        self.finish_block(GaiaTerminator::Jump(end_label.clone()));
+                        self.emit_jump(&end_label, false);
 
                         // 5. End block
-                        self.start_block(end_label);
+                        self.define_label(&end_label);
                         return Ok(());
                     }
                     "__while" => {
                         if args.len() < 2 { return Ok(()); }
                         let cond_label = self.new_label("while_cond");
-                        let body_label = self.new_label("while_body");
                         let end_label = self.new_label("while_end");
 
-                        self.finish_block(GaiaTerminator::Jump(cond_label.clone()));
-
                         // 1. Condition block
-                        self.start_block(cond_label.clone());
+                        self.define_label(&cond_label);
                         self.generate_expression(&args[0])?;
-                        self.finish_block(GaiaTerminator::Branch {
-                            true_label: body_label.clone(),
-                            false_label: end_label.clone(),
-                        });
+                        self.emit_jump(&end_label, true);
 
                         // 2. Body block
-                        self.start_block(body_label);
                         self.generate_statement(&args[1])?;
-                        self.finish_block(GaiaTerminator::Jump(cond_label));
+                        self.emit_jump(&cond_label, false);
 
                         // 3. End block
-                        self.start_block(end_label);
+                        self.define_label(&end_label);
                         return Ok(());
                     }
-                    _ => {}
-                }
-
-                // Evaluate arguments for normal calls
-                for arg in args {
-                    self.generate_expression(arg)?;
-                }
-
-                match callee.as_str() {
-                    "add" => self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Add(GaiaType::I32))),
-                    "sub" => self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Sub(GaiaType::I32))),
-                    "mul" => self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Mul(GaiaType::I32))),
-                    "div" => self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Div(GaiaType::I32))),
-                    "eq" => self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Eq, GaiaType::I32))),
-                    "lt" => self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Lt, GaiaType::I32))),
-                    "gt" => self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Gt, GaiaType::I32))),
+                    "add" => {
+                        self.generate_expression(&args[0])?;
+                        self.generate_expression(&args[1])?;
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        self.emit_u8(I32Ext::Add as u8);
+                    }
+                    "sub" => {
+                        self.generate_expression(&args[0])?;
+                        self.generate_expression(&args[1])?;
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        self.emit_u8(I32Ext::Sub as u8);
+                    }
+                    "mul" => {
+                        self.generate_expression(&args[0])?;
+                        self.generate_expression(&args[1])?;
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        self.emit_u8(I32Ext::Mul as u8);
+                    }
+                    "div" => {
+                        self.generate_expression(&args[0])?;
+                        self.generate_expression(&args[1])?;
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        self.emit_u8(I32Ext::DivS as u8);
+                    }
+                    "eq" => {
+                        self.generate_expression(&args[0])?;
+                        self.generate_expression(&args[1])?;
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        self.emit_u8(I32Ext::Eq as u8);
+                    }
+                    "lt" => {
+                        self.generate_expression(&args[0])?;
+                        self.generate_expression(&args[1])?;
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        self.emit_u8(I32Ext::LtS as u8);
+                    }
+                    "gt" => {
+                        self.generate_expression(&args[0])?;
+                        self.generate_expression(&args[1])?;
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        self.emit_u8(I32Ext::GtS as u8);
+                    }
                     "__return" => {
-                        // return 语句不应该被 pop，它直接终止当前块
-                        // 如果有返回值，它已经在栈顶了
-                        self.finish_block(GaiaTerminator::Return);
+                        if !args.is_empty() {
+                            self.generate_expression(&args[0])?;
+                        } else {
+                            self.emit_u8(Opcode::I32Ext as u8);
+                            self.emit_u8(I32Ext::Const as u8);
+                            self.emit_i32(0);
+                        }
+                        self.emit_u8(Opcode::Return as u8);
                     }
                     _ => {
-                        // Function call (simplified)
-                        // In a real implementation, we would need to resolve the function index/name properly
-                         self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Call(callee.clone(), args.len()))); 
+                        // Function call (simplified, assumes chunk index matches order)
+                        // In a real implementation, we would need to resolve the chunk index properly
+                        for arg in args {
+                            self.generate_expression(arg)?;
+                        }
+                        // Assume chunk index 0 is main, others follow
+                        self.emit_u8(Opcode::Call as u8);
+                        self.emit_u16(1); // placeholder for chunk index
+                        self.emit_u8(args.len() as u8);
                     }
                 }
             }
             _ => {
-                 // Placeholder for other expressions
-                 self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::I32(0))));
+                 self.emit_u8(Opcode::I32Ext as u8);
+                 self.emit_u8(I32Ext::Const as u8);
+                 self.emit_i32(0);
             }
         }
         Ok(())

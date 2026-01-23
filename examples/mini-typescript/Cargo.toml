@@ -9,15 +9,14 @@ chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uast = { path = "../../../ProjectChomsky/packages/chomsky-uast" }
 chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
-gaia-jit = { workspace = true }
-gaia-types = { workspace = true }
-gaia-assembler = { workspace = true }
-pe-assembler = { workspace = true }
+nyar-vm = { path = "../../projects/nyar-vm" }
+nyar-error = { path = "../../projects/nyar-error" }
+byteorder = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
-rustyline = "14.0"
+oak-repl = { path = "../../../oaks/projects/oak-repl" }
 
 [[bin]]
 name = "tsc"

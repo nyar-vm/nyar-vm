@@ -5,7 +5,7 @@ use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
 #[derive(Parser, Debug)]
-#[command(name = "cx", version = "0.1.0", author = "Nyar Project", about = "Mini C Executor & REPL (Simulating tsx/pyx pattern)")]
+#[command(name = "cling", version = "0.1.0", author = "Nyar Project", about = "Mini C Interpreter (Simulating Cling)")]
 struct Args {
     /// Input C source file. If not provided, enters REPL mode.
     #[arg(index = 1)]
@@ -24,18 +24,15 @@ fn main() {
     let mut runtime = MiniCRuntime::new();
 
     if let Some(input_file) = args.input {
-        // 1. File execution mode
         let source = match fs::read_to_string(&input_file) {
             Ok(content) => content,
             Err(e) => {
-                eprintln!("cx: error: could not read file '{}': {}", input_file, e);
+                eprintln!("cling: error: could not read file '{}': {}", input_file, e);
                 std::process::exit(1);
             }
         };
-
         run_code(&frontend, &optimizer, &mut runtime, &source, args.ast);
     } else {
-        // 2. REPL mode
         run_repl(&frontend, &optimizer, &mut runtime);
     }
 }
@@ -47,51 +44,34 @@ fn run_code(frontend: &MiniCFrontend, optimizer: &MiniCOptimizer, runtime: &mut 
                 println!("{:#?}", uast);
                 return;
             }
-
-            // 2. Optimizer: Optimize UAST
             let optimized_uast = optimizer.optimize(uast);
-
-            // 3. Runtime: Execute
             if let Err(e) = runtime.execute(optimized_uast) {
-                eprintln!("cx: runtime error: {}", e);
+                eprintln!("cling: runtime error: {}", e);
             }
         }
-        Err(e) => {
-            eprintln!("cx: error: {}", e);
-        }
+        Err(e) => eprintln!("cling: error: {}", e),
     }
 }
 
 fn run_repl(frontend: &MiniCFrontend, optimizer: &MiniCOptimizer, runtime: &mut MiniCRuntime) {
     let mut rl = DefaultEditor::new().expect("Failed to create editor");
-    println!("Mini C REPL (cx)");
-    println!("Type \"exit\" or press Ctrl-D to exit.");
+    println!("****************** CLING ******************");
+    println!("* Interactive C Interpreter (Mini-C Mode) *");
+    println!("*******************************************");
 
     loop {
-        let readline = rl.readline("cx> ");
+        let readline = rl.readline("[cling]$ ");
         match readline {
             Ok(line) => {
                 let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                if line == "exit" || line == "quit" {
-                    break;
-                }
+                if line.is_empty() { continue; }
+                if line == ".q" || line == "exit" { break; }
                 rl.add_history_entry(line).ok();
-                
                 run_code(frontend, optimizer, runtime, line, false);
             }
-            Err(ReadlineError::Interrupted) => {
-                println!("Interrupted");
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                println!("EOF");
-                break;
-            }
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
             Err(err) => {
-                println!("cx: error: {:?}", err);
+                println!("cling: error: {:?}", err);
                 break;
             }
         }

@@ -2,8 +2,7 @@ use clap::Parser;
 use std::fs;
 use mini_typescript::MiniTypescriptFrontend;
 use gaia_jit::GaiaJit;
-use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use oak_repl::{OakRepl, ReplHandler};
 
 #[derive(Parser, Debug)]
 #[command(name = "tsx", version = "0.1.0", author = "Gaia Project", about = "Mini TypeScript Executor (Simulating tsx)")]
@@ -13,84 +12,48 @@ struct Args {
     input: Option<String>,
 }
 
-fn main() {
-    let args = Args::parse();
+struct TsReplHandler {
+    frontend: MiniTypescriptFrontend,
+}
 
+impl TsReplHandler {
+    fn run_code_internal(frontend: &mut MiniTypescriptFrontend, source: &str) -> anyhow::Result<()> {
+        match frontend.compile_to_gaia(source) {
+            Ok(module) => {
+                let mut jit = GaiaJit::new();
+                jit.load_module(module)?;
+                jit.run("main")?;
+            }
+            Err(e) => eprintln!("tsx: compilation error: {:?}", e),
+        }
+        Ok(())
+    }
+}
+
+impl ReplHandler for TsReplHandler {
+    fn handle_line(&mut self, line: &str) -> anyhow::Result<bool> {
+        if line == "exit()" || line == "quit()" {
+            return Ok(false);
+        }
+        let _ = Self::run_code_internal(&mut self.frontend, line);
+        Ok(true)
+    }
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
     let mut frontend = MiniTypescriptFrontend::new();
 
     if let Some(input_file) = args.input {
-        // 1. File execution mode
-        let source_code = match fs::read_to_string(&input_file) {
-            Ok(content) => content,
-            Err(e) => {
-                eprintln!("Error: Could not read file '{}': {}", input_file, e);
-                std::process::exit(1);
-            }
-        };
-
-        run_code(&mut frontend, &source_code);
+        let source_code = fs::read_to_string(&input_file)?;
+        TsReplHandler::run_code_internal(&mut frontend, &source_code)?;
     } else {
-        // 2. REPL mode
-        run_repl(&mut frontend);
+        println!("Mini TypeScript REPL (Project Gaia)");
+        println!("Type \"exit()\" or press Ctrl-D to exit.");
+        
+        let handler = TsReplHandler { frontend };
+        let mut repl = OakRepl::new("tsx> ", handler);
+        repl.run()?;
     }
-}
-
-fn run_code(frontend: &mut MiniTypescriptFrontend, source: &str) {
-    // 1. Compile to Gaia instructions
-    match frontend.compile_to_gaia(source) {
-        Ok(module) => {
-            // 2. Execute using Gaia JIT
-            let mut jit = GaiaJit::new();
-            if let Err(e) = jit.load_module(module) {
-                eprintln!("JIT load error: {:?}", e);
-                return;
-            }
-
-            match jit.run("main") {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("Execution error: {:?}", e);
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Compilation error: {:?}", e);
-        }
-    }
-}
-
-fn run_repl(frontend: &mut MiniTypescriptFrontend) {
-    let mut rl = DefaultEditor::new().expect("Failed to create editor");
-    println!("Mini TypeScript REPL (Project Gaia)");
-    println!("Type \"exit()\" or press Ctrl-D to exit.");
-
-    loop {
-        let readline = rl.readline("tsx> ");
-        match readline {
-            Ok(line) => {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                if line == "exit()" || line == "quit()" {
-                    break;
-                }
-                rl.add_history_entry(line).ok();
-                
-                run_code(frontend, line);
-            }
-            Err(ReadlineError::Interrupted) => {
-                println!("Interrupted");
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                println!("EOF");
-                break;
-            }
-            Err(err) => {
-                println!("Error: {:?}", err);
-                break;
-            }
-        }
-    }
+    Ok(())
 }

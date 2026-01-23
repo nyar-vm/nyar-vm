@@ -1,9 +1,10 @@
-use oak_c::{CLexer, CParser, CRoot, ast::*, CLanguage};
+use oak_c::{CLexer, CParser, CRoot, ast::*, CLanguage, CElementType};
 use chomsky_uast::UastNode;
 use chomsky_source::Loc;
 use oak_core::parser::{Parser, ParseSession};
 use oak_core::lexer::{Lexer, LexerCache};
 use oak_core::source::SourceText;
+use oak_core::tree::{GreenTree, RedNode, RedTree};
 
 pub struct MiniCFrontend;
 
@@ -29,164 +30,92 @@ impl MiniCFrontend {
         let parser = CParser::new(&language);
         let parse_output = parser.parse(&source_text, &[], &mut session);
         
-        // Actually, CParser in oak-c seems to return a GreenNode.
-        // We need a way to get CRoot. Since I don't see a clear way in oak-c yet,
-        // and rusty-c seems to have a different setup, I'll temporarily 
-        // mock the conversion or find the right way to cast.
-        // For now, let's assume we can't easily get CRoot from GreenNode without more info.
-        // I'll try to use a placeholder or see if I can find the cast logic.
+        let green_node = parse_output.result.map_err(|e| format!("Parse error: {:?}", e))?;
+        let red_node = RedNode::new(green_node, 0);
         
-        Err("Conversion from GreenNode to CRoot not implemented yet".to_string())
+        Ok(self.convert_red_to_uast(red_node, source))
     }
 
-    fn convert_to_uast(&self, root: &CRoot) -> UastNode {
-        let mut items = Vec::new();
-        for decl in &root.translation_unit.external_declarations {
-            match decl {
-                ExternalDeclaration::FunctionDefinition(f) => {
-                    items.push(self.convert_function(f));
+    fn convert_red_to_uast(&self, node: RedNode<CLanguage>, source: &str) -> UastNode {
+        match node.green.kind {
+            CElementType::Root => {
+                let mut items = Vec::new();
+                for child in node.children() {
+                    if let RedTree::Node(n) = child {
+                        items.push(self.convert_red_to_uast(n, source));
+                    }
                 }
-                ExternalDeclaration::Declaration(d) => {
-                    items.extend(self.convert_declaration(d));
-                }
-            }
-        }
-
-        UastNode::Module {
-            name: "mini-c".to_string(),
-            items,
-            loc: Loc::unknown(),
-        }
-    }
-
-    fn convert_function(&self, f: &FunctionDefinition) -> UastNode {
-        let name = self.get_declarator_name(&f.declarator);
-        let params = self.get_declarator_params(&f.declarator);
-        let body = self.convert_compound_statement(&f.compound_statement);
-
-        UastNode::Function {
-            name,
-            params,
-            body,
-            loc: Loc::unknown(),
-        }
-    }
-
-    fn convert_declaration(&self, d: &Declaration) -> Vec<UastNode> {
-        let mut nodes = Vec::new();
-        for init in &d.init_declarators {
-            let name = self.get_declarator_name(&init.declarator);
-            if let Some(init_expr) = &init.initializer {
-                let value = self.convert_initializer(init_expr);
-                nodes.push(UastNode::Assign {
-                    name,
-                    value: Box::new(value),
+                UastNode::Module {
+                    name: "mini-c".to_string(),
+                    items,
                     loc: Loc::unknown(),
-                });
-            }
-        }
-        nodes
-    }
-
-    fn convert_compound_statement(&self, cs: &CompoundStatement) -> Vec<UastNode> {
-        let mut nodes = Vec::new();
-        for item in &cs.block_items {
-            match item {
-                BlockItem::Declaration(d) => nodes.extend(self.convert_declaration(d)),
-                BlockItem::Statement(s) => nodes.push(self.convert_statement(s)),
-            }
-        }
-        nodes
-    }
-
-    fn convert_statement(&self, s: &Statement) -> UastNode {
-        match s {
-            Statement::Expression(e) => {
-                if let Some(expr) = &e.expression {
-                    self.convert_expression(expr)
-                } else {
-                    UastNode::Tuple(vec![], Loc::unknown())
                 }
             }
-            Statement::Jump(j) => {
-                match j {
-                    JumpStatement::Return(e, _) => {
-                        let arg = if let Some(expr) = e {
-                            self.convert_expression(expr)
-                        } else {
-                            UastNode::Tuple(vec![], Loc::unknown())
-                        };
-                        UastNode::Call {
-                            callee: "return".to_string(),
-                            args: vec![arg],
-                            loc: Loc::unknown(),
+            CElementType::FunctionDefinition => {
+                let mut name = "unknown".to_string();
+                let mut body = vec![];
+                
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(n) => {
+                            if n.green.kind == CElementType::CompoundStatement {
+                                if let UastNode::Block { body: b, .. } = self.convert_red_to_uast(n, source) {
+                                    body = b;
+                                }
+                            }
+                        }
+                        RedTree::Leaf(l) => {
+                            if let CElementType::Token(oak_c::lexer::CTokenType::Identifier) = l.kind.into() {
+                                let span = l.span;
+                                name = source[span.start..span.end].to_string();
+                            }
                         }
                     }
-                    _ => UastNode::Literal("unsupported_jump".to_string(), Loc::unknown()),
                 }
-            }
-            _ => UastNode::Literal("unsupported_stmt".to_string(), Loc::unknown()),
-        }
-    }
-
-    fn convert_expression(&self, e: &Expression) -> UastNode {
-        match e.kind.as_ref() {
-            ExpressionKind::Identifier(s, _) => UastNode::Literal(s.clone(), Loc::unknown()),
-            ExpressionKind::Constant(c, _) => {
-                match c {
-                    Constant::Integer(v, _) => UastNode::Literal(v.to_string(), Loc::unknown()),
-                    Constant::Float(v, _) => UastNode::Literal(v.to_string(), Loc::unknown()),
-                    Constant::Character(v, _) => UastNode::Literal(v.to_string(), Loc::unknown()),
-                }
-            }
-            ExpressionKind::StringLiteral(s, _) => UastNode::Literal(format!("\"{}\"", s), Loc::unknown()),
-            ExpressionKind::Binary { left, operator, right, .. } => {
-                UastNode::Call {
-                    callee: format!("{:?}", operator),
-                    args: vec![self.convert_expression(left), self.convert_expression(right)],
+                
+                UastNode::Function {
+                    name,
+                    params: vec![],
+                    body,
                     loc: Loc::unknown(),
                 }
             }
-            _ => UastNode::Literal("unsupported_expr".to_string(), Loc::unknown()),
-        }
-    }
-
-    fn convert_initializer(&self, i: &Initializer) -> UastNode {
-        match i {
-            Initializer::AssignmentExpression(e) => self.convert_expression(e),
-            _ => UastNode::Literal("unsupported_init".to_string(), Loc::unknown()),
-        }
-    }
-
-    fn get_declarator_name(&self, d: &Declarator) -> String {
-        self.get_direct_declarator_name(&d.direct_declarator)
-    }
-
-    fn get_direct_declarator_name(&self, d: &DirectDeclarator) -> String {
-        match d {
-            DirectDeclarator::Identifier(name, _) => name.clone(),
-            DirectDeclarator::Declarator(inner) => self.get_declarator_name(inner),
-            DirectDeclarator::Function { declarator, .. } => self.get_direct_declarator_name(declarator),
-            _ => "unknown".to_string(),
-        }
-    }
-
-    fn get_declarator_params(&self, d: &Declarator) -> Vec<UastNode> {
-        match &d.direct_declarator {
-            DirectDeclarator::Function { parameter_type_list, .. } => {
-                if let Some(params) = parameter_type_list {
-                    params.parameter_list.iter().map(|p| {
-                        if let Some(decl) = &p.declarator {
-                            UastNode::Literal(self.get_declarator_name(decl), Loc::unknown())
-                        } else {
-                            UastNode::Literal("param".to_string(), Loc::unknown())
+            CElementType::ExpressionStatement => {
+                // Simplified: find the identifier if it's a call
+                let mut callee = "unknown".to_string();
+                for child in node.children() {
+                    if let RedTree::Leaf(l) = child {
+                        if let CElementType::Token(oak_c::lexer::CTokenType::Identifier) = l.kind.into() {
+                            let span = l.span;
+                            callee = source[span.start..span.end].to_string();
                         }
-                    }).collect()
-                } else {
-                    vec![]
+                    }
+                }
+                UastNode::Call {
+                    callee: Box::new(UastNode::Literal(callee, Loc::unknown())),
+                    args: vec![],
+                    loc: Loc::unknown(),
                 }
             }
-            _ => vec![],
+            CElementType::CompoundStatement => {
+                let mut items = Vec::new();
+                for child in node.children() {
+                    if let RedTree::Node(n) = child {
+                        items.push(self.convert_red_to_uast(n, source));
+                    }
+                }
+                UastNode::Block {
+                    body: items,
+                    loc: Loc::unknown(),
+                }
+            }
+            CElementType::ReturnStatement => {
+                UastNode::Return {
+                    value: Some(Box::new(UastNode::Literal("return_val".to_string(), Loc::unknown()))),
+                    loc: Loc::unknown(),
+                }
+            }
+            _ => UastNode::Literal(format!("unsupported_{:?}", node.green.kind), Loc::unknown()),
         }
     }
 }
