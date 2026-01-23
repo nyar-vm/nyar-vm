@@ -26,17 +26,20 @@ impl NyarBackend {
         let mut code = Vec::new();
         match tree {
             IKunTree::Constant(v) => {
+                println!("  LOWER: Push Int({})", v);
                 code.push(Opcode::Push as u8);
                 let idx = self.add_constant(NyarConstant::Int(*v));
                 code.extend_from_slice(&(idx as u16).to_le_bytes());
             }
             IKunTree::StringConstant(s) => {
+                println!("  LOWER: Push String(\"{}\")", s);
                 code.push(Opcode::StringExt as u8);
                 code.push(StringExt::Const as u8);
                 let idx = self.add_constant(NyarConstant::String(s.clone()));
                 code.extend_from_slice(&(idx as u16).to_le_bytes());
             }
             IKunTree::Symbol(s) => {
+                println!("  LOWER: LoadGlobal(\"{}\")", s);
                 code.push(Opcode::LoadGlobal as u8);
                 let idx = self.add_constant(NyarConstant::String(s.clone()));
                 code.extend_from_slice(&(idx as u16).to_le_bytes());
@@ -123,8 +126,11 @@ impl NyarBackend {
                         // target, name, args
                         code.extend(self.lower_tree(&args[2])?); // push args
                         code.extend(self.lower_tree(&args[0])?); // push target
-                        code.push(Opcode::InvokeMethod as u8);
+                        
                         let name_str = if let IKunTree::Symbol(s) = &args[1] { s } else { "unknown" };
+                        println!("  LOWER: InvokeMethod(\"{}\")", name_str);
+
+                        code.push(Opcode::InvokeMethod as u8);
                         let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
                         code.extend_from_slice(&(idx as u16).to_le_bytes());
                         
@@ -137,8 +143,11 @@ impl NyarBackend {
                     } else if args.len() == 2 {
                         // name, args
                         code.extend(self.lower_tree(&args[1])?); // push args
-                        code.push(Opcode::CallSymbol as u8);
+                        
                         let name_str = if let IKunTree::Symbol(s) = &args[0] { s } else { "unknown" };
+                        println!("  LOWER: CallSymbol(\"{}\")", name_str);
+
+                        code.push(Opcode::CallSymbol as u8);
                         let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
                         code.extend_from_slice(&(idx as u16).to_le_bytes());
                         
@@ -153,8 +162,11 @@ impl NyarBackend {
                 "get_field" => {
                     // target, name
                     code.extend(self.lower_tree(&args[0])?); // push target
-                    code.push(Opcode::GetField as u8);
+                    
                     let name_str = if let IKunTree::Symbol(s) = &args[1] { s } else { "unknown" };
+                    println!("  LOWER: GetField(\"{}\")", name_str);
+
+                    code.push(Opcode::GetField as u8);
                     let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
                     code.extend_from_slice(&(idx as u16).to_le_bytes());
                 }

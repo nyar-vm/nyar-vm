@@ -400,54 +400,44 @@ impl NyarcModule {
             }
         }
 
-        if !self.classes.is_empty() || !self.traits.is_empty() || !self.impls.is_empty() {
-            buf.extend_from_slice(&(self.classes.len() as u32).to_le_bytes());
-            for c in &self.classes {
-                write_string(&mut buf, &c.name);
-                buf.extend_from_slice(&(c.fields.len() as u16).to_le_bytes());
-                for f in &c.fields {
-                    write_string(&mut buf, f);
-                }
+        buf.extend_from_slice(&(self.classes.len() as u32).to_le_bytes());
+        for c in &self.classes {
+            write_string(&mut buf, &c.name);
+            buf.extend_from_slice(&(c.fields.len() as u16).to_le_bytes());
+            for f in &c.fields {
+                write_string(&mut buf, f);
             }
         }
 
-        if !self.traits.is_empty() || !self.impls.is_empty() {
-            buf.extend_from_slice(&(self.traits.len() as u32).to_le_bytes());
-            for t in &self.traits {
-                write_string(&mut buf, &t.name);
-                buf.extend_from_slice(&(t.methods.len() as u16).to_le_bytes());
-                for m in &t.methods {
-                    write_string(&mut buf, m);
-                }
+        buf.extend_from_slice(&(self.traits.len() as u32).to_le_bytes());
+        for t in &self.traits {
+            write_string(&mut buf, &t.name);
+            buf.extend_from_slice(&(t.methods.len() as u16).to_le_bytes());
+            for m in &t.methods {
+                write_string(&mut buf, m);
             }
         }
 
-        if !self.impls.is_empty() {
-            buf.extend_from_slice(&(self.impls.len() as u32).to_le_bytes());
-            for i in &self.impls {
-                buf.extend_from_slice(&i.class_idx.to_le_bytes());
-                buf.extend_from_slice(&i.trait_idx.to_le_bytes());
-                buf.extend_from_slice(&(i.methods.len() as u16).to_le_bytes());
-                for m in &i.methods {
-                    buf.extend_from_slice(&m.to_le_bytes());
-                }
+        buf.extend_from_slice(&(self.impls.len() as u32).to_le_bytes());
+        for i in &self.impls {
+            buf.extend_from_slice(&i.class_idx.to_le_bytes());
+            buf.extend_from_slice(&i.trait_idx.to_le_bytes());
+            buf.extend_from_slice(&(i.methods.len() as u16).to_le_bytes());
+            for m in &i.methods {
+                buf.extend_from_slice(&m.to_le_bytes());
             }
         }
 
-        if !self.imports.is_empty() {
-            buf.extend_from_slice(&(self.imports.len() as u32).to_le_bytes());
-            for i in &self.imports {
-                write_string(&mut buf, &i.provider);
-                write_string(&mut buf, &i.symbol);
-            }
+        buf.extend_from_slice(&(self.imports.len() as u32).to_le_bytes());
+        for i in &self.imports {
+            write_string(&mut buf, &i.provider);
+            write_string(&mut buf, &i.symbol);
         }
 
-        if !self.exports.is_empty() {
-            buf.extend_from_slice(&(self.exports.len() as u32).to_le_bytes());
-            for e in &self.exports {
-                write_string(&mut buf, &e.symbol);
-                buf.extend_from_slice(&e.chunk_idx.to_le_bytes());
-            }
+        buf.extend_from_slice(&(self.exports.len() as u32).to_le_bytes());
+        for e in &self.exports {
+            write_string(&mut buf, &e.symbol);
+            buf.extend_from_slice(&e.chunk_idx.to_le_bytes());
         }
 
         buf
