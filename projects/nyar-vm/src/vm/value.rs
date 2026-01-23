@@ -1,5 +1,70 @@
+use nyar_gc::Trace;
 use std::collections::HashMap;
 use std::ptr::null_mut;
+
+impl Trace for Value {
+    fn trace(&self) {
+        match self.tag {
+            ValueTag::Int
+            | ValueTag::Float
+            | ValueTag::Bool
+            | ValueTag::Null
+            | ValueTag::BigInt
+            | ValueTag::Code
+            | ValueTag::WitnessTable
+            | ValueTag::String => {}
+            ValueTag::Array => unsafe {
+                let array = &*(self.data.ptr as *const Array);
+                for item in &array.items {
+                    item.trace();
+                }
+            },
+            ValueTag::Object => unsafe {
+                let obj = &*(self.data.ptr as *const Object);
+                for field in &obj.fields {
+                    field.trace();
+                }
+            },
+            ValueTag::Closure => unsafe {
+                let closure = &*(self.data.ptr as *const Closure);
+                for upvalue in &closure.upvalues {
+                    upvalue.0.trace();
+                }
+            },
+            ValueTag::DynObject => unsafe {
+                let obj = &*(self.data.ptr as *const DynObject);
+                for value in obj.entries.values() {
+                    value.trace();
+                }
+            },
+            ValueTag::List => unsafe {
+                let list = &*(self.data.ptr as *const List);
+                for item in &list.items {
+                    item.trace();
+                }
+            },
+            ValueTag::Tuple => unsafe {
+                let tuple = &*(self.data.ptr as *const Tuple);
+                for item in &tuple.items {
+                    item.trace();
+                }
+            },
+            ValueTag::Continuation => unsafe {
+                let cont = &*(self.data.ptr as *const Continuation);
+                for val in &cont.stack_slice {
+                    val.trace();
+                }
+            },
+            ValueTag::Effect => unsafe {
+                let effect = &*(self.data.ptr as *const Effect);
+                for arg in &effect.args {
+                    arg.trace();
+                }
+            },
+            _ => {}
+        }
+    }
+}
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +106,30 @@ pub struct Value {
 }
 
 impl Value {
+    pub unsafe fn as_closure<'a>(&self) -> &'a Closure {
+        &*(self.data.ptr as *const Closure)
+    }
+    pub unsafe fn as_object<'a>(&self) -> &'a Object {
+        &*(self.data.ptr as *const Object)
+    }
+    pub unsafe fn as_dyn_object<'a>(&self) -> &'a DynObject {
+        &*(self.data.ptr as *const DynObject)
+    }
+    pub unsafe fn as_list<'a>(&self) -> &'a List {
+        &*(self.data.ptr as *const List)
+    }
+    pub unsafe fn as_tuple<'a>(&self) -> &'a Tuple {
+        &*(self.data.ptr as *const Tuple)
+    }
+    pub unsafe fn as_effect<'a>(&self) -> &'a Effect {
+        &*(self.data.ptr as *const Effect)
+    }
+    pub unsafe fn as_cont<'a>(&self) -> &'a Continuation {
+         &*(self.data.ptr as *const Continuation)
+     }
+     pub unsafe fn as_continuation<'a>(&self) -> &'a Continuation {
+         &*(self.data.ptr as *const Continuation)
+     }
     pub fn int(v: i64) -> Self {
         Self {
             tag: ValueTag::Int,
@@ -198,21 +287,7 @@ impl Value {
     pub unsafe fn as_bigint<'a>(&self) -> &'a BigInt {
         &*(self.data.ptr as *const BigInt)
     }
-    pub unsafe fn as_dyn_object<'a>(&self) -> &'a DynObject {
-        &*(self.data.ptr as *const DynObject)
-    }
-    pub unsafe fn as_list<'a>(&self) -> &'a List {
-        &*(self.data.ptr as *const List)
-    }
-    pub unsafe fn as_tuple<'a>(&self) -> &'a Tuple {
-        &*(self.data.ptr as *const Tuple)
-    }
-    pub unsafe fn as_effect<'a>(&self) -> &'a Effect {
-        &*(self.data.ptr as *const Effect)
-    }
-    pub unsafe fn as_cont<'a>(&self) -> &'a Continuation {
-        &*(self.data.ptr as *const Continuation)
-    }
+
 }
 
 #[derive(Clone)]

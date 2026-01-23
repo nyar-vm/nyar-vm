@@ -5,7 +5,7 @@ default-members = [
     "projects/nyar-error",
     "projects/nyar-vm",
 ]
-exclude = ["projects/nyar-wasm32-wasi", "examples/valkyrie-bootstrap", "projects/nyar-cli", "examples/mini-c"]
+exclude = ["examples/valkyrie-bootstrap", "projects/nyar-cli", "examples/mini-c"]
 
 [profile.release]
 lto = true

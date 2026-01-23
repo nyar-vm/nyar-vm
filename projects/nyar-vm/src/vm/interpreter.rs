@@ -4,6 +4,7 @@ use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::ffi::{FFIFunction, FFIRegistry, FFIResult};
 use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
+use nyar_gc::{NyarGc, Trace};
 use std::ptr::null;
 
 fn normalize(mut v: Vec<u8>) -> Vec<u8> {

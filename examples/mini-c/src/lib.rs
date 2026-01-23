@@ -8,5 +8,4 @@ pub mod optimizer;
 pub mod runtime;
 
 pub use oak_c::{CLexer, CParser, CRoot};
-pub use chomsky_uast::UastNode;
 pub use gaia_jit::JitMemory;
