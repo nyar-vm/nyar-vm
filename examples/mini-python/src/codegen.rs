@@ -2,7 +2,7 @@
 //!
 //! 将 Python AST 转换为 Gaia 指令
 
-use crate::ast::*;
+use oak_python::ast::*;
 use gaia_assembler::{
     instruction::{CmpCondition, CoreInstruction, GaiaInstruction, ManagedInstruction},
     program::{GaiaBlock, GaiaConstant, GaiaFunction, GaiaModule, GaiaTerminator},

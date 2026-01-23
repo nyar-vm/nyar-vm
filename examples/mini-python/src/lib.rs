@@ -2,19 +2,15 @@
 //!
 //! 这个库提供了 Mini Python 语言的词法分析、语法分析和 Gaia 翻译功能。
 
-pub mod ast;
 pub mod codegen;
-pub mod lexer;
-pub mod parser;
 pub mod pyc_codegen;
 
-use ast::Program;
+use oak_python::{ast::Program, lexer::PythonLexer, parser::PythonParser};
 use codegen::GaiaTranslator;
 use gaia_assembler::program::GaiaModule;
 use gaia_types::GaiaError;
-use lexer::PythonLexer;
-use parser::{ParseError, PythonParser};
 use pyc_codegen::{Marshal, PycTranslator};
+use oak_core::ParseError;
 
 /// Mini Python 前端
 pub struct MiniPythonFrontend {
@@ -30,12 +26,8 @@ impl MiniPythonFrontend {
     /// 解析 Python 源代码为 AST
     pub fn parse(&mut self, source: &str) -> Result<Program, ParseError> {
         let mut lexer = PythonLexer::new(source);
-        let token_stream = lexer.tokenize();
-        // 处理词法分析结果
-        if !token_stream.diagnostics.is_empty() {
-            return Err(ParseError::LexError(format!("Lexer error: {:?}", token_stream.diagnostics)));
-        }
-        let mut parser = PythonParser::new(token_stream.result.unwrap());
+        let tokens = lexer.tokenize()?;
+        let mut parser = PythonParser::new(tokens);
         parser.parse()
     }
 
@@ -77,15 +69,11 @@ impl MiniPythonFrontend {
     }
 
     /// 仅进行词法分析
-    pub fn tokenize(&mut self, source: &str) -> Result<Vec<gaia_types::reader::Token<lexer::PythonTokenType>>, ParseError> {
+    pub fn tokenize(&mut self, source: &str) -> Result<Vec<gaia_types::reader::Token<oak_python::lexer::PythonTokenType>>, ParseError> {
         let mut lexer = PythonLexer::new(source);
-        let token_stream = lexer.tokenize();
-        // 处理词法分析结果
-        if !token_stream.diagnostics.is_empty() {
-            return Err(ParseError::LexError(format!("Lexer error: {:?}", token_stream.diagnostics)));
-        }
+        let token_stream = lexer.tokenize()?;
         // 从 TokenStream 中提取 tokens
-        Ok(token_stream.result.unwrap().tokens.into_inner())
+        Ok(token_stream.tokens.into_inner())
     }
 
     /// 获取翻译器的可变引用

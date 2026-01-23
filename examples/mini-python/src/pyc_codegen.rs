@@ -2,7 +2,7 @@
 //!
 //! 将 Python AST 转换为 Python 字节码 (.pyc)
 
-use crate::ast::*;
+use oak_python::ast::*;
 
 /// Python 3.10 常用操作码
 #[repr(u8)]
