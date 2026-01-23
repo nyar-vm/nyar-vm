@@ -1,0 +1,28 @@
+package nyar:pe-assembly;
+
+/// Main PE assembly world definition
+/// Exports all interfaces that make up the PE assembly functionality
+world pe-assembly {
+    /// Error handling interface
+    export types;
+    /// PE header structures interface
+    export headers;
+    /// PE section structures interface
+    export sections;
+    /// PE import tables interface
+    export imports;
+    /// PE export tables interface
+    export exports;
+    /// x86 instruction set interface
+    export x86-instructions;
+    /// x64 instruction set interface
+    export x64-instructions;
+    /// Assembler functionality interface
+    export program;
+    /// PE file writing interface
+    export writer;
+    /// PE file reading interface
+    export reader;
+    /// Easy test methods interface
+    export easy-test;
+}

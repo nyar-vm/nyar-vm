@@ -3,6 +3,13 @@
 //! 将 C AST 转换为 Gaia 指令
 
 use crate::ast::*;
+use pe_rust::{
+    exports::nyar::pe_assembly::{
+        easy_test::Guest as _,
+        types::{PeError, TargetArch},
+    },
+    PeContext,
+};
 use gaia_assembler::{
     instruction::{CmpCondition, CoreInstruction, GaiaInstruction},
     program::{GaiaBlock, GaiaConstant, GaiaFunction, GaiaModule, GaiaTerminator},
@@ -113,6 +120,16 @@ impl GaiaTranslator {
             globals: Vec::new(),
             imports,
         })
+    }
+
+    /// 使用 pe-rust 生成 PE 二进制文件
+    pub fn generate_pe_binary(&self, arch: TargetArch, exit_code: u32) -> Result<Vec<u8>, PeError> {
+        PeContext::easy_exit_code(arch, exit_code)
+    }
+
+    /// 使用 pe-rust 生成输出字符串的 PE 二进制文件
+    pub fn generate_pe_console_log(&self, arch: TargetArch, text: String) -> Result<Vec<u8>, PeError> {
+        PeContext::easy_console_log(arch, text)
     }
 
     /// 处理全局变量

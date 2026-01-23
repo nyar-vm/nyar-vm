@@ -3,7 +3,7 @@
 //! 这是一个简单的 C 语言编译器，可以将 C 代码编译为 Gaia 指令
 
 use clap::{Arg, ArgAction, Command};
-use rusty_c::{config::ReadConfig, lexer::CLexer, MiniCFrontend};
+use rusty_c::{MiniCFrontend, TargetArch};
 use std::{fs, path::Path};
 
 fn main() {
@@ -40,19 +40,8 @@ fn main() {
 
     // 如果只需要词法分析
     if matches.get_flag("tokens") {
-        let config = ReadConfig::new();
-        let lexer = CLexer::new(&config);
-        let diagnostics = lexer.tokenize(&source);
-        if let Err(e) = diagnostics.result.as_ref() {
-            eprintln!("词法分析错误：{}", e);
-            std::process::exit(1);
-        }
-        let token_stream = diagnostics.result.unwrap();
-        println!("词法分析结果：");
-        for token in token_stream.tokens.into_inner() {
-            println!("{:?}", token);
-        }
-        return;
+        eprintln!("错误：词法分析功能暂不可用");
+        std::process::exit(1);
     }
 
     // 创建前端编译器
@@ -75,13 +64,9 @@ fn main() {
 
     // 如果需要生成二进制文件
     if matches.get_flag("binary") {
-        let target = gaia_types::helpers::CompilationTarget {
-            build: gaia_types::helpers::Architecture::X86_64,
-            host: gaia_types::helpers::AbiCompatible::PE,
-            target: gaia_types::helpers::ApiCompatible::MicrosoftVisualC,
-        };
+        let arch = TargetArch::X64; // 默认使用 X64
 
-        match frontend.compile_to_binary(&source, target) {
+        match frontend.translator().generate_pe_binary(arch, 0) {
             Ok(binary) => {
                 let input_path = Path::new(input_file);
                 let output_path = input_path.with_extension("exe");
@@ -89,10 +74,10 @@ fn main() {
                     eprintln!("写入二进制文件失败：{}", e);
                     std::process::exit(1);
                 });
-                println!("二进制文件已生成：{}", output_path.display());
+                println!("使用 pe-rust 生成的二进制文件已保存：{}", output_path.display());
             }
             Err(e) => {
-                eprintln!("二进制生成错误：{}", e);
+                eprintln!("二进制生成错误：{:?}", e);
                 std::process::exit(1);
             }
         }

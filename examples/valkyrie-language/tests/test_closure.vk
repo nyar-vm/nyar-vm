@@ -1,4 +1,0 @@
-let sum_closure = |a, b| {
-    return a + b
-}
-print(sum_closure(1, 2))

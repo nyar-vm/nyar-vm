@@ -1,0 +1,11 @@
+/// Easy test interface
+/// Provides simple test methods for PE assembly generation
+interface easy-test {
+    use types.{pe-error, target-arch};
+    
+    /// Test method to generate a simple exit(code) executable
+    easy-exit-code: func(arch: target-arch, code: u32) -> result<list<u8>, pe-error>;
+    
+    /// Test method to generate a simple console.log(text) executable
+    easy-console-log: func(arch: target-arch, text: string) -> result<list<u8>, pe-error>;
+}

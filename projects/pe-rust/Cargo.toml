@@ -1,0 +1,28 @@
+[package]
+name = "pe-rust"
+version = "0.0.0"
+authors = ["Aster <192607617@qq.com>"]
+description = "..."
+repository = "https://github.com/oovm/wasm.exe"
+documentation = "https://docs.rs/wasm-exe"
+readme = "readme.md"
+license = "MPL-2.0"
+edition = "2024"
+exclude = ["package.json", "tests/**"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+byteorder = "1.5.0"
+wit-bindgen = "0.46.0"
+
+[build-dependencies]
+
+[dev-dependencies]
+
+[features]
+default = []
+
+[package.metadata.docs.rs]
+all-features = true

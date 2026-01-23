@@ -1,0 +1,43 @@
+/// PE export tables interface
+/// Defines structures for PE file export tables
+interface exports {
+    /// Export table entry structure
+    /// Represents an exported function from a DLL
+    record export-entry {
+        /// Name of the exported function
+        function-name: string,
+        /// Ordinal number
+        ordinal: u16,
+        /// Export address table RVA
+        eat-rva: u32,
+    }
+    
+    /// Export table structure
+    /// Represents exports from a DLL
+    record export-table {
+        /// Export flags
+        export-flags: u32,
+        /// Time/date stamp
+        time-date-stamp: u32,
+        /// Major version
+        major-version: u16,
+        /// Minor version
+        minor-version: u16,
+        /// Name RVA
+        name-rva: u32,
+        /// Ordinal base
+        ordinal-base: u32,
+        /// Number of functions in the address table
+        address-table-entries: u32,
+        /// Number of names in the name pointer table
+        number-of-name-pointers: u32,
+        /// Export address table RVA
+        export-address-table-rva: u32,
+        /// Name pointer table RVA
+        name-pointer-table-rva: u32,
+        /// Ordinal table RVA
+        ordinal-table-rva: u32,
+        /// List of exported functions
+        exports: list<export-entry>,
+    }
+}

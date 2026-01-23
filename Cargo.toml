@@ -16,7 +16,7 @@ opt-level = "s"
 gaia-jit = { path = "../project-gaia/projects/gaia-jit" }
 gaia-types = { path = "../project-gaia/projects/gaia-types" }
 gaia-assembler = { path = "../project-gaia/projects/gaia-assembler" }
-pe-rust = { path = "../rusty-c/projects/pe-rust" }
+pe-rust = { path = "projects/pe-rust" }
 pe-assembler = { path = "../project-gaia/examples/pe-assembler" }
 
 criterion = "0.5"

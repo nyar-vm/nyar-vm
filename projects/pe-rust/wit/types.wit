@@ -1,0 +1,103 @@
+/// Error types for PE assembly operations
+/// Defines various error conditions that can occur during PE file processing
+interface types {
+    /// PE-specific error enumeration
+    /// Represents different types of errors that can occur when working with PE files
+    variant pe-error {
+        /// Invalid PE header structure detected
+        invalid-header,
+        /// Invalid instruction encountered during assembly/disassembly
+        invalid-instruction,
+        /// Invalid section structure detected
+        invalid-section,
+        /// Invalid import table structure detected
+        invalid-import,
+        /// File I/O error
+        io-error,
+        /// Unsupported architecture
+        unsupported-architecture,
+        /// Invalid instruction encoding
+        invalid-encoding,
+        /// Symbol resolution error
+        symbol-resolution-error,
+    }
+    
+    /// Target architecture enumeration
+    enum target-arch {
+        /// x86 (32-bit) architecture
+        x86,
+        /// x64 (64-bit) architecture
+        x64,
+    }
+    
+    /// Subsystem type enumeration
+    enum subsystem-type {
+        /// Unknown subsystem
+        unknown,
+        /// Native (no subsystem required)
+        native,
+        /// Windows GUI application
+        windows-gui,
+        /// Windows console application
+        windows-cui,
+        /// OS/2 character application
+        os2-cui,
+        /// POSIX character application
+        posix-cui,
+        /// Windows CE application
+        windows-ce-gui,
+        /// EFI application
+        efi-application,
+        /// EFI boot service driver
+        efi-boot-service-driver,
+        /// EFI runtime driver
+        efi-runtime-driver,
+        /// EFI ROM image
+        efi-rom,
+        /// Xbox application
+        xbox,
+        /// Windows boot application
+        windows-boot-application,
+    }
+    
+    /// Encoded instruction structure
+    /// Represents a generic encoded instruction with architecture-specific attributes
+    record encoded-instruction {
+        /// Target architecture
+        arch: target-arch,
+        /// Encoded instruction bytes
+        bytes: list<u8>,
+        /// Instruction size in bytes
+        size: u8,
+        /// REX prefix (x64 only)
+        rex-prefix: option<u8>,
+        /// Opcode map (0, 1, 2, or 3)
+        opcode-map: u8,
+        /// ModR/M byte (if present)
+        modrm: option<u8>,
+        /// SIB byte (if present)
+        sib: option<u8>,
+        /// Instruction prefixes
+        prefixes: list<u8>,
+    }
+
+    /// Debugging entry structure
+    /// Represents a single debugging entry with line and column information
+    record debug-entry {
+        /// Line number in the source file
+        line: u32,
+        /// Column number in the source file
+        column: u32,
+        /// Offset in the IL stream
+        il-offset: u32,
+    }
+
+    /// Debugging information structure
+    /// Contains source file path and a list of debugging entries
+    record debug-info {
+        /// Path to the source file
+        source-file: string,
+        /// List of debugging entries
+        entries: list<debug-entry>,
+    }
+}

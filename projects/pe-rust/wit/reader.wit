@@ -1,0 +1,89 @@
+/// PE reader interface
+/// Provides functionality for reading PE files into assembly representations
+interface reader {
+    use types.{pe-error, target-arch, subsystem-type};
+    use program.{pe-program};
+    use headers.{pe-header, dos-header, nt-headers};
+    use sections.{pe-section, section-header};
+
+    /// Configuration for the PE reader
+    /// Contains settings that control how PE files are parsed
+    record read-config {
+        /// Whether to validate the PE file structure
+        validate-structure: bool,
+        /// Whether to parse section data
+        parse-sections: bool,
+        /// Whether to parse import tables
+        parse-imports: bool,
+        /// Whether to parse export tables
+        parse-exports: bool,
+        /// Whether to parse debug information
+        parse-debug-info: bool,
+        /// Maximum number of sections to parse
+        max-sections: u32,
+        /// Maximum number of imports to parse
+        max-imports: u32,
+    }
+
+    /// Low-level PE view - raw binary representation without validation
+    /// Represents the raw PE file structure as read from binary
+    record pe-view {
+        /// Raw binary data
+        raw-data: list<u8>,
+        /// DOS header
+        dos-header: dos-header,
+        /// NT headers
+        nt-headers: nt-headers,
+        /// Section headers
+        section-headers: list<section-header>,
+        /// Raw section data
+        section-data: list<list<u8>>,
+        /// File size
+        file-size: u32,
+        /// Validation state
+        is-valid-structure: bool,
+    }
+
+    /// Reads PE file binary data into a low-level PE view
+    /// This is the first step: binary → read → PeView
+    read-view: func(pe-data: list<u8>) -> result<pe-view, pe-error>;
+    
+    /// Validates a PE view structure
+    /// Second step: PeView → validate → validated PeView
+    validate-view: func(view: pe-view) -> result<pe-view, pe-error>;
+    
+    /// Converts a validated PE view to a high-level PE program
+    /// Final step: validated PeView → PeProgram
+    view-to-program: func(view: pe-view, config: read-config) -> result<pe-program, pe-error>;
+    
+    /// Complete PE reading pipeline: binary → PeView → validate → PeProgram
+    /// Combines all steps for convenience
+    read: func(pe-data: list<u8>, config: read-config) -> result<pe-program, pe-error>;
+    
+    /// Validates a PE file structure
+    /// Takes PE file bytes and returns validation result
+    validate: func(pe-data: list<u8>) -> result<bool, pe-error>;
+    
+    /// Extracts basic information from a PE file
+    /// Takes PE file bytes and returns basic PE information
+    get-info: func(pe-data: list<u8>) -> result<pe-info, pe-error>;
+    
+    /// PE file basic information structure
+    /// Contains basic information about a PE file
+    record pe-info {
+        /// Target architecture
+        arch: target-arch,
+        /// Subsystem type
+        subsystem: subsystem-type,
+        /// Entry point RVA
+        entry-point: u32,
+        /// Image base
+        image-base: u64,
+        /// Size of image
+        size-of-image: u32,
+        /// Number of sections
+        number-of-sections: u16,
+        /// Time/date stamp
+        date-time-stamp: u32,
+    }
+}

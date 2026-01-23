@@ -1,0 +1,33 @@
+/// PE writer interface
+/// Provides functionality for writing PE files from assembly representations
+interface writer {
+    use types.{pe-error};
+    use program.{pe-program};
+
+    /// Configuration for the PE writer
+    /// Contains settings that control how PE files are generated
+    record writer-config {
+        /// Whether to align sections to file alignment
+        align-sections: bool,
+        /// Whether to calculate and set checksum
+        calculate-checksum: bool,
+        /// Whether to optimize the PE file layout
+        optimize-layout: bool,
+        /// Whether to include debug information
+        include-debug-info: bool,
+        /// Additional data directories to include
+        extra-data-directories: list<u32>,
+    }
+    
+    /// Converts a PE assembler representation to PE file binary data
+    /// Takes an assembler state and configuration, returns PE file bytes or error
+    write: func(program: pe-program, config: writer-config) -> result<list<u8>, pe-error>;
+    
+    /// Validates a PE program representation before writing
+    /// Takes a program state and returns validation result
+    validate: func(program: pe-program) -> result<bool, pe-error>;
+    
+    /// Calculates the size of the PE file that would be generated
+    /// Takes an assembler state and returns the estimated file size
+    calculate-size: func(program: pe-program) -> result<u32, pe-error>;
+}

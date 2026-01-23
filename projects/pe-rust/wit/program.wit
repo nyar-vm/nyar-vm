@@ -1,0 +1,54 @@
+/// PE assembler interface
+/// Provides functionality for working with PE assembly representations
+interface program {
+    use types.{pe-error, target-arch, subsystem-type};
+    use headers.{pe-header};
+    use sections.{pe-section};
+    use imports.{import-table};
+    use exports.{export-table};
+
+    /// PE assembler data structure
+    /// Represents the internal state and configuration of a PE assembler
+    record pe-program {
+        /// Target architecture
+        arch: target-arch,
+        /// Subsystem type
+        subsystem: subsystem-type,
+        /// Complete PE header structure containing all header components
+        header: pe-header,
+        /// List of sections in the PE file
+        sections: list<pe-section>,
+        /// Import tables for external DLL functions
+        import-tables: list<import-table>,
+        /// Export tables for functions exported by this DLL
+        export-tables: list<export-table>,
+        /// Debug information (e.g., PDB data)
+        debug-info: option<list<u8>>,
+        /// Entry point address
+        entry-point: u32,
+    }
+    
+    /// Creates a new PE assembler with default settings
+    /// Returns a PE assembler with default settings
+    new: func(arch: target-arch, subsystem: subsystem-type) -> pe-program;
+
+    /// Creates a new PE assembler configured for console applications
+    /// Returns a PE assembler with default settings for Windows console apps
+    new-console-app: func(arch: target-arch) -> pe-program;
+
+    /// Creates a new PE assembler configured for GUI applications
+    /// Returns a PE assembler with default settings for Windows GUI apps
+    new-gui-app: func(arch: target-arch) -> pe-program;
+
+    /// Adds a new section to the PE file
+    /// Takes a section and adds it to the assembler
+    add-section: func(program: pe-program, section: pe-section) -> result<pe-program, pe-error>;
+
+    /// Adds an import table to the PE file
+    /// Takes an import table and adds it to the assembler
+    add-import-table: func(program: pe-program, import-table: import-table) -> result<pe-program, pe-error>;
+
+    /// Sets the entry point for the PE file
+    /// Takes an RVA and sets it as the entry point
+    set-entry-point: func(program: pe-program, entry-point: u32) -> result<pe-program, pe-error>;
+}

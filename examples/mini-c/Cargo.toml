@@ -9,8 +9,10 @@ gaia-types = { workspace = true }
 gaia-assembler = { workspace = true, features = ["clr"] }
 pe-rust = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 clap = { workspace = true }
 url = { workspace = true }
+oak-c = { path = "../../../ProjectChomsky/packages/oak-c" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
