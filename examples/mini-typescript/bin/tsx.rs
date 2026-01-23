@@ -26,7 +26,7 @@ impl TsReplHandler {
         }
     }
 
-    fn run_project(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_project(&mut self, path: &str) -> anyhow::Result<()> {
         let p = Path::new(path);
         let base_dir = if p.is_dir() { p } else { p.parent().unwrap_or(Path::new(".")) };
         let mut loader = ProjectLoader::new(base_dir);
@@ -54,7 +54,7 @@ impl TsReplHandler {
         Ok(())
     }
 
-    fn run_code_internal(&mut self, source: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_code_internal(&mut self, source: &str) -> anyhow::Result<()> {
         match self.frontend.compile_to_nyar(source) {
             Ok(module) => {
                 let module_idx = self.vm.load_module(module);
@@ -92,7 +92,7 @@ impl ReplHandler for TsReplHandler {
         depth <= 0
     }
 
-    fn handle_line(&mut self, line: &str) -> Result<HandleResult, Box<dyn std::error::Error>> {
+    fn handle_line(&mut self, line: &str) -> anyhow::Result<HandleResult> {
         let trimmed = line.trim();
         if trimmed == "exit()" || trimmed == "quit()" {
             return Ok(HandleResult::Exit);

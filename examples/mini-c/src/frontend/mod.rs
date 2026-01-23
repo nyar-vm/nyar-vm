@@ -99,17 +99,10 @@ impl MiniCFrontend {
                                                 }
                                             }
                                         }
-                                        CElementType::ReturnStatement
-                                        | CElementType::ExpressionStatement
-                                        | CElementType::DeclarationStatement
-                                        | CElementType::IfStatement
-                                        | CElementType::WhileStatement
-                                        | CElementType::ForStatement
-                                        | CElementType::CompoundStatement => {
+                                        _ => {
                                             let stmt = self.convert_red_to_uir(builder, n, source, source_id);
                                             body.push(stmt);
                                         }
-                                        _ => {}
                                     }
                                 }
                                 RedTree::Leaf(l) => {
@@ -147,11 +140,21 @@ impl MiniCFrontend {
                         }
                     }
                     CElementType::DeclarationStatement => {
+                        let filtered_children: Vec<_> = node.children().filter(|child| {
+                            match child {
+                                RedTree::Leaf(l) => {
+                                    let kind: CElementType = l.kind.into();
+                                    !matches!(kind, CElementType::Token(CTokenType::Whitespace) | CElementType::Token(CTokenType::Comment))
+                                }
+                                _ => true
+                            }
+                        }).collect();
+
                         let mut name = None;
                         let mut value = None;
                         let mut found_assign = false;
 
-                        for child in node.children() {
+                        for child in filtered_children {
                             match child {
                                 RedTree::Leaf(l) => {
                                     let kind: CElementType = l.kind.into();
@@ -162,12 +165,9 @@ impl MiniCFrontend {
                                         }
                                     } else if let CElementType::Token(CTokenType::Assign) = kind {
                                         found_assign = true;
-                                    } else if let CElementType::Token(CTokenType::IntegerLiteral) = kind {
+                                    } else if let CElementType::Token(CTokenType::IntegerLiteral | CTokenType::FloatLiteral) = kind {
                                         if found_assign {
-                                            let s = l.span;
-                                            if let Ok(val) = source[s.start..s.end].parse::<i64>() {
-                                                value = Some(builder.constant(val, loc));
-                                            }
+                                            value = Some(self.convert_tree_to_uir(builder, RedTree::Leaf(l), source, source_id));
                                         }
                                     }
                                 }
@@ -196,7 +196,7 @@ impl MiniCFrontend {
                             }
                         }).collect();
                         
-                        // Handle binary operations or function calls
+                        // Handle function calls (Identifier followed by LeftParen)
                         if filtered_children.len() >= 3 {
                             let mut is_call = false;
                             if let RedTree::Leaf(l) = &filtered_children[1] {
@@ -210,90 +210,61 @@ impl MiniCFrontend {
                                 let func = self.convert_tree_to_uir(builder, filtered_children[0].clone(), source, source_id);
                                 let mut args = vec![];
                                 for i in 2..filtered_children.len() {
-                                    if let RedTree::Leaf(l) = &filtered_children[i] {
+                                    let child = &filtered_children[i];
+                                    if let RedTree::Leaf(l) = child {
                                         let kind: CElementType = l.kind.into();
                                         if matches!(kind, CElementType::Token(CTokenType::RightParen) | CElementType::Token(CTokenType::Comma)) {
                                             continue;
                                         }
                                     }
-                                    args.push(self.convert_tree_to_uir(builder, filtered_children[i].clone(), source, source_id));
+                                    args.push(self.convert_tree_to_uir(builder, child.clone(), source, source_id));
                                 }
                                 return builder.call(func, args, loc);
                             }
+                        }
 
-                            let mut op_idx = None;
-                            for (i, child) in filtered_children.iter().enumerate() {
-                                if let RedTree::Leaf(l) = child {
-                                    let kind: CElementType = l.kind.into();
-                                    match kind {
-                                        CElementType::Token(CTokenType::Plus) |
-                                        CElementType::Token(CTokenType::Minus) |
-                                        CElementType::Token(CTokenType::Star) |
-                                        CElementType::Token(CTokenType::Slash) |
-                                        CElementType::Token(CTokenType::Assign) |
-                                        CElementType::Token(CTokenType::Equal) |
-                                        CElementType::Token(CTokenType::NotEqual) |
-                                        CElementType::Token(CTokenType::Less) |
-                                        CElementType::Token(CTokenType::LessEqual) |
-                                        CElementType::Token(CTokenType::Greater) |
-                                        CElementType::Token(CTokenType::GreaterEqual) => {
-                                            op_idx = Some(i);
-                                            break;
-                                        }
-                                        _ => {}
-                                    }
+                        // Handle binary operations: [Left, Op, Right]
+                        if filtered_children.len() == 3 {
+                            if let RedTree::Leaf(op_leaf) = &filtered_children[1] {
+                                let kind: CElementType = op_leaf.kind.into();
+                                let op_text = match kind {
+                                    CElementType::Token(CTokenType::Plus) => Some("+"),
+                                    CElementType::Token(CTokenType::Minus) => Some("-"),
+                                    CElementType::Token(CTokenType::Star) => Some("*"),
+                                    CElementType::Token(CTokenType::Slash) => Some("/"),
+                                    CElementType::Token(CTokenType::Assign) => Some("="),
+                                    CElementType::Token(CTokenType::Equal) => Some("=="),
+                                    CElementType::Token(CTokenType::NotEqual) => Some("!="),
+                                    CElementType::Token(CTokenType::Less) => Some("<"),
+                                    CElementType::Token(CTokenType::LessEqual) => Some("<="),
+                                    CElementType::Token(CTokenType::Greater) => Some(">"),
+                                    CElementType::Token(CTokenType::GreaterEqual) => Some(">="),
+                                    _ => None,
+                                };
+
+                                if let Some(op) = op_text {
+                                    let left = self.convert_tree_to_uir(builder, filtered_children[0].clone(), source, source_id);
+                                    let right = self.convert_tree_to_uir(builder, filtered_children[2].clone(), source, source_id);
+                                    return if op == "=" {
+                                        builder.assign_to_id(left, right, loc)
+                                    } else {
+                                        builder.binary_op(op, left, right, loc)
+                                    };
                                 }
                             }
-
-                            if let Some(idx) = op_idx {
-                                if idx > 0 && idx < filtered_children.len() - 1 {
-                                    let left = &filtered_children[idx-1];
-                                    let op_leaf = match &filtered_children[idx] {
-                                        RedTree::Leaf(l) => l,
-                                        _ => unreachable!(),
-                                    };
-                                    let right = &filtered_children[idx+1];
-                                    
-                                    let left_id = self.convert_tree_to_uir(builder, left.clone(), source, source_id);
-                                    let right_id = self.convert_tree_to_uir(builder, right.clone(), source, source_id);
-                                    let op_span = op_leaf.span;
-                                    let op_text = source[op_span.start..op_span.end].trim();
-                                    
-                                    if op_text.is_empty() {
-                                        let kind: CElementType = op_leaf.kind.into();
-                                        let fallback_op = match kind {
-                                            CElementType::Token(CTokenType::Plus) => "+",
-                                            CElementType::Token(CTokenType::Minus) => "-",
-                                            CElementType::Token(CTokenType::Star) => "*",
-                                            CElementType::Token(CTokenType::Slash) => "/",
-                                            CElementType::Token(CTokenType::Assign) => "=",
-                                            CElementType::Token(CTokenType::Equal) => "==",
-                                            CElementType::Token(CTokenType::NotEqual) => "!=",
-                                            CElementType::Token(CTokenType::Less) => "<",
-                                            CElementType::Token(CTokenType::LessEqual) => "<=",
-                                            CElementType::Token(CTokenType::Greater) => ">",
-                                            CElementType::Token(CTokenType::GreaterEqual) => ">=",
-                                            _ => "",
-                                        };
-                                        
-                                        if fallback_op.is_empty() {
-                                            println!("DEBUG: Empty operator text at span {:?} with kind {:?}", op_span, kind);
-                                        }
-
-                                        return match fallback_op {
-                                            "=" => builder.assign_to_id(left_id, right_id, loc),
-                                            _ => builder.binary_op(fallback_op, left_id, right_id, loc),
-                                        };
-                                    }
-
-                                    return match op_text {
-                                        "=" => builder.assign_to_id(left_id, right_id, loc),
-                                        _ => builder.binary_op(op_text, left_id, right_id, loc),
-                                    };
+                            
+                            // If it's not a binary op but has 3 children, it might be something like (expr)
+                            // or a wrapped expression. Let's try to find if it's a bracketed expression.
+                            if let (RedTree::Leaf(l1), RedTree::Leaf(l3)) = (&filtered_children[0], &filtered_children[2]) {
+                                let k1: CElementType = l1.kind.into();
+                                let k3: CElementType = l3.kind.into();
+                                if let (CElementType::Token(CTokenType::LeftParen), CElementType::Token(CTokenType::RightParen)) = (k1, k3) {
+                                    return self.convert_tree_to_uir(builder, filtered_children[1].clone(), source, source_id);
                                 }
                             }
                         }
 
+                        // If it's a single child (e.g., constant or identifier), or anything else
                         if filtered_children.len() == 1 {
                             return self.convert_tree_to_uir(builder, filtered_children[0].clone(), source, source_id);
                         }
@@ -368,6 +339,11 @@ impl MiniCFrontend {
                     }
                     CElementType::Token(CTokenType::Identifier) => {
                         builder.symbol(text, loc)
+                    }
+                    CElementType::ExpressionStatement => {
+                        // In Pratt parser, IntegerLiteral is often wrapped in ExpressionStatement directly
+                        // Let's handle it here if it's a leaf
+                        self.convert_tree_to_uir(builder, RedTree::Leaf(leaf), source, source_id)
                     }
                     _ => builder.constant(0, loc),
                 }

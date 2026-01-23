@@ -139,6 +139,7 @@ impl NyarTranslator {
             match node {
                 IKun::StateUpdate(target, value) => {
                     let value_class = egraph.get_class(*value);
+                    println!("Codegen: StateUpdate value class nodes: {:?}", value_class.nodes);
                     if let IKun::Lambda(params, body) = &value_class.nodes[0] {
                         // It's a function definition
                         let target_class = egraph.get_class(*target);

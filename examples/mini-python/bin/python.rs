@@ -26,13 +26,43 @@ struct Args {
     ast: bool,
 }
 
+use std::fmt::{Display, Formatter};
+use std::error::Error;
+
+#[derive(Debug)]
+pub enum PythonError {
+    Other(String),
+}
+
+impl Display for PythonError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PythonError::Other(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+impl Error for PythonError {}
+
+impl From<String> for PythonError {
+    fn from(s: String) -> Self {
+        PythonError::Other(s)
+    }
+}
+
+impl From<&str> for PythonError {
+    fn from(s: &str) -> Self {
+        PythonError::Other(s.to_string())
+    }
+}
+
 /// Python REPL 处理器
 struct PythonReplHandler {
     frontend: MiniPythonFrontend,
 }
 
 impl PythonReplHandler {
-    fn run_code_internal(frontend: &mut MiniPythonFrontend, source: &str, show_ast: bool) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_code_internal(frontend: &mut MiniPythonFrontend, source: &str, show_ast: bool) -> Result<(), PythonError> {
         if show_ast {
             match frontend.parse_to_ast(source) {
                 Ok(program) => println!("{:#?}", program),
