@@ -248,6 +248,54 @@ impl Instruction {
                 buf.push(I32Ext::Const as u8);
                 buf.extend_from_slice(&v.to_le_bytes());
             }
+            Instruction::I32Add => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Add as u8);
+            }
+            Instruction::I32Sub => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Sub as u8);
+            }
+            Instruction::I32Mul => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Mul as u8);
+            }
+            Instruction::I32DivS => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::DivS as u8);
+            }
+            Instruction::I32RemS => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::RemS as u8);
+            }
+            Instruction::I32Neg => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Neg as u8);
+            }
+            Instruction::I32Eq => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Eq as u8);
+            }
+            Instruction::I32Ne => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Ne as u8);
+            }
+            Instruction::I32LtS => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::LtS as u8);
+            }
+            Instruction::I32LeS => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::LeS as u8);
+            }
+            Instruction::I32GtS => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::GtS as u8);
+            }
+            Instruction::I32GeS => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::GeS as u8);
+            }
             // Add other encodings as needed for tests
             _ => unimplemented!("Encoding for {:?} not implemented", self),
         }

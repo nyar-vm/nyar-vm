@@ -163,6 +163,7 @@ pub struct NyarVM {
     pub trace_log: std::cell::RefCell<Vec<String>>,
     pub ffi: FFIRegistry,
     pub symbol_table: std::collections::HashMap<String, (usize, u16)>, // (module_idx, chunk_idx)
+    pub builtins: std::collections::HashMap<String, Value>,
 }
 
 impl Trace for NyarVM {
@@ -191,6 +192,7 @@ impl NyarVM {
             trace_log: std::cell::RefCell::new(Vec::new()),
             ffi: FFIRegistry::new(),
             symbol_table: std::collections::HashMap::new(),
+            builtins: std::collections::HashMap::new(),
         };
         vm.register_builtins();
         vm
@@ -198,6 +200,23 @@ impl NyarVM {
 
     fn register_builtins(&mut self) {
         // Builtins can be registered here
+        self.register_java_builtins();
+    }
+
+    fn register_java_builtins(&mut self) {
+        let mut out = Value::dyn_object();
+        let out_ptr = unsafe { out.data.ptr as *mut DynObject };
+        let out_mut = unsafe { &mut *out_ptr };
+
+        // System.out.println
+        // For now, System.out is just a DynObject
+
+        let mut system = Value::dyn_object();
+        let system_ptr = unsafe { system.data.ptr as *mut DynObject };
+        let system_mut = unsafe { &mut *system_ptr };
+        system_mut.entries.insert("out".to_string(), out);
+
+        self.builtins.insert("System".to_string(), system);
     }
 
     fn push(&mut self, v: Value) {
@@ -1367,6 +1386,12 @@ impl NyarVM {
 
                     if receiver.tag != ValueTag::Object {
                         match name {
+                            "println" => {
+                                for arg in args {
+                                    self.print_line(&arg.to_string());
+                                }
+                                self.push(Value::null());
+                            }
                             "add" => {
                                 if args.len() == 1 {
                                     let rhs = args[0];

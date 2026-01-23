@@ -2,26 +2,22 @@ use chomsky_uir::{EGraph, Id, IKun, IKunTree};
 use chomsky_full::optimizer::UniversalOptimizer;
 use chomsky_full::cost::DefaultCostModel;
 use chomsky_full::extract::IKunExtractor;
-use gaia_jit::JitMemory;
-use gaia_assembler::program::{GaiaModule, GaiaFunction, GaiaBlock, GaiaConstant, GaiaTerminator};
-use gaia_assembler::instruction::{GaiaInstruction, CoreInstruction, CmpCondition};
-use gaia_assembler::types::{GaiaSignature, GaiaType};
-use gaia_assembler::assembler::GaiaAssembler;
-use gaia_types::helpers::{CompilationTarget, Architecture, AbiCompatible, ApiCompatible};
+use nyar_vm::vm::interpreter::NyarVM;
+use nyar_vm::bytecode::format::{NyarcModule, Chunk, ExportInfo};
+use nyar_vm::bytecode::decoder::Instruction;
 use anyhow::{Result, anyhow};
+use std::collections::HashMap;
 
 pub struct MiniCRuntime {
-    _memory: Option<JitMemory>,
     _optimizer: UniversalOptimizer<()>,
-    assembler: GaiaAssembler,
+    vm: NyarVM,
 }
 
 impl MiniCRuntime {
     pub fn new() -> Self {
         Self {
-            _memory: None,
             _optimizer: UniversalOptimizer::new(),
-            assembler: GaiaAssembler::new(),
+            vm: NyarVM::new(),
         }
     }
 
@@ -33,171 +29,184 @@ impl MiniCRuntime {
         let extractor = IKunExtractor::new(&egraph, cost_model);
         let tree = extractor.extract(root_id);
 
-        // 2. Translate IKunTree to Gaia Module
-        let module = self.translate_to_gaia(&tree)?;
+        // 2. Translate IKunTree to Nyar Module
+        let module = self.translate_to_nyar(&tree)?;
 
-        // 3. Compile using Gaia Assembler (Gaia Adapter Mode)
-        println!("Compiling Gaia Module: {}", module.name);
+        // 3. Execute using Nyar VM
+        println!("Executing Nyar Module: {:?}", module.exports);
         
-        let target = CompilationTarget {
-            build: Architecture::X86_64,
-            host: AbiCompatible::PE,
-            target: ApiCompatible::MicrosoftVisualC,
-        };
-
-        match self.assembler.compile(&module, &target) {
-            Ok(files) => {
-                println!("Successfully compiled to target: {:?}", target.build);
-                for (name, bytes) in &files.files {
-                    println!("  Generated file: {} ({} bytes)", name, bytes.len());
+        let module_idx = self.vm.load_module(module);
+        
+        // Find main or first export
+        if let Some(export) = self.vm.modules[module_idx].exports.iter().find(|e| e.symbol == "main").or(self.vm.modules[module_idx].exports.first()) {
+            match self.vm.execute(module_idx, export.chunk_idx as usize) {
+                Ok(val) => {
+                    println!("Execution result: {:?}", val);
+                }
+                Err(e) => {
+                    println!("Nyar VM execution failed: {:?}", e);
+                    return Err(anyhow!("Nyar VM execution failed: {:?}", e));
                 }
             }
-            Err(e) => {
-                println!("Warning: Gaia Assembler failed to compile: {:?}", e);
-                println!("Falling back to interpreted/simulated execution info:");
-                for func in &module.functions {
-                    println!("  Function: {}", func.name);
-                    for block in &func.blocks {
-                        println!("    Block {}:", block.label);
-                        for inst in &block.instructions {
-                            println!("      {:?}", inst);
-                        }
-                        println!("      {:?}", block.terminator);
-                    }
-                }
-            }
+        } else {
+            return Err(anyhow!("No entry point found in module"));
         }
         
         Ok(())
     }
 
-    fn translate_to_gaia(&self, tree: &IKunTree) -> Result<GaiaModule> {
-        let mut module = GaiaModule {
-            name: "mini-c-module".to_string(),
-            functions: vec![],
-            structs: vec![],
-            classes: vec![],
-            constants: vec![],
-            globals: vec![],
-            imports: vec![],
-        };
+    fn translate_to_nyar(&self, tree: &IKunTree) -> Result<NyarcModule> {
+        let mut module = NyarcModule::default();
 
         match tree {
-            IKunTree::Module(name, items) => {
-                module.name = name.clone();
+            IKunTree::Module(_name, items) => {
                 for item in items {
                     if let IKunTree::Export(name, body) = item {
                         if let IKunTree::Lambda(params, body) = &**body {
-                            let func = self.translate_function(name, params, body)?;
-                            module.functions.push(func);
+                            let chunk = self.translate_function(params, body)?;
+                            let chunk_idx = module.chunks.len() as u16;
+                            module.chunks.push(chunk);
+                            module.exports.push(ExportInfo {
+                                symbol: name.clone(),
+                                chunk_idx,
+                            });
                         }
                     }
                 }
             }
             IKunTree::Extension(name, items) if name == "module" => {
-                // Compatibility for old extension-style module
                 for item in items.iter() {
                     if let IKunTree::StateUpdate(target, body) = item {
                         if let IKunTree::Symbol(name) = &**target {
                             if let IKunTree::Lambda(params, body) = &**body {
-                                let func = self.translate_function(name, params, body)?;
-                                module.functions.push(func);
+                                let chunk = self.translate_function(params, body)?;
+                                let chunk_idx = module.chunks.len() as u16;
+                                module.chunks.push(chunk);
+                                module.exports.push(ExportInfo {
+                                    symbol: name.clone(),
+                                    chunk_idx,
+                                });
                             }
                         }
                     }
                 }
             }
             _ => {
-                let main = self.translate_function("main", &vec![], tree)?;
-                module.functions.push(main);
+                let chunk = self.translate_function(&vec![], tree)?;
+                module.chunks.push(chunk);
+                module.exports.push(ExportInfo {
+                    symbol: "main".to_string(),
+                    chunk_idx: 0,
+                });
             }
         }
 
         Ok(module)
     }
 
-    fn translate_function(&self, name: &str, params: &[String], body: &IKunTree) -> Result<GaiaFunction> {
+    fn translate_function(&self, params: &[String], body: &IKunTree) -> Result<Chunk> {
         let mut instructions = vec![];
-        let mut symbols = std::collections::HashMap::new();
+        let mut symbols = HashMap::new();
         
-        // Handle parameters
-        let mut param_types = vec![];
+        // Handle parameters (map to locals)
         for (i, param) in params.iter().enumerate() {
-            param_types.push(GaiaType::I32); // Default to I32 for mini-c
-            symbols.insert(param.clone(), i as u32);
+            symbols.insert(param.clone(), i as u8);
         }
 
         self.translate_expr(body, &mut instructions, &mut symbols)?;
+        
+        // Add return if not present
+        if instructions.last() != Some(&Instruction::Return) {
+            instructions.push(Instruction::Return);
+        }
 
-        Ok(GaiaFunction {
-            name: name.to_string(),
-            signature: GaiaSignature {
-                params: param_types,
-                return_type: GaiaType::I32,
-            },
-            blocks: vec![GaiaBlock {
-                label: "entry".to_string(),
-                instructions,
-                terminator: GaiaTerminator::Return,
-            }],
-            is_external: false,
+        let mut code = vec![];
+        for ins in instructions {
+            code.extend_from_slice(&ins.encode());
+        }
+
+        Ok(Chunk {
+            locals: 32,
+            upvalues: 0,
+            max_stack: 32,
+            code,
+            handlers: vec![],
+            lines: vec![],
         })
     }
 
-    fn translate_expr(&self, tree: &IKunTree, insts: &mut Vec<GaiaInstruction>, symbols: &mut std::collections::HashMap<String, u32>) -> Result<()> {
+    fn translate_expr(&self, tree: &IKunTree, insts: &mut Vec<Instruction>, symbols: &mut HashMap<String, u8>) -> Result<()> {
         match tree {
             IKunTree::Constant(v) => {
-                insts.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::I32(*v as i32))));
-            }
-            IKunTree::FloatConstant(v) => {
-                insts.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::F64(f64::from_bits(*v)))));
+                insts.push(Instruction::I32Const(*v as i32));
             }
             IKunTree::Symbol(name) => {
                 if let Some(&idx) = symbols.get(name) {
-                    insts.push(GaiaInstruction::Core(CoreInstruction::LoadLocal(idx, GaiaType::I32)));
+                    insts.push(Instruction::LoadLocal(idx));
                 } else {
-                    // If not found, assume it's a new local (not ideal but works for mini-c examples)
-                    let idx = symbols.len() as u32;
+                    let idx = symbols.len() as u8;
                     symbols.insert(name.clone(), idx);
-                    insts.push(GaiaInstruction::Core(CoreInstruction::LoadLocal(idx, GaiaType::I32)));
+                    insts.push(Instruction::LoadLocal(idx));
                 }
             }
             IKunTree::Extension(op, args) if args.len() == 2 => {
                 self.translate_expr(&args[0], insts, symbols)?;
                 self.translate_expr(&args[1], insts, symbols)?;
                 match op.as_str() {
-                    "+" => insts.push(GaiaInstruction::Core(CoreInstruction::Add(GaiaType::I32))),
-                    "-" => insts.push(GaiaInstruction::Core(CoreInstruction::Sub(GaiaType::I32))),
-                    "*" => insts.push(GaiaInstruction::Core(CoreInstruction::Mul(GaiaType::I32))),
-                    "/" => insts.push(GaiaInstruction::Core(CoreInstruction::Div(GaiaType::I32))),
-                    "==" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Eq, GaiaType::I32))),
-                    "!=" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Ne, GaiaType::I32))),
-                    "<" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Lt, GaiaType::I32))),
-                    "<=" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Le, GaiaType::I32))),
-                    ">" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Gt, GaiaType::I32))),
-                    ">=" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Ge, GaiaType::I32))),
-                    _ => {
-                        println!("DEBUG: Unsupported binary op: '{}'", op);
-                        return Err(anyhow!("Unsupported binary op: {}", op));
-                    }
+                    "+" => insts.push(Instruction::I32Add),
+                    "-" => insts.push(Instruction::I32Sub),
+                    "*" => insts.push(Instruction::I32Mul),
+                    "/" => insts.push(Instruction::I32DivS),
+                    "==" => insts.push(Instruction::I32Eq),
+                    "!=" => insts.push(Instruction::I32Ne),
+                    "<" => insts.push(Instruction::I32LtS),
+                    "<=" => insts.push(Instruction::I32LeS),
+                    ">" => insts.push(Instruction::I32GtS),
+                    ">=" => insts.push(Instruction::I32GeS),
+                    _ => return Err(anyhow!("Unsupported binary op: {}", op)),
                 }
             }
             IKunTree::Choice(cond, then_br, else_br) => {
                 self.translate_expr(cond, insts, symbols)?;
-                insts.push(GaiaInstruction::Core(CoreInstruction::BrTrue("then".to_string())));
-                self.translate_expr(else_br, insts, symbols)?;
-                insts.push(GaiaInstruction::Core(CoreInstruction::Br("end".to_string())));
-                insts.push(GaiaInstruction::Core(CoreInstruction::Label("then".to_string())));
+                
+                let jump_if_false_idx = insts.len();
+                insts.push(Instruction::Nop); 
+                
                 self.translate_expr(then_br, insts, symbols)?;
-                insts.push(GaiaInstruction::Core(CoreInstruction::Label("end".to_string())));
+                
+                let jump_idx = insts.len();
+                insts.push(Instruction::Nop); 
+                
+                let then_start = jump_if_false_idx + 1;
+                let then_end = jump_idx;
+                let then_len = self.calculate_code_size(&insts[then_start..then_end]);
+                
+                self.translate_expr(else_br, insts, symbols)?;
+                
+                let else_start = jump_idx + 1;
+                let else_end = insts.len();
+                let else_len = self.calculate_code_size(&insts[else_start..else_end]);
+                
+                insts[jump_if_false_idx] = Instruction::JumpIfFalse(then_len as i16 + 3); 
+                insts[jump_idx] = Instruction::Jump(else_len as i16);
             }
             IKunTree::Repeat(cond, body) => {
-                insts.push(GaiaInstruction::Core(CoreInstruction::Label("loop_start".to_string())));
+                let start_pos = self.calculate_code_size(insts);
+                
                 self.translate_expr(cond, insts, symbols)?;
-                insts.push(GaiaInstruction::Core(CoreInstruction::BrFalse("loop_end".to_string())));
+                
+                let jump_if_false_idx = insts.len();
+                insts.push(Instruction::Nop);
+                
                 self.translate_expr(body, insts, symbols)?;
-                insts.push(GaiaInstruction::Core(CoreInstruction::Br("loop_start".to_string())));
-                insts.push(GaiaInstruction::Core(CoreInstruction::Label("loop_end".to_string())));
+                
+                let body_end_pos = self.calculate_code_size(insts);
+                let jump_back_offset = -( (body_end_pos - start_pos) as i16 + 3 );
+                insts.push(Instruction::Jump(jump_back_offset));
+                
+                let final_pos = self.calculate_code_size(insts);
+                let jump_forward_offset = (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx+1])) as i16;
+                insts[jump_if_false_idx] = Instruction::JumpIfFalse(jump_forward_offset);
             }
             IKunTree::Seq(stmts) => {
                 for stmt in stmts {
@@ -206,7 +215,7 @@ impl MiniCRuntime {
             }
             IKunTree::Extension(name, args) if name == "return" && args.len() == 1 => {
                 self.translate_expr(&args[0], insts, symbols)?;
-                insts.push(GaiaInstruction::Core(CoreInstruction::Ret));
+                insts.push(Instruction::Return);
             }
             IKunTree::StateUpdate(target, value) => {
                 self.translate_expr(value, insts, symbols)?;
@@ -214,18 +223,19 @@ impl MiniCRuntime {
                     let idx = if let Some(&i) = symbols.get(name) {
                         i
                     } else {
-                        let i = symbols.len() as u32;
+                        let i = symbols.len() as u8;
                         symbols.insert(name.clone(), i);
                         i
                     };
-                    insts.push(GaiaInstruction::Core(CoreInstruction::StoreLocal(idx, GaiaType::I32)));
+                    insts.push(Instruction::StoreLocal(idx));
                 }
             }
-            _ => {
-                // Ignore or log
-            }
+            _ => {}
         }
         Ok(())
     }
-}
 
+    fn calculate_code_size(&self, insts: &[Instruction]) -> usize {
+        insts.iter().map(|i| i.encode().len()).sum()
+    }
+}

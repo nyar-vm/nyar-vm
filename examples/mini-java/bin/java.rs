@@ -1,6 +1,6 @@
 use clap::Parser;
 use std::fs;
-use nyar_vm::runtime::VirtualMachine;
+use nyar_vm::NyarVM;
 use nyar_vm::bytecode::format::NyarModule;
 
 #[derive(Parser, Debug)]
@@ -24,25 +24,40 @@ fn main() {
     };
 
     // Decode module
-    let module = match NyarModule::decode(&data) {
+    let module = match NyarModule::parse(&data) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("Error: Could not decode Nyar module: {}", e);
+            eprintln!("Error: Could not decode Nyar module: {:?}", e);
             std::process::exit(1);
         }
     };
 
     // Initialize VM
-    let mut vm = VirtualMachine::new();
+    let mut vm = NyarVM::new();
     
     // Load and run
-    if let Err(e) = vm.load_module(module) {
-        eprintln!("Runtime error: {}", e);
-        std::process::exit(1);
+    let module_idx = vm.load_module(module);
+    
+    // Find main method to run
+    // In Mini Java, we usually look for HelloWorld.main or similar
+    // For now, let's look for any exported method named "main"
+    let mut main_chunk = None;
+    for (i, m) in vm.modules.iter().enumerate() {
+        for export in &m.exports {
+            if export.symbol == "main" {
+                main_chunk = Some((i, export.chunk_idx as usize));
+                break;
+            }
+        }
     }
 
-    if let Err(e) = vm.run() {
-        eprintln!("Execution error: {}", e);
+    if let Some((m_idx, c_idx)) = main_chunk {
+        if let Err(e) = vm.execute(m_idx, c_idx) {
+            vm.print_traceback(&e);
+            std::process::exit(1);
+        }
+    } else {
+        eprintln!("Error: Could not find 'main' method");
         std::process::exit(1);
     }
 }
