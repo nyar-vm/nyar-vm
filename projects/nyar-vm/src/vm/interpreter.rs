@@ -1,6 +1,7 @@
 use crate::bytecode::decoder::Instruction;
 use crate::bytecode::format::{Chunk, ClassInfo, Constant, ImplInfo, NyarcModule, TraitInfo};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
+use crate::vm::ffi::{FFIFunction, FFIRegistry, FFIResult};
 use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
 use std::ptr::null;
@@ -162,6 +163,8 @@ pub struct NyarVM {
     #[allow(clippy::type_complexity)]
     pub stdout: Option<Box<dyn Fn(&str)>>,
     pub trace_log: std::cell::RefCell<Vec<String>>,
+    pub ffi: FFIRegistry,
+    pub symbol_table: std::collections::HashMap<String, u16>,
 }
 
 impl NyarVM {
@@ -186,7 +189,24 @@ impl NyarVM {
             handler_stack: Vec::new(),
             stdout: None,
             trace_log: std::cell::RefCell::new(Vec::new()),
+            ffi: FFIRegistry::new(),
+            symbol_table: std::collections::HashMap::new(),
+        };
+        vm.register_builtins();
+        vm
+    }
+
+    fn register_builtins(&mut self) {
+        struct ImportFunc;
+        impl FFIFunction for ImportFunc {
+            fn call(&self, _args: Vec<Value>) -> FFIResult {
+                // Simplified: in a real impl, we'd need access to the VM's FFI registry
+                // which requires some architectural adjustments (e.g., passing registry to call)
+                // For now, this is a placeholder for the concept.
+                Ok(Value::null())
+            }
         }
+        // self.ffi.register("import".to_string(), Box::new(ImportFunc));
     }
     fn push(&mut self, v: Value) {
         if self.sp >= self.stack.len() {
@@ -237,6 +257,29 @@ impl NyarVM {
         }
         self.trace_log.borrow_mut().push(msg.to_string());
     }
+
+    /// Load a new module into the VM, merging its contents.
+    /// This allows for hot-reloading code or adding new functionality at runtime.
+    pub fn load_module(&mut self, module: NyarcModule) {
+        // Map old indices to new ones if necessary (simplified for now: just append)
+        let chunk_offset = self.chunks.len() as u16;
+
+        self.constants.extend(module.constants);
+        self.chunks.extend(module.chunks);
+        self.classes.extend(module.classes);
+        self.traits.extend(module.traits);
+        self.impls.extend(module.impls);
+        self.effects.extend(module.effects);
+
+        // Update symbol table with exports
+        for export in module.exports {
+            self.symbol_table.insert(export.symbol, chunk_offset + export.chunk_idx);
+        }
+
+        // Handle imports - in a real VM, this would trigger lazy loading or link-time resolution
+        // For now, we just acknowledge them.
+    }
+
     pub fn print_traceback(&self, err: &VmError) {
         self.print_line("Traceback (most recent call last):");
         let start = if self.frames.len() > 20 {
@@ -1224,6 +1267,49 @@ impl NyarVM {
                     self.frames.push(new_frame);
                     next_ip = None;
                 }
+                Instruction::CallSymbol(name_idx, argc) => {
+                    let name = match self.constants.get(name_idx as usize) {
+                        Some(Constant::String(s)) => s.as_str(),
+                        _ => return Err(VmError::IndexOutOfBounds),
+                    };
+
+                    if let Some(&chunk_idx) = self.symbol_table.get(name) {
+                        let mut args = Vec::with_capacity(argc as usize);
+                        for _ in 0..argc {
+                            args.push(self.pop()?);
+                        }
+                        args.reverse();
+
+                        let chunk = self
+                            .chunks
+                            .get(chunk_idx as usize)
+                            .cloned()
+                            .ok_or(VmError::IndexOutOfBounds)?;
+                        use crate::bytecode::decoder::Decoder;
+                        let decoder = Decoder::new(&chunk.code);
+                        let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+
+                        if args.len() < chunk.locals as usize {
+                            args.resize(chunk.locals as usize, Value::null());
+                        }
+
+                        let new_frame = Frame {
+                            instrs,
+                            ip: 0,
+                            locals: args,
+                            closure: null(),
+                            chunk_idx: Some(chunk_idx as usize),
+                        };
+
+                        if let Some(next) = next_ip {
+                            self.frames.last_mut().unwrap().ip = next;
+                        }
+                        self.frames.push(new_frame);
+                        next_ip = None;
+                    } else {
+                        return Err(VmError::RuntimeError(format!("Symbol not found: {}", name)));
+                    }
+                }
                 Instruction::InvokeMethod(name_idx, argc) => {
                     let mut args = Vec::with_capacity(argc as usize);
                     for _ in 0..argc {
@@ -1884,8 +1970,13 @@ impl NyarVM {
                         Some(Constant::String(s)) => s.as_str(),
                         _ => "",
                     };
-                    match name {
-                        "read_file" => {
+
+                    if let Some(func) = self.ffi.get(name) {
+                        let res = func.call(args)?;
+                        self.push(res);
+                    } else {
+                        match name {
+                            "read_file" => {
                             let path_v = args.pop().unwrap_or(Value::string("".to_string()));
                             let mut res = Value::string("".to_string());
                             unsafe {
@@ -2482,6 +2573,7 @@ impl NyarVM {
                             }
                         }
                     }
+                }
                 }
                 Instruction::NewObject(class_idx) => {
                     let cls = self

@@ -18,19 +18,19 @@ fn main() {
     let optimizer = MiniCOptimizer::new();
     let mut runtime = MiniCRuntime::new();
 
-    // 1. Frontend: Parse to UAST
+    // 1. Frontend: Parse to Intent Stream
     match frontend.parse(&source) {
-        Ok(uast) => {
+        Ok(intent_stream) => {
             if matches.get_flag("ast") {
-                println!("{:#?}", uast);
+                println!("{:#?}", intent_stream);
                 return;
             }
 
-            // 2. Optimizer: Optimize UAST
-            let optimized_uast = optimizer.optimize(uast);
+            // 2. Optimizer: Optimize Intent Stream
+            let optimized_stream = optimizer.optimize(intent_stream);
 
             // 3. Runtime: Execute
-            if let Err(e) = runtime.execute(optimized_uast) {
+            if let Err(e) = runtime.execute(optimized_stream) {
                 eprintln!("Runtime error: {}", e);
             }
         }

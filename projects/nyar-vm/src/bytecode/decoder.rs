@@ -34,6 +34,7 @@ pub enum Instruction {
     CallDynamic(u16, u8),
     CallClosure(u8),
     InvokeMethod(u16, u8),
+    CallSymbol(u16, u8),
     GetField(u16),
     SetField(u16),
     NewObject(u16),
@@ -266,6 +267,7 @@ impl<'a> Decoder<'a> {
             0x22 => Opcode::CallDynamic,
             0x23 => Opcode::CallClosure,
             0x24 => Opcode::InvokeMethod,
+            0x25 => Opcode::CallSymbol,
             0x30 => Opcode::GetField,
             0x31 => Opcode::SetField,
             0x32 => Opcode::NewObject,
@@ -533,6 +535,10 @@ impl<'a> Decoder<'a> {
                 Instruction::CallClosure(self.read_u8().ok_or(DecodeError::Truncated)?)
             }
             Opcode::InvokeMethod => Instruction::InvokeMethod(
+                self.read_u16().ok_or(DecodeError::Truncated)?,
+                self.read_u8().ok_or(DecodeError::Truncated)?,
+            ),
+            Opcode::CallSymbol => Instruction::CallSymbol(
                 self.read_u16().ok_or(DecodeError::Truncated)?,
                 self.read_u8().ok_or(DecodeError::Truncated)?,
             ),

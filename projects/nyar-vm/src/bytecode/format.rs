@@ -45,6 +45,18 @@ pub struct ImplInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImportInfo {
+    pub provider: String,
+    pub symbol: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExportInfo {
+    pub symbol: String,
+    pub chunk_idx: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NyarcModule {
     pub version: u16,
     pub flags: u32,
@@ -58,6 +70,10 @@ pub struct NyarcModule {
     pub traits: Vec<TraitInfo>,
     #[serde(default)]
     pub impls: Vec<ImplInfo>,
+    #[serde(default)]
+    pub imports: Vec<ImportInfo>,
+    #[serde(default)]
+    pub exports: Vec<ExportInfo>,
 }
 
 pub type NyarModule = NyarcModule;
@@ -264,6 +280,53 @@ impl NyarcModule {
             }
         }
 
+        let mut imports = Vec::new();
+        if cur.position() < cur.get_ref().len() as u64 {
+            let import_count = cur
+                .read_u32::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)? as usize;
+            for _ in 0..import_count {
+                let plen = cur
+                    .read_u32::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)? as usize;
+                let mut pbuf = vec![0u8; plen];
+                cur.read_exact(&mut pbuf)
+                    .map_err(|_| FormatError::Truncated)?;
+                let provider = String::from_utf8_lossy(&pbuf).into_owned();
+
+                let slen = cur
+                    .read_u32::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)? as usize;
+                let mut sbuf = vec![0u8; slen];
+                cur.read_exact(&mut sbuf)
+                    .map_err(|_| FormatError::Truncated)?;
+                let symbol = String::from_utf8_lossy(&sbuf).into_owned();
+
+                imports.push(ImportInfo { provider, symbol });
+            }
+        }
+
+        let mut exports = Vec::new();
+        if cur.position() < cur.get_ref().len() as u64 {
+            let export_count = cur
+                .read_u32::<LittleEndian>()
+                .map_err(|_| FormatError::Truncated)? as usize;
+            for _ in 0..export_count {
+                let slen = cur
+                    .read_u32::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)? as usize;
+                let mut sbuf = vec![0u8; slen];
+                cur.read_exact(&mut sbuf)
+                    .map_err(|_| FormatError::Truncated)?;
+                let symbol = String::from_utf8_lossy(&sbuf).into_owned();
+
+                let chunk_idx = cur
+                    .read_u16::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)?;
+                exports.push(ExportInfo { symbol, chunk_idx });
+            }
+        }
+
         Ok(Self {
             version,
             flags,
@@ -274,6 +337,8 @@ impl NyarcModule {
             classes,
             traits,
             impls,
+            imports,
+            exports,
         })
     }
     pub fn encode(&self) -> Vec<u8> {
@@ -351,6 +416,22 @@ impl NyarcModule {
             }
         }
 
+        if !self.imports.is_empty() {
+            buf.extend_from_slice(&(self.imports.len() as u32).to_le_bytes());
+            for i in &self.imports {
+                write_string(&mut buf, &i.provider);
+                write_string(&mut buf, &i.symbol);
+            }
+        }
+
+        if !self.exports.is_empty() {
+            buf.extend_from_slice(&(self.exports.len() as u32).to_le_bytes());
+            for e in &self.exports {
+                write_string(&mut buf, &e.symbol);
+                buf.extend_from_slice(&e.chunk_idx.to_le_bytes());
+            }
+        }
+
         buf
     }
     pub fn parse_toml_str(s: &str) -> Result<Self, FormatError> {
@@ -380,5 +461,7 @@ pub fn minimal_module_with_chunk(code: Vec<u8>, constants: Vec<Constant>) -> Nya
         classes: vec![],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     }
 }
