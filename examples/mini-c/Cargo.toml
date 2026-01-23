@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 oak-c = { path = "../../../oaks/examples/oak-c" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uast = { path = "../../../ProjectChomsky/packages/chomsky-uast" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
@@ -14,3 +15,10 @@ gaia-assembler = { path = "../../../project-gaia/projects/gaia-assembler" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 clap = { version = "4.5", features = ["derive"] }
+rustyline = "14.0"
+
+[[bin]]
+name = "cx"
+path = "bin/cx.rs"
+
+[dev-dependencies]

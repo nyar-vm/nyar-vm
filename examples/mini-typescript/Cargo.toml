@@ -7,6 +7,7 @@ edition = "2021"
 oak-typescript = { path = "../../../oaks/examples/oak-typescript" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uast = { path = "../../../ProjectChomsky/packages/chomsky-uast" }
+chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
 gaia-jit = { workspace = true }
 gaia-types = { workspace = true }
@@ -16,6 +17,7 @@ pe-assembler = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
+rustyline = "14.0"
 
 [[bin]]
 name = "tsc"

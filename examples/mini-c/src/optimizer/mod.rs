@@ -3,13 +3,13 @@ use chomsky_full::optimizer::UniversalOptimizer;
 // use chomsky_cost::SimpleCostModel;
 
 pub struct MiniCOptimizer {
-    optimizer: UniversalOptimizer,
+    // optimizer: UniversalOptimizer<()>,
 }
 
 impl MiniCOptimizer {
     pub fn new() -> Self {
         Self {
-            optimizer: UniversalOptimizer::default(),
+            // optimizer: UniversalOptimizer::default(),
         }
     }
 
