@@ -55,24 +55,26 @@ impl MiniCFrontend {
         match tree {
             RedTree::Node(node) => {
                 let kind = node.green.kind;
-                println!("DEBUG: Node kind: {:?}", kind);
-                for (i, child) in node.children().enumerate() {
-                    match child {
-                        RedTree::Node(n) => println!("  DEBUG: Child {} Node: {:?}", i, n.green.kind),
-                        RedTree::Leaf(l) => {
-                            let text = &source[l.span.start..l.span.end];
-                            println!("  DEBUG: Child {} Leaf: {:?} '{}'", i, l.kind, text);
-                        }
-                    }
-                }
+                // println!("DEBUG: Node kind: {:?}", kind);
+                // for (i, child) in node.children().enumerate() {
+                //     match child {
+                //         RedTree::Node(n) => println!("  DEBUG: Child {} Node: {:?}", i, n.green.kind),
+                //         RedTree::Leaf(l) => {
+                //             let text = &source[l.span.start..l.span.end];
+                //             println!("  DEBUG: Child {} Leaf: {:?} '{}'", i, l.kind, text);
+                //         }
+                //     }
+                // }
                 let loc = self.get_loc(&node, source_id);
                 match kind {
                     CElementType::Root => {
                         let mut items = vec![];
                         for child in node.children() {
                             if let RedTree::Node(n) = child {
-                                let item = self.convert_red_to_uir(builder, n, source, source_id);
-                                items.push(item);
+                                if n.green.kind != CElementType::Error {
+                                    let item = self.convert_red_to_uir(builder, n, source, source_id);
+                                    items.push(item);
+                                }
                             }
                         }
                         builder.module("mini-c", items)
@@ -80,12 +82,23 @@ impl MiniCFrontend {
                     CElementType::FunctionDefinition => {
                         let mut name = "unknown".to_string();
                         let mut body = vec![];
+                        let mut params = vec![];
                         let mut found_name = false;
 
                         for child in node.children() {
                             match child {
                                 RedTree::Node(n) => {
                                     match n.green.kind {
+                                        CElementType::ParameterList => {
+                                            for p_child in n.children() {
+                                                if let RedTree::Leaf(pl) = p_child {
+                                                    if let CElementType::Token(CTokenType::Identifier) = pl.kind.into() {
+                                                        let s = pl.span;
+                                                        params.push(source[s.start..s.end].to_string());
+                                                    }
+                                                }
+                                            }
+                                        }
                                         CElementType::ReturnStatement
                                         | CElementType::ExpressionStatement
                                         | CElementType::DeclarationStatement
@@ -110,7 +123,7 @@ impl MiniCFrontend {
                                 }
                             }
                         }
-                        builder.function(&name, vec![], body)
+                        builder.function(&name, params, body)
                     }
                     CElementType::ReturnStatement => {
                         let mut expr = None;
@@ -118,6 +131,12 @@ impl MiniCFrontend {
                             if let RedTree::Node(n) = child {
                                 expr = Some(self.convert_red_to_uir(builder, n, source, source_id));
                                 break;
+                            } else if let RedTree::Leaf(l) = child {
+                                let kind: CElementType = l.kind.into();
+                                if let CElementType::Token(CTokenType::IntegerLiteral | CTokenType::Identifier) = kind {
+                                    expr = Some(self.convert_tree_to_uir(builder, RedTree::Leaf(l), source, source_id));
+                                    break;
+                                }
                             }
                         }
                         if let Some(e) = expr {

@@ -109,6 +109,17 @@ impl NyarBackend {
                         code.push(arg_count);
                     }
                 }
+                "get_field" => {
+                    // 字段访问处理
+                    if args.len() == 2 {
+                        // target, name
+                        code.extend(self.lower_tree(&args[0])?); // push target
+                        code.push(Opcode::GetProperty as u8);
+                        let name_str = if let IKunTree::Symbol(s) = &args[1] { s } else { "unknown" };
+                        let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
+                        code.extend_from_slice(&(idx as u16).to_le_bytes());
+                    }
+                }
                 _ => {}
             },
             IKunTree::Module(_, items) => {
@@ -264,6 +275,11 @@ impl NyarTranslator {
                 Literal::Boolean(b) => Ok(builder.bool(*b, Loc::new(0, 0, 0))),
             },
             Expression::Identifier(id) => Ok(builder.symbol(id, Loc::new(0, 0, 0))),
+            Expression::FieldAccess(fa) => {
+                let target_id = self.translate_expression(builder, &fa.target)?;
+                let name_id = builder.symbol(&fa.name, Loc::new(0, 0, 0));
+                Ok(builder.extension("get_field", vec![target_id, name_id], Loc::new(0, 0, 0)))
+            }
             Expression::MethodCall(call) => {
                 let mut args = Vec::new();
                 for arg in &call.arguments {

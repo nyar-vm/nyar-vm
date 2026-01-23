@@ -2,7 +2,7 @@ use clap::Parser;
 use std::fs;
 use std::path::Path;
 use virtual_python::MiniPythonFrontend;
-use gaia_jit::GaiaJit;
+// use gaia_jit::GaiaJit;
 use oak_repl::{OakRepl, ReplHandler, HandleResult};
 use oak_highlight::{OakHighlighter, Theme, HighlightResult};
 
@@ -34,7 +34,7 @@ struct PythonReplHandler {
 impl PythonReplHandler {
     fn run_code_internal(frontend: &mut MiniPythonFrontend, source: &str, show_ast: bool) -> anyhow::Result<()> {
         if show_ast {
-            match frontend.parse(source) {
+            match frontend.parse_to_ast(source) {
                 Ok(program) => println!("{:#?}", program),
                 Err(e) => eprintln!("python: error: {:?}", e),
             }
@@ -42,7 +42,9 @@ impl PythonReplHandler {
         }
 
         match frontend.compile_to_gaia(source) {
-            Ok(module) => {
+            Ok(_module) => {
+                println!("Gaia module generated successfully. JIT execution is not yet implemented in this standard driver.");
+                /*
                 let mut jit = GaiaJit::new();
                 if let Err(e) = jit.load_module(module) {
                     eprintln!("python: JIT load error: {:?}", e);
@@ -51,6 +53,7 @@ impl PythonReplHandler {
                 if let Err(e) = jit.run("main") {
                     eprintln!("python: execution error: {:?}", e);
                 }
+                */
             }
             Err(e) => eprintln!("python: error: {}", e),
         }

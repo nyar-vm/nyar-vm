@@ -178,29 +178,37 @@ fn main() {
     }
 
     // 默认行为：显示解析成功信息
-    println!("✅ 解析成功！");
-    println!("文件: {}", input_file);
-    println!("语句数量: {}", program.statements.len());
+    match frontend.parse_to_ast(&source_code) {
+        Ok(program) => {
+            println!("✅ 解析成功！");
+            println!("文件: {}", input_file);
+            println!("语句数量: {}", program.statements.len());
 
-    // 统计不同类型的语句
-    let mut function_count = 0;
-    let mut class_count = 0;
-    let mut assignment_count = 0;
-    let mut other_count = 0;
+            // 统计不同类型的语句
+            let mut function_count = 0;
+            let mut class_count = 0;
+            let mut assignment_count = 0;
+            let mut other_count = 0;
 
-    for statement in &program.statements {
-        match statement {
-            virtual_python::ast::Statement::FunctionDef { .. } => function_count += 1,
-            virtual_python::ast::Statement::ClassDef { .. } => class_count += 1,
-            virtual_python::ast::Statement::Assignment { .. } => assignment_count += 1,
-            _ => other_count += 1,
+            for statement in &program.statements {
+                match statement {
+                    oak_python::ast::Statement::FunctionDef { .. } => function_count += 1,
+                    oak_python::ast::Statement::ClassDef { .. } => class_count += 1,
+                    oak_python::ast::Statement::Assignment { .. } => assignment_count += 1,
+                    _ => other_count += 1,
+                }
+            }
+
+            println!("  - 函数定义: {}", function_count);
+            println!("  - 类定义: {}", class_count);
+            println!("  - 赋值语句: {}", assignment_count);
+            println!("  - 其他语句: {}", other_count);
+        }
+        Err(e) => {
+            eprintln!("解析错误: {:?}", e);
+            std::process::exit(1);
         }
     }
-
-    println!("  - 函数定义: {}", function_count);
-    println!("  - 类定义: {}", class_count);
-    println!("  - 赋值语句: {}", assignment_count);
-    println!("  - 其他语句: {}", other_count);
 
     println!("\n💡 提示：");
     println!("  使用 --ast 查看抽象语法树");

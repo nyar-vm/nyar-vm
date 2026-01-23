@@ -10,10 +10,10 @@ use codegen::GaiaTranslator;
 use gaia_assembler::program::GaiaModule;
 use gaia_types::GaiaError;
 use pyc_codegen::{Marshal, PycTranslator};
-use oak_core::{Lexer, Parser, ParseError, lexer::LexerCache, source::SourceText};
-use chomsky_uir::{EGraph, Id, IKunTree, DEFAULT_COST_MODEL};
+use oak_core::{Lexer, Parser, OakError, ParseSession, lexer::LexerCache, source::SourceText};
+use chomsky_uir::Id;
+use chomsky_cost::DefaultCostModel;
 use chomsky_full::optimizer::UniversalOptimizer;
-// use chomsky_cost::DEFAULT_COST_MODEL;
 
 /// Mini Python 前端
 pub struct MiniPythonFrontend {
@@ -54,7 +54,7 @@ impl MiniPythonFrontend {
         self.optimizer.saturate();
 
         // 3. 提取：基于成本模型提取最优意图树
-        let optimized_tree = self.optimizer.extract(root, DEFAULT_COST_MODEL);
+        let optimized_tree = self.optimizer.extract(root, DefaultCostModel::default());
 
         // 4. 后端生成：将优化后的意图树翻译为 Gaia 程序
         self.translator.generate_from_tree(&optimized_tree)
@@ -69,7 +69,7 @@ impl MiniPythonFrontend {
         self.optimizer.saturate();
 
         // 3. 提取：基于成本模型提取最优意图树
-        let optimized_tree = self.optimizer.extract(root, DEFAULT_COST_MODEL);
+        let optimized_tree = self.optimizer.extract(root, DefaultCostModel::default());
 
         // 4. 后端生成：将优化后的意图树翻译为 Python 字节码
         let mut translator = PycTranslator::new(filename, "<module>");
@@ -95,10 +95,10 @@ impl MiniPythonFrontend {
     }
 
     /// 仅进行词法分析
-    pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<oak_python::kind::PythonSyntaxKind>>, ParseError> {
+    pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<oak_python::kind::PythonSyntaxKind>>, OakError> {
         let config = PythonLanguage;
         let lexer = oak_python::lexer::PythonLexer::new(&config);
-        let mut cache = oak_core::lexer::ParseSession::<PythonLanguage>::default();
+        let mut cache = ParseSession::<PythonLanguage>::default();
         let source_text = SourceText::new(source);
         let output = lexer.lex(&source_text, &[], &mut cache);
         
