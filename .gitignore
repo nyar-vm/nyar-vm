@@ -19,6 +19,9 @@ package-lock.json
 # Asm
 *.exe
 *.dll
+*.pdb
+*.txt
+*.log
 
 # Wasm
 *.wasm

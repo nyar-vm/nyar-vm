@@ -1,0 +1,20 @@
+[package]
+name = "rusty-c"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gaia-jit = { workspace = true }
+gaia-types = { workspace = true }
+gaia-assembler = { workspace = true, features = ["clr"] }
+pe-rust = { workspace = true }
+serde = { workspace = true }
+clap = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[bin]]
+name = "rcc"
+path = "src/main.rs"

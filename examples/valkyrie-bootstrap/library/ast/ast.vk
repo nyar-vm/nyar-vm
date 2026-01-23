@@ -66,7 +66,9 @@ enum Expr {
   Div(lhs, rhs, span),
   Call(callee, args, span),
   Field(obj, key, span),
-  Index(obj, key, span)
+  Index(obj, key, span),
+  SetIndex(obj, key, val, span),
+  List(items, span)
 }
 
 enum Type {

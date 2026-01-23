@@ -7,26 +7,26 @@ class Parser { lex, cur }
 
 imply Parser {
   micro new(lex) {
+    print("DEBUG: Parser::new entered")
     let p = new Parser
     p.lex = lex
     let l = p.lex
+    print("DEBUG: Parser::new calling next_token")
     let tok = l.next_token()
     # print("DEBUG: Parser::new tok variant: " + tok.__variant__)
     p.cur = tok
+    print("DEBUG: Parser::new finished")
     return p
   }
   micro advance(self) {
     self.cur = self.lex.next_token()
   }
   micro current_kind(self) {
-    print("DEBUG: current_kind check")
     if self.cur {
         let k = self.cur.kind
-        # print("DEBUG: current_kind kind=" + k)
         return k
     } else {
-        print("DEBUG: current_kind self.cur is null")
-        return TokenKind::EOF
+        return TokenKind::EOF()
     }
   }
 
@@ -36,8 +36,10 @@ imply Parser {
     let last_line = 0
     while true {
       let t = self.current_kind()
+      # print("DEBUG: parse_all t=" + str(t))
       match t {
          case TokenKind::EOF:
+            print("DEBUG: parse_all matched EOF")
             break
          case _:
       }
@@ -64,9 +66,8 @@ imply Parser {
   }
   micro parse_path(self) {
     let path = ""
-    print("DEBUG: parse_path start")
     let k = self.current_kind()
-    print("DEBUG: parse_path kind variant: " + k.__variant__)
+    print("DEBUG: parse_path k=" + str(k))
     if k.__variant__ == "Identifier" {
        path = k._0
        self.advance()
@@ -179,6 +180,18 @@ imply Parser {
           let e = self.parse_expr()
           self.expect_rparen()
           return e
+       case TokenKind::LBracket:
+          self.advance()
+          let items = new List
+          while self.current_kind().__variant__ != "RBracket" && self.current_kind().__variant__ != "EOF" {
+             let e = self.parse_expr()
+             items.push(e)
+             if self.current_kind().__variant__ == "Comma" {
+                self.advance()
+             }
+          }
+          if self.current_kind().__variant__ == "RBracket" { self.advance() }
+          return Expr::List(items, span)
        case _:
           self.advance()
           return Expr::Int(0, span)
@@ -216,6 +229,17 @@ imply Parser {
          case "LParen":
              let args = self.parse_args_expr()
              left = Expr::Call(left, args, span)
+         case "LBracket":
+             self.advance()
+             let idx = self.parse_expr()
+             if self.current_kind().__variant__ == "RBracket" { self.advance() }
+             if self.current_kind().__variant__ == "Eq" {
+                 self.advance()
+                 let val = self.parse_expr()
+                 left = Expr::SetIndex(left, idx, val, span)
+             } else {
+                 left = Expr::Index(left, idx, span)
+             }
          case _:
             break
       }
@@ -322,8 +346,8 @@ imply Parser {
   }
 
   micro parse_stmt_plain(self) {
+    print("DEBUG: entering parse_stmt_plain")
     let kind = self.current_kind()
-    let variant = kind.__variant__
     let span = null
     if self.cur {
         span = self.cur.span

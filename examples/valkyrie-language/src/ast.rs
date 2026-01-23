@@ -36,6 +36,9 @@ pub enum Expr {
     Closure(Vec<String>, Vec<Stmt>),
     // OOP
     New(String),
+    List(Vec<Expr>),
+    Index(Box<Expr>, Box<Expr>),
+    SetIndex(Box<Expr>, Box<Expr>, Box<Expr>),
     GetField(Box<Expr>, String),
     SetField(Box<Expr>, String, Box<Expr>),
     SetLocal(String, Box<Expr>),

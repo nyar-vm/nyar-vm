@@ -3,6 +3,8 @@ pub enum Token {
     Ident(String),
     LParen,
     RParen,
+    LBracket,
+    RBracket,
     LBrace,
     RBrace,
     Comma,
@@ -132,6 +134,16 @@ pub fn lex(input: &str) -> Result<Vec<(Token, u32)>, Error> {
         }
         if c == b')' {
             out.push((Token::RParen, line));
+            i += 1;
+            continue;
+        }
+        if c == b'[' {
+            out.push((Token::LBracket, line));
+            i += 1;
+            continue;
+        }
+        if c == b']' {
+            out.push((Token::RBracket, line));
             i += 1;
             continue;
         }

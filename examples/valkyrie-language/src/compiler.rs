@@ -278,6 +278,9 @@ fn infer_expr_type(contexts: &[FunctionContext], e: &Expr) -> TypeKind {
         Expr::Call(_, _) => TypeKind::Unknown,
         Expr::Closure(_, _) => TypeKind::Unknown,
         Expr::New(_) => TypeKind::Unknown,
+        Expr::List(_) => TypeKind::Unknown,
+        Expr::Index(_, _) => TypeKind::Unknown,
+        Expr::SetIndex(_, _, _) => TypeKind::Unknown,
         Expr::GetField(_, _) => TypeKind::Unknown,
         Expr::SetField(_, _, _) => TypeKind::Unknown,
         Expr::SetLocal(_, v) => infer_expr_type(contexts, v),
@@ -329,6 +332,11 @@ fn instr_size(code: &[u8], pos: usize) -> usize {
         x if x == Opcode::NewArray as u8 => 3,
         x if x == Opcode::GetElement as u8 => 1,
         x if x == Opcode::SetElement as u8 => 1,
+        x if x == Opcode::NewList as u8 => 3,
+        x if x == Opcode::PushElementLeft as u8 => 1,
+        x if x == Opcode::PopElementLeft as u8 => 1,
+        x if x == Opcode::PushElementRight as u8 => 1,
+        x if x == Opcode::PopElementRight as u8 => 1,
         x if x == Opcode::TypeOf as u8 => 1,
         x if x == Opcode::InstanceOf as u8 => 3,
         x if x == Opcode::CheckCast as u8 => 3,
@@ -715,6 +723,28 @@ fn compile_expr(
         Expr::Call(callee, args) => {
             // Check for InvokeMethod pattern: Call(GetField(obj, method), args)
             if let Expr::GetField(obj, field) = &**callee {
+                if field == "push" && args.len() == 1 {
+                    compile_expr(compiler, contexts, obj)?;
+                    compile_expr(compiler, contexts, &args[0])?;
+                    contexts.last_mut().unwrap().code.push(Opcode::PushElementRight as u8);
+                    return Ok(());
+                }
+                if field == "pop" && args.is_empty() {
+                    compile_expr(compiler, contexts, obj)?;
+                    contexts.last_mut().unwrap().code.push(Opcode::PopElementRight as u8);
+                    return Ok(());
+                }
+                if field == "unshift" && args.len() == 1 {
+                    compile_expr(compiler, contexts, obj)?;
+                    compile_expr(compiler, contexts, &args[0])?;
+                    contexts.last_mut().unwrap().code.push(Opcode::PushElementLeft as u8);
+                    return Ok(());
+                }
+                if field == "shift" && args.is_empty() {
+                    compile_expr(compiler, contexts, obj)?;
+                    contexts.last_mut().unwrap().code.push(Opcode::PopElementLeft as u8);
+                    return Ok(());
+                }
                 // Compile receiver
                 compile_expr(compiler, contexts, obj)?;
                 // Compile args
@@ -849,6 +879,25 @@ fn compile_expr(
                 ctx.code.push(if is_local { 1 } else { 0 });
                 ctx.code.push(index);
             }
+        }
+        Expr::List(items) => {
+            for item in items {
+                compile_expr(compiler, contexts, item)?;
+            }
+            let ctx = contexts.last_mut().unwrap();
+            ctx.code.push(Opcode::NewList as u8);
+            ctx.code.extend_from_slice(&(items.len() as u16).to_le_bytes());
+        }
+        Expr::Index(obj, idx) => {
+            compile_expr(compiler, contexts, obj)?;
+            compile_expr(compiler, contexts, idx)?;
+            contexts.last_mut().unwrap().code.push(Opcode::GetElement as u8);
+        }
+        Expr::SetIndex(obj, idx, val) => {
+            compile_expr(compiler, contexts, obj)?;
+            compile_expr(compiler, contexts, idx)?;
+            compile_expr(compiler, contexts, val)?;
+            contexts.last_mut().unwrap().code.push(Opcode::SetElement as u8);
         }
         Expr::New(name) => {
             if let Some(idx) = compiler.resolve_class(name) {

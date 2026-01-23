@@ -13,6 +13,8 @@ enum TokenKind {
   Slash,
   LParen,
   RParen,
+  LBracket,
+  RBracket,
   LBrace,
   RBrace,
   Eq,
@@ -47,8 +49,23 @@ class Token { kind, span }
 
 class Lexer { input, pos, len, ch, line, col }
 
+class TokenHelper { __variant__, _0 }
+micro _tk(v) {
+    print("DEBUG: _tk entered v=" + v)
+    let t = new TokenHelper
+    t.__variant__ = v
+    return t
+}
+micro _tk1(v, a) {
+    let t = new TokenHelper
+    t.__variant__ = v
+    t._0 = a
+    return t
+}
+
 imply Lexer {
   micro new(input) {
+    print("DEBUG: Lexer::new entered")
     let l = new Lexer
     l.input = input
     if l.input {
@@ -61,9 +78,11 @@ imply Lexer {
     l.line = 1
     l.col = 1
     l.read_char()
+    print("DEBUG: Lexer::new finished")
     return l
   }
   micro read_char(self) {
+      # print("DEBUG: read_char pos=" + str(self.pos))
       if self.pos >= self.len {
         self.ch = ""
       } else {
@@ -128,12 +147,14 @@ imply Lexer {
   }
 
   micro skip_whitespace(self) {
+    # print("DEBUG: skip_whitespace entered ch=" + self.ch)
     while self.ch == " " || self.ch == "\t" || self.ch == "\n" || self.ch == "\r" {
       self.read_char()
     }
   }
 
   micro next_token(self) {
+    print("DEBUG: next_token entered")
     loop {
       self.skip_whitespace()
       if self.ch == "#" {
@@ -147,7 +168,9 @@ imply Lexer {
     let start_line = self.line
     let start_col = self.col
     
+    print("DEBUG: calling _next_token_impl")
     let kind = self._next_token_impl()
+    print("DEBUG: _next_token_impl returned")
     
     let span = new Span
     span.start = start_pos
@@ -162,116 +185,127 @@ imply Lexer {
   }
 
   micro _next_token_impl(self) {
+    print("DEBUG: _next_token_impl entered")
     if self.ch == null {
         self.ch = ""
     }
     let c = self.ch
-    if c == "" { return TokenKind::EOF() }
+    if c == "" { return _tk("EOF") }
     
     if c == "(" {
           self.read_char()
-          return TokenKind::LParen()
+          return _tk("LParen")
      }
      
      if c == "\"" {
             let s = self.read_string()
-            return TokenKind::String(s)
+            return _tk1("String", s)
      } else {
-       if c == "+" { self.read_char(); return TokenKind::Plus() }
+       if c == "+" { self.read_char(); return _tk("Plus") }
        else {
        if c == "-" { 
             self.read_char()
             if self.ch == ">" {
                 self.read_char()
-                return TokenKind::Arrow()
+                return _tk("Arrow")
             }
-            return TokenKind::Minus() 
+            return _tk("Minus") 
        } else {
-       if c == "*" { self.read_char(); return TokenKind::Star() }
+       if c == "*" { self.read_char(); return _tk("Star") }
        else {
-       if c == "/" { self.read_char(); return TokenKind::Slash() }
+       if c == "/" { self.read_char(); return _tk("Slash") }
        else {
-       if c == "(" { self.read_char(); return TokenKind::LParen() }
+       if c == "(" { self.read_char(); return _tk("LParen") }
        else {
-       if c == ")" { self.read_char(); return TokenKind::RParen() }
+       if c == ")" { self.read_char(); return _tk("RParen") }
        else {
-       if c == "{" { self.read_char(); return TokenKind::LBrace() }
+       if c == "{" { self.read_char(); return _tk("LBrace") }
        else {
-       if c == "}" { self.read_char(); return TokenKind::RBrace() }
+       if c == "}" { self.read_char(); return _tk("RBrace") }
+       else {
+       if c == "[" { self.read_char(); return _tk("LBracket") }
+       else {
+       if c == "]" { self.read_char(); return _tk("RBracket") }
        else {
        if c == "=" { 
             self.read_char()
             if self.ch == "=" {
                 self.read_char()
-                return TokenKind::EqEq()
+                return _tk("EqEq")
             }
-            return TokenKind::Eq() 
+            return _tk("Eq") 
        } else {
-       if c == ";" { self.read_char(); return TokenKind::Semi() }
+       if c == ";" { self.read_char(); return _tk("Semi") }
        else {
-       if c == "," { self.read_char(); return TokenKind::Comma() }
+       if c == "," { self.read_char(); return _tk("Comma") }
        else {
-       if c == ":" { self.read_char(); return TokenKind::Colon() }
+       if c == ":" { self.read_char(); return _tk("Colon") }
        else {
-       if c == "|" { self.read_char(); return TokenKind::Pipe() }
+       if c == "|" { self.read_char(); return _tk("Pipe") }
        else {
-       if c == "&" { self.read_char(); return TokenKind::Amp() }
+       if c == "&" { self.read_char(); return _tk("Amp") }
        else {
-       if c == "?" { self.read_char(); return TokenKind::Question() }
+       if c == "?" { self.read_char(); return _tk("Question") }
        else {
-       if c == "@" { self.read_char(); return TokenKind::At() }
+       if c == "@" { self.read_char(); return _tk("At") }
        else {
-       if c == "." { self.read_char(); return TokenKind::Dot() }
+       if c == "." { self.read_char(); return _tk("Dot") }
        else {
            if Lexer::is_alpha(c) {
+             print("DEBUG: is_alpha matched c=" + c)
              let lit = self.read_identifier()
+             print("DEBUG: read_identifier returned lit=" + lit)
               match lit {
                  case "let":
-                    return TokenKind::KwLet()
+                    return _tk("KwLet")
                  case "if":
-                    return TokenKind::KwIf()
+                    return _tk("KwIf")
                  case "else":
-                    return TokenKind::KwElse()
+                    return _tk("KwElse")
                  case "while":
-                    return TokenKind::KwWhile()
+                    return _tk("KwWhile")
                  case "micro":
-                    return TokenKind::KwMicro()
+                    return _tk("KwMicro")
                  case "macro":
-                    return TokenKind::KwMacro()
+                    return _tk("KwMacro")
                  case "class":
-                    return TokenKind::KwClass()
+                    return _tk("KwClass")
                  case "enum":
-                    return TokenKind::KwEnum()
+                    return _tk("KwEnum")
                  case "return":
-                    return TokenKind::KwReturn()
+                    return _tk("KwReturn")
                  case "namespace":
-                    return TokenKind::KwNamespace()
+                    # return _tk("KwNamespace")
+                    print("DEBUG: Manual TokenHelper creation for namespace")
+                    let t = new TokenHelper
+                    t.__variant__ = "KwNamespace"
+                    return t
                  case "using":
-                    return TokenKind::KwUsing()
+                    return _tk("KwUsing")
                  case "imply":
-                    return TokenKind::KwImply()
+                    return _tk("KwImply")
                  case "match":
-                    return TokenKind::KwMatch()
+                    return _tk("KwMatch")
                  case "case":
-                    return TokenKind::KwCase()
+                    return _tk("KwCase")
                  case "true":
-                    return TokenKind::KwTrue()
+                    return _tk("KwTrue")
                  case "false":
-                    return TokenKind::KwFalse()
+                    return _tk("KwFalse")
                  case _:
-                    let res = TokenKind::Identifier(lit)
+                    let res = _tk1("Identifier", lit)
                     return res
               }
            } else {
              if Lexer::is_digit(c) {
                 let num = self.read_number()
-                return TokenKind::Integer(num)
+                return _tk1("Integer", num)
              } else {
                 self.read_char()
-                return TokenKind::Identifier(c)
+                return _tk1("Identifier", c)
              }
            }
-       }}}}}}}}}}}}}}}}}}
+       }}}}}}}}}}}}}}}}}}}}
    }
    micro skip_comment(self) {
     while self.ch != "\n" && self.ch != "\r" && self.ch != "" {

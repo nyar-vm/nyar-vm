@@ -6,7 +6,7 @@ using package::ast::List
 
 print("vcc bootstrap started...")
 
-let files = new List
+let files = []
 files.push("examples/valkyrie-bootstrap/library/ast/ast.vk")
 files.push("examples/valkyrie-bootstrap/library/ast/lexer.vk")
 files.push("examples/valkyrie-bootstrap/library/ast/parser.vk")
@@ -23,7 +23,7 @@ files.push("examples/valkyrie-bootstrap/library/mir/compiler.vk")
 files.push("examples/valkyrie-bootstrap/test/call_macro.vk")
 files.push("examples/valkyrie-bootstrap/binary/vcc/main.vk")
 
-let all_stmts = new List
+let all_stmts = []
 let i = 0
 let n = files.len()
 
@@ -34,6 +34,7 @@ while i < n {
     if code == "" {
         print("Failed to read file (or empty): " + path)
     } else {
+        print("DEBUG: read file success, len=" + str(len(code)))
         let lexer = Lexer::new(code)
         let parser = Parser::new(lexer)
         let stmts = parser.parse_all()

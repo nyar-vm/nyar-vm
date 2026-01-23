@@ -624,7 +624,7 @@ fn get_precedence(token: &Token) -> Precedence {
         }
         Token::Plus | Token::Minus => Precedence::Term,
         Token::Star | Token::Slash => Precedence::Factor,
-        Token::Dot | Token::LParen => Precedence::Call,
+        Token::Dot | Token::LParen | Token::LBracket => Precedence::Call,
         _ => Precedence::None,
     }
 }
@@ -652,6 +652,9 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
                     }
                     Expr::Variable(name) => {
                         left = Expr::SetLocal(name, Box::new(right));
+                    }
+                    Expr::Index(obj, idx) => {
+                        left = Expr::SetIndex(obj, idx, Box::new(right));
                     }
                     _ => return Err(Error::Parse("Invalid assignment target".into())),
                 }
@@ -769,6 +772,17 @@ fn parse_expr_pratt(tokens: &[Token], i: &mut usize, min_prec: Precedence) -> Re
                     }
                 }
                 left = Expr::Call(Box::new(left), args);
+            }
+            Token::LBracket => {
+                *i += 1;
+                let idx = parse_expr(tokens, i)?;
+                match tokens.get(*i) {
+                    Some(Token::RBracket) => {
+                        *i += 1;
+                        left = Expr::Index(Box::new(left), Box::new(idx));
+                    }
+                    _ => return Err(Error::Parse("expect ]".into())),
+                }
             }
             _ => break,
         }
@@ -903,6 +917,30 @@ fn parse_prefix(tokens: &[Token], i: &mut usize) -> Result<Expr, Error> {
                     Ok(e)
                 }
                 _ => Err(Error::Parse("expect )".into())),
+            }
+        }
+        Some(Token::LBracket) => {
+            *i += 1;
+            let mut items = Vec::new();
+            if let Some(Token::RBracket) = tokens.get(*i) {
+                *i += 1;
+                Ok(Expr::List(items))
+            } else {
+                loop {
+                    items.push(parse_expr(tokens, i)?);
+                    match tokens.get(*i) {
+                        Some(Token::Comma) => {
+                            *i += 1;
+                            continue;
+                        }
+                        Some(Token::RBracket) => {
+                            *i += 1;
+                            break;
+                        }
+                        _ => return Err(Error::Parse("expect , or ]".into())),
+                    }
+                }
+                Ok(Expr::List(items))
             }
         }
         Some(Token::Pipe) => {

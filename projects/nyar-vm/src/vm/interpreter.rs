@@ -1533,6 +1533,91 @@ impl NyarVM {
                                     self.push(Value::bool(false));
                                 }
                             }
+                            "len" => {
+                                let len = match receiver.tag {
+                                    ValueTag::String => unsafe { receiver.as_string().len() },
+                                    ValueTag::Array => unsafe { receiver.as_array().items.len() },
+                                    ValueTag::List => unsafe { receiver.as_list().items.len() },
+                                    ValueTag::Tuple => unsafe { receiver.as_tuple().items.len() },
+                                    ValueTag::DynObject => unsafe { receiver.as_dyn_object().entries.len() },
+                                    _ => 0,
+                                };
+                                self.push(Value::int(len as i64));
+                            }
+                            "get" => {
+                                let idx_v = args.first().cloned().unwrap_or(Value::int(0));
+                                if receiver.tag == ValueTag::List && idx_v.tag == ValueTag::Int {
+                                    let list = unsafe { receiver.as_list() };
+                                    let idx = unsafe { idx_v.as_int() } as usize;
+                                    if idx < list.items.len() {
+                                        self.push(list.items[idx]);
+                                    } else {
+                                        self.push(Value::null());
+                                    }
+                                } else if receiver.tag == ValueTag::String && idx_v.tag == ValueTag::Int {
+                                    let s = unsafe { receiver.as_string() };
+                                    let idx = unsafe { idx_v.as_int() } as usize;
+                                    let c = s.chars().nth(idx).map(|c| c.to_string()).unwrap_or_default();
+                                    self.push(Value::string(c));
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            }
+                            "push" => {
+                                if let Some(val) = args.first() {
+                                    if receiver.tag == ValueTag::List {
+                                        let list_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::List };
+                                        let list_mut = unsafe { &mut *list_ptr };
+                                        list_mut.items.push(*val);
+                                        self.push(Value::null());
+                                    } else {
+                                        self.push(Value::null());
+                                    }
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            }
+                            "pop" => {
+                                if receiver.tag == ValueTag::List {
+                                    let list_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::List };
+                                    let list_mut = unsafe { &mut *list_ptr };
+                                    if let Some(val) = list_mut.items.pop() {
+                                        self.push(val);
+                                    } else {
+                                        self.push(Value::null());
+                                    }
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            }
+                            "unshift" => {
+                                if let Some(val) = args.first() {
+                                    if receiver.tag == ValueTag::List {
+                                        let list_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::List };
+                                        let list_mut = unsafe { &mut *list_ptr };
+                                        list_mut.items.insert(0, *val);
+                                        self.push(Value::null());
+                                    } else {
+                                        self.push(Value::null());
+                                    }
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            }
+                            "shift" => {
+                                if receiver.tag == ValueTag::List {
+                                    let list_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::List };
+                                    let list_mut = unsafe { &mut *list_ptr };
+                                    if !list_mut.items.is_empty() {
+                                        let val = list_mut.items.remove(0);
+                                        self.push(val);
+                                    } else {
+                                        self.push(Value::null());
+                                    }
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            }
                             _ => {
                                 return Err(VmError::RuntimeError(format!(
                                     "Receiver is not an object. tag={:?}, method={}",
@@ -2416,9 +2501,66 @@ impl NyarVM {
                     self.push(arr);
                 }
                 Instruction::NewList(len) => {
-                    let items = vec![Value::null(); len as usize];
+                    let mut items = Vec::with_capacity(len as usize);
+                    for _ in 0..len {
+                        items.push(self.pop()?);
+                    }
+                    items.reverse();
                     let list = Value::list(items);
                     self.push(list);
+                }
+                Instruction::PushElementRight => {
+                    let val = self.pop()?;
+                    let list_v = self.pop()?;
+                    if list_v.tag == ValueTag::List {
+                        let list_ptr = unsafe { list_v.data.ptr as *mut crate::vm::value::List };
+                        let list_mut = unsafe { &mut *list_ptr };
+                        list_mut.items.push(val);
+                        self.push(Value::null());
+                    } else {
+                        return Err(VmError::RuntimeError(format!("PushElementRight on non-list: found {:?}", list_v.tag).into()));
+                    }
+                }
+                Instruction::PopElementRight => {
+                    let list_v = self.pop()?;
+                    if list_v.tag == ValueTag::List {
+                        let list_ptr = unsafe { list_v.data.ptr as *mut crate::vm::value::List };
+                        let list_mut = unsafe { &mut *list_ptr };
+                        if let Some(val) = list_mut.items.pop() {
+                            self.push(val);
+                        } else {
+                            self.push(Value::null());
+                        }
+                    } else {
+                        return Err(VmError::RuntimeError("PopElementRight on non-list".into()));
+                    }
+                }
+                Instruction::PushElementLeft => {
+                    let val = self.pop()?;
+                    let list_v = self.pop()?;
+                    if list_v.tag == ValueTag::List {
+                        let list_ptr = unsafe { list_v.data.ptr as *mut crate::vm::value::List };
+                        let list_mut = unsafe { &mut *list_ptr };
+                        list_mut.items.insert(0, val);
+                        self.push(Value::null());
+                    } else {
+                        return Err(VmError::RuntimeError("PushElementLeft on non-list".into()));
+                    }
+                }
+                Instruction::PopElementLeft => {
+                    let list_v = self.pop()?;
+                    if list_v.tag == ValueTag::List {
+                        let list_ptr = unsafe { list_v.data.ptr as *mut crate::vm::value::List };
+                        let list_mut = unsafe { &mut *list_ptr };
+                        if !list_mut.items.is_empty() {
+                            let val = list_mut.items.remove(0);
+                            self.push(val);
+                        } else {
+                            self.push(Value::null());
+                        }
+                    } else {
+                        return Err(VmError::RuntimeError("PopElementLeft on non-list".into()));
+                    }
                 }
                 Instruction::GetElement => {
                     let idx_v = self.pop()?;
