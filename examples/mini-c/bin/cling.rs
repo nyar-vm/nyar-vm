@@ -20,8 +20,9 @@ struct CReplHandler {
 impl CReplHandler {
     fn run_code_internal(frontend: &mut MiniCFrontend, source: &str) -> anyhow::Result<()> {
         match frontend.parse(source) {
-            Ok(uast) => {
-                println!("{:#?}", uast);
+            Ok((egraph, root)) => {
+                println!("EGraph nodes: {}", egraph.nodes.len());
+                println!("Root ID: {:?}", root);
                 // TODO: 接入后端执行
             }
             Err(e) => eprintln!("cling: compilation error: {:?}", e),

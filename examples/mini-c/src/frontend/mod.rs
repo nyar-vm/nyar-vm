@@ -1,11 +1,10 @@
 use oak_c::{CLexer, CParser, CLanguage, CElementType, CTokenType};
-use chomsky_uast::UastNode;
+use chomsky_uir::{EGraph, Id, IntentBuilder};
 use chomsky_source::Loc;
 use oak_core::parser::{Parser, ParseSession};
 use oak_core::lexer::{Lexer, LexerCache};
 use oak_core::source::SourceText;
 use oak_core::tree::{RedNode, RedTree};
-use chomsky_types::{Intent, IntentNode};
 
 pub struct MiniCFrontend;
 
@@ -14,7 +13,7 @@ impl MiniCFrontend {
         Self
     }
 
-    pub fn parse(&self, source: &str) -> Result<UastNode, String> {
+    pub fn parse(&self, source: &str) -> Result<(EGraph, Id), String> {
         let language = CLanguage::default();
         let lexer = CLexer::new(&language);
         let mut session = ParseSession::<CLanguage>::new(16);
@@ -34,87 +33,126 @@ impl MiniCFrontend {
         let green_node = parse_output.result.map_err(|e| format!("Parse error: {:?}", e))?;
         let red_node = RedNode::new(green_node, 0);
         
-        Ok(self.convert_red_to_uast(red_node, source))
+        let mut egraph = EGraph::default();
+        let mut builder = IntentBuilder::new(&mut egraph);
+        
+        let root_id = self.convert_red_to_uir(&mut builder, red_node, source);
+        
+        Ok((egraph, root_id))
     }
 
-    fn convert_red_to_uast(&self, node: RedNode<CLanguage>, source: &str) -> UastNode {
-        println!("Converting node: {:?}", node.green.kind);
+    fn convert_red_to_uir(&self, builder: &mut IntentBuilder, node: RedNode<CLanguage>, source: &str) -> Id {
         match node.green.kind {
             CElementType::Root => {
-                let mut items = Vec::new();
+                let mut items = vec![];
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
-                        items.push(self.convert_red_to_uast(n, source));
+                        let item = self.convert_red_to_uir(builder, n, source);
+                        items.push(item);
                     }
                 }
-                UastNode::Module {
-                    name: "mini-c".to_string(),
-                    items,
-                    loc: Loc::unknown(),
-                }
+                // Wrap in a module for now, or just return a list if that's what we want.
+                // But UIR usually expects a single root.
+                // Let's make a module "mini-c".
+                builder.module("mini-c", items)
             }
             CElementType::FunctionDefinition => {
                 let mut name = "unknown".to_string();
                 let mut body = vec![];
-                
+                let mut found_name = false;
+
                 for child in node.children() {
                     match child {
                         RedTree::Node(n) => {
-                            if n.green.kind == CElementType::CompoundStatement {
-                                // For FunctionDefinition, we expect the body to be a List of statements (simulating a Block)
-                                if let UastNode::List(b, _) = self.convert_red_to_uast(n, source) {
-                                    body = b;
+                            // Only process statements
+                             match n.green.kind {
+                                CElementType::ReturnStatement
+                                | CElementType::ExpressionStatement
+                                | CElementType::IfStatement
+                                | CElementType::WhileStatement
+                                | CElementType::ForStatement
+                                | CElementType::CompoundStatement => {
+                                    let stmt = self.convert_red_to_uir(builder, n, source);
+                                    body.push(stmt);
                                 }
+                                _ => {}
                             }
                         }
                         RedTree::Leaf(l) => {
                             if let CElementType::Token(CTokenType::Identifier) = l.kind.into() {
-                                let span = l.span;
-                                name = source[span.start..span.end].to_string();
+                                if !found_name {
+                                    let s = l.span;
+                                    name = source[s.start..s.end].to_string();
+                                    found_name = true;
+                                }
                             }
                         }
                     }
                 }
-                
-                UastNode::Function {
-                    name,
-                    params: vec![],
-                    body,
-                    loc: Loc::unknown(),
+                // Empty params for now as in the original
+                builder.function(&name, vec![], body)
+            }
+            CElementType::ReturnStatement => {
+                let mut expr = None;
+                for child in node.children() {
+                    if let RedTree::Node(n) = child {
+                        expr = Some(self.convert_red_to_uir(builder, n, source));
+                        break;
+                    }
+                }
+                if let Some(e) = expr {
+                    builder.return_(e)
+                } else {
+                    // Return void/unit?
+                    let unit = builder.constant(());
+                    builder.return_(unit)
                 }
             }
             CElementType::ExpressionStatement => {
-                // Simplified: find the identifier if it's a call
-                let mut callee = "unknown".to_string();
+                // If it's a leaf (literal/identifier), extract it
                 for child in node.children() {
-                    if let RedTree::Leaf(l) = child {
-                        if let CElementType::Token(CTokenType::Identifier) = l.kind.into() {
-                            let span = l.span;
-                            callee = source[span.start..span.end].to_string();
+                    match child {
+                        RedTree::Leaf(l) => {
+                            let s = l.span;
+                            let text = &source[s.start..s.end];
+                            // Check if it's a number or identifier
+                             if let CElementType::Token(CTokenType::IntegerLiteral) = l.kind.into() {
+                                 if let Ok(val) = text.parse::<i64>() {
+                                     return builder.constant(val);
+                                 }
+                             }
+                             // Fallback to symbol for identifiers
+                             return builder.symbol(text);
+                        }
+                        RedTree::Node(n) => {
+                            return self.convert_red_to_uir(builder, n, source);
                         }
                     }
                 }
-                UastNode::Call {
-                    callee,
-                    args: vec![],
-                    loc: Loc::unknown(),
-                }
+                // Empty expression?
+                builder.constant("empty_expr")
             }
             CElementType::CompoundStatement => {
-                let mut items = Vec::new();
+                let mut stmts = vec![];
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
-                        items.push(self.convert_red_to_uast(n, source));
+                        stmts.push(self.convert_red_to_uir(builder, n, source));
                     }
                 }
-                // Using List to represent a block of statements since Block variant is missing
-                UastNode::List(items, Loc::unknown())
+                builder.block(stmts)
             }
-            CElementType::ReturnStatement => {
-                // Using Intent for Return since Return variant is missing
-                UastNode::Intent(IntentNode::new(Intent::Trap).with_attribute("type", "return"), Loc::unknown())
+            CElementType::Token(t) => {
+                // Just a literal for now
+                let span = node.span();
+                let text = &source[span.start..span.end];
+                builder.constant(format!("token_{:?}:{}", t, text))
             }
-            _ => UastNode::Literal(format!("unsupported_{:?}", node.green.kind), Loc::unknown()),
+            _ => {
+                let span = node.span();
+                let text = &source[span.start..span.end];
+                // Return a string constant for unsupported nodes to avoid crashing
+                builder.constant(format!("unsupported_{:?}: {}", node.green.kind, text.trim()))
+            }
         }
     }
 }

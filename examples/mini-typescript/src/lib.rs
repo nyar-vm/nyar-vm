@@ -9,7 +9,7 @@ use oak_typescript::TypeScriptParser;
 use codegen::NyarTranslator;
 use nyar_vm::bytecode::format::NyarModule;
 use nyar_error::FormatError;
-use chomsky_uast::UastNode;
+use chomsky_uir::{EGraph, Id};
 
 /// Mini TypeScript 前端
 pub struct MiniTypescriptFrontend {
@@ -22,23 +22,23 @@ impl MiniTypescriptFrontend {
         Self { translator: NyarTranslator::new() }
     }
 
-    /// 解析 TypeScript 源代码为 UAST
-    pub fn parse(&mut self, source: &str) -> Result<UastNode, String> {
+    /// 解析 TypeScript 源代码为 UIR
+    pub fn parse(&mut self, source: &str) -> Result<(EGraph, Id), String> {
         let mut parser = TypeScriptParser::new(source);
         parser.parse_module().map_err(|e| format!("Parse error: {:?}", e))
     }
 
     /// 将 TypeScript 源代码编译为 Nyar 程序
     pub fn compile_to_nyar(&mut self, source: &str) -> Result<NyarModule, FormatError> {
-        // 解析为 UAST
-        let uast = self.parse(source).map_err(|_e| {
+        // 解析为 UIR
+        let (egraph, root) = self.parse(source).map_err(|_e| {
             // 这里我们暂时简单地返回一个 FormatError
             // 实际上应该有更好的错误转换
             FormatError::InvalidHeader
         })?;
 
         // 翻译为 Nyar 程序
-        self.translator.generate(&uast)
+        self.translator.generate(&egraph, root)
     }
 
     /// 仅进行词法分析

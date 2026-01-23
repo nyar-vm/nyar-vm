@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 oak-typescript = { path = "../../../oaks/examples/oak-typescript" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
-chomsky-uast = { path = "../../../ProjectChomsky/packages/chomsky-uast" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
 nyar-vm = { path = "../../projects/nyar-vm" }

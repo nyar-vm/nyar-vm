@@ -1,16 +1,16 @@
 //! Nyar 指令生成器
 //!
-//! 将 UAST (Universal Abstract Syntax Tree) 转换为 Nyar 字节码
+//! 将 UIR (Universal Intermediate Representation) 转换为 Nyar 字节码
 //! 这里的实现将作为 Chomsky 的一部分或与其紧密集成
 
 use std::collections::HashMap;
 
-use chomsky_uast::UastNode;
+use chomsky_uir::{EGraph, Id, IKun};
 use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::{I32Ext, Opcode};
 use nyar_error::FormatError;
 
-/// Nyar 翻译器，将 UAST 转换为 Nyar 字节码
+/// Nyar 翻译器，将 UIR 转换为 Nyar 字节码
 pub struct NyarTranslator {
     /// 局部变量映射
     locals: HashMap<String, u8>,
@@ -109,27 +109,52 @@ impl NyarTranslator {
     }
 
     /// 生成 NyarModule
-    pub fn generate(&mut self, root: &UastNode) -> Result<NyarModule, FormatError> {
+    pub fn generate(&mut self, egraph: &EGraph, root: Id) -> Result<NyarModule, FormatError> {
         let mut functions_info = Vec::new();
-
-        // 假设 root 是一个 Module
-        if let UastNode::Module { items, .. } = root {
-            // 1. 先收集所有函数定义，以便处理调用
-            // (这里简化处理，假设所有函数都在 Chunk 中按顺序排列)
-
-            // 2. 生成主 Chunk (包含顶级语句)
-            let main_stmts: Vec<&UastNode> = items.iter().filter(|item| !matches!(item, UastNode::Function { .. })).collect();
-            self.generate_main_chunk(&main_stmts)?;
-
-            // 3. 生成其他函数的 Chunk
-            for item in items {
-                if let UastNode::Function { name, params, body, .. } = item {
-                    functions_info.push((name.clone(), params.len()));
-                    self.generate_function_chunk(name, params, body)?;
+        
+        // Retrieve the root node
+        let root_node = &egraph[root];
+        
+        // Assume root is an Extension("module", [name, items...]) or just Seq
+        let items = match root_node {
+            IKun::Extension(name, args) if name == "module" => {
+                // args[0] is name, args[1..] are items
+                &args[1..]
+            }
+            IKun::Seq(items) => items.as_slice(),
+            _ => std::slice::from_ref(&root),
+        };
+        
+        // 1. Separate functions from main statements
+        let mut main_stmts = Vec::new();
+        let mut functions = Vec::new();
+        
+        for &item in items {
+            let node = &egraph[item];
+            // Check if it's a function definition (assignment of lambda)
+            // or just a lambda? Usually function def is `name = lambda`
+            if let IKun::StateUpdate(target, value) = node {
+                if let IKun::Lambda(params, body) = &egraph[*value] {
+                    // It's a function definition
+                    if let IKun::Symbol(name) = &egraph[*target] {
+                        functions.push((name.clone(), params.clone(), *body));
+                        continue;
+                    }
                 }
             }
-        } else {
-             self.generate_main_chunk(&[root])?;
+            // Also check for direct Lambda (anonymous function expression used as statement? Unlikely at top level)
+            // Or Extension("async", [func])
+            
+            main_stmts.push(item);
+        }
+
+        // 2. Generate Main Chunk
+        self.generate_main_chunk(egraph, &main_stmts)?;
+
+        // 3. Generate Function Chunks
+        for (name, params, body) in functions {
+            functions_info.push((name.clone(), params.len()));
+            self.generate_function_chunk(egraph, &name, &params, body)?;
         }
 
         Ok(NyarModule {
@@ -145,11 +170,11 @@ impl NyarTranslator {
         })
     }
 
-    fn generate_main_chunk(&mut self, statements: &[&UastNode]) -> Result<(), FormatError> {
+    fn generate_main_chunk(&mut self, egraph: &EGraph, statements: &[Id]) -> Result<(), FormatError> {
         self.reset_for_function();
 
-        for stmt in statements {
-            self.generate_statement(stmt)?;
+        for &stmt in statements {
+            self.generate_node(egraph, stmt, true)?;
         }
 
         // 默认返回 0
@@ -174,24 +199,22 @@ impl NyarTranslator {
 
     fn generate_function_chunk(
         &mut self,
+        egraph: &EGraph,
         _name: &str,
-        parameters: &[UastNode],
-        body: &[UastNode],
+        parameters: &[String],
+        body: Id,
     ) -> Result<(), FormatError> {
         self.reset_for_function();
 
         // 处理参数
-        for (i, param) in parameters.iter().enumerate() {
-            if let UastNode::Literal(param_name, _) = param {
-                self.locals.insert(param_name.clone(), i as u8);
-                self.local_index += 1;
-            }
+        for (i, param_name) in parameters.iter().enumerate() {
+            self.locals.insert(param_name.clone(), i as u8);
+            self.local_index += 1;
         }
 
         // 生成函数体
-        for stmt in body {
-            self.generate_statement(stmt)?;
-        }
+        // body should be a Seq (Block)
+        self.generate_node(egraph, body, true)?;
 
         // 确保有 Return
         if self.code.last() != Some(&(Opcode::Return as u8)) {
@@ -215,157 +238,103 @@ impl NyarTranslator {
         Ok(())
     }
 
-    fn generate_statement(&mut self, statement: &UastNode) -> Result<(), FormatError> {
-        match statement {
-            UastNode::Assign { name, value, .. } => {
-                self.generate_expression(value)?;
-                
-                let index = if let Some(&idx) = self.locals.get(name) {
-                    idx
+    fn generate_node(&mut self, egraph: &EGraph, id: Id, is_statement: bool) -> Result<(), FormatError> {
+        let node = &egraph[id];
+        match node {
+            IKun::Constant(v) => {
+                self.emit_u8(Opcode::I32Ext as u8);
+                self.emit_u8(I32Ext::Const as u8);
+                self.emit_i32(*v as i32);
+                if is_statement { self.emit_u8(Opcode::Pop as u8); }
+            }
+            IKun::StringConstant(s) => {
+                let idx = self.constants.len() as u16;
+                self.constants.push(Constant::String(s.clone()));
+                self.emit_u8(Opcode::Push as u8);
+                self.emit_u16(idx);
+                if is_statement { self.emit_u8(Opcode::Pop as u8); }
+            }
+            IKun::Symbol(name) => {
+                if let Some(&index) = self.locals.get(name) {
+                    self.emit_u8(Opcode::LoadLocal as u8);
+                    self.emit_u8(index);
                 } else {
-                    let idx = self.local_index;
-                    self.locals.insert(name.clone(), idx);
-                    self.local_index += 1;
-                    idx
-                };
-
-                self.emit_u8(Opcode::StoreLocal as u8);
-                self.emit_u8(index);
-            }
-            UastNode::List(items, _) => {
-                for item in items {
-                    self.generate_statement(item)?;
-                }
-            }
-            UastNode::Intent(intent_node, _) => {
-                match intent_node.intent {
-                    _ => {}
-                }
-            }
-            _ => {
-                self.generate_expression(statement)?;
-                self.emit_u8(Opcode::Pop as u8);
-            }
-        }
-        Ok(())
-    }
-
-    fn generate_expression(&mut self, expression: &UastNode) -> Result<(), FormatError> {
-        match expression {
-            UastNode::Literal(val, _) => {
-                if let Ok(num) = val.parse::<i32>() {
+                    // Undefined variable or global? defaulting to 0 for now
                     self.emit_u8(Opcode::I32Ext as u8);
                     self.emit_u8(I32Ext::Const as u8);
-                    self.emit_i32(num);
-                } else if val.starts_with('"') || val.starts_with('\'') {
-                    let content = val.trim_matches('"').trim_matches('\'').to_string();
-                    let idx = self.constants.len() as u16;
-                    self.constants.push(Constant::String(content));
-                    self.emit_u8(Opcode::Push as u8);
-                    self.emit_u16(idx);
-                } else {
-                    // Identifier (Variable load)
-                    if let Some(&index) = self.locals.get(val) {
-                        self.emit_u8(Opcode::LoadLocal as u8);
-                        self.emit_u8(index);
+                    self.emit_i32(0);
+                }
+                if is_statement { self.emit_u8(Opcode::Pop as u8); }
+            }
+            IKun::StateUpdate(target, value) => {
+                self.generate_node(egraph, *value, false)?;
+                
+                if let IKun::Symbol(name) = &egraph[*target] {
+                    let index = if let Some(&idx) = self.locals.get(name) {
+                        idx
                     } else {
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        self.emit_u8(I32Ext::Const as u8);
-                        self.emit_i32(0);
-                    }
+                        let idx = self.local_index;
+                        self.locals.insert(name.clone(), idx);
+                        self.local_index += 1;
+                        idx
+                    };
+                    self.emit_u8(Opcode::StoreLocal as u8);
+                    self.emit_u8(index);
+                } else {
+                    // Assignment to non-symbol?
+                    self.emit_u8(Opcode::Pop as u8); // Discard value
+                }
+                // Assignment is a statement usually
+            }
+            IKun::Seq(items) => {
+                for &item in items {
+                    self.generate_node(egraph, item, true)?;
                 }
             }
-            UastNode::Call { callee, args, .. } => {
-                match callee.as_str() {
-                    "__if" => {
-                        if args.len() < 2 { return Ok(()); }
-                        let false_label = self.new_label("if_false");
-                        let end_label = self.new_label("if_end");
+            IKun::Choice(cond, then_branch, else_branch) => {
+                let false_label = self.new_label("if_false");
+                let end_label = self.new_label("if_end");
 
-                        // 1. Evaluate condition
-                        self.generate_expression(&args[0])?;
-                        
-                        // 2. Jump if false
-                        self.emit_jump(&false_label, true);
+                // 1. Evaluate condition
+                self.generate_node(egraph, *cond, false)?;
+                
+                // 2. Jump if false
+                self.emit_jump(&false_label, true);
 
-                        // 3. True block
-                        self.generate_statement(&args[1])?;
-                        self.emit_jump(&end_label, false);
+                // 3. True block
+                self.generate_node(egraph, *then_branch, true)?;
+                self.emit_jump(&end_label, false);
 
-                        // 4. False block
-                        self.define_label(&false_label);
-                        if args.len() > 2 {
-                            self.generate_statement(&args[2])?;
-                        }
-                        self.emit_jump(&end_label, false);
+                // 4. False block
+                self.define_label(&false_label);
+                self.generate_node(egraph, *else_branch, true)?;
+                self.emit_jump(&end_label, false);
 
-                        // 5. End block
-                        self.define_label(&end_label);
-                        return Ok(());
-                    }
-                    "__while" => {
+                // 5. End block
+                self.define_label(&end_label);
+            }
+            IKun::Extension(name, args) => {
+                match name.as_str() {
+                    "while" => {
                         if args.len() < 2 { return Ok(()); }
                         let cond_label = self.new_label("while_cond");
                         let end_label = self.new_label("while_end");
 
                         // 1. Condition block
                         self.define_label(&cond_label);
-                        self.generate_expression(&args[0])?;
+                        self.generate_node(egraph, args[0], false)?;
                         self.emit_jump(&end_label, true);
 
                         // 2. Body block
-                        self.generate_statement(&args[1])?;
+                        self.generate_node(egraph, args[1], true)?;
                         self.emit_jump(&cond_label, false);
 
                         // 3. End block
                         self.define_label(&end_label);
-                        return Ok(());
                     }
-                    "add" => {
-                        self.generate_expression(&args[0])?;
-                        self.generate_expression(&args[1])?;
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        self.emit_u8(I32Ext::Add as u8);
-                    }
-                    "sub" => {
-                        self.generate_expression(&args[0])?;
-                        self.generate_expression(&args[1])?;
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        self.emit_u8(I32Ext::Sub as u8);
-                    }
-                    "mul" => {
-                        self.generate_expression(&args[0])?;
-                        self.generate_expression(&args[1])?;
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        self.emit_u8(I32Ext::Mul as u8);
-                    }
-                    "div" => {
-                        self.generate_expression(&args[0])?;
-                        self.generate_expression(&args[1])?;
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        self.emit_u8(I32Ext::DivS as u8);
-                    }
-                    "eq" => {
-                        self.generate_expression(&args[0])?;
-                        self.generate_expression(&args[1])?;
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        self.emit_u8(I32Ext::Eq as u8);
-                    }
-                    "lt" => {
-                        self.generate_expression(&args[0])?;
-                        self.generate_expression(&args[1])?;
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        self.emit_u8(I32Ext::LtS as u8);
-                    }
-                    "gt" => {
-                        self.generate_expression(&args[0])?;
-                        self.generate_expression(&args[1])?;
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        self.emit_u8(I32Ext::GtS as u8);
-                    }
-                    "__return" => {
+                    "return" => {
                         if !args.is_empty() {
-                            self.generate_expression(&args[0])?;
+                            self.generate_node(egraph, args[0], false)?;
                         } else {
                             self.emit_u8(Opcode::I32Ext as u8);
                             self.emit_u8(I32Ext::Const as u8);
@@ -373,24 +342,47 @@ impl NyarTranslator {
                         }
                         self.emit_u8(Opcode::Return as u8);
                     }
+                    "add" | "sub" | "mul" | "div" | "eq" | "lt" | "gt" => {
+                        self.generate_node(egraph, args[0], false)?;
+                        self.generate_node(egraph, args[1], false)?;
+                        self.emit_u8(Opcode::I32Ext as u8);
+                        let op = match name.as_str() {
+                            "add" => I32Ext::Add,
+                            "sub" => I32Ext::Sub,
+                            "mul" => I32Ext::Mul,
+                            "div" => I32Ext::DivS,
+                            "eq" => I32Ext::Eq,
+                            "lt" => I32Ext::LtS,
+                            "gt" => I32Ext::GtS,
+                            _ => unreachable!(),
+                        };
+                        self.emit_u8(op as u8);
+                        if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    }
                     _ => {
-                        // Function call (simplified, assumes chunk index matches order)
-                        // In a real implementation, we would need to resolve the chunk index properly
-                        for arg in args {
-                            self.generate_expression(arg)?;
-                        }
-                        // Assume chunk index 0 is main, others follow
-                        self.emit_u8(Opcode::Call as u8);
-                        self.emit_u16(1); // placeholder for chunk index
-                        self.emit_u8(args.len() as u8);
+                        // Unknown extension, ignore or error
                     }
                 }
             }
-            _ => {
-                 self.emit_u8(Opcode::I32Ext as u8);
-                 self.emit_u8(I32Ext::Const as u8);
-                 self.emit_i32(0);
+            IKun::Apply(func, args) => {
+                // Simplified call generation
+                for arg in args {
+                    self.generate_node(egraph, *arg, false)?;
+                }
+                
+                // For now, we don't have function lookup by ID easily in this simplified codegen
+                // We assume `func` is a Symbol that maps to a function name
+                // But in VM, we call by index usually? Or name?
+                // Nyar bytecode `Call` takes a chunk index?
+                // The original code used a placeholder index 1.
+                // We will do the same.
+                self.emit_u8(Opcode::Call as u8);
+                self.emit_u16(1); 
+                self.emit_u8(args.len() as u8);
+                
+                if is_statement { self.emit_u8(Opcode::Pop as u8); }
             }
+            _ => {}
         }
         Ok(())
     }
