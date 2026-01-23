@@ -10,7 +10,7 @@ path = "src/lib.rs"
 [dependencies]
 oak-python = { path = "../../../oaks/examples/oak-python" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
-chomsky-uast = { path = "../../../ProjectChomsky/packages/chomsky-uast" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
 gaia-jit = { workspace = true }
 gaia-types = { workspace = true }

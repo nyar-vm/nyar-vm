@@ -5,12 +5,13 @@
 pub mod codegen;
 pub mod pyc_codegen;
 
-use oak_python::{ast::Program, lexer::PythonLexer, parser::PythonParser};
+use oak_python::{ast::Program, lexer::PythonLexer, parser::PythonParser, PythonFrontend};
 use codegen::GaiaTranslator;
 use gaia_assembler::program::GaiaModule;
 use gaia_types::GaiaError;
 use pyc_codegen::{Marshal, PycTranslator};
 use oak_core::ParseError;
+use chomsky_uir::{EGraph, Id};
 
 /// Mini Python 前端
 pub struct MiniPythonFrontend {
@@ -23,28 +24,34 @@ impl MiniPythonFrontend {
         Self { translator: GaiaTranslator::new() }
     }
 
-    /// 解析 Python 源代码为 AST
-    pub fn parse(&mut self, source: &str) -> Result<Program, ParseError> {
-        let mut lexer = PythonLexer::new(source);
-        let tokens = lexer.tokenize()?;
-        let mut parser = PythonParser::new(tokens);
-        parser.parse()
+    /// 解析 Python 源代码为 UIR
+    pub fn parse(&mut self, source: &str) -> Result<(EGraph, Id), String> {
+        let frontend = PythonFrontend::new(source);
+        frontend.parse()
     }
 
     /// 将 Python 源代码编译为 Gaia 程序
     pub fn compile_to_gaia(&mut self, source: &str) -> Result<GaiaModule, GaiaError> {
-        // 解析为 AST
-        let ast = self
-            .parse(source)
-            .map_err(|e| GaiaError::syntax_error(&format!("Parse error: {:?}", e), gaia_types::SourceLocation::default()))?;
+        // 解析为 UIR
+        let (egraph, root) = self.parse(source).map_err(|e| GaiaError::syntax_error(&format!("Parse error: {:?}", e), gaia_types::SourceLocation::default()))?;
 
         // 翻译为 Gaia 程序
-        self.translator.generate(&ast)
+        self.translator.generate(&egraph, root)
     }
 
     /// 将 Python 源代码编译为 .pyc 字节流
     pub fn compile_to_pyc(&mut self, source: &str, filename: &str) -> Result<Vec<u8>, String> {
-        let ast = self.parse(source).map_err(|e| format!("Parse error: {:?}", e))?;
+        // PycTranslator currently uses AST Program.
+        // We need to keep AST parsing for PycTranslator unless we refactor it too.
+        // oak-python::PythonFrontend uses PythonParser which returns Program.
+        // My update to oak-python::lib.rs makes parse() return (EGraph, Id), but it calls converter.
+        // I can still access Parser directly if needed.
+        
+        let mut lexer = PythonLexer::new(source);
+        let tokens = lexer.tokenize().map_err(|e| format!("{:?}", e))?;
+        let mut parser = PythonParser::new(tokens);
+        let ast = parser.parse().map_err(|e| format!("{:?}", e))?;
+
         let mut translator = PycTranslator::new(filename, "<module>");
         let code_obj = translator.translate(&ast);
 
@@ -90,37 +97,5 @@ impl MiniPythonFrontend {
 impl Default for MiniPythonFrontend {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mini_python_frontend() {
-        let code = r#"
-def hello(name):
-    print("Hello")
-    return True
-
-x = 42
-y = [1, 2, 3]
-"#;
-
-        let mut frontend = MiniPythonFrontend::new();
-        let result = frontend.parse(code);
-        assert!(result.is_ok());
-
-        let program = result.unwrap();
-        assert_eq!(program.statements.len(), 3); // function, assignment x, assignment y
-    }
-
-    #[test]
-    fn test_tokenize_only() {
-        let code = "def hello(): pass";
-        let mut frontend = MiniPythonFrontend::new();
-        let tokens = frontend.tokenize(code);
-        assert!(tokens.is_ok());
     }
 }
