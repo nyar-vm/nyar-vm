@@ -5,8 +5,8 @@
 
 pub mod codegen;
 
-use oak_java::{JavaLanguage, JavaParser, JavaRoot, JavaBuilder};
-use oak_core::{source::Source, builder::Builder, builder::BuilderCache};
+use oak_java::{JavaLanguage, JavaRoot, JavaBuilder};
+use oak_core::{source::SourceText, builder::Builder};
 use nyar_vm::bytecode::format::NyarModule;
 use chomsky_uir::{EGraph, IKun, ConstraintAnalysis};
 use anyhow::Result;
@@ -28,7 +28,8 @@ impl MiniJavaFrontend {
     /// 解析 Java 源代码
     pub fn parse(&self, source: &str) -> Result<JavaRoot> {
         let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
-        let output = self.builder.build(source, &[], &mut session);
+        let source_text = SourceText::new(source);
+        let output = self.builder.build(&source_text, &[], &mut session);
         match output.result {
             Ok(root) => Ok(root),
             Err(e) => Err(anyhow::anyhow!("Parse error: {:?}", e)),

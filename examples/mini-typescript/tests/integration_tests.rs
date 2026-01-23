@@ -6,7 +6,7 @@ use std::path::Path;
 fn test_multi_file_project() {
     let project_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
-        .join("multi-file-test");
+        .join("multi-file");
     
     let mut loader = ProjectLoader::new(&project_dir);
     let modules = loader.load_project(&project_dir).expect("Failed to load project");
@@ -16,12 +16,9 @@ fn test_multi_file_project() {
     let mut vm = NyarVM::new();
     // Load all modules into VM
     for module in modules {
-        vm.load_module(module).expect("Failed to load module into VM");
+        vm.load_module(module.into());
     }
     
-    // Run the main module (last one loaded by ProjectLoader usually, or we can find it)
-    // Actually ProjectLoader loads entry point first, but load_file_recursive pushes to modules vec.
-    // So entry point is modules[0].
-    
-    vm.run_module(0).expect("Failed to run main module");
+    // Run the main module (index 0)
+    vm.execute(0, 0).expect("Failed to run main module");
 }

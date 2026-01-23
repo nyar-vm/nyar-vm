@@ -3,44 +3,57 @@
 //! 这个库提供了 Mini TypeScript 语言的解析和 Nyar 翻译功能。
 //! 遵循 Project Chomsky Whitebook 规范。
 
+#![feature(new_range_api)]
+
 pub mod codegen;
 pub mod project;
 
-use oak_typescript::{TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot, ast};
+use oak_core::builder::{Builder, BuilderCache, DummyCache as BuilderDummyCache};
+use oak_core::lexer::{Lexer, LexerCache, DummyCache as LexerDummyCache};
+use oak_core::SourceText;
+use oak_typescript::{TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot, ast, TypeScriptSyntaxKind};
 use codegen::NyarTranslator;
 use nyar_vm::bytecode::format::NyarModule;
 use nyar_error::FormatError;
 use chomsky_uir::{EGraph, Id, IntentBuilder, ConstraintAnalysis, intent::IKun};
 use chomsky_source::Loc;
-use oak_core::Builder;
+use core::range::Range;
 
 /// Mini TypeScript 前端
 pub struct MiniTypescriptFrontend {
     language: TypeScriptLanguage,
     translator: NyarTranslator,
+    source_id: u32,
 }
 
 impl MiniTypescriptFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self { 
-            language: TypeScriptLanguage::default(),
-            translator: NyarTranslator::new() 
+            language: TypeScriptLanguage::standard(),
+            translator: NyarTranslator::new(),
+            source_id: 1, // 默认 source_id
         }
     }
 
+    /// 设置当前处理的源码 ID
+    pub fn set_source_id(&mut self, id: u32) {
+        self.source_id = id;
+    }
+
     /// 解析 TypeScript 源代码为 UIR
-    pub fn parse(&mut self, source: &str) -> Result<(EGraph, Id), String> {
+    pub fn parse(&mut self, source: &str) -> Result<(EGraph<IKun, ConstraintAnalysis>, Id), String> {
         let builder = TypeScriptBuilder::new(&self.language);
-        let mut cache = oak_core::BuilderCache::default();
-        let diagnostics = builder.build(source, &[], &mut cache);
+        let mut cache = BuilderDummyCache::default();
+        let source_text = SourceText::from(source);
+        let diagnostics = Builder::build(&builder, &source_text, &[], &mut cache);
         
         let ast = diagnostics.result.map_err(|e| format!("Parse error: {:?}", e))?;
         
-        let mut egraph = EGraph::new(ConstraintAnalysis::default());
+        let mut egraph = EGraph::new();
         let mut intent_builder = IntentBuilder::new(&mut egraph);
         
-        let converter = UirConverter::new(&mut intent_builder);
+        let mut converter = UirConverter::new(&mut intent_builder, self.source_id);
         let root_id = converter.convert_root(ast);
         
         Ok((egraph, root_id))
@@ -58,14 +71,17 @@ impl MiniTypescriptFrontend {
     }
 
     /// 仅进行词法分析
-    pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_typescript::lexer::TokenInfo>, String> {
-        let mut lexer = oak_typescript::TypeScriptLexer::new(&self.language);
-        let mut tokens = Vec::new();
-        // 这里需要适配新的 lexer API，如果 TypeScriptLexer::new 返回的是一个包装器
-        // 假设它支持基本的 next_token
-        // 实际上在 Oaks 中，Lexer 通常通过 session 工作
-        // 为了简化，我们暂时保留原逻辑的意图，但需要修正类型
-        Ok(tokens)
+    pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<TypeScriptSyntaxKind>>, String> {
+        let lexer = oak_typescript::TypeScriptLexer::new(&self.language);
+        let mut cache = LexerDummyCache::default();
+        let source_text = SourceText::from(source);
+        let output = Lexer::lex(&lexer, &source_text, &[], &mut cache);
+        
+        if !output.diagnostics.is_empty() {
+            return Err(format!("Lexer errors: {:?}", output.diagnostics));
+        }
+        
+        Ok(output.result.map_err(|e| format!("{:?}", e))?.to_vec())
     }
 
     /// 获取翻译器的可变引用
@@ -81,14 +97,19 @@ impl MiniTypescriptFrontend {
 
 struct UirConverter<'a> {
     builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>,
+    source_id: u32,
 }
 
 impl<'a> UirConverter<'a> {
-    fn new(builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>) -> Self {
-        Self { builder }
+    fn new(builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>, source_id: u32) -> Self {
+        Self { builder, source_id }
     }
 
-    fn convert_root(&self, root: TypeScriptRoot) -> Id {
+    fn to_loc(&self, range: Range<usize>) -> Loc {
+        Loc::new(self.source_id, range.start as u32, range.end as u32)
+    }
+
+    fn convert_root(&mut self, root: TypeScriptRoot) -> Id {
         let mut items = Vec::new();
         for stmt in root.statements {
             items.push(self.convert_statement(stmt));
@@ -96,10 +117,10 @@ impl<'a> UirConverter<'a> {
         self.builder.module("main", items)
     }
 
-    fn convert_statement(&self, stmt: ast::Statement) -> Id {
-        let loc = Loc::default(); // TODO: 从 span 转换
+    fn convert_statement(&mut self, stmt: ast::Statement) -> Id {
         match stmt {
             ast::Statement::VariableDeclaration(var) => {
+                let loc = self.to_loc(var.span);
                 let value = if let Some(expr) = var.value {
                     self.convert_expression(expr)
                 } else {
@@ -108,6 +129,7 @@ impl<'a> UirConverter<'a> {
                 self.builder.assign(&var.name, value, loc)
             }
             ast::Statement::FunctionDeclaration(func) => {
+                let _loc = self.to_loc(func.span);
                 let mut body_ids = Vec::new();
                 for s in func.body {
                     body_ids.push(self.convert_statement(s));
@@ -117,25 +139,38 @@ impl<'a> UirConverter<'a> {
             ast::Statement::ExpressionStatement(expr) => {
                 self.convert_expression(expr)
             }
+            ast::Statement::ImportDeclaration(import) => {
+                let loc = self.to_loc(import.span);
+                let source = self.builder.string(&import.module_specifier, loc.clone());
+                let mut args = vec![source];
+                for name in import.imports {
+                    args.push(self.builder.symbol(&name, loc.clone()));
+                }
+                self.builder.extension("import", args, loc)
+            }
+            ast::Statement::ExportDeclaration(export) => {
+                let loc = self.to_loc(export.span);
+                let inner = self.convert_statement(*export.declaration);
+                self.builder.extension("export", vec![inner], loc)
+            }
         }
     }
 
-    fn convert_expression(&self, expr: ast::Expression) -> Id {
-        let loc = Loc::default();
+    fn convert_expression(&mut self, expr: ast::Expression) -> Id {
         match expr {
             ast::Expression::Identifier(name) => {
-                self.builder.symbol(&name, loc)
+                self.builder.symbol(&name, Loc::default()) // FIXME: Identifier should have span
             }
             ast::Expression::NumericLiteral(val) => {
-                self.builder.float(val, loc)
+                self.builder.float(val, Loc::default())
             }
             ast::Expression::StringLiteral(val) => {
-                self.builder.string(&val, loc)
+                self.builder.string(&val, Loc::default())
             }
             ast::Expression::CallExpression { func, args } => {
                 let func_id = self.convert_expression(*func);
                 let arg_ids = args.into_iter().map(|a| self.convert_expression(a)).collect();
-                self.builder.call(func_id, arg_ids, loc)
+                self.builder.call(func_id, arg_ids, Loc::default())
             }
         }
     }

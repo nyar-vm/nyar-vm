@@ -60,18 +60,17 @@ fn main() {
     }
 
     // 解析源代码
-    let program = match frontend.parse(&source_code) {
-        Ok(program) => program,
-        Err(e) => {
-            eprintln!("解析错误: {:?}", e);
-            std::process::exit(1);
-        }
-    };
-
     if show_ast {
-        // 只显示 AST
-        println!("=== 抽象语法树 ===");
-        println!("{:#?}", program);
+        match frontend.parse_to_ast(&source_code) {
+            Ok(program) => {
+                println!("=== 抽象语法树 ===");
+                println!("{:#?}", program);
+            }
+            Err(e) => {
+                eprintln!("解析错误: {:?}", e);
+                std::process::exit(1);
+            }
+        }
         return;
     }
 

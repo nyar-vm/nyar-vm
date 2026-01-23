@@ -2,6 +2,7 @@
 //!
 //! 将 Python AST 转换为 Python 字节码 (.pyc)
 
+use chomsky_uir::IKunTree;
 use oak_python::ast::*;
 
 /// Python 3.10 常用操作码
@@ -235,6 +236,100 @@ impl PycTranslator {
         self.emit(OpCode::ReturnConst, none_idx);
 
         self.assemble()
+    }
+
+    pub fn translate_from_tree(&mut self, tree: &IKunTree) -> PyCodeObject {
+        // Python 3.11+ requires RESUME at the start of every code object
+        self.emit(OpCode::Resume, 0);
+
+        self.compile_tree_node(tree);
+
+        // 默认返回 None (Python 3.12 使用 RETURN_CONST)
+        let none_idx = self.add_const(PyObject::None);
+        self.emit(OpCode::ReturnConst, none_idx);
+
+        self.assemble()
+    }
+
+    fn compile_tree_node(&mut self, tree: &IKunTree) {
+        match tree {
+            IKunTree::Constant(v) => {
+                let idx = self.add_const(PyObject::Int(*v));
+                self.emit(OpCode::LoadConst, idx);
+            }
+            IKunTree::FloatConstant(bits) => {
+                let f = f64::from_bits(*bits);
+                let idx = self.add_const(PyObject::Float(f));
+                self.emit(OpCode::LoadConst, idx);
+            }
+            IKunTree::BooleanConstant(b) => {
+                let idx = self.add_const(PyObject::Bool(*b));
+                self.emit(OpCode::LoadConst, idx);
+            }
+            IKunTree::StringConstant(s) => {
+                let idx = self.add_const(PyObject::String(s.clone()));
+                self.emit(OpCode::LoadConst, idx);
+            }
+            IKunTree::Symbol(name) => {
+                let idx = self.add_name(name);
+                self.emit(OpCode::LoadName, idx);
+            }
+            IKunTree::StateUpdate(target, value) => {
+                self.compile_tree_node(value);
+                if let IKunTree::Symbol(name) = &**target {
+                    let idx = self.add_name(name);
+                    self.emit(OpCode::StoreName, idx);
+                }
+            }
+            IKunTree::Seq(items) => {
+                for item in items {
+                    self.compile_tree_node(item);
+                }
+            }
+            IKunTree::Choice(cond, then_branch, else_branch) => {
+                self.compile_tree_node(cond);
+                let jump_to_false_placeholder = self.instructions.len();
+                self.emit(OpCode::PopJumpIfFalse, 0);
+
+                self.compile_tree_node(then_branch);
+                let jump_to_end_placeholder = self.instructions.len();
+                self.emit(OpCode::JumpForward, 0);
+
+                let false_target = self.instructions.len() as u32;
+                self.instructions[jump_to_false_placeholder].arg = false_target;
+
+                self.compile_tree_node(else_branch);
+                let end_target = (self.instructions.len() - jump_to_end_placeholder - 1) as u32;
+                self.instructions[jump_to_end_placeholder].arg = end_target;
+            }
+            IKunTree::Apply(func, args) => {
+                self.compile_tree_node(func);
+                for arg in args {
+                    self.compile_tree_node(arg);
+                }
+                self.emit(OpCode::Call, args.len() as u32);
+            }
+            IKunTree::Extension(name, args) => {
+                match name.as_str() {
+                    "add" | "sub" | "mul" | "div" => {
+                        self.compile_tree_node(&args[0]);
+                        self.compile_tree_node(&args[1]);
+                        // BinaryOp argument depends on the operation in 3.11+
+                        // 0 is ADD, 10 is SUBTRACT, 5 is MULTIPLY, 11 is TRUE_DIVIDE
+                        let op_idx = match name.as_str() {
+                            "add" => 0,
+                            "sub" => 10,
+                            "mul" => 5,
+                            "div" => 11,
+                            _ => 0,
+                        };
+                        self.emit(OpCode::BinaryOp, op_idx);
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
     }
 
     fn compile_statement(&mut self, stmt: &Statement) {

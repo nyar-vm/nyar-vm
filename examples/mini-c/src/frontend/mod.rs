@@ -1,9 +1,10 @@
 use oak_c::{CLexer, CParser, CLanguage, CElementType, CTokenType};
-use chomsky_uir::{EGraph, Id, IntentBuilder};
+use chomsky_uir::{EGraph, Id, IntentBuilder, IKun};
 use chomsky_source::Loc;
 use oak_core::parser::{Parser, ParseSession};
 use oak_core::source::SourceText;
 use oak_core::tree::{RedNode, RedTree};
+use oak_core::{Lexer, LexerCache};
 
 pub struct MiniCFrontend;
 
@@ -12,7 +13,7 @@ impl MiniCFrontend {
         Self
     }
 
-    pub fn parse(&self, source: &str) -> Result<(EGraph, Id), String> {
+    pub fn parse(&self, source: &str) -> Result<(EGraph<IKun, ()>, Id), String> {
         let language = CLanguage::default();
         let lexer = CLexer::new(&language);
         let mut session = ParseSession::<CLanguage>::new(16);
@@ -21,7 +22,7 @@ impl MiniCFrontend {
         
         let lex_output = lexer.lex(&source_text, &[], &mut session);
         let tokens = lex_output.result.map_err(|e| format!("Lex error: {:?}", e))?;
-        session.set_lex_output(oak_core::errors::OakDiagnostics {
+        session.set_lex_output(oak_core::LexOutput::<CLanguage> {
             result: Ok(tokens),
             diagnostics: lex_output.diagnostics,
         });
@@ -32,7 +33,7 @@ impl MiniCFrontend {
         let green_node = parse_output.result.map_err(|e| format!("Parse error: {:?}", e))?;
         let red_node = RedNode::new(green_node, 0);
         
-        let mut egraph = EGraph::default();
+        let mut egraph = EGraph::new();
         let mut builder = IntentBuilder::new(&mut egraph);
         
         // Assume source_id 1 for the main file
@@ -46,7 +47,7 @@ impl MiniCFrontend {
         Loc::new(source_id, span.start as u32, span.end as u32)
     }
 
-    fn convert_red_to_uir(&self, builder: &mut IntentBuilder, node: RedNode<CLanguage>, source: &str, source_id: u32) -> Id {
+    fn convert_red_to_uir(&self, builder: &mut IntentBuilder<()>, node: RedNode<CLanguage>, source: &str, source_id: u32) -> Id {
         let loc = self.get_loc(&node, source_id);
         match node.green.kind {
             CElementType::Root => {
@@ -110,8 +111,6 @@ impl MiniCFrontend {
                 }
             }
             CElementType::DeclarationStatement => {
-                // Simplified declaration: int a = 1;
-                // We look for an identifier and an optional assignment
                 let mut name = None;
                 let mut value = None;
                 let mut found_assign = false;
@@ -152,34 +151,80 @@ impl MiniCFrontend {
             }
             CElementType::ExpressionStatement => {
                 let children: Vec<_> = node.children().collect();
-                if children.len() == 3 {
-                    // Possible binary expression: [left, op, right]
-                    if let (RedTree::Node(left), RedTree::Leaf(op_leaf), RedTree::Node(right)) = (&children[0], &children[1], &children[2]) {
-                        let left_id = self.convert_red_to_uir(builder, left.clone(), source, source_id);
-                        let right_id = self.convert_red_to_uir(builder, right.clone(), source, source_id);
-                        let op_span = op_leaf.span;
-                        let op_text = &source[op_span.start..op_span.end];
-                        return builder.binary_op(op_text, left_id, right_id, loc);
+                
+                // Handle binary operations: [left, op, right]
+                if children.len() >= 3 {
+                    // Try to find an operator in the middle
+                    let mut op_idx = None;
+                    for (i, child) in children.iter().enumerate() {
+                        if let RedTree::Leaf(l) = child {
+                            let kind: CElementType = l.kind.into();
+                            match kind {
+                                CElementType::Token(CTokenType::Plus) |
+                                CElementType::Token(CTokenType::Minus) |
+                                CElementType::Token(CTokenType::Star) |
+                                CElementType::Token(CTokenType::Slash) |
+                                CElementType::Token(CTokenType::Assign) |
+                                CElementType::Token(CTokenType::Equal) |
+                                CElementType::Token(CTokenType::NotEqual) |
+                                CElementType::Token(CTokenType::Less) |
+                                CElementType::Token(CTokenType::LessEqual) |
+                                CElementType::Token(CTokenType::Greater) |
+                                CElementType::Token(CTokenType::GreaterEqual) => {
+                                    op_idx = Some(i);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    if let Some(idx) = op_idx {
+                        if idx > 0 && idx < children.len() - 1 {
+                            if let (RedTree::Node(left), RedTree::Leaf(op_leaf), RedTree::Node(right)) = (&children[idx-1], &children[idx], &children[idx+1]) {
+                                let left_id = self.convert_red_to_uir(builder, left.clone(), source, source_id);
+                                let right_id = self.convert_red_to_uir(builder, right.clone(), source, source_id);
+                                let op_span = op_leaf.span;
+                                let op_text = &source[op_span.start..op_span.end];
+                                
+                                return match op_text {
+                                    "=" => builder.assign_to_id(left_id, right_id, loc),
+                                    _ => builder.binary_op(op_text, left_id, right_id, loc),
+                                };
+                            }
+                        }
                     }
                 }
 
-                for child in node.children() {
-                    match child {
+                // Handle single child (literal or symbol or nested expression)
+                if children.len() == 1 {
+                    match &children[0] {
                         RedTree::Leaf(l) => {
                             let s = l.span;
                             let text = &source[s.start..s.end];
-                            if let CElementType::Token(CTokenType::IntegerLiteral) = l.kind.into() {
-                                if let Ok(val) = text.parse::<i64>() {
-                                    return builder.constant(val, loc);
+                            match l.kind.into() {
+                                CElementType::Token(CTokenType::IntegerLiteral) => {
+                                    if let Ok(val) = text.parse::<i64>() {
+                                        return builder.constant(val, loc);
+                                    }
                                 }
+                                CElementType::Token(CTokenType::FloatLiteral) => {
+                                    if let Ok(val) = text.parse::<f64>() {
+                                        return builder.float(val, loc);
+                                    }
+                                }
+                                CElementType::Token(CTokenType::Identifier) => {
+                                    return builder.symbol(text, loc);
+                                }
+                                _ => {}
                             }
-                            return builder.symbol(text, loc);
                         }
                         RedTree::Node(n) => {
-                            return self.convert_red_to_uir(builder, n, source, source_id);
+                            return self.convert_red_to_uir(builder, n.clone(), source, source_id);
                         }
                     }
                 }
+
                 builder.constant(0, loc)
             }
             CElementType::CompoundStatement => {
@@ -192,7 +237,6 @@ impl MiniCFrontend {
                 builder.block(stmts, loc)
             }
             CElementType::IfStatement => {
-                // Simplified IF: [if, (, cond, ), then, (else, else_stmt)?]
                 let mut nodes = vec![];
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
@@ -226,6 +270,10 @@ impl MiniCFrontend {
                 } else {
                     builder.constant(0, loc)
                 }
+            }
+            CElementType::Token(CTokenType::Identifier) => {
+                let s = node.span();
+                builder.symbol(&source[s.start..s.end], loc)
             }
             _ => {
                 builder.constant(0, loc)

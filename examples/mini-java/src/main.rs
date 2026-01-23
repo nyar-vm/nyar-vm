@@ -53,19 +53,19 @@ fn main() {
     }
 
     if show_uir {
-        // 显示 Chomsky UIR
-        match frontend.compile_to_uir(&source_code) {
-            Ok(egraph) => {
-                println!("=== Chomsky UIR (Intent Graph) ===");
-                println!("{:#?}", egraph);
+            // 显示 Chomsky UIR
+            match frontend.compile_to_uir(&source_code) {
+                Ok(_egraph) => {
+                    println!("=== Chomsky UIR (Intent Graph) ===");
+                    println!("{:#?}", _egraph);
+                }
+                Err(e) => {
+                    eprintln!("编译 UIR 错误: {:?}", e);
+                    std::process::exit(1);
+                }
             }
-            Err(e) => {
-                eprintln!("编译 UIR 错误: {:?}", e);
-                std::process::exit(1);
-            }
+            return;
         }
-        return;
-    }
 
     if compile_nyar {
         // 编译到 Nyar 字节码

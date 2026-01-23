@@ -1,6 +1,5 @@
 use chomsky_uir::{EGraph, Id, IKun};
 use chomsky_full::optimizer::UniversalOptimizer;
-use chomsky_cost::DefaultCostModel;
 
 pub struct MiniCOptimizer {
     optimizer: UniversalOptimizer<()>,
@@ -13,7 +12,7 @@ impl MiniCOptimizer {
         }
     }
 
-    pub fn optimize(&self, intent_graph: (EGraph, Id)) -> (EGraph, Id) {
+    pub fn optimize(&self, intent_graph: (EGraph<IKun, ()>, Id)) -> (EGraph<IKun, ()>, Id) {
         let (mut egraph, root_id) = intent_graph;
         
         // 1. Run saturation search using registered rules

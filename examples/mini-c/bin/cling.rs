@@ -1,6 +1,8 @@
 use clap::Parser;
 use std::fs;
 use mini_c::frontend::MiniCFrontend;
+use mini_c::optimizer::MiniCOptimizer;
+use mini_c::runtime::MiniCRuntime;
 // use gaia_jit::JitMemory;
 use oak_repl::{OakRepl, ReplHandler, HandleResult};
 // use oak_highlight::{OakHighlighter, Theme, HighlightResult};
@@ -21,7 +23,7 @@ impl CReplHandler {
     fn run_code_internal(frontend: &mut MiniCFrontend, source: &str) -> anyhow::Result<()> {
         match frontend.parse(source) {
             Ok((egraph, root)) => {
-                println!("EGraph nodes: {}", egraph.nodes.len());
+                println!("EGraph nodes: {}", egraph.memo.len());
                 println!("Root ID: {:?}", root);
                 // TODO: 接入后端执行
             }
