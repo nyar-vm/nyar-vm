@@ -4,6 +4,7 @@
 //! 遵循 Project Chomsky Whitebook 规范。
 
 pub mod codegen;
+pub mod project;
 
 use oak_typescript::TypeScriptParser;
 use codegen::NyarTranslator;

@@ -54,10 +54,13 @@ fn perform_throw_unhandled() {
             max_stack: 8,
             code,
             handlers: vec![],
+            lines: vec![],
         }],
         classes: vec![],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let mut vm = NyarVM::new(
         module.constants.clone(),
@@ -307,6 +310,7 @@ fn run_match_variant() {
             max_stack: 8,
             code,
             handlers: vec![],
+            lines: vec![],
         }],
         classes: vec![
             nyar_vm::bytecode::format::ClassInfo {
@@ -320,6 +324,8 @@ fn run_match_variant() {
         ],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let mut vm = NyarVM::new(
         module.constants.clone(),
@@ -358,10 +364,13 @@ fn run_sizeof_array_string_bigint_object() {
             max_stack: 8,
             code,
             handlers: vec![],
+            lines: vec![],
         }],
         classes: vec![],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let mut vm = NyarVM::new(
         module.constants.clone(),
@@ -449,6 +458,7 @@ fn run_sizeof_array_string_bigint_object() {
             max_stack: 8,
             code: code4,
             handlers: vec![],
+            lines: vec![],
         }],
         classes: vec![nyar_vm::bytecode::format::ClassInfo {
             name: "O".to_string(),
@@ -456,6 +466,8 @@ fn run_sizeof_array_string_bigint_object() {
         }],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let mut vm4 = NyarVM::new(
         module4.constants.clone(),

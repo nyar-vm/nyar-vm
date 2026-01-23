@@ -86,6 +86,24 @@ pub fn write_string(buf: &mut Vec<u8>, s: &str) {
     buf.extend_from_slice(s.as_bytes());
 }
 
+impl Default for NyarcModule {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            flags: 0,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            constants: vec![],
+            effects: vec![],
+            chunks: vec![],
+            classes: vec![],
+            traits: vec![],
+            impls: vec![],
+            imports: vec![],
+            exports: vec![],
+        }
+    }
+}
+
 impl NyarcModule {
     pub fn parse(b: &[u8]) -> Result<Self, FormatError> {
         if b.len() < 8 {

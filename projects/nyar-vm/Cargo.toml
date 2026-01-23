@@ -10,6 +10,9 @@ path = "src/lib.rs"
 [dependencies]
 nyar-error = { path = "../nyar-error" }
 nyar-gc = { path = "../nyar-gc" }
+nyar-jit = { path = "../nyar-jit" }
+nyar-aot = { path = "../nyar-aot" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 serde = { workspace = true }
 toml = { workspace = true }
 byteorder = { workspace = true }

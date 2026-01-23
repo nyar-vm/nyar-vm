@@ -31,6 +31,7 @@ fn run_await_on_closure() {
                 max_stack: 8,
                 code: callee,
                 handlers: vec![],
+                lines: vec![],
             },
             Chunk {
                 locals: 0,
@@ -38,11 +39,14 @@ fn run_await_on_closure() {
                 max_stack: 8,
                 code: main,
                 handlers: vec![],
+                lines: vec![],
             },
         ],
         classes: vec![],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let chunk = module.chunks[1].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();
@@ -87,6 +91,7 @@ fn run_block_on_closure() {
                 max_stack: 8,
                 code: callee,
                 handlers: vec![],
+                lines: vec![],
             },
             Chunk {
                 locals: 0,
@@ -94,11 +99,14 @@ fn run_block_on_closure() {
                 max_stack: 8,
                 code: main,
                 handlers: vec![],
+                lines: vec![],
             },
         ],
         classes: vec![],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let chunk = module.chunks[1].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();
@@ -295,6 +303,7 @@ fn run_perform_await_on_closure() {
                 max_stack: 8,
                 code: callee,
                 handlers: vec![],
+                lines: vec![],
             },
             Chunk {
                 locals: 0,
@@ -302,11 +311,14 @@ fn run_perform_await_on_closure() {
                 max_stack: 8,
                 code: main,
                 handlers: vec![],
+                lines: vec![],
             },
         ],
         classes: vec![],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let chunk = module.chunks[1].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();
@@ -678,12 +690,15 @@ fn run_effect_unhandled_error_top_level() {
             locals: 0,
             upvalues: 0,
             max_stack: 8,
-            code: main,
+            code,
             handlers: vec![],
+            lines: vec![],
         }],
         classes: vec![],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let chunk = module.chunks[0].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();
@@ -981,11 +996,12 @@ fn run_logger_event_handler_prints_and_resumes() {
         effects: vec!["LoggerEvent".to_string()],
         chunks: vec![
             Chunk {
-                locals: 3,
+                locals: 0,
                 upvalues: 0,
                 max_stack: 8,
-                code: catch,
+                code: callee,
                 handlers: vec![],
+                lines: vec![],
             },
             Chunk {
                 locals: 0,
@@ -993,11 +1009,14 @@ fn run_logger_event_handler_prints_and_resumes() {
                 max_stack: 8,
                 code: main,
                 handlers: vec![],
+                lines: vec![],
             },
         ],
         classes: vec![],
         traits: vec![],
         impls: vec![],
+        imports: vec![],
+        exports: vec![],
     };
     let chunk = module.chunks[1].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();

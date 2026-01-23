@@ -187,6 +187,74 @@ pub enum Instruction {
     StringLenChars,
 }
 
+impl Instruction {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        match self {
+            Instruction::Nop => buf.push(Opcode::Nop as u8),
+            Instruction::Push(v) => {
+                buf.push(Opcode::Push as u8);
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            Instruction::Pop => buf.push(Opcode::Pop as u8),
+            Instruction::Dup(v) => {
+                buf.push(Opcode::Dup as u8);
+                buf.push(*v);
+            }
+            Instruction::Swap(v) => {
+                buf.push(Opcode::Swap as u8);
+                buf.push(*v);
+            }
+            Instruction::LoadLocal(v) => {
+                buf.push(Opcode::LoadLocal as u8);
+                buf.push(*v);
+            }
+            Instruction::StoreLocal(v) => {
+                buf.push(Opcode::StoreLocal as u8);
+                buf.push(*v);
+            }
+            Instruction::LoadGlobal(v) => {
+                buf.push(Opcode::LoadGlobal as u8);
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            Instruction::StoreGlobal(v) => {
+                buf.push(Opcode::StoreGlobal as u8);
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            Instruction::LoadUpvalue(v) => {
+                buf.push(Opcode::LoadUpvalue as u8);
+                buf.push(*v);
+            }
+            Instruction::StoreUpvalue(v) => {
+                buf.push(Opcode::StoreUpvalue as u8);
+                buf.push(*v);
+            }
+            Instruction::CloseUpvalues => buf.push(Opcode::CloseUpvalues as u8),
+            Instruction::Jump(v) => {
+                buf.push(Opcode::Jump as u8);
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            Instruction::JumpIfFalse(v) => {
+                buf.push(Opcode::JumpIfFalse as u8);
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            Instruction::JumpIfNull(v) => {
+                buf.push(Opcode::JumpIfNull as u8);
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            Instruction::Return => buf.push(Opcode::Return as u8),
+            Instruction::I32Const(v) => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Const as u8);
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+            // Add other encodings as needed for tests
+            _ => unimplemented!("Encoding for {:?} not implemented", self),
+        }
+        buf
+    }
+}
+
 pub struct Decoder<'a> {
     code: &'a [u8],
     cursor: Cursor<&'a [u8]>,

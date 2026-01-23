@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use chomsky_uir::{EGraph, Id, IKun};
-use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
+use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, ImportInfo, NyarModule};
 use nyar_vm::bytecode::opcode::{I32Ext, Opcode};
 use nyar_error::FormatError;
 
@@ -111,6 +111,8 @@ impl NyarTranslator {
     /// 生成 NyarModule
     pub fn generate(&mut self, egraph: &EGraph, root: Id) -> Result<NyarModule, FormatError> {
         let mut functions_info = Vec::new();
+        let mut imports_info = Vec::new();
+        let mut exports_info = Vec::new();
         
         // Retrieve the root node
         let root_node = &egraph[root];
@@ -125,25 +127,67 @@ impl NyarTranslator {
             _ => std::slice::from_ref(&root),
         };
         
-        // 1. Separate functions from main statements
+        // 1. Separate functions, imports, and exports from main statements
         let mut main_stmts = Vec::new();
         let mut functions = Vec::new();
         
         for &item in items {
             let node = &egraph[item];
-            // Check if it's a function definition (assignment of lambda)
-            // or just a lambda? Usually function def is `name = lambda`
-            if let IKun::StateUpdate(target, value) = node {
-                if let IKun::Lambda(params, body) = &egraph[*value] {
-                    // It's a function definition
-                    if let IKun::Symbol(name) = &egraph[*target] {
-                        functions.push((name.clone(), params.clone(), *body));
-                        continue;
+            match node {
+                IKun::StateUpdate(target, value) => {
+                    if let IKun::Lambda(params, body) = &egraph[*value] {
+                        // It's a function definition
+                        if let IKun::Symbol(name) = &egraph[*target] {
+                            functions.push((name.clone(), params.clone(), *body));
+                            continue;
+                        }
                     }
                 }
+                IKun::Extension(name, args) => {
+                    match name.as_str() {
+                        "import" => {
+                            // Extension("import", [source_id, symbols...])
+                            if let IKun::StringConstant(source) = &egraph[args[0]] {
+                                if args.len() > 1 {
+                                    for &symbol_id in &args[1..] {
+                                        if let IKun::Symbol(symbol_name) = &egraph[symbol_id] {
+                                            imports_info.push(ImportInfo {
+                                                provider: source.clone(),
+                                                symbol: symbol_name.clone(),
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    // Fallback for star import or empty list
+                                    imports_info.push(ImportInfo {
+                                        provider: source.clone(),
+                                        symbol: "*".to_string(),
+                                    });
+                                }
+                            }
+                            continue;
+                        }
+                        "export" => {
+                            // Extension("export", [item_id])
+                            let exported_item = &egraph[args[0]];
+                            if let IKun::StateUpdate(target, value) = exported_item {
+                                if let IKun::Lambda(params, body) = &egraph[*value] {
+                                    if let IKun::Symbol(name) = &egraph[*target] {
+                                        functions.push((name.clone(), params.clone(), *body));
+                                        exports_info.push(ExportInfo {
+                                            symbol: name.clone(),
+                                            chunk_idx: (functions.len()) as u16, // +1 because 0 is main
+                                        });
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
             }
-            // Also check for direct Lambda (anonymous function expression used as statement? Unlikely at top level)
-            // Or Extension("async", [func])
             
             main_stmts.push(item);
         }
@@ -167,6 +211,8 @@ impl NyarTranslator {
             classes: Vec::new(),
             traits: Vec::new(),
             impls: Vec::new(),
+            imports: imports_info,
+            exports: exports_info,
         })
     }
 

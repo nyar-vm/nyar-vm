@@ -4,33 +4,33 @@
 
 pub mod codegen;
 
-use oak_java::{JavaLanguage, parser::JavaParser, ast::JavaRoot};
-use oak_core::source::Source;
+use oak_java::{JavaLanguage, parser::JavaParser, ast::JavaRoot, builder::JavaBuilder};
+use oak_core::{source::Source, builder::Builder, builder::BuilderCache};
 use nyar_vm::bytecode::format::NyarModule;
 use anyhow::Result;
 
 /// Mini Java 前端
 pub struct MiniJavaFrontend {
     language: JavaLanguage,
+    builder: JavaBuilder,
 }
 
 impl MiniJavaFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: JavaLanguage::default(),
-        }
+        let language = JavaLanguage::default();
+        let builder = JavaBuilder::new(language.clone());
+        Self { language, builder }
     }
 
     /// 解析 Java 源代码
     pub fn parse(&self, source: &str) -> Result<JavaRoot> {
-        // 这里只是示意，实际解析逻辑需要根据 oak-java 的实现来调用
-        // 假设 JavaParser 有一个简单的接口
-        // let mut parser = JavaParser::new(&self.language);
-        // parser.parse(source)
-        
-        // 由于 oak-java 目前可能还是骨架，我们先返回一个空的 Root
-        Ok(JavaRoot { items: vec![] })
+        let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
+        let output = self.builder.build(source, &[], &mut session);
+        match output.result {
+            Ok(root) => Ok(root),
+            Err(e) => Err(anyhow::anyhow!("Parse error: {:?}", e)),
+        }
     }
 
     /// 编译到 Nyar 字节码

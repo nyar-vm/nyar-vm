@@ -147,6 +147,7 @@ struct Frame {
     ip: usize,
     locals: Vec<Value>,
     closure: *const Closure,
+    module_idx: usize,
     chunk_idx: Option<usize>,
 }
 
@@ -155,18 +156,13 @@ pub struct NyarVM {
     stack: Vec<Value>,
     sp: usize,
     frames: Vec<Frame>,
-    pub constants: Vec<Constant>,
-    pub chunks: Vec<Chunk>,
-    pub classes: Vec<ClassInfo>,
-    pub traits: Vec<TraitInfo>,
-    pub impls: Vec<ImplInfo>,
-    pub effects: Vec<String>,
+    pub modules: Vec<NyarcModule>,
     pub handler_stack: Vec<HandlerFrame>,
     #[allow(clippy::type_complexity)]
     pub stdout: Option<Box<dyn Fn(&str)>>,
     pub trace_log: std::cell::RefCell<Vec<String>>,
     pub ffi: FFIRegistry,
-    pub symbol_table: std::collections::HashMap<String, u16>,
+    pub symbol_table: std::collections::HashMap<String, (usize, u16)>, // (module_idx, chunk_idx)
 }
 
 impl Trace for NyarVM {
@@ -183,25 +179,13 @@ impl Trace for NyarVM {
 }
 
 impl NyarVM {
-    pub fn new(
-        constants: Vec<Constant>,
-        chunks: Vec<Chunk>,
-        classes: Vec<ClassInfo>,
-        traits: Vec<TraitInfo>,
-        impls: Vec<ImplInfo>,
-        effects: Vec<String>,
-    ) -> Self {
+    pub fn new() -> Self {
         let mut vm = Self {
             gc: NyarGc::new(),
             stack: Vec::with_capacity(64),
             sp: 0,
             frames: Vec::new(),
-            constants,
-            chunks,
-            classes,
-            traits,
-            impls,
-            effects,
+            modules: Vec::new(),
             handler_stack: Vec::new(),
             stdout: None,
             trace_log: std::cell::RefCell::new(Vec::new()),
@@ -213,17 +197,9 @@ impl NyarVM {
     }
 
     fn register_builtins(&mut self) {
-        struct ImportFunc;
-        impl FFIFunction for ImportFunc {
-            fn call(&self, _args: Vec<Value>) -> FFIResult {
-                // Simplified: in a real impl, we'd need access to the VM's FFI registry
-                // which requires some architectural adjustments (e.g., passing registry to call)
-                // For now, this is a placeholder for the concept.
-                Ok(Value::null())
-            }
-        }
-        // self.ffi.register("import".to_string(), Box::new(ImportFunc));
+        // Builtins can be registered here
     }
+
     fn push(&mut self, v: Value) {
         if self.sp >= self.stack.len() {
             self.stack.push(v)
@@ -232,6 +208,7 @@ impl NyarVM {
         }
         self.sp += 1
     }
+
     fn pop(&mut self) -> Result<Value, VmError> {
         if self.sp == 0 {
             Err(VmError::StackUnderflow)
@@ -240,6 +217,7 @@ impl NyarVM {
             Ok(self.stack[self.sp])
         }
     }
+
     fn peek_at(&self, depth: usize) -> Result<Value, VmError> {
         if depth >= self.sp {
             Err(VmError::StackUnderflow)
@@ -247,6 +225,7 @@ impl NyarVM {
             Ok(self.stack[self.sp - 1 - depth])
         }
     }
+
     fn swap_with(&mut self, depth: usize) -> Result<(), VmError> {
         if depth >= self.sp {
             Err(VmError::StackUnderflow)
@@ -257,6 +236,7 @@ impl NyarVM {
             Ok(())
         }
     }
+
     fn print_line(&self, msg: &str) {
         if let Some(cb) = &self.stdout {
             cb(msg);
@@ -265,35 +245,9 @@ impl NyarVM {
         }
         self.trace_log.borrow_mut().push(msg.to_string());
     }
+
     pub fn log(&self, msg: &str) {
-        if let Some(cb) = &self.stdout {
-            cb(msg);
-        } else {
-            println!("{}", msg);
-        }
-        self.trace_log.borrow_mut().push(msg.to_string());
-    }
-
-    /// Load a new module into the VM, merging its contents.
-    /// This allows for hot-reloading code or adding new functionality at runtime.
-    pub fn load_module(&mut self, module: NyarcModule) {
-        // Map old indices to new ones if necessary (simplified for now: just append)
-        let chunk_offset = self.chunks.len() as u16;
-
-        self.constants.extend(module.constants);
-        self.chunks.extend(module.chunks);
-        self.classes.extend(module.classes);
-        self.traits.extend(module.traits);
-        self.impls.extend(module.impls);
-        self.effects.extend(module.effects);
-
-        // Update symbol table with exports
-        for export in module.exports {
-            self.symbol_table.insert(export.symbol, chunk_offset + export.chunk_idx);
-        }
-
-        // Handle imports - in a real VM, this would trigger lazy loading or link-time resolution
-        // For now, we just acknowledge them.
+        self.print_line(msg);
     }
 
     pub fn print_traceback(&self, err: &VmError) {
@@ -306,8 +260,8 @@ impl NyarVM {
         };
         for (i, f) in self.frames.iter().enumerate().skip(start) {
             let info = match f.chunk_idx {
-                Some(ci) => format!("frame {}: chunk={}, ip={}", i, ci, f.ip),
-                None => format!("frame {}: chunk=<entry>, ip={}", i, f.ip),
+                Some(ci) => format!("frame {}: module={}, chunk={}, ip={}", i, f.module_idx, ci, f.ip),
+                None => format!("frame {}: module={}, chunk=<entry>, ip={}", i, f.module_idx, f.ip),
             };
             self.print_line(&info);
         }
@@ -320,16 +274,45 @@ impl NyarVM {
             _ => self.print_line("Error"),
         }
     }
-    pub fn execute(&mut self, program: &[Instruction]) -> Result<Value, VmError> {
-        let mut loop_count = 0u64;
+
+    pub fn load_module(&mut self, module: NyarcModule) -> usize {
+        let module_idx = self.modules.len();
+        
+        // Update symbol table with exports from this module
+        for export in &module.exports {
+            self.symbol_table.insert(export.symbol.clone(), (module_idx, export.chunk_idx));
+        }
+        
+        self.modules.push(module);
+        module_idx
+    }
+
+    pub fn execute(&mut self, module_idx: usize, chunk_idx: usize) -> Result<Value, VmError> {
+        let module = &self.modules[module_idx];
+        let chunk = &module.chunks[chunk_idx];
+        
+        // Decode chunk code to instructions
+        let mut decoder = crate::bytecode::decoder::Decoder::new(&chunk.code);
+        let mut instructions = Vec::new();
+        while let Ok(ins) = decoder.next_result() {
+            instructions.push(ins);
+        }
+
         let frame = Frame {
-            instrs: program.to_vec(),
+            instrs: instructions,
             ip: 0,
             locals: vec![Value::null(); 32],
-            closure: null(),
-            chunk_idx: None,
+            closure: std::ptr::null(),
+            module_idx,
+            chunk_idx: Some(chunk_idx),
         };
-        self.frames.push(frame.clone());
+        
+        self.frames.push(frame);
+        self.run_loop()
+    }
+
+    fn run_loop(&mut self) -> Result<Value, VmError> {
+        let mut loop_count = 0u64;
         loop {
             loop_count += 1;
             if loop_count > 10_000_000 {
@@ -339,20 +322,36 @@ impl NyarVM {
                 self.print_traceback(&err);
                 return Err(err);
             }
-            let (ins, cur_ip) = {
+            
+            let (ins, cur_ip, module_idx) = {
                 let f = self.frames.last().unwrap();
                 if f.ip >= f.instrs.len() {
                     break;
                 }
-                (f.instrs[f.ip].clone(), f.ip)
+                (f.instrs[f.ip].clone(), f.ip, f.module_idx)
             };
-            if loop_count % 1_000_000 == 0 {
-                println!("DEBUG: Executed {} instrs, current: {:?}", loop_count, ins);
-            }
+
             let mut next_ip = Some(cur_ip + 1);
-            // self.log(&format!("ip={} {:?}", cur_ip, ins));
+            
             match ins {
                 Instruction::Nop => {}
+                Instruction::Push(idx) => {
+                    let module = &self.modules[module_idx];
+                    let constant = &module.constants[idx as usize];
+                    match constant {
+                        Constant::Int(v) => self.push(Value::int(*v)),
+                        Constant::Float(v) => self.push(Value::float(*v)),
+                        Constant::String(v) => self.push(Value::string(v.clone())),
+                        _ => return Err(VmError::RuntimeError("Unsupported constant type".to_string())),
+                    }
+                }
+                Instruction::Pop => { self.pop()?; }
+                Instruction::Return => {
+                    let val = self.pop().unwrap_or(Value::null());
+                    self.frames.pop();
+                    return Ok(val);
+                }
+
                 Instruction::BigIntConst { sign, bytes } => {
                     self.push(Value::bigint(sign, bytes));
                 }
@@ -1240,6 +1239,42 @@ impl NyarVM {
                         return Err(VmError::IndexOutOfBounds);
                     }
                 }
+                Instruction::Call(chunk_idx, argc) => {
+                    let module = &self.modules[module_idx];
+                    let chunk = module
+                        .chunks
+                        .get(chunk_idx as usize)
+                        .cloned()
+                        .ok_or(VmError::IndexOutOfBounds)?;
+                    use crate::bytecode::decoder::Decoder;
+                    let decoder = Decoder::new(&chunk.code);
+                    let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+
+                    let mut args = Vec::with_capacity(argc as usize);
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
+                    args.reverse();
+
+                    if args.len() < chunk.locals as usize {
+                        args.resize(chunk.locals as usize, Value::null());
+                    }
+
+                    let new_frame = Frame {
+                        instrs,
+                        ip: 0,
+                        locals: args,
+                        closure: null(),
+                        module_idx,
+                        chunk_idx: Some(chunk_idx as usize),
+                    };
+
+                    if let Some(next) = next_ip {
+                        self.frames.last_mut().unwrap().ip = next;
+                    }
+                    self.frames.push(new_frame);
+                    next_ip = None;
+                }
                 Instruction::CallClosure(argc) => {
                     let mut args = Vec::with_capacity(argc as usize);
                     for _ in 0..argc {
@@ -1256,7 +1291,7 @@ impl NyarVM {
                     let closure = unsafe { &*closure_ptr };
                     let chunk_idx = closure.func;
 
-                    let chunk = self
+                    let chunk = self.modules[module_idx]
                         .chunks
                         .get(chunk_idx)
                         .cloned()
@@ -1274,6 +1309,7 @@ impl NyarVM {
                         ip: 0,
                         locals: args,
                         closure: closure_ptr,
+                        module_idx,
                         chunk_idx: Some(chunk_idx),
                     };
 
@@ -1284,19 +1320,20 @@ impl NyarVM {
                     next_ip = None;
                 }
                 Instruction::CallSymbol(name_idx, argc) => {
-                    let name = match self.constants.get(name_idx as usize) {
+                    let module = &self.modules[module_idx];
+                    let name = match module.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s.as_str(),
                         _ => return Err(VmError::IndexOutOfBounds),
                     };
 
-                    if let Some(&chunk_idx) = self.symbol_table.get(name) {
+                    if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
                         let mut args = Vec::with_capacity(argc as usize);
                         for _ in 0..argc {
                             args.push(self.pop()?);
                         }
                         args.reverse();
 
-                        let chunk = self
+                        let chunk = self.modules[m_idx]
                             .chunks
                             .get(chunk_idx as usize)
                             .cloned()
@@ -1314,6 +1351,7 @@ impl NyarVM {
                             ip: 0,
                             locals: args,
                             closure: null(),
+                            module_idx: m_idx,
                             chunk_idx: Some(chunk_idx as usize),
                         };
 
@@ -1335,7 +1373,7 @@ impl NyarVM {
 
                     let receiver = self.pop()?;
 
-                    let name = match self.constants.get(name_idx as usize) {
+                    let name = match self.modules[module_idx].constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s.as_str(),
                         _ => return Err(VmError::InvalidOpcode),
                     };
@@ -1731,17 +1769,17 @@ impl NyarVM {
                         let obj_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::Object };
                         let obj_ref = unsafe { &*obj_ptr };
                         let class_idx = obj_ref.class_idx;
-                        let class_name = self
+                        let class_name = self.modules[module_idx]
                             .classes
                             .get(class_idx as usize)
                             .map(|c| c.name.clone())
                             .unwrap_or_else(|| "<unknown>".to_string());
 
                         let mut chunk_idx = None;
-                        for impl_info in &self.impls {
+                        for impl_info in &self.modules[module_idx].impls {
                             if impl_info.class_idx == class_idx {
                                 if let Some(trait_info) =
-                                    self.traits.get(impl_info.trait_idx as usize)
+                                    self.modules[module_idx].traits.get(impl_info.trait_idx as usize)
                                 {
                                     if let Some(idx) =
                                         trait_info.methods.iter().position(|m| m == name)
@@ -1765,7 +1803,7 @@ impl NyarVM {
                         //    "InvokeMethod: dispatch class={}({}), chunk_idx={}",
                         //    class_name, class_idx, chunk_idx
                         // ));
-                        let chunk = self
+                        let chunk = self.modules[module_idx]
                             .chunks
                             .get(chunk_idx as usize)
                             .cloned()
@@ -1889,11 +1927,12 @@ impl NyarVM {
                                     name_idx,
                                 )) = instrs.get(0)
                                 {
-                                    let name0 = match self.constants.get(*name_idx as usize) {
+                                    let module = &self.modules[module_idx];
+                                    let name0 = match module.constants.get(*name_idx as usize) {
                                         Some(Constant::String(s)) => s.as_str(),
                                         _ => "",
                                     };
-                                    let eff_name = self
+                                    let eff_name = module
                                         .effects
                                         .get(idx as usize)
                                         .map(|s| s.as_str())
@@ -1907,7 +1946,7 @@ impl NyarVM {
                             }
                             chosen
                         } {
-                            let chunk = self
+                            let chunk = self.modules[module_idx]
                                 .chunks
                                 .get(hf.catch_chunk)
                                 .cloned()
@@ -1935,6 +1974,7 @@ impl NyarVM {
                                 ip: 0,
                                 locals,
                                 closure: null(),
+                                module_idx,
                                 chunk_idx: Some(hf.catch_chunk),
                             };
                             if let Some(next) = next_ip {
@@ -2865,11 +2905,12 @@ impl NyarVM {
                     self.push(Value::bool(is_match));
                 }
                 Instruction::MatchEffect(name_idx) => {
-                    let name = match self.constants.get(name_idx as usize) {
+                    let module = &self.modules[module_idx];
+                    let name = match module.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s.as_str(),
                         _ => "",
                     };
-                    let eff_idx = self.effects.iter().position(|e| e == name);
+                    let eff_idx = module.effects.iter().position(|e| e == name);
                     let f = self.frames.last().unwrap();
                     let mut ok = false;
                     if !f.locals.is_empty() {
@@ -2915,8 +2956,9 @@ impl NyarVM {
                 }
                 Instruction::GetField(name_idx) => {
                     let obj = self.pop()?;
+                    let module = &self.modules[module_idx];
                     // self.log(&format!("GetField: obj_tag={:?}, name_idx={}", obj.tag, name_idx));
-                    match self.constants.get(name_idx as usize) {
+                    match module.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => {
                             // self.log(&format!("GetField: name_const=String({})", s));
                         }
@@ -2936,7 +2978,7 @@ impl NyarVM {
                     let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
                     let obj_ref = unsafe { &*obj_ptr };
 
-                    let name = match self.constants.get(name_idx as usize) {
+                    let name = match module.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s,
                         _ => {
                             return Err(VmError::RuntimeError(format!(
@@ -2945,7 +2987,7 @@ impl NyarVM {
                             )))
                         }
                     };
-                    let cls = self
+                    let cls = module
                         .classes
                         .get(obj_ref.class_idx as usize)
                         .ok_or(VmError::IndexOutOfBounds)?;
@@ -2958,8 +3000,9 @@ impl NyarVM {
                 Instruction::SetField(name_idx) => {
                     let val = self.pop()?;
                     let obj = self.pop()?;
+                    let module = &self.modules[module_idx];
                     // self.log(&format!("SetField: obj_tag={:?}, name_idx={}", obj.tag, name_idx));
-                    match self.constants.get(name_idx as usize) {
+                    match module.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => {
                             // self.log(&format!("SetField: name_const=String({})", s));
                         }
@@ -2980,7 +3023,7 @@ impl NyarVM {
                     let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
                     let obj_mut = unsafe { &mut *obj_ptr };
 
-                    let name = match self.constants.get(name_idx as usize) {
+                    let name = match module.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s,
                         _ => {
                             return Err(VmError::RuntimeError(format!(
@@ -2989,7 +3032,7 @@ impl NyarVM {
                             )))
                         }
                     };
-                    let cls = self
+                    let cls = module
                         .classes
                         .get(obj_mut.class_idx as usize)
                         .ok_or(VmError::IndexOutOfBounds)?;

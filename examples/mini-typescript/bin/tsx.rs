@@ -1,52 +1,69 @@
 use clap::Parser;
 use std::fs;
+use std::path::Path;
 use mini_typescript::MiniTypescriptFrontend;
+use mini_typescript::project::ProjectLoader;
 use nyar_vm::NyarVM;
-use nyar_vm::bytecode::decoder::Decoder;
 use oak_repl::{OakRepl, ReplHandler, HandleResult};
 
 #[derive(Parser, Debug)]
 #[command(name = "tsx", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Executor (Simulating tsx)")]
 struct Args {
-    /// The input TypeScript file. If not provided, enters REPL mode.
+    /// The input TypeScript file or directory. If not provided, enters REPL mode.
     #[arg(index = 1)]
     input: Option<String>,
 }
 
 struct TsReplHandler {
     frontend: MiniTypescriptFrontend,
+    vm: NyarVM,
 }
 
 impl TsReplHandler {
-    fn run_code_internal(frontend: &mut MiniTypescriptFrontend, source: &str) -> anyhow::Result<()> {
-        match frontend.compile_to_nyar(source) {
-            Ok(module) => {
-                // 1. 获取主 Chunk (通常是第一个)
-                if let Some(chunk) = module.chunks.first() {
-                    // 2. 解码字节码为指令
-                    let mut decoder = Decoder::new(&chunk.code);
-                    let mut instructions = Vec::new();
-                    while let Ok(ins) = decoder.next_result() {
-                        instructions.push(ins);
-                    }
+    fn new() -> Self {
+        Self {
+            frontend: MiniTypescriptFrontend::new(),
+            vm: NyarVM::new(),
+        }
+    }
 
-                    // 3. 创建 VM 并执行
-                    let mut vm = NyarVM::new(
-                        module.constants.clone(),
-                        module.chunks.clone(),
-                        module.classes.clone(),
-                        module.traits.clone(),
-                        module.impls.clone(),
-                        module.effects.clone(),
-                    );
-                    
-                    match vm.execute(&instructions) {
-                        Ok(val) => {
-                            // Value 不实现 Debug，我们手动打印其基本信息
-                            println!("Result Tag: {:?}", val.tag);
-                        }
-                        Err(e) => eprintln!("tsx: runtime error: {:?}", e),
+    fn run_project(&mut self, path: &str) -> anyhow::Result<()> {
+        let p = Path::new(path);
+        let base_dir = if p.is_dir() { p } else { p.parent().unwrap_or(Path::new(".")) };
+        let mut loader = ProjectLoader::new(base_dir);
+        
+        match loader.load_project(p) {
+            Ok(modules) => {
+                let mut entry_module_idx = 0;
+                for (i, module) in modules.into_iter().enumerate() {
+                    let idx = self.vm.load_module(module);
+                    if i == 0 {
+                        entry_module_idx = idx;
                     }
+                }
+                
+                // Execute main chunk of the entry module (usually index 0)
+                match self.vm.execute(entry_module_idx, 0) {
+                    Ok(val) => {
+                        println!("Execution finished. Result Tag: {:?}", val.tag);
+                    }
+                    Err(e) => eprintln!("tsx: runtime error: {:?}", e),
+                }
+            }
+            Err(e) => eprintln!("tsx: project loading error: {}", e),
+        }
+        Ok(())
+    }
+
+    fn run_code_internal(&mut self, source: &str) -> anyhow::Result<()> {
+        match self.frontend.compile_to_nyar(source) {
+            Ok(module) => {
+                let module_idx = self.vm.load_module(module);
+                match self.vm.execute(module_idx, 0) {
+                    Ok(val) => {
+                        println!("Result Tag: {:?}", val.tag);
+                    }
+                    Err(e) => eprintln!("tsx: runtime error: {:?}", e),
                 }
             }
             Err(e) => eprintln!("tsx: compilation error: {:?}", e),
@@ -81,7 +98,7 @@ impl ReplHandler for TsReplHandler {
         if trimmed == "exit()" || trimmed == "quit()" {
             return Ok(HandleResult::Exit);
         }
-        let _ = Self::run_code_internal(&mut self.frontend, line);
+        let _ = self.run_code_internal(line);
         Ok(HandleResult::Continue)
     }
 
@@ -98,16 +115,14 @@ impl ReplHandler for TsReplHandler {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let mut frontend = MiniTypescriptFrontend::new();
+    let mut handler = TsReplHandler::new();
 
     if let Some(input_file) = args.input {
-        let source_code = fs::read_to_string(&input_file)?;
-        TsReplHandler::run_code_internal(&mut frontend, &source_code)?;
+        handler.run_project(&input_file)?;
     } else {
         println!("Mini TypeScript REPL (Project Gaia)");
         println!("Type \"exit()\" or press Ctrl-D to exit.");
         
-        let handler = TsReplHandler { frontend };
         let mut repl = OakRepl::new(handler);
         repl.run()?;
     }
