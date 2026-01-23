@@ -30,6 +30,23 @@ pub struct NyarTranslator {
     chunks: Vec<Chunk>,
 }
 
+/// 辅助函数：在 EGraph 中递归查找 Lambda 节点
+fn find_lambda(egraph: &EGraph<IKun, ConstraintAnalysis>, class_id: Id) -> Option<(Vec<String>, Id)> {
+    let class = egraph.get_class(class_id);
+    for node in &class.nodes {
+        match node {
+            IKun::Lambda(params, body) => return Some((params.clone(), *body)),
+            IKun::StateUpdate(_, val) => {
+                if let Some(res) = find_lambda(egraph, *val) {
+                    return Some(res);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 impl NyarTranslator {
     /// 创建新的 Nyar 翻译器
     pub fn new() -> Self {
@@ -134,77 +151,118 @@ impl NyarTranslator {
         
         for &item in items {
             let node_class = egraph.get_class(item);
-            let node = &node_class.nodes[0];
-            println!("Codegen: Processing item {:?} (class {})", node, item);
-            match node {
-                IKun::StateUpdate(target, value) => {
-                    let value_class = egraph.get_class(*value);
-                    println!("Codegen: StateUpdate value class nodes: {:?}", value_class.nodes);
-                    if let IKun::Lambda(params, body) = &value_class.nodes[0] {
-                        // It's a function definition
-                        let target_class = egraph.get_class(*target);
-                        if let IKun::Symbol(name) = &target_class.nodes[0] {
-                            functions.push((name.clone(), params.clone(), *body));
-                            continue;
+            let mut handled_as_special = false;
+            
+            for node in &node_class.nodes {
+                match node {
+                    IKun::Lambda(_params, _body) => {
+                        // Directly a lambda (e.g. from FunctionDeclaration)
+                        // We mark it as handled so it doesn't go to main_stmts
+                        // unless it's an anonymous lambda used as an expression (which shouldn't be at top level anyway)
+                        handled_as_special = true;
+                        break;
+                    }
+                    IKun::StateUpdate(target, value) => {
+                        let mut is_function = false;
+                        
+                        if let Some((params, body)) = find_lambda(egraph, *value) {
+                            let target_class = egraph.get_class(*target);
+                            for t_node in &target_class.nodes {
+                                if let IKun::Symbol(name) = t_node {
+                                    functions.push((name.clone(), params.clone(), body));
+                                    is_function = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if is_function {
+                            handled_as_special = true;
+                            break;
                         }
                     }
-                }
-                IKun::Extension(name, args) => {
-                    match name.as_str() {
-                        "import" => {
-                            // Extension("import", [source_id, symbols...])
-                            if !args.is_empty() {
-                                let source_class = egraph.get_class(args[0]);
-                                if let IKun::StringConstant(source) = &source_class.nodes[0] {
-                                    if args.len() > 1 {
-                                        for &symbol_id in &args[1..] {
-                                            let symbol_class = egraph.get_class(symbol_id);
-                                            if let IKun::Symbol(symbol_name) = &symbol_class.nodes[0] {
+                    IKun::Extension(name, args) => {
+                        match name.as_str() {
+                            "import" => {
+                                if !args.is_empty() {
+                                    let source_class = egraph.get_class(args[0]);
+                                    for s_node in &source_class.nodes {
+                                        if let IKun::StringConstant(source) = s_node {
+                                            if args.len() > 1 {
+                                                for &symbol_id in &args[1..] {
+                                                    let symbol_class = egraph.get_class(symbol_id);
+                                                    for sym_node in &symbol_class.nodes {
+                                                        if let IKun::Symbol(symbol_name) = sym_node {
+                                                            imports_info.push(ImportInfo {
+                                                                provider: source.clone(),
+                                                                symbol: symbol_name.clone(),
+                                                            });
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            } else {
                                                 imports_info.push(ImportInfo {
                                                     provider: source.clone(),
-                                                    symbol: symbol_name.clone(),
+                                                    symbol: "*".to_string(),
                                                 });
                                             }
-                                        }
-                                    } else {
-                                        // Fallback for star import or empty list
-                                        imports_info.push(ImportInfo {
-                                            provider: source.clone(),
-                                            symbol: "*".to_string(),
-                                        });
-                                    }
-                                }
-                            }
-                            continue;
-                        }
-                        "export" => {
-                            // Extension("export", [item_id])
-                            if !args.is_empty() {
-                                let exported_item_class = egraph.get_class(args[0]);
-                                let exported_item = &exported_item_class.nodes[0];
-                                if let IKun::StateUpdate(target, value) = exported_item {
-                                    let value_class = egraph.get_class(*value);
-                                    if let IKun::Lambda(params, body) = &value_class.nodes[0] {
-                                        let target_class = egraph.get_class(*target);
-                                        if let IKun::Symbol(name) = &target_class.nodes[0] {
-                                            functions.push((name.clone(), params.clone(), *body));
-                                            exports_info.push(ExportInfo {
-                                                symbol: name.clone(),
-                                                chunk_idx: (functions.len()) as u16,
-                                            });
-                                            continue;
+                                            break;
                                         }
                                     }
                                 }
+                                handled_as_special = true;
+                                break;
                             }
+                            "export" => {
+                                if !args.is_empty() {
+                                    let exported_item_class = egraph.get_class(args[0]);
+                                    for exported_item in &exported_item_class.nodes {
+                                        match exported_item {
+                                            IKun::StateUpdate(target, value) => {
+                                                let mut is_function = false;
+                                                if let Some((params, body)) = find_lambda(egraph, *value) {
+                                                    let target_class = egraph.get_class(*target);
+                                                    for t_node in &target_class.nodes {
+                                                        if let IKun::Symbol(name) = t_node {
+                                                            functions.push((name.clone(), params.clone(), body));
+                                                            exports_info.push(ExportInfo {
+                                                                symbol: name.clone(),
+                                                                chunk_idx: (functions.len()) as u16,
+                                                            });
+                                                            is_function = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                if is_function {
+                                                    handled_as_special = true;
+                                                    break;
+                                                }
+                                            }
+                                            IKun::Lambda(params, body) => {
+                                                // Handle exported Lambda directly (if it doesn't have a name, we might have an issue, 
+                                                // but usually exports have names from the declaration)
+                                                // For now, let's just mark as handled to avoid warning
+                                                handled_as_special = true;
+                                                break;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                                if handled_as_special { break; }
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
+                    _ => {}
                 }
-                _ => {}
             }
-            println!("Codegen: Adding to main_stmts: {:?}", node);
-            main_stmts.push(item);
+            
+            if !handled_as_special {
+                main_stmts.push(item);
+            }
         }
 
         // 2. Generate Main Chunk
@@ -301,162 +359,266 @@ impl NyarTranslator {
 
     fn generate_node(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, id: Id, is_statement: bool) -> Result<(), FormatError> {
         let node_class = egraph.get_class(id);
-        let node = &node_class.nodes[0];
-        match node {
-            IKun::Constant(v) => {
-                self.emit_u8(Opcode::I32Ext as u8);
-                self.emit_u8(I32Ext::Const as u8);
-                self.emit_i32(*v as i32);
-                if is_statement { self.emit_u8(Opcode::Pop as u8); }
-            }
-            IKun::StringConstant(s) => {
-                let idx = self.constants.len() as u16;
-                self.constants.push(Constant::String(s.clone()));
-                self.emit_u8(Opcode::Push as u8);
-                self.emit_u16(idx);
-                if is_statement { self.emit_u8(Opcode::Pop as u8); }
-            }
-            IKun::Symbol(name) => {
-                if let Some(&index) = self.locals.get(name.as_str()) {
-                    self.emit_u8(Opcode::LoadLocal as u8);
-                    self.emit_u8(index);
-                } else {
-                    // Undefined variable or global? defaulting to 0 for now
+        
+        // Try to find a node we can handle
+        let mut handled = false;
+        for node in &node_class.nodes {
+            match node {
+                IKun::Constant(v) => {
                     self.emit_u8(Opcode::I32Ext as u8);
                     self.emit_u8(I32Ext::Const as u8);
-                    self.emit_i32(0);
+                    self.emit_i32(*v as i32);
+                    if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    handled = true;
                 }
-                if is_statement { self.emit_u8(Opcode::Pop as u8); }
-            }
-            IKun::StateUpdate(target, value) => {
-                self.generate_node(egraph, *value, false)?;
-                
-                let target_class = egraph.get_class(*target);
-                if let IKun::Symbol(name) = &target_class.nodes[0] {
-                    let index = if let Some(&idx) = self.locals.get(name.as_str()) {
-                        idx
-                    } else {
-                        let idx = self.local_index;
-                        self.locals.insert(name.clone(), idx);
-                        self.local_index += 1;
-                        idx
-                    };
-                    self.emit_u8(Opcode::StoreLocal as u8);
-                    self.emit_u8(index);
-                    if !is_statement {
+                IKun::StringConstant(s) => {
+                    let idx = self.constants.len() as u16;
+                    self.constants.push(Constant::String(s.clone()));
+                    self.emit_u8(Opcode::Push as u8);
+                    self.emit_u16(idx);
+                    if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    handled = true;
+                }
+                IKun::Symbol(name) => {
+                    if let Some(&index) = self.locals.get(name.as_str()) {
                         self.emit_u8(Opcode::LoadLocal as u8);
                         self.emit_u8(index);
+                    } else {
+                        // Try global or builtin
+                        let idx = self.constants.len() as u16;
+                        self.constants.push(Constant::String(name.clone()));
+                        self.emit_u8(Opcode::LoadGlobal as u8);
+                        self.emit_u16(idx);
                     }
-                } else if is_statement {
-                    self.emit_u8(Opcode::Pop as u8);
+                    if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    handled = true;
                 }
-            }
-            IKun::Seq(items) => {
-                let len = items.len();
-                for (i, &item) in items.iter().enumerate() {
-                    let is_last = i == len - 1;
-                    self.generate_node(egraph, item, if is_last { is_statement } else { true })?;
-                }
-            }
-            IKun::Choice(cond, then_branch, else_branch) => {
-                let false_label = self.new_label("if_false");
-                let end_label = self.new_label("if_end");
-
-                // 1. Evaluate condition
-                self.generate_node(egraph, *cond, false)?;
-
-                // 2. Jump if false
-                self.emit_jump(&false_label, true);
-
-                // 3. True block
-                self.generate_node(egraph, *then_branch, is_statement)?;
-                self.emit_jump(&end_label, false);
-
-                // 4. False block
-                self.define_label(&false_label);
-                self.generate_node(egraph, *else_branch, is_statement)?;
-
-                // 5. End block
-                self.define_label(&end_label);
-            }
-            IKun::Extension(name, args) => {
-                match name.as_str() {
-                    "while" => {
-                        if args.len() < 2 { return Ok(()); }
-                        let cond_label = self.new_label("while_cond");
-                        let end_label = self.new_label("while_end");
-
-                        // 1. Condition block
-                        self.define_label(&cond_label);
-                        self.generate_node(egraph, args[0], false)?;
-                        self.emit_jump(&end_label, true);
-
-                        // 2. Body block
-                        self.generate_node(egraph, args[1], true)?;
-                        self.emit_jump(&cond_label, false);
-
-                        // 3. End block
-                        self.define_label(&end_label);
-                    }
-                    "return" => {
-                        if !args.is_empty() {
-                            self.generate_node(egraph, args[0], false)?;
-                        } else {
-                            self.emit_u8(Opcode::I32Ext as u8);
-                            self.emit_u8(I32Ext::Const as u8);
-                            self.emit_i32(0);
+                IKun::StateUpdate(target, value) => {
+                    self.generate_node(egraph, *value, false)?;
+                    
+                    let target_class = egraph.get_class(*target);
+                    let mut target_handled = false;
+                    for target_node in &target_class.nodes {
+                        if let IKun::Symbol(name) = target_node {
+                            let index = if let Some(&idx) = self.locals.get(name.as_str()) {
+                                idx
+                            } else {
+                                let idx = self.local_index;
+                                self.locals.insert(name.clone(), idx);
+                                self.local_index += 1;
+                                idx
+                            };
+                            self.emit_u8(Opcode::StoreLocal as u8);
+                            self.emit_u8(index);
+                            if !is_statement {
+                                self.emit_u8(Opcode::LoadLocal as u8);
+                                self.emit_u8(index);
+                            }
+                            target_handled = true;
+                            break;
                         }
-                        self.emit_u8(Opcode::Return as u8);
                     }
-                    "add" | "sub" | "mul" | "div" | "eq" | "lt" | "gt" => {
-                        self.generate_node(egraph, args[0], false)?;
-                        self.generate_node(egraph, args[1], false)?;
-                        self.emit_u8(Opcode::I32Ext as u8);
-                        let op = match name.as_str() {
-                            "add" => I32Ext::Add,
-                            "sub" => I32Ext::Sub,
-                            "mul" => I32Ext::Mul,
-                            "div" => I32Ext::DivS,
-                            "eq" => I32Ext::Eq,
-                            "lt" => I32Ext::LtS,
-                            "gt" => I32Ext::GtS,
-                            _ => unreachable!(),
-                        };
-                        self.emit_u8(op as u8);
-                        if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    if !target_handled && is_statement {
+                        self.emit_u8(Opcode::Pop as u8);
                     }
-                    _ => {
-                        // Unknown extension, ignore or error
-                    }
+                    handled = true;
                 }
-            }
-            IKun::Apply(func, args) => {
-                // Simplified call generation
-                for arg in args {
-                    self.generate_node(egraph, *arg, false)?;
+                IKun::Seq(items) => {
+                    let len = items.len();
+                    for (i, &item) in items.iter().enumerate() {
+                        let is_last = i == len - 1;
+                        self.generate_node(egraph, item, if is_last { is_statement } else { true })?;
+                    }
+                    handled = true;
                 }
+                IKun::Choice(cond, then_branch, else_branch) => {
+                    let false_label = self.new_label("if_false");
+                    let end_label = self.new_label("if_end");
 
-                let func_class = egraph.get_class(*func);
-                if let IKun::Symbol(name) = &func_class.nodes[0] {
-                    // Call by name (could be local function, exported function from another module, or built-in)
-                    let name_idx = self.constants.len() as u16;
-                    self.constants.push(Constant::String(name.clone()));
-                    self.emit_u8(Opcode::CallSymbol as u8);
-                    self.emit_u16(name_idx);
-                    self.emit_u8(args.len() as u8);
-                } else {
-                    // Call by value (e.g. closure or complex expression)
-                    self.generate_node(egraph, *func, false)?;
-                    self.emit_u8(Opcode::Call as u8);
-                    self.emit_u8(args.len() as u8);
-                }
+                    // 1. Evaluate condition
+                    self.generate_node(egraph, *cond, false)?;
 
-                if is_statement {
-                    self.emit_u8(Opcode::Pop as u8);
+                    // 2. Jump if false
+                    self.emit_jump(&false_label, true);
+
+                    // 3. True block
+                    self.generate_node(egraph, *then_branch, is_statement)?;
+                    
+                    if !is_statement {
+                        self.emit_jump(&end_label, false);
+                    } else {
+                        // If it's a statement, we don't need to jump to end if we already returned or something,
+                        // but for simplicity we always jump to end to skip the else branch.
+                        self.emit_jump(&end_label, false);
+                    }
+
+                    // 4. False block
+                    self.define_label(&false_label);
+                    self.generate_node(egraph, *else_branch, is_statement)?;
+
+                    // 5. End block
+                    self.define_label(&end_label);
+                    handled = true;
                 }
+                IKun::Extension(name, args) => {
+                    match name.as_str() {
+                        "while" => {
+                            if args.len() < 2 { return Ok(()); }
+                            let cond_label = self.new_label("while_cond");
+                            let end_label = self.new_label("while_end");
+
+                            // 1. Condition block
+                            self.define_label(&cond_label);
+                            self.generate_node(egraph, args[0], false)?;
+                            self.emit_jump(&end_label, true);
+
+                            // 2. Body block
+                            self.generate_node(egraph, args[1], true)?;
+                            self.emit_jump(&cond_label, false);
+
+                            // 3. End block
+                            self.define_label(&end_label);
+                            
+                            // While loop as expression returns null
+                            if !is_statement {
+                                // We don't have a Null opcode in I32Ext, so we push 0 for now
+                                self.emit_u8(Opcode::I32Ext as u8);
+                                self.emit_u8(I32Ext::Const as u8);
+                                self.emit_i32(0);
+                            }
+                            handled = true;
+                        }
+                        "return" => {
+                            if !args.is_empty() {
+                                self.generate_node(egraph, args[0], false)?;
+                            } else {
+                                self.emit_u8(Opcode::I32Ext as u8);
+                                self.emit_u8(I32Ext::Const as u8);
+                                self.emit_i32(0);
+                            }
+                            self.emit_u8(Opcode::Return as u8);
+                            // After return, we don't need to pop even if is_statement is true
+                            // because the frame is gone.
+                            handled = true;
+                        }
+                        "add" | "sub" | "mul" | "div" | "eq" | "lt" | "gt" => {
+                            self.generate_node(egraph, args[0], false)?;
+                            self.generate_node(egraph, args[1], false)?;
+                            self.emit_u8(Opcode::I32Ext as u8);
+                            let op = match name.as_str() {
+                                "add" => I32Ext::Add,
+                                "sub" => I32Ext::Sub,
+                                "mul" => I32Ext::Mul,
+                                "div" => I32Ext::DivS,
+                                "eq" => I32Ext::Eq,
+                                "lt" => I32Ext::LtS,
+                                "gt" => I32Ext::GtS,
+                                _ => unreachable!(),
+                            };
+                            self.emit_u8(op as u8);
+                            if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                            handled = true;
+                        }
+                        "member" => {
+                            // object.property
+                            self.generate_node(egraph, args[0], false)?;
+                            let prop_class = egraph.get_class(args[1]);
+                            let mut prop_handled = false;
+                            for prop_node in &prop_class.nodes {
+                                if let IKun::Symbol(prop_name) = prop_node {
+                                    let name_idx = self.constants.len() as u16;
+                                    self.constants.push(Constant::String(prop_name.clone()));
+                                    self.emit_u8(Opcode::GetField as u8);
+                                    self.emit_u16(name_idx);
+                                    prop_handled = true;
+                                    break;
+                                }
+                            }
+                            if !prop_handled {
+                                // Fallback to index access if property is not a literal symbol
+                                self.generate_node(egraph, args[1], false)?;
+                                self.emit_u8(Opcode::GetElement as u8);
+                            }
+                            if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                            handled = true;
+                        }
+                        _ => {
+                            // Unknown extension, ignore or error
+                        }
+                    }
+                }
+                IKun::Apply(func, args) => {
+                    let func_class = egraph.get_class(*func);
+                    let mut func_handled = false;
+                    
+                    // Try to see if it's a method call like object.method(args)
+                    for node in &func_class.nodes {
+                        if let IKun::Extension(ext_name, ext_args) = node {
+                            if ext_name == "member" && ext_args.len() == 2 {
+                                // object.method(args) -> receiver = object, method = ext_args[1]
+                                // 1. Push receiver
+                                self.generate_node(egraph, ext_args[0], false)?;
+                                // 2. Push arguments
+                                for arg in args {
+                                    self.generate_node(egraph, *arg, false)?;
+                                }
+                                // 3. InvokeMethod
+                                let prop_class = egraph.get_class(ext_args[1]);
+                                for prop_node in &prop_class.nodes {
+                                    if let IKun::Symbol(prop_name) = prop_node {
+                                        let name_idx = self.constants.len() as u16;
+                                        self.constants.push(Constant::String(prop_name.clone()));
+                                        self.emit_u8(Opcode::InvokeMethod as u8);
+                                        self.emit_u16(name_idx);
+                                        self.emit_u8(args.len() as u8);
+                                        func_handled = true;
+                                        break;
+                                    }
+                                }
+                                if func_handled { break; }
+                            }
+                        }
+                    }
+
+                    if !func_handled {
+                        // Simplified call generation
+                        for arg in args {
+                            self.generate_node(egraph, *arg, false)?;
+                        }
+
+                        for func_node in &func_class.nodes {
+                            if let IKun::Symbol(name) = func_node {
+                                // Call by name (could be local function, exported function from another module, or built-in)
+                                let name_idx = self.constants.len() as u16;
+                                self.constants.push(Constant::String(name.clone()));
+                                self.emit_u8(Opcode::CallSymbol as u8);
+                                self.emit_u16(name_idx);
+                                self.emit_u8(args.len() as u8);
+                                func_handled = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if !func_handled {
+                        // Call by value (expression returning a function)
+                        self.generate_node(egraph, *func, false)?;
+                        self.emit_u8(Opcode::CallClosure as u8);
+                        self.emit_u8(args.len() as u8);
+                    }
+                    
+                    if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    handled = true;
+                }
+                _ => {}
             }
-            _ => {}
+            if handled { break; }
         }
+
+        if !handled {
+            println!("Codegen: Unhandled node class {:?}: {:?}", id, node_class.nodes);
+        }
+        
         Ok(())
     }
 }

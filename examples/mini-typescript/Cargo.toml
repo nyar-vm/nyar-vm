@@ -18,7 +18,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 oak-repl = { path = "../../../oaks/projects/oak-repl" }
-anyhow = "1.0"
 
 [[bin]]
 name = "tsc"

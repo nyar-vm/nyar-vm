@@ -3,7 +3,7 @@ use std::path::Path;
 use mini_typescript::MiniTypescriptFrontend;
 use mini_typescript::project::ProjectLoader;
 use nyar_vm::NyarVM;
-use oak_repl::{OakRepl, ReplHandler, HandleResult};
+use oak_repl::{OakRepl, ReplHandler, HandleResult, ReplError};
 
 #[derive(Parser, Debug)]
 #[command(name = "tsx", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Executor (Simulating tsx)")]
@@ -11,6 +11,48 @@ struct Args {
     /// The input TypeScript file or directory. If not provided, enters REPL mode.
     #[arg(index = 1)]
     input: Option<String>,
+}
+
+use std::fmt::{Display, Formatter};
+use std::error::Error;
+
+#[derive(Debug)]
+pub enum TsError {
+    Other(String),
+}
+
+impl Display for TsError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TsError::Other(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+impl Error for TsError {}
+
+impl From<String> for TsError {
+    fn from(s: String) -> Self {
+        TsError::Other(s)
+    }
+}
+
+impl From<&str> for TsError {
+    fn from(s: &str) -> Self {
+        TsError::Other(s.to_string())
+    }
+}
+
+impl From<TsError> for ReplError {
+    fn from(e: TsError) -> Self {
+        ReplError::Other(e.to_string())
+    }
+}
+
+impl From<ReplError> for TsError {
+    fn from(e: ReplError) -> Self {
+        TsError::Other(e.to_string())
+    }
 }
 
 struct TsReplHandler {
@@ -26,7 +68,7 @@ impl TsReplHandler {
         }
     }
 
-    fn run_project(&mut self, path: &str) -> anyhow::Result<()> {
+    fn run_project(&mut self, path: &str) -> Result<(), TsError> {
         let p = Path::new(path);
         let base_dir = if p.is_dir() { p } else { p.parent().unwrap_or(Path::new(".")) };
         let mut loader = ProjectLoader::new(base_dir);
@@ -54,7 +96,7 @@ impl TsReplHandler {
         Ok(())
     }
 
-    fn run_code_internal(&mut self, source: &str) -> anyhow::Result<()> {
+    fn run_code_internal(&mut self, source: &str) -> Result<(), TsError> {
         match self.frontend.compile_to_nyar(source) {
             Ok(module) => {
                 let module_idx = self.vm.load_module(module);
@@ -92,7 +134,7 @@ impl ReplHandler for TsReplHandler {
         depth <= 0
     }
 
-    fn handle_line(&mut self, line: &str) -> anyhow::Result<HandleResult> {
+    fn handle_line(&mut self, line: &str) -> Result<HandleResult, ReplError> {
         let trimmed = line.trim();
         if trimmed == "exit()" || trimmed == "quit()" {
             return Ok(HandleResult::Exit);
@@ -112,7 +154,7 @@ impl ReplHandler for TsReplHandler {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), TsError> {
     let args = Args::parse();
     let mut handler = TsReplHandler::new();
 

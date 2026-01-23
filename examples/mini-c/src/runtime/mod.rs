@@ -5,8 +5,40 @@ use chomsky_full::extract::IKunExtractor;
 use nyar_vm::vm::interpreter::NyarVM;
 use nyar_vm::bytecode::format::{NyarcModule, Chunk, ExportInfo};
 use nyar_vm::bytecode::decoder::Instruction;
-use anyhow::{Result, anyhow};
+use std::fmt::{Display, Formatter};
+use std::error::Error;
 use std::collections::HashMap;
+
+#[derive(Debug)]
+pub enum RuntimeError {
+    NyarVm(String),
+    EntryPointNotFound,
+    Other(String),
+}
+
+impl Display for RuntimeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeError::NyarVm(msg) => write!(f, "Nyar VM execution failed: {}", msg),
+            RuntimeError::EntryPointNotFound => write!(f, "No entry point found in module"),
+            RuntimeError::Other(msg) => write!(f, "Runtime error: {}", msg),
+        }
+    }
+}
+
+impl Error for RuntimeError {}
+
+impl From<String> for RuntimeError {
+    fn from(s: String) -> Self {
+        RuntimeError::Other(s)
+    }
+}
+
+impl From<&str> for RuntimeError {
+    fn from(s: &str) -> Self {
+        RuntimeError::Other(s.to_string())
+    }
+}
 
 pub struct MiniCRuntime {
     _optimizer: UniversalOptimizer<()>,
@@ -21,7 +53,7 @@ impl MiniCRuntime {
         }
     }
 
-    pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<()> {
+    pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), RuntimeError> {
         let (egraph, root_id) = intent_graph;
         
         // 1. Extract the best tree using the default cost model
@@ -45,17 +77,17 @@ impl MiniCRuntime {
                 }
                 Err(e) => {
                     println!("Nyar VM execution failed: {:?}", e);
-                    return Err(anyhow!("Nyar VM execution failed: {:?}", e));
+                    return Err(RuntimeError::NyarVm(format!("{:?}", e)));
                 }
             }
         } else {
-            return Err(anyhow!("No entry point found in module"));
+            return Err(RuntimeError::EntryPointNotFound);
         }
         
         Ok(())
     }
 
-    fn translate_to_nyar(&self, tree: &IKunTree) -> Result<NyarcModule> {
+    fn translate_to_nyar(&self, tree: &IKunTree) -> Result<NyarcModule, RuntimeError> {
         let mut module = NyarcModule::default();
 
         match tree {
@@ -104,7 +136,7 @@ impl MiniCRuntime {
         Ok(module)
     }
 
-    fn translate_function(&self, params: &[String], body: &IKunTree) -> Result<Chunk> {
+    fn translate_function(&self, params: &[String], body: &IKunTree) -> Result<Chunk, RuntimeError> {
         let mut instructions = vec![];
         let mut symbols = HashMap::new();
         
@@ -135,7 +167,7 @@ impl MiniCRuntime {
         })
     }
 
-    fn translate_expr(&self, tree: &IKunTree, insts: &mut Vec<Instruction>, symbols: &mut HashMap<String, u8>) -> Result<()> {
+    fn translate_expr(&self, tree: &IKunTree, insts: &mut Vec<Instruction>, symbols: &mut HashMap<String, u8>) -> Result<(), RuntimeError> {
         match tree {
             IKunTree::Constant(v) => {
                 insts.push(Instruction::I32Const(*v as i32));
@@ -163,7 +195,7 @@ impl MiniCRuntime {
                     "<=" => insts.push(Instruction::I32LeS),
                     ">" => insts.push(Instruction::I32GtS),
                     ">=" => insts.push(Instruction::I32GeS),
-                    _ => return Err(anyhow!("Unsupported binary op: {}", op)),
+                    _ => return Err(RuntimeError::Other(format!("Unsupported binary op: {}", op))),
                 }
             }
             IKunTree::Choice(cond, then_br, else_br) => {

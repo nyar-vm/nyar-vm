@@ -15,12 +15,42 @@ struct Args {
     input: Option<String>,
 }
 
+use std::fmt::{Display, Formatter};
+use std::error::Error;
+
+#[derive(Debug)]
+pub enum ClingError {
+    Other(String),
+}
+
+impl Display for ClingError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClingError::Other(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+impl Error for ClingError {}
+
+impl From<String> for ClingError {
+    fn from(s: String) -> Self {
+        ClingError::Other(s)
+    }
+}
+
+impl From<&str> for ClingError {
+    fn from(s: &str) -> Self {
+        ClingError::Other(s.to_string())
+    }
+}
+
 struct CReplHandler {
     frontend: MiniCFrontend,
 }
 
 impl CReplHandler {
-    fn run_code_internal(frontend: &mut MiniCFrontend, source: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_code_internal(frontend: &mut MiniCFrontend, source: &str) -> Result<(), ClingError> {
         match frontend.parse(source) {
             Ok((egraph, root)) => {
                 println!("EGraph nodes: {}", egraph.memo.len());
@@ -71,7 +101,7 @@ impl ReplHandler for CReplHandler {
         false
     }
 
-    fn handle_line(&mut self, line: &str) -> Result<HandleResult, Box<dyn std::error::Error>> {
+    fn handle_line(&mut self, line: &str) -> Result<HandleResult, ClingError> {
         let trimmed = line.trim();
         if trimmed == ".q" || trimmed == "exit()" {
             return Ok(HandleResult::Exit);
@@ -91,7 +121,7 @@ impl ReplHandler for CReplHandler {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), ClingError> {
     let args = Args::parse();
     // 假设 mini-c 导出了 MiniCFrontend
     // 注意：如果 mini-c 的库名不是 virtual_c，请根据实际情况调整

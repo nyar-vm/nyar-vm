@@ -133,8 +133,7 @@ impl<'a> UirConverter<'a> {
                 for s in func.body {
                     body_ids.push(self.convert_statement(s));
                 }
-                let lambda = self.builder.function(&func.name, func.params, body_ids);
-                self.builder.assign(&func.name, lambda, loc)
+                self.builder.function(&func.name, func.params, body_ids)
             }
             ast::Statement::ExpressionStatement(expr) => {
                 self.convert_expression(expr)

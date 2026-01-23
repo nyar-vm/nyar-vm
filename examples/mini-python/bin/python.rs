@@ -134,7 +134,7 @@ impl ReplHandler for PythonReplHandler {
         true
     }
 
-    fn handle_line(&mut self, line: &str) -> anyhow::Result<HandleResult> {
+    fn handle_line(&mut self, line: &str) -> Result<HandleResult, PythonError> {
         let trimmed = line.trim();
         if trimmed == "exit()" || trimmed == "quit()" {
             return Ok(HandleResult::Exit);
@@ -157,7 +157,7 @@ impl ReplHandler for PythonReplHandler {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), PythonError> {
     let args = Args::parse();
     let mut frontend = MiniPythonFrontend::new();
 
