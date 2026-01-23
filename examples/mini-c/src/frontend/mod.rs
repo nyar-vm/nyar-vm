@@ -2,7 +2,6 @@ use oak_c::{CLexer, CParser, CLanguage, CElementType, CTokenType};
 use chomsky_uir::{EGraph, Id, IntentBuilder};
 use chomsky_source::Loc;
 use oak_core::parser::{Parser, ParseSession};
-use oak_core::lexer::{Lexer, LexerCache};
 use oak_core::source::SourceText;
 use oak_core::tree::{RedNode, RedTree};
 
@@ -36,24 +35,28 @@ impl MiniCFrontend {
         let mut egraph = EGraph::default();
         let mut builder = IntentBuilder::new(&mut egraph);
         
-        let root_id = self.convert_red_to_uir(&mut builder, red_node, source);
+        // Assume source_id 1 for the main file
+        let root_id = self.convert_red_to_uir(&mut builder, red_node, source, 1);
         
         Ok((egraph, root_id))
     }
 
-    fn convert_red_to_uir(&self, builder: &mut IntentBuilder, node: RedNode<CLanguage>, source: &str) -> Id {
+    fn get_loc(&self, node: &RedNode<CLanguage>, source_id: u32) -> Loc {
+        let span = node.span();
+        Loc::new(source_id, span.start as u32, span.end as u32)
+    }
+
+    fn convert_red_to_uir(&self, builder: &mut IntentBuilder, node: RedNode<CLanguage>, source: &str, source_id: u32) -> Id {
+        let loc = self.get_loc(&node, source_id);
         match node.green.kind {
             CElementType::Root => {
                 let mut items = vec![];
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
-                        let item = self.convert_red_to_uir(builder, n, source);
+                        let item = self.convert_red_to_uir(builder, n, source, source_id);
                         items.push(item);
                     }
                 }
-                // Wrap in a module for now, or just return a list if that's what we want.
-                // But UIR usually expects a single root.
-                // Let's make a module "mini-c".
                 builder.module("mini-c", items)
             }
             CElementType::FunctionDefinition => {
@@ -64,15 +67,15 @@ impl MiniCFrontend {
                 for child in node.children() {
                     match child {
                         RedTree::Node(n) => {
-                            // Only process statements
-                             match n.green.kind {
+                            match n.green.kind {
                                 CElementType::ReturnStatement
                                 | CElementType::ExpressionStatement
+                                | CElementType::DeclarationStatement
                                 | CElementType::IfStatement
                                 | CElementType::WhileStatement
                                 | CElementType::ForStatement
                                 | CElementType::CompoundStatement => {
-                                    let stmt = self.convert_red_to_uir(builder, n, source);
+                                    let stmt = self.convert_red_to_uir(builder, n, source, source_id);
                                     body.push(stmt);
                                 }
                                 _ => {}
@@ -89,70 +92,145 @@ impl MiniCFrontend {
                         }
                     }
                 }
-                // Empty params for now as in the original
                 builder.function(&name, vec![], body)
             }
             CElementType::ReturnStatement => {
                 let mut expr = None;
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
-                        expr = Some(self.convert_red_to_uir(builder, n, source));
+                        expr = Some(self.convert_red_to_uir(builder, n, source, source_id));
                         break;
                     }
                 }
                 if let Some(e) = expr {
-                    builder.return_(e)
+                    builder.return_(e, loc)
                 } else {
-                    // Return void/unit?
-                    let unit = builder.constant(());
-                    builder.return_(unit)
+                    let zero = builder.constant(0, loc);
+                    builder.return_(zero, loc)
+                }
+            }
+            CElementType::DeclarationStatement => {
+                // Simplified declaration: int a = 1;
+                // We look for an identifier and an optional assignment
+                let mut name = None;
+                let mut value = None;
+                let mut found_assign = false;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Leaf(l) => {
+                            let kind: CElementType = l.kind.into();
+                            if let CElementType::Token(CTokenType::Identifier) = kind {
+                                if name.is_none() {
+                                    let s = l.span;
+                                    name = Some(source[s.start..s.end].to_string());
+                                }
+                            } else if let CElementType::Token(CTokenType::Assign) = kind {
+                                found_assign = true;
+                            } else if let CElementType::Token(CTokenType::IntegerLiteral) = kind {
+                                if found_assign {
+                                    let s = l.span;
+                                    if let Ok(val) = source[s.start..s.end].parse::<i64>() {
+                                        value = Some(builder.constant(val, loc));
+                                    }
+                                }
+                            }
+                        }
+                        RedTree::Node(n) => {
+                            if found_assign {
+                                value = Some(self.convert_red_to_uir(builder, n, source, source_id));
+                            }
+                        }
+                    }
+                }
+
+                if let (Some(n), Some(v)) = (name, value) {
+                    builder.assign(&n, v, loc)
+                } else {
+                    builder.constant(0, loc)
                 }
             }
             CElementType::ExpressionStatement => {
-                // If it's a leaf (literal/identifier), extract it
+                let children: Vec<_> = node.children().collect();
+                if children.len() == 3 {
+                    // Possible binary expression: [left, op, right]
+                    if let (RedTree::Node(left), RedTree::Leaf(op_leaf), RedTree::Node(right)) = (&children[0], &children[1], &children[2]) {
+                        let left_id = self.convert_red_to_uir(builder, left.clone(), source, source_id);
+                        let right_id = self.convert_red_to_uir(builder, right.clone(), source, source_id);
+                        let op_span = op_leaf.span;
+                        let op_text = &source[op_span.start..op_span.end];
+                        return builder.binary_op(op_text, left_id, right_id, loc);
+                    }
+                }
+
                 for child in node.children() {
                     match child {
                         RedTree::Leaf(l) => {
                             let s = l.span;
                             let text = &source[s.start..s.end];
-                            // Check if it's a number or identifier
-                             if let CElementType::Token(CTokenType::IntegerLiteral) = l.kind.into() {
-                                 if let Ok(val) = text.parse::<i64>() {
-                                     return builder.constant(val);
-                                 }
-                             }
-                             // Fallback to symbol for identifiers
-                             return builder.symbol(text);
+                            if let CElementType::Token(CTokenType::IntegerLiteral) = l.kind.into() {
+                                if let Ok(val) = text.parse::<i64>() {
+                                    return builder.constant(val, loc);
+                                }
+                            }
+                            return builder.symbol(text, loc);
                         }
                         RedTree::Node(n) => {
-                            return self.convert_red_to_uir(builder, n, source);
+                            return self.convert_red_to_uir(builder, n, source, source_id);
                         }
                     }
                 }
-                // Empty expression?
-                builder.constant("empty_expr")
+                builder.constant(0, loc)
             }
             CElementType::CompoundStatement => {
                 let mut stmts = vec![];
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
-                        stmts.push(self.convert_red_to_uir(builder, n, source));
+                        stmts.push(self.convert_red_to_uir(builder, n, source, source_id));
                     }
                 }
-                builder.block(stmts)
+                builder.block(stmts, loc)
             }
-            CElementType::Token(t) => {
-                // Just a literal for now
-                let span = node.span();
-                let text = &source[span.start..span.end];
-                builder.constant(format!("token_{:?}:{}", t, text))
+            CElementType::IfStatement => {
+                // Simplified IF: [if, (, cond, ), then, (else, else_stmt)?]
+                let mut nodes = vec![];
+                for child in node.children() {
+                    if let RedTree::Node(n) = child {
+                        nodes.push(n);
+                    }
+                }
+                if nodes.len() >= 2 {
+                    let cond = self.convert_red_to_uir(builder, nodes[0].clone(), source, source_id);
+                    let then_br = self.convert_red_to_uir(builder, nodes[1].clone(), source, source_id);
+                    let else_br = if nodes.len() >= 3 {
+                        self.convert_red_to_uir(builder, nodes[2].clone(), source, source_id)
+                    } else {
+                        builder.constant(0, loc)
+                    };
+                    builder.branch(cond, then_br, else_br, loc)
+                } else {
+                    builder.constant(0, loc)
+                }
+            }
+            CElementType::WhileStatement => {
+                let mut nodes = vec![];
+                for child in node.children() {
+                    if let RedTree::Node(n) = child {
+                        nodes.push(n);
+                    }
+                }
+                if nodes.len() >= 2 {
+                    let cond = self.convert_red_to_uir(builder, nodes[0].clone(), source, source_id);
+                    let body = self.convert_red_to_uir(builder, nodes[1].clone(), source, source_id);
+                    builder.while_loop(cond, body, loc)
+                } else {
+                    builder.constant(0, loc)
+                }
             }
             _ => {
-                let span = node.span();
-                let text = &source[span.start..span.end];
-                // Return a string constant for unsupported nodes to avoid crashing
-                builder.constant(format!("unsupported_{:?}: {}", node.green.kind, text.trim()))
+                builder.constant(0, loc)
             }
         }
     }
 }
+

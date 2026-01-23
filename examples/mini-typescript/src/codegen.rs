@@ -415,18 +415,24 @@ impl NyarTranslator {
                 for arg in args {
                     self.generate_node(egraph, *arg, false)?;
                 }
-                
-                // For now, we don't have function lookup by ID easily in this simplified codegen
-                // We assume `func` is a Symbol that maps to a function name
-                // But in VM, we call by index usually? Or name?
-                // Nyar bytecode `Call` takes a chunk index?
-                // The original code used a placeholder index 1.
-                // We will do the same.
-                self.emit_u8(Opcode::Call as u8);
-                self.emit_u16(1); 
-                self.emit_u8(args.len() as u8);
-                
-                if is_statement { self.emit_u8(Opcode::Pop as u8); }
+
+                if let IKun::Symbol(name) = &egraph[*func] {
+                    // Call by name (could be local function, exported function from another module, or built-in)
+                    let name_idx = self.constants.len() as u16;
+                    self.constants.push(Constant::String(name.clone()));
+                    self.emit_u8(Opcode::CallSymbol as u8);
+                    self.emit_u16(name_idx);
+                    self.emit_u8(args.len() as u8);
+                } else {
+                    // Call by value (e.g. closure or complex expression)
+                    self.generate_node(egraph, *func, false)?;
+                    self.emit_u8(Opcode::CallClosure as u8);
+                    self.emit_u8(args.len() as u8);
+                }
+
+                if is_statement {
+                    self.emit_u8(Opcode::Pop as u8);
+                }
             }
             _ => {}
         }

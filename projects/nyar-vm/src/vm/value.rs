@@ -239,8 +239,9 @@ impl Value {
             },
         }
     }
-    pub fn closure(func_idx: u16, upvalues: Vec<Upvalue>) -> Self {
+    pub fn closure(module_idx: usize, func_idx: u16, upvalues: Vec<Upvalue>) -> Self {
         let c = Box::new(Closure {
+            module_idx,
             func: func_idx as usize,
             upvalues,
         });
@@ -301,6 +302,7 @@ pub struct Upvalue(pub Value);
 
 #[derive(Clone)]
 pub struct Closure {
+    pub module_idx: usize,
     pub func: usize,
     pub upvalues: Vec<Upvalue>,
 }

@@ -1,21 +1,29 @@
-use chomsky_uir::{EGraph, Id};
+use chomsky_uir::{EGraph, Id, IKun};
 use chomsky_full::optimizer::UniversalOptimizer;
+use chomsky_cost::DefaultCostModel;
 
 pub struct MiniCOptimizer {
-    // optimizer: UniversalOptimizer<()>,
+    optimizer: UniversalOptimizer<()>,
 }
 
 impl MiniCOptimizer {
     pub fn new() -> Self {
         Self {
-            // optimizer: UniversalOptimizer::default(),
+            optimizer: UniversalOptimizer::new(),
         }
     }
 
     pub fn optimize(&self, intent_graph: (EGraph, Id)) -> (EGraph, Id) {
-        // 在实际应用中，这里会调用 UniversalOptimizer 进行优化
-        // 目前先作为占位符，返回原始意图图
-        // 按照 Whitebook 规范，优化逻辑应在此处进行等价图变换等
-        intent_graph
+        let (mut egraph, root_id) = intent_graph;
+        
+        // 1. Run saturation search using registered rules
+        self.optimizer.scheduler.run(&egraph, &self.optimizer.registry);
+
+        // 2. Extract the best variant (simplified for now)
+        // In a real implementation, we would extract the best IKunTree and potentially rebuild the EGraph.
+        // For now, we return the saturated E-Graph.
+        (egraph, root_id)
     }
 }
+
+

@@ -9,6 +9,7 @@ pub struct HandlerFrame {
 
 pub fn perform_effect_internal(
     vm: &mut crate::vm::interpreter::NyarVM,
+    module_idx: usize,
     name: String,
     args: Vec<Value>,
 ) -> Result<Option<Value>, VmError> {
@@ -58,7 +59,7 @@ pub fn perform_effect_internal(
     if name.contains("Token::") {
         let variant_name = name.split("::").last().unwrap_or("");
         // Find Token class
-        let class_idx = vm
+        let class_idx = vm.modules[module_idx]
             .classes
             .iter()
             .position(|c| c.name.ends_with("::Token") || c.name == "Token");

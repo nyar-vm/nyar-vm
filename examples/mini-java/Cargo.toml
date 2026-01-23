@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+oak-core = { path = "../../../oaks/packages/oak-core" }
 oak-java = { path = "../../../oaks/examples/oak-java" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }

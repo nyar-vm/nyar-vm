@@ -14,12 +14,14 @@ fn main() {
         .arg(Arg::new("input").help("输入的 Java 源文件").required(true).index(1))
         .arg(Arg::new("output").short('o').long("output").value_name("FILE").help("输出文件路径").required(false))
         .arg(Arg::new("ast").long("ast").help("只输出抽象语法树").action(clap::ArgAction::SetTrue))
+        .arg(Arg::new("uir").long("uir").help("输出 Chomsky UIR (Intent Graph)").action(clap::ArgAction::SetTrue))
         .arg(Arg::new("nyar").long("nyar").help("编译到 Nyar 字节码并输出").action(clap::ArgAction::SetTrue))
         .get_matches();
 
     let input_file = matches.get_one::<String>("input").unwrap();
     let output_file = matches.get_one::<String>("output");
     let show_ast = matches.get_flag("ast");
+    let show_uir = matches.get_flag("uir");
     let compile_nyar = matches.get_flag("nyar");
 
     // 读取输入文件
@@ -47,6 +49,21 @@ fn main() {
         // 只显示 AST
         println!("=== 抽象语法树 ===");
         println!("{:#?}", program);
+        return;
+    }
+
+    if show_uir {
+        // 显示 Chomsky UIR
+        match frontend.compile_to_uir(&source_code) {
+            Ok(egraph) => {
+                println!("=== Chomsky UIR (Intent Graph) ===");
+                println!("{:#?}", egraph);
+            }
+            Err(e) => {
+                eprintln!("编译 UIR 错误: {:?}", e);
+                std::process::exit(1);
+            }
+        }
         return;
     }
 
