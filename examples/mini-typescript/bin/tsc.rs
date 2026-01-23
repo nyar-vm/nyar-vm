@@ -3,13 +3,13 @@ use std::fs;
 use mini_typescript::MiniTypescriptFrontend;
 
 #[derive(Parser, Debug)]
-#[command(name = "tsc", version = "0.1.0", author = "Gaia Project", about = "Mini TypeScript Compiler")]
+#[command(name = "tsc", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Compiler")]
 struct Args {
     /// The input TypeScript file
     #[arg(index = 1)]
     input: String,
 
-    /// Output Gaia JSON file
+    /// Output Nyar Binary file
     #[arg(short, long, value_name = "FILE")]
     output: Option<String>,
 }
@@ -29,17 +29,19 @@ fn main() {
     // Create frontend instance
     let mut frontend = MiniTypescriptFrontend::new();
 
-    // Compile to Gaia instructions
-    match frontend.compile_to_gaia(&source_code) {
+    // Compile to Nyar instructions
+    match frontend.compile_to_nyar(&source_code) {
         Ok(module) => {
-            let json = serde_json::to_string_pretty(&module).unwrap();
+            let data = module.encode();
             if let Some(out_path) = args.output {
-                if let Err(e) = fs::write(&out_path, json) {
+                if let Err(e) = fs::write(&out_path, data) {
                     eprintln!("Error: Could not write to output file '{}': {}", out_path, e);
                     std::process::exit(1);
                 }
                 println!("Compiled successfully to '{}'", out_path);
             } else {
+                // 如果没有指定输出文件，可以尝试反序列化为 JSON 打印或直接输出 16 进制
+                let json = serde_json::to_string_pretty(&module).unwrap();
                 println!("{}", json);
             }
         }

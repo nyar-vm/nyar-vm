@@ -3,7 +3,8 @@ use std::fs;
 use std::path::Path;
 use virtual_python::MiniPythonFrontend;
 use gaia_jit::GaiaJit;
-use oak_repl::{OakRepl, ReplHandler};
+use oak_repl::{OakRepl, ReplHandler, HandleResult};
+use oak_highlight::{OakHighlighter, Theme, HighlightResult};
 
 #[derive(Parser, Debug)]
 #[command(name = "python", version = "0.1.0", author = "Gaia Project", about = "Mini Python Interpreter (Standard)")]
@@ -58,12 +59,68 @@ impl PythonReplHandler {
 }
 
 impl ReplHandler for PythonReplHandler {
-    fn handle_line(&mut self, line: &str) -> anyhow::Result<bool> {
-        if line == "exit()" || line == "quit()" {
-            return Ok(false);
+    fn highlight<'a>(&self, code: &'a str) -> Option<HighlightResult<'a>> {
+        let highlighter = OakHighlighter::new();
+        highlighter.highlight(code, "python", Theme::OneDarkPro).ok()
+    }
+
+    fn prompt(&self, is_continuation: bool) -> &str {
+        if is_continuation { "... " } else { ">>> " }
+    }
+
+    fn is_complete(&self, code: &str) -> bool {
+        if code.trim().is_empty() {
+            return true;
+        }
+        
+        // 简单的完整性检查：括号匹配
+        let mut depth = 0;
+        for c in code.chars() {
+            match c {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        
+        if depth > 0 {
+            return false;
+        }
+
+        // 如果以冒号结尾，说明需要下一行
+        if code.trim_end().ends_with(':') {
+            return false;
+        }
+        
+        // 如果最后一行不为空，且代码中包含冒号（可能在 if/def 块中），
+        // 且当前代码没有以空行结尾，通常 Python REPL 需要一个额外空行来结束块
+        if code.contains(':') && !code.ends_with("\n\n") && !code.ends_with("\n") {
+             // 这里逻辑可以根据具体前端解析能力调整
+        }
+
+        true
+    }
+
+    fn handle_line(&mut self, line: &str) -> anyhow::Result<HandleResult> {
+        let trimmed = line.trim();
+        if trimmed == "exit()" || trimmed == "quit()" {
+            return Ok(HandleResult::Exit);
         }
         let _ = Self::run_code_internal(&mut self.frontend, line, false);
-        Ok(true)
+        Ok(HandleResult::Continue)
+    }
+
+    fn get_indent(&self, code: &str) -> usize {
+        // 简单的自动缩进：如果上一行以冒号结尾，增加 4 个空格
+        if code.trim_end().ends_with(':') {
+            let last_line = code.lines().last().unwrap_or("");
+            let current_indent = last_line.len() - last_line.trim_start().len();
+            return current_indent + 4;
+        }
+        
+        // 否则保持当前缩进
+        let last_line = code.lines().last().unwrap_or("");
+        last_line.len() - last_line.trim_start().len()
     }
 }
 
@@ -103,7 +160,7 @@ fn main() -> anyhow::Result<()> {
         println!("Type \"help\", \"copyright\", \"credits\" or \"license\" for more information.");
         
         let handler = PythonReplHandler { frontend };
-        let mut repl = OakRepl::new(">>> ", handler);
+        let mut repl = OakRepl::new(handler);
         repl.run()?;
     }
     Ok(())
