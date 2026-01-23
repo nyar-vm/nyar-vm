@@ -151,6 +151,7 @@ struct Frame {
 }
 
 pub struct NyarVM {
+    pub gc: NyarGc,
     stack: Vec<Value>,
     sp: usize,
     frames: Vec<Frame>,
@@ -168,6 +169,19 @@ pub struct NyarVM {
     pub symbol_table: std::collections::HashMap<String, u16>,
 }
 
+impl Trace for NyarVM {
+    fn trace(&self) {
+        for i in 0..self.sp {
+            self.stack[i].trace();
+        }
+        for frame in &self.frames {
+            for local in &frame.locals {
+                local.trace();
+            }
+        }
+    }
+}
+
 impl NyarVM {
     pub fn new(
         constants: Vec<Constant>,
@@ -177,7 +191,8 @@ impl NyarVM {
         impls: Vec<ImplInfo>,
         effects: Vec<String>,
     ) -> Self {
-        Self {
+        let mut vm = Self {
+            gc: NyarGc::new(),
             stack: Vec::with_capacity(64),
             sp: 0,
             frames: Vec::new(),
