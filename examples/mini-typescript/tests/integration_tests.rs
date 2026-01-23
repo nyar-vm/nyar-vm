@@ -1,6 +1,22 @@
-use mini_typescript::project::ProjectLoader;
+use mini_typescript::{MiniTypescriptFrontend, project::ProjectLoader};
 use nyar_vm::vm::interpreter::NyarVM;
 use std::path::Path;
+
+#[test]
+fn test_basic_compilation() {
+    let mut frontend = MiniTypescriptFrontend::new();
+    let source = "let x = 42; function add(a, b) { return a + b; } x = add(x, 10);";
+    
+    let result = frontend.compile_to_nyar(source);
+    assert!(result.is_ok(), "Compilation failed: {:?}", result.err());
+    
+    let module = result.unwrap();
+    let mut vm = NyarVM::new();
+    vm.load_module(module.into());
+    
+    // Execute the main script
+    vm.execute(0, 0).expect("Execution failed");
+}
 
 #[test]
 fn test_multi_file_project() {

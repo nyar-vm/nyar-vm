@@ -8,9 +8,7 @@
 pub mod codegen;
 pub mod project;
 
-use oak_core::builder::{Builder, BuilderCache, DummyCache as BuilderDummyCache};
-use oak_core::lexer::{Lexer, LexerCache, DummyCache as LexerDummyCache};
-use oak_core::SourceText;
+use oak_core::{Builder, Lexer, SourceText, ParseSession};
 use oak_typescript::{TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot, ast, TypeScriptSyntaxKind};
 use codegen::NyarTranslator;
 use nyar_vm::bytecode::format::NyarModule;
@@ -44,9 +42,9 @@ impl MiniTypescriptFrontend {
     /// 解析 TypeScript 源代码为 UIR
     pub fn parse(&mut self, source: &str) -> Result<(EGraph<IKun, ConstraintAnalysis>, Id), String> {
         let builder = TypeScriptBuilder::new(&self.language);
-        let mut cache = BuilderDummyCache::default();
-        let source_text = SourceText::from(source);
-        let diagnostics = Builder::build(&builder, &source_text, &[], &mut cache);
+        let mut session = ParseSession::<TypeScriptLanguage>::default();
+        let source_text = SourceText::new(source);
+        let diagnostics = Builder::build(&builder, &source_text, &[], &mut session);
         
         let ast = diagnostics.result.map_err(|e| format!("Parse error: {:?}", e))?;
         
@@ -73,15 +71,16 @@ impl MiniTypescriptFrontend {
     /// 仅进行词法分析
     pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<TypeScriptSyntaxKind>>, String> {
         let lexer = oak_typescript::TypeScriptLexer::new(&self.language);
-        let mut cache = LexerDummyCache::default();
-        let source_text = SourceText::from(source);
-        let output = Lexer::lex(&lexer, &source_text, &[], &mut cache);
+        let mut session = ParseSession::<TypeScriptLanguage>::default();
+        let source_text = SourceText::new(source);
+        let output = Lexer::lex(&lexer, &source_text, &[], &mut session);
         
         if !output.diagnostics.is_empty() {
             return Err(format!("Lexer errors: {:?}", output.diagnostics));
         }
         
-        Ok(output.result.map_err(|e| format!("{:?}", e))?.to_vec())
+        let tokens = output.result.map_err(|e| format!("Lexer error: {:?}", e))?;
+        Ok(tokens.to_vec())
     }
 
     /// 获取翻译器的可变引用
@@ -129,7 +128,6 @@ impl<'a> UirConverter<'a> {
                 self.builder.assign(&var.name, value, loc)
             }
             ast::Statement::FunctionDeclaration(func) => {
-                let _loc = self.to_loc(func.span);
                 let mut body_ids = Vec::new();
                 for s in func.body {
                     body_ids.push(self.convert_statement(s));
@@ -141,10 +139,9 @@ impl<'a> UirConverter<'a> {
             }
             ast::Statement::ImportDeclaration(import) => {
                 let loc = self.to_loc(import.span);
-                let source = self.builder.string(&import.module_specifier, loc.clone());
-                let mut args = vec![source];
-                for name in import.imports {
-                    args.push(self.builder.symbol(&name, loc.clone()));
+                let mut args = vec![self.builder.string(&import.module_specifier, loc.clone())];
+                for s in import.imports {
+                    args.push(self.builder.symbol(&s, loc.clone()));
                 }
                 self.builder.extension("import", args, loc)
             }
@@ -159,18 +156,48 @@ impl<'a> UirConverter<'a> {
     fn convert_expression(&mut self, expr: ast::Expression) -> Id {
         match expr {
             ast::Expression::Identifier(name) => {
-                self.builder.symbol(&name, Loc::default()) // FIXME: Identifier should have span
+                self.builder.symbol(&name, Loc::default())
             }
             ast::Expression::NumericLiteral(val) => {
-                self.builder.float(val, Loc::default())
+                self.builder.constant(val as i64, Loc::default())
             }
             ast::Expression::StringLiteral(val) => {
                 self.builder.string(&val, Loc::default())
             }
+            ast::Expression::BooleanLiteral(val) => {
+                self.builder.bool(val, Loc::default())
+            }
+            ast::Expression::BinaryExpression { left, operator, right } => {
+                let l = self.convert_expression(*left);
+                let r = self.convert_expression(*right);
+                self.builder.binary_op(&operator, l, r, Loc::default())
+            }
             ast::Expression::CallExpression { func, args } => {
-                let func_id = self.convert_expression(*func);
-                let arg_ids = args.into_iter().map(|a| self.convert_expression(a)).collect();
-                self.builder.call(func_id, arg_ids, Loc::default())
+                let f = self.convert_expression(*func);
+                let mut arg_ids = Vec::new();
+                for arg in args {
+                    arg_ids.push(self.convert_expression(arg));
+                }
+                self.builder.call(f, arg_ids, Loc::default())
+            }
+            ast::Expression::UnaryExpression { operator, argument } => {
+                let arg = self.convert_expression(*argument);
+                self.builder.extension(&operator, vec![arg], Loc::default())
+            }
+            ast::Expression::MemberExpression { object, property, computed, .. } => {
+                let obj = self.convert_expression(*object);
+                let prop = self.convert_expression(*property);
+                let op = if computed { "index" } else { "member" };
+                self.builder.extension(op, vec![obj, prop], Loc::default())
+            }
+            ast::Expression::ConditionalExpression { test, consequent, alternate } => {
+                let t = self.convert_expression(*test);
+                let c = self.convert_expression(*consequent);
+                let a = self.convert_expression(*alternate);
+                self.builder.branch(t, c, a, Loc::default())
+            }
+            _ => {
+                self.builder.constant(0, Loc::default())
             }
         }
     }

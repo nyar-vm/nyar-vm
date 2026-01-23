@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 oak-python = { path = "../../../oaks/examples/oak-python" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }

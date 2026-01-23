@@ -5,12 +5,12 @@
 pub mod codegen;
 pub mod pyc_codegen;
 
-use oak_python::{ast::Program, lexer::PythonLexer, parser::PythonParser, PythonFrontend};
+use oak_python::{ast::Program, PythonLanguage, PythonFrontend};
 use codegen::GaiaTranslator;
 use gaia_assembler::program::GaiaModule;
 use gaia_types::GaiaError;
 use pyc_codegen::{Marshal, PycTranslator};
-use oak_core::ParseError;
+use oak_core::{Lexer, Parser, ParseError, lexer::LexerCache, source::SourceText};
 use chomsky_uir::{EGraph, Id, IKunTree, DEFAULT_COST_MODEL};
 use chomsky_full::optimizer::UniversalOptimizer;
 // use chomsky_cost::DEFAULT_COST_MODEL;
@@ -32,17 +32,17 @@ impl MiniPythonFrontend {
 
     /// 解析 Python 源代码为 EGraph
     pub fn parse_to_egraph(&mut self, source: &str) -> Result<Id, String> {
-        let frontend = PythonFrontend::new(source);
+        let source_text = SourceText::new(source);
+        let frontend = PythonFrontend::new(&source_text);
         let mut builder = chomsky_uir::builder::IntentBuilder::new(&mut self.optimizer.egraph);
         frontend.parse(&mut builder).map_err(|e| format!("{:?}", e))
     }
 
     /// 解析 Python 源代码为 AST (用于 --ast 调试)
     pub fn parse_to_ast(&mut self, source: &str) -> Result<Program, String> {
-        let mut lexer = PythonLexer::new(source);
-        let tokens = lexer.tokenize().map_err(|e| format!("{:?}", e))?;
-        let mut parser = PythonParser::new(tokens);
-        parser.parse().map_err(|e| format!("{:?}", e))
+        let source_text = SourceText::new(source);
+        let frontend = PythonFrontend::new(&source_text);
+        frontend.parse_to_ast().map_err(|e| format!("{:?}", e))
     }
 
     /// 将 Python 源代码编译为 Gaia 程序
@@ -95,11 +95,17 @@ impl MiniPythonFrontend {
     }
 
     /// 仅进行词法分析
-    pub fn tokenize(&mut self, source: &str) -> Result<Vec<gaia_types::reader::Token<oak_python::lexer::PythonTokenType>>, ParseError> {
-        let mut lexer = PythonLexer::new(source);
-        let token_stream = lexer.tokenize()?;
-        // 从 TokenStream 中提取 tokens
-        Ok(token_stream.tokens.into_inner())
+    pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<oak_python::kind::PythonSyntaxKind>>, ParseError> {
+        let config = PythonLanguage;
+        let lexer = oak_python::lexer::PythonLexer::new(&config);
+        let mut cache = oak_core::lexer::ParseSession::<PythonLanguage>::default();
+        let source_text = SourceText::new(source);
+        let output = lexer.lex(&source_text, &[], &mut cache);
+        
+        match output.result {
+            Ok(tokens) => Ok(tokens.to_vec()),
+            Err(e) => Err(e),
+        }
     }
 
     /// 获取翻译器的可变引用

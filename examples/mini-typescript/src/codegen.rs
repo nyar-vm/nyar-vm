@@ -430,8 +430,8 @@ impl NyarTranslator {
             }
             IKun::Apply(func, args) => {
                 // Simplified call generation
-                for &arg in args {
-                    self.generate_node(egraph, arg, false)?;
+                for arg in args {
+                    self.generate_node(egraph, *arg, false)?;
                 }
 
                 let func_class = egraph.get_class(*func);

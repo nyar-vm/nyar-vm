@@ -8,6 +8,8 @@ oak-core = { path = "../../../oaks/projects/oak-core" }
 oak-java = { path = "../../../oaks/examples/oak-java" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
+chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
 chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
 nyar-vm = { path = "../../projects/nyar-vm" }

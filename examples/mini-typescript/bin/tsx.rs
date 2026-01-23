@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::fs;
 use std::path::Path;
 use mini_typescript::MiniTypescriptFrontend;
 use mini_typescript::project::ProjectLoader;

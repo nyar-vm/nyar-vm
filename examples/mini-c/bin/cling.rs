@@ -25,7 +25,16 @@ impl CReplHandler {
             Ok((egraph, root)) => {
                 println!("EGraph nodes: {}", egraph.memo.len());
                 println!("Root ID: {:?}", root);
-                // TODO: 接入后端执行
+                
+                // 1. Optimize
+                let mut optimizer = MiniCOptimizer::new();
+                let optimized_graph = optimizer.optimize((egraph, root));
+                
+                // 2. Execute/Compile
+                let mut runtime = MiniCRuntime::new();
+                if let Err(e) = runtime.execute(optimized_graph) {
+                    eprintln!("cling: runtime error: {:?}", e);
+                }
             }
             Err(e) => eprintln!("cling: compilation error: {:?}", e),
         }

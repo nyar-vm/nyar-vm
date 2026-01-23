@@ -176,7 +176,10 @@ impl MiniCRuntime {
                     "<=" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Le, GaiaType::I32))),
                     ">" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Gt, GaiaType::I32))),
                     ">=" => insts.push(GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Ge, GaiaType::I32))),
-                    _ => return Err(anyhow!("Unsupported binary op: {}", op)),
+                    _ => {
+                        println!("DEBUG: Unsupported binary op: '{}'", op);
+                        return Err(anyhow!("Unsupported binary op: {}", op));
+                    }
                 }
             }
             IKunTree::Choice(cond, then_br, else_br) => {
