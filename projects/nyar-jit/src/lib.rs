@@ -954,11 +954,11 @@ impl NyarJit {
                 }
                 Instruction::Return => {
                     if let Some(val_id) = stack.pop() {
-                        intents.push(IKun::Extension("return".to_string(), vec![val_id]));
+                        intents.push(IKun::Return(val_id));
                     } else {
                         let null_id = intents.len();
                         intents.push(IKun::Constant(0)); // Null
-                        intents.push(IKun::Extension("return".to_string(), vec![null_id]));
+                        intents.push(IKun::Return(null_id));
                     }
                 }
                 Instruction::Halt => {

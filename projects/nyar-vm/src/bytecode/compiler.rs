@@ -1,3 +1,4 @@
+use crate::bytecode::decoder::Instruction;
 use crate::bytecode::format::{Chunk, Constant as NyarConstant, ExportInfo, NyarModule};
 use crate::bytecode::opcode::{Opcode, StringExt};
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
@@ -17,30 +18,75 @@ impl NyarBackend {
     pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, VmError> {
         let mut code = Vec::new();
         match tree {
+            IKunTree::Module(_name, items) => {
+                for item in items {
+                    self.lower_tree(item)?;
+                }
+            }
+            IKunTree::Export(name, body) => {
+                if let IKunTree::Lambda(params, body) = &**body {
+                    let body_code = self.lower_tree(body)?;
+                    let mut final_code = body_code;
+                    // Ensure Return at the end
+                    if final_code.last() != Some(&(Opcode::Return as u8)) {
+                        final_code.push(Opcode::Return as u8);
+                    }
+
+                    let chunk_idx = self.module.chunks.len() as u16;
+                    self.module.chunks.push(Chunk {
+                        locals: 32,
+                        upvalues: 0,
+                        max_stack: 64,
+                        code: final_code,
+                        handlers: vec![],
+                        lines: vec![],
+                        decoded: None,
+                        hotness: std::sync::atomic::AtomicU32::new(0),
+                    });
+                    self.module.exports.push(ExportInfo {
+                        symbol: name.clone(),
+                        chunk_idx,
+                    });
+                }
+            }
             IKunTree::Constant(v) => {
-                code.push(Opcode::Push as u8);
-                let idx = self.add_constant(NyarConstant::Int(*v));
-                code.extend_from_slice(&(idx as u16).to_le_bytes());
+                code.extend_from_slice(&Instruction::I64Const(*v).encode());
             }
             IKunTree::StringConstant(s) => {
-                code.push(Opcode::StringExt as u8);
-                code.push(StringExt::Const as u8);
-                let idx = self.add_constant(NyarConstant::String(s.clone()));
-                code.extend_from_slice(&(idx as u16).to_le_bytes());
+                code.extend_from_slice(&Instruction::StringConst(s.clone()).encode());
             }
             IKunTree::Symbol(s) => {
                 code.push(Opcode::LoadGlobal as u8);
                 let idx = self.add_constant(NyarConstant::String(s.clone()));
                 code.extend_from_slice(&(idx as u16).to_le_bytes());
             }
+            IKunTree::Return(val) => {
+                code.extend(self.lower_tree(val)?);
+                code.push(Opcode::Return as u8);
+            }
             IKunTree::Seq(items) => {
                 for item in items {
                     code.extend(self.lower_tree(item)?);
                 }
             }
+            IKunTree::CrossLangCall(lang, name, args) => {
+                if lang == "native" {
+                    for arg in args {
+                        code.extend(self.lower_tree(arg)?);
+                    }
+                    let name_idx = self.add_constant(NyarConstant::String(name.clone()));
+                    code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
+                }
+            }
             IKunTree::Extension(name, args) => {
                 println!("Backend: Extension {}, args len {}", name, args.len());
                 match name.as_str() {
+                    "return" => {
+                        if let Some(val) = args.first() {
+                            code.extend(self.lower_tree(val)?);
+                        }
+                        code.push(Opcode::Return as u8);
+                    }
                     "class" => {
                         if let IKunTree::StringConstant(_class_name) = &args[0] {
                             if let IKunTree::Seq(members) = &args[1] {
@@ -58,12 +104,16 @@ impl NyarBackend {
                                 (&args[name_idx], &args[body_idx])
                             {
                                 let body_code = self.lower_tree(body)?;
+                                let mut final_code = body_code;
+                                if final_code.last() != Some(&(Opcode::Return as u8)) {
+                                    final_code.push(Opcode::Return as u8);
+                                }
                                 let chunk_idx = self.module.chunks.len() as u16;
                                 self.module.chunks.push(Chunk {
                                     locals: 32,
                                     upvalues: 0,
                                     max_stack: 64,
-                                    code: body_code,
+                                    code: final_code,
                                     handlers: vec![],
                                     lines: vec![],
                                     decoded: None,

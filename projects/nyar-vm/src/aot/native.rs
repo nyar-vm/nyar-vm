@@ -103,6 +103,10 @@ impl NativeBackend {
             IKunTree::Lambda(_, body) => {
                 self.emit_tree(body, builder, data)?;
             }
+            IKunTree::Return(val) => {
+                self.emit_tree(val, builder, data)?;
+                builder.add_instruction(Instruction::Ret);
+            }
             IKunTree::Seq(items) => {
                 for item in items {
                     self.emit_tree(item, builder, data)?;

@@ -2,7 +2,8 @@ use chomsky::optimizer::UniversalOptimizer;
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{EGraph, IKun, IKunTree, Id};
-use nyar_vm::bytecode::format::{Chunk, ExportInfo, NyarcModule};
+use nyar_vm::bytecode::decoder::Instruction;
+use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, NyarcModule};
 use nyar_vm::vm::interpreter::NyarVM;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -98,7 +99,7 @@ impl MiniGoRuntime {
                 for item in items {
                     if let IKunTree::Export(name, body) = item {
                         if let IKunTree::Lambda(params, body) = &**body {
-                            let chunk = self.translate_function(params, body)?;
+                            let chunk = self.translate_function(params, body, &mut module)?;
                             let chunk_idx = module.chunks.len() as u16;
                             module.chunks.push(chunk);
                             module.exports.push(ExportInfo {
@@ -118,9 +119,71 @@ impl MiniGoRuntime {
     fn translate_function(
         &self,
         _params: &[String],
-        _body: &IKunTree,
+        body: &IKunTree,
+        module: &mut NyarcModule,
     ) -> Result<Chunk, RuntimeError> {
-        // Placeholder for function translation
-        Ok(Chunk::default())
+        let mut code = Vec::new();
+        self.emit_tree(body, &mut code, module)?;
+
+        // Add a Return at the end if not already there
+        if code.last() != Some(&(nyar_vm::bytecode::opcode::Opcode::Return as u8)) {
+            code.extend_from_slice(&Instruction::Return.encode());
+        }
+
+        Ok(Chunk {
+            locals: 32,
+            upvalues: 0,
+            max_stack: 32,
+            code,
+            handlers: vec![],
+            lines: vec![],
+            decoded: None,
+            hotness: std::sync::atomic::AtomicU32::new(0),
+        })
+    }
+
+    fn emit_tree(
+        &self,
+        tree: &IKunTree,
+        code: &mut Vec<u8>,
+        module: &mut NyarcModule,
+    ) -> Result<(), RuntimeError> {
+        match tree {
+            IKunTree::Seq(items) => {
+                for item in items {
+                    self.emit_tree(item, code, module)?;
+                }
+            }
+            IKunTree::Constant(v) => {
+                code.extend_from_slice(&Instruction::I64Const(*v).encode());
+            }
+            IKunTree::StringConstant(s) => {
+                code.extend_from_slice(&Instruction::StringConst(s.clone()).encode());
+            }
+            IKunTree::CrossLangCall(lang, name, args) => {
+                if lang == "native" {
+                    // Push arguments
+                    for arg in args {
+                        self.emit_tree(arg, code, module)?;
+                    }
+                    // FFICall expects (constant_idx_of_name, argc)
+                    let name_idx = module.constants.len() as u16;
+                    module.constants.push(Constant::String(name.clone()));
+                    code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
+                }
+            }
+            IKunTree::Extension(name, args) => {
+                if name == "return" {
+                    if let Some(val) = args.first() {
+                        self.emit_tree(val, code, module)?;
+                    }
+                    code.extend_from_slice(&Instruction::Return.encode());
+                }
+            }
+            _ => {
+                // Ignore other types for now
+            }
+        }
+        Ok(())
     }
 }

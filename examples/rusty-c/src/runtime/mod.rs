@@ -282,8 +282,8 @@ impl MiniCRuntime {
                 self.translate_expr(func, insts, symbols)?;
                 insts.push(Instruction::CallClosure(args.len() as u8));
             }
-            IKunTree::Extension(name, args) if name == "return" && args.len() == 1 => {
-                self.translate_expr(&args[0], insts, symbols)?;
+            IKunTree::Return(val) => {
+                self.translate_expr(val, insts, symbols)?;
                 insts.push(Instruction::Return);
             }
             IKunTree::StateUpdate(target, value) => {

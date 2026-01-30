@@ -308,10 +308,8 @@ pub enum GcState {
 }
 
 /// Metadata stored at the beginning of every GC-managed allocation.
+#[repr(transparent)]
 pub struct GcHeader {
-    /// Relative offset to the next object in the collector's list.
-    /// 0 means null.
-    pub next_offset: AtomicI32,
     /// Type ID for VTable lookup (low 16 bits) and Packed flags/size (high 16 bits).
     /// Bits 0-15: Type ID
     /// Bit 16: marked
@@ -320,6 +318,12 @@ pub struct GcHeader {
     /// Bit 19: large
     /// Bits 20-31: size_packed (size >> 2)
     pub(crate) type_and_flags: AtomicU32,
+}
+
+#[repr(C)]
+struct LargeObjectHeader {
+    next: AtomicPtr<LargeObjectHeader>,
+    size: u32,
 }
 
 /// VTable containing function pointers for GC operations.
@@ -334,13 +338,15 @@ impl GcHeader {
     pub fn size(&self) -> usize {
         let val = self.type_and_flags.load(Ordering::Acquire);
         if (val & (1 << 19)) != 0 {
-            // Large object: size is stored in a u32 before the header
+            // Large object: size is stored in the LargeObjectHeader before the GcBox
             unsafe {
-                let size_ptr = (self as *const GcHeader as *const u8).sub(4) as *const u32;
-                *size_ptr as usize
+                let header_ptr = (self as *const GcHeader as *const u8)
+                    .sub(std::mem::size_of::<LargeObjectHeader>())
+                    as *const LargeObjectHeader;
+                (*header_ptr).size as usize
             }
         } else {
-            ((val >> 20) & 0xFFF) as usize * 4
+            ((val >> 20) as usize) << 2
         }
     }
 
@@ -402,28 +408,6 @@ impl GcHeader {
             }
         }
     }
-    pub fn get_next(&self) -> *mut GcHeader {
-        let offset = self.next_offset.load(Ordering::Acquire);
-        if offset == 0 {
-            std::ptr::null_mut()
-        } else {
-            (self as *const GcHeader as isize + offset as isize) as *mut GcHeader
-        }
-    }
-
-    pub fn set_next(&self, next: *mut GcHeader) {
-        let offset = if next.is_null() {
-            0
-        } else {
-            let offset = next as isize - self as *const GcHeader as isize;
-            assert!(
-                offset <= i32::MAX as isize && offset >= i32::MIN as isize,
-                "GC pointer offset out of range"
-            );
-            offset as i32
-        };
-        self.next_offset.store(offset, Ordering::Release);
-    }
 
     pub unsafe fn get_vtable(&self) -> *const GcVTable {
         let registry = VTABLE_REGISTRY.lock().unwrap();
@@ -473,21 +457,13 @@ impl<T: Trace + 'static> std::ops::Deref for Gc<T> {
 /// The garbage collector itself.
 /// Current state of the garbage collector.
 struct SweepState {
-    young_curr: AtomicPtr<GcHeader>,
-    young_prev: AtomicPtr<GcHeader>,
-    old_curr: AtomicPtr<GcHeader>,
-    old_prev: AtomicPtr<GcHeader>,
-    large_curr: AtomicPtr<GcHeader>,
-    large_prev: AtomicPtr<GcHeader>,
+    large_curr: AtomicPtr<LargeObjectHeader>,
+    large_prev: AtomicPtr<LargeObjectHeader>,
 }
 
 pub struct NyarGc {
-    /// Head of the linked list of young generation objects.
-    young_head: AtomicPtr<GcHeader>,
-    /// Head of the linked list of old generation objects.
-    old_head: AtomicPtr<GcHeader>,
     /// Head of the linked list of large objects.
-    large_head: AtomicPtr<GcHeader>,
+    large_head: AtomicPtr<LargeObjectHeader>,
     /// Memory blocks managed by the GC (lock-free linked list).
     blocks_head: AtomicPtr<GcBlockHeader>,
     /// Mark stack for bitmapped marking.
@@ -653,7 +629,7 @@ impl NyarGc {
         *post_collect = Some(Box::new(f));
     }
 
-    /// Internal helper to initialize a newly allocated GcBox and link it to the young generation.
+    /// Internal helper to initialize a newly allocated GcBox.
     unsafe fn init_gc_box<T: Trace + 'static>(
         &self,
         ptr: *mut GcBox<T>,
@@ -661,61 +637,30 @@ impl NyarGc {
         layout: Layout,
     ) -> Gc<T> {
         let state = self.state.load(Ordering::Acquire);
-        let marked = state != GcState::Idle as u8;
+        let marking = state == GcState::Marking as u8;
 
         let (type_id, _) = Self::get_type_info::<T>();
         let size = layout.size();
         assert!(size <= 16380, "Object too large for GcBox, use alloc_large");
         let type_and_flags = (type_id as u32) | (((size >> 2) as u32) << 20); // Gen 0, not marked, not large, not dirty
 
-        // Insert into young_head atomically
-        let mut old_head = self.young_head.load(Ordering::Acquire);
-        loop {
-            let offset = if old_head.is_null() {
-                0
-            } else {
-                let offset = old_head as isize - ptr as isize;
-                assert!(
-                    offset <= i32::MAX as isize && offset >= i32::MIN as isize,
-                    "GC pointer offset out of range"
-                );
-                offset as i32
-            };
-            std::ptr::write(
-                &mut (*ptr).header,
-                GcHeader {
-                    next_offset: AtomicI32::new(offset),
-                    type_and_flags: AtomicU32::new(type_and_flags),
-                },
-            );
-            match self.young_head.compare_exchange_weak(
-                old_head,
-                &mut (*ptr).header as *mut _,
-                Ordering::Release,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => break,
-                Err(actual) => old_head = actual,
-            }
-        }
+        std::ptr::write(
+            &mut (*ptr).header,
+            GcHeader {
+                type_and_flags: AtomicU32::new(type_and_flags),
+            },
+        );
 
-        if marked {
+        if marking {
             let base = (ptr as usize) & !(BLOCK_SIZE - 1);
             let block_header = base as *const GcBlockHeader;
-            (*block_header).set_marked(&mut (*ptr).header);
+            (*block_header).set_marked(&(*ptr).header);
         }
 
         std::ptr::write(&mut (*ptr).data, value);
 
         let gc_box = NonNull::new_unchecked(ptr);
-        let allocated = self
-            .allocated_bytes
-            .fetch_add(layout.size(), Ordering::SeqCst)
-            + layout.size();
-
-        if allocated > self.threshold.load(Ordering::Relaxed) {
-            self.collect_minor(|_| {});
-        }
+        self.allocated_bytes.fetch_add(layout.size(), Ordering::SeqCst);
 
         Gc { ptr: gc_box }
     }
@@ -740,17 +685,11 @@ impl NyarGc {
         let head = first_block.ptr.as_ptr() as *mut GcBlockHeader;
         std::mem::forget(first_block);
         Self {
-            young_head: AtomicPtr::new(std::ptr::null_mut()),
-            old_head: AtomicPtr::new(std::ptr::null_mut()),
             large_head: AtomicPtr::new(std::ptr::null_mut()),
             blocks_head: AtomicPtr::new(head),
             mark_stack: Mutex::new(Vec::new()),
             state: AtomicU8::new(GcState::Idle as u8),
             sweep_state: Mutex::new(SweepState {
-                young_curr: AtomicPtr::new(std::ptr::null_mut()),
-                young_prev: AtomicPtr::new(std::ptr::null_mut()),
-                old_curr: AtomicPtr::new(std::ptr::null_mut()),
-                old_prev: AtomicPtr::new(std::ptr::null_mut()),
                 large_curr: AtomicPtr::new(std::ptr::null_mut()),
                 large_prev: AtomicPtr::new(std::ptr::null_mut()),
             }),
@@ -838,52 +777,49 @@ impl NyarGc {
 
     /// Allocate a large object directly from the system allocator.
     unsafe fn alloc_large<T: Trace + 'static>(&self, value: T, layout: Layout) -> Gc<T> {
-        let size_header_size = 4;
-        let total_layout =
-            Layout::from_size_align(layout.size() + size_header_size, layout.align().max(4))
-                .unwrap();
-        let raw_ptr = alloc::alloc(total_layout);
-        if raw_ptr.is_null() {
+        let size = layout.size();
+        let total_size =
+            size + std::mem::size_of::<LargeObjectHeader>() + std::mem::size_of::<GcHeader>();
+        let total_layout = Layout::from_size_align(total_size, 16).unwrap();
+
+        let ptr = alloc::alloc(total_layout);
+        if ptr.is_null() {
             alloc::handle_alloc_error(total_layout);
         }
 
-        *(raw_ptr as *mut u32) = layout.size() as u32;
-        let ptr = raw_ptr.add(size_header_size) as *mut GcBox<T>;
+        let large_header = ptr as *mut LargeObjectHeader;
+        (*large_header).size = size as u32;
 
-        let state = self.state.load(Ordering::Acquire);
-        let marked = state != GcState::Idle as u8;
+        let gc_header_ptr = ptr.add(std::mem::size_of::<LargeObjectHeader>()) as *mut GcHeader;
         let (type_id, _) = Self::get_type_info::<T>();
 
         // Flags: marked (bit 16), generation (bit 17), large (bit 19)
+        let state = self.state.load(Ordering::Acquire);
+        let marking = state == GcState::Marking as u8;
+
         let mut flags = (1 << 17) | (1 << 19);
-        if marked {
+        if marking {
             flags |= 1 << 16;
         }
         let type_and_flags = (type_id as u32) | flags;
 
+        std::ptr::write(
+            gc_header_ptr,
+            GcHeader {
+                type_and_flags: AtomicU32::new(type_and_flags),
+            },
+        );
+
+        let data_ptr = gc_header_ptr.add(1) as *mut T;
+        std::ptr::write(data_ptr, value);
+
         // Insert into large_head atomically
         let mut old_head = self.large_head.load(Ordering::Acquire);
         loop {
-            let offset = if old_head.is_null() {
-                0
-            } else {
-                let offset = old_head as isize - ptr as isize;
-                assert!(
-                    offset <= i32::MAX as isize && offset >= i32::MIN as isize,
-                    "GC pointer offset out of range"
-                );
-                offset as i32
-            };
-            std::ptr::write(
-                &mut (*ptr).header,
-                GcHeader {
-                    next_offset: AtomicI32::new(offset),
-                    type_and_flags: AtomicU32::new(type_and_flags),
-                },
-            );
+            (*large_header).next.store(old_head, Ordering::Release);
             match self.large_head.compare_exchange_weak(
                 old_head,
-                &mut (*ptr).header as *mut _,
+                large_header,
                 Ordering::Release,
                 Ordering::Acquire,
             ) {
@@ -892,19 +828,10 @@ impl NyarGc {
             }
         }
 
-        std::ptr::write(&mut (*ptr).data, value);
-
-        let gc_box = NonNull::new_unchecked(ptr);
-        let allocated = self
-            .allocated_bytes
-            .fetch_add(layout.size(), Ordering::SeqCst)
-            + layout.size();
-
-        if allocated > self.threshold.load(Ordering::Relaxed) {
-            self.collect_major(|_| {});
+        self.allocated_bytes.fetch_add(size, Ordering::SeqCst);
+        Gc {
+            ptr: NonNull::new_unchecked(gc_header_ptr as *mut GcBox<T>),
         }
-
-        Gc { ptr: gc_box }
     }
 
     fn refill_tlab(&self, tlab: &mut Tlab, layout: Layout) -> *mut u8 {

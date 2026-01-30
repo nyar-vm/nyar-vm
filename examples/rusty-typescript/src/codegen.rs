@@ -514,6 +514,11 @@ impl NyarTranslator {
                     self.define_label(&end_label);
                     handled = true;
                 }
+                IKun::Return(val) => {
+                    self.generate_node(egraph, *val, false)?;
+                    self.emit_u8(Opcode::Return as u8);
+                    handled = true;
+                }
                 IKun::Extension(name, args) => {
                     match name.as_str() {
                         "while" => {

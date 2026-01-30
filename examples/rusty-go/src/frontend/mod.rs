@@ -109,7 +109,7 @@ impl MiniGoFrontend {
                     }
                     Ok(IKunTree::CrossLangCall(
                         "native".to_string(),
-                        "System.Console.WriteLine".to_string(),
+                        "print".to_string(),
                         arguments,
                     ))
                 } else {
@@ -152,7 +152,7 @@ impl MiniGoFrontend {
         let loc = self.get_loc(&node, source_id);
 
         match kind {
-            GoSyntaxKind::Root => {
+            GoSyntaxKind::SourceFile => {
                 let mut items = vec![];
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
