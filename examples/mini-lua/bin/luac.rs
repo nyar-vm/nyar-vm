@@ -66,7 +66,7 @@ impl PythonReplHandler {
         if show_ast {
             match frontend.parse_to_ast(source) {
                 Ok(program) => println!("{:#?}", program),
-                Err(e) => eprintln!("python: error: {:?}", e),
+                Err(e) => eprintln!("luac: error: {:?}", e),
             }
             return Ok(());
         }
@@ -74,18 +74,8 @@ impl PythonReplHandler {
         match frontend.compile_to_gaia(source) {
             Ok(_module) => {
                 println!("Gaia module generated successfully. JIT execution is not yet implemented in this standard driver.");
-                /*
-                let mut jit = GaiaJit::new();
-                if let Err(e) = jit.load_module(module) {
-                    eprintln!("python: JIT load error: {:?}", e);
-                    return Ok(());
-                }
-                if let Err(e) = jit.run("main") {
-                    eprintln!("python: execution error: {:?}", e);
-                }
-                */
             }
-            Err(e) => eprintln!("python: error: {}", e),
+            Err(e) => eprintln!("luac: error: {}", e),
         }
         Ok(())
     }

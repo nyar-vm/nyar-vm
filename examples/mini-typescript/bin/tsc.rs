@@ -1,5 +1,5 @@
+use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use mini_typescript::errors::ScriptError;
 use mini_typescript::MiniTypescriptFrontend;
 use nyar_vm::vm::interpreter::NyarVM;
 use std::fs;
@@ -45,7 +45,7 @@ enum EmitTarget {
     Uir,
 }
 
-fn main() -> Result<(), ScriptError> {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.verbose {
@@ -54,7 +54,7 @@ fn main() -> Result<(), ScriptError> {
 
     // Read input file
     let source_code = fs::read_to_string(&args.input)
-        .map_err(|e| ScriptError::from(format!("Could not read file '{:?}': {}", args.input, e)))?;
+        .with_context(|| format!("Could not read file '{:?}'", args.input))?;
 
     // Create frontend instance
     let mut frontend = MiniTypescriptFrontend::new();
@@ -75,13 +75,13 @@ fn main() -> Result<(), ScriptError> {
     match args.emit {
         EmitTarget::Nyar => {
             let module = frontend.compile_to_nyar(&source_code)
-                .map_err(|e| ScriptError::from(format!("Compilation error: {:?}", e)))?;
+                .map_err(|e| anyhow::anyhow!("Compilation error: {:?}", e))?;
             let data = module.encode();
 
             if args.run {
                 run_module(&module)?;
             } else {
-                fs::write(&output_path, data).map_err(|e| ScriptError::from(e.to_string()))?;
+                fs::write(&output_path, data).with_context(|| format!("Failed to write output to {:?}", output_path))?;
                 if args.verbose {
                     println!("Output written to {:?}", output_path);
                 }
@@ -89,47 +89,47 @@ fn main() -> Result<(), ScriptError> {
         }
         EmitTarget::NyarToml => {
             let module = frontend.compile_to_nyar(&source_code)
-                .map_err(|e| ScriptError::from(format!("Compilation error: {:?}", e)))?;
-            let toml = module.to_toml_string();
-            fs::write(&output_path, toml).map_err(|e| ScriptError::from(e.to_string()))?;
+                .map_err(|e| anyhow::anyhow!("Compilation error: {:?}", e))?;
+            let toml = toml::to_string_pretty(&module).context("Failed to serialize to TOML")?;
+            fs::write(&output_path, toml).with_context(|| format!("Failed to write output to {:?}", output_path))?;
             if args.verbose {
                 println!("Output written to {:?}", output_path);
             }
         }
         EmitTarget::Wasm => {
             let wasm = frontend.compile_to_wasm(&source_code)
-                .map_err(|e| ScriptError::from(format!("WASM Compilation error: {}", e)))?;
-            fs::write(&output_path, wasm).map_err(|e| ScriptError::from(e.to_string()))?;
+                .map_err(|e| anyhow::anyhow!("WASM Compilation error: {}", e))?;
+            fs::write(&output_path, wasm).with_context(|| format!("Failed to write output to {:?}", output_path))?;
             if args.verbose {
                 println!("Output written to {:?}", output_path);
             }
         }
         EmitTarget::Json => {
             let module = frontend.compile_to_nyar(&source_code)
-                .map_err(|e| ScriptError::from(format!("Compilation error: {:?}", e)))?;
-            let json = serde_json::to_string_pretty(&module).map_err(|e| ScriptError::from(e.to_string()))?;
-            fs::write(&output_path, json).map_err(|e| ScriptError::from(e.to_string()))?;
+                .map_err(|e| anyhow::anyhow!("Compilation error: {:?}", e))?;
+            let json = serde_json::to_string_pretty(&module).context("Failed to serialize to JSON")?;
+            fs::write(&output_path, json).with_context(|| format!("Failed to write output to {:?}", output_path))?;
             if args.verbose {
                 println!("Output written to {:?}", output_path);
             }
         }
         EmitTarget::Tokens => {
             let tokens = frontend.tokenize(&source_code)
-                .map_err(|e| ScriptError::from(format!("Tokenization error: {}", e)))?;
+                .map_err(|e| anyhow::anyhow!("Tokenization error: {}", e))?;
             let mut output = String::new();
             for token in tokens {
                 output.push_str(&format!("{:?}\n", token));
             }
-            fs::write(&output_path, output).map_err(|e| ScriptError::from(e.to_string()))?;
+            fs::write(&output_path, output).with_context(|| format!("Failed to write output to {:?}", output_path))?;
             if args.verbose {
                 println!("Output written to {:?}", output_path);
             }
         }
         EmitTarget::Uir => {
             let (egraph, _root) = frontend.parse(&source_code)
-                .map_err(|e| ScriptError::from(format!("Parse error: {}", e)))?;
+                .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
             let output = format!("{:?}", egraph);
-            fs::write(&output_path, output).map_err(|e| ScriptError::from(e.to_string()))?;
+            fs::write(&output_path, output).with_context(|| format!("Failed to write output to {:?}", output_path))?;
             if args.verbose {
                 println!("Output written to {:?}", output_path);
             }
@@ -139,7 +139,7 @@ fn main() -> Result<(), ScriptError> {
     Ok(())
 }
 
-fn run_module(module: &nyar_vm::bytecode::format::NyarModule) -> Result<(), ScriptError> {
+fn run_module(module: &nyar_vm::bytecode::format::NyarModule) -> Result<()> {
     let mut vm = NyarVM::new();
 
     vm.stdout = Some(Box::new(|msg: &str| {
@@ -148,7 +148,7 @@ fn run_module(module: &nyar_vm::bytecode::format::NyarModule) -> Result<(), Scri
 
     let module_idx = vm.load_module(module.clone());
     let v = vm.execute(module_idx, 0)
-        .map_err(|e| ScriptError::from(format!("Runtime error: {:?}", e)))?;
+        .map_err(|e| anyhow::anyhow!("Runtime error: {:?}", e))?;
 
     println!("Execution finished. Result Tag: {:?}", v.tag);
     Ok(())

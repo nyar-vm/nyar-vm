@@ -26,8 +26,8 @@ oak-repl = { path = "../../../oaks/projects/oak-repl" }
 oak-highlight = { path = "../../../oaks/projects/oak-highlight" }
 
 [[bin]]
-name = "lua"
-path = "bin/lua.rs"
+name = "luac"
+path = "bin/luac.rs"
 
 [dev-dependencies]
 tempfile = "3.3"

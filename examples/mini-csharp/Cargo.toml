@@ -17,13 +17,9 @@ nyar-error = { path = "../../projects/nyar-error" }
 byteorder = "1.5"
 
 tokio = { version = "1.42.0", features = ["full"] }
-wat = { version = "1.221.2", features = ["dwarf", "component-model"] }
-wasmtime = "27.0.0"
-wasmtime-wasi = "27.0.0"
 c3-linearization = "0.1.0"
 downcast = "0.11.0"
 anyhow = "1.0.94"
-wast = "222.0.0"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
