@@ -2,10 +2,10 @@
 resolver = "2"
 members = ["projects/*", "examples/*"]
 default-members = [
-    "projects/nyar-error",
+    "projects/nyar-types",
     "projects/nyar-vm",
 ]
-exclude = ["examples/valkyrie-bootstrap", "projects/nyar-cli"]
+exclude = ["examples/valkyrie-bootstrap", "projects/nyar-tools"]
 
 [profile.release]
 lto = true

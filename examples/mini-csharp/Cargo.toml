@@ -13,7 +13,7 @@ chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
 chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
 nyar-vm = { path = "../../projects/nyar-vm" }
-nyar-error = { path = "../../projects/nyar-error" }
+nyar-types = { path = "../../projects/nyar-types" }
 byteorder = "1.5"
 
 tokio = { version = "1.42.0", features = ["full"] }

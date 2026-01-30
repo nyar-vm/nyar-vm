@@ -10,11 +10,10 @@ chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
 chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
-nyar-vm = { path = "../../projects/nyar-vm" }
-nyar-error = { path = "../../projects/nyar-error" }
+nyar-vm = { path = "../../projects/nyar-vm", features = ["clap"] }
+nyar-types = { path = "../../projects/nyar-types" }
 byteorder = { workspace = true }
 tokio = { version = "1.42.0", features = ["full"] }
-anyhow = "1.0.94"
 toml = { workspace = true }
 
 serde = { workspace = true }

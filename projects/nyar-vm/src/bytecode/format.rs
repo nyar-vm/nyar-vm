@@ -80,6 +80,39 @@ pub type NyarModule = NyarcModule;
 
 pub use nyar_error::FormatError;
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum EmitTarget {
+    /// Nyar Binary module (.nyar)
+    Nyar,
+    /// Nyar TOML module (.nyar.toml)
+    NyarToml,
+    /// Nyar JSON module (.nyar.json)
+    NyarJson,
+    /// WASM component (.wasm)
+    Wasm,
+    /// UIR as JSON
+    Json,
+    /// Tokens
+    Tokens,
+    /// UIR EGraph debug output
+    Uir,
+}
+
+impl EmitTarget {
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Self::Nyar => "nyar",
+            Self::NyarToml => "nyar.toml",
+            Self::NyarJson => "nyar.json",
+            Self::Wasm => "wasm",
+            Self::Json => "json",
+            Self::Tokens => "tokens",
+            Self::Uir => "uir",
+        }
+    }
+}
+
 pub fn write_string(buf: &mut Vec<u8>, s: &str) {
     let l = s.len() as u32;
     buf.extend_from_slice(&l.to_le_bytes());

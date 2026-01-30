@@ -6,5 +6,5 @@ edition = "2021"
 [dependencies]
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
-nyar-error = { path = "../nyar-error" }
+nyar-types = { path = "../nyar-types" }
 serde = { workspace = true }

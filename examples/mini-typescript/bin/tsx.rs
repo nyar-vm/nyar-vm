@@ -23,18 +23,6 @@ struct Args {
     verbose: bool,
 }
 
-impl From<ScriptError> for ReplError {
-    fn from(e: ScriptError) -> Self {
-        ReplError::Other(e.to_string())
-    }
-}
-
-impl From<ReplError> for ScriptError {
-    fn from(e: ReplError) -> Self {
-        ScriptError::from(e.to_string())
-    }
-}
-
 struct TsReplHandler {
     frontend: MiniTypescriptFrontend,
     vm: NyarVM,
@@ -177,7 +165,7 @@ fn main() -> Result<(), ScriptError> {
         println!("Type \"exit()\" or press Ctrl-D to exit.");
 
         let mut repl = OakRepl::new(handler);
-        repl.run()?;
+        repl.run().map_err(|e| ScriptError::from(e.to_string()))?;
     }
     Ok(())
 }

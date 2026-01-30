@@ -8,7 +8,7 @@ name = "nyar_vm"
 path = "src/lib.rs"
 
 [dependencies]
-nyar-error = { path = "../nyar-error" }
+nyar-types = { path = "../nyar-types" }
 nyar-gc = { path = "../nyar-gc" }
 nyar-jit = { path = "../nyar-jit" }
 nyar-aot = { path = "../nyar-aot" }
@@ -16,7 +16,12 @@ chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 serde = { workspace = true }
 toml = { workspace = true }
 byteorder = { workspace = true }
+clap = { workspace = true, optional = true }
 zip = "0.6"
+
+[features]
+default = []
+clap = ["dep:clap"]
 
 [dev-dependencies]
 criterion = { workspace = true }

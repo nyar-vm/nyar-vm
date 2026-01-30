@@ -86,9 +86,9 @@ impl GaiaTranslator {
         // 1. 提取顶级元素
         let (module_name, items) = match tree {
             IKunTree::Module(name, items) => (name.as_str(), items.as_slice()),
-            IKunTree::Seq(items) => ("mini_python_program", items.as_slice()),
-            IKunTree::Extension(name, args) if name == "python_module" => ("mini_python_program", &args[1..]),
-            _ => ("mini_python_program", std::slice::from_ref(tree)),
+            IKunTree::Seq(items) => ("mini_lua_program", items.as_slice()),
+            IKunTree::Extension(name, args) if name == "lua_module" => ("mini_lua_program", &args[1..]),
+            _ => ("mini_lua_program", std::slice::from_ref(tree)),
         };
 
         // 2. 分离函数定义和主语句

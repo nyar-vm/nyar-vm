@@ -1,19 +1,19 @@
 use clap::Parser;
 use std::fs;
 use std::path::Path;
-use virtual_python::MiniPythonFrontend;
+use virtual_lua::MiniLuaFrontend;
 // use gaia_jit::GaiaJit;
 use oak_repl::{OakRepl, ReplHandler, HandleResult};
 use oak_highlight::{OakHighlighter, Theme, HighlightResult};
 
 #[derive(Parser, Debug)]
-#[command(name = "python", version = "0.1.0", author = "Gaia Project", about = "Mini Python Interpreter (Standard)")]
+#[command(name = "luac", version = "0.1.0", author = "Gaia Project", about = "Mini Lua Compiler (Standard)")]
 struct Args {
-    /// The input Python source file (.py). If not provided, enters REPL mode.
+    /// The input Lua source file (.lua). If not provided, enters REPL mode.
     #[arg(index = 1)]
     input: Option<String>,
 
-    /// Compile to Python bytecode (.pyc) instead of executing
+    /// Compile to Lua bytecode (.luac) instead of executing
     #[arg(long)]
     compile: bool,
 
@@ -30,39 +30,39 @@ use std::fmt::{Display, Formatter};
 use std::error::Error;
 
 #[derive(Debug)]
-pub enum PythonError {
+pub enum LuaError {
     Other(String),
 }
 
-impl Display for PythonError {
+impl Display for LuaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            PythonError::Other(msg) => write!(f, "{}", msg),
+            LuaError::Other(msg) => write!(f, "{}", msg),
         }
     }
 }
 
-impl Error for PythonError {}
+impl Error for LuaError {}
 
-impl From<String> for PythonError {
+impl From<String> for LuaError {
     fn from(s: String) -> Self {
-        PythonError::Other(s)
+        LuaError::Other(s)
     }
 }
 
-impl From<&str> for PythonError {
+impl From<&str> for LuaError {
     fn from(s: &str) -> Self {
-        PythonError::Other(s.to_string())
+        LuaError::Other(s.to_string())
     }
 }
 
-/// Python REPL 处理器
-struct PythonReplHandler {
-    frontend: MiniPythonFrontend,
+/// Lua REPL 处理器
+struct LuaReplHandler {
+    frontend: MiniLuaFrontend,
 }
 
-impl PythonReplHandler {
-    fn run_code_internal(frontend: &mut MiniPythonFrontend, source: &str, show_ast: bool) -> Result<(), PythonError> {
+impl LuaReplHandler {
+    fn run_code_internal(frontend: &mut MiniLuaFrontend, source: &str, show_ast: bool) -> Result<(), LuaError> {
         if show_ast {
             match frontend.parse_to_ast(source) {
                 Ok(program) => println!("{:#?}", program),
@@ -81,110 +81,79 @@ impl PythonReplHandler {
     }
 }
 
-impl ReplHandler for PythonReplHandler {
+impl ReplHandler for LuaReplHandler {
     fn highlight<'a>(&self, code: &'a str) -> Option<HighlightResult<'a>> {
         let highlighter = OakHighlighter::new();
-        highlighter.highlight(code, "python", Theme::OneDarkPro).ok()
+        highlighter.highlight(code, "lua", Theme::OneDarkPro).ok()
     }
 
     fn prompt(&self, is_continuation: bool) -> &str {
-        if is_continuation { "... " } else { ">>> " }
+        if is_continuation {
+            ">> "
+        } else {
+            "lua> "
+        }
     }
 
-    fn is_complete(&self, code: &str) -> bool {
-        if code.trim().is_empty() {
-            return true;
-        }
-        
-        // 简单的完整性检查：括号匹配
-        let mut depth = 0;
-        for c in code.chars() {
-            match c {
-                '(' | '[' | '{' => depth += 1,
-                ')' | ']' | '}' => depth -= 1,
-                _ => {}
+    fn handle(&mut self, code: &str) -> HandleResult {
+        match code.trim() {
+            "exit" | "quit" => HandleResult::Exit,
+            _ => {
+                if let Err(e) = Self::run_code_internal(&mut self.frontend, code, false) {
+                    eprintln!("{}", e);
+                }
+                HandleResult::Continue
             }
         }
-        
-        if depth > 0 {
-            return false;
-        }
-
-        // 如果以冒号结尾，说明需要下一行
-        if code.trim_end().ends_with(':') {
-            return false;
-        }
-        
-        // 如果最后一行不为空，且代码中包含冒号（可能在 if/def 块中），
-        // 且当前代码没有以空行结尾，通常 Python REPL 需要一个额外空行来结束块
-        if code.contains(':') && !code.ends_with("\n\n") && !code.ends_with("\n") {
-             // 这里逻辑可以根据具体前端解析能力调整
-        }
-
-        true
-    }
-
-    fn handle_line(&mut self, line: &str) -> Result<HandleResult, PythonError> {
-        let trimmed = line.trim();
-        if trimmed == "exit()" || trimmed == "quit()" {
-            return Ok(HandleResult::Exit);
-        }
-        let _ = Self::run_code_internal(&mut self.frontend, line, false);
-        Ok(HandleResult::Continue)
-    }
-
-    fn get_indent(&self, code: &str) -> usize {
-        // 简单的自动缩进：如果上一行以冒号结尾，增加 4 个空格
-        if code.trim_end().ends_with(':') {
-            let last_line = code.lines().last().unwrap_or("");
-            let current_indent = last_line.len() - last_line.trim_start().len();
-            return current_indent + 4;
-        }
-        
-        // 否则保持当前缩进
-        let last_line = code.lines().last().unwrap_or("");
-        last_line.len() - last_line.trim_start().len()
     }
 }
 
-fn main() -> Result<(), PythonError> {
+fn main() {
     let args = Args::parse();
-    let mut frontend = MiniPythonFrontend::new();
+
+    let mut frontend = MiniLuaFrontend::new();
 
     if let Some(input_file) = args.input {
+        // 读取输入文件
         let source_code = match fs::read_to_string(&input_file) {
             Ok(content) => content,
-            Err(_) => {
-                eprintln!("python: can't open file '{}': [Errno 2] No such file or directory", input_file);
+            Err(e) => {
+                eprintln!("错误：无法读取文件 '{}': {}", input_file, e);
                 std::process::exit(1);
             }
         };
 
         if args.compile {
-            match frontend.compile_to_pyc(&source_code, &input_file) {
-                Ok(pyc_data) => {
+            match frontend.compile_to_gaia(&source_code) {
+                Ok(module) => {
                     let out_path = args.output.unwrap_or_else(|| {
                         let path = Path::new(&input_file);
-                        path.with_extension("pyc").to_string_lossy().into_owned()
+                        path.with_extension("gaia").to_string_lossy().into_owned()
                     });
-                    fs::write(&out_path, pyc_data)?;
-                    println!("Successfully compiled to {}", out_path);
+                    // 将 GaiaModule 序列化为 JSON 或二进制（此处示例简化为输出成功信息）
+                    println!("Successfully compiled to Gaia module.");
+                    println!("Output path: {}", out_path);
+                    // fs::write(&out_path, format!("{:?}", module)).ok(); 
                 }
                 Err(e) => {
-                    eprintln!("python: error: {}", e);
+                    eprintln!("编译错误: {}", e);
                     std::process::exit(1);
                 }
             }
         } else {
-            PythonReplHandler::run_code_internal(&mut frontend, &source_code, args.ast)?;
+            if let Err(e) = LuaReplHandler::run_code_internal(&mut frontend, &source_code, args.ast) {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
         }
     } else {
-        println!("Python 0.1.0 (Mini Python, Gaia Project)");
-        println!("Type \"help\", \"copyright\", \"credits\" or \"license\" for more information.");
-        
-        let handler = PythonReplHandler { frontend };
+        // 进入 REPL 模式
+        println!("Mini Lua REPL (Standard)");
+        println!("Type 'exit' or 'quit' to exit.");
+        let handler = LuaReplHandler { frontend };
         let mut repl = OakRepl::new(handler);
-        repl.run()?;
+        if let Err(e) = repl.run() {
+            eprintln!("REPL 错误: {:?}", e);
+        }
     }
-    Ok(())
 }

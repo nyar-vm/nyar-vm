@@ -8,5 +8,5 @@ chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 gaia-jit = { workspace = true }
 gaia-assembler = { workspace = true }
-nyar-error = { path = "../nyar-error" }
+nyar-types = { path = "../nyar-types" }
 serde = { workspace = true }
