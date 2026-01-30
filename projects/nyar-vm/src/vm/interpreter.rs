@@ -142,13 +142,13 @@ fn div_mod_abs(mut a: Vec<u8>, b: &[u8]) -> (Vec<u8>, Vec<u8>) {
 }
 
 #[derive(Clone)]
-struct Frame {
-    instrs: std::sync::Arc<Vec<Instruction>>,
-    ip: usize,
-    locals: Vec<Value>,
-    closure: *const Closure,
-    module_idx: usize,
-    chunk_idx: Option<usize>,
+pub struct Frame {
+    pub instrs: std::sync::Arc<Vec<Instruction>>,
+    pub ip: usize,
+    pub locals: Vec<Value>,
+    pub closure: *const Closure,
+    pub module_idx: usize,
+    pub chunk_idx: Option<usize>,
 }
 
 pub trait JitProvider: Send + Sync {
@@ -157,9 +157,9 @@ pub trait JitProvider: Send + Sync {
 
 pub struct NyarVM {
     pub gc: NyarGc,
-    stack: Vec<Value>,
-    sp: usize,
-    frames: Vec<Frame>,
+    pub stack: Vec<Value>,
+    pub sp: usize,
+    pub frames: Vec<Frame>,
     pub modules: Vec<NyarcModule>,
     pub handler_stack: Vec<HandlerFrame>,
     #[allow(clippy::type_complexity)]
@@ -334,6 +334,13 @@ impl NyarVM {
 
     pub fn execute_symbol(&mut self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
         if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
+            if let Some(jit) = self.jit.clone() {
+                // For JIT execution, we might need to push args to the stack
+                // But for now, let's just try to trigger JIT compilation/execution
+                if let Some(res) = jit.try_execute(self, m_idx, chunk_idx as usize) {
+                    return res;
+                }
+            }
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
 
             let mut locals = args;

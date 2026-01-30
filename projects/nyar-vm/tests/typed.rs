@@ -1,5 +1,4 @@
-use nyar_vm::bytecode::decoder::Decoder;
-use nyar_vm::bytecode::format::{minimal_module_with_chunk, NyarModule};
+use nyar_vm::bytecode::format::minimal_module_with_chunk;
 use nyar_vm::bytecode::opcode::{BigIntExt, F32Ext, F64Ext, I32Ext, I64Ext, Opcode, StringExt};
 use nyar_vm::vm::interpreter::NyarVM;
 
@@ -16,22 +15,10 @@ fn run_i32_add_return() {
     code.push(I32Ext::Add as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 42);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_int(), 42);
 }
 
 #[test]
@@ -47,22 +34,10 @@ fn run_i64_add_return() {
     code.push(I64Ext::Add as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 43);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_int(), 43);
 }
 
 #[test]
@@ -78,22 +53,10 @@ fn run_f32_add_return() {
     code.push(F32Ext::Add as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert!((v.as_float() - 3.75).abs() < 1e-6);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert!((v.as_float() - 3.75).abs() < 1e-6);
 }
 
 #[test]
@@ -109,22 +72,10 @@ fn run_f64_add_return() {
     code.push(F64Ext::Add as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert!((v.as_float() - 3.75).abs() < 1e-12);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert!((v.as_float() - 3.75).abs() < 1e-12);
 }
 
 #[test]
@@ -140,22 +91,10 @@ fn run_i32_unsigned_cmp() {
     code.push(I32Ext::LtU as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_bool(), false);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_bool(), false);
 }
 
 #[test]
@@ -168,22 +107,10 @@ fn run_i32_to_f64s() {
     code.push(I32Ext::ToF64S as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert!((v.as_float() + 2.0).abs() < 1e-12);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert!((v.as_float() + 2.0).abs() < 1e-12);
 }
 
 #[test]
@@ -196,22 +123,10 @@ fn run_f64_to_i32u() {
     code.push(F64Ext::ToI32U as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 4294967295i64);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_int(), 4294967295i64);
 }
 
 #[test]
@@ -229,21 +144,11 @@ fn run_string_concat_return() {
     code.push(StringExt::Concat as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
     unsafe {
-        assert_eq!(v.as_string(), &"ab".to_string());
+        assert_eq!(v.as_string(), "ab");
     }
 }
 
@@ -266,22 +171,10 @@ fn run_bigint_add_return() {
     code.push(BigIntExt::ToI64 as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 43);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_int(), 43);
 }
 
 #[test]
@@ -301,22 +194,10 @@ fn run_bigint_cmp_lt_ge() {
     code.push(BigIntExt::Lt as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code.clone(), vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_bool(), true);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_bool(), true);
 
     let mut code2 = Vec::new();
     code2.push(Opcode::I64Ext as u8);
@@ -333,22 +214,10 @@ fn run_bigint_cmp_lt_ge() {
     code2.push(BigIntExt::Ge as u8);
     code2.push(Opcode::Return as u8);
     let module2 = minimal_module_with_chunk(code2, vec![]);
-    let data2 = module2.encode();
-    let parsed2 = NyarModule::parse(&data2).unwrap();
-    let chunk2 = parsed2.chunks[0].clone();
-    let program2 = Decoder::new(&chunk2.code).decode_all().unwrap();
-    let mut vm2 = NyarVM::new(
-        parsed2.constants,
-        parsed2.chunks.clone(),
-        parsed2.classes,
-        parsed2.traits,
-        parsed2.impls,
-        parsed2.effects,
-    );
-    let v2 = vm2.execute(&program2).unwrap();
-    unsafe {
-        assert_eq!(v2.as_bool(), true);
-    }
+    let mut vm2 = NyarVM::new();
+    let module_idx2 = vm2.load_module(module2);
+    let v2 = vm2.execute(module_idx2, 0).unwrap();
+    assert_eq!(v2.as_bool(), true);
 }
 
 #[test]
@@ -370,22 +239,10 @@ fn run_bigint_mod_to_i64() {
     code.push(BigIntExt::ToI64 as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 1i64);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_int(), 1i64);
 }
 
 #[test]
@@ -400,20 +257,10 @@ fn run_bigint_to_string() {
     code.push(BigIntExt::ToString as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
     unsafe {
-        assert_eq!(v.as_string(), &"-123".to_string());
+        assert_eq!(v.as_string(), "-123");
     }
 }

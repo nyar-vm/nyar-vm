@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 chomsky = { workspace = true }
+chomsky-rules = { workspace = true }
+chomsky-rule-engine = { workspace = true }
 gaia-jit = { workspace = true }
 nyar-types = { path = "../nyar-types" }
 nyar-vm = { path = "../nyar-vm" }

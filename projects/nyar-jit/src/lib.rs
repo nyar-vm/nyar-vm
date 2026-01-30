@@ -1,10 +1,48 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use chomsky::adapters::GaiaX86Adapter;
 use chomsky::extract::{Backend, BackendArtifact, IKunTree};
 use chomsky::optimizer::UniversalOptimizer;
 use chomsky::uir::IKun;
+use chomsky_rules::{AlgebraicSimplification, ConstantFolding};
+
+pub struct BarrierElision;
+
+impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A> for BarrierElision {
+    fn name(&self) -> &str {
+        "barrier-elision"
+    }
+
+    fn apply(&self, egraph: &chomsky_uir::egraph::EGraph<IKun, A>) {
+        let mut matches = Vec::new();
+        for entry in egraph.classes.iter() {
+            let (&id, eclass) = entry.pair();
+            for node in &eclass.nodes {
+                if let IKun::Extension(op, args) = node {
+                    if op == "barrier" && args.len() == 1 {
+                        let obj_id = egraph.union_find.find(args[0]);
+                        if let Some(obj_class) = egraph.classes.get(&obj_id) {
+                            for obj_node in &obj_class.nodes {
+                                if let IKun::Extension(obj_op, _) = obj_node {
+                                    if obj_op == "alloc" {
+                                        // Barrier on freshly allocated object is redundant
+                                        matches.push(id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for id in matches {
+            let nop_id = egraph.add(IKun::Symbol("nop".to_string()));
+            egraph.union(id, nop_id);
+        }
+    }
+}
 use dashmap::DashMap;
 use gaia_jit::JitMemory;
 use nyar_types::VmError;
@@ -41,6 +79,21 @@ pub struct CompiledCode {
 unsafe impl Send for CompiledCode {}
 unsafe impl Sync for CompiledCode {}
 
+/// The function signature for JIT-compiled code.
+/// 
+/// # Arguments
+/// * `stack_ptr` - Pointer to the VM value stack.
+/// * `sp` - Pointer to the stack pointer (index).
+/// * `locals_ptr` - Pointer to the local variables for the current frame.
+/// 
+/// # Returns
+/// * `0` on success, non-zero for error codes (e.g., deoptimization request).
+type JitEntry = unsafe extern "C" fn(
+    stack_ptr: *mut Value,
+    sp: *mut usize,
+    locals_ptr: *mut Value,
+) -> i32;
+
 /// Metadata for a single deoptimization point.
 pub struct DeoptPoint {
     /// Offset within the machine code where deoptimization can occur.
@@ -60,8 +113,18 @@ pub enum StackSlot {
 
 /// Inline Cache (IC) for dynamic dispatch optimization.
 pub struct InlineCache {
-    /// Maps call site IDs to target addresses.
-    pub entries: HashMap<u32, *const u8>,
+    /// Maps call site IDs to a single monomorphic target entry.
+    /// In a more advanced implementation, this could be a Vec for Polymorphic IC.
+    pub entries: DashMap<u32, IcEntry>,
+}
+
+/// Represents an entry in the Inline Cache.
+#[derive(Clone, Copy)]
+pub struct IcEntry {
+    /// The class ID or type tag we are caching for.
+    pub class_id: u32,
+    /// The actual target machine code address.
+    pub target: *const u8,
 }
 
 unsafe impl Send for InlineCache {}
@@ -70,8 +133,24 @@ unsafe impl Sync for InlineCache {}
 impl InlineCache {
     pub fn new() -> Self {
         Self {
-            entries: HashMap::new(),
+            entries: DashMap::new(),
         }
+    }
+
+    /// Records a successful dispatch in the cache.
+    pub fn record(&self, call_site: u32, class_id: u32, target: *const u8) {
+        self.entries.insert(call_site, IcEntry { class_id, target });
+    }
+
+    /// Looks up a cached target for a call site.
+    pub fn lookup(&self, call_site: u32, class_id: u32) -> Option<*const u8> {
+        self.entries.get(&call_site).and_then(|entry| {
+            if entry.class_id == class_id {
+                Some(entry.target)
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -85,24 +164,24 @@ impl JitProvider for NyarJit {
         
         // 1. Check if already compiled
         if let Some(compiled) = self.code_cache.get(&key) {
-            if compiled.tier == JitTier::Optimizing {
-                // Already fully optimized
-                return None; // Fallback to interpreter for now until machine code execution is implemented
-            }
+            // Found compiled code, execute it!
+            let result = self.execute_compiled(compiled.value(), vm);
             
-            // Baseline compiled, check if we should upgrade to Optimizing
-            let threshold = self.get_threshold(JitTier::Optimizing);
-            let chunk = &mut vm.modules[module_idx].chunks[chunk_idx];
-            chunk.hotness += 1;
-            
-            if chunk.hotness >= threshold {
-                match self.compile(vm, module_idx, chunk_idx, JitTier::Optimizing) {
-                    Ok(_) => { /* Upgrade successful, next call will use it */ }
-                    Err(e) => return Some(Err(e)),
+            if compiled.tier == JitTier::Baseline {
+                // Baseline compiled, check if we should upgrade to Optimizing
+                let threshold = self.get_threshold(JitTier::Optimizing);
+                let chunk = &mut vm.modules[module_idx].chunks[chunk_idx];
+                chunk.hotness += 1;
+                
+                if chunk.hotness >= threshold {
+                    match self.compile(vm, module_idx, chunk_idx, JitTier::Optimizing) {
+                        Ok(_) => { /* Upgrade successful, next call will use it */ }
+                        Err(e) => return Some(Err(e)),
+                    }
                 }
             }
             
-            return None; // Fallback to interpreter for now
+            return Some(result);
         }
 
         // 2. Increment hotness in VM's chunk for baseline trigger
@@ -140,7 +219,23 @@ pub struct NyarJit {
 impl NyarJit {
     /// Creates a new NyarJit instance with specified memory capacity.
     pub fn new(capacity: usize) -> Result<Self, VmError> {
-        let optimizer = std::sync::Mutex::new(UniversalOptimizer::new());
+        let mut optimizer = UniversalOptimizer::new();
+        
+        // Register default optimization rules
+        optimizer.register_rule(
+            chomsky_rule_engine::RuleCategory::Algebraic,
+            Box::new(ConstantFolding),
+        );
+        optimizer.register_rule(
+            chomsky_rule_engine::RuleCategory::Algebraic,
+            Box::new(AlgebraicSimplification),
+        );
+        optimizer.register_rule(
+            chomsky_rule_engine::RuleCategory::Aggressive,
+            Box::new(BarrierElision),
+        );
+
+        let optimizer = std::sync::Mutex::new(optimizer);
         let jit_mem = std::sync::Mutex::new(JitMemory::new(capacity).map_err(|e| VmError::RuntimeError(e.to_string()))?);
         
         let mut thresholds = HashMap::new();
@@ -156,6 +251,37 @@ impl NyarJit {
         })
     }
 
+    /// Executes compiled machine code.
+    fn execute_compiled(&self, compiled: &CompiledCode, vm: &mut NyarVM) -> Result<Value, VmError> {
+        let entry: JitEntry = unsafe { std::mem::transmute(compiled.entry_point) };
+        
+        // Prepare locals for this execution.
+        // In a real VM, we might use a dedicated JIT stack or reuse the VM stack for locals.
+        // For now, we simulate a frame's locals.
+        let mut locals = vec![Value::null(); 32];
+        
+        unsafe {
+            let res_code = entry(
+                vm.stack.as_mut_ptr(),
+                &mut vm.sp as *mut usize,
+                locals.as_mut_ptr(),
+            );
+            
+            if res_code == 0 {
+                // Success! The result should be at the top of the stack.
+                if vm.sp > 0 {
+                    vm.sp -= 1;
+                    Ok(vm.stack[vm.sp])
+                } else {
+                    Ok(Value::null())
+                }
+            } else {
+                // Handle deoptimization or errors
+                Err(VmError::RuntimeError(format!("JIT execution failed with code {}", res_code)))
+            }
+        }
+    }
+
     /// Compiles a chunk of bytecode into machine code.
     pub fn compile(
         &self,
@@ -164,10 +290,15 @@ impl NyarJit {
         chunk_idx: usize,
         tier: JitTier,
     ) -> Result<Arc<CompiledCode>, VmError> {
-        // 1. Intent Extraction
+        let key = (module_idx, chunk_idx);
+
+        // 1. Get or create Inline Cache for this chunk
+        let ic = self.ic_registry.entry(key).or_insert_with(|| Arc::new(InlineCache::new())).value().clone();
+
+        // 2. Intent Extraction
         let intents = self.extract_intents(vm, module_idx, chunk_idx);
 
-        // 2. Build initial IKunTree from intents
+        // 3. Build initial IKunTree from intents
         let context = intents.clone();
         let tree = if !intents.is_empty() {
             IKunTree::from_uir_id(intents.len() - 1, &context)
@@ -175,7 +306,7 @@ impl NyarJit {
             IKunTree::Symbol("empty_chunk".to_string())
         };
 
-        // 3. E-Graph Optimization (if Tier 2)
+        // 4. E-Graph Optimization (if Tier 2)
         let optimized_tree = if tier == JitTier::Optimizing {
             let mut optimizer = self.optimizer.lock().unwrap();
             let root_id = self.add_tree_to_egraph(&mut optimizer, &tree);
@@ -185,10 +316,9 @@ impl NyarJit {
             tree
         };
 
-        // 4. Machine Code Generation via Gaia
-        let key = (module_idx, chunk_idx);
+        // 5. Machine Code Generation via Gaia
         let backend = self.get_backend();
-        self.generate_and_cache(key, &optimized_tree, tier, backend.as_ref())
+        self.generate_and_cache(key, &optimized_tree, tier, backend.as_ref(), ic)
     }
 
     fn add_tree_to_egraph(&self, optimizer: &mut UniversalOptimizer<()>, tree: &IKunTree) -> chomsky::uir::Id {
@@ -228,6 +358,9 @@ impl NyarJit {
                 let key_id = self.add_tree_to_egraph(optimizer, key);
                 let val_id = self.add_tree_to_egraph(optimizer, val);
                 optimizer.add_intent(&IKun::StateUpdate(key_id, val_id))
+            }
+            _ => {
+                optimizer.add_intent(&IKun::Symbol("unsupported_tree_node".to_string()))
             }
         }
     }
@@ -293,10 +426,45 @@ impl NyarJit {
                         stack.push(id);
                     }
                 }
-                Instruction::I32Eq | Instruction::I64Eq => {
+                Instruction::I32Eq | Instruction::I64Eq | Instruction::F32Eq | Instruction::F64Eq => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("eq".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32Ne | Instruction::I64Ne | Instruction::F32Ne | Instruction::F64Ne => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("ne".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32LtS | Instruction::I64LtS | Instruction::F32Lt | Instruction::F64Lt => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("lt".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32LeS | Instruction::I64LeS | Instruction::F32Le | Instruction::F64Le => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("le".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32GtS | Instruction::I64GtS | Instruction::F32Gt | Instruction::F64Gt => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("gt".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32GeS | Instruction::I64GeS | Instruction::F32Ge | Instruction::F64Ge => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("ge".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
@@ -308,8 +476,47 @@ impl NyarJit {
                 Instruction::StoreLocal(idx) => {
                     if let Some(val) = stack.pop() {
                         let id = intents.len();
-                        intents.push(IKun::StateUpdate(val, val)); // Simplified: should map to local variable update
-                        // We might need a way to represent state in IKun
+                        intents.push(IKun::StateUpdate(id, val)); // Use unique ID for state update
+                        // We also need to record that local_{idx} is now 'val'
+                    }
+                }
+                Instruction::LoadGlobal(idx) => {
+                    let id = intents.len();
+                    intents.push(IKun::Symbol(format!("global_{}", idx)));
+                    stack.push(id);
+                }
+                Instruction::StoreGlobal(idx) => {
+                    if let Some(val) = stack.pop() {
+                        let id = intents.len();
+                        intents.push(IKun::StateUpdate(id, val));
+                    }
+                }
+                Instruction::Call(idx, _args_count) => {
+                    // Simplified: treat as an extension for now
+                    let id = intents.len();
+                    intents.push(IKun::Extension(format!("call_{}", idx), vec![]));
+                    stack.push(id);
+                }
+                Instruction::NewObject(idx) => {
+                    let id = intents.len();
+                    intents.push(IKun::Extension("alloc".to_string(), vec![IKun::Constant(idx as i64)]));
+                    stack.push(id);
+                }
+                Instruction::SetField(idx) => {
+                    if let (Some(val), Some(obj)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        // Store to field and record that it needs a barrier
+                        let store = IKun::Extension("store_field".to_string(), vec![obj, IKun::Constant(idx as i64), val]);
+                        intents.push(store);
+                        
+                        let barrier = IKun::Extension("barrier".to_string(), vec![obj]);
+                        intents.push(barrier);
+                    }
+                }
+                Instruction::Return => {
+                    if let Some(val) = stack.pop() {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("return".to_string(), vec![val]));
                     }
                 }
                 Instruction::Return => {
@@ -330,13 +537,6 @@ impl NyarJit {
         Box::new(GaiaX86Adapter)
     }
 
-    fn build_tree(&self, intents: Vec<IKun>) -> IKunTree {
-        if intents.is_empty() {
-            return IKunTree::Symbol("nop".to_string());
-        }
-        <IKunTree as FromUir>::from_uir(&intents[0], &intents)
-    }
-
     /// Generates machine code from an IKunTree and caches it.
     pub fn generate_and_cache(
         &self,
@@ -344,6 +544,7 @@ impl NyarJit {
         tree: &IKunTree,
         tier: JitTier,
         backend: &dyn Backend,
+        ic: Arc<InlineCache>,
     ) -> Result<Arc<CompiledCode>, VmError> {
         let artifact = backend.generate(tree)
             .map_err(|e| VmError::RuntimeError(format!("JIT Backend error: {:?}", e)))?;
@@ -360,7 +561,7 @@ impl NyarJit {
                     entry_point: ptr,
                     tier,
                     size,
-                    ic: Arc::new(InlineCache::new()),
+                    ic,
                     deopt_metadata: Vec::new(), // Populated by backend in a full implementation
                 });
                 
