@@ -29,15 +29,26 @@ impl Backend for NativeBackend {
         let mut data_bytes = Vec::new();
         
         // --- 简单的机器码生成逻辑 ---
+        // 为影子空间和第 5 个参数预留空间 (4 * 8 + 8 = 40)
+        // 并对齐到 16 字节
+        builder.add_instruction(Instruction::Sub {
+            dst: Operand::reg(Register::RSP),
+            src: Operand::imm(40, 32),
+        });
+
         self.emit_tree(tree, &mut builder, &mut data_bytes)?;
         
+        // 恢复栈指针
+        builder.add_instruction(Instruction::Add {
+            dst: Operand::reg(Register::RSP),
+            src: Operand::imm(40, 32),
+        });
+
         // 4. ExitProcess(0)
-        // xor ecx, ecx -> 用 sub ecx, ecx 模拟或者 mov ecx, 0
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
             src: Operand::imm(0, 32),
         });
-        // call ExitProcess (index 0 in kernel32 imports)
         builder.add_instruction(Instruction::Call {
             target: Operand::mem(None, None, 0, 0),
         });
@@ -59,7 +70,7 @@ impl Backend for NativeBackend {
         }
 
         let exe_bytes = pe.generate()
-            .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("PE Builder error: {:?}", e)))?;
+            .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("PE Builder error: {}", e)))?;
 
         Ok(BackendArtifact::Binary(exe_bytes))
     }
@@ -91,52 +102,70 @@ impl NativeBackend {
                     }
                 }
             }
+            IKunTree::Apply(func, args) => {
+                if let IKunTree::Symbol(name) = &**func {
+                    if name == "System.Console.WriteLine" {
+                        if let Some(IKunTree::StringConstant(s)) = args.first() {
+                            self.emit_write_line(s, builder, data)?;
+                        }
+                    }
+                }
+            }
             _ => {}
         }
         Ok(())
     }
 
     fn emit_write_line(&self, s: &str, builder: &mut ProgramBuilder, data: &mut Vec<u8>) -> ChomskyResult<()> {
-        let string_offset = data.len();
         data.extend_from_slice(s.as_bytes());
         data.push(0);
+        // 为 lpNumberOfBytesWritten 预留 4 字节
+        data.extend_from_slice(&[0, 0, 0, 0]);
 
         // 1. GetStdHandle(STD_OUTPUT_HANDLE = -11)
-        // mov ecx, -11
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
-            src: Operand::imm(-11, 32),
+            src: Operand::imm(-11i64, 32),
         });
-        // call GetStdHandle (index 1)
         builder.add_instruction(Instruction::Call {
-            target: Operand::mem(None, None, 0, 0),
+            target: Operand::mem(None, None, 0, 1),
         });
 
         // 2. WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped)
-        // mov rcx, rax (hFile)
+        // hFile (rcx) = rax
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::RCX),
             src: Operand::reg(Register::RAX),
         });
-        // mov rdx, string_offset
-        builder.add_instruction(Instruction::Mov {
-            dst: Operand::reg(Register::RDX),
-            src: Operand::imm(string_offset as i64, 64),
+        
+        // lpBuffer (rdx) = [rip + disp32] -> .data start
+        builder.add_instruction(Instruction::Lea {
+            dst: Register::RDX,
+            displacement: 0,
+            rip_relative: true,
         });
-        // mov r8, string_length
+
+        // nNumberOfBytesToWrite (r8) = s.len()
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::R8),
             src: Operand::imm(s.len() as i64, 32),
         });
-        // sub r9, r9 (清零)
-        builder.add_instruction(Instruction::Sub {
-            dst: Operand::reg(Register::R9),
-            src: Operand::reg(Register::R9),
+
+        // lpNumberOfBytesWritten (r9) = [rip + disp32] -> .data + offset
+        builder.add_instruction(Instruction::Lea {
+            dst: Register::R9,
+            displacement: 0,
+            rip_relative: true,
         });
-        
-        // call WriteFile (index 2)
+
+        // lpOverlapped (stack [rsp+32]) = NULL
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::mem(Some(Register::RSP), None, 1, 32),
+            src: Operand::imm(0, 32),
+        });
+
         builder.add_instruction(Instruction::Call {
-            target: Operand::mem(None, None, 0, 0),
+            target: Operand::mem(None, None, 0, 2),
         });
 
         Ok(())

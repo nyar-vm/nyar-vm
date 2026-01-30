@@ -1,12 +1,13 @@
 //! Kotlin 到 Nyar 字节码的翻译器
 
-use nyar_vm::NyarError;
+use nyar_types::NyarError;
 use chomsky_uir::{IntentBuilder, IKunTree, EGraph, IKun, ConstraintAnalysis, Id};
 use chomsky_extract::IKunExtractor;
-use chomsky_cost::DEFAULT_COST_MODEL;
+use chomsky_cost::DefaultCostModel;
+use chomsky_source::Loc;
 use oak_kotlin::ast::*;
 use oak_kotlin::kind::KotlinSyntaxKind;
-use oak_core::{GreenNode, GreenTree, Language};
+use oak_core::{Language};
 use oak_kotlin::language::KotlinLanguage;
 
 pub struct NyarTranslator;
@@ -19,7 +20,7 @@ impl NyarTranslator {
     pub fn translate_to_tree(&self, root: &KotlinRoot) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(root, &mut egraph)?;
-        let extractor = IKunExtractor::new(&egraph, &DEFAULT_COST_MODEL);
+        let extractor = IKunExtractor::new(&egraph, DefaultCostModel);
         Ok(extractor.extract(root_id))
     }
 
@@ -31,88 +32,93 @@ impl NyarTranslator {
             members.push(self.translate_declaration(decl, &mut builder)?);
         }
         
-        let root_id = builder.seq(members);
-        builder.set_root(root_id);
+        let root_id = builder.seq(members, Loc::default());
         Ok(root_id)
     }
 
-    fn translate_declaration(&self, decl: &Declaration, builder: &mut IntentBuilder) -> Result<Id, NyarError> {
+    fn translate_declaration(&self, decl: &Declaration, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+        let loc = Loc::default();
         match decl {
             Declaration::Class { name, members, .. } => {
                 let mut class_members = Vec::new();
                 for member in members {
                     class_members.push(self.translate_declaration(member, builder)?);
                 }
-                let members_seq = builder.seq(class_members);
+                let name_id = builder.string(name, loc);
+                let members_seq = builder.seq(class_members, loc);
                 Ok(builder.extension("class", vec![
-                    builder.string(name.clone()),
+                    name_id,
                     members_seq
-                ]))
+                ], loc))
             }
             Declaration::Function { name, params, body, .. } => {
                 let mut param_ids = Vec::new();
                 for param in params {
+                    let p_name = builder.string(&param.name, loc);
+                    let p_type = builder.string(param.type_name.as_deref().unwrap_or("Any"), loc);
                     param_ids.push(builder.extension("parameter", vec![
-                        builder.string(param.name.clone()),
-                        builder.string(param.type_name.clone().unwrap_or_else(|| "Any".to_string())),
-                    ]));
+                        p_name,
+                        p_type,
+                    ], loc));
                 }
-                let params_seq = builder.seq(param_ids);
+                let params_seq = builder.seq(param_ids, loc);
                 
                 let mut stmt_ids = Vec::new();
                 for stmt in body {
                     stmt_ids.push(self.translate_statement(stmt, builder)?);
                 }
-                let body_seq = builder.seq(stmt_ids);
+                let body_seq = builder.seq(stmt_ids, loc);
                 
+                let name_id = builder.string(name, loc);
+                let ret_type = builder.string("void", loc); // TODO: proper return type
                 Ok(builder.extension("method", vec![
-                    builder.string(name.clone()),
-                    builder.string("void"), // TODO: proper return type
+                    name_id,
+                    ret_type,
                     params_seq,
                     body_seq
-                ]))
+                ], loc))
             }
             Declaration::Variable { name, is_val, .. } => {
+                let name_id = builder.string(name, loc);
+                let is_val_id = builder.bool(*is_val, loc);
                 Ok(builder.extension("variable", vec![
-                    builder.string(name.clone()),
-                    builder.bool(*is_val),
-                ]))
+                    name_id,
+                    is_val_id,
+                ], loc))
             }
         }
     }
 
-    fn translate_statement(&self, stmt: &Statement, builder: &mut IntentBuilder) -> Result<Id, NyarError> {
+    fn translate_statement(&self, stmt: &Statement, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+        let loc = Loc::default();
         match stmt {
             Statement::Return(expr) => {
                 let expr_id = if let Some(e) = expr {
-                    builder.string(e.clone()) // TODO: parse expression
+                    builder.string(e, loc) // TODO: parse expression
                 } else {
-                    builder.seq(vec![])
+                    builder.seq(vec![], loc)
                 };
-                Ok(builder.extension("return", vec![expr_id]))
+                Ok(builder.extension("return", vec![expr_id], loc))
             }
             Statement::Expression(expr) => {
-                Ok(builder.string(expr.clone())) // TODO: proper expression translation
+                Ok(builder.string(expr, loc)) // TODO: proper expression translation
             }
             Statement::Variable { name, is_val } => {
+                let name_id = builder.string(name, loc);
+                let is_val_id = builder.bool(*is_val, loc);
                 Ok(builder.extension("variable", vec![
-                    builder.string(name.clone()),
-                    builder.bool(*is_val),
-                ]))
+                    name_id,
+                    is_val_id,
+                ], loc))
+            }
+            Statement::Assignment { target, value } => {
+                let target_id = builder.string(target, loc);
+                let value_id = builder.string(value, loc);
+                Ok(builder.extension("assign", vec![
+                    target_id,
+                    value_id,
+                ], loc))
             }
         }
-    }
-}
-
-struct TranslationContext<'a> {
-    builder: &'a mut IntentBuilder<'a>,
-    source: &'a str,
-    offset: usize,
-}
-
-impl<'a> TranslationContext<'a> {
-    fn translate_node(&mut self, node: &GreenNode<'static, KotlinLanguage>) -> Result<Id, NyarError> {
-        // This is no longer used, but kept for reference if needed
-        Ok(self.builder.seq(vec![]))
     }
 }

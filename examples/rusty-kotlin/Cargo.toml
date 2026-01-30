@@ -11,6 +11,7 @@ oak-kotlin = { path = "../../../oaks/examples/oak-kotlin" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
 chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
+chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
 serde = { version = "1.0", features = ["derive"] }
 
 [lib]

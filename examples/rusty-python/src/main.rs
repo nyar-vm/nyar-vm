@@ -2,14 +2,14 @@
 //!
 //! 这是一个类似 Python 的语言前端演示程序，支持编译到 Gaia 指令或 Python 字节码 (.pyc)
 
-use std::{path::Path, process::exit};
+use std::{fs, path::Path, process::exit};
 use virtual_python::MiniPythonFrontend;
 use nyar_vm::NyarDriver;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <input_file>", args[0]);
+        eprintln!("Usage: {} <input_file> [--pyc <output_pyc>]", args[0]);
         exit(1);
     }
 
@@ -17,9 +17,32 @@ fn main() {
     let frontend = MiniPythonFrontend::new();
     let driver = NyarDriver::new();
     
-    if let Err(e) = driver.run_source(&frontend, input_file) {
-        eprintln!("Runtime error: {:?}", e);
-        exit(1);
+    // 检查是否需要生成 pyc
+    let mut pyc_output = None;
+    for i in 0..args.len() {
+        if args[i] == "--pyc" && i + 1 < args.len() {
+            pyc_output = Some(&args[i + 1]);
+            break;
+        }
+    }
+
+    if let Some(output_path) = pyc_output {
+        let source = fs::read_to_string(input_file).expect("Failed to read input file");
+        match frontend.compile_to_pyc(&source) {
+            Ok(bytes) => {
+                fs::write(output_path, bytes).expect("Failed to write pyc file");
+                println!("Compiled to {}", output_path);
+            }
+            Err(e) => {
+                eprintln!("Compilation error: {:?}", e);
+                exit(1);
+            }
+        }
+    } else {
+        if let Err(e) = driver.run_source(&frontend, input_file) {
+            eprintln!("Runtime error: {:?}", e);
+            exit(1);
+        }
     }
 }
 

@@ -2,14 +2,16 @@
 #![feature(new_range_api)]
 
 pub mod ast;
-pub mod codegen;
+// pub mod codegen;
 pub mod converter;
 
+use chomsky_extract::Backend;
+use chomsky_uir::ConstraintAnalysis;
+use chomsky_uir::IntentBuilder;
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::source::SourceText;
+use oak_core::Builder;
 use oak_rust::{RustBuilder, RustLanguage, RustRoot};
-use chomsky_uir::IntentBuilder;
-use chomsky_uir::ConstraintAnalysis;
 
 /// Mini Rust 前端实现
 #[derive(Default)]
@@ -30,7 +32,7 @@ impl NyarFrontend for MiniRustFrontend {
     type Language = RustLanguage;
 
     fn parse(&self, source: &str) -> Result<RustRoot, NyarError> {
-        let builder = RustBuilder::new(&self.language);
+        let builder = RustBuilder::new(self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<RustLanguage>::default();
 
@@ -39,26 +41,14 @@ impl NyarFrontend for MiniRustFrontend {
     }
 
     fn lower(&self, _ast: &RustRoot) -> Result<IKunTree, NyarError> {
-        let mut builder = chomsky_uir::IntentBuilder::<chomsky_uir::ConstraintAnalysis>::new();
+        let mut aot = nyar_aot::NyarAot::<ConstraintAnalysis>::new();
+        let mut builder = chomsky_uir::IntentBuilder::new(&mut aot.optimizer.egraph);
         let id = converter::convert_root(_ast, &mut builder);
-        let intent = builder.finish(id);
-
-        let mut aot = nyar_aot::NyarAot::new();
+        
+        aot.saturate();
+        
         let backend = nyar_vm::bytecode::compiler::NyarBackend::new();
-        
-        let artifact = aot.compile(&intent, &backend)
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
-            
-        // NyarBackend::generate returns BackendArtifact::Source(json) which is NyarModule
-        // But we want the IKunTree itself if possible, or we just return a stub and 
-        // handle the real compilation in driver.
-        
-        // Actually, NyarAot::compile extracts the tree internally. 
-        // I might need a way to just get the tree.
-        
-        let id = aot.optimizer.add_intent(&intent);
-        aot.optimizer.saturate();
-        let tree = aot.optimizer.extract(id, backend.get_model());
+        let tree = aot.extract(id, backend.get_model());
         
         Ok(tree)
     }

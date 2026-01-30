@@ -3,7 +3,7 @@
 //! 这是一个类似 CSharp 的语言前端演示程序，支持编译到 Nyar 字节码
 
 use std::{path::Path, process::exit};
-use mini_csharp::MiniCSharpFrontend;
+use rusty_csharp::MiniCSharpFrontend;
 use nyar_vm::NyarDriver;
 
 fn main() {

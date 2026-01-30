@@ -57,15 +57,20 @@ impl Trace for Value {
             | ValueTag::List
             | ValueTag::Tuple
             | ValueTag::Continuation
+            | ValueTag::Function
+            | ValueTag::TraitObject
             | ValueTag::Effect => unsafe {
                 let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
                 GcHeader::mark(header_ptr, ctx);
             },
-            ValueTag::Function | ValueTag::TraitObject => {
-                // TODO: Trace these if they contain GC pointers
-            }
             _ => {}
         }
+    }
+}
+
+impl Trace for TraitObject {
+    fn trace(&self, _ctx: &mut MarkContext) {
+        // TODO: Trace data if it contains GC pointers
     }
 }
 
@@ -169,7 +174,10 @@ impl Value {
         if self.is_float() {
             return ValueTag::Float;
         }
-        let tag_val = ((self.0 & !NAN_BASE) >> TAG_SHIFT) as u8;
+        let mut tag_val = ((self.0 & 0x0007_8000_0000_0000) >> TAG_SHIFT) as u8;
+        if (self.0 & 0x8000_0000_0000_0000) != 0 {
+            tag_val |= 0x10;
+        }
         match tag_val {
             0 => ValueTag::Int,
             1 => ValueTag::Bool,
@@ -189,7 +197,7 @@ impl Value {
             15 => ValueTag::Float,
             16 => ValueTag::Function,
             17 => ValueTag::TraitObject,
-            _ => panic!("Invalid tag value: {}", tag_val),
+            _ => panic!("Invalid tag value: {} (raw={:016x})", tag_val, self.0),
         }
     }
 
@@ -202,7 +210,12 @@ impl Value {
     }
 
     fn encode(tag: ValueTag, payload: u64) -> Self {
-        Value(NAN_BASE | ((tag as u64) << TAG_SHIFT) | (payload & PAYLOAD_MASK))
+        let tag_val = tag as u64;
+        let mut u = NAN_BASE | ((tag_val & 0xF) << TAG_SHIFT) | (payload & PAYLOAD_MASK);
+        if (tag_val & 0x10) != 0 {
+            u |= 0x8000_0000_0000_0000;
+        }
+        Value(u)
     }
 
     pub fn is_float(&self) -> bool {

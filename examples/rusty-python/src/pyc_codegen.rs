@@ -303,6 +303,13 @@ impl PycTranslator {
                 self.instructions[jump_to_end_placeholder].arg = end_target;
             }
             IKunTree::Apply(func, args) => {
+                if let IKunTree::Symbol(name) = &**func {
+                    if name == "return" {
+                        self.compile_tree_node(&args[0]);
+                        self.emit(OpCode::ReturnValue, 0);
+                        return;
+                    }
+                }
                 self.compile_tree_node(func);
                 for arg in args {
                     self.compile_tree_node(arg);
@@ -315,7 +322,6 @@ impl PycTranslator {
                         self.compile_tree_node(&args[0]);
                         self.compile_tree_node(&args[1]);
                         // BinaryOp argument depends on the operation in 3.11+
-                        // 0 is ADD, 10 is SUBTRACT, 5 is MULTIPLY, 11 is TRUE_DIVIDE
                         let op_idx = match name.as_str() {
                             "add" => 0,
                             "sub" => 10,
@@ -325,8 +331,51 @@ impl PycTranslator {
                         };
                         self.emit(OpCode::BinaryOp, op_idx);
                     }
-                    _ => {}
+                    _ => {
+                        eprintln!("Unhandled extension: {}", name);
+                    }
                 }
+            }
+            IKunTree::Module(_, items) => {
+                for item in items {
+                    self.compile_tree_node(item);
+                }
+            }
+            IKunTree::Lambda(params, body) => {
+                // 处理函数定义
+                let mut sub_translator = PycTranslator::new(&self.filename, "<lambda>");
+                sub_translator.emit(OpCode::Resume, 0);
+                for param in params {
+                    sub_translator.add_localsplusname(param);
+                }
+                sub_translator.compile_tree_node(body);
+
+                // 确保有返回语句
+                let none_idx = sub_translator.add_const(PyObject::None);
+                sub_translator.emit(OpCode::ReturnConst, none_idx);
+
+                let code_obj = sub_translator.assemble();
+                let code_idx = self.add_const(PyObject::Code(Box::new(code_obj)));
+                let name_idx = self.add_const(PyObject::String("<lambda>".to_string()));
+
+                self.emit(OpCode::LoadConst, code_idx);
+                self.emit(OpCode::LoadConst, name_idx);
+                self.emit(OpCode::MakeFunction, 0);
+            }
+            IKunTree::CrossLangCall(lang, func, args) => {
+                if lang == "native" && func == "System.Console.WriteLine" {
+                    self.emit(OpCode::PushNull, 0);
+                    let idx = self.add_name("print");
+                    self.emit(OpCode::LoadName, idx);
+                    for arg in args {
+                        self.compile_tree_node(arg);
+                    }
+                    self.emit(OpCode::Call, args.len() as u32);
+                    self.emit(OpCode::PopTop, 0);
+                }
+            }
+            _ => {
+                eprintln!("Unhandled IKunTree node: {:?}", tree);
             }
             _ => {}
         }

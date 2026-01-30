@@ -44,9 +44,3 @@ impl NyarFrontend for MiniCSharpFrontend {
         translator.translate_to_tree(ast)
     }
 }
-
-impl Default for MiniCSharpFrontend {
-    fn default() -> Self {
-        Self::new()
-    }
-}

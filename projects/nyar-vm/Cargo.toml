@@ -7,6 +7,7 @@ edition = "2021"
 nyar-gc = { path = "../nyar-gc" }
 nyar-types = { path = "../nyar-types" }
 nyar-aot = { path = "../nyar-aot", default-features = false }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky", features = ["jvm"] }
 chomsky-uir = { workspace = true }
 chomsky-source = { workspace = true }
 chomsky-cost = { workspace = true }
@@ -25,6 +26,7 @@ x86_64-assembler = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 
 [features]
-default = ["native", "clap"]
+default = ["native", "clap", "jvm"]
 native = ["nyar-aot/native", "dep:pe-assembler", "dep:gaia-assembler", "dep:x86_64-assembler"]
+jvm = ["chomsky/jvm"]
 clap = ["dep:clap"]

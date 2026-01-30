@@ -117,6 +117,19 @@ fn convert_statement(
     }
 }
 
+fn extract_name(expr: &oak_ast::Expr) -> Option<String> {
+    match expr {
+        oak_ast::Expr::Ident(id) => Some(id.name.clone()),
+        oak_ast::Expr::Field {
+            receiver, field, ..
+        } => {
+            let r = extract_name(receiver)?;
+            Some(format!("{}.{}", r, field.name))
+        }
+        _ => None,
+    }
+}
+
 fn convert_expr(expr: &oak_ast::Expr, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Id {
     // Note: Loc is tricky to get from expr ref if not stored.
     // oak_ast::Expr usually has span.
@@ -164,9 +177,10 @@ fn convert_expr(expr: &oak_ast::Expr, builder: &mut IntentBuilder<ConstraintAnal
         }
         oak_ast::Expr::Call { callee, args, span } => {
             let loc = span_to_loc(span.clone());
-            let func_id = match &**callee {
-                oak_ast::Expr::Ident(id) => builder.symbol(&id.name, span_to_loc(id.span.clone())),
-                _ => builder.symbol("anonymous_call", loc),
+            let func_id = if let Some(name) = extract_name(callee) {
+                builder.symbol(&name, loc)
+            } else {
+                builder.symbol("anonymous_call", loc)
             };
             let arg_ids = args.iter().map(|a| convert_expr(a, builder)).collect();
             builder.call(func_id, arg_ids, loc)

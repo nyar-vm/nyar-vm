@@ -1,11 +1,9 @@
 use clap::Parser;
 use std::fs;
-use mini_c::frontend::MiniCFrontend;
-use mini_c::optimizer::MiniCOptimizer;
-use mini_c::runtime::MiniCRuntime;
-// use gaia_jit::JitMemory;
-use oak_repl::{OakRepl, ReplHandler, HandleResult};
-// use oak_highlight::{OakHighlighter, Theme, HighlightResult};
+use mini_c::MiniCFrontend;
+use nyar_vm::NyarDriver;
+use nyar_types::NyarError;
+use oak_repl::{OakRepl, ReplHandler, HandleResult, ReplError};
 
 #[derive(Parser, Debug)]
 #[command(name = "cling", version = "0.1.0", author = "Gaia Project", about = "Mini C Interpreter (Simulating Cling)")]
@@ -17,21 +15,19 @@ struct Args {
 
 use std::fmt::{Display, Formatter};
 use std::error::Error;
+use thiserror::Error as ThisError;
 
-#[derive(Debug)]
+#[derive(Debug, ThisError)]
 pub enum ClingError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("REPL error: {0}")]
+    Repl(#[from] ReplError),
+    #[error("Nyar error: {0}")]
+    Nyar(#[from] NyarError),
+    #[error("{0}")]
     Other(String),
 }
-
-impl Display for ClingError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClingError::Other(msg) => write!(f, "{}", msg),
-        }
-    }
-}
-
-impl Error for ClingError {}
 
 impl From<String> for ClingError {
     fn from(s: String) -> Self {
@@ -47,27 +43,19 @@ impl From<&str> for ClingError {
 
 struct CReplHandler {
     frontend: MiniCFrontend,
+    driver: NyarDriver,
 }
 
 impl CReplHandler {
-    fn run_code_internal(frontend: &mut MiniCFrontend, source: &str) -> Result<(), ClingError> {
-        match frontend.parse(source) {
-            Ok((egraph, root)) => {
-                println!("EGraph nodes: {}", egraph.memo.len());
-                println!("Root ID: {:?}", root);
-                
-                // 1. Optimize
-                let mut optimizer = MiniCOptimizer::new();
-                let optimized_graph = optimizer.optimize((egraph, root));
-                
-                // 2. Execute/Compile
-                let mut runtime = MiniCRuntime::new();
-                if let Err(e) = runtime.execute(optimized_graph) {
-                    eprintln!("cling: runtime error: {:?}", e);
-                }
-            }
-            Err(e) => eprintln!("cling: compilation error: {:?}", e),
+    fn new() -> Self {
+        Self {
+            frontend: MiniCFrontend::new(),
+            driver: NyarDriver::new(),
         }
+    }
+
+    fn run_code_internal(&self, source: &str) -> Result<(), ClingError> {
+        self.driver.run_code(&self.frontend, source)?;
         Ok(())
     }
 }
@@ -101,13 +89,14 @@ impl ReplHandler for CReplHandler {
         false
     }
 
-    fn handle_line(&mut self, line: &str) -> Result<HandleResult, ClingError> {
-        let trimmed = line.trim();
-        if trimmed == ".q" || trimmed == "exit()" {
-            return Ok(HandleResult::Exit);
+    fn handle_line(&mut self, line: &str) -> Result<HandleResult, ReplError> {
+        match self.run_code_internal(line) {
+            Ok(_) => Ok(HandleResult::Continue),
+            Err(e) => {
+                eprintln!("cling error: {}", e);
+                Ok(HandleResult::Continue)
+            }
         }
-        let _ = Self::run_code_internal(&mut self.frontend, line);
-        Ok(HandleResult::Continue)
     }
 
     fn get_indent(&self, code: &str) -> usize {
@@ -123,22 +112,17 @@ impl ReplHandler for CReplHandler {
 
 fn main() -> Result<(), ClingError> {
     let args = Args::parse();
-    // 假设 mini-c 导出了 MiniCFrontend
-    // 注意：如果 mini-c 的库名不是 virtual_c，请根据实际情况调整
-    let mut frontend = MiniCFrontend::new();
+    let mut handler = CReplHandler::new();
 
     if let Some(input_file) = args.input {
-        let source_code = fs::read_to_string(&input_file)?;
-        CReplHandler::run_code_internal(&mut frontend, &source_code)?;
+        let source = fs::read_to_string(input_file)?;
+        handler.run_code_internal(&source)?;
     } else {
-        println!("*******************************************************************************");
-        println!("* Visual C++ (Mini-C Cling Simulator)                                         *");
-        println!("* Type \".q\" to exit.                                                          *");
-        println!("*******************************************************************************");
-        
-        let handler = CReplHandler { frontend };
+        println!("Mini C REPL (Simulating Cling)");
+        println!("Type 'exit' to quit.");
         let mut repl = OakRepl::new(handler);
         repl.run()?;
     }
+
     Ok(())
 }

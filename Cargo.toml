@@ -31,6 +31,7 @@ chomsky-extract = { path = "../ProjectChomsky/packages/chomsky-extract" }
 chomsky-rules = { path = "../ProjectChomsky/packages/chomsky-rules" }
 chomsky-rule-engine = { path = "../ProjectChomsky/packages/chomsky-rule-engine" }
 oak-core = { path = "../oaks/projects/oak-core" }
+oak-repl = { path = "../oaks/projects/oak-repl" }
 oak-rust = { path = "../oaks/examples/oak-rust" }
 oak-c = { path = "../oaks/examples/oak-c" }
 oak-typescript = { path = "../oaks/examples/oak-typescript" }

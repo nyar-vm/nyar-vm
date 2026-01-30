@@ -51,7 +51,7 @@ impl NyarDriver {
         let ast = frontend.parse(&source)?;
         let tree = frontend.lower(&ast)?;
 
-        let _aot = crate::aot::NyarAot::new();
+        let mut aot: crate::aot::NyarAot<chomsky_uir::ConstraintAnalysis> = crate::aot::NyarAot::new();
         let backend = crate::aot::NativeBackend::new();
 
         // 这里的 tree 是 IKunTree，需要转换成 IKun 才能传给 aot.compile
@@ -91,24 +91,43 @@ impl NyarDriver {
     }
 
     /// 编译到 JVM .class 文件
+    #[cfg(feature = "jvm")]
     pub fn compile_to_jvm<F: NyarFrontend>(
         &self,
         frontend: &F,
         source_path: &Path,
         output_path: &Path,
     ) -> Result<(), NyarError> {
+        use chomsky::adapters::GaiaJvmAdapter;
+        use chomsky::extract::Backend;
+
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let _tree = frontend.lower(&ast)?;
-        
+        let tree = frontend.lower(&ast)?;
+
         println!("JVM: Compiling IKunTree to JVM at {:?}", output_path);
-        
-        // TODO: 实现从 IKunTree 到 JVM .class 的转换
-        // 这里我们可以先生成一个简单的 .class 文件占位，或者调用真正的转换逻辑
-        
-        let class_bytes = vec![0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34, 0x00, 0x01, 0x07, 0x00, 0x02, 0x01, 0x00, 0x04, 0x4D, 0x61, 0x69, 0x6E, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        fs::write(output_path, class_bytes).map_err(NyarError::from)?;
-        
+
+        let adapter = GaiaJvmAdapter;
+        let artifact = adapter.generate(&tree).map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+
+        match artifact {
+            chomsky::extract::BackendArtifact::Binary(bytes) => {
+                fs::write(output_path, bytes).map_err(NyarError::from)?;
+            }
+            _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
+        }
+
         Ok(())
+    }
+
+    /// 编译到 JVM .class 文件
+    #[cfg(not(feature = "jvm"))]
+    pub fn compile_to_jvm<F: NyarFrontend>(
+        &self,
+        _frontend: &F,
+        _source_path: &Path,
+        _output_path: &Path,
+    ) -> Result<(), NyarError> {
+        Err(NyarError::Compile("JVM feature is not enabled".to_string()))
     }
 }

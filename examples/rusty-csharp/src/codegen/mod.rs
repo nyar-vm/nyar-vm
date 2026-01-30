@@ -1,6 +1,7 @@
 //! CSharp 到 Nyar 字节码的翻译器
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
+use chomsky_source::Loc;
 use nyar_types::NyarError;
 use oak_java::ast::*;
 
@@ -24,9 +25,10 @@ impl NyarTranslator {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         self.translate_to_graph(ast, &mut egraph)?;
 
-        let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL);
-        if let Some(root_id) = egraph.classes.keys().next() {
-            Ok(extractor.extract(*root_id))
+        let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DefaultCostModel::default());
+        let root_id = egraph.classes.iter().next().map(|entry| *entry.key());
+        if let Some(root_id) = root_id {
+            Ok(extractor.extract(root_id))
         } else {
             Err(NyarError::Compile("No code generated".to_string()))
         }
@@ -35,10 +37,12 @@ impl NyarTranslator {
     fn translate_root(
         &self,
         root: &JavaRoot,
-        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+        builder: &mut IntentBuilder<ConstraintAnalysis>,
     ) -> Result<(), NyarError> {
-        for class in &root.classes {
-            self.translate_class(class, builder)?;
+        for item in &root.items {
+            if let Item::Class(class) = item {
+                self.translate_class(class, builder)?;
+            }
         }
         Ok(())
     }
@@ -46,83 +50,94 @@ impl NyarTranslator {
     fn translate_class(
         &self,
         class: &ClassDeclaration,
-        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+        builder: &mut IntentBuilder<ConstraintAnalysis>,
     ) -> Result<(), NyarError> {
         let mut members = Vec::new();
         for member in &class.members {
-            if let ClassMember::Method(method) = member {
+            if let Member::Method(method) = member {
                 let id = self.translate_method(method, builder)?;
                 members.push(id);
             }
         }
-        let name_id = builder.string_const(&class.name);
-        let members_id = builder.seq(members);
-        builder.extension("class", vec![name_id, members_id]);
+        let loc = Loc::unknown();
+        let name_id = builder.string(&class.name, loc);
+        let members_id = builder.seq(members, loc);
+        builder.extension("class", vec![name_id, members_id], loc);
         Ok(())
     }
 
     fn translate_method(
         &self,
         method: &MethodDeclaration,
-        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+        builder: &mut IntentBuilder<ConstraintAnalysis>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
         let body_id = self.translate_block(&method.body, builder)?;
-        let name_id = builder.string_const(&method.name);
-        let ret_id = builder.string_const("void");
-        Ok(builder.extension("method", vec![name_id, ret_id, body_id]))
+        let name_id = builder.string(&method.name, loc);
+        let ret_id = builder.string(&method.return_type, loc);
+        Ok(builder.extension("method", vec![name_id, ret_id, body_id], loc))
     }
 
     fn translate_block(
         &self,
-        block: &Block,
-        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+        statements: &[Statement],
+        builder: &mut IntentBuilder<ConstraintAnalysis>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut stmts = Vec::new();
-        for stmt in &block.statements {
+        for stmt in statements {
             stmts.push(self.translate_stmt(stmt, builder)?);
         }
-        Ok(builder.seq(stmts))
+        Ok(builder.seq(stmts, Loc::unknown()))
     }
 
     fn translate_stmt(
         &self,
         stmt: &Statement,
-        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+        builder: &mut IntentBuilder<ConstraintAnalysis>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
         match stmt {
             Statement::Expression(expr) => self.translate_expr(expr, builder),
             Statement::Return(Some(expr)) => {
                 let val = self.translate_expr(expr, builder)?;
-                Ok(builder.extension("return", vec![val]))
+                Ok(builder.extension("return", vec![val], loc))
             }
-            Statement::Return(None) => Ok(builder.extension("return", vec![])),
-            _ => Ok(builder.constant(0)),
+            Statement::Return(None) => Ok(builder.extension("return", vec![], loc)),
+            Statement::Block(inner) => self.translate_block(inner, builder),
         }
     }
 
     fn translate_expr(
         &self,
         expr: &Expression,
-        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+        builder: &mut IntentBuilder<ConstraintAnalysis>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
         match expr {
-            Expression::Literal(Literal::Integer(v)) => Ok(builder.constant(*v as i64)),
-            Expression::Literal(Literal::String(s)) => Ok(builder.string_const(s)),
-            Expression::Identifier(s) => Ok(builder.symbol(s)),
-            Expression::Binary(left, op, right) => {
-                let l = self.translate_expr(left, builder)?;
-                let r = self.translate_expr(right, builder)?;
-                Ok(builder.extension(&format!("{:?}", op), vec![l, r]))
-            }
-            Expression::Call(name, args) => {
+            Expression::Literal(Literal::Integer(v)) => Ok(builder.constant(*v, loc)),
+            Expression::Literal(Literal::String(s)) => Ok(builder.string(s, loc)),
+            Expression::Identifier(s) => Ok(builder.symbol(s, loc)),
+            Expression::MethodCall(call) => {
                 let mut arg_ids = Vec::new();
-                for arg in args {
+                for arg in &call.arguments {
                     arg_ids.push(self.translate_expr(arg, builder)?);
                 }
-                let name_id = builder.symbol(name);
-                let args_id = builder.seq(arg_ids);
-                Ok(builder.extension("call", vec![name_id, args_id]))
+                let name_id = builder.symbol(&call.name, loc);
+                let args_id = builder.seq(arg_ids, loc);
+                
+                if let Some(target) = &call.target {
+                    let target_id = self.translate_expr(target, builder)?;
+                    Ok(builder.extension("call", vec![target_id, name_id, args_id], loc))
+                } else {
+                    Ok(builder.extension("call", vec![name_id, args_id], loc))
+                }
             }
+            Expression::FieldAccess(access) => {
+                let target_id = self.translate_expr(&access.target, builder)?;
+                let name_id = builder.symbol(&access.name, loc);
+                Ok(builder.extension("field", vec![target_id, name_id], loc))
+            }
+            _ => Ok(builder.constant(0, loc)),
         }
     }
 }

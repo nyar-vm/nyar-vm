@@ -1320,8 +1320,6 @@ impl NyarVM {
                                                 Ok(Some(val)) => return Ok(val),
                                                 Ok(None) => {
                                                     // JIT returned to interpreter, continue from the updated IP in frame
-                                                    let updated_ip = self.frames.last().unwrap().ip;
-                                                    next_ip = Some(updated_ip);
                                                     continue;
                                                 }
                                                 Err(e) => return Err(e),

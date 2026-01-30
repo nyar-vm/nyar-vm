@@ -102,7 +102,6 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
                             }
                             if escapes { break; }
                         }
-                        
                         if !escapes {
                             matches.push(id);
                         }
@@ -568,10 +567,17 @@ impl NyarJit {
                         stack.push(id);
                     }
                 }
-                Instruction::F32Div | Instruction::F64Div => {
+                Instruction::F32Div | Instruction::F64Div | Instruction::I32DivS | Instruction::I32DivU | Instruction::I64DivS | Instruction::I64DivU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("div".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32RemS | Instruction::I32RemU | Instruction::I64RemS | Instruction::I64RemU => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("rem".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
@@ -596,32 +602,94 @@ impl NyarJit {
                         stack.push(id);
                     }
                 }
-                Instruction::I32LtS | Instruction::I64LtS | Instruction::F32Lt | Instruction::F64Lt => {
+                Instruction::I32LtS | Instruction::I64LtS | Instruction::F32Lt | Instruction::F64Lt | Instruction::I32LtU | Instruction::I64LtU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("lt".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32LeS | Instruction::I64LeS | Instruction::F32Le | Instruction::F64Le => {
+                Instruction::I32LeS | Instruction::I64LeS | Instruction::F32Le | Instruction::F64Le | Instruction::I32LeU | Instruction::I64LeU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("le".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32GtS | Instruction::I64GtS | Instruction::F32Gt | Instruction::F64Gt => {
+                Instruction::I32GtS | Instruction::I64GtS | Instruction::F32Gt | Instruction::F64Gt | Instruction::I32GtU | Instruction::I64GtU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("gt".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32GeS | Instruction::I64GeS | Instruction::F32Ge | Instruction::F64Ge => {
+                Instruction::I32GeS | Instruction::I64GeS | Instruction::F32Ge | Instruction::F64Ge | Instruction::I32GeU | Instruction::I64GeU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("ge".to_string(), vec![lhs, rhs]));
                         stack.push(id);
+                    }
+                }
+                Instruction::I32Extend64S | Instruction::I32Extend64U | Instruction::F32ToF64 => {
+                    if let Some(val) = stack.pop() {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("extend".to_string(), vec![val]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32Trunc64S | Instruction::I32Trunc64U | Instruction::F64ToF32 | Instruction::I32Trunc64SLow => {
+                    if let Some(val) = stack.pop() {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("trunc".to_string(), vec![val]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32ToF32S | Instruction::I32ToF32U | Instruction::I32ToF64S | Instruction::I32ToF64U |
+                Instruction::I64ToF32S | Instruction::I64ToF32U | Instruction::I64ToF64S | Instruction::I64ToF64U |
+                Instruction::F32ToI32S | Instruction::F32ToI32U | Instruction::F32ToI64S | Instruction::F32ToI64U |
+                Instruction::F64ToI32S | Instruction::F64ToI32U | Instruction::F64ToI64S | Instruction::F64ToI64U => {
+                    if let Some(val) = stack.pop() {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("convert".to_string(), vec![val]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::Nop => {}
+                Instruction::JumpIfNull(offset) => {
+                    if let Some(val) = stack.pop() {
+                        let null_id = intents.len();
+                        intents.push(IKun::Constant(0)); // Null
+                        let cond_id = intents.len();
+                        intents.push(IKun::Extension("eq".to_string(), vec![val, null_id]));
+                        let target_id = intents.len();
+                        intents.push(IKun::Constant(offset as i64));
+                        intents.push(IKun::Extension("branch_true".to_string(), vec![cond_id, target_id]));
+                    }
+                }
+                Instruction::NewArray(idx) => {
+                    if let Some(len_id) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
+                        let id = intents.len();
+                        intents.push(IKun::Extension("new_array".to_string(), vec![const_id, len_id]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::GetElement => {
+                    if let (Some(idx_id), Some(arr_id)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("get_element".to_string(), vec![arr_id, idx_id]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::SetElement => {
+                    if let (Some(val_id), Some(idx_id), Some(arr_id)) = (stack.pop(), stack.pop(), stack.pop()) {
+                        let key_id = intents.len();
+                        intents.push(IKun::Extension("element_key".to_string(), vec![arr_id, idx_id]));
+                        intents.push(IKun::StateUpdate(key_id, val_id));
+                        
+                        let _barrier_id = intents.len();
+                        intents.push(IKun::Extension("barrier".to_string(), vec![arr_id]));
                     }
                 }
                 Instruction::LoadLocal(idx) => {
@@ -647,24 +715,23 @@ impl NyarJit {
                 }
                 Instruction::StoreGlobal(idx) => {
                     if let Some(val_id) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
                         let key_id = intents.len();
-                        intents.push(IKun::Extension("global_key".to_string(), vec![IKun::Constant(idx as i64)]));
+                        intents.push(IKun::Extension("global_key".to_string(), vec![const_id]));
                         intents.push(IKun::StateUpdate(key_id, val_id));
                     }
                 }
                 Instruction::Jump(offset) => {
-                    let _id = intents.len();
-                    intents.push(IKun::Extension("jump".to_string(), vec![]));
-                    // Target offset could be stored in metadata or as a constant
-                    let _target_id = intents.len();
+                    let id = intents.len();
                     intents.push(IKun::Constant(offset as i64));
+                    intents.push(IKun::Extension("jump".to_string(), vec![id]));
                 }
                 Instruction::JumpIfFalse(offset) => {
                     if let Some(cond) = stack.pop() {
-                        let id = intents.len();
-                        let target_id = id + 1;
-                        intents.push(IKun::Extension("branch_false".to_string(), vec![cond, target_id]));
+                        let target_id = intents.len();
                         intents.push(IKun::Constant(offset as i64));
+                        intents.push(IKun::Extension("branch_false".to_string(), vec![cond, target_id]));
                     }
                 }
                 Instruction::Call(idx, args_count) => {
@@ -684,8 +751,7 @@ impl NyarJit {
                     stack.push(id);
                 }
                 Instruction::NewObject(idx) => {
-                    let _id = intents.len();
-                    let const_id = _id;
+                    let const_id = intents.len();
                     intents.push(IKun::Constant(idx as i64));
                     
                     let alloc_id = intents.len();
@@ -707,24 +773,28 @@ impl NyarJit {
                         let const_id = intents.len();
                         intents.push(IKun::Constant(idx as i64));
                         
-                        let _store_id = intents.len();
-                        intents.push(IKun::Extension("store_field".to_string(), vec![obj, const_id, val]));
+                        let field_id = intents.len();
+                        intents.push(IKun::Extension("field_key".to_string(), vec![obj, const_id]));
+                        intents.push(IKun::StateUpdate(field_id, val));
                         
                         let _barrier_id = intents.len();
                         intents.push(IKun::Extension("barrier".to_string(), vec![obj]));
                     }
                 }
                 Instruction::LoadUpvalue(idx) => {
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
-                    intents.push(IKun::Symbol(format!("upvalue_{}", idx)));
+                    intents.push(IKun::Extension("load_upvalue".to_string(), vec![const_id]));
                     stack.push(id);
                 }
                 Instruction::StoreUpvalue(idx) => {
                     if let Some(val) = stack.pop() {
-                        let _id = intents.len();
-                        let key_id = intents.len() + 1;
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
+                        let key_id = intents.len();
+                        intents.push(IKun::Extension("upvalue_key".to_string(), vec![const_id]));
                         intents.push(IKun::StateUpdate(key_id, val));
-                        intents.push(IKun::Symbol(format!("upvalue_{}", idx)));
                     }
                 }
                 Instruction::CallVirtual(idx, args_count) | Instruction::CallDynamic(idx, args_count) | Instruction::InvokeMethod(idx, args_count) | Instruction::CallSymbol(idx, args_count) => {
@@ -735,33 +805,28 @@ impl NyarJit {
                         }
                     }
                     args.reverse();
-                    let _const_id = intents.len();
+                    let const_id = intents.len();
                     intents.push(IKun::Constant(idx as i64));
                     
                     let id = intents.len();
-                    intents.push(IKun::Extension("dynamic_call".to_string(), args));
+                    intents.push(IKun::Extension("dynamic_call".to_string(), {
+                        let mut v = vec![const_id];
+                        v.extend(args);
+                        v
+                    }));
                     stack.push(id);
-                }
-                Instruction::I32DivS | Instruction::I64DivS => {
-                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
-                        let id = intents.len();
-                        intents.push(IKun::Extension("div_s".to_string(), vec![lhs, rhs]));
-                        stack.push(id);
-                    }
-                }
-                Instruction::I32RemS | Instruction::I64RemS => {
-                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
-                        let id = intents.len();
-                        intents.push(IKun::Extension("rem_s".to_string(), vec![lhs, rhs]));
-                        stack.push(id);
-                    }
                 }
                 Instruction::Return => {
                     if let Some(val_id) = stack.pop() {
-                        let intent_id = intents.len();
-                        intents.push(IKun::Symbol(format!("id_{}", val_id)));
-                        intents.push(IKun::Extension("return".to_string(), vec![intent_id]));
+                        intents.push(IKun::Extension("return".to_string(), vec![val_id]));
+                    } else {
+                        let null_id = intents.len();
+                        intents.push(IKun::Constant(0)); // Null
+                        intents.push(IKun::Extension("return".to_string(), vec![null_id]));
                     }
+                }
+                Instruction::Halt => {
+                    intents.push(IKun::Extension("halt".to_string(), vec![]));
                 }
                 Instruction::TypeOf => {
                     if let Some(val) = stack.pop() {
@@ -787,9 +852,6 @@ impl NyarJit {
                         intents.push(IKun::Extension("cast_to".to_string(), vec![val, const_id]));
                         stack.push(id);
                     }
-                }
-                Instruction::Halt => {
-                    intents.push(IKun::Extension("halt".to_string(), vec![]));
                 }
                 _ => {
                     // Other instructions can be added here

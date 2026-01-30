@@ -30,13 +30,15 @@ impl NyarFrontend for MiniGoFrontend {
     type Language = CLanguage;
 
     fn parse(&self, source: &str) -> Result<oak_c::CRoot, NyarError> {
-        // This is a bit of a hack since FrontendImpl::parse returns EGraph
-        // But for now let's just make it compile
-        Err(NyarError::Parse("Not implemented yet".to_string()))
+        use oak_core::Builder;
+        let builder = oak_c::CBuilder::new(oak_c::CLanguage::default());
+        let source_text = oak_core::source::SourceText::new(source.to_string());
+        let mut cache = oak_core::parser::session::ParseSession::<CLanguage>::default();
+        let output = builder.build(&source_text, &[], &mut cache);
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &oak_c::CRoot) -> Result<IKunTree, NyarError> {
-        let tree = IKunTree::Module("mini-go-program".to_string(), vec![]);
-        Ok(tree)
+    fn lower(&self, ast: &oak_c::CRoot) -> Result<IKunTree, NyarError> {
+        self.inner.lower(ast)
     }
 }

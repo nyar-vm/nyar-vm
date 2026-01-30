@@ -1,7 +1,7 @@
 use std::alloc::{self, Layout};
 use std::cell::UnsafeCell;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, AtomicU8, AtomicU64, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicUsize, AtomicU8, AtomicU64, AtomicI32, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 #[repr(transparent)]
@@ -28,6 +28,7 @@ const TLAB_SIZE: usize = 64 * 1024; // 64KB TLAB
 const CARD_SIZE: usize = 512;
 const CARDS_PER_BLOCK: usize = BLOCK_SIZE / CARD_SIZE;
 const CARD_BITMAP_WORDS: usize = CARDS_PER_BLOCK / 64;
+const MARK_BITMAP_WORDS: usize = (BLOCK_SIZE / 16) / 64;
 
 const SIZE_CLASSES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
 
@@ -83,6 +84,9 @@ struct GcBlockHeader {
     /// Card table for this block. Each bit represents CARD_SIZE bytes.
     /// 1 = dirty, 0 = clean.
     card_table: [AtomicU64; CARD_BITMAP_WORDS],
+    /// Mark bitmap for this block. Each bit represents 16 bytes.
+    /// 1 = marked, 0 = white.
+    mark_bitmap: [AtomicU64; MARK_BITMAP_WORDS],
 }
 
 impl GcBlockHeader {
@@ -91,6 +95,30 @@ impl GcBlockHeader {
     }
     fn set_next(&self, next: *mut GcBlockHeader) {
         self.next.store(next, Ordering::Release)
+    }
+
+    fn is_marked(&self, ptr: *const GcHeader) -> bool {
+        let offset = ptr as usize - (self as *const _ as usize);
+        let bit_idx = offset / 16;
+        let word_idx = bit_idx / 64;
+        let bit_in_word = bit_idx % 64;
+        (self.mark_bitmap[word_idx].load(Ordering::Acquire) & (1 << bit_in_word)) != 0
+    }
+
+    fn set_marked(&self, ptr: *const GcHeader) -> bool {
+        let offset = ptr as usize - (self as *const _ as usize);
+        let bit_idx = offset / 16;
+        let word_idx = bit_idx / 64;
+        let bit_in_word = bit_idx % 64;
+        let mask = 1 << bit_in_word;
+        let old = self.mark_bitmap[word_idx].fetch_or(mask, Ordering::SeqCst);
+        (old & mask) == 0
+    }
+
+    fn clear_mark_bitmap(&self) {
+        for word in self.mark_bitmap.iter() {
+            word.store(0, Ordering::Release);
+        }
     }
 }
 
@@ -116,6 +144,9 @@ impl GcBlock {
             (*header).live_bytes.store(0, Ordering::Relaxed);
             (*header).next.store(std::ptr::null_mut(), Ordering::Relaxed);
             for word in (*header).card_table.iter() {
+                word.store(0, Ordering::Relaxed);
+            }
+            for word in (*header).mark_bitmap.iter() {
                 word.store(0, Ordering::Relaxed);
             }
 
@@ -225,23 +256,30 @@ impl<'a> MarkContext<'a> {
     /// Mark a GC pointer as reachable.
     pub unsafe fn mark(&mut self, ptr: NonNull<GcHeader>) {
         let header = ptr.as_ref();
-        if header.get_color() == Color::White {
-            header.set_color(Color::Gray);
-            self.gray_stack.push(SendPtr(ptr));
+        if header.is_large() {
+            if !header.is_marked() {
+                header.set_marked(true);
+                self.gray_stack.push(SendPtr(ptr));
+            }
+        } else {
+            let base = (ptr.as_ptr() as usize) & !(BLOCK_SIZE - 1);
+            let block_header = base as *const GcBlockHeader;
+            if (*block_header).set_marked(header) {
+                self.gray_stack.push(SendPtr(ptr));
+            }
         }
     }
 }
 
-/// Color of an object for tri-color marking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Color {
+pub enum GcState {
     /// Not yet visited.
-    White = 0,
-    /// Visited, but children not yet visited.
-    Gray = 1,
-    /// Visited and children visited.
-    Black = 2,
+    Idle = 0,
+    /// GC is currently marking objects.
+    Marking = 1,
+    /// GC is currently sweeping unreachable objects.
+    Sweeping = 2,
 }
 
 /// Metadata stored at the beginning of every GC-managed allocation.
@@ -251,11 +289,9 @@ pub struct GcHeader {
     pub next_offset: AtomicI32,
     /// Size of the allocation in bytes.
     pub size: u32,
-    /// Type ID for VTable lookup.
-    pub type_id: u16,
-    /// Packed flags: color (bits 0-1), generation (bit 2), dirty (bit 3), large (bit 4).
-    pub flags: AtomicU8,
-    pub(crate) _padding: u8,
+    /// Type ID for VTable lookup (low 16 bits) and Packed flags (high 16 bits).
+    /// Flags: marked (bit 16), generation (bit 17), dirty (bit 18), large (bit 19).
+    pub(crate) type_and_flags: AtomicU32,
 }
 
 /// VTable containing function pointers for GC operations.
@@ -267,6 +303,59 @@ pub struct GcVTable {
 }
 
 impl GcHeader {
+    pub fn is_marked(&self) -> bool {
+        (self.type_and_flags.load(Ordering::Acquire) & (1 << 16)) != 0
+    }
+    pub fn set_marked(&self, marked: bool) {
+        if marked {
+            self.type_and_flags.fetch_or(1 << 16, Ordering::Release);
+        } else {
+            self.type_and_flags.fetch_and(!(1 << 16), Ordering::Release);
+        }
+    }
+    pub fn is_dirty(&self) -> bool {
+        (self.type_and_flags.load(Ordering::Acquire) & (1 << 18)) != 0
+    }
+    pub fn set_dirty(&self, dirty: bool) {
+        if dirty {
+            self.type_and_flags.fetch_or(1 << 18, Ordering::Release);
+        } else {
+            self.type_and_flags.fetch_and(!(1 << 18), Ordering::Release);
+        }
+    }
+    pub fn is_large(&self) -> bool {
+        (self.type_and_flags.load(Ordering::Acquire) & (1 << 19)) != 0
+    }
+    pub fn set_large(&self, large: bool) {
+        if large {
+            self.type_and_flags.fetch_or(1 << 19, Ordering::Release);
+        } else {
+            self.type_and_flags.fetch_and(!(1 << 19), Ordering::Release);
+        }
+    }
+    pub fn get_generation(&self) -> u8 {
+        ((self.type_and_flags.load(Ordering::Acquire) >> 17) & 0x01) as u8
+    }
+    pub fn set_generation(&self, gen: u8) {
+        if gen != 0 {
+            self.type_and_flags.fetch_or(1 << 17, Ordering::Release);
+        } else {
+            self.type_and_flags.fetch_and(!(1 << 17), Ordering::Release);
+        }
+    }
+    pub fn get_type_id(&self) -> u16 {
+        (self.type_and_flags.load(Ordering::Acquire) & 0xFFFF) as u16
+    }
+    pub fn set_type_id(&self, type_id: u16) {
+        let mut old = self.type_and_flags.load(Ordering::Acquire);
+        loop {
+            let new = (old & !0xFFFF) | (type_id as u32);
+            match self.type_and_flags.compare_exchange_weak(old, new, Ordering::Release, Ordering::Acquire) {
+                Ok(_) => break,
+                Err(actual) => old = actual,
+            }
+        }
+    }
     pub fn get_next(&self) -> *mut GcHeader {
         let offset = self.next_offset.load(Ordering::Acquire);
         if offset == 0 {
@@ -286,83 +375,15 @@ impl GcHeader {
         };
         self.next_offset.store(offset, Ordering::Release);
     }
-    pub fn get_color(&self) -> Color {
-        match self.flags.load(Ordering::Acquire) & 0x3 {
-            0 => Color::White,
-            1 => Color::Gray,
-            2 => Color::Black,
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn set_color(&self, color: Color) {
-        let mut old = self.flags.load(Ordering::Relaxed);
-        loop {
-            let new = (old & !0x3) | (color as u8);
-            match self.flags.compare_exchange_weak(old, new, Ordering::Release, Ordering::Acquire) {
-                Ok(_) => break,
-                Err(actual) => old = actual,
-            }
-        }
-    }
-
-    pub fn get_generation(&self) -> u8 {
-        (self.flags.load(Ordering::Acquire) >> 2) & 0x1
-    }
-
-    pub fn set_generation(&self, gen: u8) {
-        let mut old = self.flags.load(Ordering::Relaxed);
-        loop {
-            let new = (old & !(1 << 2)) | ((gen & 0x1) << 2);
-            match self.flags.compare_exchange_weak(old, new, Ordering::Release, Ordering::Acquire) {
-                Ok(_) => break,
-                Err(actual) => old = actual,
-            }
-        }
-    }
-
-    pub fn is_dirty(&self) -> bool {
-        (self.flags.load(Ordering::Acquire) & (1 << 3)) != 0
-    }
-
-    pub fn set_dirty(&self, dirty: bool) {
-        let mut old = self.flags.load(Ordering::Relaxed);
-        loop {
-            let new = if dirty { old | (1 << 3) } else { old & !(1 << 3) };
-            match self.flags.compare_exchange_weak(old, new, Ordering::Release, Ordering::Acquire) {
-                Ok(_) => break,
-                Err(actual) => old = actual,
-            }
-        }
-    }
-
-    pub fn is_large(&self) -> bool {
-        (self.flags.load(Ordering::Acquire) & (1 << 4)) != 0
-    }
-
-    pub fn set_large(&self, large: bool) {
-        let mut old = self.flags.load(Ordering::Relaxed);
-        loop {
-            let new = if large { old | (1 << 4) } else { old & !(1 << 4) };
-            match self.flags.compare_exchange_weak(old, new, Ordering::Release, Ordering::Acquire) {
-                Ok(_) => break,
-                Err(actual) => old = actual,
-            }
-        }
-    }
 
     pub unsafe fn get_vtable(&self) -> *const GcVTable {
         let registry = VTABLE_REGISTRY.lock().unwrap();
-        registry[self.type_id as usize].as_ptr()
+        registry[self.get_type_id() as usize].as_ptr()
     }
 
     /// Mark the object and trace its children if it wasn't already marked.
     pub unsafe fn mark(ptr: NonNull<GcHeader>, ctx: &mut MarkContext<'_>) {
-        let header = ptr.as_ref();
-        if header.get_color() == Color::White {
-            header.set_color(Color::Gray);
-            ctx.gray_stack.push(SendPtr(ptr));
-        }
+        ctx.mark(ptr);
     }
 }
 
@@ -402,22 +423,13 @@ impl<T: Trace + 'static> std::ops::Deref for Gc<T> {
 
 /// The garbage collector itself.
 /// Current state of the garbage collector.
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GcState {
-    /// Not yet visited.
-    Idle = 0,
-    /// GC is currently marking objects.
-    Marking = 1,
-    /// GC is currently sweeping unreachable objects.
-    Sweeping = 2,
-}
-
 struct SweepState {
     young_curr: AtomicPtr<GcHeader>,
     young_prev: AtomicPtr<GcHeader>,
     old_curr: AtomicPtr<GcHeader>,
     old_prev: AtomicPtr<GcHeader>,
+    large_curr: AtomicPtr<GcHeader>,
+    large_prev: AtomicPtr<GcHeader>,
 }
 
 pub struct NyarGc {
@@ -429,7 +441,7 @@ pub struct NyarGc {
     large_head: AtomicPtr<GcHeader>,
     /// Memory blocks managed by the GC (lock-free linked list).
     blocks_head: AtomicPtr<GcBlockHeader>,
-    /// Gray stack for tri-color marking.
+    /// Gray stack for bitmapped marking.
     gray_stack: Mutex<Vec<SendPtr<GcHeader>>>,
     /// Current state of the GC.
     state: AtomicU8,
@@ -587,14 +599,10 @@ impl NyarGc {
     /// Internal helper to initialize a newly allocated GcBox and link it to the young generation.
     unsafe fn init_gc_box<T: Trace + 'static>(&self, ptr: *mut GcBox<T>, value: T, layout: Layout) -> Gc<T> {
         let state = self.state.load(Ordering::Acquire);
-        let color = if state != GcState::Idle as u8 {
-            Color::Black
-        } else {
-            Color::White
-        };
+        let marked = state != GcState::Idle as u8;
         
         let (type_id, _) = Self::get_type_info::<T>();
-        let flags = (color as u8) | (0 << 2); // Color | Gen 0
+        let type_and_flags = type_id as u32; // Gen 0, not marked, not large, not dirty
 
         // Insert into young_head atomically
         let mut old_head = self.young_head.load(Ordering::Acquire);
@@ -611,9 +619,7 @@ impl NyarGc {
                 GcHeader {
                     next_offset: AtomicI32::new(offset),
                     size: layout.size() as u32,
-                    type_id,
-                    flags: AtomicU8::new(flags),
-                    _padding: 0,
+                    type_and_flags: AtomicU32::new(type_and_flags),
                 },
             );
             match self.young_head.compare_exchange_weak(
@@ -625,6 +631,12 @@ impl NyarGc {
                 Ok(_) => break,
                 Err(actual) => old_head = actual,
             }
+        }
+
+        if marked {
+            let base = (ptr as usize) & !(BLOCK_SIZE - 1);
+            let block_header = base as *const GcBlockHeader;
+            (*block_header).set_marked(&mut (*ptr).header);
         }
 
         std::ptr::write(&mut (*ptr).data, value);
@@ -667,6 +679,8 @@ impl NyarGc {
                 young_prev: AtomicPtr::new(std::ptr::null_mut()),
                 old_curr: AtomicPtr::new(std::ptr::null_mut()),
                 old_prev: AtomicPtr::new(std::ptr::null_mut()),
+                large_curr: AtomicPtr::new(std::ptr::null_mut()),
+                large_prev: AtomicPtr::new(std::ptr::null_mut()),
             }),
             allocated_bytes: AtomicUsize::new(0),
             threshold: AtomicUsize::new(1024 * 1024), // 1MB default threshold
@@ -753,15 +767,15 @@ impl NyarGc {
         }
 
         let state = self.state.load(Ordering::Acquire);
-        let color = if state != GcState::Idle as u8 {
-            Color::Black
-        } else {
-            Color::White
-        };
-        
+        let marked = state != GcState::Idle as u8;
         let (type_id, _) = Self::get_type_info::<T>();
-        // Color | Gen 1 (Old) | Large bit
-        let flags = (color as u8) | (1 << 2) | (1 << 4);
+        
+        // Flags: marked (bit 16), generation (bit 18), large (bit 20)
+        let mut flags = (1 << 18) | (1 << 20);
+        if marked {
+            flags |= 1 << 16;
+        }
+        let type_and_flags = (type_id as u32) | flags;
 
         // Insert into large_head atomically
         let mut old_head = self.large_head.load(Ordering::Acquire);
@@ -778,9 +792,7 @@ impl NyarGc {
                 GcHeader {
                     next_offset: AtomicI32::new(offset),
                     size: layout.size() as u32,
-                    type_id,
-                    flags: AtomicU8::new(flags),
-                    _padding: 0,
+                    type_and_flags: AtomicU32::new(type_and_flags),
                 },
             );
             match self.large_head.compare_exchange_weak(
@@ -872,7 +884,6 @@ impl NyarGc {
 
     /// Write a value to a cell within a GC-managed object, automatically triggering a write barrier.
     pub fn write<P: Trace + 'static, T: Trace + 'static>(&self, parent: Gc<P>, cell: &GcCell<T>, value: T) {
-        cell.set(value);
         unsafe {
             let parent_header = &parent.ptr.as_ref().header;
             // Generational barrier: if parent is old and not already dirty, mark it.
@@ -880,15 +891,14 @@ impl NyarGc {
                 parent_header.set_dirty(true);
                 GcBlock::mark_dirty(parent.ptr.as_ptr() as *const u8);
             }
-            // Incremental barrier: if GC is marking and parent is black, ensure invariant holds.
-            if self.get_state() == GcState::Marking && parent_header.get_color() == Color::Black {
+            // Incremental barrier: mark the value being written (Dijkstra style)
+            if self.get_state() == GcState::Marking {
                 let mut gray_stack = self.gray_stack.lock().unwrap();
                 let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
-                // Steele style: turn parent gray
-                parent_header.set_color(Color::Gray);
-                ctx.mark(NonNull::new_unchecked(parent_header as *const _ as *mut _));
+                value.trace(&mut ctx);
             }
         }
+        cell.set(value);
     }
 
     /// Write barrier: should be called when an old object is modified to point to a young object.
@@ -903,11 +913,10 @@ impl NyarGc {
                 GcBlock::mark_dirty(parent.ptr.as_ptr() as *const u8);
             }
 
-            // Incremental barrier
-            if self.get_state() == GcState::Marking && parent_header.get_color() == Color::Black {
+            // Incremental barrier: Dijkstra style
+            if self.get_state() == GcState::Marking {
                 let mut gray_stack = self.gray_stack.lock().unwrap();
                 let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
-                // Dijkstra style: turn child gray
                 ctx.mark(NonNull::new_unchecked(child_header as *const GcHeader as *mut GcHeader));
             }
         }
@@ -986,6 +995,21 @@ impl NyarGc {
         F: FnOnce(&mut MarkContext<'_>),
     {
         self.set_state(GcState::Marking);
+
+        // Clear mark bitmaps and large object mark bits
+        let mut block_curr = self.blocks_head.load(Ordering::Acquire);
+        while !block_curr.is_null() {
+            unsafe {
+                (*block_curr).clear_mark_bitmap();
+                block_curr = (*block_curr).get_next();
+            }
+        }
+        let mut large_curr = self.large_head.load(Ordering::Acquire);
+        while let Some(header_ptr) = NonNull::new(large_curr) {
+            header_ptr.as_ref().set_marked(false);
+            large_curr = header_ptr.as_ref().get_next();
+        }
+
         let mut gray_stack = self.gray_stack.lock().unwrap();
         let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
 
@@ -1056,8 +1080,6 @@ impl NyarGc {
             let header = ptr.as_ref();
             // Object is being scanned, its children will be added to gray stack
             unsafe { ((*header.get_vtable()).trace_object)(ptr.0, ctx); }
-            // Scanning finished, object is now black
-            header.set_color(Color::Black);
         }
     }
 
@@ -1067,6 +1089,21 @@ impl NyarGc {
         F: FnOnce(&mut MarkContext<'_>),
     {
         self.set_state(GcState::Marking);
+
+        // Clear mark bitmaps and large object mark bits
+        let mut block_curr = self.blocks_head.load(Ordering::Acquire);
+        while !block_curr.is_null() {
+            unsafe {
+                (*block_curr).clear_mark_bitmap();
+                block_curr = (*block_curr).get_next();
+            }
+        }
+        let mut large_curr = self.large_head.load(Ordering::Acquire);
+        while let Some(header_ptr) = NonNull::new(large_curr) {
+            header_ptr.as_ref().set_marked(false);
+            large_curr = header_ptr.as_ref().get_next();
+        }
+
         let mut gray_stack = self.gray_stack.lock().unwrap();
         let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
 
@@ -1130,6 +1167,17 @@ impl NyarGc {
             curr = header.get_next();
         }
 
+        // 2.1 Mark from dirty large objects
+        let mut curr_large = self.large_head.load(Ordering::Relaxed);
+        while let Some(header_ptr) = NonNull::new(curr_large) {
+            let header = header_ptr.as_ref();
+            if header.is_dirty() {
+                header.set_dirty(false);
+                unsafe { ((*header.get_vtable()).trace_object)(header_ptr, &mut ctx); }
+            }
+            curr_large = header.get_next();
+        }
+
         // 3. Process gray stack
         self.process_gray_stack(&mut ctx);
 
@@ -1169,6 +1217,8 @@ impl NyarGc {
                 sweep.young_prev.store(std::ptr::null_mut(), Ordering::Release);
                 sweep.old_curr.store(self.old_head.load(Ordering::Acquire), Ordering::Release);
                 sweep.old_prev.store(std::ptr::null_mut(), Ordering::Release);
+                sweep.large_curr.store(self.large_head.load(Ordering::Acquire), Ordering::Release);
+                sweep.large_prev.store(std::ptr::null_mut(), Ordering::Release);
 
                 // Reset live bytes for all blocks before marking
                 let mut block_curr = self.blocks_head.load(Ordering::Acquire);
@@ -1206,9 +1256,14 @@ impl NyarGc {
                         let header = header_ptr.as_ref();
                         let next = header.get_next();
 
-                        if header.get_color() != Color::White {
+                        let marked = if let Some(block_header) = self.find_block(header_ptr.as_ptr() as *const u8) {
+                            unsafe { (*block_header).is_marked(header) }
+                        } else {
+                            false
+                        };
+
+                        if marked {
                             // Survive and promote
-                            header.set_color(Color::White);
                             header.set_generation(1);
 
                             // Update live bytes
@@ -1262,9 +1317,13 @@ impl NyarGc {
                             let header = header_ptr.as_ref();
                             let next = header.get_next();
 
-                            if header.get_color() != Color::White {
-                                header.set_color(Color::White);
+                            let marked = if let Some(block_header) = self.find_block(header_ptr.as_ptr() as *const u8) {
+                                unsafe { (*block_header).is_marked(header) }
+                            } else {
+                                false
+                            };
 
+                            if marked {
                                 // Update live bytes
                                 let addr = header_ptr.as_ptr() as usize;
                                 let base = addr & !(BLOCK_SIZE - 1);
@@ -1289,12 +1348,37 @@ impl NyarGc {
                             }
                             work_done += 1;
                         } else {
-                            // Finished sweeping
-                            self.threshold.store(self.allocated_bytes.load(Ordering::Relaxed) * 2, Ordering::Relaxed);
-                            self.reclaim_empty_blocks();
-                            self.coalesce_free_lists();
-                            self.set_state(GcState::Idle);
-                            break;
+                            // 3. Sweep large objects
+                            let large_curr_ptr = sweep.large_curr.load(Ordering::Acquire);
+                            if let Some(header_ptr) = NonNull::new(large_curr_ptr) {
+                                let header = header_ptr.as_ref();
+                                let next = header.get_next();
+
+                                if header.is_marked() {
+                                    header.set_marked(false);
+                                    sweep.large_prev.store(large_curr_ptr, Ordering::Release);
+                                    sweep.large_curr.store(next, Ordering::Release);
+                                } else {
+                                    // Free
+                                    let large_prev_ptr = sweep.large_prev.load(Ordering::Acquire);
+                                    if let Some(mut p) = NonNull::new(large_prev_ptr) {
+                                        p.as_mut().set_next(next);
+                                    } else {
+                                        self.large_head.store(next, Ordering::Release);
+                                    }
+                                    self.allocated_bytes.fetch_sub(header.size as usize, Ordering::SeqCst);
+                                    self.free_object(header_ptr);
+                                    sweep.large_curr.store(next, Ordering::Release);
+                                }
+                                work_done += 1;
+                            } else {
+                                // Finished sweeping
+                                self.threshold.store(self.allocated_bytes.load(Ordering::Relaxed) * 2, Ordering::Relaxed);
+                                self.reclaim_empty_blocks();
+                                self.coalesce_free_lists();
+                                self.set_state(GcState::Idle);
+                                break;
+                            }
                         }
                     }
                 }
@@ -1320,9 +1404,14 @@ impl NyarGc {
             let header = header_ptr.as_ref();
             let next = header.get_next();
 
-            if header.get_color() != Color::White {
+            let marked = if let Some(block_header) = self.find_block(header_ptr.as_ptr() as *const u8) {
+                unsafe { (*block_header).is_marked(header) }
+            } else {
+                false
+            };
+
+            if marked {
                 // Object survived! Promote to old generation.
-                header.set_color(Color::White);
                 header.set_generation(1);
 
                 // Update live bytes in the block it belongs to
@@ -1358,6 +1447,31 @@ impl NyarGc {
                 curr = next;
             }
         }
+
+        // 3. Sweep large
+        let mut prev: *mut GcHeader = std::ptr::null_mut();
+        let mut curr = self.large_head.load(Ordering::Acquire);
+
+        while let Some(header_ptr) = NonNull::new(curr) {
+            let header = header_ptr.as_ref();
+            let next = header.get_next();
+
+            if header.is_marked() {
+                header.set_marked(false);
+                prev = curr;
+                curr = next;
+            } else {
+                if let Some(mut p) = NonNull::new(prev) {
+                    p.as_mut().set_next(next);
+                } else {
+                    self.large_head.store(next, Ordering::Release);
+                }
+
+                self.allocated_bytes.fetch_sub(header.size as usize, Ordering::SeqCst);
+                self.free_object(header_ptr);
+                curr = next;
+            }
+        }
     }
 
     unsafe fn sweep_full(&self) {
@@ -1371,9 +1485,13 @@ impl NyarGc {
             let header = header_ptr.as_ref();
             let next = header.get_next();
 
-            if header.get_color() != Color::White {
-                header.set_color(Color::White);
-                
+            let marked = if let Some(block_header) = self.find_block(header_ptr.as_ptr() as *const u8) {
+                unsafe { (*block_header).is_marked(header) }
+            } else {
+                false
+            };
+
+            if marked {
                 // Update live bytes in the block it belongs to
                 if let Some(block_header) = self.find_block(header_ptr.as_ptr() as *const u8) {
                     unsafe { (*block_header).live_bytes.fetch_add(header.size as usize, Ordering::Relaxed); }

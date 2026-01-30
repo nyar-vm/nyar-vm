@@ -1,5 +1,5 @@
 use oak_c::{CLexer, CParser, CLanguage, CElementType};
-use chomsky_uir::{EGraph, Id, IntentBuilder, IKun};
+use chomsky_uir::{EGraph, Id, IntentBuilder, IKun, IKunTree};
 use chomsky_source::Loc;
 use oak_core::parser::ParseSession;
 use oak_core::source::SourceText;
@@ -29,7 +29,7 @@ impl MiniGoFrontend {
         });
         
         let parser = CParser::new(language);
-        let parse_output = parser.parse(&source_text, &[], &mut session);
+        let parse_output = Parser::<CLanguage>::parse(&parser, &source_text, &[], &mut session);
         
         let green_node = parse_output.result.map_err(|e| format!("Parse error: {:?}", e))?;
         let red_node = RedNode::new(green_node, 0);
@@ -41,6 +41,17 @@ impl MiniGoFrontend {
         let root_id = self.convert_red_to_uir(&mut builder, red_node, source, 1);
         
         Ok((egraph, root_id))
+    }
+
+    pub fn lower(&self, ast: &oak_c::CRoot) -> Result<IKunTree, nyar_types::NyarError> {
+        // Simple translation from CRoot to IKunTree
+        let mut items = vec![];
+        
+        // In a real implementation, we would traverse ast.translation_unit.external_declarations
+        // and convert them to IKunTree::Function, etc.
+        // For now, let's just return a placeholder module with the file name
+        
+        Ok(IKunTree::Module("mini-go-program".to_string(), items))
     }
 
     fn get_loc(&self, node: &RedNode<CLanguage>, source_id: u32) -> Loc {
