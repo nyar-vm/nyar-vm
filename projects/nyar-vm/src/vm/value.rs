@@ -374,12 +374,12 @@ impl Value {
         !self.is_float() && self.tag() == ValueTag::Tuple
     }
 
-    pub fn is_closure(&self) -> bool {
-        !self.is_float() && self.tag() == ValueTag::Closure
-    }
-
     pub fn is_dyn_object(&self) -> bool {
         !self.is_float() && self.tag() == ValueTag::DynObject
+    }
+
+    pub fn is_closure(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Closure
     }
 
     pub fn is_effect(&self) -> bool {

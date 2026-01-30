@@ -1,5 +1,5 @@
 use nyar_vm::bytecode::decoder::Decoder;
-use nyar_vm::bytecode::format::{Chunk, Constant, ImplInfo, NyarcModule};
+use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, ImplInfo, NyarcModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::interpreter::NyarVM;
 use nyar_vm::vm::value::Value;
@@ -71,20 +71,14 @@ fn test_witness_table_instructions() {
             methods: vec![1], // chunk 1 is the method
         }],
         imports: vec![],
-        exports: vec![],
+        exports: vec![ExportInfo {
+            symbol: "main".to_string(),
+            chunk_idx: 0,
+        }],
     };
 
-    let chunk = module.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants,
-        module.chunks.clone(),
-        module.classes,
-        module.traits,
-        module.impls,
-        module.effects,
-    );
-
-    let v = vm.execute(&program).unwrap();
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
     assert_eq!(v.as_int(), 42);
 }

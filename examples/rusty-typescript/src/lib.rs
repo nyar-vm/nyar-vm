@@ -11,9 +11,11 @@ pub mod type_system;
 pub mod errors;
 
 use chomsky_extract::IKunExtractor;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IntentBuilder, Loc, Id};
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IntentBuilder, Id};
+use chomsky_source::Loc;
 use chomsky_cost;
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_vm::bytecode::format::NyarModule;
 use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
 use std::ops::Range;
@@ -42,6 +44,15 @@ impl MiniTypescriptFrontend {
     /// 设置当前处理的源码 ID
     pub fn set_source_id(&mut self, id: u32) {
         self.source_id = id;
+    }
+
+    /// 编译源码为 Nyar 模块
+    pub fn compile_to_nyar(&self, source: &str) -> Result<NyarModule, String> {
+        let ast = self.parse(source).map_err(|e| format!("Parse error: {:?}", e))?;
+        let tree = self.lower(&ast).map_err(|e| format!("Lowering error: {:?}", e))?;
+        
+        let mut translator = codegen::NyarTranslator::new();
+        translator.generate(&tree.egraph, tree.root).map_err(|e| format!("Codegen error: {:?}", e))
     }
 }
 

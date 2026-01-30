@@ -204,7 +204,7 @@ impl NyarJit {
         if intents.is_empty() {
             return IKunTree::Symbol("nop".to_string());
         }
-        IKunTree::from_uir(&intents[0])
+        <IKunTree as FromUir>::from_uir(&intents[0])
     }
 
     /// Generates machine code from an IKunTree and caches it.

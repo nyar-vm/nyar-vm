@@ -311,10 +311,12 @@ impl NyarTranslator {
         self.chunks.push(Chunk {
             locals: self.local_index as u16,
             upvalues: 0,
-            max_stack: 16, // 简化处理
+            max_stack: 64,
             code: std::mem::take(&mut self.code),
-            handlers: Vec::new(),
-            lines: Vec::new(),
+            handlers: vec![],
+            lines: vec![],
+            decoded: None,
+            hotness: 0,
         });
 
         Ok(())
@@ -352,10 +354,12 @@ impl NyarTranslator {
         self.chunks.push(Chunk {
             locals: self.local_index as u16,
             upvalues: 0,
-            max_stack: 16,
+            max_stack: 64,
             code: std::mem::take(&mut self.code),
-            handlers: Vec::new(),
-            lines: Vec::new(),
+            handlers: vec![],
+            lines: vec![],
+            decoded: None,
+            hotness: 0,
         });
 
         Ok(())

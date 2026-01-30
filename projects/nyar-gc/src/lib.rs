@@ -138,10 +138,25 @@ impl GcBlock {
         let card_idx = offset / CARD_SIZE;
         let word_idx = card_idx / 64;
         let bit_idx = card_idx % 64;
-        let mask = 1u64 << bit_idx;
         unsafe {
-            (*header).card_table[word_idx].fetch_or(mask, Ordering::Release);
+            (*header).card_table[word_idx].fetch_or(1 << bit_idx, Ordering::Release);
         }
+    }
+
+    fn is_card_dirty(&self, card_idx: usize) -> bool {
+        let word_idx = card_idx / 64;
+        let bit_idx = card_idx % 64;
+        (self.get_header().card_table[word_idx].load(Ordering::Acquire) & (1 << bit_idx)) != 0
+    }
+
+    fn has_dirty_cards(&self) -> bool {
+        let header = self.get_header();
+        for word in header.card_table.iter() {
+            if word.load(Ordering::Acquire) != 0 {
+                return true;
+            }
+        }
+        false
     }
 
     fn clear_cards(&self) {
@@ -324,9 +339,6 @@ pub enum GcState {
     Marking = 1,
     /// GC is currently sweeping unreachable objects.
     Sweeping = 2,
-}
-
-impl GcState {
 }
 
 struct SweepState {
@@ -607,23 +619,62 @@ impl NyarGc {
         mark_roots(&mut ctx);
 
         // 2. Mark from dirty cards in old generation (old -> young)
-        let mut curr = self.old_head.load(Ordering::Acquire);
+        let mut curr = self.old_head.load(Ordering::Relaxed);
+        let mut last_card_idx = usize::MAX;
+        let mut last_block_base = usize::MAX;
+        let mut is_last_card_dirty = false;
+        let mut is_last_block_dirty = true;
+
         while let Some(header_ptr) = NonNull::new(curr) {
             let header = header_ptr.as_ref();
-            // Objects in old generation are 1MB aligned to their blocks
-            let base = (header_ptr.as_ptr() as usize) & !(BLOCK_SIZE - 1);
-            let block_header = unsafe { &*(base as *const GcBlockHeader) };
-            
-            let offset = header_ptr.as_ptr() as usize - base;
+            let addr = header_ptr.as_ptr() as usize;
+            let base = addr & !(BLOCK_SIZE - 1);
+            let offset = addr - base;
             let card_idx = offset / CARD_SIZE;
-            let word_idx = card_idx / 64;
-            let bit_idx = card_idx % 64;
-            let mask = 1u64 << bit_idx;
-            
-            if (block_header.card_table[word_idx].load(Ordering::Acquire) & mask) != 0 {
+
+            if base != last_block_base {
+                last_block_base = base;
+                last_card_idx = card_idx;
+                let block_header = base as *const GcBlockHeader;
+                
+                // Check if the whole block is clean
+                unsafe {
+                    is_last_block_dirty = false;
+                    for word in (*block_header).card_table.iter() {
+                        if word.load(Ordering::Acquire) != 0 {
+                            is_last_block_dirty = true;
+                            break;
+                        }
+                    }
+                }
+
+                if is_last_block_dirty {
+                    let word_idx = card_idx / 64;
+                    let bit_idx = card_idx % 64;
+                    unsafe {
+                        is_last_card_dirty = ((*block_header).card_table[word_idx].load(Ordering::Acquire) & (1 << bit_idx)) != 0;
+                    }
+                } else {
+                    is_last_card_dirty = false;
+                }
+            } else if card_idx != last_card_idx {
+                last_card_idx = card_idx;
+                if is_last_block_dirty {
+                    let block_header = base as *const GcBlockHeader;
+                    let word_idx = card_idx / 64;
+                    let bit_idx = card_idx % 64;
+                    unsafe {
+                        is_last_card_dirty = ((*block_header).card_table[word_idx].load(Ordering::Acquire) & (1 << bit_idx)) != 0;
+                    }
+                } else {
+                    is_last_card_dirty = false;
+                }
+            }
+
+            if is_last_card_dirty {
                 unsafe { (header.trace_object)(header_ptr, &mut ctx); }
             }
-            curr = header.next.load(Ordering::Acquire);
+            curr = header.next.load(Ordering::Relaxed);
         }
 
         // 3. Process gray stack
@@ -657,6 +708,14 @@ impl NyarGc {
                 sweep.old_curr.store(self.old_head.load(Ordering::Acquire), Ordering::Release);
                 sweep.old_prev.store(std::ptr::null_mut(), Ordering::Release);
 
+                // Reset live bytes for all blocks before marking
+                {
+                    let blocks = self.blocks.lock().unwrap();
+                    for block in blocks.iter() {
+                        block.reset_live_bytes();
+                    }
+                }
+
                 // Initial marking from roots
                 let mut gray_stack = self.gray_stack.lock().unwrap();
                 let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
@@ -688,6 +747,14 @@ impl NyarGc {
                             // Survive and promote
                             header.set_color(Color::White);
                             header.generation.store(1, Ordering::Release);
+
+                            // Update live bytes
+                            let addr = header_ptr.as_ptr() as usize;
+                            let base = addr & !(BLOCK_SIZE - 1);
+                            let block_header = base as *const GcBlockHeader;
+                            unsafe {
+                                (*block_header).live_bytes.fetch_add(header.size, Ordering::Relaxed);
+                            }
 
                             // Remove from young
                             let young_prev_ptr = sweep.young_prev.load(Ordering::Acquire);
@@ -734,11 +801,13 @@ impl NyarGc {
 
                             if header.get_color() != Color::White {
                                 header.set_color(Color::White);
-                                
+
                                 // Update live bytes
-                                if let Some(block_idx) = self.find_block(header_ptr.as_ptr() as *const u8) {
-                                    let blocks = self.blocks.lock().unwrap();
-                                    blocks[block_idx].add_live_bytes(header.size);
+                                let addr = header_ptr.as_ptr() as usize;
+                                let base = addr & !(BLOCK_SIZE - 1);
+                                let block_header = base as *const GcBlockHeader;
+                                unsafe {
+                                    (*block_header).live_bytes.fetch_add(header.size, Ordering::Relaxed);
                                 }
 
                                 sweep.old_prev.store(old_curr_ptr, Ordering::Release);
@@ -789,7 +858,14 @@ impl NyarGc {
     }
 
     unsafe fn sweep_young(&self) {
-        let mut prev: *mut GcHeader = std::ptr::null_mut();
+        // Reset live bytes for all blocks before sweeping
+        {
+            let blocks = self.blocks.lock().unwrap();
+            for block in blocks.iter() {
+                block.reset_live_bytes();
+            }
+        }
+
         let mut curr = self.young_head.load(Ordering::Acquire);
 
         while let Some(header_ptr) = NonNull::new(curr) {
@@ -800,13 +876,15 @@ impl NyarGc {
                 // Object survived! Promote to old generation.
                 header.set_color(Color::White);
                 header.generation.store(1, Ordering::Release);
-
-                // Remove from young list
-                if let Some(mut p) = NonNull::new(prev) {
-                    p.as_mut().next.store(next, Ordering::Release);
-                } else {
-                    self.young_head.store(next, Ordering::Release);
+                
+                // Update live bytes in the block it belongs to
+                if let Some(block_idx) = self.find_block(header_ptr.as_ptr() as *const u8) {
+                    let blocks = self.blocks.lock().unwrap();
+                    blocks[block_idx].add_live_bytes(header.size);
                 }
+
+                // Remove from young list (always head since we promote everything)
+                self.young_head.store(next, Ordering::Release);
 
                 // Add to old list
                 let mut old_head = self.old_head.load(Ordering::Acquire);
@@ -822,16 +900,10 @@ impl NyarGc {
                         Err(actual) => old_head = actual,
                     }
                 }
-
-                // Since we removed it from the current list, prev doesn't change
                 curr = next;
             } else {
                 // Object is unreachable, free it
-                if let Some(mut p) = NonNull::new(prev) {
-                    p.as_mut().next.store(next, Ordering::Release);
-                } else {
-                    self.young_head.store(next, Ordering::Release);
-                }
+                self.young_head.store(next, Ordering::Release);
 
                 // Update allocated_bytes
                 self.allocated_bytes.fetch_sub(header.size, Ordering::SeqCst);
@@ -854,6 +926,13 @@ impl NyarGc {
 
             if header.get_color() != Color::White {
                 header.set_color(Color::White);
+                
+                // Update live bytes in the block it belongs to
+                if let Some(block_idx) = self.find_block(header_ptr.as_ptr() as *const u8) {
+                    let blocks = self.blocks.lock().unwrap();
+                    blocks[block_idx].add_live_bytes(header.size);
+                }
+
                 prev = curr;
                 curr = next;
             } else {
