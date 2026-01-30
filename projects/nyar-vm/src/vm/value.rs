@@ -402,6 +402,10 @@ impl Value {
         !self.is_float() && self.tag() == ValueTag::WitnessTable
     }
 
+    pub fn is_bigint(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::BigInt
+    }
+
     pub fn is_truthy(&self) -> bool {
         if self.is_float() {
             return !self.as_float().is_nan() && self.as_float() != 0.0;

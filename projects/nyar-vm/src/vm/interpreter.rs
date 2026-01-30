@@ -1246,12 +1246,7 @@ impl NyarVM {
                 Instruction::JumpIfFalse(off) => {
                     let off = *off;
                     let v = self.pop()?;
-                    let cond = match v.tag() {
-                        ValueTag::Bool => v.as_bool(),
-                        ValueTag::Null => false,
-                        _ => true,
-                    };
-                    if !cond {
+                    if !v.is_truthy() {
                         next_ip = Some((cur_ip as isize + off as isize) as usize);
                     }
                 }
@@ -2174,35 +2169,34 @@ impl NyarVM {
                         }
                         "not" => {
                             if let Some(v) = args.first() {
-                                let b = match v.tag() {
-                                    ValueTag::Bool => v.as_bool(),
-                                    ValueTag::Null => false,
-                                    _ => true,
-                                };
-                                self.push(Value::bool(!b));
+                                self.push(Value::bool(!v.is_truthy()));
                             } else {
                                 self.push(Value::bool(true));
                             }
                         }
                         "assert" => {
-                            let msg = if let Some(v) = args.last() {
-                                match v.tag() {
-                                    ValueTag::Int => {
-                                format!("assertion failed: {}", v.as_int())
-                            }
-                            ValueTag::Float => {
-                                format!("assertion failed: {}", v.as_float())
-                            }
-                            ValueTag::Bool => {
-                                format!("assertion failed: {}", v.as_bool())
-                            }
-                                    ValueTag::Null => "assertion failed".to_string(),
-                                    _ => "assertion failed".to_string(),
-                                }
+                            let cond = if let Some(v) = args.first() {
+                                v.is_truthy()
                             } else {
-                                "assertion failed".to_string()
+                                false
                             };
-                            return Err(VmError::RuntimeError(msg));
+                            if !cond {
+                                let msg = if args.len() > 1 {
+                                    let v = args.last().unwrap();
+                                    match v.tag() {
+                                        ValueTag::Int => format!("assertion failed: {}", v.as_int()),
+                                        ValueTag::Float => format!("assertion failed: {}", v.as_float()),
+                                        ValueTag::Bool => format!("assertion failed: {}", v.as_bool()),
+                                        ValueTag::Null => "assertion failed: null".to_string(),
+                                        ValueTag::String => unsafe { v.as_string().clone() },
+                                        _ => "assertion failed".to_string(),
+                                    }
+                                } else {
+                                    "assertion failed".to_string()
+                                };
+                                return Err(VmError::RuntimeError(msg));
+                            }
+                            self.push(Value::null());
                         }
                         "len" => {
                             if let Some(v) = args.last() {

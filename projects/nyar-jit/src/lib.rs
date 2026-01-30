@@ -499,18 +499,24 @@ impl NyarJit {
                 }
                 Instruction::NewObject(idx) => {
                     let id = intents.len();
-                    intents.push(IKun::Extension("alloc".to_string(), vec![IKun::Constant(idx as i64)]));
-                    stack.push(id);
+                    let const_id = id;
+                    intents.push(IKun::Constant(idx as i64));
+                    
+                    let alloc_id = intents.len();
+                    intents.push(IKun::Extension("alloc".to_string(), vec![const_id]));
+                    stack.push(alloc_id);
                 }
                 Instruction::SetField(idx) => {
                     if let (Some(val), Some(obj)) = (stack.pop(), stack.pop()) {
-                        let id = intents.len();
-                        // Store to field and record that it needs a barrier
-                        let store = IKun::Extension("store_field".to_string(), vec![obj, IKun::Constant(idx as i64), val]);
-                        intents.push(store);
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
                         
-                        let barrier = IKun::Extension("barrier".to_string(), vec![obj]);
-                        intents.push(barrier);
+                        let store_id = intents.len();
+                        intents.push(IKun::Extension("store_field".to_string(), vec![obj, const_id, val]));
+                        
+                        let _barrier_id = intents.len();
+                        intents.push(IKun::Extension("barrier".to_string(), vec![obj]));
+                        // Barriers usually don't push to stack
                     }
                 }
                 Instruction::Return => {

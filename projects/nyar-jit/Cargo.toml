@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
 chomsky-rules = { workspace = true }
 chomsky-rule-engine = { workspace = true }
 gaia-jit = { workspace = true }
