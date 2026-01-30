@@ -1,7 +1,7 @@
 use super::*;
 
-impl From<ExampleErrorKind> for ExampleError {
-    fn from(value: ExampleErrorKind) -> Self {
+impl From<KotlinErrorKind> for KotlinError {
+    fn from(value: KotlinErrorKind) -> Self {
         Self {
             kind: Box::new(value),
         }

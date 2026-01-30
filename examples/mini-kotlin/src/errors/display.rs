@@ -1,23 +1,23 @@
 use super::*;
 
-impl Error for ExampleError {}
+impl Error for KotlinError {}
 
 
-impl Debug for ExampleError {
+impl Debug for KotlinError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.kind, f)
     }
 }
 
-impl Display for ExampleError {
+impl Display for KotlinError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.kind, f)
     }
 }
 
 
-impl Display for ExampleErrorKind {
+impl Display for KotlinErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self { ExampleErrorKind::UnknownError => { write!(f, "UnknownError") } }
+        match self { KotlinErrorKind::UnknownError => { write!(f, "UnknownError") } }
     }
 }

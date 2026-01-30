@@ -7,6 +7,9 @@
 
 pub mod codegen;
 pub mod project;
+pub mod type_system;
+pub mod errors;
+pub mod wasm;
 
 use oak_core::{Builder, Lexer, SourceText, ParseSession};
 use oak_typescript::{TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot, ast, TypeScriptSyntaxKind};
@@ -66,6 +69,17 @@ impl MiniTypescriptFrontend {
 
         // 翻译为 Nyar 程序
         self.translator.generate(&egraph, root)
+    }
+
+    /// 将 TypeScript 源代码编译为 WASM 程序
+    pub fn compile_to_wasm(&mut self, source: &str) -> Result<Vec<u8>, String> {
+        // 解析为 UIR
+        let (_egraph, _root) = self.parse(source)?;
+        
+        // 暂时返回一个基础的 WASM 组件
+        let wat = include_str!("wasm/com.wat");
+        let wasm = wat::parse_str(wat).map_err(|e| format!("WAT parse error: {}", e))?;
+        Ok(wasm)
     }
 
     /// 仅进行词法分析

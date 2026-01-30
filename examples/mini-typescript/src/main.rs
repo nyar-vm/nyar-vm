@@ -20,6 +20,7 @@ fn main() {
         .arg(
             Arg::new("nyar-json").long("nyar-json").help("编译到 Nyar 字节码并输出为 JSON 格式").action(clap::ArgAction::SetTrue),
         )
+        .arg(Arg::new("wasm").long("wasm").help("编译到 WASM 组件").action(clap::ArgAction::SetTrue))
         .get_matches();
 
     let input_file = matches.get_one::<String>("input").unwrap();
@@ -28,6 +29,7 @@ fn main() {
     let show_tokens = matches.get_flag("tokens");
     let compile_nyar = matches.get_flag("nyar");
     let compile_nyar_json = matches.get_flag("nyar-json");
+    let compile_wasm = matches.get_flag("wasm");
 
     // 读取输入文件
     let source_code = match fs::read_to_string(input_file) {
@@ -97,6 +99,24 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("编译 Nyar 错误: {:?}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if compile_wasm {
+        // 编译到 WASM 组件
+        match frontend.compile_to_wasm(&source_code) {
+            Ok(wasm) => {
+                println!("=== WASM 组件 ===");
+                println!("大小: {} 字节", wasm.len());
+                if let Some(out_path) = output_file {
+                    fs::write(out_path, wasm).unwrap();
+                    println!("已导出到 WASM 文件 '{}'", out_path);
+                }
+            }
+            Err(e) => {
+                eprintln!("编译 WASM 错误: {}", e);
                 std::process::exit(1);
             }
         }

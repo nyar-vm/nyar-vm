@@ -12,6 +12,10 @@ struct Args {
     /// Output Nyar Binary file
     #[arg(short, long, value_name = "FILE")]
     output: Option<String>,
+
+    /// Compile to WASM component
+    #[arg(long)]
+    wasm: bool,
 }
 
 fn main() {
@@ -28,6 +32,27 @@ fn main() {
 
     // Create frontend instance
     let mut frontend = MiniTypescriptFrontend::new();
+
+    if args.wasm {
+        match frontend.compile_to_wasm(&source_code) {
+            Ok(wasm) => {
+                if let Some(out_path) = args.output {
+                    if let Err(e) = fs::write(&out_path, wasm) {
+                        eprintln!("Error: Could not write to output file '{}': {}", out_path, e);
+                        std::process::exit(1);
+                    }
+                    println!("Compiled successfully to WASM '{}'", out_path);
+                } else {
+                    println!("Compiled successfully to WASM (size: {} bytes)", wasm.len());
+                }
+            }
+            Err(e) => {
+                eprintln!("WASM Compilation error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
 
     // Compile to Nyar instructions
     match frontend.compile_to_nyar(&source_code) {
