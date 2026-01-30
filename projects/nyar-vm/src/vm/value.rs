@@ -16,8 +16,20 @@ impl Display for Value {
             ValueTag::Int => write!(f, "{}", self.as_int()),
             ValueTag::Bool => write!(f, "{}", self.as_bool()),
             ValueTag::Null => write!(f, "null"),
-            ValueTag::String => write!(f, "{}", unsafe { self.as_string() }),
-            ValueTag::BigInt => write!(f, "{}", unsafe { self.as_bigint().to_i64() }),
+            ValueTag::String => {
+                if let Some(s) = self.try_as_str() {
+                    write!(f, "{}", s)
+                } else {
+                    write!(f, "<invalid_string>")
+                }
+            }
+            ValueTag::BigInt => {
+                if let Some(bi) = self.try_as_bigint() {
+                    write!(f, "{}", bi.to_i64())
+                } else {
+                    write!(f, "<invalid_bigint>")
+                }
+            }
             ValueTag::Array => write!(f, "[...]"),
             ValueTag::Object => write!(f, "{{...}}"),
             ValueTag::Closure => write!(f, "<closure>"),

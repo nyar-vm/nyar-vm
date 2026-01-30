@@ -44,14 +44,99 @@ impl MiniGoFrontend {
     }
 
     pub fn lower(&self, ast: &oak_c::CRoot) -> Result<IKunTree, nyar_types::NyarError> {
-        // Simple translation from CRoot to IKunTree
         let mut items = vec![];
-        
-        // In a real implementation, we would traverse ast.translation_unit.external_declarations
-        // and convert them to IKunTree::Function, etc.
-        // For now, let's just return a placeholder module with the file name
-        
+
+        for decl in &ast.translation_unit.external_declarations {
+            match decl {
+                oak_c::ast::ExternalDeclaration::FunctionDefinition(func) => {
+                    let name = self.get_declarator_name(&func.declarator);
+                    let body = self.lower_compound_statement(&func.compound_statement)?;
+                    
+                    // 为 main 函数创建导出
+                    if name == "main" {
+                        items.push(IKunTree::Export("main".to_string(), Box::new(IKunTree::Lambda(vec![], Box::new(body)))));
+                    } else {
+                        // 其他函数也可以作为普通导出，因为 IKunTree 没有专门的 Function 变体
+                        items.push(IKunTree::Export(name, Box::new(IKunTree::Lambda(vec![], Box::new(body)))));
+                    }
+                }
+                _ => {}
+            }
+        }
+
         Ok(IKunTree::Module("mini-go-program".to_string(), items))
+    }
+
+    fn get_declarator_name(&self, declarator: &oak_c::ast::Declarator) -> String {
+        self.get_direct_declarator_name(&declarator.direct_declarator)
+    }
+
+    fn get_direct_declarator_name(&self, direct: &oak_c::ast::DirectDeclarator) -> String {
+        match direct {
+            oak_c::ast::DirectDeclarator::Identifier(name, _) => name.clone(),
+            oak_c::ast::DirectDeclarator::Function { declarator, .. } => {
+                self.get_direct_declarator_name(declarator)
+            }
+            oak_c::ast::DirectDeclarator::Declarator(decl) => {
+                self.get_declarator_name(decl)
+            }
+            _ => "unknown".to_string(),
+        }
+    }
+
+    fn lower_compound_statement(&self, stmt: &oak_c::ast::CompoundStatement) -> Result<IKunTree, nyar_types::NyarError> {
+        let mut items = vec![];
+        for item in &stmt.block_items {
+            match item {
+                oak_c::ast::BlockItem::Statement(s) => {
+                    items.push(self.lower_statement(s)?);
+                }
+                _ => {}
+            }
+        }
+        Ok(IKunTree::Seq(items))
+    }
+
+    fn lower_statement(&self, stmt: &oak_c::ast::Statement) -> Result<IKunTree, nyar_types::NyarError> {
+        match stmt {
+            oak_c::ast::Statement::Expression(expr_stmt) => {
+                if let Some(expr) = &expr_stmt.expression {
+                    self.lower_expression(expr)
+                } else {
+                    Ok(IKunTree::Seq(vec![]))
+                }
+            }
+            oak_c::ast::Statement::Compound(comp) => self.lower_compound_statement(comp),
+            _ => Ok(IKunTree::Seq(vec![])), // 简化处理其他语句
+        }
+    }
+
+    fn lower_expression(&self, expr: &oak_c::ast::Expression) -> Result<IKunTree, nyar_types::NyarError> {
+        match &*expr.kind {
+            oak_c::ast::ExpressionKind::FunctionCall { function, arguments, .. } => {
+                let func_name = self.get_expression_name(function);
+                if func_name == "printf" || func_name == "println" {
+                    let mut args = vec![];
+                    for arg in arguments {
+                        args.push(self.lower_expression(arg)?);
+                    }
+                    Ok(IKunTree::CrossLangCall("native".to_string(), "System.Console.WriteLine".to_string(), args))
+                } else {
+                    Ok(IKunTree::Seq(vec![]))
+                }
+            }
+            oak_c::ast::ExpressionKind::StringLiteral(s, _) => {
+                Ok(IKunTree::StringConstant(s.clone()))
+            }
+            _ => Ok(IKunTree::Seq(vec![])),
+        }
+    }
+
+    fn get_expression_name(&self, expr: &oak_c::ast::Expression) -> String {
+        match &*expr.kind {
+            oak_c::ast::ExpressionKind::Identifier(name, _) => name.clone(),
+            _ => "unknown".to_string(),
+        }
     }
 
     fn get_loc(&self, node: &RedNode<CLanguage>, source_id: u32) -> Loc {

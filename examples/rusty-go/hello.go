@@ -1,7 +1,3 @@
-package main
-
-import "fmt"
-
-func main() {
-    fmt.Println("Hello from Mini Go!")
+void main() {
+    printf("Hello from Mini Go!");
 }

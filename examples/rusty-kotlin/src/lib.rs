@@ -41,11 +41,16 @@ impl NyarFrontend for MiniKotlinFrontend {
         let mut session = oak_core::parser::ParseSession::<KotlinLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
+        if let Ok(root) = &output.result {
+            println!("Parsed {} declarations", root.declarations.len());
+        }
         output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &KotlinRoot) -> Result<IKunTree, NyarError> {
         let translator = codegen::NyarTranslator::new();
-        translator.translate_to_tree(ast)
+        let tree = translator.translate_to_tree(ast)?;
+        println!("Lowered to tree: {:?}", tree);
+        Ok(tree)
     }
 }

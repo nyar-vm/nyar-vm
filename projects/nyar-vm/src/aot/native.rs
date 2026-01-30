@@ -30,39 +30,45 @@ impl Backend for NativeBackend {
         
         // --- 简单的机器码生成逻辑 ---
         // 为影子空间和第 5 个参数预留空间 (4 * 8 + 8 = 40)
-        // 并对齐到 16 字节
+        // 为了保持 16 字节对齐，我们分配 48 字节 (16 * 3)
+        // 进入 entry 时 rsp 是 16 字节对齐的
         builder.add_instruction(Instruction::Sub {
             dst: Operand::reg(Register::RSP),
-            src: Operand::imm(40, 32),
+            src: Operand::imm(48, 32),
         });
 
         self.emit_tree(tree, &mut builder, &mut data_bytes)?;
         
-        // 恢复栈指针
-        builder.add_instruction(Instruction::Add {
-            dst: Operand::reg(Register::RSP),
-            src: Operand::imm(40, 32),
-        });
-
         // 4. ExitProcess(0)
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
             src: Operand::imm(0, 32),
         });
+        // call ExitProcess (index 2 in imports)
         builder.add_instruction(Instruction::Call {
-            target: Operand::mem(None, None, 0, 0),
+            target: Operand::mem(None, None, 0, 2),
+        });
+
+        // 恢复栈指针 (虽然 ExitProcess 不会返回，但为了代码完整性加上)
+        builder.add_instruction(Instruction::Add {
+            dst: Operand::reg(Register::RSP),
+            src: Operand::imm(48, 32),
         });
 
         let code = builder.compile_instructions()
             .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("Assembler error: {:?}", e)))?;
 
         // 使用 PeBuilder 构建 EXE
+        // 注意：导入顺序必须与代码中的调用顺序一致！
+        // 1. GetStdHandle (index 0)
+        // 2. WriteFile (index 1)
+        // 3. ExitProcess (index 2)
         let mut pe = PeBuilder::new()
             .architecture(self.arch.clone())
             .subsystem(SubsystemType::Console)
-            .import_function("kernel32.dll", "ExitProcess")    // index 0
-            .import_function("kernel32.dll", "GetStdHandle")   // index 1
-            .import_function("kernel32.dll", "WriteFile")      // index 2
+            .import_function("kernel32.dll", "GetStdHandle")   // index 0
+            .import_function("kernel32.dll", "WriteFile")      // index 1
+            .import_function("kernel32.dll", "ExitProcess")    // index 2
             .code(code);
         
         if !data_bytes.is_empty() {
@@ -128,7 +134,7 @@ impl NativeBackend {
             src: Operand::imm(-11i64, 32),
         });
         builder.add_instruction(Instruction::Call {
-            target: Operand::mem(None, None, 0, 1),
+            target: Operand::mem(None, None, 0, 0),
         });
 
         // 2. WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped)
@@ -165,7 +171,7 @@ impl NativeBackend {
         });
 
         builder.add_instruction(Instruction::Call {
-            target: Operand::mem(None, None, 0, 2),
+            target: Operand::mem(None, None, 0, 1),
         });
 
         Ok(())

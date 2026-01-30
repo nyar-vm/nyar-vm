@@ -379,8 +379,8 @@ impl NyarVM {
     }
 
     fn get_chunk_instructions(&mut self, module_idx: usize, chunk_idx: usize) -> Result<std::sync::Arc<Vec<Instruction>>, VmError> {
-        let module = &mut self.modules[module_idx];
-        let chunk = &mut module.chunks[chunk_idx];
+        let module = self.modules.get_mut(module_idx).ok_or_else(|| VmError::RuntimeError(format!("Module index out of bounds: {}", module_idx)))?;
+        let chunk = module.chunks.get_mut(chunk_idx).ok_or_else(|| VmError::RuntimeError(format!("Chunk index out of bounds: {} in module {}", chunk_idx, module_idx)))?;
 
         if let Some(ref instrs) = chunk.decoded {
             return Ok(instrs.clone());

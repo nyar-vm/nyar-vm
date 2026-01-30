@@ -88,12 +88,23 @@ impl<'a> UirConverter<'a> {
         let loc = self.to_loc(func.span.clone().into());
         let name = self.get_declarator_name(&func.declarator);
         
+        let mut params = Vec::new();
+        if let ast::DirectDeclarator::Function { parameter_type_list, .. } = &func.declarator.direct_declarator {
+            if let Some(list) = parameter_type_list {
+                for param in &list.parameter_list {
+                    if let Some(decl) = &param.declarator {
+                        params.push(self.get_declarator_name(decl));
+                    }
+                }
+            }
+        }
+
         let mut body_ids = Vec::new();
         for item in &func.compound_statement.block_items {
             body_ids.push(self.convert_block_item(item));
         }
         
-        let lambda = self.builder.function(&name, vec![], body_ids);
+        let lambda = self.builder.function(&name, params, body_ids);
         self.builder.assign(&name, lambda, loc)
     }
 
@@ -162,7 +173,18 @@ impl<'a> UirConverter<'a> {
                         let body = self.convert_statement(statement);
                         self.builder.extension("while", vec![cond, body], self.to_loc(span.clone().into()))
                     }
-                    _ => self.builder.constant(0, loc),
+                    ast::IterationStatement::DoWhile { statement, condition, span } => {
+                        let body = self.convert_statement(statement);
+                        let cond = self.convert_expression(condition);
+                        self.builder.extension("do_while", vec![body, cond], self.to_loc(span.clone().into()))
+                    }
+                    ast::IterationStatement::For { init, condition, update, statement, span } => {
+                        let i = if let Some(e) = init { self.convert_expression(e) } else { self.builder.constant(0, loc.clone()) };
+                        let c = if let Some(e) = condition { self.convert_expression(e) } else { self.builder.constant(1, loc.clone()) };
+                        let u = if let Some(e) = update { self.convert_expression(e) } else { self.builder.constant(0, loc.clone()) };
+                        let b = self.convert_statement(statement);
+                        self.builder.extension("for", vec![i, c, u, b], self.to_loc(span.clone().into()))
+                    }
                 }
             }
             ast::Statement::Jump(jump) => {
@@ -207,20 +229,62 @@ impl<'a> UirConverter<'a> {
                 let l = self.convert_expression(left);
                 let r = self.convert_expression(right);
                 let op = format!("{:?}", operator).to_lowercase();
-                self.builder.extension(&op, vec![l, r], loc)
+                self.builder.binary_op(&op, l, r, loc)
+            }
+            ast::ExpressionKind::Unary { operator, operand, .. } => {
+                let arg = self.convert_expression(operand);
+                let op = format!("{:?}", operator).to_lowercase();
+                self.builder.extension(&op, vec![arg], loc)
+            }
+            ast::ExpressionKind::Assignment { left, operator, right, .. } => {
+                let r = self.convert_expression(right);
+                let l = self.convert_expression(left);
+                // For now, assume simple assignment. 
+                // C has +=, -= etc but we can handle them later if needed.
+                let op = format!("{:?}", operator).to_lowercase();
+                if op == "assign" {
+                    self.builder.assign_to_id(l, r, loc)
+                } else {
+                    // Compound assignment
+                    let base_op = op.replace("assign", "");
+                    let value = self.builder.binary_op(&base_op, l, r, loc.clone());
+                    self.builder.assign_to_id(l, value, loc)
+                }
+            }
+            ast::ExpressionKind::PostfixIncDec { operand, is_increment, .. } => {
+                let arg = self.convert_expression(operand);
+                let op = if *is_increment { "post_inc" } else { "post_dec" };
+                self.builder.extension(op, vec![arg], loc)
+            }
+            ast::ExpressionKind::PrefixIncDec { operand, is_increment, .. } => {
+                let arg = self.convert_expression(operand);
+                let op = if *is_increment { "pre_inc" } else { "pre_dec" };
+                self.builder.extension(op, vec![arg], loc)
+            }
+            ast::ExpressionKind::Conditional { condition, then_expr, else_expr, .. } => {
+                let t = self.convert_expression(condition);
+                let c = self.convert_expression(then_expr);
+                let a = self.convert_expression(else_expr);
+                self.builder.branch(t, c, a, loc)
             }
             ast::ExpressionKind::FunctionCall { function, arguments, .. } => {
                 let func = self.convert_expression(function);
-                let mut args = vec![func];
+                let mut args = Vec::new();
                 for arg in arguments {
                     args.push(self.convert_expression(arg));
                 }
-                self.builder.extension("call", args, loc)
+                self.builder.call(func, args, loc)
             }
             ast::ExpressionKind::ArraySubscript { array, index, .. } => {
                 let arr = self.convert_expression(array);
                 let idx = self.convert_expression(index);
                 self.builder.extension("index", vec![arr, idx], loc)
+            }
+            ast::ExpressionKind::MemberAccess { object, member, is_pointer, .. } => {
+                let obj = self.convert_expression(object);
+                let mem = self.builder.symbol(member, loc.clone());
+                let op = if *is_pointer { "arrow" } else { "dot" };
+                self.builder.extension(op, vec![obj, mem], loc)
             }
             _ => self.builder.constant(0, loc),
         }
