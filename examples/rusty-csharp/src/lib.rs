@@ -39,11 +39,9 @@ impl NyarFrontend for MiniCSharpFrontend {
     }
 
     /// 编译到 Chomsky UIR (IKunTree)
-    fn lower(&self, _ast: &JavaRoot) -> Result<IKunTree, NyarError> {
-        // TODO: 实现真正的从 JavaRoot 到 IKunTree 的转换
-        let mut tree = IKunTree::default();
-        tree.name = "mini-csharp-program".to_string();
-        Ok(tree)
+    fn lower(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
+        let translator = crate::codegen::NyarTranslator::new();
+        translator.translate_to_tree(ast)
     }
 }
 

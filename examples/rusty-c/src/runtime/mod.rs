@@ -1,7 +1,7 @@
 use chomsky_uir::{EGraph, Id, IKun, IKunTree};
-use chomsky_full::optimizer::UniversalOptimizer;
-use chomsky_full::cost::DefaultCostModel;
-use chomsky_full::extract::IKunExtractor;
+use chomsky::optimizer::UniversalOptimizer;
+use chomsky::cost::DefaultCostModel;
+use chomsky::extract::IKunExtractor;
 use nyar_vm::vm::interpreter::NyarVM;
 use nyar_vm::bytecode::format::{NyarcModule, Chunk, ExportInfo};
 use nyar_vm::bytecode::decoder::Instruction;
@@ -164,6 +164,7 @@ impl MiniCRuntime {
             code,
             handlers: vec![],
             lines: vec![],
+            ..Default::default()
         })
     }
 

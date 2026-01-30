@@ -1,11 +1,11 @@
 use chomsky_uir::{EGraph, Id, IKun};
-use chomsky_full::optimizer::UniversalOptimizer;
+use chomsky::optimizer::UniversalOptimizer;
 
-pub struct MiniCOptimizer {
+pub struct MiniGoOptimizer {
     optimizer: UniversalOptimizer<()>,
 }
 
-impl MiniCOptimizer {
+impl MiniGoOptimizer {
     pub fn new() -> Self {
         Self {
             optimizer: UniversalOptimizer::new(),
@@ -13,16 +13,12 @@ impl MiniCOptimizer {
     }
 
     pub fn optimize(&self, intent_graph: (EGraph<IKun, ()>, Id)) -> (EGraph<IKun, ()>, Id) {
-        let (mut egraph, root_id) = intent_graph;
+        let (egraph, root_id) = intent_graph;
         
         // 1. Run saturation search using registered rules
         self.optimizer.scheduler.run(&egraph, &self.optimizer.registry);
 
         // 2. Extract the best variant (simplified for now)
-        // In a real implementation, we would extract the best IKunTree and potentially rebuild the EGraph.
-        // For now, we return the saturated E-Graph.
         (egraph, root_id)
     }
 }
-
-

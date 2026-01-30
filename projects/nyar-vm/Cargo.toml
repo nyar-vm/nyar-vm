@@ -18,6 +18,10 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 thiserror = "1.0"
 indexmap = "2.2"
+pe-assembler = { workspace = true }
+gaia-assembler = { workspace = true }
+gaia-types = { workspace = true }
+x86_64-assembler = { workspace = true }
 clap = { workspace = true, optional = true }
 
 [features]

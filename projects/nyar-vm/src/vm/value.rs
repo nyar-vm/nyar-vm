@@ -41,87 +41,29 @@ impl Trace for Value {
         if self.is_float() {
             return;
         }
+        let payload = self.payload();
+        if payload == 0 {
+            return;
+        }
         match self.tag() {
             ValueTag::Int | ValueTag::Bool | ValueTag::Null | ValueTag::Code => {}
-
-            ValueTag::WitnessTable => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
+            ValueTag::WitnessTable
+            | ValueTag::String
+            | ValueTag::BigInt
+            | ValueTag::Array
+            | ValueTag::Object
+            | ValueTag::Closure
+            | ValueTag::DynObject
+            | ValueTag::List
+            | ValueTag::Tuple
+            | ValueTag::Continuation
+            | ValueTag::Effect => unsafe {
+                let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
+                GcHeader::mark(header_ptr, ctx);
             },
-
-            ValueTag::String => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::BigInt => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::Array => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::Object => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::Closure => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::DynObject => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::List => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::Tuple => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::Continuation => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
-            ValueTag::Effect => unsafe {
-                let payload = self.payload();
-                if payload != 0 {
-                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark(header_ptr, ctx);
-                }
-            },
+            ValueTag::Function | ValueTag::TraitObject => {
+                // TODO: Trace these if they contain GC pointers
+            }
             _ => {}
         }
     }
@@ -253,6 +195,10 @@ impl Value {
 
     pub fn payload(&self) -> u64 {
         self.0 & PAYLOAD_MASK
+    }
+
+    pub fn pointer_payload(&self) -> *mut u8 {
+        self.payload() as *mut u8
     }
 
     fn encode(tag: ValueTag, payload: u64) -> Self {
@@ -416,12 +362,17 @@ impl Value {
 
     pub fn is_truthy(&self) -> bool {
         if self.is_float() {
-            return !self.as_float().is_nan() && self.as_float() != 0.0;
+            let f = self.as_float();
+            return !f.is_nan() && f != 0.0;
         }
         match self.tag() {
             ValueTag::Bool => self.as_bool(),
             ValueTag::Null => false,
             ValueTag::Int => self.as_int() != 0,
+            ValueTag::String => unsafe { !self.as_string().is_empty() },
+            ValueTag::Array => unsafe { !self.as_array().items.is_empty() },
+            ValueTag::List => unsafe { !self.as_list().items.is_empty() },
+            ValueTag::DynObject => unsafe { !self.as_dyn_object().entries.is_empty() },
             _ => true,
         }
     }
@@ -517,6 +468,13 @@ impl Value {
             None
         }
     }
+    pub fn try_as_array_mut(&self) -> Option<&mut Array> {
+        if self.is_array() {
+            Some(unsafe { self.as_array_mut() })
+        } else {
+            None
+        }
+    }
     pub unsafe fn as_bigint<'a>(&self) -> &'a BigInt {
         let ptr = self.payload() as *const GcBox<BigInt>;
         &(*ptr).data
@@ -563,6 +521,13 @@ impl Value {
             None
         }
     }
+    pub fn try_as_closure_mut(&self) -> Option<&mut Closure> {
+        if self.is_closure() {
+            Some(unsafe { self.as_closure_mut() })
+        } else {
+            None
+        }
+    }
     pub fn try_as_list(&self) -> Option<&List> {
         if self.is_list() {
             Some(unsafe { self.as_list() })
@@ -587,6 +552,20 @@ impl Value {
     pub fn try_as_tuple_mut(&self) -> Option<&mut Tuple> {
         if self.is_tuple() {
             Some(unsafe { self.as_tuple_mut() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_effect(&self) -> Option<&Effect> {
+        if self.is_effect() {
+            Some(unsafe { self.as_effect() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_object_mut(&self) -> Option<&mut Object> {
+        if self.is_object() {
+            Some(unsafe { self.as_object_mut() })
         } else {
             None
         }

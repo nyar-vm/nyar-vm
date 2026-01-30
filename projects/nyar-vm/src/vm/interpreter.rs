@@ -2,10 +2,9 @@ use crate::bytecode::decoder::Instruction;
 use crate::bytecode::format::{Constant, NyarcModule};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::ffi::FFIRegistry;
-use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
+use crate::vm::value::{BigInt, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
 use nyar_gc::{NyarGc, Trace, MarkContext};
-use std::ptr::null;
 
 fn normalize(mut v: Vec<u8>) -> Vec<u8> {
     while let Some(&last) = v.last() {
@@ -38,10 +37,6 @@ fn from_u128(mut x: u128) -> Vec<u8> {
         x >>= 8;
     }
     out
-}
-
-fn key_is_string(v: &Value) -> bool {
-    v.is_string()
 }
 
 fn cmp_abs(a: &[u8], b: &[u8]) -> i8 {
@@ -146,14 +141,14 @@ pub struct Frame {
     pub instrs: std::sync::Arc<Vec<Instruction>>,
     pub ip: usize,
     pub locals: Vec<Value>,
-    pub closure: *const Closure,
+    pub closure: Value,
     pub module_idx: usize,
     pub chunk_idx: Option<usize>,
 }
 
 pub trait JitProvider: Send + Sync {
     fn try_execute(&self, vm: &mut NyarVM, module_idx: usize, chunk_idx: usize) -> Option<Result<Value, VmError>>;
-    fn osr(&self, module_idx: usize, chunk_idx: usize, target: u32) -> Result<*const u8, VmError>;
+    fn osr(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize, target: u32) -> Result<*const u8, VmError>;
 }
 
 pub struct NyarVM {
@@ -171,6 +166,7 @@ pub struct NyarVM {
     pub builtins: std::collections::HashMap<String, Value>,
     pub jit: Option<std::sync::Arc<dyn JitProvider>>,
     pub local_hotness: u8,
+    pub last_gc_count: u64,
 }
 
 impl Trace for NyarVM {
@@ -179,9 +175,13 @@ impl Trace for NyarVM {
             self.stack[i].trace(ctx);
         }
         for frame in &self.frames {
+            frame.closure.trace(ctx);
             for local in &frame.locals {
                 local.trace(ctx);
             }
+        }
+        for builtin in self.builtins.values() {
+            builtin.trace(ctx);
         }
     }
 }
@@ -202,6 +202,7 @@ impl NyarVM {
             builtins: std::collections::HashMap::new(),
             jit: None,
             local_hotness: 0,
+            last_gc_count: 0,
         };
         vm.register_builtins();
         vm
@@ -219,8 +220,9 @@ impl NyarVM {
         // For now, System.out is just a DynObject
 
         let system = Value::dyn_object(&self.gc);
-        let system_mut = unsafe { system.as_dyn_object_mut() };
-        system_mut.entries.insert("out".to_string(), out);
+        if let Some(system_mut) = system.try_as_dyn_object_mut() {
+            system_mut.entries.insert("out".to_string(), out);
+        }
 
         self.builtins.insert("System".to_string(), system);
     }
@@ -276,6 +278,15 @@ impl NyarVM {
         self.print_line(msg);
     }
 
+    pub fn decay_hotness(&self) {
+        for module in &self.modules {
+            for chunk in &module.chunks {
+                let old = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
+                chunk.hotness.store(old >> 1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    }
+
     pub fn print_traceback(&self, err: &VmError) {
         self.print_line("Traceback (most recent call last):");
         let start = if self.frames.len() > 20 {
@@ -326,7 +337,7 @@ impl NyarVM {
             instrs,
             ip: 0,
             locals: vec![Value::null(); 32],
-            closure: std::ptr::null(),
+            closure: Value::null(),
             module_idx,
             chunk_idx: Some(chunk_idx),
         };
@@ -355,7 +366,7 @@ impl NyarVM {
                 instrs,
                 ip: 0,
                 locals,
-                closure: std::ptr::null(),
+                closure: Value::null(),
                 module_idx: m_idx,
                 chunk_idx: Some(chunk_idx as usize),
             };
@@ -1285,15 +1296,22 @@ impl NyarVM {
                     if off < 0 {
                         if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
                             let m_idx = self.frames.last().unwrap().module_idx;
-                            let chunk = &self.modules[m_idx].chunks[chunk_idx];
                             
                             self.local_hotness = self.local_hotness.wrapping_add(1);
                             if self.local_hotness == 0 {
+                                // JIT Heat Decay: if GC happened, halve all chunk hotness
+                                let gc_count = self.gc.total_collections.load(std::sync::atomic::Ordering::Relaxed);
+                                if gc_count > self.last_gc_count {
+                                    self.decay_hotness();
+                                    self.last_gc_count = gc_count;
+                                }
+
+                                let chunk = &self.modules[m_idx].chunks[chunk_idx];
                                 chunk.hotness.fetch_add(256, std::sync::atomic::Ordering::Relaxed);
                                 if let Some(jit) = self.jit.clone() {
                                     // Trigger OSR if hot enough
                                     if chunk.hotness.load(std::sync::atomic::Ordering::Relaxed) >= 10240 {
-                                        if let Ok(entry) = jit.osr(m_idx, chunk_idx, target as u32) {
+                                        if let Ok(entry) = jit.osr(self, m_idx, chunk_idx, target as u32) {
                                             // Transition to JIT code
                                             println!("OSR triggered for chunk {} at target {}", chunk_idx, target);
                                             match self.execute_jit_at(entry) {
@@ -1323,10 +1341,17 @@ impl NyarVM {
                     if off < 0 && !v.is_truthy() {
                         if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
                             let m_idx = self.frames.last().unwrap().module_idx;
-                            let chunk = &self.modules[m_idx].chunks[chunk_idx];
                             
                             self.local_hotness = self.local_hotness.wrapping_add(1);
                             if self.local_hotness == 0 {
+                                // JIT Heat Decay: if GC happened, halve all chunk hotness
+                                let gc_count = self.gc.total_collections.load(std::sync::atomic::Ordering::Relaxed);
+                                if gc_count > self.last_gc_count {
+                                    self.decay_hotness();
+                                    self.last_gc_count = gc_count;
+                                }
+
+                                let chunk = &self.modules[m_idx].chunks[chunk_idx];
                                 chunk.hotness.fetch_add(256, std::sync::atomic::Ordering::Relaxed);
                             }
                         }
@@ -1359,10 +1384,7 @@ impl NyarVM {
                             f.locals[up.index as usize]
                         } else {
                             let f = self.frames.last().unwrap();
-                            if f.closure.is_null() {
-                                return Err(VmError::InvalidOpcode);
-                            }
-                            let closure = unsafe { &*f.closure };
+                            let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
                             closure.upvalues[up.index as usize].0
                         };
                         captured.push(Upvalue(val));
@@ -1373,10 +1395,7 @@ impl NyarVM {
                 Instruction::LoadUpvalue(idx) => {
                     let idx = *idx;
                     let f = self.frames.last().unwrap();
-                    if f.closure.is_null() {
-                        return Err(VmError::InvalidOpcode);
-                    }
-                    let closure = unsafe { &*f.closure };
+                    let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
                     if (idx as usize) < closure.upvalues.len() {
                         self.push(closure.upvalues[idx as usize].0);
                     } else {
@@ -1387,15 +1406,7 @@ impl NyarVM {
                     let idx = *idx;
                     let val = self.pop()?;
                     let f = self.frames.last().unwrap();
-                    if f.closure.is_null() {
-                        return Err(VmError::InvalidOpcode);
-                    }
-                    // Upvalues are effectively immutable copies for now unless we implement interior mutability
-                    // But if we want to update the copy in the closure:
-                    // We need mutable access to the closure.
-                    // But `f.closure` is *const.
-                    // Since we own the VM and everything is single threaded here, we can cast to *mut.
-                    let closure = unsafe { &mut *(f.closure as *mut Closure) };
+                    let closure = f.closure.try_as_closure_mut().ok_or(VmError::InvalidOpcode)?;
                     if (idx as usize) < closure.upvalues.len() {
                         closure.upvalues[idx as usize].0 = val;
                     } else {
@@ -1421,7 +1432,7 @@ impl NyarVM {
                         instrs,
                         ip: 0,
                         locals: args,
-                        closure: null(),
+                        closure: Value::null(),
                         module_idx,
                         chunk_idx: Some(chunk_idx as usize),
                     };
@@ -1441,17 +1452,13 @@ impl NyarVM {
                     args.reverse();
 
                     let callee = self.pop()?;
-                    if !callee.is_closure() {
-                        return Err(VmError::InvalidOpcode); // Expected closure
-                    }
-
-                    let closure_ptr = unsafe { callee.as_closure() as *const Closure as *mut Closure };
-                    let (instrs, locals_count, c_module_idx, c_chunk_idx) = {
-                        let closure = unsafe { &*closure_ptr };
+                    let (instrs, locals_count, c_module_idx, c_chunk_idx) = if let Some(closure) = callee.try_as_closure() {
                         let chunk_idx = closure.func;
                         let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                         let locals_count = self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
                         (instrs, locals_count, closure.module_idx, chunk_idx)
+                    } else {
+                        return Err(VmError::InvalidOpcode); // Expected closure
                     };
 
                     if args.len() < locals_count {
@@ -1462,7 +1469,7 @@ impl NyarVM {
                         instrs,
                         ip: 0,
                         locals: args,
-                        closure: closure_ptr,
+                        closure: callee,
                         module_idx: c_module_idx,
                         chunk_idx: Some(c_chunk_idx),
                     };
@@ -1500,7 +1507,7 @@ impl NyarVM {
                             instrs: instrs.into(),
                             ip: 0,
                             locals: args,
-                            closure: null(),
+                            closure: Value::null(),
                             module_idx: m_idx,
                             chunk_idx: Some(chunk_idx as usize),
                         };
@@ -1959,7 +1966,7 @@ impl NyarVM {
                             instrs: instrs.into(),
                             ip: 0,
                             locals: full_args,
-                            closure: null(),
+                            closure: Value::null(),
                             module_idx,
                             chunk_idx: Some(chunk_idx as usize),
                         };
@@ -1992,14 +1999,13 @@ impl NyarVM {
                     if name == "await" {
                         if let Some(v) = args.get(0) {
                             if let Some(closure) = v.try_as_closure() {
-                                let closure_ptr = closure as *const Closure;
                                 let chunk_idx = closure.func;
                                 let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                                 let new_frame = Frame {
                                     instrs,
                                     ip: 0,
                                     locals: Vec::new(),
-                                    closure: closure_ptr,
+                                    closure: *v,
                                     module_idx: closure.module_idx,
                                     chunk_idx: Some(chunk_idx),
                                 };
@@ -2062,7 +2068,7 @@ impl NyarVM {
                                 instrs,
                                 ip: 0,
                                 locals,
-                                closure: null(),
+                                closure: Value::null(),
                                 module_idx,
                                 chunk_idx: Some(hf.catch_chunk),
                             };
@@ -2444,8 +2450,8 @@ impl NyarVM {
                                 (ValueTag::Bool, ValueTag::Bool) => {
                                     a.as_bool() == b.as_bool()
                                 }
-                                (ValueTag::String, ValueTag::String) => unsafe {
-                                    a.as_string() == b.as_string()
+                                (ValueTag::String, ValueTag::String) => {
+                                    a.try_as_str() == b.try_as_str()
                                 },
                                 (ValueTag::Null, ValueTag::Null) => true,
                                 _ => false,
@@ -2465,8 +2471,8 @@ impl NyarVM {
                                 (ValueTag::Bool, ValueTag::Bool) => {
                                     a.as_bool() != b.as_bool()
                                 }
-                                (ValueTag::String, ValueTag::String) => unsafe {
-                                    a.as_string() != b.as_string()
+                                (ValueTag::String, ValueTag::String) => {
+                                    a.try_as_str() != b.try_as_str()
                                 },
                                 (ValueTag::Null, ValueTag::Null) => false,
                                 _ => true,
@@ -2483,8 +2489,8 @@ impl NyarVM {
                                 (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() < b.as_float()
                                 }
-                                (ValueTag::String, ValueTag::String) => unsafe {
-                                    a.as_string() < b.as_string()
+                                (ValueTag::String, ValueTag::String) => {
+                                    a.try_as_str() < b.try_as_str()
                                 },
                                 _ => false,
                             };
@@ -2500,8 +2506,8 @@ impl NyarVM {
                                 (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() <= b.as_float()
                                 }
-                                (ValueTag::String, ValueTag::String) => unsafe {
-                                    a.as_string() <= b.as_string()
+                                (ValueTag::String, ValueTag::String) => {
+                                    a.try_as_str() <= b.try_as_str()
                                 },
                                 _ => false,
                             };
@@ -2517,8 +2523,8 @@ impl NyarVM {
                                 (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() > b.as_float()
                                 }
-                                (ValueTag::String, ValueTag::String) => unsafe {
-                                    a.as_string() > b.as_string()
+                                (ValueTag::String, ValueTag::String) => {
+                                    a.try_as_str() > b.try_as_str()
                                 },
                                 _ => false,
                             };
@@ -2534,8 +2540,8 @@ impl NyarVM {
                                 (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() >= b.as_float()
                                 }
-                                (ValueTag::String, ValueTag::String) => unsafe {
-                                    a.as_string() >= b.as_string()
+                                (ValueTag::String, ValueTag::String) => {
+                                    a.try_as_str() >= b.try_as_str()
                                 },
                                 _ => false,
                             };
@@ -2551,10 +2557,14 @@ impl NyarVM {
                                 (ValueTag::Float, ValueTag::Float) => {
                                     self.push(Value::float(a.as_float() + b.as_float()))
                                 }
-                                (ValueTag::String, ValueTag::String) => unsafe {
-                                    let mut s = a.as_string().clone();
-                                    s.push_str(b.as_string());
-                                    self.push(Value::string(s, &self.gc));
+                                (ValueTag::String, ValueTag::String) => {
+                                    if let (Some(sa), Some(sb)) = (a.try_as_str(), b.try_as_str()) {
+                                        let mut s = sa.to_string();
+                                        s.push_str(sb);
+                                        self.push(Value::string(s, &self.gc));
+                                    } else {
+                                        self.push(Value::null());
+                                    }
                                 }
                                 _ => self.push(Value::null()),
                             }
@@ -2693,8 +2703,7 @@ impl NyarVM {
                 Instruction::PushElementRight => {
                     let val = self.pop()?;
                     let list_v = self.pop()?;
-                    if list_v.is_list() {
-                        let list_mut = unsafe { list_v.as_list_mut() };
+                    if let Some(list_mut) = list_v.try_as_list_mut() {
                         list_mut.items.push(val);
                         self.push(Value::null());
                     } else {
@@ -2703,8 +2712,7 @@ impl NyarVM {
                 }
                 Instruction::PopElementRight => {
                     let list_v = self.pop()?;
-                    if list_v.is_list() {
-                        let list_mut = unsafe { list_v.as_list_mut() };
+                    if let Some(list_mut) = list_v.try_as_list_mut() {
                         if let Some(val) = list_mut.items.pop() {
                             self.push(val);
                         } else {
@@ -2717,8 +2725,7 @@ impl NyarVM {
                 Instruction::PushElementLeft => {
                     let val = self.pop()?;
                     let list_v = self.pop()?;
-                    if list_v.is_list() {
-                        let list_mut = unsafe { list_v.as_list_mut() };
+                    if let Some(list_mut) = list_v.try_as_list_mut() {
                         list_mut.items.insert(0, val);
                         self.push(Value::null());
                     } else {
@@ -2727,8 +2734,7 @@ impl NyarVM {
                 }
                 Instruction::PopElementLeft => {
                     let list_v = self.pop()?;
-                    if list_v.is_list() {
-                        let list_mut = unsafe { list_v.as_list_mut() };
+                    if let Some(list_mut) = list_v.try_as_list_mut() {
                         if !list_mut.items.is_empty() {
                             let val = list_mut.items.remove(0);
                             self.push(val);
@@ -2742,31 +2748,26 @@ impl NyarVM {
                 Instruction::GetElement => {
                     let idx_v = self.pop()?;
                     let arr_v = self.pop()?;
-                    if arr_v.is_array() {
+                    if let Some(arr_ref) = arr_v.try_as_array() {
                         let idx = idx_v.as_int();
-                        let arr_ref = unsafe { arr_v.as_array() };
                         if idx < 0 || (idx as usize) >= arr_ref.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         self.push(arr_ref.items[idx as usize]);
-                    } else if arr_v.is_tuple() {
+                    } else if let Some(tup_ref) = arr_v.try_as_tuple() {
                         let idx = idx_v.as_int();
-                        let tup_ref = unsafe { arr_v.as_tuple() };
                         if idx < 0 || (idx as usize) >= tup_ref.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         self.push(tup_ref.items[idx as usize]);
-                    } else if arr_v.is_list() {
+                    } else if let Some(list_ref) = arr_v.try_as_list() {
                         let idx = idx_v.as_int();
-                        let list_ref = unsafe { arr_v.as_list() };
                         if idx < 0 || (idx as usize) >= list_ref.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         self.push(list_ref.items[idx as usize]);
-                    } else if arr_v.is_dyn_object() {
-                        if key_is_string(&idx_v) {
-                            let k = unsafe { idx_v.as_string() };
-                            let obj_ref = unsafe { arr_v.as_dyn_object() };
+                    } else if let Some(obj_ref) = arr_v.try_as_dyn_object() {
+                        if let Some(k) = idx_v.try_as_str() {
                             if let Some(val) = obj_ref.entries.get(k) {
                                 self.push(*val);
                             } else {
@@ -2783,17 +2784,15 @@ impl NyarVM {
                     let val = self.pop()?;
                     let idx_v = self.pop()?;
                     let arr_v = self.pop()?;
-                    if arr_v.is_array() {
+                    if let Some(arr_mut) = arr_v.try_as_array_mut() {
                         let idx = idx_v.as_int();
-                        let arr_mut = unsafe { arr_v.as_array_mut() };
                         if idx < 0 || (idx as usize) >= arr_mut.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         arr_mut.items[idx as usize] = val;
                         self.push(arr_v);
-                    } else if arr_v.is_tuple() {
+                    } else if let Some(tup_mut) = arr_v.try_as_tuple_mut() {
                         let idx = idx_v.as_int();
-                        let tup_mut = unsafe { arr_v.as_tuple_mut() };
                         if idx < 0 || (idx as usize) >= tup_mut.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
@@ -2803,19 +2802,16 @@ impl NyarVM {
                         }
                         tup_mut.items[idx as usize] = val;
                         self.push(arr_v);
-                    } else if arr_v.is_list() {
+                    } else if let Some(list_mut) = arr_v.try_as_list_mut() {
                         let idx = idx_v.as_int();
-                        let list_mut = unsafe { arr_v.as_list_mut() };
                         if idx < 0 || (idx as usize) >= list_mut.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         list_mut.items[idx as usize] = val;
                         self.push(arr_v);
-                    } else if arr_v.is_dyn_object() {
-                        if key_is_string(&idx_v) {
-                            let k = unsafe { idx_v.as_string().clone() };
-                            let obj_mut = unsafe { arr_v.as_dyn_object_mut() };
-                            obj_mut.entries.insert(k, val);
+                    } else if let Some(obj_mut) = arr_v.try_as_dyn_object_mut() {
+                        if let Some(k) = idx_v.try_as_str() {
+                            obj_mut.entries.insert(k.to_string(), val);
                             self.push(arr_v);
                         } else {
                             return Err(VmError::InvalidOpcode);
@@ -2827,18 +2823,15 @@ impl NyarVM {
                 Instruction::RemoveKey => {
                     let key_v = self.pop()?;
                     let container = self.pop()?;
-                    if container.is_dyn_object() {
-                        if key_is_string(&key_v) {
-                            let k = unsafe { key_v.as_string().clone() };
-                            let obj_mut = unsafe { container.as_dyn_object_mut() };
-                            let existed = obj_mut.entries.remove(&k).is_some();
+                    if let Some(obj_mut) = container.try_as_dyn_object_mut() {
+                        if let Some(k) = key_v.try_as_str() {
+                            let existed = obj_mut.entries.remove(k).is_some();
                             self.push(Value::bool(existed));
                         } else {
                             return Err(VmError::InvalidOpcode);
                         }
-                    } else if container.is_list() {
+                    } else if let Some(list_mut) = container.try_as_list_mut() {
                         let idx = key_v.as_int();
-                        let list_mut = unsafe { container.as_list_mut() };
                         if idx < 0 || (idx as usize) >= list_mut.items.len() {
                             self.push(Value::bool(false));
                         } else {
@@ -2872,10 +2865,8 @@ impl NyarVM {
                         container = tmp;
                     }
                     let mut exists = false;
-                    if container.is_object() {
-                        let obj_ref = unsafe { container.as_object() };
-                        if key.is_string() {
-                            let name = unsafe { key.as_string() };
+                    if let Some(obj_ref) = container.try_as_object() {
+                        if let Some(name) = key.try_as_str() {
                             let cls = self.modules[module_idx]
                                 .classes
                                 .get(obj_ref.class_idx as usize)
@@ -2885,28 +2876,23 @@ impl NyarVM {
                                 exists = true;
                             }
                         }
-                    } else if container.is_dyn_object() {
-                        if key.is_string() {
-                            let k = unsafe { key.as_string() };
-                            let obj_ref = unsafe { container.as_dyn_object() };
+                    } else if let Some(obj_ref) = container.try_as_dyn_object() {
+                        if let Some(k) = key.try_as_str() {
                             exists = obj_ref.entries.contains_key(k);
                         }
-                    } else if container.is_array() {
+                    } else if let Some(arr_ref) = container.try_as_array() {
                         if key.is_int() {
                             let idx = key.as_int();
-                            let arr_ref = unsafe { container.as_array() };
                             exists = idx >= 0 && (idx as usize) < arr_ref.items.len();
                         }
-                    } else if container.is_tuple() {
+                    } else if let Some(tup_ref) = container.try_as_tuple() {
                         if key.is_int() {
                             let idx = key.as_int();
-                            let tup_ref = unsafe { container.as_tuple() };
                             exists = idx >= 0 && (idx as usize) < tup_ref.items.len();
                         }
-                    } else if container.is_list() {
+                    } else if let Some(list_ref) = container.try_as_list() {
                         if key.is_int() {
                             let idx = key.as_int();
-                            let list_ref = unsafe { container.as_list() };
                             exists = idx >= 0 && (idx as usize) < list_ref.items.len();
                         }
                     }
@@ -2915,8 +2901,7 @@ impl NyarVM {
                 Instruction::MatchVariant(class_idx) => {
                     let class_idx = *class_idx;
                     let val = self.pop()?;
-                    let is_match = if val.is_object() {
-                        let obj_ref = unsafe { val.as_object() };
+                    let is_match = if let Some(obj_ref) = val.try_as_object() {
                         obj_ref.class_idx == class_idx
                     } else {
                         false
@@ -2935,13 +2920,10 @@ impl NyarVM {
                     let mut ok = false;
                     if !f.locals.is_empty() {
                         let v = f.locals[0];
-                        if v.is_string() {
-                            unsafe {
-                                ok = v.as_string() == name;
-                            }
-                        } else if v.is_effect() {
+                        if let Some(vs) = v.try_as_str() {
+                            ok = vs == name;
+                        } else if let Some(e) = v.try_as_effect() {
                             if let Some(i) = eff_idx {
-                                let e = unsafe { v.as_effect() };
                                 ok = e.type_idx as usize == i;
                             }
                         }
@@ -2990,16 +2972,16 @@ impl NyarVM {
                 Instruction::WitnessMethod(method_idx) => {
                     let method_idx = *method_idx as usize;
                     let v = self.pop()?;
-                    if !v.is_witness_table() {
+                    if let Some(witness) = v.try_as_witness_table() {
+                        if method_idx >= witness.methods.len() {
+                            return Err(VmError::IndexOutOfBounds);
+                        }
+                        let chunk_idx = witness.methods[method_idx];
+                        let closure = Value::closure(witness.module_idx, chunk_idx as u16, vec![], &self.gc);
+                        self.push(closure);
+                    } else {
                         return Err(VmError::InvalidOpcode);
                     }
-                    let witness = unsafe { v.as_witness_table() };
-                    if method_idx >= witness.methods.len() {
-                        return Err(VmError::IndexOutOfBounds);
-                    }
-                    let chunk_idx = witness.methods[method_idx];
-                    let closure = Value::closure(witness.module_idx, chunk_idx as u16, vec![], &self.gc);
-                    self.push(closure);
                 }
                 Instruction::GetField(name_idx) => {
                     let name_idx = *name_idx;
@@ -3017,9 +2999,7 @@ impl NyarVM {
                             // self.log("GetField: name_const_missing");
                         }
                     }
-                    if obj.is_object() {
-                        let obj_ref = unsafe { obj.as_object() };
-
+                    if let Some(obj_ref) = obj.try_as_object() {
                         let name = match module.constants.get(name_idx as usize) {
                             Some(Constant::String(s)) => s,
                             _ => {
@@ -3038,9 +3018,7 @@ impl NyarVM {
                         } else {
                             return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
                         }
-                    } else if obj.is_dyn_object() {
-                        let obj_ref = unsafe { obj.as_dyn_object() };
-
+                    } else if let Some(obj_ref) = obj.try_as_dyn_object() {
                         let name = match module.constants.get(name_idx as usize) {
                             Some(Constant::String(s)) => s,
                             _ => {
@@ -3080,32 +3058,31 @@ impl NyarVM {
                         }
                     }
                     // self.log(&format!("SetField: value_tag={:?}", val.tag()));
-                    if !obj.is_object() {
+                    if let Some(obj_mut) = obj.try_as_object_mut() {
+                        let name = match module.constants.get(name_idx as usize) {
+                            Some(Constant::String(s)) => s,
+                            _ => {
+                                return Err(VmError::RuntimeError(format!(
+                                    "SetField with non-string field name at constant {}",
+                                    name_idx
+                                )))
+                            }
+                        };
+                        let cls = module
+                            .classes
+                            .get(obj_mut.class_idx as usize)
+                            .ok_or(VmError::IndexOutOfBounds)?;
+                        if let Some(idx) = cls.fields.iter().position(|f| f == name) {
+                            obj_mut.fields[idx] = val;
+                            self.push(val);
+                        } else {
+                            return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
+                        }
+                    } else {
                         return Err(VmError::RuntimeError(format!(
                             "SetField on non-object: found {:?}",
                             obj.tag()
                         )));
-                    }
-                    let obj_mut = unsafe { obj.as_object_mut() };
-
-                    let name = match module.constants.get(name_idx as usize) {
-                        Some(Constant::String(s)) => s,
-                        _ => {
-                            return Err(VmError::RuntimeError(format!(
-                                "SetField with non-string field name at constant {}",
-                                name_idx
-                            )))
-                        }
-                    };
-                    let cls = module
-                        .classes
-                        .get(obj_mut.class_idx as usize)
-                        .ok_or(VmError::IndexOutOfBounds)?;
-                    if let Some(idx) = cls.fields.iter().position(|f| f == name) {
-                        obj_mut.fields[idx] = val;
-                        self.push(val);
-                    } else {
-                        return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
                     }
                 }
                 Instruction::InstanceOf(class_idx) => {
@@ -3175,7 +3152,6 @@ impl NyarVM {
                 Instruction::Await => {
                     let v = self.pop()?;
                     if let Some(closure) = v.try_as_closure() {
-                        let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
                         let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                         let args: Vec<Value> = Vec::new();
@@ -3183,7 +3159,7 @@ impl NyarVM {
                             instrs,
                             ip: 0,
                             locals: args,
-                            closure: closure_ptr,
+                            closure: v,
                             module_idx: closure.module_idx,
                             chunk_idx: Some(chunk_idx),
                         };
@@ -3199,7 +3175,6 @@ impl NyarVM {
                 Instruction::BlockOn => {
                     let v = self.pop()?;
                     if let Some(closure) = v.try_as_closure() {
-                        let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
                         let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                         let args: Vec<Value> = Vec::new();
@@ -3207,7 +3182,7 @@ impl NyarVM {
                             instrs,
                             ip: 0,
                             locals: args,
-                            closure: closure_ptr,
+                            closure: v,
                             module_idx: closure.module_idx,
                             chunk_idx: Some(chunk_idx),
                         };

@@ -1,5 +1,5 @@
 use chomsky_uir::{EGraph, Id, IKun};
-use chomsky_full::optimizer::UniversalOptimizer;
+use chomsky::optimizer::UniversalOptimizer;
 
 pub struct MiniCOptimizer {
     optimizer: UniversalOptimizer<()>,

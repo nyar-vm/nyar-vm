@@ -1,1 +1,35 @@
+[package]
+name = "mini-c"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mini_c"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rusty-c"
+path = "src/main.rs"
+
+[[bin]]
+name = "cling"
+path = "bin/cling.rs"
+
+[dependencies]
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
+oak-c = { path = "../../../oaks/examples/oak-c" }
+oak-repl = { path = "../../../oaks/projects/oak-repl" }
+nyar-types = { path = "../../projects/nyar-types" }
+nyar-vm = { path = "../../projects/nyar-vm" }
+gaia-assembler = { path = "../../../project-gaia/projects/gaia-assembler" }
+gaia-types = { path = "../../../project-gaia/projects/gaia-types" }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+tempfile = "3.10"
+
 [dev-dependencies]

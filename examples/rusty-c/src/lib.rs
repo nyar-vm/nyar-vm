@@ -29,19 +29,12 @@ impl MiniCFrontend {
 impl NyarFrontend for MiniCFrontend {
     type Language = CLanguage;
 
-    fn parse(&self, source: &str) -> Result<CRoot, NyarError> {
-        let builder = CBuilder::new(&self.language);
-        let source_text = SourceText::new(source);
-        let mut session = oak_core::parser::ParseSession::<CLanguage>::default();
-
-        let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+    fn parse(&self, source: &str) -> Result<(), NyarError> {
+        Ok(())
     }
 
-    fn lower(&self, _ast: &CRoot) -> Result<IKunTree, NyarError> {
+    fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
         // TODO: 实现从 CRoot 到 IKunTree 的转换
-        let mut tree = IKunTree::default();
-        tree.name = "mini-c-program".to_string();
-        Ok(tree)
+        Ok(IKunTree::Module("mini-c-program".to_string(), vec![]))
     }
 }

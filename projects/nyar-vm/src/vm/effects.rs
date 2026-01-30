@@ -20,7 +20,7 @@ pub fn perform_effect_internal(
                 crate::vm::value::ValueTag::Float => format!("{}", v.as_float()),
                 crate::vm::value::ValueTag::Bool => format!("{}", v.as_bool()),
                 crate::vm::value::ValueTag::Null => "null".to_string(),
-                crate::vm::value::ValueTag::String => unsafe { v.as_string().clone() },
+                crate::vm::value::ValueTag::String => v.try_as_str().map(|s| s.to_string()).unwrap_or_else(|| "<invalid string>".to_string()),
                 _ => "<unsupported>".to_string(),
             };
             vm.log(&msg);
@@ -45,11 +45,11 @@ pub fn perform_effect_internal(
             (crate::vm::value::ValueTag::Float, crate::vm::value::ValueTag::Float) => {
                 Value::float(a.as_float() + b.as_float())
             }
-            (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => unsafe {
-                let mut s = a.as_string().clone();
-                s.push_str(b.as_string());
+            (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => {
+                let mut s = a.try_as_str().unwrap_or("").to_string();
+                s.push_str(b.try_as_str().unwrap_or(""));
                 Value::string(s, &vm.gc)
-            },
+            }
             _ => Value::null(),
         };
         return Ok(Some(res));

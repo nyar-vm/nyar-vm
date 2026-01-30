@@ -1,1 +1,23 @@
+[package]
+name = "mini-java"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-types = { workspace = true }
+nyar-vm = { workspace = true }
+oak-core = { workspace = true }
+oak-java = { path = "../../../oaks/examples/oak-java" }
+chomsky-uir = { workspace = true }
+chomsky-source = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
 tempfile = "3.3"
+
+[[bin]]
+name = "javac"
+path = "bin/javac.rs"
+
+[[bin]]
+name = "java"
+path = "bin/java.rs"

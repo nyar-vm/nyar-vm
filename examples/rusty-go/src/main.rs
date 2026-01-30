@@ -1,7 +1,5 @@
-//! Mini Go 解释器
-
-use nyar_vm::NyarDriver;
 use mini_go::MiniGoFrontend;
+use nyar_vm::NyarDriver;
 use std::env;
 use std::path::PathBuf;
 

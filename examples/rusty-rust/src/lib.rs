@@ -5,9 +5,11 @@ pub mod ast;
 pub mod codegen;
 pub mod converter;
 
-use nyar_types::{NyarError, NyarFrontend, IKunTree};
+use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::source::SourceText;
 use oak_rust::{RustBuilder, RustLanguage, RustRoot};
+use chomsky_uir::IntentBuilder;
+use chomsky_uir::ConstraintAnalysis;
 
 /// Mini Rust 前端实现
 #[derive(Default)]
@@ -37,7 +39,27 @@ impl NyarFrontend for MiniRustFrontend {
     }
 
     fn lower(&self, _ast: &RustRoot) -> Result<IKunTree, NyarError> {
-        let translator = codegen::GaiaTranslator::new();
-        translator.translate_to_tree(_ast)
+        let mut builder = chomsky_uir::IntentBuilder::<chomsky_uir::ConstraintAnalysis>::new();
+        let id = converter::convert_root(_ast, &mut builder);
+        let intent = builder.finish(id);
+
+        let mut aot = nyar_aot::NyarAot::new();
+        let backend = nyar_vm::bytecode::compiler::NyarBackend::new();
+        
+        let artifact = aot.compile(&intent, &backend)
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+            
+        // NyarBackend::generate returns BackendArtifact::Source(json) which is NyarModule
+        // But we want the IKunTree itself if possible, or we just return a stub and 
+        // handle the real compilation in driver.
+        
+        // Actually, NyarAot::compile extracts the tree internally. 
+        // I might need a way to just get the tree.
+        
+        let id = aot.optimizer.add_intent(&intent);
+        aot.optimizer.saturate();
+        let tree = aot.optimizer.extract(id, backend.get_model());
+        
+        Ok(tree)
     }
 }

@@ -38,6 +38,7 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
         }
 
         for id in matches {
+            // Replace barrier with nop or just identity of the object
             let nop_id = egraph.add(IKun::Symbol("nop".to_string()));
             egraph.union(id, nop_id);
         }
@@ -56,14 +57,51 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
         for entry in egraph.classes.iter() {
             let (&id, eclass) = entry.pair();
             for node in &eclass.nodes {
-                if let IKun::Extension(op, args) = node {
+                if let IKun::Extension(op, _args) = node {
                     if op == "alloc" {
-                        // Check if this allocation escapes
+                        // Check if this allocation escapes the current function
                         let mut escapes = false;
-                        // In a real E-Graph, we would check all uses of this class ID.
-                        // For this demo, we'll just check if it's used in any non-field-access op.
                         
-                        // Placeholder for escape analysis:
+                        // Search for all uses of this e-class
+                        for other_entry in egraph.classes.iter() {
+                            let other_class = other_entry.value();
+                            for other_node in &other_class.nodes {
+                                match other_node {
+                                    IKun::Extension(other_op, other_args) => {
+                                        // If used in something other than field access, it might escape
+                                        if other_args.contains(&id) && 
+                                           other_op != "load_field" && 
+                                           other_op != "store_field" &&
+                                           other_op != "barrier" {
+                                            escapes = true;
+                                            break;
+                                        }
+                                    }
+                                    IKun::Apply(_, other_args) => {
+                                        if other_args.contains(&id) {
+                                            escapes = true;
+                                            break;
+                                        }
+                                    }
+                                    IKun::Map(f, x) => {
+                                        if *f == id || *x == id {
+                                            escapes = true;
+                                            break;
+                                        }
+                                    }
+                                    IKun::StateUpdate(_k, v) => {
+                                        // If stored into a global or upvalue, it escapes
+                                        if *v == id {
+                                            escapes = true;
+                                            break;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if escapes { break; }
+                        }
+                        
                         if !escapes {
                             matches.push(id);
                         }
@@ -72,9 +110,13 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
             }
         }
 
-        // For matches, we would replace the allocation with scalar fields.
-        // This is a complex transformation that usually happens during code generation
-        // or via more complex rewrite rules.
+        for id in matches {
+            // In a real implementation, we would replace the 'alloc' node
+            // with a 'virtual_object' node that the backend can then
+            // use to perform scalar replacement.
+            let virtual_id = egraph.add(IKun::Extension("virtual_object".to_string(), vec![]));
+            egraph.union(id, virtual_id);
+        }
     }
 }
 use dashmap::DashMap;
@@ -219,7 +261,7 @@ impl JitProvider for NyarJit {
                 let hotness = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
                 
                 if hotness >= threshold {
-                    match self.compile(vm, module_idx, chunk_idx, next_tier) {
+                    match self.compile(vm, module_idx, chunk_idx, next_tier, 0) {
                         Ok(_) => { /* Upgrade successful, next call will use it */ }
                         Err(e) => return Some(Err(e)),
                     }
@@ -239,7 +281,7 @@ impl JitProvider for NyarJit {
 
         if hotness >= threshold {
             // Trigger baseline compilation
-            match self.compile(vm, module_idx, chunk_idx, JitTier::Baseline) {
+            match self.compile(vm, module_idx, chunk_idx, JitTier::Baseline, 0) {
                 Ok(_) => {
                     // Compilation successful, next call will use it
                 }
@@ -250,10 +292,10 @@ impl JitProvider for NyarJit {
         None
     }
 
-    fn osr(&self, module_idx: usize, chunk_idx: usize, target: u32) -> Result<*const u8, VmError> {
+    fn osr(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize, target: u32) -> Result<*const u8, VmError> {
         // OSR allows transitioning from the interpreter to JITed code in the middle of a function.
         // For now, delegate to the internal osr method.
-        self.osr_internal(module_idx, chunk_idx, target)
+        self.osr_internal(vm, module_idx, chunk_idx, target)
     }
 }
 
@@ -328,13 +370,19 @@ impl NyarJit {
             );
             
             if res_code == 0 {
-                // Success! The result should be at the top of the stack.
+                // Success! JIT finished the whole function.
+                // The result should be at the top of the stack.
                 if vm.sp > 0 {
                     vm.sp -= 1;
                     Ok(vm.stack[vm.sp])
                 } else {
                     Ok(Value::null())
                 }
+            } else if res_code == 1 {
+                // OSR/Partial success: JIT finished a loop or portion and wants to return to interpreter.
+                // State is already updated via pointers (stack, sp, locals).
+                // We just need to return null as a placeholder, the VM loop will continue.
+                Ok(Value::null())
             } else {
                 // Handle deoptimization or errors
                 Err(VmError::RuntimeError(format!("JIT execution failed with code {}", res_code)))
@@ -342,13 +390,14 @@ impl NyarJit {
         }
     }
 
-    /// Compiles a chunk of bytecode into machine code.
+    /// Compiles a chunk of bytecode into machine code, optionally starting from an offset (for OSR).
     pub fn compile(
         &self,
         vm: &NyarVM,
         module_idx: usize,
         chunk_idx: usize,
         tier: JitTier,
+        start_offset: usize,
     ) -> Result<Arc<CompiledCode>, VmError> {
         let key = (module_idx, chunk_idx);
 
@@ -356,7 +405,7 @@ impl NyarJit {
         let ic = self.ic_registry.entry(key).or_insert_with(|| Arc::new(InlineCache::new())).value().clone();
 
         // 2. Intent Extraction
-        let intents = self.extract_intents(vm, module_idx, chunk_idx, 0);
+        let intents = self.extract_intents(vm, module_idx, chunk_idx, start_offset);
 
         // 3. Build initial IKunTree from intents
         let context = intents.clone();
@@ -370,17 +419,18 @@ impl NyarJit {
         let optimized_tree = match tier {
             JitTier::Extreme => {
                 let mut optimizer = self.optimizer.lock().unwrap();
+                optimizer.scheduler.fuel = 30;
+                optimizer.scheduler.timeout = std::time::Duration::from_secs(10);
                 let root_id = self.add_tree_to_egraph(&mut optimizer, &tree);
                 let backend = self.get_backend();
-                // Extreme tier: Full optimization with more iterations/rules if possible
                 optimizer.optimize(&optimizer.egraph, root_id, backend.get_model())
             }
             JitTier::Optimizing => {
                 let mut optimizer = self.optimizer.lock().unwrap();
+                optimizer.scheduler.fuel = 5;
+                optimizer.scheduler.timeout = std::time::Duration::from_millis(500);
                 let root_id = self.add_tree_to_egraph(&mut optimizer, &tree);
                 let backend = self.get_backend();
-                // Mid-tier: Faster optimization, maybe fewer iterations
-                // For now, using the same optimize call but we could configure it
                 optimizer.optimize(&optimizer.egraph, root_id, backend.get_model())
             }
             _ => tree,
@@ -598,7 +648,7 @@ impl NyarJit {
                     }
                 }
                 Instruction::Jump(offset) => {
-                    let id = intents.len();
+                    let _id = intents.len();
                     intents.push(IKun::Extension("jump".to_string(), vec![]));
                     // Target offset could be stored in metadata or as a constant
                     let _target_id = intents.len();
@@ -784,7 +834,7 @@ impl NyarJit {
     }
 
     /// Triggers On-Stack Replacement (OSR) for long-running loops.
-    pub fn osr_internal(&self, module_idx: usize, chunk_idx: usize, target_offset: u32) -> Result<*const u8, VmError> {
+    pub fn osr_internal(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize, target_offset: u32) -> Result<*const u8, VmError> {
         let key = (module_idx, chunk_idx, target_offset);
         
         // 1. Check if already compiled for this OSR target
@@ -793,24 +843,14 @@ impl NyarJit {
         }
         
         // 2. Perform OSR compilation
-        // Note: For simplicity, we use a basic compilation here. 
-        // In a real VM, we might need more VM context to correctly reconstruct the stack.
-        
+        // We trigger a baseline compilation starting from target_offset.
         // In a real OSR, we would need to know the stack state at target_offset.
         // For now, we assume a simple case where the stack is relatively stable.
+        let compiled = self.compile(vm, module_idx, chunk_idx, JitTier::Baseline, target_offset as usize)?;
         
-        // Trigger a baseline compilation starting from target_offset
-        // We'll need a specialized compile_osr method or similar.
-        
-        // For now, let's just use a placeholder result or try to compile the whole chunk
-        // but mark it as an OSR entry.
-        
-        // In a real implementation, we would call something like:
-        // let compiled = self.compile_osr(vm, module_idx, chunk_idx, target_offset)?;
-        // self.osr_cache.insert(key, compiled.clone());
-        // Ok(compiled.entry_point)
-        
-        Err(VmError::RuntimeError("Full OSR compilation logic not yet implemented".to_string()))
+        // 3. Cache and return
+        self.osr_cache.insert(key, compiled.clone());
+        Ok(compiled.entry_point)
     }
 
     /// GC-JIT Co-optimization: Barrier Elision.

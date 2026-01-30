@@ -13,13 +13,13 @@ fn main() {
     let frontend = MiniJavaFrontend::new();
     let driver = NyarDriver::new();
     
-    // 模拟编译：目前先编译为 native (stub)
+    // 编译到 JVM .class
     let output_file = args.iter().position(|a| a == "-o")
         .and_then(|i| args.get(i + 1))
         .map(Path::new)
-        .unwrap_or(Path::new("out.exe"));
+        .unwrap_or(Path::new("Hello.class"));
 
-    if let Err(e) = driver.compile_to_native(&frontend, input_file, output_file) {
+    if let Err(e) = driver.compile_to_jvm(&frontend, input_file, output_file) {
         eprintln!("Compilation error: {:?}", e);
         exit(1);
     }

@@ -32,6 +32,27 @@ impl Default for MiniTypescriptFrontend {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+wit_bindgen::generate!({
+    world: "compiler",
+    path: "wit",
+});
+
+#[cfg(target_arch = "wasm32")]
+struct Compiler;
+
+#[cfg(target_arch = "wasm32")]
+impl Guest for Compiler {
+    fn compile(source: String) -> Result<Vec<u8>, String> {
+        let frontend = MiniTypescriptFrontend::new();
+        let module = frontend.compile_to_nyar(&source)?;
+        Ok(module.encode())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+export!(Compiler);
+
 impl MiniTypescriptFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
@@ -78,7 +99,9 @@ impl NyarFrontend for MiniTypescriptFrontend {
 
         let root_id = converter.convert_root(ast.clone());
         let extractor = IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
-        Ok(extractor.extract(root_id))
+        let tree = extractor.extract(root_id);
+        println!("Extracted IKunTree: {:?}", tree);
+        Ok(tree)
     }
 }
 
@@ -246,6 +269,29 @@ impl<'a> UirConverter<'a> {
                     arg_ids.push(self.convert_expression(arg));
                 }
                 self.builder.extension("gc.new", arg_ids, Loc::default())
+            }
+            ast::Expression::AssignmentExpression { left, operator, right } => {
+                let r = self.convert_expression(*right);
+                if operator == "=" {
+                    match *left {
+                        ast::Expression::MemberExpression { object, property, .. } => {
+                            let obj = self.convert_expression(*object);
+                            let prop = self.convert_expression(*property);
+                            self.builder.extension("gc.set_field", vec![obj, prop, r], Loc::default())
+                        }
+                        _ => {
+                            let l = self.convert_expression(*left);
+                            self.builder.assign_to_id(l, r, Loc::default())
+                        }
+                    }
+                } else {
+                    let l = self.convert_expression(*left.clone());
+                    // Compound assignment like +=
+                    let op = operator.trim_end_matches('=');
+                    let value = self.builder.binary_op(op, l, r, Loc::default());
+                    let target = self.convert_expression(*left);
+                    self.builder.assign_to_id(target, value, Loc::default())
+                }
             }
             _ => {
                 self.builder.constant(0, Loc::default())

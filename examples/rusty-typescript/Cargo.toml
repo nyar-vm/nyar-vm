@@ -6,6 +6,7 @@ edition = "2021"
 [lib]
 name = "mini_typescript"
 path = "src/lib.rs"
+crate-type = ["lib", "cdylib"]
 
 [[bin]]
 name = "tsc"
@@ -30,6 +31,11 @@ serde_json = "1.0"
 toml = "0.8"
 clap = { version = "4.5", features = ["derive"] }
 tempfile = "3.10"
+wit-bindgen = "0.35.0"
+
+[package.metadata.component]
+package = "nyar:mini-typescript"
+target = { path = "wit", world = "compiler" }
 
 [dev-dependencies]
 chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }

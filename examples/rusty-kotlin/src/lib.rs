@@ -44,10 +44,8 @@ impl NyarFrontend for MiniKotlinFrontend {
         output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &KotlinRoot) -> Result<IKunTree, NyarError> {
-        // TODO: 实现真正的从 KotlinRoot 到 IKunTree 的转换
-        let mut tree = IKunTree::default();
-        tree.name = "mini-kotlin-program".to_string();
-        Ok(tree)
+    fn lower(&self, ast: &KotlinRoot) -> Result<IKunTree, NyarError> {
+        let translator = codegen::NyarTranslator::new();
+        translator.translate_to_tree(ast)
     }
 }
