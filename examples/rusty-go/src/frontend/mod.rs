@@ -4,8 +4,9 @@ use chomsky_source::Loc;
 use oak_core::parser::ParseSession;
 use oak_core::source::SourceText;
 use oak_core::tree::{RedNode, RedTree};
-use oak_core::Lexer;
+use oak_core::{Lexer, Parser, LexerCache};
 
+#[derive(Default)]
 pub struct MiniGoFrontend;
 
 impl MiniGoFrontend {
@@ -15,7 +16,7 @@ impl MiniGoFrontend {
 
     pub fn parse(&self, source: &str) -> Result<(EGraph<IKun, ()>, Id), String> {
         let language = CLanguage::default();
-        let lexer = CLexer::new(&language);
+        let lexer = CLexer::new(language);
         let mut session = ParseSession::<CLanguage>::new(16);
         
         let source_text = SourceText::new(source.to_string());
@@ -27,7 +28,7 @@ impl MiniGoFrontend {
             diagnostics: lex_output.diagnostics,
         });
         
-        let parser = CParser::new(&language);
+        let parser = CParser::new(language);
         let parse_output = parser.parse(&source_text, &[], &mut session);
         
         let green_node = parse_output.result.map_err(|e| format!("Parse error: {:?}", e))?;

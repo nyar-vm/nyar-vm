@@ -5,9 +5,7 @@ use pe_assembler::helpers::PeBuilder;
 use pe_assembler::types::SubsystemType;
 use x86_64_assembler::builder::ProgramBuilder;
 use x86_64_assembler::instruction::{Instruction, Operand, Register};
-use chomsky_types::{ChomskyError, ChomskyErrorKind, ChomskyResult};
-
-use gaia_types::GaiaError;
+use chomsky_types::ChomskyResult;
 
 pub struct NativeBackend {
     arch: Architecture,
@@ -17,16 +15,6 @@ impl NativeBackend {
     pub fn new() -> Self {
         Self {
             arch: Architecture::X86_64,
-        }
-    }
-
-    fn wrap_error(&self, stage: &str, message: String) -> ChomskyError {
-        ChomskyError {
-            kind: Box::new(ChomskyErrorKind::BackendError {
-                target: self.name().to_string(),
-                stage: stage.to_string(),
-                message,
-            }),
         }
     }
 }
@@ -44,7 +32,7 @@ impl Backend for NativeBackend {
         self.emit_tree(tree, &mut builder, &mut data_bytes)?;
         
         // 4. ExitProcess(0)
-        // xor ecx, ecx
+        // xor ecx, ecx -> 用 sub ecx, ecx 模拟或者 mov ecx, 0
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
             src: Operand::imm(0, 32),
@@ -55,7 +43,7 @@ impl Backend for NativeBackend {
         });
 
         let code = builder.compile_instructions()
-            .map_err(|e| self.wrap_error("Assembler", format!("{:?}", e)))?;
+            .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("Assembler error: {:?}", e)))?;
 
         // 使用 PeBuilder 构建 EXE
         let mut pe = PeBuilder::new()
@@ -71,7 +59,7 @@ impl Backend for NativeBackend {
         }
 
         let exe_bytes = pe.generate()
-            .map_err(|e| self.wrap_error("PEBuilder", format!("{:?}", e)))?;
+            .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("PE Builder error: {:?}", e)))?;
 
         Ok(BackendArtifact::Binary(exe_bytes))
     }
@@ -109,84 +97,46 @@ impl NativeBackend {
     }
 
     fn emit_write_line(&self, s: &str, builder: &mut ProgramBuilder, data: &mut Vec<u8>) -> ChomskyResult<()> {
-        // 准备字符串数据
-        let s_with_newline = format!("{}\r\n", s);
-        let start_offset = data.len();
-        data.extend_from_slice(s_with_newline.as_bytes());
-        
-        // 1. GetStdHandle(-11)
+        let string_offset = data.len();
+        data.extend_from_slice(s.as_bytes());
+        data.push(0);
+
+        // 1. GetStdHandle(STD_OUTPUT_HANDLE = -11)
         // mov ecx, -11
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
-            src: Operand::imm(-11i64, 32),
+            src: Operand::imm(-11, 32),
         });
-        // call GetStdHandle (index 1 in kernel32 imports)
+        // call GetStdHandle (index 1)
         builder.add_instruction(Instruction::Call {
             target: Operand::mem(None, None, 0, 0),
-        });
-        // mov r12, rax (save handle)
-        builder.add_instruction(Instruction::Mov {
-            dst: Operand::reg(Register::R12),
-            src: Operand::reg(Register::RAX),
         });
 
-        // 2. WriteFile(hStdOut, lpBuffer, nNumberOfBytesToWrite, &lpNumberOfBytesWritten, NULL)
-        // rcx = hStdOut (r12)
+        // 2. WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped)
+        // mov rcx, rax (hFile)
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::RCX),
-            src: Operand::reg(Register::R12),
+            src: Operand::reg(Register::RAX),
         });
-        
-        // rdx = lpBuffer (lea rdx, [rip+0] points to .data start)
-        // Note: Currently fix_code_relocations only supports LEA RDX, [RIP+0] pointing to the START of .data.
-        // If we have multiple strings, we need to handle offsets.
-        // For now, we assume this is the only string and it's at offset 0.
-        builder.add_instruction(Instruction::Lea {
-            dst: Register::RDX,
-            displacement: start_offset as i32, // This might not be fully supported by PeBuilder yet if it's not 0
-            rip_relative: true,
+        // mov rdx, string_offset
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::RDX),
+            src: Operand::imm(string_offset as i64, 64),
         });
-        
-        // r8 = nNumberOfBytesToWrite
+        // mov r8, string_length
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::R8),
-            src: Operand::imm(s_with_newline.len() as i64, 32),
+            src: Operand::imm(s.len() as i64, 32),
         });
-        
-        // r9 = &lpNumberOfBytesWritten (stack space)
-        // sub rsp, 40 (shadow space + 1 stack param)
+        // sub r9, r9 (清零)
         builder.add_instruction(Instruction::Sub {
-            dst: Operand::reg(Register::RSP),
-            src: Operand::imm(40, 8),
+            dst: Operand::reg(Register::R9),
+            src: Operand::reg(Register::R9),
         });
         
-        // lea r9, [rsp + 48] (somewhere on stack)
-        builder.add_instruction(Instruction::Lea {
-            dst: Register::R9,
-            displacement: 48,
-            rip_relative: false,
-        });
-        
-        // stack[32] = NULL (5th parameter)
-        // mov qword ptr [rsp + 32], 0
-        // (x86_64-assembler might not support Mov Mem, Imm directly, let's use a register)
-        builder.add_instruction(Instruction::Mov {
-            dst: Operand::reg(Register::RAX),
-            src: Operand::imm(0, 64),
-        });
-        // TODO: Implement Mov Mem, Reg in x86_64-assembler if needed
-        // For now, let's just hope WriteFile handles NULL correctly for the 5th param if we don't pass it? 
-        // No, it's required.
-        
-        // call WriteFile (index 2 in kernel32 imports)
+        // call WriteFile (index 2)
         builder.add_instruction(Instruction::Call {
             target: Operand::mem(None, None, 0, 0),
-        });
-        
-        // add rsp, 40
-        builder.add_instruction(Instruction::Add {
-            dst: Operand::reg(Register::RSP),
-            src: Operand::imm(40, 8),
         });
 
         Ok(())

@@ -171,6 +171,7 @@ type JitEntry = unsafe extern "C" fn(
     stack_ptr: *mut Value,
     sp: *mut usize,
     locals_ptr: *mut Value,
+    ip_ptr: *mut usize,
 ) -> i32;
 
 /// Metadata for a single deoptimization point.

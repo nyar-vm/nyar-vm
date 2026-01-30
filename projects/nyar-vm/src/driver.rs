@@ -40,6 +40,7 @@ impl NyarDriver {
     }
 
     /// AOT 编译到原生可执行文件
+    #[cfg(feature = "native")]
     pub fn compile_to_native<F: NyarFrontend>(
         &self,
         frontend: &F,
@@ -50,7 +51,7 @@ impl NyarDriver {
         let ast = frontend.parse(&source)?;
         let tree = frontend.lower(&ast)?;
 
-        let mut aot = crate::aot::NyarAot::new();
+        let _aot = crate::aot::NyarAot::new();
         let backend = crate::aot::NativeBackend::new();
 
         // 这里的 tree 是 IKunTree，需要转换成 IKun 才能传给 aot.compile
@@ -98,7 +99,7 @@ impl NyarDriver {
     ) -> Result<(), NyarError> {
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let tree = frontend.lower(&ast)?;
+        let _tree = frontend.lower(&ast)?;
         
         println!("JVM: Compiling IKunTree to JVM at {:?}", output_path);
         

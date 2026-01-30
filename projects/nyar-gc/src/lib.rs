@@ -92,9 +92,6 @@ impl GcBlockHeader {
     fn set_next(&self, next: *mut GcBlockHeader) {
         self.next.store(next, Ordering::Release)
     }
-    fn reset_live_bytes(&self) {
-        self.live_bytes.store(0, Ordering::Relaxed);
-    }
 }
 
 struct GcBlock {
@@ -256,7 +253,7 @@ pub struct GcHeader {
     pub size: u32,
     /// Type ID for VTable lookup.
     pub type_id: u16,
-    /// Packed flags: color (bits 0-1), generation (bit 2), dirty (bit 3).
+    /// Packed flags: color (bits 0-1), generation (bit 2), dirty (bit 3), large (bit 4).
     pub flags: AtomicU8,
     pub(crate) _padding: u8,
 }
@@ -339,6 +336,21 @@ impl GcHeader {
         }
     }
 
+    pub fn is_large(&self) -> bool {
+        (self.flags.load(Ordering::Acquire) & (1 << 4)) != 0
+    }
+
+    pub fn set_large(&self, large: bool) {
+        let mut old = self.flags.load(Ordering::Relaxed);
+        loop {
+            let new = if large { old | (1 << 4) } else { old & !(1 << 4) };
+            match self.flags.compare_exchange_weak(old, new, Ordering::Release, Ordering::Acquire) {
+                Ok(_) => break,
+                Err(actual) => old = actual,
+            }
+        }
+    }
+
     pub unsafe fn get_vtable(&self) -> *const GcVTable {
         let registry = VTABLE_REGISTRY.lock().unwrap();
         registry[self.type_id as usize].as_ptr()
@@ -413,6 +425,8 @@ pub struct NyarGc {
     young_head: AtomicPtr<GcHeader>,
     /// Head of the linked list of old generation objects.
     old_head: AtomicPtr<GcHeader>,
+    /// Head of the linked list of large objects.
+    large_head: AtomicPtr<GcHeader>,
     /// Memory blocks managed by the GC (lock-free linked list).
     blocks_head: AtomicPtr<GcBlockHeader>,
     /// Gray stack for tri-color marking.
@@ -444,6 +458,9 @@ impl<T> AtomicUptr<T> {
     fn compare_exchange_weak(&self, old: *mut T, new: *mut T, success: Ordering, failure: Ordering) -> Result<*mut T, *mut T> {
         self.0.compare_exchange_weak(old, new, success, failure)
     }
+    fn swap(&self, new: *mut T, order: Ordering) -> *mut T {
+        self.0.swap(new, order)
+    }
 }
 
 impl Drop for NyarGc {
@@ -461,6 +478,104 @@ impl Drop for NyarGc {
 }
 
 impl NyarGc {
+    /// Coalesce adjacent free nodes in the free lists to reduce fragmentation.
+    pub unsafe fn coalesce_free_lists(&self) {
+        for i in 0..SIZE_CLASSES.len() {
+            let free_head = &self.free_lists[i];
+            let head = free_head.swap(std::ptr::null_mut(), Ordering::Acquire);
+            if head.is_null() { continue; }
+
+            // 1. Collect all nodes into a vector
+            let mut nodes = Vec::new();
+            let mut curr = head;
+            while !curr.is_null() {
+                nodes.push(curr);
+                curr = (*curr).next;
+            }
+
+            // 2. Sort by address
+            nodes.sort_unstable();
+
+            // 3. Coalesce adjacent nodes
+            let mut new_head: *mut FreeNode = std::ptr::null_mut();
+            let mut last_node: *mut FreeNode = std::ptr::null_mut();
+
+            let mut j = 0;
+            while j < nodes.len() {
+                let curr_node = nodes[j];
+                let curr_addr = curr_node as usize;
+                let curr_size = SIZE_CLASSES[i];
+
+                let mut merged_size = curr_size;
+                let mut k = j + 1;
+                
+                // Try to merge with subsequent nodes if they are physically adjacent
+                while k < nodes.len() {
+                    let next_node = nodes[k];
+                    let next_addr = next_node as usize;
+                    if curr_addr + merged_size == next_addr {
+                        merged_size += SIZE_CLASSES[i];
+                        k += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                if merged_size > curr_size {
+                    // Merged! Try to put it into a larger size class
+                    if let Some(new_idx) = self.get_size_class(merged_size) {
+                        if new_idx > i {
+                            // Put into larger size class
+                            let target_head = &self.free_lists[new_idx];
+                            let mut old_target_head = target_head.load(Ordering::Acquire);
+                            loop {
+                                (*curr_node).next = old_target_head;
+                                match target_head.compare_exchange_weak(
+                                    old_target_head,
+                                    curr_node,
+                                    Ordering::Release,
+                                    Ordering::Acquire,
+                                ) {
+                                    Ok(_) => break,
+                                    Err(actual) => old_target_head = actual,
+                                }
+                            }
+                            j = k;
+                            continue;
+                        }
+                    }
+                }
+
+                // Not merged or couldn't move to larger class, keep in current list
+                if last_node.is_null() {
+                    new_head = curr_node;
+                } else {
+                    (*last_node).next = curr_node;
+                }
+                last_node = curr_node;
+                (*last_node).next = std::ptr::null_mut();
+                j = k;
+            }
+
+            // 4. Put back to free list
+            if !new_head.is_null() {
+                let mut old_head = free_head.load(Ordering::Acquire);
+                loop {
+                    (*last_node).next = old_head;
+                    match free_head.compare_exchange_weak(
+                        old_head,
+                        new_head,
+                        Ordering::Release,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => break,
+                        Err(actual) => old_head = actual,
+                    }
+                }
+            }
+        }
+    }
+
     pub fn set_post_collect<F>(&self, f: F)
     where
         F: Fn() + Send + Sync + 'static,
@@ -543,6 +658,7 @@ impl NyarGc {
         Self {
             young_head: AtomicPtr::new(std::ptr::null_mut()),
             old_head: AtomicPtr::new(std::ptr::null_mut()),
+            large_head: AtomicPtr::new(std::ptr::null_mut()),
             blocks_head: AtomicPtr::new(head),
             gray_stack: Mutex::new(Vec::new()),
             state: AtomicU8::new(GcState::Idle as u8),
@@ -586,6 +702,11 @@ impl NyarGc {
         let layout = Layout::new::<GcBox<T>>();
         let size = layout.size();
 
+        // 0. Large object allocation
+        if size > BLOCK_SIZE / 4 {
+            return unsafe { self.alloc_large(value, layout) };
+        }
+
         // 1. Try to allocate from free list first
         if let Some(idx) = self.get_size_class(size) {
             let free_head = &self.free_lists[idx];
@@ -622,6 +743,67 @@ impl NyarGc {
             }
         }
         None
+    }
+
+    /// Allocate a large object directly from the system allocator.
+    unsafe fn alloc_large<T: Trace + 'static>(&self, value: T, layout: Layout) -> Gc<T> {
+        let ptr = alloc::alloc(layout) as *mut GcBox<T>;
+        if ptr.is_null() {
+            alloc::handle_alloc_error(layout);
+        }
+
+        let state = self.state.load(Ordering::Acquire);
+        let color = if state != GcState::Idle as u8 {
+            Color::Black
+        } else {
+            Color::White
+        };
+        
+        let (type_id, _) = Self::get_type_info::<T>();
+        // Color | Gen 1 (Old) | Large bit
+        let flags = (color as u8) | (1 << 2) | (1 << 4);
+
+        // Insert into large_head atomically
+        let mut old_head = self.large_head.load(Ordering::Acquire);
+        loop {
+            let offset = if old_head.is_null() {
+                0
+            } else {
+                let offset = old_head as isize - ptr as isize;
+                assert!(offset <= i32::MAX as isize && offset >= i32::MIN as isize, "GC pointer offset out of range");
+                offset as i32
+            };
+            std::ptr::write(
+                &mut (*ptr).header,
+                GcHeader {
+                    next_offset: AtomicI32::new(offset),
+                    size: layout.size() as u32,
+                    type_id,
+                    flags: AtomicU8::new(flags),
+                    _padding: 0,
+                },
+            );
+            match self.large_head.compare_exchange_weak(
+                old_head,
+                &mut (*ptr).header as *mut _,
+                Ordering::Release,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => old_head = actual,
+            }
+        }
+
+        std::ptr::write(&mut (*ptr).data, value);
+
+        let gc_box = NonNull::new_unchecked(ptr);
+        let allocated = self.allocated_bytes.fetch_add(layout.size(), Ordering::SeqCst) + layout.size();
+
+        if allocated > self.threshold.load(Ordering::Relaxed) {
+            self.collect_major(|_| {});
+        }
+
+        Gc { ptr: gc_box }
     }
 
     fn refill_tlab(&self, tlab: &mut Tlab, layout: Layout) -> *mut u8 {
@@ -732,11 +914,16 @@ impl NyarGc {
     }
 
     unsafe fn drop_and_dealloc<T: Trace + 'static>(header_ptr: NonNull<GcHeader>) {
+        let header = header_ptr.as_ref();
         let ptr = header_ptr.cast::<GcBox<T>>();
         // Explicitly drop the data
         std::ptr::drop_in_place(&mut (*ptr.as_ptr()).data);
-        // Memory is managed by GcBlock, so we don't deallocate individual boxes here.
-        // In a compacting GC, this memory would be reclaimed during compaction.
+        
+        if header.is_large() {
+            let layout = Layout::new::<GcBox<T>>();
+            alloc::dealloc(ptr.as_ptr() as *mut u8, layout);
+        }
+        // Memory for non-large objects is managed by GcBlock, so we don't deallocate individual boxes here.
     }
 
     unsafe fn free_object(&self, header_ptr: NonNull<GcHeader>) {
@@ -819,13 +1006,14 @@ impl NyarGc {
                 for word in (*block_curr).card_table.iter() {
                     word.store(0, Ordering::Release);
                 }
-                block_curr = (*block_curr).next.load(Ordering::Acquire);
+                block_curr = (*block_curr).get_next();
             }
         }
 
         // 5. Adjust threshold
         self.threshold.store(self.allocated_bytes.load(Ordering::Relaxed) * 2, Ordering::Relaxed);
         self.reclaim_empty_blocks();
+        self.coalesce_free_lists();
         self.total_collections.fetch_add(1, Ordering::SeqCst);
         self.set_state(GcState::Idle);
     }
@@ -836,7 +1024,7 @@ impl NyarGc {
 
         while !curr.is_null() {
             let header = &*curr;
-            let next = header.next.load(Ordering::Acquire);
+            let next = header.get_next();
 
             // Reclaim block if it's full (cursor == BLOCK_SIZE) and has no live objects
             if header.cursor.load(Ordering::Relaxed) >= BLOCK_SIZE && header.live_bytes.load(Ordering::Relaxed) == 0 {
@@ -850,7 +1038,7 @@ impl NyarGc {
                 if prev.is_null() {
                     self.blocks_head.store(next, Ordering::Release);
                 } else {
-                    (*prev).next.store(next, Ordering::Release);
+                    (*prev).set_next(next);
                 }
                 let layout = Layout::from_size_align(BLOCK_SIZE, BLOCK_SIZE).unwrap();
                 alloc::dealloc(curr as *mut u8, layout);
@@ -956,9 +1144,11 @@ impl NyarGc {
                 for word in (*block_curr).card_table.iter() {
                     word.store(0, Ordering::Release);
                 }
-                block_curr = (*block_curr).next.load(Ordering::Acquire);
+                block_curr = (*block_curr).get_next();
             }
         }
+        self.reclaim_empty_blocks();
+        self.coalesce_free_lists();
         self.total_collections.fetch_add(1, Ordering::SeqCst);
         self.set_state(GcState::Idle);
     }
@@ -985,7 +1175,7 @@ impl NyarGc {
                 while !block_curr.is_null() {
                     unsafe {
                         (*block_curr).live_bytes.store(0, Ordering::Relaxed);
-                        block_curr = (*block_curr).next.load(Ordering::Acquire);
+                        block_curr = (*block_curr).get_next();
                     }
                 }
 
@@ -1101,6 +1291,8 @@ impl NyarGc {
                         } else {
                             // Finished sweeping
                             self.threshold.store(self.allocated_bytes.load(Ordering::Relaxed) * 2, Ordering::Relaxed);
+                            self.reclaim_empty_blocks();
+                            self.coalesce_free_lists();
                             self.set_state(GcState::Idle);
                             break;
                         }

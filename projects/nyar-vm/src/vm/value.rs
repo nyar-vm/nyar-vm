@@ -369,10 +369,10 @@ impl Value {
             ValueTag::Bool => self.as_bool(),
             ValueTag::Null => false,
             ValueTag::Int => self.as_int() != 0,
-            ValueTag::String => unsafe { !self.as_string().is_empty() },
-            ValueTag::Array => unsafe { !self.as_array().items.is_empty() },
-            ValueTag::List => unsafe { !self.as_list().items.is_empty() },
-            ValueTag::DynObject => unsafe { !self.as_dyn_object().entries.is_empty() },
+            ValueTag::String => self.try_as_str().map(|s| !s.is_empty()).unwrap_or(true),
+            ValueTag::Array => self.try_as_array().map(|a| !a.items.is_empty()).unwrap_or(true),
+            ValueTag::List => self.try_as_list().map(|l| !l.items.is_empty()).unwrap_or(true),
+            ValueTag::DynObject => self.try_as_dyn_object().map(|d| !d.entries.is_empty()).unwrap_or(true),
             _ => true,
         }
     }

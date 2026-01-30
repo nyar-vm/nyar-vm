@@ -36,8 +36,7 @@ impl NyarFrontend for MiniGoFrontend {
     }
 
     fn lower(&self, _ast: &oak_c::CRoot) -> Result<IKunTree, NyarError> {
-        let mut tree = IKunTree::default();
-        tree.name = "mini-go-program".to_string();
+        let tree = IKunTree::Module("mini-go-program".to_string(), vec![]);
         Ok(tree)
     }
 }
