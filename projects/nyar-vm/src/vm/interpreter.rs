@@ -143,7 +143,7 @@ fn div_mod_abs(mut a: Vec<u8>, b: &[u8]) -> (Vec<u8>, Vec<u8>) {
 
 #[derive(Clone)]
 struct Frame {
-    instrs: Vec<Instruction>,
+    instrs: std::sync::Arc<Vec<Instruction>>,
     ip: usize,
     locals: Vec<Value>,
     closure: *const Closure,
@@ -306,38 +306,24 @@ impl NyarVM {
 
     pub fn execute(&mut self, module_idx: usize, chunk_idx: usize) -> Result<Value, VmError> {
         println!("VM: Executing module {}, chunk {}", module_idx, chunk_idx);
-        let module = &self.modules[module_idx];
-        let chunk = &module.chunks[chunk_idx];
-        
-        // Decode chunk code to instructions
-        let mut decoder = crate::bytecode::decoder::Decoder::new(&chunk.code);
-        let mut instructions = Vec::new();
-        while let Ok(ins) = decoder.next_result() {
-            instructions.push(ins);
-        }
+        let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
 
         let frame = Frame {
-            instrs: instructions,
+            instrs,
             ip: 0,
             locals: vec![Value::null(); 32],
             closure: std::ptr::null(),
             module_idx,
             chunk_idx: Some(chunk_idx),
         };
-        
+
         self.frames.push(frame);
         self.run_loop()
     }
 
     pub fn execute_symbol(&mut self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
         if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
-            let chunk = &self.modules[m_idx].chunks[chunk_idx as usize];
-            
-            let mut decoder = crate::bytecode::decoder::Decoder::new(&chunk.code);
-            let mut instructions = Vec::new();
-            while let Ok(ins) = decoder.next_result() {
-                instructions.push(ins);
-            }
+            let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
 
             let mut locals = args;
             if locals.len() < 32 {
@@ -345,19 +331,39 @@ impl NyarVM {
             }
 
             let frame = Frame {
-                instrs: instructions,
+                instrs,
                 ip: 0,
                 locals,
                 closure: std::ptr::null(),
                 module_idx: m_idx,
                 chunk_idx: Some(chunk_idx as usize),
             };
-            
+
             self.frames.push(frame);
             self.run_loop()
         } else {
             Err(VmError::RuntimeError(format!("Symbol not found: {}", name)))
         }
+    }
+
+    fn get_chunk_instructions(&mut self, module_idx: usize, chunk_idx: usize) -> Result<std::sync::Arc<Vec<Instruction>>, VmError> {
+        let module = &mut self.modules[module_idx];
+        let chunk = &mut module.chunks[chunk_idx];
+
+        if let Some(ref instrs) = chunk.decoded {
+            return Ok(instrs.clone());
+        }
+
+        // Decode chunk code to instructions
+        let mut decoder = crate::bytecode::decoder::Decoder::new(&chunk.code);
+        let mut instructions = Vec::new();
+        while let Ok(ins) = decoder.next_result() {
+            instructions.push(ins);
+        }
+
+        let instrs = std::sync::Arc::new(instructions);
+        chunk.decoded = Some(instrs.clone());
+        Ok(instrs)
     }
 
     fn run_loop(&mut self) -> Result<Value, VmError> {
@@ -2140,9 +2146,9 @@ impl NyarVM {
                         "print" => {
                             if let Some(v) = args.last() {
                                 let msg = match v.tag() {
-                                    ValueTag::Int => format!("{}", unsafe { v.as_int() }),
-                                    ValueTag::Float => format!("{}", unsafe { v.as_float() }),
-                                    ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
+                                    ValueTag::Int => format!("{}", v.as_int()),
+                            ValueTag::Float => format!("{}", v.as_float()),
+                            ValueTag::Bool => format!("{}", v.as_bool()),
                                     ValueTag::Null => "null".to_string(),
                                     ValueTag::String => unsafe { v.as_string().clone() },
                                     ValueTag::Object => {
@@ -2190,9 +2196,9 @@ impl NyarVM {
                         "yield" => {
                             if let Some(v) = args.last() {
                                 let msg = match v.tag() {
-                                    ValueTag::Int => format!("{}", unsafe { v.as_int() }),
-                                    ValueTag::Float => format!("{}", unsafe { v.as_float() }),
-                                    ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
+                                    ValueTag::Int => format!("{}", v.as_int()),
+                        ValueTag::Float => format!("{}", v.as_float()),
+                        ValueTag::Bool => format!("{}", v.as_bool()),
                                     ValueTag::Null => "null".to_string(),
                                     _ => "<unsupported>".to_string(),
                                 };
@@ -2222,14 +2228,14 @@ impl NyarVM {
                             let msg = if let Some(v) = args.last() {
                                 match v.tag() {
                                     ValueTag::Int => {
-                                        format!("assertion failed: {}", unsafe { v.as_int() })
-                                    }
-                                    ValueTag::Float => {
-                                        format!("assertion failed: {}", unsafe { v.as_float() })
-                                    }
-                                    ValueTag::Bool => {
-                                        format!("assertion failed: {}", unsafe { v.as_bool() })
-                                    }
+                                format!("assertion failed: {}", v.as_int())
+                            }
+                            ValueTag::Float => {
+                                format!("assertion failed: {}", v.as_float())
+                            }
+                            ValueTag::Bool => {
+                                format!("assertion failed: {}", v.as_bool())
+                            }
                                     ValueTag::Null => "assertion failed".to_string(),
                                     _ => "assertion failed".to_string(),
                                 }
@@ -2275,7 +2281,7 @@ impl NyarVM {
                         "chr" => {
                             if let Some(v) = args.last() {
                                 let c = if v.tag() == ValueTag::Int {
-                                    let i = unsafe { v.as_int() };
+                                    let i = v.as_int();
                                     std::char::from_u32(i as u32).unwrap_or('\0').to_string()
                                 } else {
                                     "\0".to_string()
@@ -2296,7 +2302,7 @@ impl NyarVM {
 
                             if container.tag() == ValueTag::String && idx_v.tag() == ValueTag::Int {
                                 let s = unsafe { container.as_string() };
-                                let idx = unsafe { idx_v.as_int() } as usize;
+                                let idx = idx_v.as_int() as usize;
                                 let c = s
                                     .chars()
                                     .nth(idx)
@@ -2305,7 +2311,7 @@ impl NyarVM {
                                 self.push(Value::string(c, &self.gc));
                             } else if container.tag() == ValueTag::List && idx_v.tag() == ValueTag::Int {
                                  let list = unsafe { container.as_list() };
-                                let idx = unsafe { idx_v.as_int() } as usize;
+                                let idx = idx_v.as_int() as usize;
                                 if idx < list.items.len() {
                                     self.push(list.items[idx]);
                                 } else {
@@ -2313,7 +2319,7 @@ impl NyarVM {
                                 }
                             } else if container.tag() == ValueTag::Array && idx_v.tag() == ValueTag::Int {
                                  let arr = unsafe { container.as_array() };
-                                let idx = unsafe { idx_v.as_int() } as usize;
+                                let idx = idx_v.as_int() as usize;
                                 if idx < arr.items.len() {
                                     self.push(arr.items[idx]);
                                 } else {
@@ -2328,10 +2334,7 @@ impl NyarVM {
                                 let val = args.pop().unwrap_or(Value::null()); // val is last arg
                                 let container = args.pop().unwrap_or(Value::null()); // container is first arg
                                 if container.tag() == ValueTag::List {
-                                    let list_ptr = unsafe {
-                                        container.as_list() as *const crate::vm::value::List as *mut crate::vm::value::List
-                                    };
-                                    let list_mut = unsafe { &mut *list_ptr };
+                                    let list_mut = unsafe { container.as_list_mut() };
                                     list_mut.items.push(val);
                                     self.push(Value::null());
                                 } else {
@@ -2396,9 +2399,9 @@ impl NyarVM {
                         "str" => {
                             if let Some(v) = args.last() {
                                 let s = match v.tag() {
-                                    ValueTag::Int => format!("{}", unsafe { v.as_int() }),
-                                    ValueTag::Float => format!("{}", unsafe { v.as_float() }),
-                                    ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
+                                    ValueTag::Int => format!("{}", v.as_int()),
+                                    ValueTag::Float => format!("{}", v.as_float()),
+                                    ValueTag::Bool => format!("{}", v.as_bool()),
                                     ValueTag::Null => "null".to_string(),
                                     ValueTag::String => unsafe { v.as_string().clone() },
                                     _ => format!("{:?}", v.tag()),

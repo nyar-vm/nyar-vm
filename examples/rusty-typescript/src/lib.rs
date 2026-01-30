@@ -125,6 +125,51 @@ impl<'a> UirConverter<'a> {
                 let inner = self.convert_statement(*export.declaration);
                 self.builder.extension("export", vec![inner], loc)
             }
+            ast::Statement::ClassDeclaration(class) => {
+                let loc = self.to_loc(class.span);
+                let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
+                if let Some(ext) = class.extends {
+                    args.push(self.builder.symbol(&ext, loc.clone()));
+                } else {
+                    args.push(self.builder.constant(0, loc.clone())); // No base class
+                }
+
+                for member in class.body {
+                    match member {
+                        ast::ClassMember::Property { name, ty, initializer, span } => {
+                            let mloc = self.to_loc(span);
+                            let init_id = if let Some(expr) = initializer {
+                                self.convert_expression(expr)
+                            } else {
+                                self.builder.constant(0, mloc.clone())
+                            };
+                            let ty_id = if let Some(t) = ty {
+                                self.builder.symbol(&t, mloc.clone())
+                            } else {
+                                self.builder.symbol("any", mloc.clone())
+                            };
+                            args.push(self.builder.extension("gc.field", vec![
+                                self.builder.symbol(&name, mloc.clone()),
+                                ty_id,
+                                init_id,
+                            ], mloc));
+                        }
+                        ast::ClassMember::Method { name, params, body, span } => {
+                            let mloc = self.to_loc(span);
+                            let mut body_ids = Vec::new();
+                            for s in body {
+                                body_ids.push(self.convert_statement(s));
+                            }
+                            let lambda = self.builder.function(&name, params, body_ids);
+                            args.push(self.builder.extension("gc.method", vec![
+                                self.builder.symbol(&name, mloc.clone()),
+                                lambda,
+                            ], mloc));
+                        }
+                    }
+                }
+                self.builder.extension("gc.struct", args, loc)
+            }
         }
     }
 
@@ -162,14 +207,25 @@ impl<'a> UirConverter<'a> {
             ast::Expression::MemberExpression { object, property, computed, .. } => {
                 let obj = self.convert_expression(*object);
                 let prop = self.convert_expression(*property);
-                let op = if computed { "index" } else { "member" };
-                self.builder.extension(op, vec![obj, prop], Loc::default())
+                if computed {
+                    self.builder.extension("index", vec![obj, prop], Loc::default())
+                } else {
+                    self.builder.extension("gc.get_field", vec![obj, prop], Loc::default())
+                }
             }
             ast::Expression::ConditionalExpression { test, consequent, alternate } => {
                 let t = self.convert_expression(*test);
                 let c = self.convert_expression(*consequent);
                 let a = self.convert_expression(*alternate);
                 self.builder.branch(t, c, a, Loc::default())
+            }
+            ast::Expression::NewExpression { func, args } => {
+                let f = self.convert_expression(*func);
+                let mut arg_ids = vec![f];
+                for arg in args {
+                    arg_ids.push(self.convert_expression(arg));
+                }
+                self.builder.extension("gc.new", arg_ids, Loc::default())
             }
             _ => {
                 self.builder.constant(0, Loc::default())

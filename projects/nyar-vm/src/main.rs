@@ -13,58 +13,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let driver = NyarDriver::new();
 
     match program_name.as_str() {
-        "csc" | "csharp" => {
-            let frontend = rusty_csharp::CSharpFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
-        "javac" | "java" => {
-            let frontend = rusty_java::JavaFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
-        "kotlinc" | "kotlin" => {
-            let frontend = rusty_kotlin::KotlinFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
-        "python" => {
-            let frontend = rusty_python::PythonFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
-        "lua" => {
-            let frontend = rusty_lua::LuaFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
-        "rustc" => {
-            let frontend = rusty_rust::MiniRustFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
-        "tsc" | "tsx" => {
-            let frontend = rusty_typescript::MiniTypescriptFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
-        "cc" | "gcc" | "clang" => {
-            let frontend = mini_c::MiniCFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
-        "go" => {
-            let frontend = mini_go::MiniGoFrontend::new();
-            run_driver(&driver, &frontend, &args)?;
-        }
+        // Frontends are currently disabled as they are not in the workspace
         _ => {
             if args.len() < 2 {
-                println!("Usage: nyar <frontend> <input_file>");
-                println!("Supported frontends: csharp, java, kotlin, python, lua, rust, typescript, c, go");
+                println!("Nyar Universal Runtime");
+                println!("Usage: nyar <input_file>");
                 return Ok(());
             }
-            // Default behavior if not called as a symlink
-            println!("Nyar Universal Runtime");
-            println!("Please use one of the supported tool names or specify a frontend.");
+            println!("Nyar Universal Runtime (Internal Testing)");
+            // In a real scenario, we would pick a frontend based on file extension
+            // For now, this is just a placeholder.
         }
     }
 
     Ok(())
 }
 
-fn run_driver<F: nyar_types::NyarFrontend>(
+fn _run_driver<F: nyar_types::NyarFrontend>(
     driver: &NyarDriver,
     frontend: &F,
     args: &[String],

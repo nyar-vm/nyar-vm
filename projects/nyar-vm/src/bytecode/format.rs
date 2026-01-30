@@ -23,6 +23,8 @@ pub struct Chunk {
     pub handlers: Vec<Handler>,
     #[serde(default)]
     pub lines: Vec<(u32, u32)>, // offset, line
+    #[serde(skip)]
+    pub decoded: Option<std::sync::Arc<Vec<crate::bytecode::decoder::Instruction>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

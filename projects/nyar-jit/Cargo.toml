@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-chomsky-uir = { workspace = true }
+chomsky = { workspace = true }
+gaia-jit = { workspace = true }
+nyar-types = { path = "../nyar-types" }
 nyar-vm = { path = "../nyar-vm" }
+hashbrown = "0.14"

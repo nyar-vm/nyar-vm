@@ -1,8 +1,7 @@
-use nyar_gc::{Trace, NyarGc, GcHeader, GcBox, MarkContext, Gc};
+use nyar_gc::{Trace, NyarGc, GcHeader, GcBox, MarkContext};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::NonNull;
-use std::mem::transmute;
 
 const NAN_BASE: u64 = 0x7FF8_0000_0000_0000;
 const TAG_SHIFT: u32 = 47;
@@ -315,7 +314,7 @@ impl Value {
         Self::encode(ValueTag::Int, v as u64)
     }
     pub fn float(v: f64) -> Self {
-        let u: u64 = unsafe { transmute(v) };
+        let u: u64 = v.to_bits();
         if (u & NAN_BASE) == NAN_BASE {
             Value(u & !0x0008_0000_0000_0000)
         } else {
@@ -382,7 +381,7 @@ impl Value {
         self.payload() as i64
     }
     pub fn as_float(&self) -> f64 {
-        unsafe { transmute(self.0) }
+        f64::from_bits(self.0)
     }
     pub fn as_bool(&self) -> bool {
         self.payload() != 0
