@@ -1,57 +1,26 @@
-use clap::Parser;
-use std::fs;
-use std::path::Path;
+use std::{path::Path, process::exit};
 use mini_csharp::MiniCSharpFrontend;
-use chomsky_full::extract::Backend;
-
-#[derive(Parser, Debug)]
-#[command(name = "csc", version = "0.1.0", author = "Nyar Project", about = "Mini CSharp Compiler")]
-struct Args {
-    /// The input CSharp file
-    #[arg(index = 1)]
-    input: String,
-
-    /// The output Nyar Binary file
-    #[arg(short, long, default_value = "out.nyar")]
-    output: String,
-}
+use nyar_vm::NyarDriver;
 
 fn main() {
-    let args = Args::parse();
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: csc <input_file> [-o <output_file>]");
+        exit(1);
+    }
 
-    // Read input file
-    let source = match fs::read_to_string(&args.input) {
-        Ok(content) => content,
-        Err(e) => {
-            eprintln!("Error: Could not read file '{}': {}", args.input, e);
-            std::process::exit(1);
-        }
-    };
-
-    // Initialize frontend
+    let input_file = Path::new(&args[1]);
     let frontend = MiniCSharpFrontend::new();
+    let driver = NyarDriver::new();
+    
+    // 模拟编译：目前先编译为 native (stub)
+    let output_file = args.iter().position(|a| a == "-o")
+        .and_then(|i| args.get(i + 1))
+        .map(Path::new)
+        .unwrap_or(Path::new("out.exe"));
 
-    // Compile
-    println!("Compiling {}...", args.input);
-    let artifact = match frontend.generate_from_source(&source) {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("Error: Compilation failed: {:?}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Save output
-    let data = match artifact {
-        chomsky_full::extract::BackendArtifact::Binary(data) => data,
-        chomsky_full::extract::BackendArtifact::Source(s) => s.into_bytes(),
-    };
-
-    match fs::write(&args.output, data) {
-        Ok(_) => println!("Successfully compiled to {}", args.output),
-        Err(e) => {
-            eprintln!("Error: Could not write output file '{}': {}", args.output, e);
-            std::process::exit(1);
-        }
+    if let Err(e) = driver.compile_to_native(&frontend, input_file, output_file) {
+        eprintln!("Compilation error: {:?}", e);
+        exit(1);
     }
 }

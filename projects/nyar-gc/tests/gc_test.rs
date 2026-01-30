@@ -1,15 +1,16 @@
-use nyar_gc::{NyarGc, Trace, Gc};
-use std::cell::Cell;
+use nyar_gc::{NyarGc, Trace, Gc, MarkContext, GcCell};
 
 struct TestNode {
     value: i32,
-    next: Cell<Option<Gc<TestNode>>>,
+    next: GcCell<Option<Gc<TestNode>>>,
 }
 
 impl Trace for TestNode {
-    fn trace(&self) {
-        if let Some(next) = self.next.get() {
-            next.trace();
+    fn trace(&self, ctx: &mut MarkContext) {
+        unsafe {
+            if let Some(next) = self.next.get_ref() {
+                next.trace(ctx);
+            }
         }
     }
 }
@@ -20,23 +21,25 @@ fn test_gc_basic() {
     
     let node1 = gc.alloc(TestNode {
         value: 1,
-        next: Cell::new(None),
+        next: GcCell::new(None),
     });
     
     let node2 = gc.alloc(TestNode {
         value: 2,
-        next: Cell::new(Some(node1)),
+        next: GcCell::new(Some(node1)),
     });
     
     // Both should be reachable if we start from node2
     unsafe {
-        gc.collect(|| {
-            node2.trace();
+        gc.collect(|ctx| {
+            node2.trace(ctx);
         });
     }
     
     assert_eq!(node2.value, 2);
-    assert_eq!(node2.next.get().unwrap().value, 1);
+    unsafe {
+        assert_eq!(node2.next.get_ref().unwrap().value, 1);
+    }
 }
 
 #[test]
@@ -46,61 +49,88 @@ fn test_gc_collect() {
     {
         let _node1 = gc.alloc(TestNode {
             value: 1,
-            next: Cell::new(None),
+            next: GcCell::new(None),
         });
     }
     // node1 is out of scope, but GC doesn't know that yet.
-    // In a real VM, roots would be on the stack or in registers.
     
     let node2 = gc.alloc(TestNode {
         value: 2,
-        next: Cell::new(None),
+        next: GcCell::new(None),
     });
     
     unsafe {
-        gc.collect(|| {
-            node2.trace();
+        gc.collect(|ctx| {
+            node2.trace(ctx);
         });
     }
     
-    // After collection, node1 should be freed (though we can't easily check that without a custom allocator or tracking)
     assert_eq!(node2.value, 2);
 }
 
 #[test]
 fn test_generational_gc() {
     let gc = NyarGc::new();
-    
+
     // 1. Allocate a node (Young Gen)
     let node1 = gc.alloc(TestNode {
         value: 1,
-        next: Cell::new(None),
+        next: GcCell::new(None),
     });
-    
+
     // 2. Perform minor GC, node1 survives and should be promoted to Old Gen
     unsafe {
-        gc.collect_minor(|| {
-            node1.trace();
+        gc.collect_minor(|ctx| {
+            node1.trace(ctx);
         });
     }
-    
+
     // 3. Allocate another node (Young Gen)
     let node2 = gc.alloc(TestNode {
         value: 2,
-        next: Cell::new(None),
+        next: GcCell::new(None),
     });
-    
-    // 4. Update node1 (Old) to point to node2 (Young) -> Write Barrier
-    node1.next.set(Some(node2));
-    gc.write_barrier(node1, node2);
-    
-    // 5. Perform minor GC. node2 should be reachable via node1 (remembered set)
+
+    // 4. Update node1 (Old) to point to node2 (Young) -> Automated Write Barrier
+    gc.write(node1, &node1.next, Some(node2));
+
+    // 5. Perform minor GC. node2 should be reachable via node1 (card table)
     unsafe {
-        gc.collect_minor(|| {
-            // No roots here, node2 should be found via node1 in remembered set
+        gc.collect_minor(|ctx| {
+            node1.trace(ctx);
         });
     }
-    
+
     // 6. Verify node2 still exists
-    assert_eq!(node1.next.get().unwrap().value, 2);
+    unsafe {
+        assert_eq!(node1.next.get_ref().unwrap().value, 2);
+    }
+}
+
+#[test]
+fn test_incremental_gc() {
+    let gc = NyarGc::new();
+    let root = gc.alloc(TestNode {
+        value: 1,
+        next: GcCell::new(None),
+    });
+
+    // Allocate many objects to trigger GC
+    for i in 0..100 {
+        let node = gc.alloc(TestNode {
+            value: i,
+            next: GcCell::new(None),
+        });
+        gc.write(root, &root.next, Some(node));
+
+        // Perform small steps of GC
+        unsafe {
+            gc.step(5, |ctx| {
+                root.trace(ctx);
+            });
+        }
+    }
+
+    // After many steps, GC should eventually finish a cycle
+    assert!(root.value == 1);
 }

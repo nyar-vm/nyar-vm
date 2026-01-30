@@ -43,4 +43,3 @@ nyarc repl
 `nyar-tools` 本身并不包含核心逻辑，它通过调用 `nyar-vm`, `nyar-aot`, `nyar-jit` 等库来完成任务。
 
 - **`cmds/`**: 包含每个子命令的具体 CLI 逻辑。
-- **`bootstrap_builder.rs`**: 用于构建基础运行时环境的辅助工具。

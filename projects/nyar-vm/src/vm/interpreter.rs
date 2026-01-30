@@ -2,9 +2,9 @@ use crate::bytecode::decoder::Instruction;
 use crate::bytecode::format::{Constant, NyarcModule};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::ffi::FFIRegistry;
-use crate::vm::value::{BigInt, Closure, DynObject, Upvalue, Value, ValueTag};
+use crate::vm::value::{BigInt, Closure, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
-use nyar_gc::{NyarGc, Trace};
+use nyar_gc::{NyarGc, Trace, MarkContext};
 use std::ptr::null;
 
 fn normalize(mut v: Vec<u8>) -> Vec<u8> {
@@ -167,13 +167,13 @@ pub struct NyarVM {
 }
 
 impl Trace for NyarVM {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for i in 0..self.sp {
-            self.stack[i].trace();
+            self.stack[i].trace(ctx);
         }
         for frame in &self.frames {
             for local in &frame.locals {
-                local.trace();
+                local.trace(ctx);
             }
         }
     }
@@ -1077,13 +1077,13 @@ impl NyarVM {
                     self.push(Value::float(r));
                 }
                 Instruction::StringConst(s) => {
-                    self.push(Value::string(s.clone()));
+                    self.push(Value::string(s.clone(), &self.gc));
                 }
                 Instruction::StringConcat => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let r = unsafe { format!("{}{}", lhs.as_string(), rhs.as_string()) };
-                    self.push(Value::string(r));
+                    self.push(Value::string(r, &self.gc));
                 }
                 Instruction::StringLenBytes => {
                     let v = self.pop()?;
@@ -1145,7 +1145,7 @@ impl NyarVM {
                     } else {
                         String::new()
                     };
-                    self.push(Value::string(sub));
+                    self.push(Value::string(sub, &self.gc));
                 }
                 Instruction::Push(idx) => {
                     let c = self.modules[module_idx]
@@ -1155,7 +1155,7 @@ impl NyarVM {
                     match c {
                         Constant::Int(i) => self.push(Value::int(*i)),
                         Constant::Float(x) => self.push(Value::float(*x)),
-                        Constant::String(s) => self.push(Value::string(s.clone())),
+                        Constant::String(s) => self.push(Value::string(s.clone(), &self.gc)),
                     }
                 }
                 Instruction::Pop => {
@@ -1278,7 +1278,7 @@ impl NyarVM {
                         };
                         captured.push(Upvalue(val));
                     }
-                    let v = Value::closure(module_idx, *idx, captured);
+                    let v = Value::closure(module_idx, *idx, captured, &self.gc);
                     self.push(v);
                 }
                 Instruction::LoadUpvalue(idx) => {
@@ -1487,9 +1487,9 @@ impl NyarVM {
                                             Value::float(lhs.as_float() + rhs.as_float()),
                                         ),
                                         (ValueTag::String, ValueTag::String) => unsafe {
-                                            let mut s = lhs.as_string().clone();
+                                            let mut s = lhs.as_string().to_string();
                                             s.push_str(rhs.as_string());
-                                            self.push(Value::string(s));
+                                            self.push(Value::string(s, &self.gc));
                                         }
                                         _ => self.push(Value::null()),
                                     }
@@ -1761,7 +1761,7 @@ impl NyarVM {
                                         .nth(idx)
                                         .map(|c| c.to_string())
                                         .unwrap_or_default();
-                                    self.push(Value::string(c));
+                                    self.push(Value::string(c, &self.gc));
                                 } else {
                                     self.push(Value::null());
                                 }
@@ -1988,15 +1988,15 @@ impl NyarVM {
                             let instrs =
                                 decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
                             let mut locals = Vec::new();
-                            locals.push(Value::effect(idx as u16, args.clone()));
-                            locals.push(Value::list(args.clone()));
+                            locals.push(Value::effect(idx as u16, args.clone(), &self.gc));
+                            locals.push(Value::list(args.clone(), &self.gc));
                             let cont_ip = if let Some(next) = next_ip {
                                 next
                             } else {
                                 cur_ip + 1
                             };
                             let cont_slice = self.stack[..self.sp].to_vec();
-                            let cont = Value::continuation(cont_ip, cont_slice);
+                            let cont = Value::continuation(cont_ip, cont_slice, &self.gc);
                             locals.push(cont);
                             if locals.len() < chunk.locals as usize {
                                 locals.resize(chunk.locals as usize, Value::null());
@@ -2066,20 +2066,20 @@ impl NyarVM {
                     } else {
                         match name {
                             "read_file" => {
-                                let path_v = args.pop().unwrap_or(Value::string("".to_string()));
-                                let mut res = Value::string("".to_string());
+                                let path_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
+                                let mut res = Value::string("".to_string(), &self.gc);
                                 use std::fs;
                                 if path_v.tag() == ValueTag::String {
                                     let path = unsafe { path_v.as_string() }.clone();
                                     if let Ok(content) = fs::read_to_string(&path) {
-                                        res = Value::string(content);
+                                        res = Value::string(content, &self.gc);
                                     }
                                 }
                                 self.push(res);
                             }
                             "write_file" => {
-                                let data_v = args.pop().unwrap_or(Value::string("".to_string()));
-                                let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                                let data_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
+                                let path_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
                                 let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
@@ -2108,8 +2108,8 @@ impl NyarVM {
                                 self.push(Value::bool(ok));
                             }
                             "write_bytes" => {
-                                let bytes_v = args.pop().unwrap_or(Value::list(vec![]));
-                                let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                                let bytes_v = args.pop().unwrap_or(Value::list(vec![], &self.gc));
+                                let path_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
                                 let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
@@ -2280,9 +2280,9 @@ impl NyarVM {
                                 } else {
                                     "\0".to_string()
                                 };
-                                self.push(Value::string(c));
+                                self.push(Value::string(c, &self.gc));
                             } else {
-                                self.push(Value::string("".to_string()));
+                                self.push(Value::string("".to_string(), &self.gc));
                             }
                         }
                         "get" => {
@@ -2302,7 +2302,7 @@ impl NyarVM {
                                     .nth(idx)
                                     .map(|c| c.to_string())
                                     .unwrap_or_default();
-                                self.push(Value::string(c));
+                                self.push(Value::string(c, &self.gc));
                             } else if container.tag() == ValueTag::List && idx_v.tag() == ValueTag::Int {
                                  let list = unsafe { container.as_list() };
                                 let idx = unsafe { idx_v.as_int() } as usize;
@@ -2384,13 +2384,13 @@ impl NyarVM {
                                 if v.tag() == ValueTag::String {
                                     let s = unsafe { v.as_string() };
                                     let items: Vec<Value> =
-                                        s.chars().map(|c| Value::string(c.to_string())).collect();
-                                    self.push(Value::list(items));
+                                        s.chars().map(|c| Value::string(c.to_string(), &self.gc)).collect();
+                                    self.push(Value::list(items, &self.gc));
                                 } else {
-                                    self.push(Value::list(vec![]));
+                                    self.push(Value::list(vec![], &self.gc));
                                 }
                             } else {
-                                self.push(Value::list(vec![]));
+                                self.push(Value::list(vec![], &self.gc));
                             }
                         }
                         "str" => {
@@ -2403,9 +2403,9 @@ impl NyarVM {
                                     ValueTag::String => unsafe { v.as_string().clone() },
                                     _ => format!("{:?}", v.tag()),
                                 };
-                                self.push(Value::string(s));
+                                self.push(Value::string(s, &self.gc));
                             } else {
-                                self.push(Value::string("".to_string()));
+                                self.push(Value::string("".to_string(), &self.gc));
                             }
                         }
                         "eq" => {
@@ -2531,7 +2531,7 @@ impl NyarVM {
                                 (ValueTag::String, ValueTag::String) => unsafe {
                                     let mut s = a.as_string().clone();
                                     s.push_str(b.as_string());
-                                    self.push(Value::string(s));
+                                    self.push(Value::string(s, &self.gc));
                                 }
                                 _ => self.push(Value::null()),
                             }
@@ -2610,7 +2610,7 @@ impl NyarVM {
                                     // So we need to REVERSE args to get [a, b].
 
                                     let mut fields = Vec::new();
-                                    fields.push(Value::string(variant_name.to_string()));
+                                    fields.push(Value::string(variant_name.to_string(), &self.gc));
 
                                     // args is [last_arg, ..., first_arg]
                                     // We want [first_arg, ..., last_arg]
@@ -2629,7 +2629,7 @@ impl NyarVM {
                                         fields.push(Value::null());
                                     }
 
-                                    let obj = Value::object(idx, fields);
+                                    let obj = Value::object(idx, fields, &self.gc);
                                     self.push(obj);
                                 } else {
                                     return Err(VmError::UnhandledEffect(name.to_string()));
@@ -2647,15 +2647,15 @@ impl NyarVM {
                         .get(*class_idx as usize)
                         .ok_or(VmError::IndexOutOfBounds)?;
                     let fields = vec![Value::null(); cls.fields.len()];
-                    let obj = Value::object(*class_idx, fields);
+                    let obj = Value::object(*class_idx, fields, &self.gc);
                     self.push(obj);
                 }
                 Instruction::NewDynObject => {
-                    self.push(Value::dyn_object());
+                    self.push(Value::dyn_object(&self.gc));
                 }
                 Instruction::NewArray(len) => {
                     let items = vec![Value::null(); *len as usize];
-                    let arr = Value::array(items);
+                    let arr = Value::array(items, &self.gc);
                     self.push(arr);
                 }
                 Instruction::NewList(len) => {
@@ -2664,7 +2664,7 @@ impl NyarVM {
                         items.push(self.pop()?);
                     }
                     items.reverse();
-                    let list = Value::list(items);
+                    let list = Value::list(items, &self.gc);
                     self.push(list);
                 }
                 Instruction::PushElementRight => {
@@ -2838,7 +2838,7 @@ impl NyarVM {
                         items.push(self.pop()?);
                     }
                     items.reverse();
-                    self.push(Value::tuple(items));
+                    self.push(Value::tuple(items, &self.gc));
                 }
                 Instruction::HasKey => {
                     let mut key = self.pop()?;
@@ -3105,7 +3105,7 @@ impl NyarVM {
                         cur_ip + 1
                     };
                     let slice = self.stack[..self.sp].to_vec();
-                    let cont = Value::continuation(ip, slice);
+                    let cont = Value::continuation(ip, slice, &self.gc);
                     self.push(cont);
                 }
                 Instruction::ResumeWith => {

@@ -1,7 +1,7 @@
-use nyar_gc::{Trace, NyarGc, GcHeader, GcBox};
+use nyar_gc::{Trace, NyarGc, GcHeader, GcBox, MarkContext, Gc};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
-use std::ptr::{null_mut, NonNull};
+use std::ptr::NonNull;
 use std::mem::transmute;
 
 const NAN_BASE: u64 = 0x7FF8_0000_0000_0000;
@@ -29,7 +29,7 @@ impl Display for Value {
 }
 
 impl Trace for Value {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         if self.is_float() {
             return;
         }
@@ -40,70 +40,70 @@ impl Trace for Value {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::BigInt => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::Array => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::Object => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::Closure => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::DynObject => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::List => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::Tuple => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::Continuation => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             ValueTag::Effect => unsafe {
                 let payload = self.payload();
                 if payload != 0 {
                     let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
-                    GcHeader::mark_and_trace(header_ptr);
+                    GcHeader::mark(header_ptr, ctx);
                 }
             },
             _ => {}
@@ -112,69 +112,69 @@ impl Trace for Value {
 }
 
 impl Trace for Closure {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for upvalue in &self.upvalues {
-            upvalue.0.trace();
+            upvalue.0.trace(ctx);
         }
     }
 }
 
 impl Trace for Object {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for field in &self.fields {
-            field.trace();
+            field.trace(ctx);
         }
     }
 }
 
 impl Trace for Continuation {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for val in &self.stack_slice {
-            val.trace();
+            val.trace(ctx);
         }
     }
 }
 
 impl Trace for BigInt {
-    fn trace(&self) {}
+    fn trace(&self, _ctx: &mut MarkContext) {}
 }
 
 impl Trace for DynObject {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for value in self.entries.values() {
-            value.trace();
+            value.trace(ctx);
         }
     }
 }
 
 impl Trace for Array {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for item in &self.items {
-            item.trace();
+            item.trace(ctx);
         }
     }
 }
 
 impl Trace for List {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for item in &self.items {
-            item.trace();
+            item.trace(ctx);
         }
     }
 }
 
 impl Trace for Tuple {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for item in &self.items {
-            item.trace();
+            item.trace(ctx);
         }
     }
 }
 
 impl Trace for Effect {
-    fn trace(&self) {
+    fn trace(&self, ctx: &mut MarkContext) {
         for arg in &self.args {
-            arg.trace();
+            arg.trace(ctx);
         }
     }
 }
@@ -197,6 +197,9 @@ pub enum ValueTag {
     Effect = 12,
     Code = 13,
     WitnessTable = 14,
+    Float = 15,
+    Function = 16,
+    TraitObject = 17,
 }
 
 #[repr(transparent)]
@@ -206,9 +209,30 @@ pub struct Value(u64);
 impl Value {
     pub fn tag(&self) -> ValueTag {
         if self.is_float() {
-            panic!("Cannot get tag of float");
+            return ValueTag::Float;
         }
-        unsafe { transmute(((self.0 & !NAN_BASE) >> TAG_SHIFT) as u8) }
+        let tag_val = ((self.0 & !NAN_BASE) >> TAG_SHIFT) as u8;
+        match tag_val {
+            0 => ValueTag::Int,
+            1 => ValueTag::Bool,
+            2 => ValueTag::Null,
+            3 => ValueTag::String,
+            4 => ValueTag::Array,
+            5 => ValueTag::BigInt,
+            6 => ValueTag::Object,
+            7 => ValueTag::Closure,
+            8 => ValueTag::DynObject,
+            9 => ValueTag::List,
+            10 => ValueTag::Tuple,
+            11 => ValueTag::Continuation,
+            12 => ValueTag::Effect,
+            13 => ValueTag::Code,
+            14 => ValueTag::WitnessTable,
+            15 => ValueTag::Float,
+            16 => ValueTag::Function,
+            17 => ValueTag::TraitObject,
+            _ => panic!("Invalid tag value: {}", tag_val),
+        }
     }
 
     pub fn payload(&self) -> u64 {
@@ -306,37 +330,37 @@ impl Value {
     }
     pub fn string(s: String, gc: &NyarGc) -> Self {
         let g = gc.alloc(s);
-        Self::encode(ValueTag::String, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::String, g.as_ptr() as u64)
     }
     pub fn array(items: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Array { items });
-        Self::encode(ValueTag::Array, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::Array, g.as_ptr() as u64)
     }
     pub fn bigint(sign: u8, bytes: Vec<u8>, gc: &NyarGc) -> Self {
         let g = gc.alloc(BigInt { sign, bytes });
-        Self::encode(ValueTag::BigInt, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::BigInt, g.as_ptr() as u64)
     }
     pub fn dyn_object(gc: &NyarGc) -> Self {
         let g = gc.alloc(DynObject {
             entries: HashMap::new(),
         });
-        Self::encode(ValueTag::DynObject, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::DynObject, g.as_ptr() as u64)
     }
     pub fn list(items: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(List { items });
-        Self::encode(ValueTag::List, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::List, g.as_ptr() as u64)
     }
     pub fn tuple(items: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Tuple { items });
-        Self::encode(ValueTag::Tuple, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::Tuple, g.as_ptr() as u64)
     }
     pub fn effect(type_idx: u16, args: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Effect { type_idx, args });
-        Self::encode(ValueTag::Effect, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::Effect, g.as_ptr() as u64)
     }
     pub fn bigint_from_i64(v: i64, gc: &NyarGc) -> Self {
         let g = gc.alloc(BigInt::from_i64(v));
-        Self::encode(ValueTag::BigInt, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::BigInt, g.as_ptr() as u64)
     }
     pub fn closure(module_idx: usize, func_idx: u16, upvalues: Vec<Upvalue>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Closure {
@@ -344,15 +368,15 @@ impl Value {
             func: func_idx as usize,
             upvalues,
         });
-        Self::encode(ValueTag::Closure, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::Closure, g.as_ptr() as u64)
     }
     pub fn object(class_idx: u16, fields: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Object { class_idx, fields });
-        Self::encode(ValueTag::Object, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::Object, g.as_ptr() as u64)
     }
     pub fn continuation(ip: usize, stack_slice: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Continuation { ip, stack_slice });
-        Self::encode(ValueTag::Continuation, g.ptr.as_ptr() as u64)
+        Self::encode(ValueTag::Continuation, g.as_ptr() as u64)
     }
     pub fn as_int(&self) -> i64 {
         self.payload() as i64

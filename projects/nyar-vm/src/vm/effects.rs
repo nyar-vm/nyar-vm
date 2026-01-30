@@ -48,7 +48,7 @@ pub fn perform_effect_internal(
             (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => unsafe {
                 let mut s = a.as_string().clone();
                 s.push_str(b.as_string());
-                Value::string(s)
+                Value::string(s, &vm.gc)
             },
             _ => Value::null(),
         };
@@ -65,8 +65,8 @@ pub fn perform_effect_internal(
             let idx = idx as u16;
             let val = args.get(0).cloned().unwrap_or(Value::null());
             // Token enum has __variant__ and one field (u or x) mapped to _0
-            let fields = vec![Value::string(variant_name.to_string()), val];
-            let obj = Value::object(idx, fields);
+            let fields = vec![Value::string(variant_name.to_string(), &vm.gc), val];
+            let obj = Value::object(idx, fields, &vm.gc);
             return Ok(Some(obj));
         }
     }

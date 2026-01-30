@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_driver<F: nyar_frontend::NyarFrontend>(
+fn run_driver<F: nyar_types::NyarFrontend>(
     driver: &NyarDriver,
     frontend: &F,
     args: &[String],

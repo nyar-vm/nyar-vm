@@ -1,7 +1,6 @@
 use crate::bytecode::compiler::NyarBackend;
 use crate::vm::interpreter::NyarVM;
-use nyar_error::NyarError;
-use nyar_frontend::NyarFrontend;
+use nyar_types::{NyarError, NyarFrontend};
 use std::fs;
 use std::path::Path;
 
@@ -17,7 +16,7 @@ impl NyarDriver {
 
     /// 运行源代码文件
     pub fn run_source<F: NyarFrontend>(&self, frontend: &F, path: &Path) -> Result<(), NyarError> {
-        let source = fs::read_to_string(path).map_err(|e| NyarError::IO(e.to_string()))?;
+        let source = fs::read_to_string(path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
         let tree = frontend.lower(&ast)?;
         let mut backend = NyarBackend::new();
@@ -44,33 +43,35 @@ impl NyarDriver {
     pub fn compile_to_native<F: NyarFrontend>(
         &self,
         frontend: &F,
-        source: &str,
-        output: &Path,
+        source_path: &Path,
+        output_path: &Path,
     ) -> Result<(), NyarError> {
-        let ast = frontend.parse(source)?;
+        let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
+        let ast = frontend.parse(&source)?;
         let tree = frontend.lower(&ast)?;
         
         // TODO: 使用 nyar-aot 进行原生代码生成
-        println!("AOT: Compiling IKunTree to native at {:?}", output);
+        println!("AOT: Compiling IKunTree to native at {:?}", output_path);
         println!("IKunTree name: {}", tree.name);
         
-        Err(NyarError::Unimplemented("AOT compilation to native backend is not yet fully integrated".to_string()))
+        Err(NyarError::Compile("AOT compilation to native backend is not yet fully integrated".to_string()))
     }
 
     /// AOT 编译到 WASM
     pub fn compile_to_wasm<F: NyarFrontend>(
         &self,
         frontend: &F,
-        source: &str,
-        output: &Path,
+        source_path: &Path,
+        output_path: &Path,
     ) -> Result<(), NyarError> {
-        let ast = frontend.parse(source)?;
+        let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
+        let ast = frontend.parse(&source)?;
         let tree = frontend.lower(&ast)?;
         
         // TODO: 使用 nyar-aot 进行 WASM 生成
-        println!("AOT: Compiling IKunTree to WASM at {:?}", output);
+        println!("AOT: Compiling IKunTree to WASM at {:?}", output_path);
         println!("IKunTree name: {}", tree.name);
         
-        Err(NyarError::Unimplemented("AOT compilation to WASM backend is not yet fully integrated".to_string()))
+        Err(NyarError::Compile("AOT compilation to WASM backend is not yet fully integrated".to_string()))
     }
 }
