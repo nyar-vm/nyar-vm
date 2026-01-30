@@ -770,8 +770,8 @@ impl NyarGc {
         let marked = state != GcState::Idle as u8;
         let (type_id, _) = Self::get_type_info::<T>();
         
-        // Flags: marked (bit 16), generation (bit 18), large (bit 20)
-        let mut flags = (1 << 18) | (1 << 20);
+        // Flags: marked (bit 16), generation (bit 17), large (bit 19)
+        let mut flags = (1 << 17) | (1 << 19);
         if marked {
             flags |= 1 << 16;
         }

@@ -25,7 +25,7 @@ chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }
 oak-core = { path = "../../../oaks/projects/oak-core" }
 oak-typescript = { path = "../../../oaks/examples/oak-typescript", default-features = false }
 nyar-types = { path = "../../projects/nyar-types" }
-nyar-vm = { path = "../../projects/nyar-vm", features = ["native"] }
+nyar-vm = { path = "../../projects/nyar-vm", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"

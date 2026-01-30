@@ -24,7 +24,11 @@ impl NyarDriver {
         let module = backend.finish();
         let mut vm = NyarVM::new();
         let module_idx = vm.load_module(module);
-        vm.execute(module_idx, 0).map(|_| ()).map_err(NyarError::from)
+        if vm.execute_symbol("main", vec![]).is_ok() {
+            Ok(())
+        } else {
+            vm.execute(module_idx, 0).map(|_| ()).map_err(NyarError::from)
+        }
     }
 
     /// 运行源代码字符串

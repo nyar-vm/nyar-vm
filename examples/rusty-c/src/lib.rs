@@ -140,6 +140,31 @@ impl<'a> UirConverter<'a> {
                     self.builder.constant(0, self.to_loc(expr_stmt.span.clone().into()))
                 }
             }
+            ast::Statement::Selection(sel) => {
+                match sel {
+                    ast::SelectionStatement::If { condition, then_statement, else_statement, span } => {
+                        let cond = self.convert_expression(condition);
+                        let then_id = self.convert_statement(then_statement);
+                        let else_id = if let Some(e) = else_statement {
+                            self.convert_statement(e)
+                        } else {
+                            self.builder.constant(0, loc.clone())
+                        };
+                        self.builder.extension("if", vec![cond, then_id, else_id], self.to_loc(span.clone().into()))
+                    }
+                    _ => self.builder.constant(0, loc),
+                }
+            }
+            ast::Statement::Iteration(iter) => {
+                match iter {
+                    ast::IterationStatement::While { condition, statement, span } => {
+                        let cond = self.convert_expression(condition);
+                        let body = self.convert_statement(statement);
+                        self.builder.extension("while", vec![cond, body], self.to_loc(span.clone().into()))
+                    }
+                    _ => self.builder.constant(0, loc),
+                }
+            }
             ast::Statement::Jump(jump) => {
                 match jump {
                     ast::JumpStatement::Return(expression, _) => {
@@ -149,6 +174,12 @@ impl<'a> UirConverter<'a> {
                             self.builder.constant(0, loc.clone())
                         };
                         self.builder.extension("return", vec![val], loc)
+                    }
+                    ast::JumpStatement::Break(span) => {
+                        self.builder.extension("break", vec![], self.to_loc(span.clone().into()))
+                    }
+                    ast::JumpStatement::Continue(span) => {
+                        self.builder.extension("continue", vec![], self.to_loc(span.clone().into()))
                     }
                     _ => self.builder.constant(0, loc),
                 }
@@ -167,11 +198,29 @@ impl<'a> UirConverter<'a> {
                 }
             }
             ast::ExpressionKind::Identifier(name, _) => self.builder.symbol(name, loc),
+            ast::ExpressionKind::StringLiteral(s, _) => {
+                // String literal as a constant or symbol?
+                // For now, let's treat it as a symbol with special prefix
+                self.builder.symbol(&format!("\"{}\"", s), loc)
+            }
             ast::ExpressionKind::Binary { left, operator, right, .. } => {
                 let l = self.convert_expression(left);
                 let r = self.convert_expression(right);
                 let op = format!("{:?}", operator).to_lowercase();
                 self.builder.extension(&op, vec![l, r], loc)
+            }
+            ast::ExpressionKind::FunctionCall { function, arguments, .. } => {
+                let func = self.convert_expression(function);
+                let mut args = vec![func];
+                for arg in arguments {
+                    args.push(self.convert_expression(arg));
+                }
+                self.builder.extension("call", args, loc)
+            }
+            ast::ExpressionKind::ArraySubscript { array, index, .. } => {
+                let arr = self.convert_expression(array);
+                let idx = self.convert_expression(index);
+                self.builder.extension("index", vec![arr, idx], loc)
             }
             _ => self.builder.constant(0, loc),
         }
@@ -198,7 +247,7 @@ impl<'a> UirConverter<'a> {
     fn get_direct_declarator_name(&self, decl: &ast::DirectDeclarator) -> String {
         match decl {
             ast::DirectDeclarator::Identifier(name, _) => name.clone(),
-            ast::DirectDeclarator::Declarator(d) => self.get_declarator_name(d),
+            ast::DirectDeclarator::Declarator(decl) => self.get_declarator_name(decl),
             ast::DirectDeclarator::Array { declarator, .. } => self.get_direct_declarator_name(declarator),
             ast::DirectDeclarator::Function { declarator, .. } => self.get_direct_declarator_name(declarator),
         }

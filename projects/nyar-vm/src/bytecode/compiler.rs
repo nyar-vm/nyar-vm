@@ -39,6 +39,7 @@ impl NyarBackend {
                 }
             }
             IKunTree::Extension(name, args) => {
+                println!("Backend: Extension {}, args len {}", name, args.len());
                 match name.as_str() {
                     "class" => {
                         if let IKunTree::StringConstant(_class_name) = &args[0] {
@@ -50,16 +51,16 @@ impl NyarBackend {
                         }
                     }
                     "method" => {
-                        if args.len() >= 3 {
-                            let name_idx = args.len() - 3;
+                        if args.len() >= 4 {
+                            let name_idx = 0;
                             let body_idx = args.len() - 1;
                             if let (IKunTree::StringConstant(name), body) = (&args[name_idx], &args[body_idx]) {
                                 let body_code = self.lower_tree(body)?;
                                 let chunk_idx = self.module.chunks.len() as u16;
                                 self.module.chunks.push(Chunk {
-                                    locals: 0,
+                                    locals: 32,
                                     upvalues: 0,
-                                    max_stack: 10,
+                                    max_stack: 64,
                                     code: body_code,
                                     handlers: vec![],
                                     lines: vec![],

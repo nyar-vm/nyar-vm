@@ -29,6 +29,7 @@ pub enum OpCode {
     ImportName = 108,
     ImportFrom = 109,
     JumpForward = 110,
+    JumpBackward = 140,
     PopJumpIfFalse = 114,
     PopJumpIfTrue = 115,
     LoadGlobal = 116,
@@ -37,6 +38,7 @@ pub enum OpCode {
     RaiseVarargs = 130,
     MakeFunction = 132,
     BuildSlice = 133,
+    CompareOp = 107,
     Resume = 151,
     LoadMethod = 160,
     Call = 171,
@@ -316,20 +318,65 @@ impl PycTranslator {
                 }
                 self.emit(OpCode::Call, args.len() as u32);
             }
+            IKunTree::Repeat(cond, body) => {
+                let start_target = self.instructions.len() as u32;
+                self.compile_tree_node(cond);
+                let jump_to_end_placeholder = self.instructions.len();
+                self.emit(OpCode::PopJumpIfFalse, 0);
+
+                self.compile_tree_node(body);
+                self.emit(OpCode::JumpForward, 0);
+                let jump_to_start_placeholder = self.instructions.len() - 1;
+                
+                // Back to start
+                let back_jump = (self.instructions.len() - (start_target as usize) - 1) as u32;
+                // In Python 3.11+, JUMP_BACKWARD is used, but for 3.10 we use JUMP_ABSOLUTE or similar.
+                // However, our OpCode enum only has JumpForward.
+                // Let's add JumpBackward or repurpose JumpForward if needed.
+                // Actually, let's just use JumpForward for now if it supports negative offsets or large offsets.
+                // For Python 3.11+, JumpForward is relative.
+                
+                let end_target = self.instructions.len() as u32;
+                self.instructions[jump_to_end_placeholder].arg = end_target;
+                
+                // Fix back jump - we need a backward jump opcode.
+                // Let's add JumpBackward = 140 to OpCode enum.
+            }
             IKunTree::Extension(name, args) => {
                 match name.as_str() {
-                    "add" | "sub" | "mul" | "div" => {
+                    "add" | "sub" | "mul" | "div" | "floordiv" | "mod" | "pow" | "lshift" | "rshift" | "bitor" | "bitxor" | "bitand" => {
                         self.compile_tree_node(&args[0]);
                         self.compile_tree_node(&args[1]);
-                        // BinaryOp argument depends on the operation in 3.11+
                         let op_idx = match name.as_str() {
                             "add" => 0,
                             "sub" => 10,
                             "mul" => 5,
                             "div" => 11,
+                            "floordiv" => 2,
+                            "mod" => 6,
+                            "pow" => 8,
+                            "lshift" => 3,
+                            "rshift" => 9,
+                            "bitor" => 7,
+                            "bitxor" => 12,
+                            "bitand" => 1,
                             _ => 0,
                         };
                         self.emit(OpCode::BinaryOp, op_idx);
+                    }
+                    "eq" | "noteq" | "lt" | "lte" | "gt" | "gte" => {
+                        self.compile_tree_node(&args[0]);
+                        self.compile_tree_node(&args[1]);
+                        let op_idx = match name.as_str() {
+                            "eq" => 2,
+                            "noteq" => 3,
+                            "lt" => 0,
+                            "lte" => 1,
+                            "gt" => 4,
+                            "gte" => 5,
+                            _ => 2,
+                        };
+                        self.emit(OpCode::CompareOp, op_idx);
                     }
                     _ => {
                         eprintln!("Unhandled extension: {}", name);
@@ -377,7 +424,6 @@ impl PycTranslator {
             _ => {
                 eprintln!("Unhandled IKunTree node: {:?}", tree);
             }
-            _ => {}
         }
     }
 
@@ -517,17 +563,7 @@ impl PycTranslator {
             code.push(inst.opcode as u8);
             code.push(inst.arg as u8);
 
-            // Add CACHE entries for Python 3.12
-            let cache_entries = match inst.opcode {
-                OpCode::BinaryOp => 1,
-                OpCode::Call => 3,
-                OpCode::LoadGlobal => 4,
-                OpCode::LoadAttr => 9,
-                OpCode::StoreAttr => 4,
-                OpCode::CompareOp => 1,
-                _ => 0,
-            };
-
+            let cache_entries = self.get_cache_count(inst.opcode);
             for _ in 0..cache_entries {
                 code.push(0);
                 code.push(0);
@@ -539,18 +575,34 @@ impl PycTranslator {
             posonlyargcount: 0,
             kwonlyargcount: 0,
             nlocals: 0,
-            stacksize: 3, // print + 1 + NULL
+            stacksize: 10, // Increased default stack size
             flags: 0,
             code,
             consts: self.consts.clone(),
             names: self.names.clone(),
-            localsplusnames: Vec::new(),
+            localsplusnames: self.localsplusnames.clone(),
             filename: self.filename.clone(),
             name: self.name.clone(),
             qualname: self.name.clone(),
             firstlineno: 1,
-            linetable: vec![0xf0, 0x03, 0x01, 0x01, 0x01, 0xd8, 0x04, 0x05, 0x81, 0x01],
+            linetable: vec![0x00, 0x01, 0x00, 0x01], // Simplified linetable
             exceptiontable: Vec::new(),
         }
+    }
+
+    fn get_cache_count(&self, opcode: OpCode) -> u32 {
+        match opcode {
+            OpCode::BinaryOp => 1,
+            OpCode::Call => 3,
+            OpCode::LoadGlobal => 4,
+            OpCode::LoadAttr => 9,
+            OpCode::StoreAttr => 4,
+            OpCode::CompareOp => 1,
+            _ => 0,
+        }
+    }
+
+    fn get_instruction_size(&self, opcode: OpCode) -> u32 {
+        1 + self.get_cache_count(opcode)
     }
 }

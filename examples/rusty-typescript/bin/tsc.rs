@@ -30,8 +30,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let driver = NyarDriver::new();
 
     if let Some(output_path) = args.output {
-        println!("tsc: Compiling to {:?}", output_path);
-        driver.compile_to_native(&frontend, &args.input, &output_path)?;
+        #[cfg(feature = "native")]
+        {
+            println!("tsc: Compiling to {:?}", output_path);
+            driver.compile_to_native(&frontend, &args.input, &output_path)?;
+        }
+        #[cfg(not(feature = "native"))]
+        {
+            println!("tsc: Native compilation is not supported in this build.");
+            return Err("Native compilation is not supported in this build.".into());
+        }
     } else {
         println!("tsc: Running {:?}", args.input);
         driver.run_source(&frontend, &args.input)?;
