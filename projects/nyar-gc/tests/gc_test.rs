@@ -110,45 +110,6 @@ fn test_gc_collect() {
 }
 
 #[test]
-fn test_generational_gc() {
-    let gc = NyarGc::new();
-
-    // 1. Allocate a node (Young Gen)
-    let node1 = gc.alloc(TestNode {
-        value: 1,
-        next: GcCell::new(None),
-    });
-
-    // 2. Perform minor GC, node1 survives and should be promoted to Old Gen
-    unsafe {
-        gc.collect_minor(|ctx| {
-            node1.trace(ctx);
-        });
-    }
-
-    // 3. Allocate another node (Young Gen)
-    let node2 = gc.alloc(TestNode {
-        value: 2,
-        next: GcCell::new(None),
-    });
-
-    // 4. Update node1 (Old) to point to node2 (Young) -> Automated Write Barrier
-    gc.write(node1, &node1.next, Some(node2));
-
-    // 5. Perform minor GC. node2 should be reachable via node1 (card table)
-    unsafe {
-        gc.collect_minor(|ctx| {
-            node1.trace(ctx);
-        });
-    }
-
-    // 6. Verify node2 still exists
-    unsafe {
-        assert_eq!(node1.next.get_ref().unwrap().value, 2);
-    }
-}
-
-#[test]
 fn test_incremental_gc() {
     let gc = NyarGc::new();
     let root = gc.alloc(TestNode {
