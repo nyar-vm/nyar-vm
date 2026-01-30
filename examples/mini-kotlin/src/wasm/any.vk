@@ -1,0 +1,256 @@
+
+@primitive("anyref")
+class UnknownObject { }
+
+trait AnyObject { }
+
+
+
+class Animal {
+	name()
+}
+trait Swim {
+    swim()
+}
+trait Walk {
+	walk()
+}
+class Fish(Animal), GetX, GetY, GetZ {
+	x: f32,
+	y: f32,
+	z: f32,
+}
+class Dog(Animal), Walk {
+	dx: f32,
+	dy: f32
+}
+
+
+class FakeAnimalTable {
+
+}
+class SwimVTable {
+	swim()
+}
+class WalkVTable {
+	walk()
+}
+class FishVTable {
+	name()
+	swim()
+	get_x()
+	get_y()
+	get_z()
+}
+
+class Point {
+	x: i32,
+	y: i32,
+}
+let point = new Point { x: 0, y: 0}
+
+if (point is { x: i32, y: i32 }) {
+	true
+}
+if point is GetXITable && point is SetXITable && point is GetYITable && point is SetYITable {
+	true
+}
+
+invokeMethod {
+	source: Animal,
+	target: GetXITable,
+	method: get_x,
+	arguments: []
+}
+
+Dog as Any as Swim
+
+x is Dog { }
+x transmute? Dog
+if x != null {
+
+}
+
+using type { A }
+
+type unknown = UnknownObject
+type any = AnyObject
+
+
+class UnknownObject {
+
+}
+class AnyStructure {
+	asm from(unknown: UnknownObject) {
+		"""
+		ref.test = unknown
+		return ref.test
+		"""
+	}
+}
+class AnyFunction {
+
+}
+
+class AnyObject {
+	vtable: X
+	layout: x
+}
+
+class AnyITable {
+	swim: SwimITable
+}
+
+class AnimalVTable {
+	name()
+}
+class AnimalITable {
+	get_x: GetXITable,
+	set_x: SetXITable
+}
+
+
+extern fn request(time: f32): () / [Asynchronous<i32>, TimeOutError];
+async fn test() -> Result<(), TimeOutError> {
+	let a = await request(1)?
+	let b = await request(2)?
+	print(a + b)
+}
+
+extern fn request(time: f32, async: Continuation<i32>, error: Continuation<TimeOutError>)
+fn test(timeout: Continuation<TimeOutError>) / Print {
+	let a;
+	let b;
+	request(
+		1,
+		{
+			a = result
+			request(
+				2,
+				{
+					b = result
+					print(a + b)
+				},
+				timeout
+			)
+		},
+		timeout
+	)
+}
+
+catch test() {
+	Async(i32) => {
+
+	}
+}
+
+
+(func $generator
+  (local $i i32)
+  (local.set $i (i32.const 100))
+  (loop $l
+    ;; Suspend execution, pass current value of $i to consumer
+    (suspend $gen (local.get $i))
+    ;; Decrement $i and exit loop once $i reaches 0
+    (local.tee $i (i32.sub (local.get $i) (i32.const 1)))
+    (br_if $l)
+  )
+)
+
+sequence fn generator(): i32 {
+	let i: i32 = 100
+	loop {
+		yield i
+		i -= 1
+		if i == 0 {
+			break
+		}
+	}
+}
+
+(func $consumer
+ (local $c (ref $ct))
+ ;; Create continuation executing function $generator.
+ ;; Execution only starts when resumed for the first time.
+ (local.set $c (cont.new $ct (ref.func $generator)))
+
+ (loop $loop
+   (block $on_gen (result i32 (ref $ct))
+     ;; Resume continuation $c
+     (resume $ct (on $gen $on_gen) (local.get $c))
+     ;; $generator returned: no more data
+     (return)
+   )
+   ;; Generator suspended, stack now contains [i32 (ref $ct)]
+   ;; Save continuation to resume it in the next iteration
+   (local.set $c)
+   ;; Stack now contains the i32 value produced by $generator
+   (call $print)
+
+   (br $loop)
+ )
+)
+
+
+typus Generator<T> = Coroutine<(), Suspend=T>;
+
+@.compiler_hack
+trait Coroutine<G> {
+	--- (tag $Coroutine.Suspend (param i32))
+	typus Suspend;
+	--- (type $Coroutine.Resume (func))
+    --- (type $Coroutine (cont $Coroutine.Resume))
+	typus Returned;
+	asm state(self, given: G) -> CoroutineState<Self::Suspend, Self::Returned> {
+		"""
+		;; (param $self (ref $Coroutine))
+		;; (param $given anyref)
+		(block $on_resume (result $T (ref $Coroutine))
+			;; resume continuation
+			(resume $Coroutine (on $Coroutine.Suspend $on_resume) (local.get $self))
+			;; no more data
+			(return) ;; CoroutineState::Complete
+		)
+		(local.set $self)
+		(return)     ;; CoroutineState::Complete
+		"""
+	}
+}
+
+enums CoroutineState<T, F> {
+    Suspended {
+        suspend: T,
+    },
+    Completed {
+        complete: F,
+    }
+}
+
+
+
+pub trait Coroutine<R = ()> {
+    type Yield;
+    type Return;
+
+    // Required method
+    fn resume(
+        self: Pin<&mut Self>,
+        arg: R,
+    ) -> CoroutineState<Self::Yield, Self::Return>;
+}
+
+
+
+fn consumer() {
+	let mut c: Sequence<i32> = generator()
+	loop {
+		let mut v: i32;
+		match c.next() {
+			Some(),
+			None => {
+				return
+			}
+		}
+		print(v)
+	}
+}

@@ -1,11 +1,11 @@
 [package]
-name = "mini-java"
+name = "mini-kotlin"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 oak-core = { path = "../../../oaks/projects/oak-core" }
-oak-java = { path = "../../../oaks/examples/oak-java" }
+oak-kotlin = { path = "../../../oaks/examples/oak-kotlin" }
 chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
@@ -30,12 +30,12 @@ serde_json = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 
 [[bin]]
-name = "javac"
-path = "bin/javac.rs"
+name = "kotlinc"
+path = "bin/kotlinc.rs"
 
 [[bin]]
-name = "java"
-path = "bin/java.rs"
+name = "kotlin"
+path = "bin/kotlin.rs"
 
 [dev-dependencies]
 tempfile = "3.3"

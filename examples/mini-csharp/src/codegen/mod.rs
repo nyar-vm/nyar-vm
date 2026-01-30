@@ -1,6 +1,6 @@
-//! Java 到 Nyar 字节码的翻译器
+//! CSharp 到 Nyar 字节码的翻译器
 
-use crate::{JavaResult, JavaError};
+use crate::{CSharpResult, CSharpError};
 use chomsky_source::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree};
 use chomsky_extract::{Backend, BackendArtifact, IKunExtractor};
@@ -22,7 +22,7 @@ impl NyarBackend {
         }
     }
 
-    fn lower_tree(&mut self, tree: &IKunTree) -> JavaResult<Vec<u8>> {
+    fn lower_tree(&mut self, tree: &IKunTree) -> CSharpResult<Vec<u8>> {
         let mut code = Vec::new();
         match tree {
             IKunTree::Constant(v) => {
@@ -218,12 +218,12 @@ impl NyarTranslator {
         Self
     }
 
-    pub fn translate_to_graph(&self, ast: &JavaRoot, egraph: &mut EGraph<IKun, ConstraintAnalysis>) -> JavaResult<Id> {
+    pub fn translate_to_graph(&self, ast: &JavaRoot, egraph: &mut EGraph<IKun, ConstraintAnalysis>) -> CSharpResult<Id> {
         let mut builder = IntentBuilder::new(egraph);
         self.translate_root(&mut builder, ast)
     }
 
-    pub fn translate(&self, ast: &JavaRoot) -> JavaResult<NyarModule> {
+    pub fn translate(&self, ast: &JavaRoot) -> CSharpResult<NyarModule> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
@@ -243,7 +243,7 @@ impl NyarTranslator {
         Ok(backend.module)
     }
 
-    fn translate_root(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, ast: &JavaRoot) -> JavaResult<Id> {
+    fn translate_root(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, ast: &JavaRoot) -> CSharpResult<Id> {
         let mut items = Vec::new();
         for item in &ast.items {
             let id = match item {
@@ -270,7 +270,7 @@ impl NyarTranslator {
         Ok(builder.seq(items, Loc::new(0, 0, 0)))
     }
 
-    fn translate_class(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, class: &ClassDeclaration) -> JavaResult<Id> {
+    fn translate_class(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, class: &ClassDeclaration) -> CSharpResult<Id> {
         let loc = Loc::new(0, class.span.start as u32, class.span.end as u32);
         let name_id = builder.string(&class.name, loc.clone());
 
@@ -287,7 +287,7 @@ impl NyarTranslator {
         Ok(builder.extension("class", vec![name_id, members_id], loc))
     }
 
-    fn translate_field(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, field: &FieldDeclaration) -> JavaResult<Id> {
+    fn translate_field(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, field: &FieldDeclaration) -> CSharpResult<Id> {
         let loc = Loc::new(0, field.span.start as u32, field.span.end as u32);
         let name_id = builder.string(&field.name, loc.clone());
         let type_id = builder.string(&field.r#type, loc.clone());
@@ -295,7 +295,7 @@ impl NyarTranslator {
         Ok(builder.extension("field", vec![name_id, type_id], loc))
     }
 
-    fn translate_method(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, method: &MethodDeclaration) -> JavaResult<Id> {
+    fn translate_method(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, method: &MethodDeclaration) -> CSharpResult<Id> {
         let loc = Loc::new(0, method.span.start as u32, method.span.end as u32);
         let name_id = builder.string(&method.name, loc.clone());
         let ret_id = builder.string(&method.return_type, loc.clone());
@@ -318,7 +318,7 @@ impl NyarTranslator {
         Ok(builder.extension("method", vec![name_id, ret_id, params_id, body_id], loc))
     }
 
-    fn translate_statement(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, stmt: &Statement) -> JavaResult<Id> {
+    fn translate_statement(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, stmt: &Statement) -> CSharpResult<Id> {
         match stmt {
             Statement::Expression(expr) => self.translate_expression(builder, expr),
             Statement::Return(expr) => {
@@ -339,7 +339,7 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_expression(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, expr: &Expression) -> JavaResult<Id> {
+    fn translate_expression(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, expr: &Expression) -> CSharpResult<Id> {
         match expr {
             Expression::Literal(lit) => match lit {
                 Literal::Integer(i) => Ok(builder.constant(*i, Loc::new(0, 0, 0))),

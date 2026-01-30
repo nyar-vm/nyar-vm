@@ -151,6 +151,10 @@ impl NyarTranslator {
         
         for &item in items {
             let node_class = egraph.get_class(item);
+            println!("Translate: processing item {:?}: {:?}", item, node_class.nodes);
+            for entry in egraph.classes.iter() {
+                println!("  Class {:?}: {:?}", entry.key(), entry.value().nodes);
+            }
             let mut handled_as_special = false;
             
             for node in &node_class.nodes {
