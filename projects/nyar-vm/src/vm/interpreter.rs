@@ -1100,48 +1100,48 @@ impl NyarVM {
                 }
                 Instruction::StringLenBytes => {
                     let v = self.pop()?;
-                    let n = unsafe { v.as_string().len() } as i64;
+                    let n = v.try_as_str().ok_or(VmError::InvalidOpcode)?.len() as i64;
                     self.push(Value::int(n));
                 }
                 Instruction::StringLenChars => {
                     let v = self.pop()?;
-                    let n = unsafe { v.as_string().chars().count() } as i64;
+                    let n = v.try_as_str().ok_or(VmError::InvalidOpcode)?.chars().count() as i64;
                     self.push(Value::int(n));
                 }
                 Instruction::StringEq => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_string() == rhs.as_string() };
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? == rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringNe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_string() != rhs.as_string() };
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? != rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringLt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_string() < rhs.as_string() };
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? < rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringLe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_string() <= rhs.as_string() };
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? <= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringGt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_string() > rhs.as_string() };
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? > rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringGe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_string() >= rhs.as_string() };
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? >= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringSubstr => {

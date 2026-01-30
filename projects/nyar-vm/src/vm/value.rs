@@ -491,13 +491,55 @@ impl Value {
         let ptr = self.payload() as *const GcBox<String>;
         &(*ptr).data
     }
+    pub fn try_as_str(&self) -> Option<&str> {
+        if self.is_string() {
+            Some(unsafe { self.as_string().as_str() })
+        } else {
+            None
+        }
+    }
     pub unsafe fn as_array<'a>(&self) -> &'a Array {
         let ptr = self.payload() as *const GcBox<Array>;
         &(*ptr).data
     }
+    pub fn try_as_array(&self) -> Option<&Array> {
+        if self.is_array() {
+            Some(unsafe { self.as_array() })
+        } else {
+            None
+        }
+    }
     pub unsafe fn as_bigint<'a>(&self) -> &'a BigInt {
         let ptr = self.payload() as *const GcBox<BigInt>;
         &(*ptr).data
+    }
+    pub fn try_as_bigint(&self) -> Option<&BigInt> {
+        if self.is_bigint() {
+            Some(unsafe { self.as_bigint() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_int(&self) -> Option<i64> {
+        if self.is_int() {
+            Some(self.as_int())
+        } else {
+            None
+        }
+    }
+    pub fn try_as_float(&self) -> Option<f64> {
+        if self.is_float() {
+            Some(self.as_float())
+        } else {
+            None
+        }
+    }
+    pub fn try_as_bool(&self) -> Option<bool> {
+        if self.is_bool() {
+            Some(self.as_bool())
+        } else {
+            None
+        }
     }
 }
 
