@@ -41,7 +41,7 @@ fn from_u128(mut x: u128) -> Vec<u8> {
 }
 
 fn key_is_string(v: &Value) -> bool {
-    v.tag == ValueTag::String
+    v.tag() == ValueTag::String
 }
 
 fn cmp_abs(a: &[u8], b: &[u8]) -> i8 {
@@ -205,14 +205,12 @@ impl NyarVM {
 
     fn register_java_builtins(&mut self) {
         let out = Value::dyn_object();
-        let out_ptr = unsafe { out.data.ptr as *mut DynObject };
-        let _out_mut = unsafe { &mut *out_ptr };
 
         // System.out.println
         // For now, System.out is just a DynObject
 
         let system = Value::dyn_object();
-        let system_ptr = unsafe { system.data.ptr as *mut DynObject };
+        let system_ptr = unsafe { system.as_dyn_object() as *const DynObject as *mut DynObject };
         let system_mut = unsafe { &mut *system_ptr };
         system_mut.entries.insert("out".to_string(), out);
 
@@ -3188,10 +3186,10 @@ impl NyarVM {
                 Instruction::ResumeWith => {
                     let result = self.pop()?;
                     let cont_v = self.pop()?;
-                    if cont_v.tag != ValueTag::Continuation {
+                    if cont_v.tag() != ValueTag::Continuation {
                         return Err(VmError::InvalidOpcode);
                     }
-                    let cont = unsafe { cont_v.as_cont().clone() };
+                    let cont = unsafe { cont_v.as_continuation().clone() };
                     if self.frames.is_empty() {
                         return Err(VmError::StackUnderflow);
                     }
@@ -3204,9 +3202,9 @@ impl NyarVM {
                 }
                 Instruction::Await => {
                     let v = self.pop()?;
-                    if v.tag == ValueTag::Closure {
-                        let closure_ptr = unsafe { v.data.ptr as *mut crate::vm::value::Closure };
-                        let closure = unsafe { &*closure_ptr };
+                    if v.tag() == ValueTag::Closure {
+                        let closure = unsafe { v.as_closure() };
+                        let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
                         let chunk = self.modules[closure.module_idx]
                             .chunks
@@ -3236,9 +3234,9 @@ impl NyarVM {
                 }
                 Instruction::BlockOn => {
                     let v = self.pop()?;
-                    if v.tag == ValueTag::Closure {
-                        let closure_ptr = unsafe { v.data.ptr as *mut crate::vm::value::Closure };
-                        let closure = unsafe { &*closure_ptr };
+                    if v.tag() == ValueTag::Closure {
+                        let closure = unsafe { v.as_closure() };
+                        let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
                         let chunk = self.modules[closure.module_idx]
                             .chunks

@@ -17,17 +17,29 @@ graph TD
     B -->|Semantic| C(HIR: Semantic Graph);
     C -->|Linearize| D(CFG: Control Flow Graph);
     D -->|SSA Transform| E(SSA: Static Single Assignment);
+    
+    subgraph Optimization [Chomsky Universal Optimization]
+        E <-->|Lifting / Lowering| U(UIR: Universal IR / Intents);
+        U -->|Equality Saturation| U;
+    end
+    
     E -->|Lowering| F(LIR: Low-level Stack Machine);
     F -->|Emit| G[WASM / Bytecode];
 
     style D fill:#fff2cc,stroke:#ffbf00
     style E fill:#f8cecc,stroke:#b85450
+    style U fill:#dae8fc,stroke:#6c8ebf
 ```
 
 - **AST -> HIR**: 引入作用域、名稱解析和類型信息。
 - **HIR -> CFG**: 將結構化代碼（如 `if`, `while`）轉換為基本塊和顯式跳轉。
 - **CFG -> SSA**: 變量版本化、插入 Phi 節點，便於數據流分析。
+- **Chomsky 普遍優化**: 
+    - **語義提升 (Lifting)**: 將 SSA 或更高層的 IR 提升為 **UIR (Universal IR)**。
+    - **等價飽和 (Equality Saturation)**: 利用 E-Graph 引擎在等價空間中搜索最優路徑。
+    - **成本模型提取**: 根據目標後端（如 `nyar-vm`）的成本模型提取最優實現。
 - **SSA -> LIR**: SSA 銷毀、Phi 消除，以及向下放到棧式指令。
+- **LIR -> Emit**: 最終生成可執行的字節碼。
 
 ### 1.2 開發者體驗 (DX) 優先
 

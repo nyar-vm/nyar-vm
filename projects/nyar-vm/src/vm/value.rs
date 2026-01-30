@@ -153,25 +153,25 @@ impl Value {
         format!("{}", self)
     }
     pub unsafe fn as_closure<'a>(&self) -> &'a Closure {
-        transmute(self.payload())
+        &*(self.payload() as *const Closure)
     }
     pub unsafe fn as_object<'a>(&self) -> &'a Object {
-        transmute(self.payload())
+        &*(self.payload() as *const Object)
     }
     pub unsafe fn as_dyn_object<'a>(&self) -> &'a DynObject {
-        transmute(self.payload())
+        &*(self.payload() as *const DynObject)
     }
     pub unsafe fn as_list<'a>(&self) -> &'a List {
-        transmute(self.payload())
+        &*(self.payload() as *const List)
     }
     pub unsafe fn as_tuple<'a>(&self) -> &'a Tuple {
-        transmute(self.payload())
+        &*(self.payload() as *const Tuple)
     }
     pub unsafe fn as_effect<'a>(&self) -> &'a Effect {
-        transmute(self.payload())
+        &*(self.payload() as *const Effect)
     }
     pub unsafe fn as_continuation<'a>(&self) -> &'a Continuation {
-        transmute(self.payload())
+        &*(self.payload() as *const Continuation)
     }
     pub fn int(v: i64) -> Self {
         Self::encode(ValueTag::Int, v as u64)

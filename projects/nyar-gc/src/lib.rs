@@ -1,5 +1,5 @@
 use std::alloc::{self, Layout};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ptr::NonNull;
 
 /// A trait for types that can be traced by the garbage collector.
@@ -20,6 +20,8 @@ pub struct GcHeader {
     pub(crate) next: Cell<Option<NonNull<GcHeader>>>,
     /// Function to drop and deallocate the object.
     pub(crate) drop_and_dealloc: unsafe fn(NonNull<GcHeader>),
+    /// Function to trace the object.
+    pub(crate) trace_object: unsafe fn(NonNull<GcHeader>),
 }
 
 #[repr(C)]
@@ -49,8 +51,12 @@ impl<T: Trace + 'static> std::ops::Deref for Gc<T> {
 
 /// The garbage collector itself.
 pub struct NyarGc {
-    /// Head of the linked list of all allocated objects.
-    head: Cell<Option<NonNull<GcHeader>>>,
+    /// Head of the linked list of young generation objects.
+    young_head: Cell<Option<NonNull<GcHeader>>>,
+    /// Head of the linked list of old generation objects.
+    old_head: Cell<Option<NonNull<GcHeader>>>,
+    /// Objects in the old generation that may point to young generation.
+    remembered_set: RefCell<Vec<NonNull<GcHeader>>>,
     /// Total number of bytes allocated.
     allocated_bytes: Cell<usize>,
     /// Threshold for the next collection cycle.
@@ -61,7 +67,9 @@ impl NyarGc {
     /// Create a new garbage collector.
     pub fn new() -> Self {
         Self {
-            head: Cell::new(None),
+            young_head: Cell::new(None),
+            old_head: Cell::new(None),
+            remembered_set: RefCell::new(Vec::new()),
             allocated_bytes: Cell::new(0),
             threshold: Cell::new(1024 * 1024), // 1MB default threshold
         }
@@ -80,17 +88,41 @@ impl NyarGc {
                 &mut (*ptr).header,
                 GcHeader {
                     marked: Cell::new(false),
-                    next: Cell::new(self.head.get()),
+                    generation: Cell::new(0), // New objects are always in young generation
+                    dirty: Cell::new(false),
+                    next: Cell::new(self.young_head.get()),
                     drop_and_dealloc: Self::drop_and_dealloc::<T>,
+                    trace_object: Self::trace_object::<T>,
                 },
             );
             std::ptr::write(&mut (*ptr).data, value);
 
             let gc_box = NonNull::new_unchecked(ptr);
-            self.head.set(Some(NonNull::new_unchecked(&mut (*ptr).header)));
+            self.young_head.set(Some(NonNull::new_unchecked(&mut (*ptr).header)));
             self.allocated_bytes.set(self.allocated_bytes.get() + layout.size());
 
+            if self.allocated_bytes.get() > self.threshold.get() {
+                // Trigger minor collection first
+                self.collect_minor(|| {});
+            }
+
             Gc { ptr: gc_box }
+        }
+    }
+
+    /// Write barrier: should be called when an old object is modified to point to a young object.
+    pub fn write_barrier<T: Trace + 'static, U: Trace + 'static>(&self, parent: Gc<T>, child: Gc<U>) {
+        unsafe {
+            let parent_header = &parent.ptr.as_ref().header;
+            let child_header = &child.ptr.as_ref().header;
+
+            // If parent is old and child is young, add parent to remembered set
+            if parent_header.generation.get() > 0 && child_header.generation.get() == 0 {
+                if !parent_header.dirty.get() {
+                    parent_header.dirty.set(true);
+                    self.remembered_set.borrow_mut().push(NonNull::new_unchecked(parent_header as *const _ as *mut _));
+                }
+            }
         }
     }
 
@@ -103,6 +135,11 @@ impl NyarGc {
         alloc::dealloc(ptr.as_ptr() as *mut u8, layout);
     }
 
+    unsafe fn trace_object<T: Trace + 'static>(header_ptr: NonNull<GcHeader>) {
+        let ptr = header_ptr.cast::<GcBox<T>>();
+        (*ptr.as_ptr()).data.trace();
+    }
+
     /// Run a collection cycle.
     ///
     /// # Safety
@@ -111,32 +148,121 @@ impl NyarGc {
     where
         F: FnOnce(),
     {
-        // 1. Marking phase
-        mark_roots();
-
-        // 2. Sweeping phase
-        self.sweep();
+        // For simplicity, a full collect is a major collection
+        self.collect_major(mark_roots);
     }
 
-    unsafe fn sweep(&self) {
+    /// Minor collection: only collect young generation.
+    pub unsafe fn collect_minor<F>(&self, mark_roots: F)
+    where
+        F: FnOnce(),
+    {
+        // 1. Mark roots
+        mark_roots();
+
+        // 2. Mark from remembered set (old -> young)
+        for &header_ptr in self.remembered_set.borrow().iter() {
+            let header = header_ptr.as_ref();
+            // Trace the object to mark its young children
+            (header.trace_object)(header_ptr);
+        }
+
+        // 3. Sweep young generation and promote survivors
+        self.sweep_young();
+
+        // 4. Reset remembered set for next cycle
+        // Only keep objects that are still dirty (though in minor GC we usually clear them
+        // and let the write barrier re-add them if they still point to young)
+        let mut remembered = self.remembered_set.borrow_mut();
+        for &header_ptr in remembered.iter() {
+            header_ptr.as_ref().dirty.set(false);
+        }
+        remembered.clear();
+    }
+
+    /// Major collection: collect all generations.
+    pub unsafe fn collect_major<F>(&self, mark_roots: F)
+    where
+        F: FnOnce(),
+    {
+        // 1. Mark roots
+        mark_roots();
+
+        // 2. Sweep everything
+        self.sweep_full();
+
+        // 3. Clear remembered set
+        let mut remembered = self.remembered_set.borrow_mut();
+        for &header_ptr in remembered.iter() {
+            header_ptr.as_ref().dirty.set(false);
+        }
+        remembered.clear();
+
+        // 4. Adjust threshold
+        self.threshold.set(self.allocated_bytes.get() * 2);
+    }
+
+    unsafe fn sweep_young(&self) {
         let mut prev: Option<NonNull<GcHeader>> = None;
-        let mut curr = self.head.get();
+        let mut curr = self.young_head.get();
 
         while let Some(header_ptr) = curr {
             let header = header_ptr.as_ref();
             let next = header.next.get();
 
             if header.marked.get() {
-                // Object is reachable, unmark for next cycle
+                // Object survived! Promote to old generation.
                 header.marked.set(false);
-                prev = Some(header_ptr);
+                header.generation.set(1);
+
+                // Remove from young list
+                if let Some(mut p) = prev {
+                    p.as_mut().next.set(next);
+                } else {
+                    self.young_head.set(next);
+                }
+
+                // Add to old list
+                header.next.set(self.old_head.get());
+                self.old_head.set(Some(header_ptr));
+
                 curr = next;
             } else {
                 // Object is unreachable, free it
                 if let Some(mut p) = prev {
                     p.as_mut().next.set(next);
                 } else {
-                    self.head.set(next);
+                    self.young_head.set(next);
+                }
+
+                // TODO: Update allocated_bytes (needs to know size)
+                (header.drop_and_dealloc)(header_ptr);
+                curr = next;
+            }
+        }
+    }
+
+    unsafe fn sweep_full(&self) {
+        // Sweep young
+        self.sweep_young();
+
+        // Sweep old
+        let mut prev: Option<NonNull<GcHeader>> = None;
+        let mut curr = self.old_head.get();
+
+        while let Some(header_ptr) = curr {
+            let header = header_ptr.as_ref();
+            let next = header.next.get();
+
+            if header.marked.get() {
+                header.marked.set(false);
+                prev = Some(header_ptr);
+                curr = next;
+            } else {
+                if let Some(mut p) = prev {
+                    p.as_mut().next.set(next);
+                } else {
+                    self.old_head.set(next);
                 }
 
                 (header.drop_and_dealloc)(header_ptr);

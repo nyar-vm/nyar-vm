@@ -15,10 +15,10 @@ pub fn perform_effect_internal(
 ) -> Result<Option<Value>, VmError> {
     if name == "LoggerEvent" {
         if let Some(v) = args.last() {
-            let msg = match v.tag {
-                crate::vm::value::ValueTag::Int => format!("{}", unsafe { v.as_int() }),
-                crate::vm::value::ValueTag::Float => format!("{}", unsafe { v.as_float() }),
-                crate::vm::value::ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
+            let msg = match v.tag() {
+                crate::vm::value::ValueTag::Int => format!("{}", v.as_int()),
+                crate::vm::value::ValueTag::Float => format!("{}", v.as_float()),
+                crate::vm::value::ValueTag::Bool => format!("{}", v.as_bool()),
                 crate::vm::value::ValueTag::Null => "null".to_string(),
                 crate::vm::value::ValueTag::String => unsafe { v.as_string().clone() },
                 _ => "<unsupported>".to_string(),
@@ -38,21 +38,19 @@ pub fn perform_effect_internal(
     if name == "add" {
         let a = args.get(0).cloned().unwrap_or(Value::null());
         let b = args.get(1).cloned().unwrap_or(Value::null());
-        let res = unsafe {
-            match (a.tag, b.tag) {
-                (crate::vm::value::ValueTag::Int, crate::vm::value::ValueTag::Int) => {
-                    Value::int(a.as_int() + b.as_int())
-                }
-                (crate::vm::value::ValueTag::Float, crate::vm::value::ValueTag::Float) => {
-                    Value::float(a.as_float() + b.as_float())
-                }
-                (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => {
-                    let mut s = a.as_string().clone();
-                    s.push_str(b.as_string());
-                    Value::string(s)
-                }
-                _ => Value::null(),
+        let res = match (a.tag(), b.tag()) {
+            (crate::vm::value::ValueTag::Int, crate::vm::value::ValueTag::Int) => {
+                Value::int(a.as_int() + b.as_int())
             }
+            (crate::vm::value::ValueTag::Float, crate::vm::value::ValueTag::Float) => {
+                Value::float(a.as_float() + b.as_float())
+            }
+            (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => unsafe {
+                let mut s = a.as_string().clone();
+                s.push_str(b.as_string());
+                Value::string(s)
+            },
+            _ => Value::null(),
         };
         return Ok(Some(res));
     }

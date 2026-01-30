@@ -17,17 +17,29 @@ graph TD
     B -->|Semantic| C(HIR: Semantic Graph);
     C -->|Linearize| D(CFG: Control Flow Graph);
     D -->|SSA Transform| E(SSA: Static Single Assignment);
+    
+    subgraph Optimization [Chomsky Universal Optimization]
+        E <-->|Lifting / Lowering| U(UIR: Universal IR / Intents);
+        U -->|Equality Saturation| U;
+    end
+    
     E -->|Lowering| F(LIR: Low-level Stack Machine);
     F -->|Emit| G[WASM / Bytecode];
 
     style D fill:#fff2cc,stroke:#ffbf00
     style E fill:#f8cecc,stroke:#b85450
+    style U fill:#dae8fc,stroke:#6c8ebf
 ```
 
 - **AST -> HIR**: Introduces scopes, name resolution, and type information.
 - **HIR -> CFG**: Converts structured code (e.g., `if`, `while`) into basic blocks and explicit jumps.
 - **CFG -> SSA**: Versions variables, inserts Phi nodes, and facilitates data flow analysis.
+- **Chomsky Universal Optimization**:
+    - **Lifting**: Lifts SSA or higher-level IR into **UIR (Universal IR)**.
+    - **Equality Saturation**: Uses the E-Graph engine to search for the optimal path in the equivalence space.
+    - **Cost Model Extraction**: Extracts the best implementation based on the cost model of the target backend (e.g., `nyar-vm`).
 - **SSA -> LIR**: SSA destruction, phi elimination, and lowering to stack-based instructions.
+- **LIR -> Emit**: Final generation of executable bytecode.
 
 ### 1.2 Developer Experience (DX) First
 
