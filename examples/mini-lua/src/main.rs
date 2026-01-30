@@ -1,6 +1,8 @@
 //! Mini Lua 语言编译器
 //!
 //! 这是一个类似 Lua 的语言前端演示程序，支持编译到 Gaia 指令
+//!
+//! 注意：目前不支持编译到 .pyc，因为那是 Python 特有的。
 
 use clap::{Arg, Command};
 use std::{fs, path::Path};
@@ -79,45 +81,32 @@ fn main() {
                 if compile_gaia_json {
                     println!("{}", serde_json::to_string_pretty(&module).unwrap());
                 } else {
-                    println!("{:#?}", module);
+                    println!("{}", module);
                 }
 
                 if let Some(out_path) = output_file {
-                    let data = if out_path.ends_with(".json") {
-                        serde_json::to_string_pretty(&module).unwrap().into_bytes()
-                    } else {
-                        // 暂时使用调试输出
-                        format!("{:#?}", module).into_bytes()
-                    };
-                    if let Err(e) = fs::write(out_path, data) {
+                    let json = serde_json::to_string_pretty(&module).unwrap();
+                    if let Err(e) = fs::write(out_path, json) {
                         eprintln!("错误：无法写入文件 '{}': {}", out_path, e);
+                        std::process::exit(1);
                     }
+                    println!("成功编译到 {}", out_path);
                 }
             }
             Err(e) => {
-                eprintln!("编译错误: {}", e);
+                eprintln!("编译 Gaia 错误: {:?}", e);
                 std::process::exit(1);
             }
         }
         return;
     }
 
-    // 默认行为：显示解析成功信息
-    match frontend.parse_to_ast(&source_code) {
-        Ok(program) => {
-            println!("✅ 解析成功！");
-            println!("文件: {}", input_file);
-            println!("顶级语句数量: {}", program.statements.len());
-        }
+    // 默认：尝试解析并输出成功信息
+    match frontend.parse_to_egraph(&source_code) {
+        Ok(_) => println!("解析成功！"),
         Err(e) => {
-            eprintln!("解析错误: {:?}", e);
+            eprintln!("解析错误: {}", e);
             std::process::exit(1);
         }
     }
-
-    println!("\n💡 提示：");
-    println!("  使用 --ast 查看抽象语法树");
-    println!("  使用 --tokens 查看词法分析结果");
-    println!("  使用 --gaia 编译到 Gaia 指令");
-    println!("  使用 --gaia-json 编译到 Gaia 指令 (JSON 格式)");
 }

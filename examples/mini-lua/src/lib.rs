@@ -4,7 +4,7 @@
 
 pub mod codegen;
 
-use oak_lua::{ast::LuaRoot, LuaLanguage, LuaParser};
+use oak_lua::{ast::LuaRoot, LuaLanguage, LuaBuilder, LuaParser};
 use codegen::GaiaTranslator;
 use gaia_assembler::program::GaiaModule;
 use gaia_types::GaiaError;
@@ -32,15 +32,15 @@ impl MiniLuaFrontend {
     pub fn parse_to_egraph(&mut self, source: &str) -> Result<Id, String> {
         let source_text = SourceText::new(source);
         let mut builder = chomsky_uir::builder::IntentBuilder::new(&mut self.optimizer.egraph);
-        let parser = LuaParser::new(&source_text);
-        parser.parse(&mut builder).map_err(|e| format!("{:?}", e))
+        let frontend = LuaBuilder::new(&source_text);
+        frontend.parse(&mut builder).map_err(|e| format!("{:?}", e))
     }
 
     /// 解析 Lua 源代码为 AST (用于 --ast 调试)
     pub fn parse_to_ast(&mut self, source: &str) -> Result<LuaRoot, String> {
         let source_text = SourceText::new(source);
-        let parser = LuaParser::new(&source_text);
-        parser.parse_to_ast().map_err(|e| format!("{:?}", e))
+        let mut parser = LuaParser::new(&source_text);
+        Ok(parser.parse_root())
     }
 
     /// 将 Lua 源代码编译为 Gaia 程序
@@ -62,22 +62,7 @@ impl MiniLuaFrontend {
     pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<oak_lua::kind::LuaSyntaxKind>>, OakError> {
         let config = LuaLanguage;
         let lexer = oak_lua::lexer::LuaLexer::new(&config);
-        lexer.tokenize(source)
-    }
-
-    /// 获取翻译器的可变引用
-    pub fn translator_mut(&mut self) -> &mut GaiaTranslator {
-        &mut self.translator
-    }
-
-    /// 获取翻译器的不可变引用
-    pub fn translator(&self) -> &GaiaTranslator {
-        &self.translator
-    }
-}
-
-impl Default for MiniLuaFrontend {
-    fn default() -> Self {
-        Self::new()
+        let source_text = SourceText::new(source);
+        Ok(lexer.tokenize(&source_text))
     }
 }

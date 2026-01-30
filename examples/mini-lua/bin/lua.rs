@@ -7,15 +7,11 @@ use oak_repl::{OakRepl, ReplHandler, HandleResult};
 use oak_highlight::{OakHighlighter, Theme, HighlightResult};
 
 #[derive(Parser, Debug)]
-#[command(name = "luac", version = "0.1.0", author = "Gaia Project", about = "Mini Lua Compiler (Standard)")]
+#[command(name = "lua", version = "0.1.0", author = "Gaia Project", about = "Mini Lua Compiler")]
 struct Args {
     /// The input Lua source file (.lua). If not provided, enters REPL mode.
     #[arg(index = 1)]
     input: Option<String>,
-
-    /// Compile to Lua bytecode (.luac) instead of executing
-    #[arg(long)]
-    compile: bool,
 
     /// Output file path
     #[arg(short, long, value_name = "FILE")]
@@ -66,16 +62,16 @@ impl LuaReplHandler {
         if show_ast {
             match frontend.parse_to_ast(source) {
                 Ok(program) => println!("{:#?}", program),
-                Err(e) => eprintln!("luac: error: {:?}", e),
+                Err(e) => eprintln!("lua: error: {:?}", e),
             }
             return Ok(());
         }
 
         match frontend.compile_to_gaia(source) {
             Ok(_module) => {
-                println!("Gaia module generated successfully. JIT execution is not yet implemented in this standard driver.");
+                println!("Gaia module generated successfully.");
             }
-            Err(e) => eprintln!("luac: error: {}", e),
+            Err(e) => eprintln!("lua: error: {}", e),
         }
         Ok(())
     }

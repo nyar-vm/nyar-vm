@@ -4,12 +4,36 @@
 
 ## 核心特性
 
-- **动态类型**: 数值、字符串、布尔、nil。
-- **表 (Table)**: 核心数据结构，支持数组和关联数组模式。
-- **函数**: 支持第一类函数、匿名函数和闭包。
-- **控制流**: 完整的 `if-then-else`, `for`, `while`, `repeat-until`。
+- **动态类型**: 运行时处理数值、字符串、布尔和 `nil`。
+- **表 (Table)**: Lua 的灵魂，支持关联数组与数组模式的混合存储。
+- **闭包**: 完整的 lexical scoping 支持，支持上值（Upvalues）捕获。
+- **元表 (Metatables)**: 模拟 Lua 的运算符重载与原型继承机制。
 
-## 编译器功能
+## 编译与 Lowering 流程
 
-- 生成 Gaia 指令集 (Gaia IR)。
-- 支持表操作的深度优化。
+Mini Lua 采用双层 IR 转换策略以实现深度优化：
+
+1. **解析**: 使用 `oak-lua` 将源码解析为 UIR。
+2. **Gaia IR 生成 (Lowering)**:
+   - 使用 `GaiaTranslator` 将 `IKunTree` 转换为 `Gaia` 指令。
+   - 局部变量被映射到 `GaiaFunction` 的寄存器槽位。
+   - 字符串常量被提取到 `GaiaModule` 的常量池中。
+3. **块与跳转**:
+   - 将 Lua 的控制流映射为 `GaiaBlock`。
+   - 通过 `GaiaTerminator` 实现循环与分支跳转。
+
+## 对象模型处理
+
+- **表实现**: 在 Nyar VM 中，Lua Table 映射为高度优化的哈希表。
+- **索引操作**: `a.b` 或 `a[b]` 映射为 `GetField` 或 `InvokeMethod`（当涉及元方法时）。
+- **环境 (Env)**: 全局变量存储在特殊的 `_G` 表中，通过词法环境层层查找。
+
+## Builtin 与 FFI 实现
+
+- **标准库**: 提供 `print`, `type`, `pairs`, `ipairs` 等核心函数的内建实现。
+- **C API 模拟**: 
+   - 允许通过 Nyar VM 的栈操作接口与 Rust/C 函数交互。
+   - 支持动态加载 `.so`/`.dll` 并将其中的函数注册到 Lua 环境。
+- **闭包实现**: 
+   - 使用 `ManagedInstruction` 处理闭包创建。
+   - VM 自动管理捕获变量的生命周期。
