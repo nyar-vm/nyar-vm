@@ -144,13 +144,6 @@ impl GcBlock {
         }
     }
 
-    fn is_card_dirty(&self, card_idx: usize) -> bool {
-        let word_idx = card_idx / 64;
-        let bit_idx = card_idx % 64;
-        let mask = 1u64 << bit_idx;
-        (self.get_header().card_table[word_idx].load(Ordering::Acquire) & mask) != 0
-    }
-
     fn clear_cards(&self) {
         let header = self.get_header();
         for word in header.card_table.iter() {
@@ -334,14 +327,6 @@ pub enum GcState {
 }
 
 impl GcState {
-    fn from_u8(v: u8) -> Self {
-        match v {
-            0 => GcState::Idle,
-            1 => GcState::Marking,
-            2 => GcState::Sweeping,
-            _ => unreachable!(),
-        }
-    }
 }
 
 struct SweepState {
@@ -622,19 +607,23 @@ impl NyarGc {
         mark_roots(&mut ctx);
 
         // 2. Mark from dirty cards in old generation (old -> young)
-        let mut curr = self.old_head.load(Ordering::Relaxed);
+        let mut curr = self.old_head.load(Ordering::Acquire);
         while let Some(header_ptr) = NonNull::new(curr) {
             let header = header_ptr.as_ref();
-            if let Some(block_idx) = self.find_block(header_ptr.as_ptr() as *const u8) {
-                let blocks = self.blocks.lock().unwrap();
-                let block = &blocks[block_idx];
-                let offset = header_ptr.as_ptr() as usize - block.ptr.as_ptr() as usize;
-                let card_idx = offset / CARD_SIZE;
-                if block.is_card_dirty(card_idx) {
-                    (header.trace_object)(header_ptr, &mut ctx);
-                }
+            // Objects in old generation are 1MB aligned to their blocks
+            let base = (header_ptr.as_ptr() as usize) & !(BLOCK_SIZE - 1);
+            let block_header = unsafe { &*(base as *const GcBlockHeader) };
+            
+            let offset = header_ptr.as_ptr() as usize - base;
+            let card_idx = offset / CARD_SIZE;
+            let word_idx = card_idx / 64;
+            let bit_idx = card_idx % 64;
+            let mask = 1u64 << bit_idx;
+            
+            if (block_header.card_table[word_idx].load(Ordering::Acquire) & mask) != 0 {
+                unsafe { (header.trace_object)(header_ptr, &mut ctx); }
             }
-            curr = header.next.load(Ordering::Relaxed);
+            curr = header.next.load(Ordering::Acquire);
         }
 
         // 3. Process gray stack

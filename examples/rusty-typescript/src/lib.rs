@@ -12,6 +12,7 @@ pub mod errors;
 
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IntentBuilder, Loc, Id};
+use chomsky_cost;
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};

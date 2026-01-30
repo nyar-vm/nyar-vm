@@ -824,67 +824,67 @@ impl NyarVM {
                 }
                 Instruction::I64Neg => {
                     let v = self.pop()?;
-                    let r = unsafe { -(v.as_int() as i64) };
+                    let r = -(v.as_int() as i64);
                     self.push(Value::int(r));
                 }
                 Instruction::I64Eq => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64) == (rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64) == (rhs.as_int() as i64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64Ne => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64) != (rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64) != (rhs.as_int() as i64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64LtS => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64) < (rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64) < (rhs.as_int() as i64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64LtU => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as u64) < (rhs.as_int() as u64) };
+                    let r = (lhs.as_int() as u64) < (rhs.as_int() as u64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64LeS => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64) <= (rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64) <= (rhs.as_int() as i64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64LeU => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as u64) <= (rhs.as_int() as u64) };
+                    let r = (lhs.as_int() as u64) <= (rhs.as_int() as u64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64GtS => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64) > (rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64) > (rhs.as_int() as i64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64GtU => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as u64) > (rhs.as_int() as u64) };
+                    let r = (lhs.as_int() as u64) > (rhs.as_int() as u64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64GeS => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64) >= (rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64) >= (rhs.as_int() as i64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64GeU => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as u64) >= (rhs.as_int() as u64) };
+                    let r = (lhs.as_int() as u64) >= (rhs.as_int() as u64);
                     self.push(Value::bool(r));
                 }
                 Instruction::I64ToF32S => {
@@ -1593,10 +1593,10 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.tag() == ValueTag::Int && rhs.tag() == ValueTag::Int {
+                                    if lhs.is_int() && rhs.is_int() {
                                         self.push(Value::bool(lhs.as_int() < rhs.as_int()));
-                                    } else if lhs.tag() == ValueTag::Float
-                                        && rhs.tag() == ValueTag::Float
+                                    } else if lhs.is_float()
+                                        && rhs.is_float()
                                     {
                                         self.push(Value::bool(lhs.as_float() < rhs.as_float()));
                                     } else {
@@ -1610,10 +1610,10 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.tag() == ValueTag::Int && rhs.tag() == ValueTag::Int {
+                                    if lhs.is_int() && rhs.is_int() {
                                         self.push(Value::bool(lhs.as_int() <= rhs.as_int()));
-                                    } else if lhs.tag() == ValueTag::Float
-                                        && rhs.tag() == ValueTag::Float
+                                    } else if lhs.is_float()
+                                        && rhs.is_float()
                                     {
                                         self.push(Value::bool(lhs.as_float() <= rhs.as_float()));
                                     } else {
@@ -1627,10 +1627,10 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.tag() == ValueTag::Int && rhs.tag() == ValueTag::Int {
+                                    if lhs.is_int() && rhs.is_int() {
                                         self.push(Value::bool(lhs.as_int() > rhs.as_int()));
-                                    } else if lhs.tag() == ValueTag::Float
-                                        && rhs.tag() == ValueTag::Float
+                                    } else if lhs.is_float()
+                                        && rhs.is_float()
                                     {
                                         self.push(Value::bool(lhs.as_float() > rhs.as_float()));
                                     } else {
@@ -1644,10 +1644,10 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.tag() == ValueTag::Int && rhs.tag() == ValueTag::Int {
+                                    if lhs.is_int() && rhs.is_int() {
                                         self.push(Value::bool(lhs.as_int() >= rhs.as_int()));
-                                    } else if lhs.tag() == ValueTag::Float
-                                        && rhs.tag() == ValueTag::Float
+                                    } else if lhs.is_float()
+                                        && rhs.is_float()
                                     {
                                         self.push(Value::bool(lhs.as_float() >= rhs.as_float()));
                                     } else {
@@ -1661,12 +1661,12 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let ba = if lhs.tag() == ValueTag::Bool {
+                                    let ba = if lhs.is_bool() {
                                         lhs.as_bool()
                                     } else {
                                         false
                                     };
-                                    let bb = if rhs.tag() == ValueTag::Bool {
+                                    let bb = if rhs.is_bool() {
                                         rhs.as_bool()
                                     } else {
                                         false
@@ -1680,12 +1680,12 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let ba = if lhs.tag() == ValueTag::Bool {
+                                    let ba = if lhs.is_bool() {
                                         lhs.as_bool()
                                     } else {
                                         false
                                     };
-                                    let bb = if rhs.tag() == ValueTag::Bool {
+                                    let bb = if rhs.is_bool() {
                                         rhs.as_bool()
                                     } else {
                                         false
@@ -2636,7 +2636,7 @@ impl NyarVM {
                 Instruction::PushElementRight => {
                     let val = self.pop()?;
                     let list_v = self.pop()?;
-                    if list_v.tag() == ValueTag::List {
+                    if list_v.is_list() {
                         let list_mut = unsafe { list_v.as_list_mut() };
                         list_mut.items.push(val);
                         self.push(Value::null());
