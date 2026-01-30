@@ -1,4 +1,4 @@
-use nyar_gc::{Trace, NyarGc, GcHeader, GcBox, MarkContext};
+use nyar_gc::{GcBox, GcHeader, MarkContext, NyarGc, Trace};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::NonNull;
@@ -395,9 +395,18 @@ impl Value {
             ValueTag::Null => false,
             ValueTag::Int => self.as_int() != 0,
             ValueTag::String => self.try_as_str().map(|s| !s.is_empty()).unwrap_or(true),
-            ValueTag::Array => self.try_as_array().map(|a| !a.items.is_empty()).unwrap_or(true),
-            ValueTag::List => self.try_as_list().map(|l| !l.items.is_empty()).unwrap_or(true),
-            ValueTag::DynObject => self.try_as_dyn_object().map(|d| !d.entries.is_empty()).unwrap_or(true),
+            ValueTag::Array => self
+                .try_as_array()
+                .map(|a| !a.items.is_empty())
+                .unwrap_or(true),
+            ValueTag::List => self
+                .try_as_list()
+                .map(|l| !l.items.is_empty())
+                .unwrap_or(true),
+            ValueTag::DynObject => self
+                .try_as_dyn_object()
+                .map(|d| !d.entries.is_empty())
+                .unwrap_or(true),
             _ => true,
         }
     }
@@ -439,7 +448,10 @@ impl Value {
         Self::encode(ValueTag::Effect, g.as_ptr() as u64)
     }
     pub fn witness_table(module_idx: usize, methods: Vec<u16>, gc: &NyarGc) -> Self {
-        let g = gc.alloc(WitnessTable { module_idx, methods });
+        let g = gc.alloc(WitnessTable {
+            module_idx,
+            methods,
+        });
         Self::encode(ValueTag::WitnessTable, g.as_ptr() as u64)
     }
     pub fn bigint_from_i64(v: i64, gc: &NyarGc) -> Self {

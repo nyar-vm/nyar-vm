@@ -2,7 +2,7 @@
 //!
 //! 将 UIR (Universal Intermediate Representation) 转换为 Gaia 指令
 
-use chomsky_uir::{EGraph, Id, IKunTree};
+use chomsky_uir::{EGraph, IKunTree, Id};
 use gaia_assembler::{
     instruction::{CmpCondition, CoreInstruction, GaiaInstruction, ManagedInstruction},
     program::{GaiaBlock, GaiaConstant, GaiaFunction, GaiaModule, GaiaTerminator},
@@ -82,12 +82,14 @@ impl GaiaTranslator {
     /// 从意图树生成 GaiaModule
     pub fn generate_from_tree(&mut self, tree: &IKunTree) -> Result<GaiaModule, GaiaError> {
         let mut functions = Vec::new();
-        
+
         // 1. 提取顶级元素
         let (module_name, items) = match tree {
             IKunTree::Module(name, items) => (name.as_str(), items.as_slice()),
             IKunTree::Seq(items) => ("mini_python_program", items.as_slice()),
-            IKunTree::Extension(name, args) if name == "python_module" => ("mini_python_program", &args[1..]),
+            IKunTree::Extension(name, args) if name == "python_module" => {
+                ("mini_python_program", &args[1..])
+            }
             _ => ("mini_python_program", std::slice::from_ref(tree)),
         };
 
@@ -130,7 +132,10 @@ impl GaiaTranslator {
         })
     }
 
-    fn generate_main_function_from_tree(&mut self, statements: Vec<&IKunTree>) -> Result<GaiaFunction, GaiaError> {
+    fn generate_main_function_from_tree(
+        &mut self,
+        statements: Vec<&IKunTree>,
+    ) -> Result<GaiaFunction, GaiaError> {
         self.reset_for_function();
         for stmt in statements {
             self.generate_tree_node(stmt, true)?;
@@ -139,7 +144,10 @@ impl GaiaTranslator {
 
         Ok(GaiaFunction {
             name: "main".to_string(),
-            signature: GaiaSignature { params: Vec::new(), return_type: GaiaType::Void },
+            signature: GaiaSignature {
+                params: Vec::new(),
+                return_type: GaiaType::Void,
+            },
             blocks: std::mem::take(&mut self.blocks),
             is_external: false,
         })
@@ -171,27 +179,42 @@ impl GaiaTranslator {
         })
     }
 
-    fn generate_tree_node(&mut self, tree: &IKunTree, _is_statement: bool) -> Result<(), GaiaError> {
+    fn generate_tree_node(
+        &mut self,
+        tree: &IKunTree,
+        _is_statement: bool,
+    ) -> Result<(), GaiaError> {
         match tree {
             IKunTree::Constant(v) => {
-                self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::I64(*v))));
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::PushConstant(GaiaConstant::I64(*v)),
+                ));
             }
             IKunTree::FloatConstant(bits) => {
                 let f = f64::from_bits(*bits);
-                self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::F64(f))));
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::PushConstant(GaiaConstant::F64(f)),
+                ));
             }
             IKunTree::BooleanConstant(b) => {
-                self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::Bool(*b))));
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::PushConstant(GaiaConstant::Bool(*b)),
+                ));
             }
             IKunTree::StringConstant(s) => {
                 let const_name = format!("str_{}", self.string_constants.len());
                 let constant = GaiaConstant::String(s.clone());
-                self.string_constants.push((const_name.clone(), constant.clone()));
-                self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(constant)));
+                self.string_constants
+                    .push((const_name.clone(), constant.clone()));
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::PushConstant(constant),
+                ));
             }
             IKunTree::Symbol(name) => {
                 if let Some(&local_index) = self.locals.get(name) {
-                    self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::LoadLocal(local_index, GaiaType::Object)));
+                    self.current_instructions.push(GaiaInstruction::Core(
+                        CoreInstruction::LoadLocal(local_index, GaiaType::Object),
+                    ));
                 } else {
                     return Err(GaiaError::syntax_error(
                         format!("Undefined variable: {}", name),
@@ -211,7 +234,9 @@ impl GaiaTranslator {
                         self.local_index += 1;
                         index
                     };
-                    self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::StoreLocal(local_index, GaiaType::Object)));
+                    self.current_instructions.push(GaiaInstruction::Core(
+                        CoreInstruction::StoreLocal(local_index, GaiaType::Object),
+                    ));
                 }
             }
             IKunTree::Seq(items) => {
@@ -265,7 +290,9 @@ impl GaiaTranslator {
                         if !args.is_empty() {
                             self.generate_tree_node(&args[0], false)?;
                         } else {
-                            self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(GaiaConstant::Null)));
+                            self.current_instructions.push(GaiaInstruction::Core(
+                                CoreInstruction::PushConstant(GaiaConstant::Null),
+                            ));
                         }
                         self.finish_block(GaiaTerminator::Return);
                         let label = self.new_label("unreachable");
@@ -292,7 +319,9 @@ impl GaiaTranslator {
                             "gt" => CmpCondition::Gt,
                             _ => unreachable!(),
                         };
-                        self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Cmp(cond, GaiaType::Object)));
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::Cmp(cond, GaiaType::Object),
+                        ));
                     }
                     _ => {}
                 }
@@ -302,14 +331,16 @@ impl GaiaTranslator {
                     self.generate_tree_node(arg, false)?;
                 }
                 if let IKunTree::Symbol(name) = &**func {
-                    self.current_instructions.push(GaiaInstruction::Managed(ManagedInstruction::CallStatic {
-                        target: "global".to_string(),
-                        method: name.clone(),
-                        signature: GaiaSignature {
-                            params: vec![GaiaType::Object; args.len()],
-                            return_type: GaiaType::Object,
+                    self.current_instructions.push(GaiaInstruction::Managed(
+                        ManagedInstruction::CallStatic {
+                            target: "global".to_string(),
+                            method: name.clone(),
+                            signature: GaiaSignature {
+                                params: vec![GaiaType::Object; args.len()],
+                                return_type: GaiaType::Object,
+                            },
                         },
-                    }));
+                    ));
                 }
             }
             _ => {}
@@ -318,10 +349,17 @@ impl GaiaTranslator {
     }
 
     /// 生成 GaiaModule (Legacy)
-    pub fn generate(&mut self, _egraph: &EGraph<chomsky_uir::IKun>, _root: Id) -> Result<GaiaModule, GaiaError> {
+    pub fn generate(
+        &mut self,
+        _egraph: &EGraph<chomsky_uir::IKun>,
+        _root: Id,
+    ) -> Result<GaiaModule, GaiaError> {
         // ... (existing implementation or delegate to tree-based one if possible)
         // For simplicity, I'll just leave it or remove it since I'm refactoring.
         // I'll keep it for now but it's not the preferred way.
-        Err(GaiaError::syntax_error("Deprecated: Use generate_from_tree instead", SourceLocation::default()))
+        Err(GaiaError::syntax_error(
+            "Deprecated: Use generate_from_tree instead",
+            SourceLocation::default(),
+        ))
     }
 }

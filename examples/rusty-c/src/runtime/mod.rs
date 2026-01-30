@@ -1,13 +1,13 @@
-use chomsky_uir::{EGraph, Id, IKun, IKunTree};
-use chomsky::optimizer::UniversalOptimizer;
 use chomsky::cost::DefaultCostModel;
 use chomsky::extract::IKunExtractor;
-use nyar_vm::vm::interpreter::NyarVM;
-use nyar_vm::bytecode::format::{NyarcModule, Chunk, ExportInfo};
+use chomsky::optimizer::UniversalOptimizer;
+use chomsky_uir::{EGraph, IKun, IKunTree, Id};
 use nyar_vm::bytecode::decoder::Instruction;
-use std::fmt::{Display, Formatter};
-use std::error::Error;
+use nyar_vm::bytecode::format::{Chunk, ExportInfo, NyarcModule};
+use nyar_vm::vm::interpreter::NyarVM;
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -55,7 +55,7 @@ impl MiniCRuntime {
 
     pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), RuntimeError> {
         let (egraph, root_id) = intent_graph;
-        
+
         // 1. Extract the best tree using the default cost model
         let cost_model = DefaultCostModel::default();
         let extractor = IKunExtractor::new(&egraph, cost_model);
@@ -66,11 +66,16 @@ impl MiniCRuntime {
 
         // 3. Execute using Nyar VM
         println!("Executing Nyar Module: {:?}", module.exports);
-        
+
         let module_idx = self.vm.load_module(module);
-        
+
         // Find main or first export
-        if let Some(export) = self.vm.modules[module_idx].exports.iter().find(|e| e.symbol == "main").or(self.vm.modules[module_idx].exports.first()) {
+        if let Some(export) = self.vm.modules[module_idx]
+            .exports
+            .iter()
+            .find(|e| e.symbol == "main")
+            .or(self.vm.modules[module_idx].exports.first())
+        {
             match self.vm.execute(module_idx, export.chunk_idx as usize) {
                 Ok(val) => {
                     println!("Execution result: {}", val);
@@ -83,7 +88,7 @@ impl MiniCRuntime {
         } else {
             return Err(RuntimeError::EntryPointNotFound);
         }
-        
+
         Ok(())
     }
 
@@ -136,17 +141,21 @@ impl MiniCRuntime {
         Ok(module)
     }
 
-    fn translate_function(&self, params: &[String], body: &IKunTree) -> Result<Chunk, RuntimeError> {
+    fn translate_function(
+        &self,
+        params: &[String],
+        body: &IKunTree,
+    ) -> Result<Chunk, RuntimeError> {
         let mut instructions = vec![];
         let mut symbols = HashMap::new();
-        
+
         // Handle parameters (map to locals)
         for (i, param) in params.iter().enumerate() {
             symbols.insert(param.clone(), i as u8);
         }
 
         self.translate_expr(body, &mut instructions, &mut symbols)?;
-        
+
         // Add return if not present
         if instructions.last() != Some(&Instruction::Return) {
             instructions.push(Instruction::Return);
@@ -168,7 +177,12 @@ impl MiniCRuntime {
         })
     }
 
-    fn translate_expr(&self, tree: &IKunTree, insts: &mut Vec<Instruction>, symbols: &mut HashMap<String, u8>) -> Result<(), RuntimeError> {
+    fn translate_expr(
+        &self,
+        tree: &IKunTree,
+        insts: &mut Vec<Instruction>,
+        symbols: &mut HashMap<String, u8>,
+    ) -> Result<(), RuntimeError> {
         match tree {
             IKunTree::Constant(v) => {
                 insts.push(Instruction::I32Const(*v as i32));
@@ -196,31 +210,36 @@ impl MiniCRuntime {
                     "<=" => insts.push(Instruction::I32LeS),
                     ">" => insts.push(Instruction::I32GtS),
                     ">=" => insts.push(Instruction::I32GeS),
-                    _ => return Err(RuntimeError::Other(format!("Unsupported binary op: {}", op))),
+                    _ => {
+                        return Err(RuntimeError::Other(format!(
+                            "Unsupported binary op: {}",
+                            op
+                        )))
+                    }
                 }
             }
             IKunTree::Choice(cond, then_br, else_br) => {
                 self.translate_expr(cond, insts, symbols)?;
-                
+
                 let jump_if_false_idx = insts.len();
-                insts.push(Instruction::JumpIfFalse(0)); 
-                
+                insts.push(Instruction::JumpIfFalse(0));
+
                 self.translate_expr(then_br, insts, symbols)?;
-                
+
                 let jump_idx = insts.len();
-                insts.push(Instruction::Jump(0)); 
-                
+                insts.push(Instruction::Jump(0));
+
                 let then_start = jump_if_false_idx + 1;
                 let then_end = jump_idx;
                 let then_len = self.calculate_code_size(&insts[then_start..then_end]);
-                
+
                 self.translate_expr(else_br, insts, symbols)?;
-                
+
                 let else_start = jump_idx + 1;
                 let else_end = insts.len();
                 let else_len = self.calculate_code_size(&insts[else_start..else_end]);
-                
-                insts[jump_if_false_idx] = Instruction::JumpIfFalse(then_len as i16 + 3); 
+
+                insts[jump_if_false_idx] = Instruction::JumpIfFalse(then_len as i16 + 3);
                 insts[jump_idx] = Instruction::Jump(else_len as i16);
             }
             IKunTree::Repeat(cond, body) => {
@@ -230,10 +249,11 @@ impl MiniCRuntime {
                 insts.push(Instruction::JumpIfFalse(0));
                 self.translate_expr(body, insts, symbols)?;
                 let body_end_pos = self.calculate_code_size(insts);
-                let jump_back_offset = -( (body_end_pos - start_pos) as i16 + 3 );
+                let jump_back_offset = -((body_end_pos - start_pos) as i16 + 3);
                 insts.push(Instruction::Jump(jump_back_offset));
                 let final_pos = self.calculate_code_size(insts);
-                let jump_forward_offset = (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx+1])) as i16;
+                let jump_forward_offset =
+                    (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx + 1])) as i16;
                 insts[jump_if_false_idx] = Instruction::JumpIfFalse(jump_forward_offset);
             }
             IKunTree::Extension(name, args) if name == "while" && args.len() == 2 => {
@@ -243,10 +263,11 @@ impl MiniCRuntime {
                 insts.push(Instruction::JumpIfFalse(0));
                 self.translate_expr(&args[1], insts, symbols)?;
                 let body_end_pos = self.calculate_code_size(insts);
-                let jump_back_offset = -( (body_end_pos - start_pos) as i16 + 3 );
+                let jump_back_offset = -((body_end_pos - start_pos) as i16 + 3);
                 insts.push(Instruction::Jump(jump_back_offset));
                 let final_pos = self.calculate_code_size(insts);
-                let jump_forward_offset = (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx+1])) as i16;
+                let jump_forward_offset =
+                    (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx + 1])) as i16;
                 insts[jump_if_false_idx] = Instruction::JumpIfFalse(jump_forward_offset);
             }
             IKunTree::Seq(stmts) => {

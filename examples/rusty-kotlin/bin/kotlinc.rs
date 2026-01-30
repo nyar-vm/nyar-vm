@@ -1,6 +1,6 @@
-use std::{path::Path, process::exit};
 use mini_kotlin::MiniKotlinFrontend;
 use nyar_vm::NyarDriver;
+use std::{path::Path, process::exit};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -12,9 +12,11 @@ fn main() {
     let input_file = Path::new(&args[1]);
     let frontend = MiniKotlinFrontend::new();
     let driver = NyarDriver::new();
-    
+
     // 模拟编译：目前先编译为 native (stub)
-    let output_file = args.iter().position(|a| a == "-o")
+    let output_file = args
+        .iter()
+        .position(|a| a == "-o")
         .and_then(|i| args.get(i + 1))
         .map(Path::new)
         .unwrap_or(Path::new("out.exe"));

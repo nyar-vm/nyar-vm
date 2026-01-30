@@ -26,14 +26,19 @@ impl NyarFrontend for MiniPythonFrontend {
     fn parse(&self, source: &str) -> Result<PythonRoot, NyarError> {
         let config = oak_python::PythonLanguage;
         let parser = oak_python::PythonParser::new(config);
-        let mut cache = oak_core::parser::session::ParseSession::<oak_python::PythonLanguage>::default();
+        let mut cache =
+            oak_core::parser::session::ParseSession::<oak_python::PythonLanguage>::default();
         let parse_result = parser.parse(source, &[], &mut cache);
 
-        let green_node = parse_result.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))?;
+        let green_node = parse_result
+            .result
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))?;
 
         let builder = oak_python::PythonBuilder::new(config);
         let source_text = oak_core::source::SourceText::new(source.to_string());
-        let ast = builder.build_root(green_node, &source_text).map_err(|e| NyarError::Parse(format!("{:?}", e)))?;
+        let ast = builder
+            .build_root(green_node, &source_text)
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))?;
         Ok(ast)
     }
 
@@ -54,10 +59,18 @@ impl MiniPythonFrontend {
             Statement::Assignment { target, value } => {
                 let target_node = self.lower_expression(target);
                 let value_node = self.lower_expression(value);
-                Some(IKunTree::StateUpdate(Box::new(target_node), Box::new(value_node)))
+                Some(IKunTree::StateUpdate(
+                    Box::new(target_node),
+                    Box::new(value_node),
+                ))
             }
             Statement::Expression(expr) => Some(self.lower_expression(expr)),
-            Statement::FunctionDef { name, parameters, body, .. } => {
+            Statement::FunctionDef {
+                name,
+                parameters,
+                body,
+                ..
+            } => {
                 let params = parameters.iter().map(|p| p.name.clone()).collect();
                 let mut body_items = Vec::new();
                 for s in body {
@@ -67,12 +80,21 @@ impl MiniPythonFrontend {
                 }
                 Some(IKunTree::StateUpdate(
                     Box::new(IKunTree::Symbol(name.clone())),
-                    Box::new(IKunTree::Lambda(params, Box::new(IKunTree::Seq(body_items)))),
+                    Box::new(IKunTree::Lambda(
+                        params,
+                        Box::new(IKunTree::Seq(body_items)),
+                    )),
                 ))
             }
             Statement::Return(expr) => {
-                let val = expr.as_ref().map(|e| self.lower_expression(e)).unwrap_or(IKunTree::Constant(0));
-                Some(IKunTree::Apply(Box::new(IKunTree::Symbol("return".to_string())), vec![val]))
+                let val = expr
+                    .as_ref()
+                    .map(|e| self.lower_expression(e))
+                    .unwrap_or(IKunTree::Constant(0));
+                Some(IKunTree::Apply(
+                    Box::new(IKunTree::Symbol("return".to_string())),
+                    vec![val],
+                ))
             }
             Statement::If { test, body, orelse } => {
                 let cond = self.lower_expression(test);
@@ -102,7 +124,10 @@ impl MiniPythonFrontend {
                         body_items.push(node);
                     }
                 }
-                Some(IKunTree::Repeat(Box::new(cond), Box::new(IKunTree::Seq(body_items))))
+                Some(IKunTree::Repeat(
+                    Box::new(cond),
+                    Box::new(IKunTree::Seq(body_items)),
+                ))
             }
             _ => None,
         }
@@ -118,7 +143,11 @@ impl MiniPythonFrontend {
                 Literal::None => IKunTree::Constant(0),
             },
             Expression::Name(name) => IKunTree::Symbol(name.clone()),
-            Expression::BinaryOp { left, operator, right } => {
+            Expression::BinaryOp {
+                left,
+                operator,
+                right,
+            } => {
                 let left_node = self.lower_expression(left);
                 let right_node = self.lower_expression(right);
                 let op_name = match operator {
@@ -137,7 +166,11 @@ impl MiniPythonFrontend {
                 };
                 IKunTree::Extension(op_name.to_string(), vec![left_node, right_node])
             }
-            Expression::Compare { left, ops, comparators } => {
+            Expression::Compare {
+                left,
+                ops,
+                comparators,
+            } => {
                 let left_node = self.lower_expression(left);
                 let right_node = self.lower_expression(&comparators[0]);
                 let op_name = match ops[0] {
@@ -153,12 +186,17 @@ impl MiniPythonFrontend {
             }
             Expression::Call { func, args, .. } => {
                 let func_node = self.lower_expression(func);
-                let args_nodes: Vec<IKunTree> = args.iter().map(|a| self.lower_expression(a)).collect();
+                let args_nodes: Vec<IKunTree> =
+                    args.iter().map(|a| self.lower_expression(a)).collect();
 
                 // 特殊处理 print
                 if let IKunTree::Symbol(ref name) = func_node {
                     if name == "print" {
-                        return IKunTree::CrossLangCall("native".to_string(), "System.Console.WriteLine".to_string(), args_nodes);
+                        return IKunTree::CrossLangCall(
+                            "native".to_string(),
+                            "System.Console.WriteLine".to_string(),
+                            args_nodes,
+                        );
                     }
                 }
 
@@ -177,7 +215,7 @@ impl MiniPythonFrontend {
         let code_obj = translator.translate_from_tree(&tree);
         let mut marshal = Marshal::new();
         marshal.write_code_object(&code_obj);
-        
+
         // 构造 .pyc 文件头 (Python 3.12)
         let mut pyc_bytes = Vec::new();
         // 1. Magic number (Python 3.12: 3551 = 0x0DCB)
@@ -189,7 +227,7 @@ impl MiniPythonFrontend {
         pyc_bytes.extend_from_slice(&[0, 0, 0, 0]);
         // 4. Source size (0 for now)
         pyc_bytes.extend_from_slice(&[0, 0, 0, 0]);
-        
+
         pyc_bytes.extend_from_slice(&marshal.finish());
         Ok(pyc_bytes)
     }

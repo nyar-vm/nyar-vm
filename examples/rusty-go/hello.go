@@ -1,3 +1,5 @@
-void main() {
-    printf("Hello from Mini Go!");
+package main
+
+func main() {
+    println("Hello from Mini Go!")
 }

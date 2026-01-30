@@ -5,10 +5,10 @@
 
 use std::collections::HashMap;
 
-use chomsky_uir::{ConstraintAnalysis, EGraph, Id, IKun};
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id};
+use nyar_types::FormatError;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, ImportInfo, NyarModule};
 use nyar_vm::bytecode::opcode::{I32Ext, Opcode};
-use nyar_types::FormatError;
 
 /// Nyar 翻译器，将 UIR 转换为 Nyar 字节码
 pub struct NyarTranslator {
@@ -31,7 +31,10 @@ pub struct NyarTranslator {
 }
 
 /// 辅助函数：在 EGraph 中递归查找 Lambda 节点
-fn find_lambda(egraph: &EGraph<IKun, ConstraintAnalysis>, class_id: Id) -> Option<(Vec<String>, Id)> {
+fn find_lambda(
+    egraph: &EGraph<IKun, ConstraintAnalysis>,
+    class_id: Id,
+) -> Option<(Vec<String>, Id)> {
     let class = egraph.get_class(class_id);
     for node in &class.nodes {
         match node {
@@ -89,11 +92,16 @@ impl NyarTranslator {
 
     /// 记录重定位
     fn emit_jump(&mut self, label: &str, is_conditional: bool) {
-        let op = if is_conditional { Opcode::JumpIfFalse } else { Opcode::Jump };
+        let op = if is_conditional {
+            Opcode::JumpIfFalse
+        } else {
+            Opcode::Jump
+        };
         self.emit_u8(op as u8);
         let offset = self.code.len();
         self.emit_i16(0); // 占位符
-        self.relocations.push((offset, label.to_string(), is_conditional));
+        self.relocations
+            .push((offset, label.to_string(), is_conditional));
     }
 
     /// 修补所有跳转偏移
@@ -126,15 +134,19 @@ impl NyarTranslator {
     }
 
     /// 生成 NyarModule
-    pub fn generate(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, root: Id) -> Result<NyarModule, FormatError> {
+    pub fn generate(
+        &mut self,
+        egraph: &EGraph<IKun, ConstraintAnalysis>,
+        root: Id,
+    ) -> Result<NyarModule, FormatError> {
         let mut functions_info = Vec::new();
         let mut imports_info = Vec::new();
         let mut exports_info = Vec::new();
-        
+
         // Retrieve the root node
         let root_class = egraph.get_class(root);
         let root_node = &root_class.nodes[0];
-        
+
         // Assume root is an Extension("module", [name, items...]) or just Seq
         let items = match root_node {
             IKun::Extension(name, args) if name == "module" => {
@@ -144,19 +156,22 @@ impl NyarTranslator {
             IKun::Seq(items) => items.as_slice(),
             _ => std::slice::from_ref(&root),
         };
-        
+
         // 1. Separate functions, imports, and exports from main statements
         let mut main_stmts = Vec::new();
         let mut functions = Vec::new();
-        
+
         for &item in items {
             let node_class = egraph.get_class(item);
-            println!("Translate: processing item {:?}: {:?}", item, node_class.nodes);
+            println!(
+                "Translate: processing item {:?}: {:?}",
+                item, node_class.nodes
+            );
             for entry in egraph.classes.iter() {
                 println!("  Class {:?}: {:?}", entry.key(), entry.value().nodes);
             }
             let mut handled_as_special = false;
-            
+
             for node in &node_class.nodes {
                 match node {
                     IKun::Lambda(_params, _body) => {
@@ -168,7 +183,7 @@ impl NyarTranslator {
                     }
                     IKun::StateUpdate(target, value) => {
                         let mut is_function = false;
-                        
+
                         if let Some((params, body)) = find_lambda(egraph, *value) {
                             let target_class = egraph.get_class(*target);
                             for t_node in &target_class.nodes {
@@ -196,7 +211,8 @@ impl NyarTranslator {
                                                 for &symbol_id in &args[1..] {
                                                     let symbol_class = egraph.get_class(symbol_id);
                                                     for sym_node in &symbol_class.nodes {
-                                                        if let IKun::Symbol(symbol_name) = sym_node {
+                                                        if let IKun::Symbol(symbol_name) = sym_node
+                                                        {
                                                             imports_info.push(ImportInfo {
                                                                 provider: source.clone(),
                                                                 symbol: symbol_name.clone(),
@@ -225,11 +241,17 @@ impl NyarTranslator {
                                         match exported_item {
                                             IKun::StateUpdate(target, value) => {
                                                 let mut is_function = false;
-                                                if let Some((params, body)) = find_lambda(egraph, *value) {
+                                                if let Some((params, body)) =
+                                                    find_lambda(egraph, *value)
+                                                {
                                                     let target_class = egraph.get_class(*target);
                                                     for t_node in &target_class.nodes {
                                                         if let IKun::Symbol(name) = t_node {
-                                                            functions.push((name.clone(), params.clone(), body));
+                                                            functions.push((
+                                                                name.clone(),
+                                                                params.clone(),
+                                                                body,
+                                                            ));
                                                             exports_info.push(ExportInfo {
                                                                 symbol: name.clone(),
                                                                 chunk_idx: (functions.len()) as u16,
@@ -245,7 +267,7 @@ impl NyarTranslator {
                                                 }
                                             }
                                             IKun::Lambda(params, body) => {
-                                                // Handle exported Lambda directly (if it doesn't have a name, we might have an issue, 
+                                                // Handle exported Lambda directly (if it doesn't have a name, we might have an issue,
                                                 // but usually exports have names from the declaration)
                                                 // For now, let's just mark as handled to avoid warning
                                                 handled_as_special = true;
@@ -255,7 +277,9 @@ impl NyarTranslator {
                                         }
                                     }
                                 }
-                                if handled_as_special { break; }
+                                if handled_as_special {
+                                    break;
+                                }
                             }
                             _ => {}
                         }
@@ -263,7 +287,7 @@ impl NyarTranslator {
                     _ => {}
                 }
             }
-            
+
             if !handled_as_special {
                 main_stmts.push(item);
             }
@@ -281,7 +305,10 @@ impl NyarTranslator {
         Ok(NyarModule {
             version: 1,
             flags: 0,
-            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             constants: std::mem::take(&mut self.constants),
             effects: Vec::new(),
             chunks: std::mem::take(&mut self.chunks),
@@ -293,7 +320,11 @@ impl NyarTranslator {
         })
     }
 
-    fn generate_main_chunk(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, statements: &[Id]) -> Result<(), FormatError> {
+    fn generate_main_chunk(
+        &mut self,
+        egraph: &EGraph<IKun, ConstraintAnalysis>,
+        statements: &[Id],
+    ) -> Result<(), FormatError> {
         self.reset_for_function();
 
         for &stmt in statements {
@@ -307,7 +338,7 @@ impl NyarTranslator {
         self.emit_u8(Opcode::Return as u8);
 
         self.patch_jumps();
-        
+
         self.chunks.push(Chunk {
             locals: self.local_index as u16,
             upvalues: 0,
@@ -365,9 +396,14 @@ impl NyarTranslator {
         Ok(())
     }
 
-    fn generate_node(&mut self, egraph: &EGraph<IKun, ConstraintAnalysis>, id: Id, is_statement: bool) -> Result<(), FormatError> {
+    fn generate_node(
+        &mut self,
+        egraph: &EGraph<IKun, ConstraintAnalysis>,
+        id: Id,
+        is_statement: bool,
+    ) -> Result<(), FormatError> {
         let node_class = egraph.get_class(id);
-        
+
         // Try to find a node we can handle
         let mut handled = false;
         for node in &node_class.nodes {
@@ -376,7 +412,9 @@ impl NyarTranslator {
                     self.emit_u8(Opcode::I32Ext as u8);
                     self.emit_u8(I32Ext::Const as u8);
                     self.emit_i32(*v as i32);
-                    if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    if is_statement {
+                        self.emit_u8(Opcode::Pop as u8);
+                    }
                     handled = true;
                 }
                 IKun::StringConstant(s) => {
@@ -384,7 +422,9 @@ impl NyarTranslator {
                     self.constants.push(Constant::String(s.clone()));
                     self.emit_u8(Opcode::Push as u8);
                     self.emit_u16(idx);
-                    if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    if is_statement {
+                        self.emit_u8(Opcode::Pop as u8);
+                    }
                     handled = true;
                 }
                 IKun::Symbol(name) => {
@@ -398,12 +438,14 @@ impl NyarTranslator {
                         self.emit_u8(Opcode::LoadGlobal as u8);
                         self.emit_u16(idx);
                     }
-                    if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                    if is_statement {
+                        self.emit_u8(Opcode::Pop as u8);
+                    }
                     handled = true;
                 }
                 IKun::StateUpdate(target, value) => {
                     self.generate_node(egraph, *value, false)?;
-                    
+
                     let target_class = egraph.get_class(*target);
                     let mut target_handled = false;
                     for target_node in &target_class.nodes {
@@ -435,7 +477,11 @@ impl NyarTranslator {
                     let len = items.len();
                     for (i, &item) in items.iter().enumerate() {
                         let is_last = i == len - 1;
-                        self.generate_node(egraph, item, if is_last { is_statement } else { true })?;
+                        self.generate_node(
+                            egraph,
+                            item,
+                            if is_last { is_statement } else { true },
+                        )?;
                     }
                     handled = true;
                 }
@@ -451,7 +497,7 @@ impl NyarTranslator {
 
                     // 3. True block
                     self.generate_node(egraph, *then_branch, is_statement)?;
-                    
+
                     if !is_statement {
                         self.emit_jump(&end_label, false);
                     } else {
@@ -471,7 +517,9 @@ impl NyarTranslator {
                 IKun::Extension(name, args) => {
                     match name.as_str() {
                         "while" => {
-                            if args.len() < 2 { return Ok(()); }
+                            if args.len() < 2 {
+                                return Ok(());
+                            }
                             let cond_label = self.new_label("while_cond");
                             let end_label = self.new_label("while_end");
 
@@ -486,7 +534,7 @@ impl NyarTranslator {
 
                             // 3. End block
                             self.define_label(&end_label);
-                            
+
                             // While loop as expression returns null
                             if !is_statement {
                                 // We don't have a Null opcode in I32Ext, so we push 0 for now
@@ -524,7 +572,9 @@ impl NyarTranslator {
                                 _ => unreachable!(),
                             };
                             self.emit_u8(op as u8);
-                            if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                            if is_statement {
+                                self.emit_u8(Opcode::Pop as u8);
+                            }
                             handled = true;
                         }
                         "member" => {
@@ -547,7 +597,9 @@ impl NyarTranslator {
                                 self.generate_node(egraph, args[1], false)?;
                                 self.emit_u8(Opcode::GetElement as u8);
                             }
-                            if is_statement { self.emit_u8(Opcode::Pop as u8); }
+                            if is_statement {
+                                self.emit_u8(Opcode::Pop as u8);
+                            }
                             handled = true;
                         }
                         _ => {
@@ -558,7 +610,7 @@ impl NyarTranslator {
                 IKun::Apply(func, args) => {
                     let func_class = egraph.get_class(*func);
                     let mut func_handled = false;
-                    
+
                     // Try to see if it's a method call like object.method(args)
                     for node in &func_class.nodes {
                         if let IKun::Extension(ext_name, ext_args) = node {
@@ -583,7 +635,9 @@ impl NyarTranslator {
                                         break;
                                     }
                                 }
-                                if func_handled { break; }
+                                if func_handled {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -607,26 +661,33 @@ impl NyarTranslator {
                             }
                         }
                     }
-                    
+
                     if !func_handled {
                         // Call by value (expression returning a function)
                         self.generate_node(egraph, *func, false)?;
                         self.emit_u8(Opcode::CallClosure as u8);
                         self.emit_u8(args.len() as u8);
                     }
-                    
-                    if is_statement { self.emit_u8(Opcode::Pop as u8); }
+
+                    if is_statement {
+                        self.emit_u8(Opcode::Pop as u8);
+                    }
                     handled = true;
                 }
                 _ => {}
             }
-            if handled { break; }
+            if handled {
+                break;
+            }
         }
 
         if !handled {
-            println!("Codegen: Unhandled node class {:?}: {:?}", id, node_class.nodes);
+            println!(
+                "Codegen: Unhandled node class {:?}: {:?}",
+                id, node_class.nodes
+            );
         }
-        
+
         Ok(())
     }
 }

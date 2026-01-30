@@ -6,14 +6,14 @@
 #![feature(new_range_api)]
 
 pub mod codegen;
+pub mod errors;
 pub mod project;
 pub mod type_system;
-pub mod errors;
 
-use chomsky_extract::IKunExtractor;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IntentBuilder, Id};
-use chomsky_source::Loc;
 use chomsky_cost;
+use chomsky_extract::IKunExtractor;
+use chomsky_source::Loc;
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder};
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use nyar_vm::bytecode::format::NyarModule;
 use oak_core::{ParseSession, SourceText};
@@ -69,14 +69,20 @@ impl MiniTypescriptFrontend {
 
     /// 编译源码为 Nyar 模块
     pub fn compile_to_nyar(&self, source: &str) -> Result<NyarModule, String> {
-        let ast = self.parse(source).map_err(|e| format!("Parse error: {:?}", e))?;
-        let tree = self.lower(&ast).map_err(|e| format!("Lowering error: {:?}", e))?;
+        let ast = self
+            .parse(source)
+            .map_err(|e| format!("Parse error: {:?}", e))?;
+        let tree = self
+            .lower(&ast)
+            .map_err(|e| format!("Lowering error: {:?}", e))?;
 
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = tree.to_egraph(&mut egraph);
 
         let mut translator = codegen::NyarTranslator::new();
-        translator.generate(&egraph, root_id).map_err(|e| format!("Codegen error: {:?}", e))
+        translator
+            .generate(&egraph, root_id)
+            .map_err(|e| format!("Codegen error: {:?}", e))
     }
 }
 
@@ -89,7 +95,9 @@ impl NyarFrontend for MiniTypescriptFrontend {
         let source_text = SourceText::new(source);
         let output = oak_core::Builder::build(&builder, &source_text, &[], &mut session);
 
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output
+            .result
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &TypeScriptRoot) -> Result<IKunTree, NyarError> {
@@ -147,9 +155,7 @@ impl<'a> UirConverter<'a> {
                 let lambda = self.builder.function(&func.name, func.params, body_ids);
                 self.builder.assign(&func.name, lambda, loc)
             }
-            ast::Statement::ExpressionStatement(expr) => {
-                self.convert_expression(expr)
-            }
+            ast::Statement::ExpressionStatement(expr) => self.convert_expression(expr),
             ast::Statement::ImportDeclaration(import) => {
                 let loc = self.to_loc(import.span.into());
                 let mut args = vec![self.builder.string(&import.module_specifier, loc.clone())];
@@ -176,7 +182,12 @@ impl<'a> UirConverter<'a> {
                 println!("Class body size: {}", class.body.len());
                 for member in class.body {
                     match member {
-                        ast::ClassMember::Property { name, ty, initializer, span } => {
+                        ast::ClassMember::Property {
+                            name,
+                            ty,
+                            initializer,
+                            span,
+                        } => {
                             println!("  Property: {}", name);
                             let mloc = self.to_loc(span.into());
                             let init_id = if let Some(expr) = initializer {
@@ -190,13 +201,18 @@ impl<'a> UirConverter<'a> {
                                 self.builder.symbol("any", mloc.clone())
                             };
                             let field_name = self.builder.symbol(&name, mloc.clone());
-                            args.push(self.builder.extension("gc.field", vec![
-                                field_name,
-                                ty_id,
-                                init_id,
-                            ], mloc));
+                            args.push(self.builder.extension(
+                                "gc.field",
+                                vec![field_name, ty_id, init_id],
+                                mloc,
+                            ));
                         }
-                        ast::ClassMember::Method { name, params, body, span } => {
+                        ast::ClassMember::Method {
+                            name,
+                            params,
+                            body,
+                            span,
+                        } => {
                             let mloc = self.to_loc(span.into());
                             let mut body_ids = Vec::new();
                             for s in body {
@@ -204,10 +220,11 @@ impl<'a> UirConverter<'a> {
                             }
                             let lambda = self.builder.function(&name, params, body_ids);
                             let method_name = self.builder.symbol(&name, mloc.clone());
-                            args.push(self.builder.extension("gc.method", vec![
-                                method_name,
-                                lambda,
-                            ], mloc));
+                            args.push(self.builder.extension(
+                                "gc.method",
+                                vec![method_name, lambda],
+                                mloc,
+                            ));
                         }
                     }
                 }
@@ -218,19 +235,17 @@ impl<'a> UirConverter<'a> {
 
     fn convert_expression(&mut self, expr: ast::Expression) -> Id {
         match expr {
-            ast::Expression::Identifier(name) => {
-                self.builder.symbol(&name, Loc::default())
-            }
+            ast::Expression::Identifier(name) => self.builder.symbol(&name, Loc::default()),
             ast::Expression::NumericLiteral(val) => {
                 self.builder.constant(val as i64, Loc::default())
             }
-            ast::Expression::StringLiteral(val) => {
-                self.builder.string(&val, Loc::default())
-            }
-            ast::Expression::BooleanLiteral(val) => {
-                self.builder.bool(val, Loc::default())
-            }
-            ast::Expression::BinaryExpression { left, operator, right } => {
+            ast::Expression::StringLiteral(val) => self.builder.string(&val, Loc::default()),
+            ast::Expression::BooleanLiteral(val) => self.builder.bool(val, Loc::default()),
+            ast::Expression::BinaryExpression {
+                left,
+                operator,
+                right,
+            } => {
                 let l = self.convert_expression(*left);
                 let r = self.convert_expression(*right);
                 self.builder.binary_op(&operator, l, r, Loc::default())
@@ -247,16 +262,27 @@ impl<'a> UirConverter<'a> {
                 let arg = self.convert_expression(*argument);
                 self.builder.extension(&operator, vec![arg], Loc::default())
             }
-            ast::Expression::MemberExpression { object, property, computed, .. } => {
+            ast::Expression::MemberExpression {
+                object,
+                property,
+                computed,
+                ..
+            } => {
                 let obj = self.convert_expression(*object);
                 let prop = self.convert_expression(*property);
                 if computed {
-                    self.builder.extension("index", vec![obj, prop], Loc::default())
+                    self.builder
+                        .extension("index", vec![obj, prop], Loc::default())
                 } else {
-                    self.builder.extension("gc.get_field", vec![obj, prop], Loc::default())
+                    self.builder
+                        .extension("gc.get_field", vec![obj, prop], Loc::default())
                 }
             }
-            ast::Expression::ConditionalExpression { test, consequent, alternate } => {
+            ast::Expression::ConditionalExpression {
+                test,
+                consequent,
+                alternate,
+            } => {
                 let t = self.convert_expression(*test);
                 let c = self.convert_expression(*consequent);
                 let a = self.convert_expression(*alternate);
@@ -270,14 +296,24 @@ impl<'a> UirConverter<'a> {
                 }
                 self.builder.extension("gc.new", arg_ids, Loc::default())
             }
-            ast::Expression::AssignmentExpression { left, operator, right } => {
+            ast::Expression::AssignmentExpression {
+                left,
+                operator,
+                right,
+            } => {
                 let r = self.convert_expression(*right);
                 if operator == "=" {
                     match *left {
-                        ast::Expression::MemberExpression { object, property, .. } => {
+                        ast::Expression::MemberExpression {
+                            object, property, ..
+                        } => {
                             let obj = self.convert_expression(*object);
                             let prop = self.convert_expression(*property);
-                            self.builder.extension("gc.set_field", vec![obj, prop, r], Loc::default())
+                            self.builder.extension(
+                                "gc.set_field",
+                                vec![obj, prop, r],
+                                Loc::default(),
+                            )
                         }
                         _ => {
                             let l = self.convert_expression(*left);
@@ -293,9 +329,7 @@ impl<'a> UirConverter<'a> {
                     self.builder.assign_to_id(target, value, Loc::default())
                 }
             }
-            _ => {
-                self.builder.constant(0, Loc::default())
-            }
+            _ => self.builder.constant(0, Loc::default()),
         }
     }
 }

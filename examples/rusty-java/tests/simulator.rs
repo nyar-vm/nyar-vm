@@ -1,11 +1,17 @@
-use mini_java::visitor::{Dog, Cat, Fish, sound};
-use mini_java::tagless::{expr, SetContext, SoundContext, Neg};
+use mini_java::tagless::{expr, Neg, SetContext, SoundContext};
+use mini_java::visitor::{sound, Cat, Dog, Fish};
 
 #[test]
 fn test_visitor() {
-    let dog = Dog { name: "nana".to_string() };
-    let cat = Cat { name: "nvnv".to_string() };
-    let fish = Fish { name: "fish".to_string() };
+    let dog = Dog {
+        name: "nana".to_string(),
+    };
+    let cat = Cat {
+        name: "nvnv".to_string(),
+    };
+    let fish = Fish {
+        name: "fish".to_string(),
+    };
     sound(&dog);
     sound(&cat);
     sound(&fish);

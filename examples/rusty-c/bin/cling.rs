@@ -1,12 +1,17 @@
 use clap::Parser;
-use std::fs;
 use mini_c::MiniCFrontend;
-use nyar_vm::NyarDriver;
 use nyar_types::NyarError;
-use oak_repl::{OakRepl, ReplHandler, HandleResult, ReplError};
+use nyar_vm::NyarDriver;
+use oak_repl::{HandleResult, OakRepl, ReplError, ReplHandler};
+use std::fs;
 
 #[derive(Parser, Debug)]
-#[command(name = "cling", version = "0.1.0", author = "Gaia Project", about = "Mini C Interpreter (Simulating Cling)")]
+#[command(
+    name = "cling",
+    version = "0.1.0",
+    author = "Gaia Project",
+    about = "Mini C Interpreter (Simulating Cling)"
+)]
 struct Args {
     /// The input C file. If not provided, enters REPL mode.
     #[arg(index = 1)]
@@ -61,14 +66,18 @@ impl CReplHandler {
 
 impl ReplHandler for CReplHandler {
     fn prompt(&self, is_continuation: bool) -> &str {
-        if is_continuation { "  ... " } else { "[cling]$ " }
+        if is_continuation {
+            "  ... "
+        } else {
+            "[cling]$ "
+        }
     }
 
     fn is_complete(&self, code: &str) -> bool {
         if code.trim().is_empty() {
             return true;
         }
-        
+
         let mut depth = 0;
         for c in code.chars() {
             match c {
@@ -77,7 +86,7 @@ impl ReplHandler for CReplHandler {
                 _ => {}
             }
         }
-        
+
         // C 语言通常需要分号结束语句，除非是块定义
         if depth <= 0 {
             let trimmed = code.trim_end();

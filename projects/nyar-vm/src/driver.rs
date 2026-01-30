@@ -27,7 +27,9 @@ impl NyarDriver {
         if vm.execute_symbol("main", vec![]).is_ok() {
             Ok(())
         } else {
-            vm.execute(module_idx, 0).map(|_| ()).map_err(NyarError::from)
+            vm.execute(module_idx, 0)
+                .map(|_| ())
+                .map_err(NyarError::from)
         }
     }
 
@@ -40,7 +42,9 @@ impl NyarDriver {
         let module = backend.finish();
         let mut vm = NyarVM::new();
         let module_idx = vm.load_module(module);
-        vm.execute(module_idx, 0).map(|_| ()).map_err(NyarError::from)
+        vm.execute(module_idx, 0)
+            .map(|_| ())
+            .map_err(NyarError::from)
     }
 
     /// AOT 编译到原生可执行文件
@@ -55,7 +59,8 @@ impl NyarDriver {
         let ast = frontend.parse(&source)?;
         let tree = frontend.lower(&ast)?;
 
-        let mut aot: crate::aot::NyarAot<chomsky_uir::ConstraintAnalysis> = crate::aot::NyarAot::new();
+        let mut aot: crate::aot::NyarAot<chomsky_uir::ConstraintAnalysis> =
+            crate::aot::NyarAot::new();
         let backend = crate::aot::NativeBackend::new();
 
         // 这里的 tree 是 IKunTree，需要转换成 IKun 才能传给 aot.compile
@@ -87,11 +92,13 @@ impl NyarDriver {
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
         let _tree = frontend.lower(&ast)?;
-        
+
         // TODO: 使用 nyar-aot 进行 WASM 生成
         println!("AOT: Compiling IKunTree to WASM at {:?}", output_path);
-        
-        Err(NyarError::Compile("AOT compilation to WASM backend is not yet fully integrated".to_string()))
+
+        Err(NyarError::Compile(
+            "AOT compilation to WASM backend is not yet fully integrated".to_string(),
+        ))
     }
 
     /// 编译到 JVM .class 文件
@@ -112,7 +119,9 @@ impl NyarDriver {
         println!("JVM: Compiling IKunTree to JVM at {:?}", output_path);
 
         let adapter = GaiaJvmAdapter;
-        let artifact = adapter.generate(&tree).map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+        let artifact = adapter
+            .generate(&tree)
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
 
         match artifact {
             chomsky::extract::BackendArtifact::Binary(bytes) => {

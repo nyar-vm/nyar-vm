@@ -20,7 +20,10 @@ pub fn perform_effect_internal(
                 crate::vm::value::ValueTag::Float => format!("{}", v.as_float()),
                 crate::vm::value::ValueTag::Bool => format!("{}", v.as_bool()),
                 crate::vm::value::ValueTag::Null => "null".to_string(),
-                crate::vm::value::ValueTag::String => v.try_as_str().map(|s| s.to_string()).unwrap_or_else(|| "<invalid string>".to_string()),
+                crate::vm::value::ValueTag::String => v
+                    .try_as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "<invalid string>".to_string()),
                 _ => "<unsupported>".to_string(),
             };
             vm.log(&msg);

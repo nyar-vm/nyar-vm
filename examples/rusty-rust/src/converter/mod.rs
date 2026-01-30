@@ -1,6 +1,5 @@
 //! Oak Rust AST 到 Chomsky UIR 的转换器
 
-
 use chomsky_source::Loc;
 use chomsky_uir::{ConstraintAnalysis, IKun, Id, IntentBuilder};
 use core::range::Range;
@@ -134,7 +133,7 @@ fn convert_expr(expr: &oak_ast::Expr, builder: &mut IntentBuilder<ConstraintAnal
     // Note: Loc is tricky to get from expr ref if not stored.
     // oak_ast::Expr usually has span.
     let loc = Loc::unknown(); // Simplified for now as Expr might not expose span easily in this match context
-    // Actually oak_ast::Expr variants have span.
+                              // Actually oak_ast::Expr variants have span.
 
     match expr {
         oak_ast::Expr::Ident(id) => builder.symbol(&id.name, span_to_loc(id.span.clone())),

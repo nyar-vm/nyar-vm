@@ -8,10 +8,10 @@ pub mod optimizer;
 pub mod runtime;
 
 use chomsky_extract::IKunExtractor;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IntentBuilder, Id};
 use chomsky_source::Loc;
-use nyar_types::{NyarError, NyarFrontend, IKunTree};
-use oak_c::{CLanguage, CRoot, CBuilder, ast};
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder};
+use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use oak_c::{ast, CBuilder, CLanguage, CRoot};
 use oak_core::source::SourceText;
 use std::ops::Range;
 
@@ -39,7 +39,9 @@ impl NyarFrontend for MiniCFrontend {
         let mut session = oak_core::parser::session::ParseSession::<CLanguage>::default();
         let source_text = SourceText::new(source.to_string());
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output
+            .result
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &CRoot) -> Result<IKunTree, NyarError> {
@@ -48,7 +50,7 @@ impl NyarFrontend for MiniCFrontend {
         let mut converter = UirConverter::new(&mut builder, 1);
 
         let root_id = converter.convert_root(ast);
-        
+
         let extractor = IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
         let tree = extractor.extract(root_id);
         Ok(tree)
@@ -79,7 +81,9 @@ impl<'a> UirConverter<'a> {
 
     fn convert_external_declaration(&mut self, decl: &ast::ExternalDeclaration) -> Id {
         match decl {
-            ast::ExternalDeclaration::FunctionDefinition(func) => self.convert_function_definition(func),
+            ast::ExternalDeclaration::FunctionDefinition(func) => {
+                self.convert_function_definition(func)
+            }
             ast::ExternalDeclaration::Declaration(decl) => self.convert_declaration(decl),
         }
     }
@@ -87,9 +91,13 @@ impl<'a> UirConverter<'a> {
     fn convert_function_definition(&mut self, func: &ast::FunctionDefinition) -> Id {
         let loc = self.to_loc(func.span.clone().into());
         let name = self.get_declarator_name(&func.declarator);
-        
+
         let mut params = Vec::new();
-        if let ast::DirectDeclarator::Function { parameter_type_list, .. } = &func.declarator.direct_declarator {
+        if let ast::DirectDeclarator::Function {
+            parameter_type_list,
+            ..
+        } = &func.declarator.direct_declarator
+        {
             if let Some(list) = parameter_type_list {
                 for param in &list.parameter_list {
                     if let Some(decl) = &param.declarator {
@@ -103,7 +111,7 @@ impl<'a> UirConverter<'a> {
         for item in &func.compound_statement.block_items {
             body_ids.push(self.convert_block_item(item));
         }
-        
+
         let lambda = self.builder.function(&name, params, body_ids);
         self.builder.assign(&name, lambda, loc)
     }
@@ -148,64 +156,108 @@ impl<'a> UirConverter<'a> {
                 if let Some(expr) = &expr_stmt.expression {
                     self.convert_expression(expr)
                 } else {
-                    self.builder.constant(0, self.to_loc(expr_stmt.span.clone().into()))
+                    self.builder
+                        .constant(0, self.to_loc(expr_stmt.span.clone().into()))
                 }
             }
-            ast::Statement::Selection(sel) => {
-                match sel {
-                    ast::SelectionStatement::If { condition, then_statement, else_statement, span } => {
-                        let cond = self.convert_expression(condition);
-                        let then_id = self.convert_statement(then_statement);
-                        let else_id = if let Some(e) = else_statement {
-                            self.convert_statement(e)
-                        } else {
-                            self.builder.constant(0, loc.clone())
-                        };
-                        self.builder.extension("if", vec![cond, then_id, else_id], self.to_loc(span.clone().into()))
-                    }
-                    _ => self.builder.constant(0, loc),
+            ast::Statement::Selection(sel) => match sel {
+                ast::SelectionStatement::If {
+                    condition,
+                    then_statement,
+                    else_statement,
+                    span,
+                } => {
+                    let cond = self.convert_expression(condition);
+                    let then_id = self.convert_statement(then_statement);
+                    let else_id = if let Some(e) = else_statement {
+                        self.convert_statement(e)
+                    } else {
+                        self.builder.constant(0, loc.clone())
+                    };
+                    self.builder.extension(
+                        "if",
+                        vec![cond, then_id, else_id],
+                        self.to_loc(span.clone().into()),
+                    )
                 }
-            }
-            ast::Statement::Iteration(iter) => {
-                match iter {
-                    ast::IterationStatement::While { condition, statement, span } => {
-                        let cond = self.convert_expression(condition);
-                        let body = self.convert_statement(statement);
-                        self.builder.extension("while", vec![cond, body], self.to_loc(span.clone().into()))
-                    }
-                    ast::IterationStatement::DoWhile { statement, condition, span } => {
-                        let body = self.convert_statement(statement);
-                        let cond = self.convert_expression(condition);
-                        self.builder.extension("do_while", vec![body, cond], self.to_loc(span.clone().into()))
-                    }
-                    ast::IterationStatement::For { init, condition, update, statement, span } => {
-                        let i = if let Some(e) = init { self.convert_expression(e) } else { self.builder.constant(0, loc.clone()) };
-                        let c = if let Some(e) = condition { self.convert_expression(e) } else { self.builder.constant(1, loc.clone()) };
-                        let u = if let Some(e) = update { self.convert_expression(e) } else { self.builder.constant(0, loc.clone()) };
-                        let b = self.convert_statement(statement);
-                        self.builder.extension("for", vec![i, c, u, b], self.to_loc(span.clone().into()))
-                    }
+                _ => self.builder.constant(0, loc),
+            },
+            ast::Statement::Iteration(iter) => match iter {
+                ast::IterationStatement::While {
+                    condition,
+                    statement,
+                    span,
+                } => {
+                    let cond = self.convert_expression(condition);
+                    let body = self.convert_statement(statement);
+                    self.builder.extension(
+                        "while",
+                        vec![cond, body],
+                        self.to_loc(span.clone().into()),
+                    )
                 }
-            }
-            ast::Statement::Jump(jump) => {
-                match jump {
-                    ast::JumpStatement::Return(expression, _) => {
-                        let val = if let Some(e) = expression {
-                            self.convert_expression(e)
-                        } else {
-                            self.builder.constant(0, loc.clone())
-                        };
-                        self.builder.extension("return", vec![val], loc)
-                    }
-                    ast::JumpStatement::Break(span) => {
-                        self.builder.extension("break", vec![], self.to_loc(span.clone().into()))
-                    }
-                    ast::JumpStatement::Continue(span) => {
-                        self.builder.extension("continue", vec![], self.to_loc(span.clone().into()))
-                    }
-                    _ => self.builder.constant(0, loc),
+                ast::IterationStatement::DoWhile {
+                    statement,
+                    condition,
+                    span,
+                } => {
+                    let body = self.convert_statement(statement);
+                    let cond = self.convert_expression(condition);
+                    self.builder.extension(
+                        "do_while",
+                        vec![body, cond],
+                        self.to_loc(span.clone().into()),
+                    )
                 }
-            }
+                ast::IterationStatement::For {
+                    init,
+                    condition,
+                    update,
+                    statement,
+                    span,
+                } => {
+                    let i = if let Some(e) = init {
+                        self.convert_expression(e)
+                    } else {
+                        self.builder.constant(0, loc.clone())
+                    };
+                    let c = if let Some(e) = condition {
+                        self.convert_expression(e)
+                    } else {
+                        self.builder.constant(1, loc.clone())
+                    };
+                    let u = if let Some(e) = update {
+                        self.convert_expression(e)
+                    } else {
+                        self.builder.constant(0, loc.clone())
+                    };
+                    let b = self.convert_statement(statement);
+                    self.builder.extension(
+                        "for",
+                        vec![i, c, u, b],
+                        self.to_loc(span.clone().into()),
+                    )
+                }
+            },
+            ast::Statement::Jump(jump) => match jump {
+                ast::JumpStatement::Return(expression, _) => {
+                    let val = if let Some(e) = expression {
+                        self.convert_expression(e)
+                    } else {
+                        self.builder.constant(0, loc.clone())
+                    };
+                    self.builder.extension("return", vec![val], loc)
+                }
+                ast::JumpStatement::Break(span) => {
+                    self.builder
+                        .extension("break", vec![], self.to_loc(span.clone().into()))
+                }
+                ast::JumpStatement::Continue(span) => {
+                    self.builder
+                        .extension("continue", vec![], self.to_loc(span.clone().into()))
+                }
+                _ => self.builder.constant(0, loc),
+            },
             _ => self.builder.constant(0, loc),
         }
     }
@@ -213,33 +265,43 @@ impl<'a> UirConverter<'a> {
     fn convert_expression(&mut self, expr: &ast::Expression) -> Id {
         let loc = self.to_loc(expr.span.clone().into());
         match &*expr.kind {
-            ast::ExpressionKind::Constant(c, _) => {
-                match c {
-                    ast::Constant::Integer(val, _) => self.builder.constant(*val, loc),
-                    _ => self.builder.constant(0, loc),
-                }
-            }
+            ast::ExpressionKind::Constant(c, _) => match c {
+                ast::Constant::Integer(val, _) => self.builder.constant(*val, loc),
+                _ => self.builder.constant(0, loc),
+            },
             ast::ExpressionKind::Identifier(name, _) => self.builder.symbol(name, loc),
             ast::ExpressionKind::StringLiteral(s, _) => {
                 // String literal as a constant or symbol?
                 // For now, let's treat it as a symbol with special prefix
                 self.builder.symbol(&format!("\"{}\"", s), loc)
             }
-            ast::ExpressionKind::Binary { left, operator, right, .. } => {
+            ast::ExpressionKind::Binary {
+                left,
+                operator,
+                right,
+                ..
+            } => {
                 let l = self.convert_expression(left);
                 let r = self.convert_expression(right);
                 let op = format!("{:?}", operator).to_lowercase();
                 self.builder.binary_op(&op, l, r, loc)
             }
-            ast::ExpressionKind::Unary { operator, operand, .. } => {
+            ast::ExpressionKind::Unary {
+                operator, operand, ..
+            } => {
                 let arg = self.convert_expression(operand);
                 let op = format!("{:?}", operator).to_lowercase();
                 self.builder.extension(&op, vec![arg], loc)
             }
-            ast::ExpressionKind::Assignment { left, operator, right, .. } => {
+            ast::ExpressionKind::Assignment {
+                left,
+                operator,
+                right,
+                ..
+            } => {
                 let r = self.convert_expression(right);
                 let l = self.convert_expression(left);
-                // For now, assume simple assignment. 
+                // For now, assume simple assignment.
                 // C has +=, -= etc but we can handle them later if needed.
                 let op = format!("{:?}", operator).to_lowercase();
                 if op == "assign" {
@@ -251,23 +313,44 @@ impl<'a> UirConverter<'a> {
                     self.builder.assign_to_id(l, value, loc)
                 }
             }
-            ast::ExpressionKind::PostfixIncDec { operand, is_increment, .. } => {
+            ast::ExpressionKind::PostfixIncDec {
+                operand,
+                is_increment,
+                ..
+            } => {
                 let arg = self.convert_expression(operand);
-                let op = if *is_increment { "post_inc" } else { "post_dec" };
+                let op = if *is_increment {
+                    "post_inc"
+                } else {
+                    "post_dec"
+                };
                 self.builder.extension(op, vec![arg], loc)
             }
-            ast::ExpressionKind::PrefixIncDec { operand, is_increment, .. } => {
+            ast::ExpressionKind::PrefixIncDec {
+                operand,
+                is_increment,
+                ..
+            } => {
                 let arg = self.convert_expression(operand);
                 let op = if *is_increment { "pre_inc" } else { "pre_dec" };
                 self.builder.extension(op, vec![arg], loc)
             }
-            ast::ExpressionKind::Conditional { condition, then_expr, else_expr, .. } => {
+            ast::ExpressionKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+                ..
+            } => {
                 let t = self.convert_expression(condition);
                 let c = self.convert_expression(then_expr);
                 let a = self.convert_expression(else_expr);
                 self.builder.branch(t, c, a, loc)
             }
-            ast::ExpressionKind::FunctionCall { function, arguments, .. } => {
+            ast::ExpressionKind::FunctionCall {
+                function,
+                arguments,
+                ..
+            } => {
                 let func_id = self.convert_expression(function);
                 let mut args = Vec::new();
                 for arg in arguments {
@@ -292,7 +375,12 @@ impl<'a> UirConverter<'a> {
                 let idx = self.convert_expression(index);
                 self.builder.extension("index", vec![arr, idx], loc)
             }
-            ast::ExpressionKind::MemberAccess { object, member, is_pointer, .. } => {
+            ast::ExpressionKind::MemberAccess {
+                object,
+                member,
+                is_pointer,
+                ..
+            } => {
                 let obj = self.convert_expression(object);
                 let mem = self.builder.symbol(member, loc.clone());
                 let op = if *is_pointer { "arrow" } else { "dot" };
@@ -324,8 +412,12 @@ impl<'a> UirConverter<'a> {
         match decl {
             ast::DirectDeclarator::Identifier(name, _) => name.clone(),
             ast::DirectDeclarator::Declarator(decl) => self.get_declarator_name(decl),
-            ast::DirectDeclarator::Array { declarator, .. } => self.get_direct_declarator_name(declarator),
-            ast::DirectDeclarator::Function { declarator, .. } => self.get_direct_declarator_name(declarator),
+            ast::DirectDeclarator::Array { declarator, .. } => {
+                self.get_direct_declarator_name(declarator)
+            }
+            ast::DirectDeclarator::Function { declarator, .. } => {
+                self.get_direct_declarator_name(declarator)
+            }
         }
     }
 }

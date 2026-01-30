@@ -5,11 +5,11 @@ pub mod frontend;
 pub mod optimizer;
 pub mod runtime;
 
-use nyar_types::{NyarError, NyarFrontend, IKunTree};
 use crate::frontend::MiniGoFrontend as FrontendImpl;
 use crate::optimizer::MiniGoOptimizer;
 use crate::runtime::MiniGoRuntime;
-use oak_c::CLanguage;
+use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use oak_go::{GoLanguage, GoRoot, GoBuilder};
 
 /// Mini Go 前端实现
 #[derive(Default)]
@@ -27,18 +27,20 @@ impl MiniGoFrontend {
 }
 
 impl NyarFrontend for MiniGoFrontend {
-    type Language = CLanguage;
+    type Language = GoLanguage;
 
-    fn parse(&self, source: &str) -> Result<oak_c::CRoot, NyarError> {
+    fn parse(&self, source: &str) -> Result<GoRoot, NyarError> {
         use oak_core::Builder;
-        let builder = oak_c::CBuilder::new(oak_c::CLanguage::default());
+        let builder = GoBuilder::new(GoLanguage::default());
         let source_text = oak_core::source::SourceText::new(source.to_string());
-        let mut cache = oak_core::parser::session::ParseSession::<CLanguage>::default();
+        let mut cache = oak_core::parser::session::ParseSession::<GoLanguage>::default();
         let output = builder.build(&source_text, &[], &mut cache);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output
+            .result
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, ast: &oak_c::CRoot) -> Result<IKunTree, NyarError> {
+    fn lower(&self, ast: &GoRoot) -> Result<IKunTree, NyarError> {
         self.inner.lower(ast)
     }
 }

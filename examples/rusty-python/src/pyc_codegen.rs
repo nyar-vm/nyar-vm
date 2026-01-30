@@ -93,8 +93,7 @@ impl Marshal {
                 if *i >= -2147483648 && *i <= 2147483647 {
                     self.data.push(b'i' | 0x80); // TYPE_INT | FLAG_REF
                     self.data.extend_from_slice(&(*i as i32).to_le_bytes());
-                }
-                else {
+                } else {
                     self.data.push(b'I' | 0x80); // TYPE_INT64 | FLAG_REF
                     self.data.extend_from_slice(&(*i as i64).to_le_bytes());
                 }
@@ -108,8 +107,7 @@ impl Marshal {
                     self.data.push(b'Z' | 0x80); // TYPE_SHORT_ASCII_INTERNED | FLAG_REF
                     self.data.push(s.len() as u8);
                     self.data.extend_from_slice(s.as_bytes());
-                }
-                else {
+                } else {
                     self.data.push(b'u' | 0x80); // TYPE_UNICODE | FLAG_REF
                     self.data.extend_from_slice(&(s.len() as u32).to_le_bytes());
                     self.data.extend_from_slice(s.as_bytes());
@@ -124,8 +122,7 @@ impl Marshal {
                 if t.len() <= 255 {
                     self.data.push(b')' | 0x80); // TYPE_SMALL_TUPLE | FLAG_REF
                     self.data.push(t.len() as u8);
-                }
-                else {
+                } else {
                     self.data.push(b'(' | 0x80); // TYPE_TUPLE | FLAG_REF
                     self.data.extend_from_slice(&(t.len() as u32).to_le_bytes());
                 }
@@ -141,12 +138,17 @@ impl Marshal {
 
     pub fn write_code_object(&mut self, code: &PyCodeObject) {
         self.data.push(b'c' | 0x80); // TYPE_CODE | FLAG_REF
-        self.data.extend_from_slice(&(code.argcount as i32).to_le_bytes());
-        self.data.extend_from_slice(&(code.posonlyargcount as i32).to_le_bytes());
-        self.data.extend_from_slice(&(code.kwonlyargcount as i32).to_le_bytes());
+        self.data
+            .extend_from_slice(&(code.argcount as i32).to_le_bytes());
+        self.data
+            .extend_from_slice(&(code.posonlyargcount as i32).to_le_bytes());
+        self.data
+            .extend_from_slice(&(code.kwonlyargcount as i32).to_le_bytes());
         // nlocals removed in 3.11+ marshal
-        self.data.extend_from_slice(&(code.stacksize as i32).to_le_bytes());
-        self.data.extend_from_slice(&(code.flags as i32).to_le_bytes());
+        self.data
+            .extend_from_slice(&(code.stacksize as i32).to_le_bytes());
+        self.data
+            .extend_from_slice(&(code.flags as i32).to_le_bytes());
 
         // co_code
         self.write_object(&PyObject::Bytes(code.code.clone()));
@@ -155,10 +157,20 @@ impl Marshal {
         self.write_object(&PyObject::Tuple(code.consts.clone()));
 
         // co_names
-        self.write_object(&PyObject::Tuple(code.names.iter().map(|s| PyObject::String(s.clone())).collect()));
+        self.write_object(&PyObject::Tuple(
+            code.names
+                .iter()
+                .map(|s| PyObject::String(s.clone()))
+                .collect(),
+        ));
 
         // co_localsplusnames (Python 3.11+)
-        self.write_object(&PyObject::Tuple(code.localsplusnames.iter().map(|s| PyObject::String(s.clone())).collect()));
+        self.write_object(&PyObject::Tuple(
+            code.localsplusnames
+                .iter()
+                .map(|s| PyObject::String(s.clone()))
+                .collect(),
+        ));
 
         // co_localspluskinds (Python 3.11+)
         // For now, assume all are CO_FAST_LOCAL (0x20) if they are in localsplusnames
@@ -175,7 +187,8 @@ impl Marshal {
         self.write_object(&PyObject::String(code.qualname.clone()));
 
         // co_firstlineno (w_long)
-        self.data.extend_from_slice(&(code.firstlineno as i32).to_le_bytes());
+        self.data
+            .extend_from_slice(&(code.firstlineno as i32).to_le_bytes());
 
         // co_linetable
         self.write_object(&PyObject::Bytes(code.linetable.clone()));
@@ -304,10 +317,12 @@ impl PycTranslator {
                 let end_offset = self.get_current_unit_offset();
 
                 // Set jump_to_false arg: offset from instruction AFTER jump to else_start
-                self.instructions[jump_to_false_idx].arg = else_start_offset - (start_offset + jump_instr_size);
+                self.instructions[jump_to_false_idx].arg =
+                    else_start_offset - (start_offset + jump_instr_size);
 
                 // Set jump_to_end arg: offset from instruction AFTER jump to end
-                self.instructions[jump_to_end_idx].arg = end_offset - (else_start_offset + jump_to_end_instr_size);
+                self.instructions[jump_to_end_idx].arg =
+                    end_offset - (else_start_offset + jump_to_end_instr_size);
             }
             IKunTree::Apply(func, args) => {
                 if let IKunTree::Symbol(name) = &**func {
@@ -342,52 +357,53 @@ impl PycTranslator {
                 let end_offset = self.get_current_unit_offset();
 
                 // Set jump_to_end arg
-                self.instructions[jump_to_end_idx].arg = end_offset - (jump_to_end_offset_base + jump_to_end_size);
+                self.instructions[jump_to_end_idx].arg =
+                    end_offset - (jump_to_end_offset_base + jump_to_end_size);
 
                 // Set jump_back arg: offset from instruction AFTER jump back to start_offset
-                self.instructions[jump_back_idx].arg = (jump_back_offset_base + jump_back_size) - start_offset;
+                self.instructions[jump_back_idx].arg =
+                    (jump_back_offset_base + jump_back_size) - start_offset;
             }
-            IKunTree::Extension(name, args) => {
-                match name.as_str() {
-                    "add" | "sub" | "mul" | "div" | "floordiv" | "mod" | "pow" | "lshift" | "rshift" | "bitor" | "bitxor" | "bitand" => {
-                        self.compile_tree_node(&args[0]);
-                        self.compile_tree_node(&args[1]);
-                        let op_idx = match name.as_str() {
-                            "add" => 0,
-                            "sub" => 10,
-                            "mul" => 5,
-                            "div" => 11,
-                            "floordiv" => 2,
-                            "mod" => 6,
-                            "pow" => 8,
-                            "lshift" => 3,
-                            "rshift" => 9,
-                            "bitor" => 7,
-                            "bitxor" => 12,
-                            "bitand" => 1,
-                            _ => 0,
-                        };
-                        self.emit(OpCode::BinaryOp, op_idx);
-                    }
-                    "eq" | "noteq" | "lt" | "lte" | "gt" | "gte" => {
-                        self.compile_tree_node(&args[0]);
-                        self.compile_tree_node(&args[1]);
-                        let op_idx = match name.as_str() {
-                            "eq" => 2,
-                            "noteq" => 3,
-                            "lt" => 0,
-                            "lte" => 1,
-                            "gt" => 4,
-                            "gte" => 5,
-                            _ => 2,
-                        };
-                        self.emit(OpCode::CompareOp, op_idx);
-                    }
-                    _ => {
-                        eprintln!("Unhandled extension: {}", name);
-                    }
+            IKunTree::Extension(name, args) => match name.as_str() {
+                "add" | "sub" | "mul" | "div" | "floordiv" | "mod" | "pow" | "lshift"
+                | "rshift" | "bitor" | "bitxor" | "bitand" => {
+                    self.compile_tree_node(&args[0]);
+                    self.compile_tree_node(&args[1]);
+                    let op_idx = match name.as_str() {
+                        "add" => 0,
+                        "sub" => 10,
+                        "mul" => 5,
+                        "div" => 11,
+                        "floordiv" => 2,
+                        "mod" => 6,
+                        "pow" => 8,
+                        "lshift" => 3,
+                        "rshift" => 9,
+                        "bitor" => 7,
+                        "bitxor" => 12,
+                        "bitand" => 1,
+                        _ => 0,
+                    };
+                    self.emit(OpCode::BinaryOp, op_idx);
                 }
-            }
+                "eq" | "noteq" | "lt" | "lte" | "gt" | "gte" => {
+                    self.compile_tree_node(&args[0]);
+                    self.compile_tree_node(&args[1]);
+                    let op_idx = match name.as_str() {
+                        "eq" => 2,
+                        "noteq" => 3,
+                        "lt" => 0,
+                        "lte" => 1,
+                        "gt" => 4,
+                        "gte" => 5,
+                        _ => 2,
+                    };
+                    self.emit(OpCode::CompareOp, op_idx);
+                }
+                _ => {
+                    eprintln!("Unhandled extension: {}", name);
+                }
+            },
             IKunTree::Module(_, items) => {
                 for item in items {
                     self.compile_tree_node(item);
@@ -448,13 +464,17 @@ impl PycTranslator {
             Statement::Return(expr) => {
                 if let Some(e) = expr {
                     self.compile_expression(e);
-                }
-                else {
+                } else {
                     self.emit(OpCode::LoadConst, 0);
                 }
                 self.emit(OpCode::ReturnValue, 0);
             }
-            Statement::FunctionDef { name, parameters, body, .. } => {
+            Statement::FunctionDef {
+                name,
+                parameters,
+                body,
+                ..
+            } => {
                 // 处理函数定义
                 let mut sub_translator = PycTranslator::new(&self.filename, name);
                 sub_translator.emit(OpCode::Resume, 0);
@@ -501,7 +521,11 @@ impl PycTranslator {
                 let idx = self.add_name(name);
                 self.emit(OpCode::LoadName, idx);
             }
-            Expression::BinaryOp { left, operator, right } => {
+            Expression::BinaryOp {
+                left,
+                operator,
+                right,
+            } => {
                 self.compile_expression(left);
                 self.compile_expression(right);
                 match operator {
@@ -532,8 +556,7 @@ impl PycTranslator {
     fn add_const(&mut self, obj: PyObject) -> u32 {
         if let Some(pos) = self.consts.iter().position(|x| x == &obj) {
             pos as u32
-        }
-        else {
+        } else {
             let pos = self.consts.len();
             self.consts.push(obj);
             pos as u32
@@ -543,8 +566,7 @@ impl PycTranslator {
     fn add_name(&mut self, name: &str) -> u32 {
         if let Some(pos) = self.names.iter().position(|x| x == name) {
             pos as u32
-        }
-        else {
+        } else {
             let pos = self.names.len();
             self.names.push(name.to_string());
             pos as u32
@@ -554,8 +576,7 @@ impl PycTranslator {
     fn add_localsplusname(&mut self, name: &str) -> u32 {
         if let Some(pos) = self.localsplusnames.iter().position(|x| x == name) {
             pos as u32
-        }
-        else {
+        } else {
             let pos = self.localsplusnames.len();
             self.localsplusnames.push(name.to_string());
             pos as u32
@@ -612,6 +633,9 @@ impl PycTranslator {
     }
 
     fn get_current_unit_offset(&self) -> u32 {
-        self.instructions.iter().map(|i| self.get_instruction_size(i.opcode)).sum()
+        self.instructions
+            .iter()
+            .map(|i| self.get_instruction_size(i.opcode))
+            .sum()
     }
 }

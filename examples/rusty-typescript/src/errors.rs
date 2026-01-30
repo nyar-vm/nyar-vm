@@ -1,7 +1,7 @@
-use std::fmt::{Display, Formatter};
-use std::error::Error;
-use std::path::PathBuf;
 use nyar_types::{FormatError, VmError};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
 
 pub type Result<T> = std::result::Result<T, ScriptError>;
 
@@ -12,42 +12,78 @@ pub struct ScriptError {
 
 #[derive(Debug)]
 pub enum ScriptErrorKind {
-    Io { error: std::io::Error, path: Option<PathBuf> },
-    NyarFormat { error: FormatError },
-    Vm { error: VmError },
-    Toml { error: toml::ser::Error },
-    Json { error: serde_json::Error },
-    Compile { message: String },
-    Other { message: String },
+    Io {
+        error: std::io::Error,
+        path: Option<PathBuf>,
+    },
+    NyarFormat {
+        error: FormatError,
+    },
+    Vm {
+        error: VmError,
+    },
+    Toml {
+        error: toml::ser::Error,
+    },
+    Json {
+        error: serde_json::Error,
+    },
+    Compile {
+        message: String,
+    },
+    Other {
+        message: String,
+    },
 }
 
 impl ScriptError {
     pub fn io(error: std::io::Error, path: impl Into<Option<PathBuf>>) -> Self {
-        Self { kind: Box::new(ScriptErrorKind::Io { error, path: path.into() }) }
+        Self {
+            kind: Box::new(ScriptErrorKind::Io {
+                error,
+                path: path.into(),
+            }),
+        }
     }
 
     pub fn nyar(error: FormatError) -> Self {
-        Self { kind: Box::new(ScriptErrorKind::NyarFormat { error }) }
+        Self {
+            kind: Box::new(ScriptErrorKind::NyarFormat { error }),
+        }
     }
 
     pub fn vm(error: VmError) -> Self {
-        Self { kind: Box::new(ScriptErrorKind::Vm { error }) }
+        Self {
+            kind: Box::new(ScriptErrorKind::Vm { error }),
+        }
     }
 
     pub fn toml(error: toml::ser::Error) -> Self {
-        Self { kind: Box::new(ScriptErrorKind::Toml { error }) }
+        Self {
+            kind: Box::new(ScriptErrorKind::Toml { error }),
+        }
     }
 
     pub fn json(error: serde_json::Error) -> Self {
-        Self { kind: Box::new(ScriptErrorKind::Json { error }) }
+        Self {
+            kind: Box::new(ScriptErrorKind::Json { error }),
+        }
     }
 
     pub fn compile(message: impl Into<String>) -> Self {
-        Self { kind: Box::new(ScriptErrorKind::Compile { message: message.into() }) }
+        Self {
+            kind: Box::new(ScriptErrorKind::Compile {
+                message: message.into(),
+            }),
+        }
     }
 
     pub fn other(message: impl Into<String>) -> Self {
-        Self { kind: Box::new(ScriptErrorKind::Other { message: message.into() }) }
+        Self {
+            kind: Box::new(ScriptErrorKind::Other {
+                message: message.into(),
+            }),
+        }
     }
 }
 

@@ -4,7 +4,12 @@ use nyar_vm::NyarDriver;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "tsx", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Executor (Simulating tsx)")]
+#[command(
+    name = "tsx",
+    version = "0.1.0",
+    author = "Nyar Project",
+    about = "Mini TypeScript Executor (Simulating tsx)"
+)]
 struct Args {
     /// The input TypeScript file or directory.
     #[arg(index = 1)]
@@ -17,7 +22,7 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    
+
     let input_path = match args.input {
         Some(path) => path,
         None => {

@@ -9,7 +9,9 @@ use chomsky_rules::{AlgebraicSimplification, ConstantFolding};
 
 pub struct BarrierElision;
 
-impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A> for BarrierElision {
+impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
+    for BarrierElision
+{
     fn name(&self) -> &str {
         "barrier-elision"
     }
@@ -47,7 +49,9 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
 
 pub struct AllocationSinking;
 
-impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A> for AllocationSinking {
+impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
+    for AllocationSinking
+{
     fn name(&self) -> &str {
         "allocation-sinking"
     }
@@ -61,7 +65,7 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
                     if op == "alloc" {
                         // Check if this allocation escapes the current function
                         let mut escapes = false;
-                        
+
                         // Search for all uses of this e-class
                         for other_entry in egraph.classes.iter() {
                             let other_class = other_entry.value();
@@ -69,11 +73,12 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
                                 match other_node {
                                     IKun::Extension(other_op, other_args) => {
                                         // If used in something other than field access, it might escape
-                                        if other_args.contains(&id) && 
-                                           other_op != "load_field" && 
-                                           other_op != "store_field" &&
-                                           other_op != "barrier" &&
-                                           other_op != "type_of" {
+                                        if other_args.contains(&id)
+                                            && other_op != "load_field"
+                                            && other_op != "store_field"
+                                            && other_op != "barrier"
+                                            && other_op != "type_of"
+                                        {
                                             escapes = true;
                                             break;
                                         }
@@ -100,7 +105,9 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
                                     _ => {}
                                 }
                             }
-                            if escapes { break; }
+                            if escapes {
+                                break;
+                            }
                         }
                         if !escapes {
                             matches.push(id);
@@ -124,7 +131,7 @@ use gaia_jit::JitMemory;
 use nyar_types::VmError;
 
 use nyar_vm::bytecode::decoder::{Decoder, Instruction};
-use nyar_vm::bytecode::format::{Constant as NyarConstant};
+use nyar_vm::bytecode::format::Constant as NyarConstant;
 use nyar_vm::vm::interpreter::NyarVM;
 
 /// Represents the compilation tiers in NyarJit.
@@ -158,12 +165,12 @@ unsafe impl Send for CompiledCode {}
 unsafe impl Sync for CompiledCode {}
 
 /// The function signature for JIT-compiled code.
-/// 
+///
 /// # Arguments
 /// * `stack_ptr` - Pointer to the VM value stack.
 /// * `sp` - Pointer to the stack pointer (index).
 /// * `locals_ptr` - Pointer to the local variables for the current frame.
-/// 
+///
 /// # Returns
 /// * `0` on success, non-zero for error codes (e.g., deoptimization request).
 type JitEntry = unsafe extern "C" fn(
@@ -238,14 +245,19 @@ use nyar_vm::vm::interpreter::JitProvider;
 use nyar_vm::vm::value::Value;
 
 impl JitProvider for NyarJit {
-    fn try_execute(&self, vm: &mut NyarVM, module_idx: usize, chunk_idx: usize) -> Option<Result<Value, VmError>> {
+    fn try_execute(
+        &self,
+        vm: &mut NyarVM,
+        module_idx: usize,
+        chunk_idx: usize,
+    ) -> Option<Result<Value, VmError>> {
         let key = (module_idx, chunk_idx);
-        
+
         // 1. Check if already compiled
         if let Some(compiled) = self.code_cache.get(&key) {
             // Found compiled code, execute it!
             let result = self.execute_compiled(compiled.value(), vm);
-            
+
             if compiled.tier < JitTier::Extreme {
                 // Check if we should upgrade to the next tier
                 let next_tier = match compiled.tier {
@@ -253,14 +265,14 @@ impl JitProvider for NyarJit {
                     JitTier::Optimizing => JitTier::Extreme,
                     _ => unreachable!(),
                 };
-                
+
                 let threshold = self.get_threshold(next_tier);
                 let chunk = &vm.modules[module_idx].chunks[chunk_idx];
-                
-                // Use the same u8 overflow logic in JIT compiled code if needed, 
+
+                // Use the same u8 overflow logic in JIT compiled code if needed,
                 // but here we are in the JIT controller, so we just check the current hotness.
                 let hotness = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
-                
+
                 if hotness >= threshold {
                     match self.compile(vm, module_idx, chunk_idx, next_tier, 0) {
                         Ok(_) => { /* Upgrade successful, next call will use it */ }
@@ -268,14 +280,14 @@ impl JitProvider for NyarJit {
                     }
                 }
             }
-            
+
             return Some(result);
         }
 
         // 2. Increment hotness in VM's chunk for baseline trigger
         let threshold = self.get_threshold(JitTier::Baseline);
         let chunk = &vm.modules[module_idx].chunks[chunk_idx];
-        
+
         // We only trigger baseline when hotness is checked.
         // The actual increment happens in the interpreter using u8 overflow.
         let hotness = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
@@ -293,7 +305,13 @@ impl JitProvider for NyarJit {
         None
     }
 
-    fn osr(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize, target: u32) -> Result<*const u8, VmError> {
+    fn osr(
+        &self,
+        vm: &NyarVM,
+        module_idx: usize,
+        chunk_idx: usize,
+        target: u32,
+    ) -> Result<*const u8, VmError> {
         // OSR allows transitioning from the interpreter to JITed code in the middle of a function.
         // For now, delegate to the internal osr method.
         self.osr_internal(vm, module_idx, chunk_idx, target)
@@ -319,7 +337,7 @@ impl NyarJit {
     /// Creates a new NyarJit instance with specified memory capacity.
     pub fn new(capacity: usize) -> Result<Self, VmError> {
         let mut optimizer = UniversalOptimizer::new();
-        
+
         // Register default optimization rules
         optimizer.register_rule(
             chomsky_rule_engine::RuleCategory::Algebraic,
@@ -339,8 +357,10 @@ impl NyarJit {
         );
 
         let optimizer = std::sync::Mutex::new(optimizer);
-        let jit_mem = std::sync::Mutex::new(JitMemory::new(capacity).map_err(|e| VmError::RuntimeError(e.to_string()))?);
-        
+        let jit_mem = std::sync::Mutex::new(
+            JitMemory::new(capacity).map_err(|e| VmError::RuntimeError(e.to_string()))?,
+        );
+
         let mut thresholds = HashMap::new();
         thresholds.insert(JitTier::Baseline, 256);
         thresholds.insert(JitTier::Optimizing, 5120);
@@ -359,10 +379,13 @@ impl NyarJit {
     /// Executes compiled machine code.
     fn execute_compiled(&self, compiled: &CompiledCode, vm: &mut NyarVM) -> Result<Value, VmError> {
         let entry: JitEntry = unsafe { std::mem::transmute(compiled.entry_point) };
-        
+
         // Use the locals from the current VM frame.
-        let frame = vm.frames.last_mut().ok_or(VmError::RuntimeError("No active frame".to_string()))?;
-        
+        let frame = vm
+            .frames
+            .last_mut()
+            .ok_or(VmError::RuntimeError("No active frame".to_string()))?;
+
         unsafe {
             let res_code = entry(
                 vm.stack.as_mut_ptr(),
@@ -370,7 +393,7 @@ impl NyarJit {
                 frame.locals.as_mut_ptr(),
                 &mut frame.ip as *mut usize,
             );
-            
+
             if res_code == 0 {
                 // Success! JIT finished the whole function.
                 // The result should be at the top of the stack.
@@ -387,7 +410,10 @@ impl NyarJit {
                 Ok(Value::null())
             } else {
                 // Handle deoptimization or errors
-                Err(VmError::RuntimeError(format!("JIT execution failed with code {}", res_code)))
+                Err(VmError::RuntimeError(format!(
+                    "JIT execution failed with code {}",
+                    res_code
+                )))
             }
         }
     }
@@ -404,7 +430,12 @@ impl NyarJit {
         let key = (module_idx, chunk_idx);
 
         // 1. Get or create Inline Cache for this chunk
-        let ic = self.ic_registry.entry(key).or_insert_with(|| Arc::new(InlineCache::new())).value().clone();
+        let ic = self
+            .ic_registry
+            .entry(key)
+            .or_insert_with(|| Arc::new(InlineCache::new()))
+            .value()
+            .clone();
 
         // 2. Intent Extraction
         let intents = self.extract_intents(vm, module_idx, chunk_idx, start_offset);
@@ -443,7 +474,11 @@ impl NyarJit {
         self.generate_and_cache(key, &optimized_tree, tier, backend.as_ref(), ic)
     }
 
-    fn add_tree_to_egraph(&self, optimizer: &mut UniversalOptimizer<()>, tree: &IKunTree) -> chomsky::uir::Id {
+    fn add_tree_to_egraph(
+        &self,
+        optimizer: &mut UniversalOptimizer<()>,
+        tree: &IKunTree,
+    ) -> chomsky::uir::Id {
         // Recursively add IKunTree nodes to E-Graph.
         match tree {
             IKunTree::Constant(v) => optimizer.add_intent(&IKun::Constant(*v)),
@@ -469,11 +504,17 @@ impl NyarJit {
             }
             IKunTree::Apply(f, args) => {
                 let f_id = self.add_tree_to_egraph(optimizer, f);
-                let arg_ids = args.iter().map(|arg| self.add_tree_to_egraph(optimizer, arg)).collect();
+                let arg_ids = args
+                    .iter()
+                    .map(|arg| self.add_tree_to_egraph(optimizer, arg))
+                    .collect();
                 optimizer.add_intent(&IKun::Apply(f_id, arg_ids))
             }
             IKunTree::Extension(name, args) => {
-                let arg_ids = args.iter().map(|arg| self.add_tree_to_egraph(optimizer, arg)).collect();
+                let arg_ids = args
+                    .iter()
+                    .map(|arg| self.add_tree_to_egraph(optimizer, arg))
+                    .collect();
                 optimizer.add_intent(&IKun::Extension(name.clone(), arg_ids))
             }
             IKunTree::StateUpdate(key, val) => {
@@ -481,19 +522,23 @@ impl NyarJit {
                 let val_id = self.add_tree_to_egraph(optimizer, val);
                 optimizer.add_intent(&IKun::StateUpdate(key_id, val_id))
             }
-            _ => {
-                optimizer.add_intent(&IKun::Symbol("unsupported_tree_node".to_string()))
-            }
+            _ => optimizer.add_intent(&IKun::Symbol("unsupported_tree_node".to_string())),
         }
     }
 
-    fn extract_intents(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize, start_offset: usize) -> Vec<IKun> {
+    fn extract_intents(
+        &self,
+        vm: &NyarVM,
+        module_idx: usize,
+        chunk_idx: usize,
+        start_offset: usize,
+    ) -> Vec<IKun> {
         let module = &vm.modules[module_idx];
         let chunk = &module.chunks[chunk_idx];
         let mut intents = Vec::new();
         let mut stack = Vec::new();
         let mut decoder = Decoder::new(&chunk.code);
-        
+
         // Skip instructions until start_offset
         for _ in 0..start_offset {
             let _ = decoder.next_result();
@@ -546,84 +591,130 @@ impl NyarJit {
                         stack.swap(len - 1, len - 1 - depth as usize);
                     }
                 }
-                Instruction::I32Add | Instruction::I64Add | Instruction::F32Add | Instruction::F64Add => {
+                Instruction::I32Add
+                | Instruction::I64Add
+                | Instruction::F32Add
+                | Instruction::F64Add => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("add".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32Sub | Instruction::I64Sub | Instruction::F32Sub | Instruction::F64Sub => {
+                Instruction::I32Sub
+                | Instruction::I64Sub
+                | Instruction::F32Sub
+                | Instruction::F64Sub => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("sub".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32Mul | Instruction::I64Mul | Instruction::F32Mul | Instruction::F64Mul => {
+                Instruction::I32Mul
+                | Instruction::I64Mul
+                | Instruction::F32Mul
+                | Instruction::F64Mul => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("mul".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::F32Div | Instruction::F64Div | Instruction::I32DivS | Instruction::I32DivU | Instruction::I64DivS | Instruction::I64DivU => {
+                Instruction::F32Div
+                | Instruction::F64Div
+                | Instruction::I32DivS
+                | Instruction::I32DivU
+                | Instruction::I64DivS
+                | Instruction::I64DivU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("div".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32RemS | Instruction::I32RemU | Instruction::I64RemS | Instruction::I64RemU => {
+                Instruction::I32RemS
+                | Instruction::I32RemU
+                | Instruction::I64RemS
+                | Instruction::I64RemU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("rem".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32Neg | Instruction::I64Neg | Instruction::F32Neg | Instruction::F64Neg => {
+                Instruction::I32Neg
+                | Instruction::I64Neg
+                | Instruction::F32Neg
+                | Instruction::F64Neg => {
                     if let Some(val) = stack.pop() {
                         let id = intents.len();
                         intents.push(IKun::Extension("neg".to_string(), vec![val]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32Eq | Instruction::I64Eq | Instruction::F32Eq | Instruction::F64Eq => {
+                Instruction::I32Eq
+                | Instruction::I64Eq
+                | Instruction::F32Eq
+                | Instruction::F64Eq => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("eq".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32Ne | Instruction::I64Ne | Instruction::F32Ne | Instruction::F64Ne => {
+                Instruction::I32Ne
+                | Instruction::I64Ne
+                | Instruction::F32Ne
+                | Instruction::F64Ne => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("ne".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32LtS | Instruction::I64LtS | Instruction::F32Lt | Instruction::F64Lt | Instruction::I32LtU | Instruction::I64LtU => {
+                Instruction::I32LtS
+                | Instruction::I64LtS
+                | Instruction::F32Lt
+                | Instruction::F64Lt
+                | Instruction::I32LtU
+                | Instruction::I64LtU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("lt".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32LeS | Instruction::I64LeS | Instruction::F32Le | Instruction::F64Le | Instruction::I32LeU | Instruction::I64LeU => {
+                Instruction::I32LeS
+                | Instruction::I64LeS
+                | Instruction::F32Le
+                | Instruction::F64Le
+                | Instruction::I32LeU
+                | Instruction::I64LeU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("le".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32GtS | Instruction::I64GtS | Instruction::F32Gt | Instruction::F64Gt | Instruction::I32GtU | Instruction::I64GtU => {
+                Instruction::I32GtS
+                | Instruction::I64GtS
+                | Instruction::F32Gt
+                | Instruction::F64Gt
+                | Instruction::I32GtU
+                | Instruction::I64GtU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("gt".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32GeS | Instruction::I64GeS | Instruction::F32Ge | Instruction::F64Ge | Instruction::I32GeU | Instruction::I64GeU => {
+                Instruction::I32GeS
+                | Instruction::I64GeS
+                | Instruction::F32Ge
+                | Instruction::F64Ge
+                | Instruction::I32GeU
+                | Instruction::I64GeU => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("ge".to_string(), vec![lhs, rhs]));
@@ -637,17 +728,32 @@ impl NyarJit {
                         stack.push(id);
                     }
                 }
-                Instruction::I32Trunc64S | Instruction::I32Trunc64U | Instruction::F64ToF32 | Instruction::I32Trunc64SLow => {
+                Instruction::I32Trunc64S
+                | Instruction::I32Trunc64U
+                | Instruction::F64ToF32
+                | Instruction::I32Trunc64SLow => {
                     if let Some(val) = stack.pop() {
                         let id = intents.len();
                         intents.push(IKun::Extension("trunc".to_string(), vec![val]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32ToF32S | Instruction::I32ToF32U | Instruction::I32ToF64S | Instruction::I32ToF64U |
-                Instruction::I64ToF32S | Instruction::I64ToF32U | Instruction::I64ToF64S | Instruction::I64ToF64U |
-                Instruction::F32ToI32S | Instruction::F32ToI32U | Instruction::F32ToI64S | Instruction::F32ToI64U |
-                Instruction::F64ToI32S | Instruction::F64ToI32U | Instruction::F64ToI64S | Instruction::F64ToI64U => {
+                Instruction::I32ToF32S
+                | Instruction::I32ToF32U
+                | Instruction::I32ToF64S
+                | Instruction::I32ToF64U
+                | Instruction::I64ToF32S
+                | Instruction::I64ToF32U
+                | Instruction::I64ToF64S
+                | Instruction::I64ToF64U
+                | Instruction::F32ToI32S
+                | Instruction::F32ToI32U
+                | Instruction::F32ToI64S
+                | Instruction::F32ToI64U
+                | Instruction::F64ToI32S
+                | Instruction::F64ToI32U
+                | Instruction::F64ToI64S
+                | Instruction::F64ToI64U => {
                     if let Some(val) = stack.pop() {
                         let id = intents.len();
                         intents.push(IKun::Extension("convert".to_string(), vec![val]));
@@ -663,7 +769,10 @@ impl NyarJit {
                         intents.push(IKun::Extension("eq".to_string(), vec![val, null_id]));
                         let target_id = intents.len();
                         intents.push(IKun::Constant(offset as i64));
-                        intents.push(IKun::Extension("branch_true".to_string(), vec![cond_id, target_id]));
+                        intents.push(IKun::Extension(
+                            "branch_true".to_string(),
+                            vec![cond_id, target_id],
+                        ));
                     }
                 }
                 Instruction::NewArray(idx) => {
@@ -671,23 +780,34 @@ impl NyarJit {
                         let const_id = intents.len();
                         intents.push(IKun::Constant(idx as i64));
                         let id = intents.len();
-                        intents.push(IKun::Extension("new_array".to_string(), vec![const_id, len_id]));
+                        intents.push(IKun::Extension(
+                            "new_array".to_string(),
+                            vec![const_id, len_id],
+                        ));
                         stack.push(id);
                     }
                 }
                 Instruction::GetElement => {
                     if let (Some(idx_id), Some(arr_id)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
-                        intents.push(IKun::Extension("get_element".to_string(), vec![arr_id, idx_id]));
+                        intents.push(IKun::Extension(
+                            "get_element".to_string(),
+                            vec![arr_id, idx_id],
+                        ));
                         stack.push(id);
                     }
                 }
                 Instruction::SetElement => {
-                    if let (Some(val_id), Some(idx_id), Some(arr_id)) = (stack.pop(), stack.pop(), stack.pop()) {
+                    if let (Some(val_id), Some(idx_id), Some(arr_id)) =
+                        (stack.pop(), stack.pop(), stack.pop())
+                    {
                         let key_id = intents.len();
-                        intents.push(IKun::Extension("element_key".to_string(), vec![arr_id, idx_id]));
+                        intents.push(IKun::Extension(
+                            "element_key".to_string(),
+                            vec![arr_id, idx_id],
+                        ));
                         intents.push(IKun::StateUpdate(key_id, val_id));
-                        
+
                         let _barrier_id = intents.len();
                         intents.push(IKun::Extension("barrier".to_string(), vec![arr_id]));
                     }
@@ -731,7 +851,10 @@ impl NyarJit {
                     if let Some(cond) = stack.pop() {
                         let target_id = intents.len();
                         intents.push(IKun::Constant(offset as i64));
-                        intents.push(IKun::Extension("branch_false".to_string(), vec![cond, target_id]));
+                        intents.push(IKun::Extension(
+                            "branch_false".to_string(),
+                            vec![cond, target_id],
+                        ));
                     }
                 }
                 Instruction::Call(idx, args_count) => {
@@ -742,10 +865,10 @@ impl NyarJit {
                         }
                     }
                     args.reverse();
-                    
+
                     let func_id = intents.len();
                     intents.push(IKun::Constant(idx as i64));
-                    
+
                     let id = intents.len();
                     intents.push(IKun::Extension("call".to_string(), {
                         let mut v = vec![func_id];
@@ -757,7 +880,7 @@ impl NyarJit {
                 Instruction::NewObject(idx) => {
                     let const_id = intents.len();
                     intents.push(IKun::Constant(idx as i64));
-                    
+
                     let alloc_id = intents.len();
                     intents.push(IKun::Extension("alloc".to_string(), vec![const_id]));
                     stack.push(alloc_id);
@@ -766,9 +889,12 @@ impl NyarJit {
                     if let Some(obj) = stack.pop() {
                         let const_id = intents.len();
                         intents.push(IKun::Constant(idx as i64));
-                        
+
                         let id = intents.len();
-                        intents.push(IKun::Extension("load_field".to_string(), vec![obj, const_id]));
+                        intents.push(IKun::Extension(
+                            "load_field".to_string(),
+                            vec![obj, const_id],
+                        ));
                         stack.push(id);
                     }
                 }
@@ -776,11 +902,14 @@ impl NyarJit {
                     if let (Some(val), Some(obj)) = (stack.pop(), stack.pop()) {
                         let const_id = intents.len();
                         intents.push(IKun::Constant(idx as i64));
-                        
+
                         let field_id = intents.len();
-                        intents.push(IKun::Extension("field_key".to_string(), vec![obj, const_id]));
+                        intents.push(IKun::Extension(
+                            "field_key".to_string(),
+                            vec![obj, const_id],
+                        ));
                         intents.push(IKun::StateUpdate(field_id, val));
-                        
+
                         let _barrier_id = intents.len();
                         intents.push(IKun::Extension("barrier".to_string(), vec![obj]));
                     }
@@ -801,7 +930,10 @@ impl NyarJit {
                         intents.push(IKun::StateUpdate(key_id, val));
                     }
                 }
-                Instruction::CallVirtual(idx, args_count) | Instruction::CallDynamic(idx, args_count) | Instruction::InvokeMethod(idx, args_count) | Instruction::CallSymbol(idx, args_count) => {
+                Instruction::CallVirtual(idx, args_count)
+                | Instruction::CallDynamic(idx, args_count)
+                | Instruction::InvokeMethod(idx, args_count)
+                | Instruction::CallSymbol(idx, args_count) => {
                     let mut args = Vec::new();
                     for _ in 0..args_count {
                         if let Some(arg) = stack.pop() {
@@ -811,7 +943,7 @@ impl NyarJit {
                     args.reverse();
                     let const_id = intents.len();
                     intents.push(IKun::Constant(idx as i64));
-                    
+
                     let id = intents.len();
                     intents.push(IKun::Extension("dynamic_call".to_string(), {
                         let mut v = vec![const_id];
@@ -844,7 +976,10 @@ impl NyarJit {
                         let const_id = intents.len();
                         intents.push(IKun::Constant(idx as i64));
                         let id = intents.len();
-                        intents.push(IKun::Extension("instance_of".to_string(), vec![val, const_id]));
+                        intents.push(IKun::Extension(
+                            "instance_of".to_string(),
+                            vec![val, const_id],
+                        ));
                         stack.push(id);
                     }
                 }
@@ -868,24 +1003,27 @@ impl NyarJit {
                         let is_local_id = intents.len();
                         intents.push(IKun::BooleanConstant(up.is_local));
                         let cap_id = intents.len();
-                        intents.push(IKun::Extension("capture_ref".to_string(), vec![const_id, is_local_id]));
+                        intents.push(IKun::Extension(
+                            "capture_ref".to_string(),
+                            vec![const_id, is_local_id],
+                        ));
                         captures.push(cap_id);
                     }
                     let func_const_id = intents.len();
-                     intents.push(IKun::Constant(idx as i64));
-                     let id = intents.len();
-                     intents.push(IKun::Extension("make_closure".to_string(), {
-                         let mut v = vec![func_const_id];
-                         v.extend(captures);
-                         v
-                     }));
-                     stack.push(id);
-                 }
-                 Instruction::TailCall => {
-                     if let Some(val_id) = stack.pop() {
-                          intents.push(IKun::Extension("tail_call".to_string(), vec![val_id]));
-                     }
-                 }
+                    intents.push(IKun::Constant(idx as i64));
+                    let id = intents.len();
+                    intents.push(IKun::Extension("make_closure".to_string(), {
+                        let mut v = vec![func_const_id];
+                        v.extend(captures);
+                        v
+                    }));
+                    stack.push(id);
+                }
+                Instruction::TailCall => {
+                    if let Some(val_id) = stack.pop() {
+                        intents.push(IKun::Extension("tail_call".to_string(), vec![val_id]));
+                    }
+                }
                 Instruction::CallClosure(argc) => {
                     let mut args = Vec::new();
                     for _ in 0..argc {
@@ -904,18 +1042,18 @@ impl NyarJit {
                         stack.push(id);
                     }
                 }
-                 Instruction::MakeTuple(argc) => {
-                     let mut args = Vec::new();
-                     for _ in 0..argc {
-                         if let Some(arg) = stack.pop() {
-                             args.push(arg);
-                         }
-                     }
-                     args.reverse();
-                     let id = intents.len();
-                     intents.push(IKun::Extension("make_tuple".to_string(), args));
-                     stack.push(id);
-                 }
+                Instruction::MakeTuple(argc) => {
+                    let mut args = Vec::new();
+                    for _ in 0..argc {
+                        if let Some(arg) = stack.pop() {
+                            args.push(arg);
+                        }
+                    }
+                    args.reverse();
+                    let id = intents.len();
+                    intents.push(IKun::Extension("make_tuple".to_string(), args));
+                    stack.push(id);
+                }
                 Instruction::SizeOf => {
                     if let Some(val) = stack.pop() {
                         let id = intents.len();
@@ -947,17 +1085,22 @@ impl NyarJit {
         backend: &dyn Backend,
         ic: Arc<InlineCache>,
     ) -> Result<Arc<CompiledCode>, VmError> {
-        let artifact = backend.generate(tree)
+        let artifact = backend
+            .generate(tree)
             .map_err(|e| VmError::RuntimeError(format!("JIT Backend error: {:?}", e)))?;
-            
+
         match artifact {
             BackendArtifact::Binary(code) => {
                 let size = code.len();
                 let mut jit_mem = self.jit_mem.lock().unwrap();
-                jit_mem.write(&code).map_err(|e| VmError::RuntimeError(e.to_string()))?;
-                
-                let ptr = jit_mem.make_executable().map_err(|e| VmError::RuntimeError(e.to_string()))?;
-                
+                jit_mem
+                    .write(&code)
+                    .map_err(|e| VmError::RuntimeError(e.to_string()))?;
+
+                let ptr = jit_mem
+                    .make_executable()
+                    .map_err(|e| VmError::RuntimeError(e.to_string()))?;
+
                 let compiled = Arc::new(CompiledCode {
                     entry_point: ptr,
                     tier,
@@ -965,13 +1108,13 @@ impl NyarJit {
                     ic,
                     deopt_metadata: Vec::new(), // Populated by backend in a full implementation
                 });
-                
+
                 self.code_cache.insert(key, compiled.clone());
                 Ok(compiled)
             }
-            BackendArtifact::Source(_) => {
-                Err(VmError::RuntimeError("JIT backend produced source code instead of binary".to_string()))
-            }
+            BackendArtifact::Source(_) => Err(VmError::RuntimeError(
+                "JIT backend produced source code instead of binary".to_string(),
+            )),
         }
     }
 
@@ -982,20 +1125,32 @@ impl NyarJit {
     }
 
     /// Triggers On-Stack Replacement (OSR) for long-running loops.
-    pub fn osr_internal(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize, target_offset: u32) -> Result<*const u8, VmError> {
+    pub fn osr_internal(
+        &self,
+        vm: &NyarVM,
+        module_idx: usize,
+        chunk_idx: usize,
+        target_offset: u32,
+    ) -> Result<*const u8, VmError> {
         let key = (module_idx, chunk_idx, target_offset);
-        
+
         // 1. Check if already compiled for this OSR target
         if let Some(compiled) = self.osr_cache.get(&key) {
             return Ok(compiled.entry_point);
         }
-        
+
         // 2. Perform OSR compilation
         // We trigger a baseline compilation starting from target_offset.
         // In a real OSR, we would need to know the stack state at target_offset.
         // For now, we assume a simple case where the stack is relatively stable.
-        let compiled = self.compile(vm, module_idx, chunk_idx, JitTier::Baseline, target_offset as usize)?;
-        
+        let compiled = self.compile(
+            vm,
+            module_idx,
+            chunk_idx,
+            JitTier::Baseline,
+            target_offset as usize,
+        )?;
+
         // 3. Cache and return
         self.osr_cache.insert(key, compiled.clone());
         Ok(compiled.entry_point)
@@ -1058,11 +1213,15 @@ impl FromUir for IKunTree {
             ),
             IKun::Apply(f, args) => IKunTree::Apply(
                 Box::new(Self::from_uir_id(*f, context)),
-                args.iter().map(|&id| Self::from_uir_id(id, context)).collect(),
+                args.iter()
+                    .map(|&id| Self::from_uir_id(id, context))
+                    .collect(),
             ),
             IKun::Extension(name, args) => IKunTree::Extension(
                 name.clone(),
-                args.iter().map(|&id| Self::from_uir_id(id, context)).collect(),
+                args.iter()
+                    .map(|&id| Self::from_uir_id(id, context))
+                    .collect(),
             ),
             IKun::StateUpdate(key, val) => IKunTree::StateUpdate(
                 Box::new(Self::from_uir_id(*key, context)),

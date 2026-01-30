@@ -4,7 +4,7 @@ use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::ffi::FFIRegistry;
 use crate::vm::value::{BigInt, Upvalue, Value, ValueTag};
 use crate::vm::VmError;
-use nyar_gc::{NyarGc, Trace, MarkContext};
+use nyar_gc::{MarkContext, NyarGc, Trace};
 
 fn normalize(mut v: Vec<u8>) -> Vec<u8> {
     while let Some(&last) = v.last() {
@@ -147,8 +147,19 @@ pub struct Frame {
 }
 
 pub trait JitProvider: Send + Sync {
-    fn try_execute(&self, vm: &mut NyarVM, module_idx: usize, chunk_idx: usize) -> Option<Result<Value, VmError>>;
-    fn osr(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize, target: u32) -> Result<*const u8, VmError>;
+    fn try_execute(
+        &self,
+        vm: &mut NyarVM,
+        module_idx: usize,
+        chunk_idx: usize,
+    ) -> Option<Result<Value, VmError>>;
+    fn osr(
+        &self,
+        vm: &NyarVM,
+        module_idx: usize,
+        chunk_idx: usize,
+        target: u32,
+    ) -> Result<*const u8, VmError>;
 }
 
 pub struct NyarVM {
@@ -282,7 +293,9 @@ impl NyarVM {
         for module in &self.modules {
             for chunk in &module.chunks {
                 let old = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
-                chunk.hotness.store(old >> 1, std::sync::atomic::Ordering::Relaxed);
+                chunk
+                    .hotness
+                    .store(old >> 1, std::sync::atomic::Ordering::Relaxed);
             }
         }
     }
@@ -297,8 +310,14 @@ impl NyarVM {
         };
         for (i, f) in self.frames.iter().enumerate().skip(start) {
             let info = match f.chunk_idx {
-                Some(ci) => format!("frame {}: module={}, chunk={}, ip={}", i, f.module_idx, ci, f.ip),
-                None => format!("frame {}: module={}, chunk=<entry>, ip={}", i, f.module_idx, f.ip),
+                Some(ci) => format!(
+                    "frame {}: module={}, chunk={}, ip={}",
+                    i, f.module_idx, ci, f.ip
+                ),
+                None => format!(
+                    "frame {}: module={}, chunk=<entry>, ip={}",
+                    i, f.module_idx, f.ip
+                ),
             };
             self.print_line(&info);
         }
@@ -314,12 +333,13 @@ impl NyarVM {
 
     pub fn load_module(&mut self, module: NyarcModule) -> usize {
         let module_idx = self.modules.len();
-        
+
         // Update symbol table with exports from this module
         for export in &module.exports {
-            self.symbol_table.insert(export.symbol.clone(), (module_idx, export.chunk_idx));
+            self.symbol_table
+                .insert(export.symbol.clone(), (module_idx, export.chunk_idx));
         }
-        
+
         self.modules.push(module);
         module_idx
     }
@@ -378,9 +398,20 @@ impl NyarVM {
         }
     }
 
-    fn get_chunk_instructions(&mut self, module_idx: usize, chunk_idx: usize) -> Result<std::sync::Arc<Vec<Instruction>>, VmError> {
-        let module = self.modules.get_mut(module_idx).ok_or_else(|| VmError::RuntimeError(format!("Module index out of bounds: {}", module_idx)))?;
-        let chunk = module.chunks.get_mut(chunk_idx).ok_or_else(|| VmError::RuntimeError(format!("Chunk index out of bounds: {} in module {}", chunk_idx, module_idx)))?;
+    fn get_chunk_instructions(
+        &mut self,
+        module_idx: usize,
+        chunk_idx: usize,
+    ) -> Result<std::sync::Arc<Vec<Instruction>>, VmError> {
+        let module = self.modules.get_mut(module_idx).ok_or_else(|| {
+            VmError::RuntimeError(format!("Module index out of bounds: {}", module_idx))
+        })?;
+        let chunk = module.chunks.get_mut(chunk_idx).ok_or_else(|| {
+            VmError::RuntimeError(format!(
+                "Chunk index out of bounds: {} in module {}",
+                chunk_idx, module_idx
+            ))
+        })?;
 
         if let Some(ref instrs) = chunk.decoded {
             return Ok(instrs.clone());
@@ -407,7 +438,10 @@ impl NyarVM {
         ) -> i32;
 
         let entry: JitEntry = unsafe { std::mem::transmute(entry_ptr) };
-        let frame = self.frames.last_mut().ok_or(VmError::RuntimeError("No active frame".to_string()))?;
+        let frame = self
+            .frames
+            .last_mut()
+            .ok_or(VmError::RuntimeError("No active frame".to_string()))?;
 
         unsafe {
             let res_code = entry(
@@ -431,7 +465,10 @@ impl NyarVM {
                 Ok(None)
             } else {
                 // Deoptimization or error.
-                Err(VmError::RuntimeError(format!("JIT execution failed or requested deopt with code {}", res_code)))
+                Err(VmError::RuntimeError(format!(
+                    "JIT execution failed or requested deopt with code {}",
+                    res_code
+                )))
             }
         }
     }
@@ -447,7 +484,7 @@ impl NyarVM {
                 self.print_traceback(&err);
                 return Err(err);
             }
-            
+
             let (cur_ip, module_idx) = {
                 let f = self.frames.last().unwrap();
                 if f.ip >= f.instrs.len() {
@@ -459,10 +496,10 @@ impl NyarVM {
             let ins = &self.frames.last().unwrap().instrs[cur_ip];
 
             let mut next_ip = Some(cur_ip + 1);
-            
+
             #[cfg(debug_assertions)]
             println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
-            
+
             match ins {
                 Instruction::Nop => {}
                 Instruction::BigIntConst { sign, bytes } => {
@@ -1159,43 +1196,53 @@ impl NyarVM {
                 }
                 Instruction::StringLenChars => {
                     let v = self.pop()?;
-                    let n = v.try_as_str().ok_or(VmError::InvalidOpcode)?.chars().count() as i64;
+                    let n = v
+                        .try_as_str()
+                        .ok_or(VmError::InvalidOpcode)?
+                        .chars()
+                        .count() as i64;
                     self.push(Value::int(n));
                 }
                 Instruction::StringEq => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? == rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?
+                        == rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringNe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? != rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?
+                        != rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringLt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? < rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?
+                        < rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringLe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? <= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?
+                        <= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringGt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? > rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?
+                        > rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringGe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? >= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?
+                        >= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bool(r));
                 }
                 Instruction::StringSubstr => {
@@ -1298,24 +1345,36 @@ impl NyarVM {
                     if off < 0 {
                         if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
                             let m_idx = self.frames.last().unwrap().module_idx;
-                            
+
                             self.local_hotness = self.local_hotness.wrapping_add(1);
                             if self.local_hotness == 0 {
                                 // JIT Heat Decay: if GC happened, halve all chunk hotness
-                                let gc_count = self.gc.total_collections.load(std::sync::atomic::Ordering::Relaxed);
+                                let gc_count = self
+                                    .gc
+                                    .total_collections
+                                    .load(std::sync::atomic::Ordering::Relaxed);
                                 if gc_count > self.last_gc_count {
                                     self.decay_hotness();
                                     self.last_gc_count = gc_count;
                                 }
 
                                 let chunk = &self.modules[m_idx].chunks[chunk_idx];
-                                chunk.hotness.fetch_add(256, std::sync::atomic::Ordering::Relaxed);
+                                chunk
+                                    .hotness
+                                    .fetch_add(256, std::sync::atomic::Ordering::Relaxed);
                                 if let Some(jit) = self.jit.clone() {
                                     // Trigger OSR if hot enough
-                                    if chunk.hotness.load(std::sync::atomic::Ordering::Relaxed) >= 10240 {
-                                        if let Ok(entry) = jit.osr(self, m_idx, chunk_idx, target as u32) {
+                                    if chunk.hotness.load(std::sync::atomic::Ordering::Relaxed)
+                                        >= 10240
+                                    {
+                                        if let Ok(entry) =
+                                            jit.osr(self, m_idx, chunk_idx, target as u32)
+                                        {
                                             // Transition to JIT code
-                                            println!("OSR triggered for chunk {} at target {}", chunk_idx, target);
+                                            println!(
+                                                "OSR triggered for chunk {} at target {}",
+                                                chunk_idx, target
+                                            );
                                             match self.execute_jit_at(entry) {
                                                 Ok(Some(val)) => return Ok(val),
                                                 Ok(None) => {
@@ -1340,22 +1399,27 @@ impl NyarVM {
                     } else {
                         cur_ip + 1
                     };
-                    
+
                     if off < 0 && !v.is_truthy() {
                         if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
                             let m_idx = self.frames.last().unwrap().module_idx;
-                            
+
                             self.local_hotness = self.local_hotness.wrapping_add(1);
                             if self.local_hotness == 0 {
                                 // JIT Heat Decay: if GC happened, halve all chunk hotness
-                                let gc_count = self.gc.total_collections.load(std::sync::atomic::Ordering::Relaxed);
+                                let gc_count = self
+                                    .gc
+                                    .total_collections
+                                    .load(std::sync::atomic::Ordering::Relaxed);
                                 if gc_count > self.last_gc_count {
                                     self.decay_hotness();
                                     self.last_gc_count = gc_count;
                                 }
 
                                 let chunk = &self.modules[m_idx].chunks[chunk_idx];
-                                chunk.hotness.fetch_add(256, std::sync::atomic::Ordering::Relaxed);
+                                chunk
+                                    .hotness
+                                    .fetch_add(256, std::sync::atomic::Ordering::Relaxed);
                             }
                         }
                     }
@@ -1363,7 +1427,11 @@ impl NyarVM {
                 }
                 Instruction::Return => {
                     #[cfg(debug_assertions)]
-                    println!("VM: Return from frame {}, stack size {}", self.frames.len(), self.sp);
+                    println!(
+                        "VM: Return from frame {}, stack size {}",
+                        self.frames.len(),
+                        self.sp
+                    );
                     let val = self.pop()?;
                     self.frames.pop();
                     while let Some(hf) = self.handler_stack.last() {
@@ -1387,7 +1455,8 @@ impl NyarVM {
                             f.locals[up.index as usize]
                         } else {
                             let f = self.frames.last().unwrap();
-                            let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
+                            let closure =
+                                f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
                             closure.upvalues[up.index as usize].0
                         };
                         captured.push(Upvalue(val));
@@ -1409,7 +1478,10 @@ impl NyarVM {
                     let idx = *idx;
                     let val = self.pop()?;
                     let f = self.frames.last().unwrap();
-                    let closure = f.closure.try_as_closure_mut().ok_or(VmError::InvalidOpcode)?;
+                    let closure = f
+                        .closure
+                        .try_as_closure_mut()
+                        .ok_or(VmError::InvalidOpcode)?;
                     if (idx as usize) < closure.upvalues.len() {
                         closure.upvalues[idx as usize].0 = val;
                     } else {
@@ -1419,7 +1491,8 @@ impl NyarVM {
                 Instruction::Call(chunk_idx, argc) => {
                     let (chunk_idx, argc) = (*chunk_idx, *argc);
                     let instrs = self.get_chunk_instructions(module_idx, chunk_idx as usize)?;
-                    let locals_count = self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
+                    let locals_count =
+                        self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
 
                     let mut args = Vec::with_capacity(argc as usize);
                     for _ in 0..argc {
@@ -1455,10 +1528,13 @@ impl NyarVM {
                     args.reverse();
 
                     let callee = self.pop()?;
-                    let (instrs, locals_count, c_module_idx, c_chunk_idx) = if let Some(closure) = callee.try_as_closure() {
+                    let (instrs, locals_count, c_module_idx, c_chunk_idx) = if let Some(closure) =
+                        callee.try_as_closure()
+                    {
                         let chunk_idx = closure.func;
                         let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
-                        let locals_count = self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
+                        let locals_count =
+                            self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
                         (instrs, locals_count, closure.module_idx, chunk_idx)
                     } else {
                         return Err(VmError::InvalidOpcode); // Expected closure
@@ -1494,7 +1570,8 @@ impl NyarVM {
 
                     if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
                         let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-                        let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+                        let locals_count =
+                            self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 
                         let mut args = Vec::with_capacity(argc as usize);
                         for _ in 0..argc {
@@ -1556,7 +1633,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int())
+                                    {
                                         self.push(Value::int(l + r));
                                     } else if let (Some(l), Some(r)) =
                                         (lhs.try_as_float(), rhs.try_as_float())
@@ -1579,7 +1657,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int())
+                                    {
                                         self.push(Value::int(l - r));
                                     } else if let (Some(l), Some(r)) =
                                         (lhs.try_as_float(), rhs.try_as_float())
@@ -1596,7 +1675,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int())
+                                    {
                                         self.push(Value::int(l * r));
                                     } else if let (Some(l), Some(r)) =
                                         (lhs.try_as_float(), rhs.try_as_float())
@@ -1613,7 +1693,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int())
+                                    {
                                         if r == 0 {
                                             return Err(VmError::RuntimeError(
                                                 "Division by zero".to_string(),
@@ -1699,7 +1780,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int())
+                                    {
                                         self.push(Value::bool(l < r));
                                     } else if let (Some(l), Some(r)) =
                                         (lhs.try_as_float(), rhs.try_as_float())
@@ -1720,7 +1802,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int())
+                                    {
                                         self.push(Value::bool(l <= r));
                                     } else if let (Some(l), Some(r)) =
                                         (lhs.try_as_float(), rhs.try_as_float())
@@ -1741,7 +1824,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int())
+                                    {
                                         self.push(Value::bool(l > r));
                                     } else if let (Some(l), Some(r)) =
                                         (lhs.try_as_float(), rhs.try_as_float())
@@ -1762,7 +1846,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int())
+                                    {
                                         self.push(Value::bool(l >= r));
                                     } else if let (Some(l), Some(r)) =
                                         (lhs.try_as_float(), rhs.try_as_float())
@@ -1885,7 +1970,9 @@ impl NyarVM {
                                 }
                             }
                             "unshift" => {
-                                if let (Some(val), Some(list_mut)) = (args.first(), receiver.try_as_list_mut()) {
+                                if let (Some(val), Some(list_mut)) =
+                                    (args.first(), receiver.try_as_list_mut())
+                                {
                                     list_mut.items.insert(0, *val);
                                     self.push(Value::null());
                                 } else {
@@ -1907,7 +1994,8 @@ impl NyarVM {
                             _ => {
                                 return Err(VmError::RuntimeError(format!(
                                     "Receiver is not an object. tag={:?}, method={}",
-                                    receiver.tag(), name
+                                    receiver.tag(),
+                                    name
                                 )))
                             }
                         }
@@ -1922,8 +2010,9 @@ impl NyarVM {
                         let mut chunk_idx = None;
                         for impl_info in &self.modules[module_idx].impls {
                             if impl_info.class_idx == class_idx {
-                                if let Some(trait_info) =
-                                    self.modules[module_idx].traits.get(impl_info.trait_idx as usize)
+                                if let Some(trait_info) = self.modules[module_idx]
+                                    .traits
+                                    .get(impl_info.trait_idx as usize)
                                 {
                                     if let Some(idx) =
                                         trait_info.methods.iter().position(|m| m == name)
@@ -2003,7 +2092,8 @@ impl NyarVM {
                         if let Some(v) = args.get(0) {
                             if let Some(closure) = v.try_as_closure() {
                                 let chunk_idx = closure.func;
-                                let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
+                                let instrs =
+                                    self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                                 let new_frame = Frame {
                                     instrs,
                                     ip: 0,
@@ -2024,9 +2114,11 @@ impl NyarVM {
                     } else {
                         if let Some(hf) = {
                             let mut chosen = None;
-                            let handlers: Vec<_> = self.handler_stack.iter().rev().cloned().collect();
+                            let handlers: Vec<_> =
+                                self.handler_stack.iter().rev().cloned().collect();
                             for h in handlers {
-                                let instrs = self.get_chunk_instructions(module_idx, h.catch_chunk)?;
+                                let instrs =
+                                    self.get_chunk_instructions(module_idx, h.catch_chunk)?;
                                 let mut matches = true;
                                 if let Some(crate::bytecode::decoder::Instruction::MatchEffect(
                                     name_idx,
@@ -2063,7 +2155,8 @@ impl NyarVM {
                             let cont_slice = self.stack[..self.sp].to_vec();
                             let cont = Value::continuation(cont_ip, cont_slice, &self.gc);
                             locals.push(cont);
-                            let locals_count = self.modules[module_idx].chunks[hf.catch_chunk].locals as usize;
+                            let locals_count =
+                                self.modules[module_idx].chunks[hf.catch_chunk].locals as usize;
                             if locals.len() < locals_count {
                                 locals.resize(locals_count, Value::null());
                             }
@@ -2132,7 +2225,9 @@ impl NyarVM {
                     } else {
                         match name {
                             "read_file" => {
-                                let path_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
+                                let path_v = args
+                                    .pop()
+                                    .unwrap_or(Value::string("".to_string(), &self.gc));
                                 let mut res = Value::string("".to_string(), &self.gc);
                                 use std::fs;
                                 if let Some(path) = path_v.try_as_str() {
@@ -2143,12 +2238,17 @@ impl NyarVM {
                                 self.push(res);
                             }
                             "write_file" => {
-                                let data_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
-                                let path_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
+                                let data_v = args
+                                    .pop()
+                                    .unwrap_or(Value::string("".to_string(), &self.gc));
+                                let path_v = args
+                                    .pop()
+                                    .unwrap_or(Value::string("".to_string(), &self.gc));
                                 let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
-                                if let (Some(path), Some(data)) = (path_v.try_as_str(), data_v.try_as_str())
+                                if let (Some(path), Some(data)) =
+                                    (path_v.try_as_str(), data_v.try_as_str())
                                 {
                                     let bytes = data.as_bytes();
                                     if let Some(dir) = Path::new(path).parent() {
@@ -2173,11 +2273,15 @@ impl NyarVM {
                             }
                             "write_bytes" => {
                                 let bytes_v = args.pop().unwrap_or(Value::list(vec![], &self.gc));
-                                let path_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
+                                let path_v = args
+                                    .pop()
+                                    .unwrap_or(Value::string("".to_string(), &self.gc));
                                 let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
-                                if let (Some(path), Some(list_ref)) = (path_v.try_as_str(), bytes_v.try_as_list()) {
+                                if let (Some(path), Some(list_ref)) =
+                                    (path_v.try_as_str(), bytes_v.try_as_list())
+                                {
                                     let mut data = Vec::with_capacity(list_ref.items.len());
                                     for item in &list_ref.items {
                                         if let Some(v) = item.try_as_int() {
@@ -2194,488 +2298,504 @@ impl NyarVM {
                                 }
                                 self.push(Value::bool(ok));
                             }
-                        "compile_jvm" => {
-                            let ok = false;
-                            self.push(Value::bool(ok));
-                        }
-                        "print" => {
-                            if let Some(v) = args.last() {
-                                let msg = match v.tag() {
-                                    ValueTag::Int => format!("{}", v.as_int()),
-                            ValueTag::Float => format!("{}", v.as_float()),
-                            ValueTag::Bool => format!("{}", v.as_bool()),
-                                    ValueTag::Null => "null".to_string(),
-                                    ValueTag::String => v.try_as_str().unwrap_or_default().to_string(),
-                                    ValueTag::Object => {
-                                        if let Some(obj_ref) = v.try_as_object() {
-                                            let cls_name = self.modules[module_idx]
-                                                .classes
-                                                .get(obj_ref.class_idx as usize)
-                                                .map(|c| c.name.clone())
-                                                .unwrap_or_else(|| "Object".to_string());
-                                            let variant = obj_ref
-                                                .fields
-                                                .get(0)
-                                                .and_then(|f| f.try_as_str().map(|s| s.to_string()))
-                                                .unwrap_or_default();
-                                            if variant.is_empty() {
-                                                format!("{}", cls_name)
-                                            } else {
-                                                format!("{}::{}", cls_name, variant)
-                                            }
-                                        } else {
-                                            "Object".to_string()
+                            "compile_jvm" => {
+                                let ok = false;
+                                self.push(Value::bool(ok));
+                            }
+                            "print" => {
+                                if let Some(v) = args.last() {
+                                    let msg = match v.tag() {
+                                        ValueTag::Int => format!("{}", v.as_int()),
+                                        ValueTag::Float => format!("{}", v.as_float()),
+                                        ValueTag::Bool => format!("{}", v.as_bool()),
+                                        ValueTag::Null => "null".to_string(),
+                                        ValueTag::String => {
+                                            v.try_as_str().unwrap_or_default().to_string()
                                         }
+                                        ValueTag::Object => {
+                                            if let Some(obj_ref) = v.try_as_object() {
+                                                let cls_name = self.modules[module_idx]
+                                                    .classes
+                                                    .get(obj_ref.class_idx as usize)
+                                                    .map(|c| c.name.clone())
+                                                    .unwrap_or_else(|| "Object".to_string());
+                                                let variant = obj_ref
+                                                    .fields
+                                                    .get(0)
+                                                    .and_then(|f| {
+                                                        f.try_as_str().map(|s| s.to_string())
+                                                    })
+                                                    .unwrap_or_default();
+                                                if variant.is_empty() {
+                                                    format!("{}", cls_name)
+                                                } else {
+                                                    format!("{}::{}", cls_name, variant)
+                                                }
+                                            } else {
+                                                "Object".to_string()
+                                            }
+                                        }
+                                        _ => "<unsupported>".to_string(),
+                                    };
+                                    if let Some(cb) = &self.stdout {
+                                        cb(&msg);
+                                    } else {
+                                        println!("{}", msg);
                                     }
-                                    _ => "<unsupported>".to_string(),
-                                };
-                                if let Some(cb) = &self.stdout {
-                                    cb(&msg);
-                                } else {
-                                    println!("{}", msg);
                                 }
+                                self.push(Value::null());
                             }
-                            self.push(Value::null());
-                        }
-                        "true" => {
-                            self.push(Value::bool(true));
-                        }
-                        "false" => {
-                            self.push(Value::bool(false));
-                        }
-                        "yield" => {
-                            if let Some(v) = args.last() {
-                                let msg = match v.tag() {
-                                    ValueTag::Int => format!("{}", v.as_int()),
-                        ValueTag::Float => format!("{}", v.as_float()),
-                        ValueTag::Bool => format!("{}", v.as_bool()),
-                                    ValueTag::Null => "null".to_string(),
-                                    _ => "<unsupported>".to_string(),
-                                };
-                                if let Some(cb) = &self.stdout {
-                                    cb(&msg);
-                                } else {
-                                    println!("{}", msg);
-                                }
-                            }
-                            self.push(Value::null());
-                        }
-                        "not" => {
-                            if let Some(v) = args.first() {
-                                self.push(Value::bool(!v.is_truthy()));
-                            } else {
+                            "true" => {
                                 self.push(Value::bool(true));
                             }
-                        }
-                        "assert" => {
-                            let cond = if let Some(v) = args.first() {
-                                v.is_truthy()
-                            } else {
-                                false
-                            };
-                            if !cond {
-                                let msg = if args.len() > 1 {
-                                    let v = args.last().unwrap();
-                                    match v.tag() {
-                                        ValueTag::Int => format!("assertion failed: {}", v.as_int()),
-                                        ValueTag::Float => format!("assertion failed: {}", v.as_float()),
-                                        ValueTag::Bool => format!("assertion failed: {}", v.as_bool()),
-                                        ValueTag::Null => "assertion failed: null".to_string(),
-                                        ValueTag::String => v.try_as_str().unwrap_or("").to_string(),
-                                        _ => "assertion failed".to_string(),
+                            "false" => {
+                                self.push(Value::bool(false));
+                            }
+                            "yield" => {
+                                if let Some(v) = args.last() {
+                                    let msg = match v.tag() {
+                                        ValueTag::Int => format!("{}", v.as_int()),
+                                        ValueTag::Float => format!("{}", v.as_float()),
+                                        ValueTag::Bool => format!("{}", v.as_bool()),
+                                        ValueTag::Null => "null".to_string(),
+                                        _ => "<unsupported>".to_string(),
+                                    };
+                                    if let Some(cb) = &self.stdout {
+                                        cb(&msg);
+                                    } else {
+                                        println!("{}", msg);
                                     }
-                                } else {
-                                    "assertion failed".to_string()
-                                };
-                                return Err(VmError::RuntimeError(msg));
+                                }
+                                self.push(Value::null());
                             }
-                            self.push(Value::null());
-                        }
-                        "len" => {
-                            if let Some(v) = args.last() {
-                                let len = if let Some(s) = v.try_as_str() {
-                                    s.len()
-                                } else if let Some(a) = v.try_as_array() {
-                                    a.items.len()
-                                } else if let Some(l) = v.try_as_list() {
-                                    l.items.len()
-                                } else if let Some(t) = v.try_as_tuple() {
-                                    t.items.len()
-                                } else if let Some(d) = v.try_as_dyn_object() {
-                                    d.entries.len()
+                            "not" => {
+                                if let Some(v) = args.first() {
+                                    self.push(Value::bool(!v.is_truthy()));
                                 } else {
-                                    0
-                                };
-                                self.push(Value::int(len as i64));
-                            } else {
-                                self.push(Value::int(0));
+                                    self.push(Value::bool(true));
+                                }
                             }
-                        }
-                        "ord" => {
-                            if let Some(v) = args.last() {
-                                let code = if let Some(s) = v.try_as_str() {
-                                    if let Some(c) = s.chars().next() {
-                                        c as i64
+                            "assert" => {
+                                let cond = if let Some(v) = args.first() {
+                                    v.is_truthy()
+                                } else {
+                                    false
+                                };
+                                if !cond {
+                                    let msg = if args.len() > 1 {
+                                        let v = args.last().unwrap();
+                                        match v.tag() {
+                                            ValueTag::Int => {
+                                                format!("assertion failed: {}", v.as_int())
+                                            }
+                                            ValueTag::Float => {
+                                                format!("assertion failed: {}", v.as_float())
+                                            }
+                                            ValueTag::Bool => {
+                                                format!("assertion failed: {}", v.as_bool())
+                                            }
+                                            ValueTag::Null => "assertion failed: null".to_string(),
+                                            ValueTag::String => {
+                                                v.try_as_str().unwrap_or("").to_string()
+                                            }
+                                            _ => "assertion failed".to_string(),
+                                        }
+                                    } else {
+                                        "assertion failed".to_string()
+                                    };
+                                    return Err(VmError::RuntimeError(msg));
+                                }
+                                self.push(Value::null());
+                            }
+                            "len" => {
+                                if let Some(v) = args.last() {
+                                    let len = if let Some(s) = v.try_as_str() {
+                                        s.len()
+                                    } else if let Some(a) = v.try_as_array() {
+                                        a.items.len()
+                                    } else if let Some(l) = v.try_as_list() {
+                                        l.items.len()
+                                    } else if let Some(t) = v.try_as_tuple() {
+                                        t.items.len()
+                                    } else if let Some(d) = v.try_as_dyn_object() {
+                                        d.entries.len()
                                     } else {
                                         0
-                                    }
+                                    };
+                                    self.push(Value::int(len as i64));
                                 } else {
-                                    0
-                                };
-                                self.push(Value::int(code));
-                            } else {
-                                self.push(Value::int(0));
-                            }
-                        }
-                        "chr" => {
-                            if let Some(v) = args.last() {
-                                let c = if let Some(i) = v.try_as_int() {
-                                    std::char::from_u32(i as u32).unwrap_or('\0').to_string()
-                                } else {
-                                    "\0".to_string()
-                                };
-                                self.push(Value::string(c, &self.gc));
-                            } else {
-                                self.push(Value::string("".to_string(), &self.gc));
-                            }
-                        }
-                        "get" => {
-                            let idx_v = args.pop().unwrap_or(Value::int(0));
-                            let container = args.pop().unwrap_or(Value::null());
-
-                            if let (Some(s), Some(idx)) = (container.try_as_str(), idx_v.try_as_int()) {
-                                let idx = idx as usize;
-                                let c = s
-                                    .chars()
-                                    .nth(idx)
-                                    .map(|c| c.to_string())
-                                    .unwrap_or_default();
-                                self.push(Value::string(c, &self.gc));
-                            } else if let (Some(list), Some(idx)) = (container.try_as_list(), idx_v.try_as_int()) {
-                                let idx = idx as usize;
-                                if idx < list.items.len() {
-                                    self.push(list.items[idx]);
-                                } else {
-                                    self.push(Value::null());
+                                    self.push(Value::int(0));
                                 }
-                            } else if let (Some(arr), Some(idx)) = (container.try_as_array(), idx_v.try_as_int()) {
-                                let idx = idx as usize;
-                                if idx < arr.items.len() {
-                                    self.push(arr.items[idx]);
-                                } else {
-                                    self.push(Value::null());
-                                }
-                            } else {
-                                self.push(Value::null());
                             }
-                        }
-                        "push" => {
-                            if args.len() == 2 {
-                                let val = args.pop().unwrap_or(Value::null());
-                                let container = args.pop().unwrap_or(Value::null());
-                                if let Some(list_mut) = container.try_as_list_mut() {
-                                    list_mut.items.push(val);
-                                    self.push(Value::null());
+                            "ord" => {
+                                if let Some(v) = args.last() {
+                                    let code = if let Some(s) = v.try_as_str() {
+                                        if let Some(c) = s.chars().next() {
+                                            c as i64
+                                        } else {
+                                            0
+                                        }
+                                    } else {
+                                        0
+                                    };
+                                    self.push(Value::int(code));
                                 } else {
-                                    self.push(Value::null());
+                                    self.push(Value::int(0));
                                 }
-                            } else {
-                                self.push(Value::null());
                             }
-                        }
-                        "set" => {
-                            if args.len() == 3 {
-                                let val_v = args.pop().unwrap_or(Value::null());
+                            "chr" => {
+                                if let Some(v) = args.last() {
+                                    let c = if let Some(i) = v.try_as_int() {
+                                        std::char::from_u32(i as u32).unwrap_or('\0').to_string()
+                                    } else {
+                                        "\0".to_string()
+                                    };
+                                    self.push(Value::string(c, &self.gc));
+                                } else {
+                                    self.push(Value::string("".to_string(), &self.gc));
+                                }
+                            }
+                            "get" => {
                                 let idx_v = args.pop().unwrap_or(Value::int(0));
                                 let container = args.pop().unwrap_or(Value::null());
 
-                                if let (Some(list_mut), Some(idx)) = (container.try_as_list_mut(), idx_v.try_as_int()) {
+                                if let (Some(s), Some(idx)) =
+                                    (container.try_as_str(), idx_v.try_as_int())
+                                {
                                     let idx = idx as usize;
-                                    if idx < list_mut.items.len() {
-                                        list_mut.items[idx] = val_v;
-                                        self.push(Value::bool(true));
+                                    let c = s
+                                        .chars()
+                                        .nth(idx)
+                                        .map(|c| c.to_string())
+                                        .unwrap_or_default();
+                                    self.push(Value::string(c, &self.gc));
+                                } else if let (Some(list), Some(idx)) =
+                                    (container.try_as_list(), idx_v.try_as_int())
+                                {
+                                    let idx = idx as usize;
+                                    if idx < list.items.len() {
+                                        self.push(list.items[idx]);
                                     } else {
-                                        self.push(Value::bool(false));
+                                        self.push(Value::null());
                                     }
-                                } else if let (Some(arr_mut), Some(idx)) = (container.try_as_array_mut(), idx_v.try_as_int()) {
+                                } else if let (Some(arr), Some(idx)) =
+                                    (container.try_as_array(), idx_v.try_as_int())
+                                {
                                     let idx = idx as usize;
-                                    if idx < arr_mut.items.len() {
-                                        arr_mut.items[idx] = val_v;
-                                        self.push(Value::bool(true));
+                                    if idx < arr.items.len() {
+                                        self.push(arr.items[idx]);
+                                    } else {
+                                        self.push(Value::null());
+                                    }
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            }
+                            "push" => {
+                                if args.len() == 2 {
+                                    let val = args.pop().unwrap_or(Value::null());
+                                    let container = args.pop().unwrap_or(Value::null());
+                                    if let Some(list_mut) = container.try_as_list_mut() {
+                                        list_mut.items.push(val);
+                                        self.push(Value::null());
+                                    } else {
+                                        self.push(Value::null());
+                                    }
+                                } else {
+                                    self.push(Value::null());
+                                }
+                            }
+                            "set" => {
+                                if args.len() == 3 {
+                                    let val_v = args.pop().unwrap_or(Value::null());
+                                    let idx_v = args.pop().unwrap_or(Value::int(0));
+                                    let container = args.pop().unwrap_or(Value::null());
+
+                                    if let (Some(list_mut), Some(idx)) =
+                                        (container.try_as_list_mut(), idx_v.try_as_int())
+                                    {
+                                        let idx = idx as usize;
+                                        if idx < list_mut.items.len() {
+                                            list_mut.items[idx] = val_v;
+                                            self.push(Value::bool(true));
+                                        } else {
+                                            self.push(Value::bool(false));
+                                        }
+                                    } else if let (Some(arr_mut), Some(idx)) =
+                                        (container.try_as_array_mut(), idx_v.try_as_int())
+                                    {
+                                        let idx = idx as usize;
+                                        if idx < arr_mut.items.len() {
+                                            arr_mut.items[idx] = val_v;
+                                            self.push(Value::bool(true));
+                                        } else {
+                                            self.push(Value::bool(false));
+                                        }
                                     } else {
                                         self.push(Value::bool(false));
                                     }
                                 } else {
                                     self.push(Value::bool(false));
                                 }
-                            } else {
-                                self.push(Value::bool(false));
                             }
-                        }
-                        "chars" => {
-                            if let Some(v) = args.last() {
-                                if let Some(s) = v.try_as_str() {
-                                    let items: Vec<Value> =
-                                        s.chars().map(|c| Value::string(c.to_string(), &self.gc)).collect();
-                                    self.push(Value::list(items, &self.gc));
+                            "chars" => {
+                                if let Some(v) = args.last() {
+                                    if let Some(s) = v.try_as_str() {
+                                        let items: Vec<Value> = s
+                                            .chars()
+                                            .map(|c| Value::string(c.to_string(), &self.gc))
+                                            .collect();
+                                        self.push(Value::list(items, &self.gc));
+                                    } else {
+                                        self.push(Value::list(vec![], &self.gc));
+                                    }
                                 } else {
                                     self.push(Value::list(vec![], &self.gc));
                                 }
-                            } else {
-                                self.push(Value::list(vec![], &self.gc));
                             }
-                        }
-                        "str" => {
-                            if let Some(v) = args.last() {
-                                let s = match v.tag() {
-                                    ValueTag::Int => format!("{}", v.as_int()),
-                                    ValueTag::Float => format!("{}", v.as_float()),
-                                    ValueTag::Bool => format!("{}", v.as_bool()),
-                                    ValueTag::Null => "null".to_string(),
-                                    ValueTag::String => v.try_as_str().unwrap_or("").to_string(),
-                                    _ => format!("{:?}", v.tag()),
+                            "str" => {
+                                if let Some(v) = args.last() {
+                                    let s = match v.tag() {
+                                        ValueTag::Int => format!("{}", v.as_int()),
+                                        ValueTag::Float => format!("{}", v.as_float()),
+                                        ValueTag::Bool => format!("{}", v.as_bool()),
+                                        ValueTag::Null => "null".to_string(),
+                                        ValueTag::String => {
+                                            v.try_as_str().unwrap_or("").to_string()
+                                        }
+                                        _ => format!("{:?}", v.tag()),
+                                    };
+                                    self.push(Value::string(s, &self.gc));
+                                } else {
+                                    self.push(Value::string("".to_string(), &self.gc));
+                                }
+                            }
+                            "eq" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                let r = match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => a.as_int() == b.as_int(),
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        a.as_float() == b.as_float()
+                                    }
+                                    (ValueTag::Bool, ValueTag::Bool) => a.as_bool() == b.as_bool(),
+                                    (ValueTag::String, ValueTag::String) => {
+                                        a.try_as_str() == b.try_as_str()
+                                    }
+                                    (ValueTag::Null, ValueTag::Null) => true,
+                                    _ => false,
                                 };
-                                self.push(Value::string(s, &self.gc));
-                            } else {
-                                self.push(Value::string("".to_string(), &self.gc));
+                                self.push(Value::bool(r));
                             }
-                        }
-                        "eq" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    a.as_int() == b.as_int()
+                            "ne" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                let r = match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => a.as_int() != b.as_int(),
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        a.as_float() != b.as_float()
+                                    }
+                                    (ValueTag::Bool, ValueTag::Bool) => a.as_bool() != b.as_bool(),
+                                    (ValueTag::String, ValueTag::String) => {
+                                        a.try_as_str() != b.try_as_str()
+                                    }
+                                    (ValueTag::Null, ValueTag::Null) => false,
+                                    _ => true,
+                                };
+                                self.push(Value::bool(r));
+                            }
+                            "lt" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                let r = match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => a.as_int() < b.as_int(),
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        a.as_float() < b.as_float()
+                                    }
+                                    (ValueTag::String, ValueTag::String) => {
+                                        a.try_as_str() < b.try_as_str()
+                                    }
+                                    _ => false,
+                                };
+                                self.push(Value::bool(r));
+                            }
+                            "le" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                let r = match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => a.as_int() <= b.as_int(),
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        a.as_float() <= b.as_float()
+                                    }
+                                    (ValueTag::String, ValueTag::String) => {
+                                        a.try_as_str() <= b.try_as_str()
+                                    }
+                                    _ => false,
+                                };
+                                self.push(Value::bool(r));
+                            }
+                            "gt" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                let r = match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => a.as_int() > b.as_int(),
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        a.as_float() > b.as_float()
+                                    }
+                                    (ValueTag::String, ValueTag::String) => {
+                                        a.try_as_str() > b.try_as_str()
+                                    }
+                                    _ => false,
+                                };
+                                self.push(Value::bool(r));
+                            }
+                            "ge" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                let r = match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => a.as_int() >= b.as_int(),
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        a.as_float() >= b.as_float()
+                                    }
+                                    (ValueTag::String, ValueTag::String) => {
+                                        a.try_as_str() >= b.try_as_str()
+                                    }
+                                    _ => false,
+                                };
+                                self.push(Value::bool(r));
+                            }
+                            "add" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => {
+                                        self.push(Value::int(a.as_int() + b.as_int()))
+                                    }
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        self.push(Value::float(a.as_float() + b.as_float()))
+                                    }
+                                    (ValueTag::String, ValueTag::String) => {
+                                        if let (Some(sa), Some(sb)) =
+                                            (a.try_as_str(), b.try_as_str())
+                                        {
+                                            let mut s = sa.to_string();
+                                            s.push_str(sb);
+                                            self.push(Value::string(s, &self.gc));
+                                        } else {
+                                            self.push(Value::null());
+                                        }
+                                    }
+                                    _ => self.push(Value::null()),
                                 }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    a.as_float() == b.as_float()
+                            }
+                            "sub" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => {
+                                        self.push(Value::int(a.as_int() - b.as_int()))
+                                    }
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        self.push(Value::float(a.as_float() - b.as_float()))
+                                    }
+                                    _ => self.push(Value::null()),
                                 }
-                                (ValueTag::Bool, ValueTag::Bool) => {
-                                    a.as_bool() == b.as_bool()
+                            }
+                            "mul" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => {
+                                        self.push(Value::int(a.as_int() * b.as_int()))
+                                    }
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        self.push(Value::float(a.as_float() * b.as_float()))
+                                    }
+                                    _ => self.push(Value::null()),
                                 }
-                                (ValueTag::String, ValueTag::String) => {
-                                    a.try_as_str() == b.try_as_str()
-                                },
-                                (ValueTag::Null, ValueTag::Null) => true,
-                                _ => false,
-                            };
-                            self.push(Value::bool(r));
-                        }
-                        "ne" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    a.as_int() != b.as_int()
+                            }
+                            "div" => {
+                                let b = args.pop().unwrap_or(Value::null());
+                                let a = args.pop().unwrap_or(Value::null());
+                                match (a.tag(), b.tag()) {
+                                    (ValueTag::Int, ValueTag::Int) => {
+                                        self.push(Value::int(a.as_int() / b.as_int()))
+                                    }
+                                    (ValueTag::Float, ValueTag::Float) => {
+                                        self.push(Value::float(a.as_float() / b.as_float()))
+                                    }
+                                    _ => self.push(Value::null()),
                                 }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    a.as_float() != b.as_float()
-                                }
-                                (ValueTag::Bool, ValueTag::Bool) => {
-                                    a.as_bool() != b.as_bool()
-                                }
-                                (ValueTag::String, ValueTag::String) => {
-                                    a.try_as_str() != b.try_as_str()
-                                },
-                                (ValueTag::Null, ValueTag::Null) => false,
-                                _ => true,
-                            };
-                            self.push(Value::bool(r));
-                        }
-                        "lt" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    a.as_int() < b.as_int()
-                                }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    a.as_float() < b.as_float()
-                                }
-                                (ValueTag::String, ValueTag::String) => {
-                                    a.try_as_str() < b.try_as_str()
-                                },
-                                _ => false,
-                            };
-                            self.push(Value::bool(r));
-                        }
-                        "le" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    a.as_int() <= b.as_int()
-                                }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    a.as_float() <= b.as_float()
-                                }
-                                (ValueTag::String, ValueTag::String) => {
-                                    a.try_as_str() <= b.try_as_str()
-                                },
-                                _ => false,
-                            };
-                            self.push(Value::bool(r));
-                        }
-                        "gt" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    a.as_int() > b.as_int()
-                                }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    a.as_float() > b.as_float()
-                                }
-                                (ValueTag::String, ValueTag::String) => {
-                                    a.try_as_str() > b.try_as_str()
-                                },
-                                _ => false,
-                            };
-                            self.push(Value::bool(r));
-                        }
-                        "ge" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    a.as_int() >= b.as_int()
-                                }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    a.as_float() >= b.as_float()
-                                }
-                                (ValueTag::String, ValueTag::String) => {
-                                    a.try_as_str() >= b.try_as_str()
-                                },
-                                _ => false,
-                            };
-                            self.push(Value::bool(r));
-                        }
-                        "add" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    self.push(Value::int(a.as_int() + b.as_int()))
-                                }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    self.push(Value::float(a.as_float() + b.as_float()))
-                                }
-                                (ValueTag::String, ValueTag::String) => {
-                                    if let (Some(sa), Some(sb)) = (a.try_as_str(), b.try_as_str()) {
-                                        let mut s = sa.to_string();
-                                        s.push_str(sb);
-                                        self.push(Value::string(s, &self.gc));
+                            }
+                            _ => {
+                                if name.contains("::") {
+                                    let parts: Vec<&str> = name.split("::").collect();
+                                    let variant_name = parts.last().unwrap();
+                                    let class_name = parts[parts.len() - 2];
+
+                                    // Find class by name suffix
+                                    let class_idx =
+                                        self.modules[module_idx].classes.iter().position(|c| {
+                                            c.name.ends_with(&format!("::{}", class_name))
+                                                || c.name == class_name
+                                        });
+
+                                    if let Some(idx) = class_idx {
+                                        let idx = idx as u16;
+                                        // Check if we have enough args.
+                                        // For now, assume single arg constructor if args.len() > 0?
+                                        // Actually, EnumDef variants can have multiple fields.
+                                        // But FFICall doesn't tell us how many fields the variant EXPECTS unless we look it up.
+                                        // But we have `args` from FFICall.
+                                        // FFICall pops args.
+                                        // We need to pop ALL args.
+                                        // FFICall logic already popped args into `args` vec.
+                                        // So we just use `args`.
+                                        // But `args` are popped in reverse order (LIFO).
+                                        // Wait, FFICall pops:
+                                        // for _ in 0..argc { args.push(pop()) }
+                                        // If I call C(a, b). Stack: [a, b].
+                                        // pop -> b. pop -> a.
+                                        // args = [b, a].
+                                        // NewObject expects fields in order.
+                                        // fields = [__variant__, _0, _1...]
+                                        // _0 should be a. _1 should be b.
+                                        // So we need to REVERSE args to get [a, b].
+
+                                        let mut fields = Vec::new();
+                                        fields.push(Value::string(
+                                            variant_name.to_string(),
+                                            &self.gc,
+                                        ));
+
+                                        // args is [last_arg, ..., first_arg]
+                                        // We want [first_arg, ..., last_arg]
+                                        // So we iterate args in reverse.
+                                        for arg in args.iter().rev() {
+                                            fields.push(*arg);
+                                        }
+
+                                        // We might need to pad with nulls if the class has more fields?
+                                        // Enum classes have fields _0, _1... up to max fields of any variant.
+                                        // If this variant has fewer fields, the remaining should be null?
+                                        // Or assume `args` matches the variant fields count?
+                                        // The VM class definition has `fields` count.
+                                        let cls = &self.modules[module_idx].classes[idx as usize];
+                                        while fields.len() < cls.fields.len() {
+                                            fields.push(Value::null());
+                                        }
+
+                                        let obj = Value::object(idx, fields, &self.gc);
+                                        self.push(obj);
                                     } else {
-                                        self.push(Value::null());
+                                        return Err(VmError::UnhandledEffect(name.to_string()));
                                     }
-                                }
-                                _ => self.push(Value::null()),
-                            }
-                        }
-                        "sub" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    self.push(Value::int(a.as_int() - b.as_int()))
-                                }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    self.push(Value::float(a.as_float() - b.as_float()))
-                                }
-                                _ => self.push(Value::null()),
-                            }
-                        }
-                        "mul" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    self.push(Value::int(a.as_int() * b.as_int()))
-                                }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    self.push(Value::float(a.as_float() * b.as_float()))
-                                }
-                                _ => self.push(Value::null()),
-                            }
-                        }
-                        "div" => {
-                            let b = args.pop().unwrap_or(Value::null());
-                            let a = args.pop().unwrap_or(Value::null());
-                            match (a.tag(), b.tag()) {
-                                (ValueTag::Int, ValueTag::Int) => {
-                                    self.push(Value::int(a.as_int() / b.as_int()))
-                                }
-                                (ValueTag::Float, ValueTag::Float) => {
-                                    self.push(Value::float(a.as_float() / b.as_float()))
-                                }
-                                _ => self.push(Value::null()),
-                            }
-                        }
-                        _ => {
-                            if name.contains("::") {
-                                let parts: Vec<&str> = name.split("::").collect();
-                                let variant_name = parts.last().unwrap();
-                                let class_name = parts[parts.len() - 2];
-
-                                // Find class by name suffix
-                                let class_idx = self.modules[module_idx].classes.iter().position(|c| {
-                                    c.name.ends_with(&format!("::{}", class_name))
-                                        || c.name == class_name
-                                });
-
-                                if let Some(idx) = class_idx {
-                                    let idx = idx as u16;
-                                    // Check if we have enough args.
-                                    // For now, assume single arg constructor if args.len() > 0?
-                                    // Actually, EnumDef variants can have multiple fields.
-                                    // But FFICall doesn't tell us how many fields the variant EXPECTS unless we look it up.
-                                    // But we have `args` from FFICall.
-                                    // FFICall pops args.
-                                    // We need to pop ALL args.
-                                    // FFICall logic already popped args into `args` vec.
-                                    // So we just use `args`.
-                                    // But `args` are popped in reverse order (LIFO).
-                                    // Wait, FFICall pops:
-                                    // for _ in 0..argc { args.push(pop()) }
-                                    // If I call C(a, b). Stack: [a, b].
-                                    // pop -> b. pop -> a.
-                                    // args = [b, a].
-                                    // NewObject expects fields in order.
-                                    // fields = [__variant__, _0, _1...]
-                                    // _0 should be a. _1 should be b.
-                                    // So we need to REVERSE args to get [a, b].
-
-                                    let mut fields = Vec::new();
-                                    fields.push(Value::string(variant_name.to_string(), &self.gc));
-
-                                    // args is [last_arg, ..., first_arg]
-                                    // We want [first_arg, ..., last_arg]
-                                    // So we iterate args in reverse.
-                                    for arg in args.iter().rev() {
-                                        fields.push(*arg);
-                                    }
-
-                                    // We might need to pad with nulls if the class has more fields?
-                                    // Enum classes have fields _0, _1... up to max fields of any variant.
-                                    // If this variant has fewer fields, the remaining should be null?
-                                    // Or assume `args` matches the variant fields count?
-                                    // The VM class definition has `fields` count.
-                                    let cls = &self.modules[module_idx].classes[idx as usize];
-                                    while fields.len() < cls.fields.len() {
-                                        fields.push(Value::null());
-                                    }
-
-                                    let obj = Value::object(idx, fields, &self.gc);
-                                    self.push(obj);
                                 } else {
                                     return Err(VmError::UnhandledEffect(name.to_string()));
                                 }
-                            } else {
-                                return Err(VmError::UnhandledEffect(name.to_string()));
                             }
                         }
                     }
-                }
                 }
                 Instruction::NewObject(class_idx) => {
                     let cls = self.modules[module_idx]
@@ -2710,7 +2830,10 @@ impl NyarVM {
                         list_mut.items.push(val);
                         self.push(Value::null());
                     } else {
-                        return Err(VmError::RuntimeError(format!("PushElementRight on non-list: found {:?}", list_v.tag()).into()));
+                        return Err(VmError::RuntimeError(
+                            format!("PushElementRight on non-list: found {:?}", list_v.tag())
+                                .into(),
+                        ));
                     }
                 }
                 Instruction::PopElementRight => {
@@ -2980,7 +3103,8 @@ impl NyarVM {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         let chunk_idx = witness.methods[method_idx];
-                        let closure = Value::closure(witness.module_idx, chunk_idx as u16, vec![], &self.gc);
+                        let closure =
+                            Value::closure(witness.module_idx, chunk_idx as u16, vec![], &self.gc);
                         self.push(closure);
                     } else {
                         return Err(VmError::InvalidOpcode);
@@ -3019,7 +3143,10 @@ impl NyarVM {
                         if let Some(idx) = cls.fields.iter().position(|f| f == name) {
                             self.push(obj_ref.fields[idx]);
                         } else {
-                            return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
+                            return Err(VmError::RuntimeError(format!(
+                                "Field not found: {}",
+                                name
+                            )));
                         }
                     } else if let Some(obj_ref) = obj.try_as_dyn_object() {
                         let name = match module.constants.get(name_idx as usize) {
@@ -3034,7 +3161,10 @@ impl NyarVM {
                         if let Some(val) = obj_ref.entries.get(name) {
                             self.push(*val);
                         } else {
-                            return Err(VmError::RuntimeError(format!("Field not found in DynObject: {}", name)));
+                            return Err(VmError::RuntimeError(format!(
+                                "Field not found in DynObject: {}",
+                                name
+                            )));
                         }
                     } else {
                         return Err(VmError::RuntimeError(format!(
@@ -3079,7 +3209,10 @@ impl NyarVM {
                             obj_mut.fields[idx] = val;
                             self.push(val);
                         } else {
-                            return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
+                            return Err(VmError::RuntimeError(format!(
+                                "Field not found: {}",
+                                name
+                            )));
                         }
                     } else {
                         return Err(VmError::RuntimeError(format!(

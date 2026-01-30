@@ -31,7 +31,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             p.set_extension("exe");
             p
         });
-        println!("正在将 Mini Go 文件 {:?} 编译为原生程序: {:?}", args.input, output);
+        println!(
+            "正在将 Mini Go 文件 {:?} 编译为原生程序: {:?}",
+            args.input, output
+        );
         driver.compile_to_native(&frontend, &args.input, &output)?;
     } else {
         println!("正在运行 Mini Go 文件: {:?}", args.input);

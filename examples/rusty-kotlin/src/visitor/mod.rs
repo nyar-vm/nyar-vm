@@ -69,8 +69,9 @@ impl AnyDowncast for SoundContext {
 }
 
 pub fn sound(animal: &dyn Animal) -> SoundContext {
-    let mut ctx = SoundContext { name: "".to_string() };
+    let mut ctx = SoundContext {
+        name: "".to_string(),
+    };
     animal.downcast(&mut ctx);
     ctx
 }
-

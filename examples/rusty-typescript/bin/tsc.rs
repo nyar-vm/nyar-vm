@@ -4,7 +4,12 @@ use nyar_vm::NyarDriver;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "tsc", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Compiler")]
+#[command(
+    name = "tsc",
+    version = "0.1.0",
+    author = "Nyar Project",
+    about = "Mini TypeScript Compiler"
+)]
 struct Args {
     /// The input TypeScript file
     #[arg(index = 1)]

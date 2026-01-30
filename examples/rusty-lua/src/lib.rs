@@ -4,9 +4,9 @@
 
 pub mod codegen;
 
-use oak_lua::{ast::LuaRoot, LuaLanguage, LuaBuilder};
-use nyar_types::{NyarFrontend, NyarError, IKunTree};
+use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::{source::SourceText, Builder};
+use oak_lua::{ast::LuaRoot, LuaBuilder, LuaLanguage};
 
 /// Mini Lua 前端
 pub struct MiniLuaFrontend {
@@ -22,7 +22,7 @@ impl Default for MiniLuaFrontend {
 impl MiniLuaFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self { 
+        Self {
             language: LuaLanguage,
         }
     }
@@ -35,9 +35,11 @@ impl NyarFrontend for MiniLuaFrontend {
         let builder = LuaBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<LuaLanguage>::default();
-        
+
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output
+            .result
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower(&self, _ast: &LuaRoot) -> Result<IKunTree, NyarError> {

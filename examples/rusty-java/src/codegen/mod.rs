@@ -26,7 +26,10 @@ impl NyarTranslator {
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
         if let Some(root_id) = root_id {
-            let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
+            let extractor = chomsky_extract::IKunExtractor::new(
+                &egraph,
+                chomsky_cost::DEFAULT_COST_MODEL.clone(),
+            );
             Ok(extractor.extract(root_id))
         } else {
             Err(NyarError::Compile("No code generated".to_string()))
@@ -130,7 +133,13 @@ impl NyarTranslator {
                 let args_id = builder.seq(arg_ids, Loc::default());
                 if let Some(target) = &call.target {
                     let target_id = self.translate_expr(target, builder)?;
-                    Ok(builder.extension("call", vec![target_id, name_id, args_id], Loc::default()))
+                    Ok(
+                        builder.extension(
+                            "call",
+                            vec![target_id, name_id, args_id],
+                            Loc::default(),
+                        ),
+                    )
                 } else {
                     Ok(builder.extension("call", vec![name_id, args_id], Loc::default()))
                 }

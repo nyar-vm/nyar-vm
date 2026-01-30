@@ -1,11 +1,11 @@
 use chomsky_extract::{Backend, BackendArtifact};
+use chomsky_types::ChomskyResult;
 use chomsky_uir::IKunTree;
 use gaia_types::helpers::Architecture;
 use pe_assembler::helpers::PeBuilder;
 use pe_assembler::types::SubsystemType;
 use x86_64_assembler::builder::ProgramBuilder;
 use x86_64_assembler::instruction::{Instruction, Operand, Register};
-use chomsky_types::ChomskyResult;
 
 pub struct NativeBackend {
     arch: Architecture,
@@ -27,7 +27,7 @@ impl Backend for NativeBackend {
     fn generate(&self, tree: &IKunTree) -> ChomskyResult<BackendArtifact> {
         let mut builder = ProgramBuilder::new(self.arch.clone());
         let mut data_bytes = Vec::new();
-        
+
         // --- 简单的机器码生成逻辑 ---
         // 为影子空间和第 5 个参数预留空间 (4 * 8 + 8 = 40)
         // 为了保持 16 字节对齐，我们分配 48 字节 (16 * 3)
@@ -38,7 +38,7 @@ impl Backend for NativeBackend {
         });
 
         self.emit_tree(tree, &mut builder, &mut data_bytes)?;
-        
+
         // 4. ExitProcess(0)
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
@@ -55,8 +55,9 @@ impl Backend for NativeBackend {
             src: Operand::imm(48, 32),
         });
 
-        let code = builder.compile_instructions()
-            .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("Assembler error: {:?}", e)))?;
+        let code = builder.compile_instructions().map_err(|e| {
+            chomsky_types::ChomskyError::backend_error(format!("Assembler error: {:?}", e))
+        })?;
 
         // 使用 PeBuilder 构建 EXE
         // 注意：导入顺序必须与代码中的调用顺序一致！
@@ -66,24 +67,30 @@ impl Backend for NativeBackend {
         let mut pe = PeBuilder::new()
             .architecture(self.arch.clone())
             .subsystem(SubsystemType::Console)
-            .import_function("kernel32.dll", "GetStdHandle")   // index 0
-            .import_function("kernel32.dll", "WriteFile")      // index 1
-            .import_function("kernel32.dll", "ExitProcess")    // index 2
+            .import_function("kernel32.dll", "GetStdHandle") // index 0
+            .import_function("kernel32.dll", "WriteFile") // index 1
+            .import_function("kernel32.dll", "ExitProcess") // index 2
             .code(code);
-        
+
         if !data_bytes.is_empty() {
             pe = pe.data(data_bytes);
         }
 
-        let exe_bytes = pe.generate()
-            .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("PE Builder error: {}", e)))?;
+        let exe_bytes = pe.generate().map_err(|e| {
+            chomsky_types::ChomskyError::backend_error(format!("PE Builder error: {}", e))
+        })?;
 
         Ok(BackendArtifact::Binary(exe_bytes))
     }
 }
 
 impl NativeBackend {
-    fn emit_tree(&self, tree: &IKunTree, builder: &mut ProgramBuilder, data: &mut Vec<u8>) -> ChomskyResult<()> {
+    fn emit_tree(
+        &self,
+        tree: &IKunTree,
+        builder: &mut ProgramBuilder,
+        data: &mut Vec<u8>,
+    ) -> ChomskyResult<()> {
         match tree {
             IKunTree::Module(_, items) => {
                 for item in items {
@@ -122,7 +129,12 @@ impl NativeBackend {
         Ok(())
     }
 
-    fn emit_write_line(&self, s: &str, builder: &mut ProgramBuilder, data: &mut Vec<u8>) -> ChomskyResult<()> {
+    fn emit_write_line(
+        &self,
+        s: &str,
+        builder: &mut ProgramBuilder,
+        data: &mut Vec<u8>,
+    ) -> ChomskyResult<()> {
         data.extend_from_slice(s.as_bytes());
         data.push(0);
         // 为 lpNumberOfBytesWritten 预留 4 字节
@@ -143,7 +155,7 @@ impl NativeBackend {
             dst: Operand::reg(Register::RCX),
             src: Operand::reg(Register::RAX),
         });
-        
+
         // lpBuffer (rdx) = [rip + disp32] -> .data start
         builder.add_instruction(Instruction::Lea {
             dst: Register::RDX,

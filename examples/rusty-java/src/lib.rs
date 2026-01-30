@@ -3,7 +3,7 @@
 //!
 //! 提供 Mini Java 的词法分析、语法分析和 Nyar 翻译功能。
 
-use nyar_types::{NyarError, NyarFrontend, IKunTree};
+use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::{builder::Builder, source::SourceText};
 use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
 
@@ -34,7 +34,9 @@ impl NyarFrontend for MiniJavaFrontend {
         let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output
+            .result
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     /// 编译到 Chomsky UIR (IKunTree)

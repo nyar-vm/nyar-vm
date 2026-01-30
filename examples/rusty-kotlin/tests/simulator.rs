@@ -1,11 +1,17 @@
-use mini_kotlin::visitor::{Dog, Cat, Fish, sound};
-use mini_kotlin::tagless::{expr, SetContext, SoundContext, Neg};
+use mini_kotlin::tagless::{expr, Neg, SetContext, SoundContext};
+use mini_kotlin::visitor::{sound, Cat, Dog, Fish};
 
 #[test]
 fn test_visitor() {
-    let dog = Dog { name: "nana".to_string() };
-    let cat = Cat { name: "nvnv".to_string() };
-    let fish = Fish { name: "fish".to_string() };
+    let dog = Dog {
+        name: "nana".to_string(),
+    };
+    let cat = Cat {
+        name: "nvnv".to_string(),
+    };
+    let fish = Fish {
+        name: "fish".to_string(),
+    };
     sound(&dog);
     sound(&cat);
     sound(&fish);

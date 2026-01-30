@@ -2,9 +2,9 @@
 //!
 //! 这是一个类似 Python 的语言前端演示程序，支持编译到 Gaia 指令或 Python 字节码 (.pyc)
 
+use nyar_vm::NyarDriver;
 use std::{fs, path::Path, process::exit};
 use virtual_python::MiniPythonFrontend;
-use nyar_vm::NyarDriver;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -16,7 +16,7 @@ fn main() {
     let input_file = Path::new(&args[1]);
     let frontend = MiniPythonFrontend::new();
     let driver = NyarDriver::new();
-    
+
     // 检查是否需要生成 pyc
     let mut pyc_output = None;
     for i in 0..args.len() {

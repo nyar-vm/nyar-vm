@@ -854,7 +854,6 @@ impl Instruction {
             }
         }
     }
-
 }
 
 pub struct Decoder<'a> {

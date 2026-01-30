@@ -1,6 +1,6 @@
-use nyar_gc::{NyarGc, Trace, Gc, MarkContext, GcCell};
-use std::thread;
+use nyar_gc::{Gc, GcCell, MarkContext, NyarGc, Trace};
 use std::sync::Arc;
+use std::thread;
 
 #[test]
 fn test_tlab_basic() {
@@ -59,24 +59,24 @@ impl Trace for TestNode {
 #[test]
 fn test_gc_basic() {
     let gc = NyarGc::new();
-    
+
     let node1 = gc.alloc(TestNode {
         value: 1,
         next: GcCell::new(None),
     });
-    
+
     let node2 = gc.alloc(TestNode {
         value: 2,
         next: GcCell::new(Some(node1)),
     });
-    
+
     // Both should be reachable if we start from node2
     unsafe {
         gc.collect(|ctx| {
             node2.trace(ctx);
         });
     }
-    
+
     assert_eq!(node2.value, 2);
     unsafe {
         assert_eq!(node2.next.get_ref().unwrap().value, 1);
@@ -86,7 +86,7 @@ fn test_gc_basic() {
 #[test]
 fn test_gc_collect() {
     let gc = NyarGc::new();
-    
+
     {
         let _node1 = gc.alloc(TestNode {
             value: 1,
@@ -94,18 +94,18 @@ fn test_gc_collect() {
         });
     }
     // node1 is out of scope, but GC doesn't know that yet.
-    
+
     let node2 = gc.alloc(TestNode {
         value: 2,
         next: GcCell::new(None),
     });
-    
+
     unsafe {
         gc.collect(|ctx| {
             node2.trace(ctx);
         });
     }
-    
+
     assert_eq!(node2.value, 2);
 }
 

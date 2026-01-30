@@ -2,7 +2,6 @@ use super::*;
 
 impl Error for KotlinError {}
 
-
 impl Debug for KotlinError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.kind, f)
@@ -15,9 +14,12 @@ impl Display for KotlinError {
     }
 }
 
-
 impl Display for KotlinErrorKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self { KotlinErrorKind::UnknownError => { write!(f, "UnknownError") } }
+        match self {
+            KotlinErrorKind::UnknownError => {
+                write!(f, "UnknownError")
+            }
+        }
     }
 }

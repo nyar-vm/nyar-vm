@@ -1,4 +1,4 @@
-use crate::bytecode::format::{Chunk, ExportInfo, NyarModule, Constant as NyarConstant};
+use crate::bytecode::format::{Chunk, Constant as NyarConstant, ExportInfo, NyarModule};
 use crate::bytecode::opcode::{Opcode, StringExt};
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
 use nyar_types::VmError;
@@ -54,7 +54,9 @@ impl NyarBackend {
                         if args.len() >= 4 {
                             let name_idx = 0;
                             let body_idx = args.len() - 1;
-                            if let (IKunTree::StringConstant(name), body) = (&args[name_idx], &args[body_idx]) {
+                            if let (IKunTree::StringConstant(name), body) =
+                                (&args[name_idx], &args[body_idx])
+                            {
                                 let body_code = self.lower_tree(body)?;
                                 let chunk_idx = self.module.chunks.len() as u16;
                                 self.module.chunks.push(Chunk {
@@ -109,10 +111,13 @@ impl Backend for NyarBackend {
 
     fn generate(&self, tree: &IKunTree) -> Result<BackendArtifact, chomsky_types::ChomskyError> {
         let mut backend = NyarBackend::new();
-        backend.lower_tree(tree).map_err(|e| chomsky_types::ChomskyError::backend_error(format!("{:?}", e)))?;
+        backend
+            .lower_tree(tree)
+            .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("{:?}", e)))?;
         let module = backend.finish();
-        
-        let json = serde_json::to_string_pretty(&module).map_err(|e| chomsky_types::ChomskyError::backend_error(e.to_string()))?;
+
+        let json = serde_json::to_string_pretty(&module)
+            .map_err(|e| chomsky_types::ChomskyError::backend_error(e.to_string()))?;
         Ok(BackendArtifact::Source(json))
     }
 }

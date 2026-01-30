@@ -1,11 +1,11 @@
-use chomsky_uir::{EGraph, Id, IKun, IKunTree};
 use chomsky::optimizer::UniversalOptimizer;
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
+use chomsky_uir::{EGraph, IKun, IKunTree, Id};
+use nyar_vm::bytecode::format::{Chunk, ExportInfo, NyarcModule};
 use nyar_vm::vm::interpreter::NyarVM;
-use nyar_vm::bytecode::format::{NyarcModule, Chunk, ExportInfo};
-use std::fmt::{Display, Formatter};
 use std::error::Error;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -53,7 +53,7 @@ impl MiniGoRuntime {
 
     pub fn execute(&mut self, intent_graph: (EGraph<IKun, ()>, Id)) -> Result<(), RuntimeError> {
         let (egraph, root_id) = intent_graph;
-        
+
         // 1. Extract the best tree using the default cost model
         let cost_model = DefaultCostModel::default();
         let extractor = IKunExtractor::new(&egraph, cost_model);
@@ -64,11 +64,16 @@ impl MiniGoRuntime {
 
         // 3. Execute using Nyar VM
         println!("Executing Nyar Module: {:?}", module.exports);
-        
+
         let module_idx = self.vm.load_module(module);
-        
+
         // Find main or first export
-        if let Some(export) = self.vm.modules[module_idx].exports.iter().find(|e| e.symbol == "main").or(self.vm.modules[module_idx].exports.first()) {
+        if let Some(export) = self.vm.modules[module_idx]
+            .exports
+            .iter()
+            .find(|e| e.symbol == "main")
+            .or(self.vm.modules[module_idx].exports.first())
+        {
             match self.vm.execute(module_idx, export.chunk_idx as usize) {
                 Ok(val) => {
                     println!("Execution result: {}", val);
@@ -81,7 +86,7 @@ impl MiniGoRuntime {
         } else {
             return Err(RuntimeError::EntryPointNotFound);
         }
-        
+
         Ok(())
     }
 
@@ -110,7 +115,11 @@ impl MiniGoRuntime {
         Ok(module)
     }
 
-    fn translate_function(&self, _params: &[String], _body: &IKunTree) -> Result<Chunk, RuntimeError> {
+    fn translate_function(
+        &self,
+        _params: &[String],
+        _body: &IKunTree,
+    ) -> Result<Chunk, RuntimeError> {
         // Placeholder for function translation
         Ok(Chunk::default())
     }

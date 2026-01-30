@@ -4,14 +4,14 @@
 //! 提供 Mini Kotlin 的词法分析、语法分析和 Nyar 翻译功能。
 
 pub mod codegen;
-pub mod visitor;
-pub mod tagless;
-pub mod row_type;
 pub mod errors;
+pub mod row_type;
+pub mod tagless;
+pub mod visitor;
 
-use oak_kotlin::{KotlinLanguage, KotlinRoot, KotlinBuilder};
-use oak_core::{source::SourceText, builder::Builder};
-use nyar_types::{NyarFrontend, NyarError, IKunTree};
+use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use oak_core::{builder::Builder, source::SourceText};
+use oak_kotlin::{KotlinBuilder, KotlinLanguage, KotlinRoot};
 
 /// Mini Kotlin 前端
 pub struct MiniKotlinFrontend {
@@ -30,7 +30,10 @@ impl MiniKotlinFrontend {
     pub fn new() -> Self {
         let language = Box::leak(Box::new(KotlinLanguage::default()));
         let builder = KotlinBuilder::new(language);
-        Self { language: language.clone(), builder }
+        Self {
+            language: language.clone(),
+            builder,
+        }
     }
 }
 
@@ -44,7 +47,9 @@ impl NyarFrontend for MiniKotlinFrontend {
         if let Ok(root) = &output.result {
             println!("Parsed {} declarations", root.declarations.len());
         }
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output
+            .result
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &KotlinRoot) -> Result<IKunTree, NyarError> {

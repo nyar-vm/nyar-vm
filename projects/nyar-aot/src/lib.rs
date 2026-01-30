@@ -10,22 +10,29 @@ pub struct NyarAot<A: chomsky_uir::egraph::Analysis<IKun> + 'static = ()> {
 }
 
 impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static> NyarAot<A> {
-    pub fn new() -> Self 
-    where A: Default {
+    pub fn new() -> Self
+    where
+        A: Default,
+    {
         Self {
             optimizer: UniversalOptimizer::new(),
         }
     }
 
     /// Compiles an IKun intent to a BackendArtifact.
-    pub fn compile(&mut self, ikun: &IKun, backend: &dyn Backend) -> Result<BackendArtifact, VmError> {
+    pub fn compile(
+        &mut self,
+        ikun: &IKun,
+        backend: &dyn Backend,
+    ) -> Result<BackendArtifact, VmError> {
         let id = self.add_intent(ikun);
         self.saturate();
         let tree = self.extract(id, backend.get_model());
-        
-        let artifact = backend.generate(&tree)
+
+        let artifact = backend
+            .generate(&tree)
             .map_err(|e| VmError::RuntimeError(format!("Backend error: {:?}", e)))?;
-            
+
         Ok(artifact)
     }
 
@@ -40,7 +47,11 @@ impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static> NyarAot<A> {
     }
 
     /// Extracts the best candidate from the internal EGraph using a cost model.
-    pub fn extract(&self, root_id: chomsky_uir::egraph::Id, cost_model: &dyn chomsky::cost::CostModel) -> chomsky_uir::IKunTree {
+    pub fn extract(
+        &self,
+        root_id: chomsky_uir::egraph::Id,
+        cost_model: &dyn chomsky::cost::CostModel,
+    ) -> chomsky_uir::IKunTree {
         self.optimizer.extract(root_id, cost_model)
     }
 }

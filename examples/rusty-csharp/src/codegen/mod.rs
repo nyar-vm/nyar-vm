@@ -1,7 +1,7 @@
 //! CSharp 到 Nyar 字节码的翻译器
 
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
 use chomsky_source::Loc;
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
 use nyar_types::NyarError;
 use oak_java::ast::*;
 
@@ -25,7 +25,8 @@ impl NyarTranslator {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         self.translate_to_graph(ast, &mut egraph)?;
 
-        let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DefaultCostModel::default());
+        let extractor =
+            chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DefaultCostModel::default());
         let root_id = egraph.classes.iter().next().map(|entry| *entry.key());
         if let Some(root_id) = root_id {
             Ok(extractor.extract(root_id))
@@ -124,7 +125,7 @@ impl NyarTranslator {
                 }
                 let name_id = builder.symbol(&call.name, loc);
                 let args_id = builder.seq(arg_ids, loc);
-                
+
                 if let Some(target) = &call.target {
                     let target_id = self.translate_expr(target, builder)?;
                     Ok(builder.extension("call", vec![target_id, name_id, args_id], loc))
@@ -141,4 +142,3 @@ impl NyarTranslator {
         }
     }
 }
-

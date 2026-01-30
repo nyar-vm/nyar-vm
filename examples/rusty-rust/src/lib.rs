@@ -37,19 +37,21 @@ impl NyarFrontend for MiniRustFrontend {
         let mut session = oak_core::parser::ParseSession::<RustLanguage>::default();
 
         let output = builder.build(&source_text, &[], &mut session);
-        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
+        output
+            .result
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower(&self, _ast: &RustRoot) -> Result<IKunTree, NyarError> {
         let mut aot = nyar_aot::NyarAot::<ConstraintAnalysis>::new();
         let mut builder = chomsky_uir::IntentBuilder::new(&mut aot.optimizer.egraph);
         let id = converter::convert_root(_ast, &mut builder);
-        
+
         aot.saturate();
-        
+
         let backend = nyar_vm::bytecode::compiler::NyarBackend::new();
         let tree = aot.extract(id, backend.get_model());
-        
+
         Ok(tree)
     }
 }

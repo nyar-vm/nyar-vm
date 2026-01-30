@@ -39,21 +39,24 @@ impl Clone for Chunk {
             handlers: self.handlers.clone(),
             lines: self.lines.clone(),
             decoded: self.decoded.clone(),
-            hotness: std::sync::atomic::AtomicU32::new(self.hotness.load(std::sync::atomic::Ordering::Relaxed)),
+            hotness: std::sync::atomic::AtomicU32::new(
+                self.hotness.load(std::sync::atomic::Ordering::Relaxed),
+            ),
         }
     }
 }
 
 impl PartialEq for Chunk {
     fn eq(&self, other: &Self) -> bool {
-        self.locals == other.locals &&
-        self.upvalues == other.upvalues &&
-        self.max_stack == other.max_stack &&
-        self.code == other.code &&
-        self.handlers == other.handlers &&
-        self.lines == other.lines &&
-        self.decoded == other.decoded &&
-        self.hotness.load(std::sync::atomic::Ordering::Relaxed) == other.hotness.load(std::sync::atomic::Ordering::Relaxed)
+        self.locals == other.locals
+            && self.upvalues == other.upvalues
+            && self.max_stack == other.max_stack
+            && self.code == other.code
+            && self.handlers == other.handlers
+            && self.lines == other.lines
+            && self.decoded == other.decoded
+            && self.hotness.load(std::sync::atomic::Ordering::Relaxed)
+                == other.hotness.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -171,7 +174,10 @@ impl Default for NyarcModule {
         Self {
             version: 1,
             flags: 0,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             constants: vec![],
             effects: vec![],
             chunks: vec![],
@@ -267,14 +273,18 @@ impl NyarcModule {
             let mut code = vec![0u8; code_size];
             cur.read_exact(&mut code)
                 .map_err(|_| FormatError::Truncated)?;
-            
+
             let line_count = cur
                 .read_u32::<LittleEndian>()
                 .map_err(|_| FormatError::Truncated)? as usize;
             let mut lines = Vec::with_capacity(line_count);
             for _ in 0..line_count {
-                let off = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
-                let line = cur.read_u32::<LittleEndian>().map_err(|_| FormatError::Truncated)?;
+                let off = cur
+                    .read_u32::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)?;
+                let line = cur
+                    .read_u32::<LittleEndian>()
+                    .map_err(|_| FormatError::Truncated)?;
                 lines.push((off, line));
             }
 
