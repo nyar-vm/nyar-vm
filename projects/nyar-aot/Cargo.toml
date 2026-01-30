@@ -1,10 +1,1 @@
-[package]
-name = "nyar-aot"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
-chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
-nyar-types = { path = "../nyar-types" }
 serde = { workspace = true }

@@ -1,15 +1,1 @@
-[package]
-name = "nyar-tools"
-version = "0.1.0"
-edition = "2021"
-
-[[bin]]
-name = "nyar"
-path = "src/main.rs"
-
-[dependencies]
-nyar-types = { path = "../nyar-types" }
-nyar-vm = { path = "../nyar-vm" }
-valkyrie-language = { path = "../../examples/valkyrie-language" }
-clap = { workspace = true }
 zip = "0.6"

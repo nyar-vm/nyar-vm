@@ -1,12 +1,1 @@
-[package]
-name = "nyar-jit"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
-chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
-gaia-jit = { workspace = true }
-gaia-assembler = { workspace = true }
-nyar-types = { path = "../nyar-types" }
 serde = { workspace = true }

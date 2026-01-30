@@ -12,10 +12,14 @@ lto = true
 opt-level = "s"
 
 [workspace.dependencies]
-chomsky-full = { path = "../ProjectChomsky/packages/chomsky-full" }
+chomsky = { path = "../ProjectChomsky/packages/chomsky" }
 chomsky-source = { path = "../ProjectChomsky/packages/chomsky-source" }
+chomsky-uir = { path = "../ProjectChomsky/packages/chomsky-uir" }
+chomsky-cost = { path = "../ProjectChomsky/packages/chomsky-cost" }
 oak-core = { path = "../oaks/projects/oak-core" }
 oak-rust = { path = "../oaks/examples/oak-rust" }
+oak-c = { path = "../oaks/examples/oak-c" }
+oak-typescript = { path = "../oaks/examples/oak-typescript" }
 gaia-jit = { path = "../project-gaia/projects/gaia-jit" }
 gaia-types = { path = "../project-gaia/projects/gaia-types" }
 gaia-assembler = { path = "../project-gaia/projects/gaia-assembler" }

@@ -4,12 +4,12 @@
 
 pub mod codegen;
 
-use oak_lua::{ast::LuaRoot, LuaLanguage, LuaBuilder, LuaParser};
+use oak_lua::{ast::LuaRoot, LuaLanguage, LuaBuilder, LuaParser, lexer::LuaLexer};
 use codegen::GaiaTranslator;
 use gaia_assembler::program::GaiaModule;
 use gaia_types::GaiaError;
-use oak_core::{Lexer, OakError, ParseSession, source::SourceText};
-use chomsky_uir::Id;
+use oak_core::{Lexer, OakError, ParseSession, source::SourceText, Parser, Builder, BuilderCache, tree::RedNode};
+use chomsky_uir::{Id, IntentBuilder, IKun};
 use chomsky_cost::DefaultCostModel;
 use chomsky_full::optimizer::UniversalOptimizer;
 
@@ -30,17 +30,43 @@ impl MiniLuaFrontend {
 
     /// 解析 Lua 源代码为 EGraph
     pub fn parse_to_egraph(&mut self, source: &str) -> Result<Id, String> {
+        let language = LuaLanguage;
+        let lexer = LuaLexer::new(&language);
+        let mut session = ParseSession::<LuaLanguage>::default();
+        
         let source_text = SourceText::new(source);
-        let mut builder = chomsky_uir::builder::IntentBuilder::new(&mut self.optimizer.egraph);
-        let frontend = LuaBuilder::new(&source_text);
-        frontend.parse(&mut builder).map_err(|e| format!("{:?}", e))
+        
+        lexer.lex(&source_text, &[], &mut session);
+        
+        let parser = LuaParser::new(&language);
+        let parse_output = parser.parse(&source_text, &[], &mut session);
+        
+        let green_node = parse_output.result.map_err(|e| format!("Parse error: {:?}", e))?;
+        let red_node = RedNode::new(green_node.clone(), 0);
+        
+        let mut builder = IntentBuilder::new(&mut self.optimizer.egraph);
+        
+        // TODO: 实现更完整的 Lua 到 UIR 的转换
+        let root_id = self.convert_red_to_uir(&mut builder, red_node, source);
+        
+        Ok(root_id)
+    }
+
+    fn convert_red_to_uir(&self, builder: &mut IntentBuilder<()>, node: RedNode<LuaLanguage>, _source: &str) -> Id {
+        let loc = chomsky_source::Loc::default();
+        // 这是一个极简的转换实现，只处理根节点
+        builder.extension("lua_module", vec![builder.string("mini_lua_program", loc)], loc)
     }
 
     /// 解析 Lua 源代码为 AST (用于 --ast 调试)
     pub fn parse_to_ast(&mut self, source: &str) -> Result<LuaRoot, String> {
+        let language = LuaLanguage;
+        let builder = LuaBuilder::new(&language);
         let source_text = SourceText::new(source);
-        let mut parser = LuaParser::new(&source_text);
-        Ok(parser.parse_root())
+        let mut session = ParseSession::<LuaLanguage>::default();
+        
+        let output = builder.build(&source_text, &[], &mut session);
+        output.result.map_err(|e| format!("{:?}", e))
     }
 
     /// 将 Lua 源代码编译为 Gaia 程序
@@ -60,9 +86,11 @@ impl MiniLuaFrontend {
 
     /// 仅进行词法分析
     pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<oak_lua::kind::LuaSyntaxKind>>, OakError> {
-        let config = LuaLanguage;
-        let lexer = oak_lua::lexer::LuaLexer::new(&config);
+        let language = LuaLanguage;
+        let lexer = LuaLexer::new(&language);
         let source_text = SourceText::new(source);
-        Ok(lexer.tokenize(&source_text))
+        let mut session = ParseSession::<LuaLanguage>::default();
+        let output = lexer.lex(&source_text, &[], &mut session);
+        output.result
     }
 }

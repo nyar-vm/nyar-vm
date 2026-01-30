@@ -1,8 +1,1 @@
-[package]
-name = "nyar-gc"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-nyar-types = { path = "../nyar-types" }
 # Add other dependencies if needed
