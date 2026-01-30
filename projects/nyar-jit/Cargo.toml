@@ -9,3 +9,4 @@ gaia-jit = { workspace = true }
 nyar-types = { path = "../nyar-types" }
 nyar-vm = { path = "../nyar-vm" }
 hashbrown = "0.14"
+dashmap = "5.5"

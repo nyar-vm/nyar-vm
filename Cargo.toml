@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["projects/*"]
+members = ["projects/*", "examples/rusty-typescript"]
 default-members = [
     "projects/nyar-types",
     "projects/nyar-vm",

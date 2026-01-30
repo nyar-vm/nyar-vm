@@ -22,6 +22,7 @@ impl Display for Value {
             ValueTag::Object => write!(f, "{{...}}"),
             ValueTag::Closure => write!(f, "<closure>"),
             ValueTag::DynObject => write!(f, "<dyn_object>"),
+            ValueTag::WitnessTable => write!(f, "<witness_table>"),
             _ => write!(f, "<value>"),
         }
     }
@@ -33,7 +34,15 @@ impl Trace for Value {
             return;
         }
         match self.tag() {
-            ValueTag::Int | ValueTag::Bool | ValueTag::Null | ValueTag::Code | ValueTag::WitnessTable => {}
+            ValueTag::Int | ValueTag::Bool | ValueTag::Null | ValueTag::Code => {}
+
+            ValueTag::WitnessTable => unsafe {
+                let payload = self.payload();
+                if payload != 0 {
+                    let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
+                    GcHeader::mark(header_ptr, ctx);
+                }
+            },
 
             ValueTag::String => unsafe {
                 let payload = self.payload();
@@ -302,6 +311,14 @@ impl Value {
         let ptr = self.payload() as *mut GcBox<Effect>;
         &mut (*ptr).data
     }
+    pub unsafe fn as_witness_table<'a>(&self) -> &'a WitnessTable {
+        let ptr = self.payload() as *const GcBox<WitnessTable>;
+        &(*ptr).data
+    }
+    pub unsafe fn as_witness_table_mut<'a>(&self) -> &'a mut WitnessTable {
+        let ptr = self.payload() as *mut GcBox<WitnessTable>;
+        &mut (*ptr).data
+    }
     pub unsafe fn as_continuation<'a>(&self) -> &'a Continuation {
         let ptr = self.payload() as *const GcBox<Continuation>;
         &(*ptr).data
@@ -356,6 +373,10 @@ impl Value {
     pub fn effect(type_idx: u16, args: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Effect { type_idx, args });
         Self::encode(ValueTag::Effect, g.as_ptr() as u64)
+    }
+    pub fn witness_table(module_idx: usize, methods: Vec<u16>, gc: &NyarGc) -> Self {
+        let g = gc.alloc(WitnessTable { module_idx, methods });
+        Self::encode(ValueTag::WitnessTable, g.as_ptr() as u64)
     }
     pub fn bigint_from_i64(v: i64, gc: &NyarGc) -> Self {
         let g = gc.alloc(BigInt::from_i64(v));
@@ -488,4 +509,14 @@ pub struct Tuple {
 pub struct Effect {
     pub type_idx: u16,
     pub args: Vec<Value>,
+}
+
+#[derive(Clone)]
+pub struct WitnessTable {
+    pub module_idx: usize,
+    pub methods: Vec<u16>,
+}
+
+impl Trace for WitnessTable {
+    fn trace(&self, _ctx: &mut MarkContext) {}
 }

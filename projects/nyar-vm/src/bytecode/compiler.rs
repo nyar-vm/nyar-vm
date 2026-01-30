@@ -63,6 +63,8 @@ impl NyarBackend {
                                     code: body_code,
                                     handlers: vec![],
                                     lines: vec![],
+                                    decoded: None,
+                                    hotness: 0,
                                 });
                                 self.module.exports.push(ExportInfo {
                                     symbol: name.clone(),

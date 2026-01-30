@@ -151,6 +151,10 @@ struct Frame {
     chunk_idx: Option<usize>,
 }
 
+pub trait JitProvider: Send + Sync {
+    fn try_execute(&self, vm: &mut NyarVM, module_idx: usize, chunk_idx: usize) -> Option<Result<Value, VmError>>;
+}
+
 pub struct NyarVM {
     pub gc: NyarGc,
     stack: Vec<Value>,
@@ -164,6 +168,7 @@ pub struct NyarVM {
     pub ffi: FFIRegistry,
     pub symbol_table: std::collections::HashMap<String, (usize, u16)>, // (module_idx, chunk_idx)
     pub builtins: std::collections::HashMap<String, Value>,
+    pub jit: Option<std::sync::Arc<dyn JitProvider>>,
 }
 
 impl Trace for NyarVM {
@@ -193,6 +198,7 @@ impl NyarVM {
             ffi: FFIRegistry::new(),
             symbol_table: std::collections::HashMap::new(),
             builtins: std::collections::HashMap::new(),
+            jit: None,
         };
         vm.register_builtins();
         vm
@@ -305,6 +311,11 @@ impl NyarVM {
     }
 
     pub fn execute(&mut self, module_idx: usize, chunk_idx: usize) -> Result<Value, VmError> {
+        if let Some(jit) = self.jit.clone() {
+            if let Some(res) = jit.try_execute(self, module_idx, chunk_idx) {
+                return res;
+            }
+        }
         println!("VM: Executing module {}, chunk {}", module_idx, chunk_idx);
         let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
 
@@ -1414,7 +1425,7 @@ impl NyarVM {
                         }
 
                         let new_frame = Frame {
-                            instrs,
+                            instrs: instrs.into(),
                             ip: 0,
                             locals: args,
                             closure: null(),
@@ -1865,7 +1876,7 @@ impl NyarVM {
                         }
 
                         let new_frame = Frame {
-                            instrs,
+                            instrs: instrs.into(),
                             ip: 0,
                             locals: full_args,
                             closure: null(),
@@ -1920,7 +1931,8 @@ impl NyarVM {
                     } else {
                         if let Some(hf) = {
                             let mut chosen = None;
-                            for h in self.handler_stack.iter().rev() {
+                            let handlers: Vec<_> = self.handler_stack.iter().rev().cloned().collect();
+                            for h in handlers {
                                 let instrs = self.get_chunk_instructions(module_idx, h.catch_chunk)?;
                                 let mut matches = true;
                                 if let Some(crate::bytecode::decoder::Instruction::MatchEffect(
@@ -2908,6 +2920,33 @@ impl NyarVM {
                         ValueTag::WitnessTable => ptr_sz,
                     };
                     self.push(Value::int(n));
+                }
+                Instruction::GetWitnessTable(class_idx, trait_idx) => {
+                    let (class_idx, trait_idx) = (*class_idx, *trait_idx);
+                    let module = &self.modules[module_idx];
+                    let mut methods = Vec::new();
+                    for imp in &module.impls {
+                        if imp.class_idx == class_idx && imp.trait_idx == trait_idx {
+                            methods = imp.methods.clone();
+                            break;
+                        }
+                    }
+                    let val = Value::witness_table(module_idx, methods, &self.gc);
+                    self.push(val);
+                }
+                Instruction::WitnessMethod(method_idx) => {
+                    let method_idx = *method_idx as usize;
+                    let v = self.pop()?;
+                    if v.tag() != ValueTag::WitnessTable {
+                        return Err(VmError::InvalidOpcode);
+                    }
+                    let witness = unsafe { v.as_witness_table() };
+                    if method_idx >= witness.methods.len() {
+                        return Err(VmError::IndexOutOfBounds);
+                    }
+                    let chunk_idx = witness.methods[method_idx];
+                    let closure = Value::closure(witness.module_idx, chunk_idx as u16, vec![], &self.gc);
+                    self.push(closure);
                 }
                 Instruction::GetField(name_idx) => {
                     let name_idx = *name_idx;

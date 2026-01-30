@@ -242,6 +242,7 @@ impl NyarcModule {
                 code,
                 handlers: vec![],
                 lines,
+                decoded: None,
                 hotness: 0,
             });
         }
@@ -503,6 +504,8 @@ pub fn minimal_module_with_chunk(code: Vec<u8>, constants: Vec<Constant>) -> Nya
             code,
             handlers: vec![],
             lines: vec![],
+            decoded: None,
+            hotness: 0,
         }],
         classes: vec![],
         traits: vec![],

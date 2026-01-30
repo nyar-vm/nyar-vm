@@ -2,8 +2,8 @@ use chomsky::optimizer::UniversalOptimizer;
 use chomsky::extract::{Backend, BackendArtifact, IKunTree};
 use chomsky::uir::IKun;
 use gaia_jit::JitMemory;
-use nyar_types::VmError;
 use hashbrown::HashMap;
+use dashmap::DashMap;
 use std::sync::Arc;
 
 /// Represents the compilation tiers in NyarJit.
@@ -66,13 +66,55 @@ impl InlineCache {
 }
 
 /// The main JIT compiler for NyarVM.
+use nyar_vm::vm::interpreter::{JitProvider, NyarVM};
+use nyar_vm::vm::value::Value;
+use nyar_vm::vm::VmError;
+
+impl JitProvider for NyarJit {
+    fn try_execute(&self, vm: &mut NyarVM, module_idx: usize, chunk_idx: usize) -> Option<Result<Value, VmError>> {
+        let key = (module_idx, chunk_idx);
+        
+        // 1. Check if already compiled
+        if let Some(compiled) = self.code_cache.get(&key) {
+            // Found compiled code, execute it
+            // In a real implementation, this would involve jumping to machine code.
+            // For now, we simulate execution or trigger tier upgrade if it's Tier 1.
+            if compiled.tier == JitTier::Baseline {
+                // Potential upgrade to Optimizing JIT
+                // (Increment hotness in compiled code, etc.)
+            }
+            // return Some(execute_machine_code(compiled, vm));
+            return None; // Fallback to interpreter for now
+        }
+
+        // 2. Increment hotness in VM's chunk
+        let threshold = 1000; // Example threshold
+        let chunk = &mut vm.modules[module_idx].chunks[chunk_idx];
+        chunk.hotness += 1;
+
+        if chunk.hotness >= threshold {
+            // Trigger compilation
+            match self.compile(vm, module_idx, chunk_idx, JitTier::Baseline) {
+                Ok(_) => {
+                    // Compilation successful, next call will use it
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+
+        None
+    }
+}
+
 pub struct NyarJit {
     /// Optimizer for Tier 2 using E-Graph Equality Saturation.
-    optimizer: UniversalOptimizer<()>,
+    optimizer: std::sync::Mutex<UniversalOptimizer<()>>,
     /// Executable memory manager for JITed code.
-    jit_mem: JitMemory,
-    /// Cache of compiled functions, indexed by name or ID.
-    cache: HashMap<String, Arc<CompiledCode>>,
+    jit_mem: std::sync::Mutex<JitMemory>,
+    /// Cache of compiled functions, indexed by (module_idx, chunk_idx).
+    code_cache: DashMap<(usize, usize), Arc<CompiledCode>>,
+    /// Inline Cache registry.
+    ic_registry: DashMap<(usize, usize), Arc<InlineCache>>,
     /// Thresholds for triggering compilation to each tier.
     thresholds: HashMap<JitTier, u32>,
 }
@@ -80,8 +122,8 @@ pub struct NyarJit {
 impl NyarJit {
     /// Creates a new NyarJit instance with specified memory capacity.
     pub fn new(capacity: usize) -> Result<Self, VmError> {
-        let optimizer = UniversalOptimizer::new();
-        let jit_mem = JitMemory::new(capacity).map_err(|e| VmError::RuntimeError(e.to_string()))?;
+        let optimizer = std::sync::Mutex::new(UniversalOptimizer::new());
+        let jit_mem = std::sync::Mutex::new(JitMemory::new(capacity).map_err(|e| VmError::RuntimeError(e.to_string()))?);
         
         let mut thresholds = HashMap::new();
         thresholds.insert(JitTier::Baseline, 100);
@@ -90,73 +132,85 @@ impl NyarJit {
         Ok(Self {
             optimizer,
             jit_mem,
-            cache: HashMap::new(),
+            code_cache: DashMap::new(),
+            ic_registry: DashMap::new(),
             thresholds,
         })
     }
 
-    /// Compiles an IKun intent into machine code for the given tier.
+    /// Compiles a chunk of bytecode into machine code.
     pub fn compile(
-        &mut self,
-        name: &str,
-        ikun: &IKun,
+        &self,
+        vm: &NyarVM,
+        module_idx: usize,
+        chunk_idx: usize,
         tier: JitTier,
-        backend: &dyn Backend,
     ) -> Result<Arc<CompiledCode>, VmError> {
-        // Return existing compiled code if it meets the required tier.
-        if let Some(cached) = self.cache.get(name) {
-            if cached.tier >= tier {
-                return Ok(cached.clone());
+        // 1. Intent Extraction
+        let intents = self.extract_intents(vm, module_idx, chunk_idx);
+
+        // 2. Build initial IKunTree from intents
+        let mut tree = self.build_tree(intents);
+
+        // 3. Optimization
+        if tier == JitTier::Optimizing {
+            // Apply E-Graph equality saturation
+            let mut optimizer = self.optimizer.lock().unwrap();
+            let root_id = self.add_tree_to_egraph(&mut optimizer, &tree);
+            
+            // Perform saturation and extraction
+            let backend = self.get_backend();
+            tree = optimizer.optimize(&optimizer.egraph, root_id, backend.get_cost_model());
+
+            // GC-JIT co-optimizations
+            self.elide_barriers(&mut tree);
+            self.sink_allocations(&mut tree);
+        }
+
+        // 4. Machine Code Generation via Gaia
+        let key = (module_idx, chunk_idx);
+        let backend = self.get_backend();
+        self.generate_and_cache(key, &tree, tier, backend.as_ref())
+    }
+
+    fn add_tree_to_egraph(&self, optimizer: &mut UniversalOptimizer<()>, tree: &IKunTree) -> chomsky_uir::egraph::Id {
+        // Recursively add IKunTree nodes to E-Graph.
+        // This is a simplified version; a full implementation would map IKunTree variants to IKun enodes.
+        match tree {
+            IKunTree::Constant(v) => optimizer.add_intent(&IKun::Constant(*v)),
+            IKunTree::Symbol(s) => optimizer.add_intent(&IKun::Symbol(s.clone())),
+            _ => {
+                // For complex trees, we would need to decompose them back to IKun intents
+                // or have a direct way to add IKunTree to EGraph.
+                optimizer.add_intent(&IKun::Symbol("complex_node".to_string()))
             }
         }
+    }
 
-        match tier {
-            JitTier::Baseline => self.compile_baseline(name, ikun, backend),
-            JitTier::Optimizing => self.compile_optimizing(name, ikun, backend),
-            JitTier::Interpreter => Err(VmError::RuntimeError("Cannot compile to Interpreter tier".to_string())),
+    fn extract_intents(&self, _vm: &NyarVM, _module_idx: usize, _chunk_idx: usize) -> Vec<IKun> {
+        // In a full implementation, this would iterate over the bytecode
+        // and translate each instruction to its corresponding IKun intent.
+        // For now, we return a symbolic representation.
+        vec![]
+    }
+
+    fn get_backend(&self) -> Box<dyn Backend> {
+        // Returns the appropriate Gaia backend for the current architecture.
+        // For now, return a placeholder or use a default.
+        unimplemented!("Gaia backend selection not implemented")
+    }
+
+    fn build_tree(&self, intents: Vec<IKun>) -> IKunTree {
+        if intents.is_empty() {
+            return IKunTree::Symbol("nop".to_string());
         }
+        IKunTree::from_uir(&intents[0])
     }
 
-    /// Fast compilation for Tier 1 (Baseline JIT).
-    fn compile_baseline(
-        &mut self,
-        name: &str,
-        ikun: &IKun,
-        backend: &dyn Backend,
-    ) -> Result<Arc<CompiledCode>, VmError> {
-        // Convert IKun to IKunTree without expensive E-Graph saturation.
-        let tree = IKunTree::from_uir(ikun);
-        self.generate_and_cache(name, &tree, JitTier::Baseline, backend)
-    }
-
-    /// Advanced optimization for Tier 2 (Optimizing JIT).
-    fn compile_optimizing(
-        &mut self,
-        name: &str,
-        ikun: &IKun,
-        backend: &dyn Backend,
-    ) -> Result<Arc<CompiledCode>, VmError> {
-        // 1. Add intent to E-Graph.
-        let id = self.optimizer.add_intent(ikun);
-        
-        // 2. Perform Equality Saturation with advanced optimization rules.
-        // This includes algebraic simplification, CSE, and cross-language optimizations.
-        // Tier 2 optimizations also include:
-        // - Effect Inlining: Inline effect handlers if statically known.
-        // - Scalar Replacement of Continuations: Avoid heap allocation for local continuations.
-        // - Await Inlining: Flatten asynchronous control flow if possible.
-        self.optimizer.saturate();
-        
-        // 3. Extract the globally optimal IKunTree according to the backend's cost model.
-        let tree = self.optimizer.extract(id, backend.get_model());
-        
-        self.generate_and_cache(name, &tree, JitTier::Optimizing, backend)
-    }
-
-    /// Generates machine code, writes it to executable memory, and caches the result.
-    fn generate_and_cache(
-        &mut self,
-        name: &str,
+    /// Generates machine code from an IKunTree and caches it.
+    pub fn generate_and_cache(
+        &self,
+        key: (usize, usize),
         tree: &IKunTree,
         tier: JitTier,
         backend: &dyn Backend,
@@ -167,9 +221,10 @@ impl NyarJit {
         match artifact {
             BackendArtifact::Binary(code) => {
                 let size = code.len();
-                self.jit_mem.write(&code).map_err(|e| VmError::RuntimeError(e.to_string()))?;
+                let mut jit_mem = self.jit_mem.lock().unwrap();
+                jit_mem.write(&code).map_err(|e| VmError::RuntimeError(e.to_string()))?;
                 
-                let ptr = self.jit_mem.make_executable().map_err(|e| VmError::RuntimeError(e.to_string()))?;
+                let ptr = jit_mem.make_executable().map_err(|e| VmError::RuntimeError(e.to_string()))?;
                 
                 let compiled = Arc::new(CompiledCode {
                     entry_point: ptr,
@@ -179,7 +234,7 @@ impl NyarJit {
                     deopt_metadata: Vec::new(), // Populated by backend in a full implementation
                 });
                 
-                self.cache.insert(name.to_string(), compiled.clone());
+                self.code_cache.insert(key, compiled.clone());
                 Ok(compiled)
             }
             BackendArtifact::Source(_) => {
@@ -189,13 +244,13 @@ impl NyarJit {
     }
 
     /// Handles deoptimization by safely returning execution to the interpreter.
-    pub fn deoptimize(&mut self, name: &str) {
+    pub fn deoptimize(&self, module_idx: usize, chunk_idx: usize) {
         // Invalidate the JITed code and update the VM state to resume in the interpreter.
-        self.cache.remove(name);
+        self.code_cache.remove(&(module_idx, chunk_idx));
     }
 
     /// Triggers On-Stack Replacement (OSR) for long-running loops.
-    pub fn osr(&mut self, _name: &str, _loop_id: u32) -> Result<*const u8, VmError> {
+    pub fn osr(&self, _module_idx: usize, _chunk_idx: usize, _loop_id: u32) -> Result<*const u8, VmError> {
         // OSR allows transitioning from the interpreter to JITed code in the middle of a function.
         Err(VmError::RuntimeError("OSR not yet implemented".to_string()))
     }
@@ -203,13 +258,13 @@ impl NyarJit {
     /// GC-JIT Co-optimization: Barrier Elision.
     /// Informs the JIT that certain objects are guaranteed to be in the young generation,
     /// allowing it to skip write barriers.
-    pub fn elide_barriers(&mut self, _tree: &mut IKunTree) {
+    pub fn elide_barriers(&self, _tree: &mut IKunTree) {
         // Implementation would analyze object lifetimes and remove redundant barrier instructions.
     }
 
     /// GC-JIT Co-optimization: Allocation Sinking.
     /// Delays or eliminates heap allocations by keeping object fields in registers.
-    pub fn sink_allocations(&mut self, _tree: &mut IKunTree) {
+    pub fn sink_allocations(&self, _tree: &mut IKunTree) {
         // Implementation would use escape analysis to perform scalar replacement of objects.
     }
 
@@ -221,6 +276,11 @@ impl NyarJit {
     /// Sets the hotness threshold for a specific tier.
     pub fn set_threshold(&mut self, tier: JitTier, threshold: u32) {
         self.thresholds.insert(tier, threshold);
+    }
+
+    /// Clears the compiled code cache.
+    pub fn clear_cache(&self) {
+        self.code_cache.clear();
     }
 }
 

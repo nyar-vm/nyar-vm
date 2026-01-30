@@ -24,15 +24,56 @@ impl<T> std::ops::Deref for SendPtr<T> {
 
 
 const BLOCK_SIZE: usize = 1024 * 1024; // 1MB blocks
+const TLAB_SIZE: usize = 64 * 1024; // 64KB TLAB
 const CARD_SIZE: usize = 512;
 const CARDS_PER_BLOCK: usize = BLOCK_SIZE / CARD_SIZE;
 
-struct GcBlock {
-    ptr: NonNull<u8>,
+struct Tlab {
+    start: *mut u8,
+    cursor: *mut u8,
+    end: *mut u8,
+}
+
+impl Tlab {
+    const fn new() -> Self {
+        Self {
+            start: std::ptr::null_mut(),
+            cursor: std::ptr::null_mut(),
+            end: std::ptr::null_mut(),
+        }
+    }
+
+    fn alloc(&mut self, layout: Layout) -> Option<*mut u8> {
+        let cursor = self.cursor as usize;
+        let align_offset = cursor % layout.align();
+        let padding = if align_offset == 0 { 0 } else { layout.align() - align_offset };
+        let size = layout.size();
+        let new_cursor = cursor + padding + size;
+
+        if new_cursor <= self.end as usize {
+            let ptr = (cursor + padding) as *mut u8;
+            self.cursor = new_cursor as *mut u8;
+            Some(ptr)
+        } else {
+            None
+        }
+    }
+}
+
+thread_local! {
+    static THREAD_TLAB: UnsafeCell<Tlab> = UnsafeCell::new(Tlab::new());
+}
+
+struct GcBlockHeader {
     cursor: AtomicUsize,
+    live_bytes: AtomicUsize,
     /// Card table for this block. Each byte represents CARD_SIZE bytes.
     /// 0 = clean, 1 = dirty.
-    card_table: Box<[AtomicU8; CARDS_PER_BLOCK]>,
+    card_table: [AtomicU8; CARDS_PER_BLOCK],
+}
+
+struct GcBlock {
+    ptr: NonNull<u8>,
 }
 
 unsafe impl Send for GcBlock {}
@@ -47,32 +88,34 @@ impl GcBlock {
                 alloc::handle_alloc_error(layout);
             }
             
-            // Initialize card table with zeros
-            let mut cards = Vec::with_capacity(CARDS_PER_BLOCK);
-            for _ in 0..CARDS_PER_BLOCK {
-                cards.push(AtomicU8::new(0));
+            let header = ptr as *mut GcBlockHeader;
+            (*header).cursor.store(std::mem::size_of::<GcBlockHeader>(), Ordering::Relaxed);
+            (*header).live_bytes.store(0, Ordering::Relaxed);
+            for i in 0..CARDS_PER_BLOCK {
+                (*header).card_table[i].store(0, Ordering::Relaxed);
             }
-            let card_table = cards.into_boxed_slice();
-            let card_table = Box::from_raw(Box::into_raw(card_table) as *mut [AtomicU8; CARDS_PER_BLOCK]);
 
             Self {
                 ptr: NonNull::new_unchecked(ptr),
-                cursor: AtomicUsize::new(0),
-                card_table,
             }
         }
     }
 
+    fn get_header(&self) -> &GcBlockHeader {
+        unsafe { &*(self.ptr.as_ptr() as *const GcBlockHeader) }
+    }
+
     fn alloc(&self, layout: Layout) -> Option<*mut u8> {
+        let header = self.get_header();
         loop {
-            let cursor = self.cursor.load(Ordering::Relaxed);
+            let cursor = header.cursor.load(Ordering::Relaxed);
             let align_offset = (self.ptr.as_ptr() as usize + cursor) % layout.align();
             let padding = if align_offset == 0 { 0 } else { layout.align() - align_offset };
             let size = layout.size();
             let new_cursor = cursor + padding + size;
 
             if new_cursor <= BLOCK_SIZE {
-                if self.cursor.compare_exchange_weak(cursor, new_cursor, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
+                if header.cursor.compare_exchange_weak(cursor, new_cursor, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
                     return unsafe { Some(self.ptr.as_ptr().add(cursor + padding)) };
                 }
             } else {
@@ -87,18 +130,23 @@ impl GcBlock {
         addr >= base && addr < base + BLOCK_SIZE
     }
 
-    fn mark_dirty(&self, ptr: *const u8) {
-        let offset = ptr as usize - self.ptr.as_ptr() as usize;
+    fn mark_dirty(ptr: *const u8) {
+        let base = (ptr as usize) & !(BLOCK_SIZE - 1);
+        let header = base as *const GcBlockHeader;
+        let offset = ptr as usize - base;
         let card_idx = offset / CARD_SIZE;
-        self.card_table[card_idx].store(1, Ordering::Release);
+        unsafe {
+            (*header).card_table[card_idx].store(1, Ordering::Release);
+        }
     }
 
     fn is_card_dirty(&self, card_idx: usize) -> bool {
-        self.card_table[card_idx].load(Ordering::Acquire) == 1
+        self.get_header().card_table[card_idx].load(Ordering::Acquire) == 1
     }
 
     fn clear_cards(&self) {
-        for card in self.card_table.iter() {
+        let header = self.get_header();
+        for card in header.card_table.iter() {
             card.store(0, Ordering::Release);
         }
     }
@@ -164,8 +212,8 @@ impl<'a> MarkContext<'a> {
     /// Mark a GC pointer as reachable.
     pub unsafe fn mark(&mut self, ptr: NonNull<GcHeader>) {
         let header = ptr.as_ref();
-        if header.color.get() == Color::White {
-            header.color.set(Color::Gray);
+        if header.get_color() == Color::White {
+            header.set_color(Color::Gray);
             self.gray_stack.push(SendPtr(ptr));
         }
     }
@@ -186,9 +234,9 @@ pub enum Color {
 /// Metadata stored at the beginning of every GC-managed allocation.
 pub struct GcHeader {
     /// Color of this object for tri-color marking.
-    pub color: Cell<Color>,
+    pub color: AtomicU8,
     /// Which generation this object belongs to (0 for young, 1 for old).
-    pub(crate) generation: Cell<u8>,
+    pub(crate) generation: AtomicU8,
     /// Link to the next object in the collector's list.
     pub next: AtomicPtr<GcHeader>,
     /// Function to drop and deallocate the object.
@@ -200,9 +248,26 @@ pub struct GcHeader {
 }
 
 impl GcHeader {
+    pub fn get_color(&self) -> Color {
+        match self.color.load(Ordering::Acquire) {
+            0 => Color::White,
+            1 => Color::Gray,
+            2 => Color::Black,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn set_color(&self, color: Color) {
+        self.color.store(color as u8, Ordering::Release);
+    }
+
     /// Mark the object and trace its children if it wasn't already marked.
     pub unsafe fn mark(ptr: NonNull<GcHeader>, ctx: &mut MarkContext<'_>) {
-        ctx.mark(ptr);
+        let header = ptr.as_ref();
+        if header.get_color() == Color::White {
+            header.set_color(Color::Gray);
+            ctx.gray_stack.push(SendPtr(ptr));
+        }
     }
 }
 
@@ -216,6 +281,9 @@ pub struct GcBox<T: Trace + 'static> {
 pub struct Gc<T: Trace + 'static> {
     ptr: NonNull<GcBox<T>>,
 }
+
+unsafe impl<T: Trace + 'static> Send for Gc<T> {}
+unsafe impl<T: Trace + 'static> Sync for Gc<T> {}
 
 impl<T: Trace + 'static> Gc<T> {
     pub fn as_ptr(&self) -> *mut GcBox<T> {
@@ -279,46 +347,11 @@ pub struct NyarGc {
     gray_stack: Mutex<Vec<SendPtr<GcHeader>>>,
     /// Current state of the GC.
     state: AtomicU8,
-    sweep_state: SweepState,
+    sweep_state: Mutex<SweepState>,
     /// Total number of bytes allocated.
     allocated_bytes: AtomicUsize,
     /// Threshold for the next collection cycle.
     threshold: AtomicUsize,
-}
-
-pub struct Tlab<'a> {
-    gc: &'a NyarGc,
-    block: Option<Arc<GcBlock>>,
-}
-
-impl<'a> Tlab<'a> {
-    pub fn new(gc: &'a NyarGc) -> Self {
-        Self { gc, block: None }
-    }
-
-    pub fn alloc<T: Trace + 'static>(&mut self, value: T) -> Gc<T> {
-        let layout = Layout::new::<GcBox<T>>();
-        
-        // 1. Try to allocate from current block
-        if let Some(ref block) = self.block {
-            if let Some(ptr) = block.alloc(layout) {
-                return unsafe { self.gc.init_gc_box(ptr as *mut GcBox<T>, value, layout) };
-            }
-        }
-
-        // 2. Current block is full or missing, get a new block from GC
-        self.new_block();
-        
-        let ptr = self.block.as_ref().unwrap().alloc(layout).expect("Allocation failed even in new block");
-        unsafe { self.gc.init_gc_box(ptr as *mut GcBox<T>, value, layout) }
-    }
-
-    fn new_block(&mut self) {
-        let block = Arc::new(GcBlock::new());
-        self.block = Some(block.clone());
-        let mut blocks = self.gc.blocks.lock().unwrap();
-        blocks.push(block);
-    }
 }
 
 impl NyarGc {
@@ -337,8 +370,8 @@ impl NyarGc {
             std::ptr::write(
                 &mut (*ptr).header,
                 GcHeader {
-                    color: Cell::new(color),
-                    generation: Cell::new(0),
+                    color: AtomicU8::new(color as u8),
+                    generation: AtomicU8::new(0),
                     next: AtomicPtr::new(old_head),
                     drop_and_dealloc: Self::drop_and_dealloc::<T>,
                     trace_object: Self::trace_object::<T>,
@@ -374,12 +407,12 @@ impl NyarGc {
             blocks: Mutex::new(vec![Arc::new(GcBlock::new())]),
             gray_stack: Mutex::new(Vec::new()),
             state: AtomicU8::new(GcState::Idle as u8),
-            sweep_state: SweepState {
+            sweep_state: Mutex::new(SweepState {
                 young_curr: AtomicPtr::new(std::ptr::null_mut()),
                 young_prev: AtomicPtr::new(std::ptr::null_mut()),
                 old_curr: AtomicPtr::new(std::ptr::null_mut()),
                 old_prev: AtomicPtr::new(std::ptr::null_mut()),
-            },
+            }),
             allocated_bytes: AtomicUsize::new(0),
             threshold: AtomicUsize::new(1024 * 1024), // 1MB default threshold
         }
@@ -401,17 +434,49 @@ impl NyarGc {
     /// Allocate a new value on the managed heap.
     pub fn alloc<T: Trace + 'static>(&self, value: T) -> Gc<T> {
         let layout = Layout::new::<GcBox<T>>();
-        let ptr = {
-            let mut blocks = self.blocks.lock().unwrap();
-            let mut ptr = blocks.last().unwrap().alloc(layout);
-            if ptr.is_none() {
-                blocks.push(Arc::new(GcBlock::new()));
-                ptr = blocks.last().unwrap().alloc(layout);
-            }
-            ptr.unwrap() as *mut GcBox<T>
-        };
 
-        unsafe { self.init_gc_box(ptr, value, layout) }
+        // Try to allocate from TLAB first
+        let ptr = THREAD_TLAB.with(|tlab_cell| {
+            let tlab = unsafe { &mut *tlab_cell.get() };
+            if let Some(ptr) = tlab.alloc(layout) {
+                ptr
+            } else {
+                // TLAB exhausted, try to refill
+                self.refill_tlab(tlab, layout)
+            }
+        });
+
+        unsafe { self.init_gc_box(ptr as *mut GcBox<T>, value, layout) }
+    }
+
+    fn refill_tlab(&self, tlab: &mut Tlab, layout: Layout) -> *mut u8 {
+        // Try to get a new chunk from existing blocks
+        let tlab_layout = Layout::from_size_align(TLAB_SIZE, 8).unwrap();
+
+        {
+            let blocks = self.blocks.lock().unwrap();
+            for block in blocks.iter() {
+                if let Some(ptr) = block.alloc(tlab_layout) {
+                    tlab.start = ptr;
+                    tlab.cursor = ptr;
+                    tlab.end = unsafe { ptr.add(TLAB_SIZE) };
+                    return tlab.alloc(layout).unwrap();
+                }
+            }
+        }
+
+        // No space in existing blocks, allocate a new block
+        let new_block = Arc::new(GcBlock::new());
+        let ptr = new_block.alloc(tlab_layout).unwrap();
+        {
+            let mut blocks = self.blocks.lock().unwrap();
+            blocks.push(new_block);
+        }
+
+        tlab.start = ptr;
+        tlab.cursor = ptr;
+        tlab.end = unsafe { ptr.add(TLAB_SIZE) };
+        tlab.alloc(layout).unwrap()
     }
 
     fn find_block(&self, ptr: *const u8) -> Option<usize> {
@@ -430,16 +495,15 @@ impl NyarGc {
         unsafe {
             let parent_header = &parent.ptr.as_ref().header;
             // Generational barrier: if parent is old, mark its card as dirty.
-            if parent_header.generation.get() > 0 {
-                if let Some(block_idx) = self.find_block(parent.ptr.as_ptr() as *const u8) {
-                    self.blocks.lock().unwrap()[block_idx].mark_dirty(parent.ptr.as_ptr() as *const u8);
-                }
+            if parent_header.generation.load(Ordering::Acquire) > 0 {
+                GcBlock::mark_dirty(parent.ptr.as_ptr() as *const u8);
             }
             // Incremental barrier: if GC is marking and parent is black, ensure invariant holds.
-            if self.state.load(Ordering::Acquire) == GcState::Marking as u8 && parent_header.color.get() == Color::Black {
+            if self.get_state() == GcState::Marking && parent_header.get_color() == Color::Black {
                 let mut gray_stack = self.gray_stack.lock().unwrap();
-                let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
-                parent_header.color.set(Color::Gray);
+                let ctx = MarkContext { gray_stack: &mut *gray_stack };
+                // Steele style: turn parent gray
+                parent_header.set_color(Color::Gray);
                 ctx.gray_stack.push(SendPtr(NonNull::new_unchecked(parent_header as *const _ as *mut _)));
             }
         }
@@ -452,14 +516,12 @@ impl NyarGc {
             let child_header = &child.ptr.as_ref().header;
 
             // Generational barrier
-            if parent_header.generation.get() > 0 && child_header.generation.get() == 0 {
-                if let Some(block_idx) = self.find_block(parent.ptr.as_ptr() as *const u8) {
-                    self.blocks.lock().unwrap()[block_idx].mark_dirty(parent.ptr.as_ptr() as *const u8);
-                }
+            if parent_header.generation.load(Ordering::Acquire) > 0 && child_header.generation.load(Ordering::Acquire) == 0 {
+                GcBlock::mark_dirty(parent.ptr.as_ptr() as *const u8);
             }
 
             // Incremental barrier
-            if self.state.load(Ordering::Acquire) == GcState::Marking as u8 && parent_header.color.get() == Color::Black {
+            if self.get_state() == GcState::Marking && parent_header.get_color() == Color::Black {
                 let mut gray_stack = self.gray_stack.lock().unwrap();
                 let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
                 // Dijkstra style: turn child gray
@@ -497,7 +559,7 @@ impl NyarGc {
     where
         F: FnOnce(&mut MarkContext<'_>),
     {
-        self.state.store(GcState::Marking as u8, Ordering::Release);
+        self.set_state(GcState::Marking);
         let mut gray_stack = self.gray_stack.lock().unwrap();
         let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
 
@@ -508,7 +570,7 @@ impl NyarGc {
         self.process_gray_stack(&mut ctx);
 
         // 3. Sweep everything
-        self.state.store(GcState::Sweeping as u8, Ordering::Release);
+        self.set_state(GcState::Sweeping);
         self.sweep_full();
 
         // 4. Clear card tables
@@ -518,7 +580,7 @@ impl NyarGc {
 
         // 5. Adjust threshold
         self.threshold.store(self.allocated_bytes.load(Ordering::Relaxed) * 2, Ordering::Relaxed);
-        self.state.store(GcState::Idle as u8, Ordering::Release);
+        self.set_state(GcState::Idle);
     }
 
     /// Process the gray stack until it's empty.
@@ -526,9 +588,9 @@ impl NyarGc {
         while let Some(ptr) = ctx.gray_stack.pop() {
             let header = ptr.as_ref();
             // Object is being scanned, its children will be added to gray stack
-            (header.trace_object)(*ptr, ctx);
+            (header.trace_object)(ptr.0, ctx);
             // Scanning finished, object is now black
-            header.color.set(Color::Black);
+            header.set_color(Color::Black);
         }
     }
 
@@ -537,7 +599,7 @@ impl NyarGc {
     where
         F: FnOnce(&mut MarkContext<'_>),
     {
-        self.state.store(GcState::Marking as u8, Ordering::Release);
+        self.set_state(GcState::Marking);
         let mut gray_stack = self.gray_stack.lock().unwrap();
         let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
 
@@ -564,130 +626,123 @@ impl NyarGc {
         self.process_gray_stack(&mut ctx);
 
         // 4. Sweep young generation and promote survivors
-        self.state.store(GcState::Sweeping as u8, Ordering::Release);
+        self.set_state(GcState::Sweeping);
         self.sweep_young();
 
         // 5. Clear card tables for next cycle
         for block in self.blocks.lock().unwrap().iter() {
             block.clear_cards();
         }
-        self.state.store(GcState::Idle as u8, Ordering::Release);
+        self.set_state(GcState::Idle);
     }
 
     /// Perform a small step of garbage collection.
     ///
     /// # Safety
     /// The caller must ensure that all root pointers are traced via the provided closure if GC is in Marking state.
-    pub unsafe fn step<F>(&self, work_limit: usize, mark_roots: F)
-    where
-        F: FnOnce(&mut MarkContext<'_>),
-    {
-        match GcState::from_u8(self.state.load(Ordering::Acquire)) {
+    pub unsafe fn step(&self, work_limit: usize) {
+        match self.get_state() {
             GcState::Idle => {
-                if self.allocated_bytes.load(Ordering::Relaxed) > self.threshold.load(Ordering::Relaxed) {
-                    self.state.store(GcState::Marking as u8, Ordering::Release);
-                    let mut gray_stack = self.gray_stack.lock().unwrap();
-                    let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
-                    mark_roots(&mut ctx);
-                }
+                self.set_state(GcState::Marking);
+                let sweep = &self.sweep_state;
+                sweep.young_curr.store(self.young_head.load(Ordering::Acquire), Ordering::Release);
+                sweep.young_prev.store(std::ptr::null_mut(), Ordering::Release);
+                sweep.old_curr.store(self.old_head.load(Ordering::Acquire), Ordering::Release);
+                sweep.old_prev.store(std::ptr::null_mut(), Ordering::Release);
             }
             GcState::Marking => {
                 let mut gray_stack = self.gray_stack.lock().unwrap();
                 let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
                 let mut work_done = 0;
-                while work_done < work_limit {
-                    if let Some(send_ptr) = ctx.gray_stack.pop() {
-                        let ptr = send_ptr.0;
-                        let header = ptr.as_ref();
-                        (header.trace_object)(ptr, &mut ctx);
-                        header.color.set(Color::Black);
-                        work_done += 1;
-                    } else {
-                        // Marking finished, start sweeping
-                        self.state.store(GcState::Sweeping as u8, Ordering::Release);
-                        self.sweep_state.young_curr.store(self.young_head.load(Ordering::Acquire), Ordering::Release);
-                        self.sweep_state.young_prev.store(std::ptr::null_mut(), Ordering::Release);
-                        self.sweep_state.old_curr.store(self.old_head.load(Ordering::Acquire), Ordering::Release);
-                        self.sweep_state.old_prev.store(std::ptr::null_mut(), Ordering::Release);
-                        break;
-                    }
+                while work_done < work_limit && !ctx.gray_stack.is_empty() {
+                    self.process_gray_stack(&mut ctx);
+                    work_done += 1;
+                }
+                if ctx.gray_stack.is_empty() {
+                    self.set_state(GcState::Sweeping);
                 }
             }
             GcState::Sweeping => {
                 let mut work_done = 0;
+                let sweep = &self.sweep_state;
                 while work_done < work_limit {
                     // 1. Sweep young generation
-                    let young_curr_ptr = self.sweep_state.young_curr.load(Ordering::Acquire);
+                    let young_curr_ptr = sweep.young_curr.load(Ordering::Acquire);
                     if let Some(header_ptr) = NonNull::new(young_curr_ptr) {
                         let header = header_ptr.as_ref();
-                        let next = NonNull::new(header.next.load(Ordering::Acquire));
+                        let next = header.next.load(Ordering::Acquire);
 
-                        if header.color.get() != Color::White {
-                            // Object survived! Promote to old generation.
-                            header.color.set(Color::White);
-                            header.generation.set(1);
+                        if header.get_color() != Color::White {
+                            // Survive and promote
+                            header.set_color(Color::White);
+                            header.generation.store(1, Ordering::Release);
 
-                            // Remove from young list
-                            let young_prev_ptr = self.sweep_state.young_prev.load(Ordering::Acquire);
+                            // Remove from young
+                            let young_prev_ptr = sweep.young_prev.load(Ordering::Acquire);
                             if let Some(mut p) = NonNull::new(young_prev_ptr) {
-                                p.as_mut().next.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                                p.as_mut().next.store(next, Ordering::Release);
                             } else {
-                                self.young_head.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                                self.young_head.store(next, Ordering::Release);
                             }
 
-                            // Add to old list
-                            header.next.store(self.old_head.load(Ordering::Acquire), Ordering::Release);
-                            self.old_head.store(header_ptr.as_ptr(), Ordering::Release);
-
-                            // Since we removed it from the current list, prev doesn't change
-                            self.sweep_state.young_curr.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                            // Add to old
+                            let mut old_head = self.old_head.load(Ordering::Acquire);
+                            loop {
+                                header.next.store(old_head, Ordering::Release);
+                                match self.old_head.compare_exchange_weak(
+                                     old_head,
+                                    young_curr_ptr,
+                                    Ordering::Release,
+                                    Ordering::Acquire,
+                                ) {
+                                    Ok(_) => break,
+                                    Err(actual) => old_head = actual,
+                                }
+                            }
+                            sweep.young_curr.store(next, Ordering::Release);
                         } else {
-                            // Object is unreachable, free it
-                            let young_prev_ptr = self.sweep_state.young_prev.load(Ordering::Acquire);
+                            // Free
+                            let young_prev_ptr = sweep.young_prev.load(Ordering::Acquire);
                             if let Some(mut p) = NonNull::new(young_prev_ptr) {
-                                p.as_mut().next.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                                p.as_mut().next.store(next, Ordering::Release);
                             } else {
-                                self.young_head.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                                self.young_head.store(next, Ordering::Release);
                             }
-
-                            // Update allocated_bytes
                             self.allocated_bytes.fetch_sub(header.size, Ordering::SeqCst);
                             (header.drop_and_dealloc)(header_ptr);
-                            self.sweep_state.young_curr.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                            sweep.young_curr.store(next, Ordering::Release);
                         }
                         work_done += 1;
-                    }
-                    // 2. Sweep old generation
-                    else {
-                        let old_curr_ptr = self.sweep_state.old_curr.load(Ordering::Acquire);
+                    } else {
+                        // 2. Sweep old generation
+                        let old_curr_ptr = sweep.old_curr.load(Ordering::Acquire);
                         if let Some(header_ptr) = NonNull::new(old_curr_ptr) {
                             let header = header_ptr.as_ref();
-                            let next = NonNull::new(header.next.load(Ordering::Acquire));
+                            let next = header.next.load(Ordering::Acquire);
 
-                            if header.color.get() != Color::White {
-                                header.color.set(Color::White);
-                                self.sweep_state.old_prev.store(header_ptr.as_ptr(), Ordering::Release);
-                                self.sweep_state.old_curr.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                            if header.get_color() != Color::White {
+                                header.set_color(Color::White);
+                                sweep.old_prev.store(old_curr_ptr, Ordering::Release);
+                                sweep.old_curr.store(next, Ordering::Release);
                             } else {
-                                let old_prev_ptr = self.sweep_state.old_prev.load(Ordering::Acquire);
+                                let old_prev_ptr = sweep.old_prev.load(Ordering::Acquire);
                                 if let Some(mut p) = NonNull::new(old_prev_ptr) {
-                                    p.as_mut().next.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                                    p.as_mut().next.store(next, Ordering::Release);
                                 } else {
-                                    self.old_head.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                                    self.old_head.store(next, Ordering::Release);
                                 }
-
                                 self.allocated_bytes.fetch_sub(header.size, Ordering::SeqCst);
                                 (header.drop_and_dealloc)(header_ptr);
-                                self.sweep_state.old_curr.store(next.map_or(std::ptr::null_mut(), |n| n.as_ptr()), Ordering::Release);
+                                sweep.old_curr.store(next, Ordering::Release);
                             }
                             work_done += 1;
                         } else {
-                            // Sweeping finished
+                            // Finished sweeping
                             for block in self.blocks.lock().unwrap().iter() {
                                 block.clear_cards();
                             }
                             self.threshold.store(self.allocated_bytes.load(Ordering::Relaxed) * 2, Ordering::Relaxed);
-                            self.state.store(GcState::Idle as u8, Ordering::Release);
+                            self.set_state(GcState::Idle);
                             break;
                         }
                     }
@@ -697,23 +752,23 @@ impl NyarGc {
     }
 
     unsafe fn sweep_young(&self) {
-        let mut prev: Option<NonNull<GcHeader>> = None;
-        let mut curr = NonNull::new(self.young_head.load(Ordering::Acquire));
+        let prev: *mut GcHeader = std::ptr::null_mut();
+        let mut curr = self.young_head.load(Ordering::Acquire);
 
-        while let Some(header_ptr) = curr {
+        while let Some(header_ptr) = NonNull::new(curr) {
             let header = header_ptr.as_ref();
-            let next = NonNull::new(header.next.load(Ordering::Acquire));
+            let next = header.next.load(Ordering::Acquire);
 
-            if header.color.get() != Color::White {
+            if header.get_color() != Color::White {
                 // Object survived! Promote to old generation.
-                header.color.set(Color::White);
-                header.generation.set(1);
+                header.set_color(Color::White);
+                header.generation.store(1, Ordering::Release);
 
                 // Remove from young list
-                if let Some(mut p) = prev {
-                    p.as_mut().next.store(next.map(|p| p.as_ptr()).unwrap_or(std::ptr::null_mut()), Ordering::Release);
+                if let Some(mut p) = NonNull::new(prev) {
+                    p.as_mut().next.store(next, Ordering::Release);
                 } else {
-                    self.young_head.store(next.map(|p| p.as_ptr()).unwrap_or(std::ptr::null_mut()), Ordering::Release);
+                    self.young_head.store(next, Ordering::Release);
                 }
 
                 // Add to old list
@@ -722,7 +777,7 @@ impl NyarGc {
                     header.next.store(old_head, Ordering::Release);
                     match self.old_head.compare_exchange_weak(
                         old_head,
-                        header_ptr.as_ptr(),
+                        curr,
                         Ordering::Release,
                         Ordering::Acquire,
                     ) {
@@ -735,10 +790,10 @@ impl NyarGc {
                 curr = next;
             } else {
                 // Object is unreachable, free it
-                if let Some(mut p) = prev {
-                    p.as_mut().next.store(next.map(|p| p.as_ptr()).unwrap_or(std::ptr::null_mut()), Ordering::Release);
+                if let Some(mut p) = NonNull::new(prev) {
+                    p.as_mut().next.store(next, Ordering::Release);
                 } else {
-                    self.young_head.store(next.map(|p| p.as_ptr()).unwrap_or(std::ptr::null_mut()), Ordering::Release);
+                    self.young_head.store(next, Ordering::Release);
                 }
 
                 // Update allocated_bytes
@@ -753,23 +808,22 @@ impl NyarGc {
         // Sweep young
         self.sweep_young();
 
-        // Sweep old
-        let mut prev: Option<NonNull<GcHeader>> = None;
-        let mut curr = NonNull::new(self.old_head.load(Ordering::Acquire));
+        let mut prev: *mut GcHeader = std::ptr::null_mut();
+        let mut curr = self.old_head.load(Ordering::Acquire);
 
-        while let Some(header_ptr) = curr {
+        while let Some(header_ptr) = NonNull::new(curr) {
             let header = header_ptr.as_ref();
-            let next = NonNull::new(header.next.load(Ordering::Acquire));
+            let next = header.next.load(Ordering::Acquire);
 
-            if header.color.get() != Color::White {
-                header.color.set(Color::White);
-                prev = Some(header_ptr);
+            if header.get_color() != Color::White {
+                header.set_color(Color::White);
+                prev = curr;
                 curr = next;
             } else {
-                if let Some(mut p) = prev {
-                    p.as_mut().next.store(next.map(|p| p.as_ptr()).unwrap_or(std::ptr::null_mut()), Ordering::Release);
+                if let Some(mut p) = NonNull::new(prev) {
+                    p.as_mut().next.store(next, Ordering::Release);
                 } else {
-                    self.old_head.store(next.map(|p| p.as_ptr()).unwrap_or(std::ptr::null_mut()), Ordering::Release);
+                    self.old_head.store(next, Ordering::Release);
                 }
 
                 // Update allocated_bytes
