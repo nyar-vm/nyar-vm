@@ -53,7 +53,7 @@ impl GcBlockHeader {
     ///
     /// # Safety
     /// The block must not be modified during iteration.
-    pub unsafe fn iter_objects(&self) -> GcBlockIterator {
+    pub unsafe fn iter_objects(&self) -> GcBlockIterator<'_> {
         GcBlockIterator {
             block: self,
             cursor: std::mem::size_of::<GcBlockHeader>(),

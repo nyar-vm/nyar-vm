@@ -5,7 +5,7 @@ use std::ptr::NonNull;
 use crate::ptr::SendPtr;
 use crate::block::{GcBlock, GcBlockHeader, BLOCK_SIZE, GC_BLOCK_MAGIC};
 use crate::object::{Gc, GcBox, GcCell, GcHeader, GcState, GcVTable, LargeObjectHeader, MarkContext, Trace};
-use crate::tlab::{THREAD_TLAB, Tlab, TLAB_SIZE};
+use crate::tlab::{Tlab, TLAB_SIZE};
 
 pub static VTABLE_REGISTRY: Mutex<Vec<SendPtr<GcVTable>>> = Mutex::new(Vec::new());
 
@@ -483,15 +483,13 @@ impl NyarGc {
         cell: &GcCell<T>,
         value: T,
     ) {
-        unsafe {
-            // Incremental barrier: mark the value being written (Dijkstra style)
-            if self.get_state() == GcState::Marking {
-                let mut mark_stack = self.mark_stack.lock().unwrap();
-                let mut ctx = MarkContext {
-                    mark_stack: &mut *mark_stack,
-                };
-                value.trace(&mut ctx);
-            }
+        // Incremental barrier: mark the value being written (Dijkstra style)
+        if self.get_state() == GcState::Marking {
+            let mut mark_stack = self.mark_stack.lock().unwrap();
+            let mut ctx = MarkContext {
+                mark_stack: &mut *mark_stack,
+            };
+            value.trace(&mut ctx);
         }
         cell.set(value);
     }
