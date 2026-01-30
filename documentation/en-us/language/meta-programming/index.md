@@ -29,11 +29,11 @@ Target Code + Runtime Support
 **Constant Expression Evaluation**:
 ```valkyrie
 // Compile-time constant computation
-let FIBONACCI_10: i32 = @const_eval(fibonacci(10))
-let LOOKUP_TABLE: [i32; 256] = @const_eval(generate_lookup_table())
+let FIBONACCI_10: i32 = @evaluate(fibonacci(10))
+let LOOKUP_TABLE: [i32; 256] = @evaluate(generate_lookup_table())
 
 // Compile-time string processing
-let CONFIG_KEY: string = @const_eval(@format("app.{}.version", @env("BUILD_TARGET")))
+let CONFIG_KEY: string = @evaluate(@format("app.{}.version", @env("BUILD_TARGET")))
 ```
 
 **Compile-time Function Execution**:

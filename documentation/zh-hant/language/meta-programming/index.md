@@ -29,11 +29,11 @@ Valkyrie 的元編程系統深度集成在多層 IR 架構中，在不同層次�
 **常量表達式求值**:
 ```valkyrie
 // 編譯時常量計算
-let FIBONACCI_10: i32 = @const_eval(fibonacci(10))
-let LOOKUP_TABLE: [i32; 256] = @const_eval(generate_lookup_table())
+let FIBONACCI_10: i32 = @evaluate(fibonacci(10))
+let LOOKUP_TABLE: [i32; 256] = @evaluate(generate_lookup_table())
 
 // 編譯時字符串處理
-let CONFIG_KEY: string = @const_eval(@format("app.{}.version", @env("BUILD_TARGET")))
+let CONFIG_KEY: string = @evaluate(@format("app.{}.version", @env("BUILD_TARGET")))
 ```
 
 **編譯時函數執行**:

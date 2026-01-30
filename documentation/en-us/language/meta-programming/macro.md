@@ -15,8 +15,8 @@ Macros use the `@` prefix and are compile-time function calls that do not captur
 
 ```valkyrie
 # Compile-time constant computation
-let FIBONACCI_10: i32 = @const_eval(fibonacci(10))
-let LOOKUP_TABLE: [i32; 256] = @const_eval(generate_lookup_table())
+let FIBONACCI_10: i32 = @evaluate(fibonacci(10))
+let LOOKUP_TABLE: [i32; 256] = @evaluate(generate_lookup_table())
 
 # Environment variable access
 let database_url: string = @env("DATABASE_URL")
@@ -72,7 +72,7 @@ micro debug_function() {
 
 ```valkyrie
 # Compile-time constant computation
-let PI_SQUARED: f64 = @const_eval(3.14159 * 3.14159)
+let PI_SQUARED: f64 = @evaluate(3.14159 * 3.14159)
 
 # Compile-time file reading
 let config_content: string = @compile_time_read_file("config.toml")

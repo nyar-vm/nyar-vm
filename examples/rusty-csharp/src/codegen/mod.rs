@@ -1,374 +1,129 @@
 //! CSharp 到 Nyar 字节码的翻译器
 
-use crate::{CSharpResult, CSharpError};
-use chomsky_source::Loc;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree};
-use chomsky_extract::{Backend, BackendArtifact, IKunExtractor};
-use chomsky_cost::DEFAULT_COST_MODEL;
-use nyar_vm::bytecode::format::{Chunk, NyarModule, Constant as NyarConstant, ExportInfo};
-use nyar_vm::bytecode::opcode::{Opcode, I32Ext, StringExt};
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
+use nyar_types::NyarError;
 use oak_java::ast::*;
 
 pub struct NyarTranslator;
-
-struct NyarBackend {
-    module: NyarModule,
-}
-
-impl NyarBackend {
-    fn new() -> Self {
-        Self {
-            module: NyarModule::default(),
-        }
-    }
-
-    fn lower_tree(&mut self, tree: &IKunTree) -> CSharpResult<Vec<u8>> {
-        let mut code = Vec::new();
-        match tree {
-            IKunTree::Constant(v) => {
-                println!("  LOWER: Push Int({})", v);
-                code.push(Opcode::Push as u8);
-                let idx = self.add_constant(NyarConstant::Int(*v));
-                code.extend_from_slice(&(idx as u16).to_le_bytes());
-            }
-            IKunTree::StringConstant(s) => {
-                println!("  LOWER: Push String(\"{}\")", s);
-                code.push(Opcode::StringExt as u8);
-                code.push(StringExt::Const as u8);
-                let idx = self.add_constant(NyarConstant::String(s.clone()));
-                code.extend_from_slice(&(idx as u16).to_le_bytes());
-            }
-            IKunTree::Symbol(s) => {
-                println!("  LOWER: LoadGlobal(\"{}\")", s);
-                code.push(Opcode::LoadGlobal as u8);
-                let idx = self.add_constant(NyarConstant::String(s.clone()));
-                code.extend_from_slice(&(idx as u16).to_le_bytes());
-            }
-            IKunTree::Seq(items) => {
-                for item in items {
-                    code.extend(self.lower_tree(item)?);
-                }
-            }
-            IKunTree::Extension(name, args) => {
-                println!("Processing extension: {}", name);
-                match name.as_str() {
-                "class" => {
-                    // 类处理：通常不需要生成代码，而是填充元数据
-                    // args[0] 是类名, args[1] 是成员序列
-                    if let IKunTree::StringConstant(class_name) = &args[0] {
-                        println!("Found class: {}", class_name);
-                        if let IKunTree::Seq(members) = &args[1] {
-                            for member in members {
-                                self.lower_tree(member)?;
-                            }
-                        }
-                    }
-                }
-                "method" => {
-                    // 方法处理：生成 Chunk 并添加导出
-                    // args: [name, ret, params, body]
-                    println!("Found method extension with {} args", args.len());
-                    if args.len() == 4 {
-                        if let (IKunTree::StringConstant(name), IKunTree::StringConstant(_ret), _params, body) = (&args[0], &args[1], &args[2], &args[3]) {
-                            println!("Compiling method: {}", name);
-                            let body_code = self.lower_tree(body)?;
-                            let chunk_idx = self.module.chunks.len() as u16;
-                            self.module.chunks.push(Chunk {
-                                locals: 0,
-                                upvalues: 0,
-                                max_stack: 10,
-                                code: body_code,
-                                handlers: vec![],
-                                lines: vec![],
-                            });
-                            self.module.exports.push(ExportInfo {
-                                symbol: name.clone(),
-                                chunk_idx,
-                            });
-                        }
-                    } else if args.len() == 3 {
-                         if let (IKunTree::StringConstant(name), IKunTree::StringConstant(_ret), body) = (&args[0], &args[1], &args[2]) {
-                            println!("Compiling method (3 args): {}", name);
-                            let body_code = self.lower_tree(body)?;
-                            let chunk_idx = self.module.chunks.len() as u16;
-                            self.module.chunks.push(Chunk {
-                                locals: 0,
-                                upvalues: 0,
-                                max_stack: 10,
-                                code: body_code,
-                                handlers: vec![],
-                                lines: vec![],
-                            });
-                            self.module.exports.push(ExportInfo {
-                                symbol: name.clone(),
-                                chunk_idx,
-                            });
-                        }
-                    }
-                }
-                "field" => {
-                    // 字段处理：目前仅作为占位
-                }
-                "parameter" => {
-                    // 参数处理：目前仅作为占位
-                }
-                "return" => {
-                    // args[0] 是返回值
-                    code.extend(self.lower_tree(&args[0])?);
-                    code.push(Opcode::Return as u8);
-                }
-                "package" | "import" | "interface" => {
-                    // 忽略元数据
-                }
-                "call" => {
-                    // 调用处理
-                    if args.len() == 3 {
-                        // target, name, args
-                        code.extend(self.lower_tree(&args[2])?); // push args
-                        code.extend(self.lower_tree(&args[0])?); // push target
-                        
-                        let name_str = if let IKunTree::Symbol(s) = &args[1] { s } else { "unknown" };
-                        println!("  LOWER: InvokeMethod(\"{}\")", name_str);
-
-                        code.push(Opcode::InvokeMethod as u8);
-                        let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
-                        code.extend_from_slice(&(idx as u16).to_le_bytes());
-                        
-                        // 获取参数数量
-                        let arg_count = match &args[2] {
-                            IKunTree::Seq(list) => list.len() as u8,
-                            _ => 1,
-                        };
-                        code.push(arg_count);
-                    } else if args.len() == 2 {
-                        // name, args
-                        code.extend(self.lower_tree(&args[1])?); // push args
-                        
-                        let name_str = if let IKunTree::Symbol(s) = &args[0] { s } else { "unknown" };
-                        println!("  LOWER: CallSymbol(\"{}\")", name_str);
-
-                        code.push(Opcode::CallSymbol as u8);
-                        let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
-                        code.extend_from_slice(&(idx as u16).to_le_bytes());
-                        
-                        // 获取参数数量
-                        let arg_count = match &args[1] {
-                            IKunTree::Seq(list) => list.len() as u8,
-                            _ => 1,
-                        };
-                        code.push(arg_count);
-                    }
-                }
-                "get_field" => {
-                    // target, name
-                    code.extend(self.lower_tree(&args[0])?); // push target
-                    
-                    let name_str = if let IKunTree::Symbol(s) = &args[1] { s } else { "unknown" };
-                    println!("  LOWER: GetField(\"{}\")", name_str);
-
-                    code.push(Opcode::GetField as u8);
-                    let idx = self.add_constant(NyarConstant::String(name_str.to_string()));
-                    code.extend_from_slice(&(idx as u16).to_le_bytes());
-                }
-                _ => {}
-                }
-            }
-            IKunTree::Module(_, items) => {
-                for item in items {
-                    self.lower_tree(item)?;
-                }
-            }
-            _ => {
-                // 其他类型暂不支持
-            }
-        }
-        Ok(code)
-    }
-
-    fn add_constant(&mut self, c: NyarConstant) -> usize {
-        if let Some(pos) = self.module.constants.iter().position(|x| x == &c) {
-            pos
-        } else {
-            let pos = self.module.constants.len();
-            self.module.constants.push(c);
-            pos
-        }
-    }
-}
-
-impl Backend for NyarBackend {
-    fn name(&self) -> &str {
-        "nyar"
-    }
-
-    fn generate(&self, tree: &IKunTree) -> chomsky_types::ChomskyResult<BackendArtifact> {
-        let mut this = Self::new();
-        match this.lower_tree(tree) {
-            Ok(_) => {
-                let data = this.module.encode();
-                Ok(BackendArtifact::Binary(data))
-            }
-            Err(e) => Err(chomsky_types::ChomskyError::backend_error(e.to_string())),
-        }
-    }
-}
 
 impl NyarTranslator {
     pub fn new() -> Self {
         Self
     }
 
-    pub fn translate_to_graph(&self, ast: &JavaRoot, egraph: &mut EGraph<IKun, ConstraintAnalysis>) -> CSharpResult<Id> {
+    pub fn translate_to_graph(
+        &self,
+        ast: &JavaRoot,
+        egraph: &mut EGraph<IKun, ConstraintAnalysis>,
+    ) -> Result<(), NyarError> {
         let mut builder = IntentBuilder::new(egraph);
-        self.translate_root(&mut builder, ast)
+        self.translate_root(ast, &mut builder)
     }
 
-    pub fn translate(&self, ast: &JavaRoot) -> CSharpResult<NyarModule> {
+    pub fn translate_to_tree(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
-        let root_id = self.translate_to_graph(ast, &mut egraph)?;
+        self.translate_to_graph(ast, &mut egraph)?;
 
-        // 提取最优路径
-        let extractor = IKunExtractor::new(&egraph, DEFAULT_COST_MODEL.clone());
-        let tree = extractor.extract(root_id);
-        println!("DEBUG: IKunTree: {:?}", tree);
-
-        // 降级为 Nyar 字节码
-        let mut backend = NyarBackend::new();
-        backend.lower_tree(&tree)?;
-
-        if backend.module.chunks.is_empty() && backend.module.constants.is_empty() {
-            eprintln!("Warning: Generated NyarModule is empty. Tree: {:?}", tree);
+        let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL);
+        if let Some(root_id) = egraph.classes.keys().next() {
+            Ok(extractor.extract(*root_id))
+        } else {
+            Err(NyarError::Compile("No code generated".to_string()))
         }
-
-        Ok(backend.module)
     }
 
-    fn translate_root(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, ast: &JavaRoot) -> CSharpResult<Id> {
-        let mut items = Vec::new();
-        for item in &ast.items {
-            let id = match item {
-                Item::Class(c) => self.translate_class(builder, c)?,
-                Item::Interface(i) => {
-                    let loc = Loc::new(0, i.span.start as u32, i.span.end as u32);
-                    let name_id = builder.string(&i.name, loc.clone());
-                    builder.extension("interface", vec![name_id], loc)
-                }
-                Item::Package(p) => {
-                    let loc = Loc::new(0, p.span.start as u32, p.span.end as u32);
-                    let name_id = builder.string(&p.name, loc.clone());
-                    builder.extension("package", vec![name_id], loc)
-                }
-                Item::Import(i) => {
-                    let loc = Loc::new(0, i.span.start as u32, i.span.end as u32);
-                    let path_id = builder.string(&i.path, loc.clone());
-                    builder.extension("import", vec![path_id], loc)
-                }
-            };
-            items.push(id);
+    fn translate_root(
+        &self,
+        root: &JavaRoot,
+        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+    ) -> Result<(), NyarError> {
+        for class in &root.classes {
+            self.translate_class(class, builder)?;
         }
-
-        Ok(builder.seq(items, Loc::new(0, 0, 0)))
+        Ok(())
     }
 
-    fn translate_class(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, class: &ClassDeclaration) -> CSharpResult<Id> {
-        let loc = Loc::new(0, class.span.start as u32, class.span.end as u32);
-        let name_id = builder.string(&class.name, loc.clone());
-
+    fn translate_class(
+        &self,
+        class: &ClassDeclaration,
+        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+    ) -> Result<(), NyarError> {
         let mut members = Vec::new();
         for member in &class.members {
-            let member_id = match member {
-                Member::Method(m) => self.translate_method(builder, m)?,
-                Member::Field(f) => self.translate_field(builder, f)?,
-            };
-            members.push(member_id);
+            if let ClassMember::Method(method) = member {
+                let id = self.translate_method(method, builder)?;
+                members.push(id);
+            }
         }
-
-        let members_id = builder.seq(members, loc.clone());
-        Ok(builder.extension("class", vec![name_id, members_id], loc))
+        let name_id = builder.string_const(&class.name);
+        let members_id = builder.seq(members);
+        builder.extension("class", vec![name_id, members_id]);
+        Ok(())
     }
 
-    fn translate_field(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, field: &FieldDeclaration) -> CSharpResult<Id> {
-        let loc = Loc::new(0, field.span.start as u32, field.span.end as u32);
-        let name_id = builder.string(&field.name, loc.clone());
-        let type_id = builder.string(&field.r#type, loc.clone());
-
-        Ok(builder.extension("field", vec![name_id, type_id], loc))
+    fn translate_method(
+        &self,
+        method: &MethodDeclaration,
+        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let body_id = self.translate_block(&method.body, builder)?;
+        let name_id = builder.string_const(&method.name);
+        let ret_id = builder.string_const("void");
+        Ok(builder.extension("method", vec![name_id, ret_id, body_id]))
     }
 
-    fn translate_method(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, method: &MethodDeclaration) -> CSharpResult<Id> {
-        let loc = Loc::new(0, method.span.start as u32, method.span.end as u32);
-        let name_id = builder.string(&method.name, loc.clone());
-        let ret_id = builder.string(&method.return_type, loc.clone());
-
-        let mut params = Vec::new();
-        for param in &method.parameters {
-            let p_loc = Loc::new(0, 0, 0);
-            let p_name = builder.string(&param.name, p_loc.clone());
-            let p_type = builder.string(&param.r#type, p_loc.clone());
-            params.push(builder.extension("parameter", vec![p_name, p_type], p_loc));
+    fn translate_block(
+        &self,
+        block: &Block,
+        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let mut stmts = Vec::new();
+        for stmt in &block.statements {
+            stmts.push(self.translate_stmt(stmt, builder)?);
         }
-        let params_id = builder.seq(params, loc.clone());
-
-        let mut body = Vec::new();
-        for stmt in &method.body {
-            body.push(self.translate_statement(builder, stmt)?);
-        }
-
-        let body_id = builder.seq(body, loc.clone());
-        Ok(builder.extension("method", vec![name_id, ret_id, params_id, body_id], loc))
+        Ok(builder.seq(stmts))
     }
 
-    fn translate_statement(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, stmt: &Statement) -> CSharpResult<Id> {
+    fn translate_stmt(
+        &self,
+        stmt: &Statement,
+        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         match stmt {
-            Statement::Expression(expr) => self.translate_expression(builder, expr),
-            Statement::Return(expr) => {
-                let val = if let Some(e) = expr {
-                    self.translate_expression(builder, e)?
-                } else {
-                    builder.constant(0, Loc::new(0, 0, 0))
-                };
-                Ok(builder.extension("return", vec![val], Loc::new(0, 0, 0)))
+            Statement::Expression(expr) => self.translate_expr(expr, builder),
+            Statement::Return(Some(expr)) => {
+                let val = self.translate_expr(expr, builder)?;
+                Ok(builder.extension("return", vec![val]))
             }
-            Statement::Block(stmts) => {
-                let mut ids = Vec::new();
-                for s in stmts {
-                    ids.push(self.translate_statement(builder, s)?);
-                }
-                Ok(builder.seq(ids, Loc::new(0, 0, 0)))
-            }
+            Statement::Return(None) => Ok(builder.extension("return", vec![])),
+            _ => Ok(builder.constant(0)),
         }
     }
 
-    fn translate_expression(&self, builder: &mut IntentBuilder<ConstraintAnalysis>, expr: &Expression) -> CSharpResult<Id> {
+    fn translate_expr(
+        &self,
+        expr: &Expression,
+        builder: &mut IntentBuilder<IKun, ConstraintAnalysis>,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         match expr {
-            Expression::Literal(lit) => match lit {
-                Literal::Integer(i) => Ok(builder.constant(*i, Loc::new(0, 0, 0))),
-                Literal::String(s) => Ok(builder.string(s, Loc::new(0, 0, 0))),
-                Literal::Boolean(b) => Ok(builder.bool(*b, Loc::new(0, 0, 0))),
-            },
-            Expression::Identifier(id) => Ok(builder.symbol(id, Loc::new(0, 0, 0))),
-            Expression::FieldAccess(fa) => {
-                let target_id = self.translate_expression(builder, &fa.target)?;
-                let name_id = builder.symbol(&fa.name, Loc::new(0, 0, 0));
-                Ok(builder.extension("get_field", vec![target_id, name_id], Loc::new(0, 0, 0)))
+            Expression::Literal(Literal::Integer(v)) => Ok(builder.constant(*v as i64)),
+            Expression::Literal(Literal::String(s)) => Ok(builder.string_const(s)),
+            Expression::Identifier(s) => Ok(builder.symbol(s)),
+            Expression::Binary(left, op, right) => {
+                let l = self.translate_expr(left, builder)?;
+                let r = self.translate_expr(right, builder)?;
+                Ok(builder.extension(&format!("{:?}", op), vec![l, r]))
             }
-            Expression::MethodCall(call) => {
-                let mut args = Vec::new();
-                for arg in &call.arguments {
-                    args.push(self.translate_expression(builder, arg)?);
+            Expression::Call(name, args) => {
+                let mut arg_ids = Vec::new();
+                for arg in args {
+                    arg_ids.push(self.translate_expr(arg, builder)?);
                 }
-
-                if let Some(target) = &call.target {
-                    let target_id = self.translate_expression(builder, target)?;
-                    let name_id = builder.symbol(&call.name, Loc::new(0, 0, 0));
-                    let args_id = builder.seq(args, Loc::new(0, 0, 0));
-                    Ok(builder.extension("call", vec![target_id, name_id, args_id], Loc::new(0, 0, 0)))
-                } else {
-                    let name_id = builder.symbol(&call.name, Loc::new(0, 0, 0));
-                    let args_id = builder.seq(args, Loc::new(0, 0, 0));
-                    Ok(builder.extension("call", vec![name_id, args_id], Loc::new(0, 0, 0)))
-                }
+                let name_id = builder.symbol(name);
+                let args_id = builder.seq(arg_ids);
+                Ok(builder.extension("call", vec![name_id, args_id]))
             }
         }
     }
 }
+

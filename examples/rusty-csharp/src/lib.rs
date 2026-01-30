@@ -3,53 +3,19 @@
 //!
 //! 提供 Mini CSharp 的词法分析、语法分析和 Nyar 翻译功能。
 
+use chomsky_extract::IKunTree;
+use nyar_types::{NyarError, NyarFrontend};
+use oak_core::{builder::Builder, source::SourceText};
+use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
+
 pub mod codegen;
-pub mod visitor;
-pub mod tagless;
-pub mod row_type;
 pub mod errors;
-
-use oak_java::{JavaLanguage, JavaRoot, JavaBuilder};
-use oak_core::{source::SourceText, builder::Builder};
-use nyar_vm::bytecode::format::NyarModule;
-use chomsky_uir::{EGraph, IKun, ConstraintAnalysis};
-use std::fmt::{Display, Formatter};
-use std::error::Error;
-
-#[derive(Debug)]
-pub enum CSharpError {
-    Parse(String),
-    Codegen(String),
-    Other(String),
-}
-
-impl Display for CSharpError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CSharpError::Parse(msg) => write!(f, "CSharp parse error: {}", msg),
-            CSharpError::Codegen(msg) => write!(f, "CSharp codegen error: {}", msg),
-            CSharpError::Other(msg) => write!(f, "CSharp error: {}", msg),
-        }
-    }
-}
-
-impl Error for CSharpError {}
-
-impl From<String> for CSharpError {
-    fn from(s: String) -> Self {
-        CSharpError::Other(s)
-    }
-}
-
-impl From<&str> for CSharpError {
-    fn from(s: &str) -> Self {
-        CSharpError::Other(s.to_string())
-    }
-}
-
-pub type CSharpResult<T> = Result<T, CSharpError>;
+pub mod row_type;
+pub mod tagless;
+pub mod visitor;
 
 /// Mini CSharp 前端
+#[derive(Default)]
 pub struct MiniCSharpFrontend {
     language: JavaLanguage,
     builder: JavaBuilder,
@@ -58,43 +24,28 @@ pub struct MiniCSharpFrontend {
 impl MiniCSharpFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        let language = JavaLanguage::default();
-        let builder = JavaBuilder::new(language.clone());
-        Self { language, builder }
+        Self::default()
     }
+}
+
+impl NyarFrontend for MiniCSharpFrontend {
+    type Language = JavaLanguage;
 
     /// 解析 CSharp 源代码
-    pub fn parse(&self, source: &str) -> CSharpResult<JavaRoot> {
+    fn parse(&self, source: &str) -> Result<JavaRoot, NyarError> {
         let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
         match output.result {
             Ok(root) => Ok(root),
-            Err(e) => Err(CSharpError::Parse(format!("{:?}", e))),
+            Err(e) => Err(NyarError::Parse(format!("{:?}", e))),
         }
     }
 
-    /// 编译到 Chomsky UIR (EGraph)
-    pub fn compile_to_uir(&self, source: &str) -> CSharpResult<EGraph<IKun, ConstraintAnalysis>> {
-        let ast = self.parse(source)?;
-        let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
+    /// 编译到 Chomsky UIR (IKunTree)
+    fn lower(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
         let translator = codegen::NyarTranslator::new();
-        translator.translate_to_graph(&ast, &mut egraph)?;
-        Ok(egraph)
-    }
-
-    /// 编译到 Nyar 字节码
-    pub fn compile_to_nyar(&self, source: &str) -> CSharpResult<NyarModule> {
-        let ast = self.parse(source)?;
-        let translator = codegen::NyarTranslator::new();
-        translator.translate(&ast)
-    }
-
-    /// 从源代码生成后端产物
-    pub fn generate_from_source(&self, source: &str) -> CSharpResult<chomsky_extract::BackendArtifact> {
-        let module = self.compile_to_nyar(source)?;
-        let data = module.encode();
-        Ok(chomsky_extract::BackendArtifact::Binary(data))
+        translator.translate_to_tree(ast).map_err(|e| NyarError::Compile(e.to_string()))
     }
 }
 
