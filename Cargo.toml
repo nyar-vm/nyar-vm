@@ -52,3 +52,5 @@ clap = { version = "4.5", features = ["derive"] }
 byteorder = "1.5"
 url = "2.5"
 tempfile = "3.10"
+num-bigint = "0.4"
+num-traits = "0.2"

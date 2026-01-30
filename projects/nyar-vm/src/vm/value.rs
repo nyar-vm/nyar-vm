@@ -1,3 +1,5 @@
+use num_bigint::BigInt as NativeBigInt;
+use num_traits::{FromPrimitive, ToPrimitive};
 use nyar_gc::{GcBox, GcHeader, MarkContext, NyarGc, Trace};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
@@ -25,7 +27,7 @@ impl Display for Value {
             }
             ValueTag::BigInt => {
                 if let Some(bi) = self.try_as_bigint() {
-                    write!(f, "{}", bi.to_i64())
+                    write!(f, "{}", bi.0)
                 } else {
                     write!(f, "<invalid_bigint>")
                 }
@@ -425,8 +427,8 @@ impl Value {
         let g = gc.alloc(Array { items });
         Self::encode(ValueTag::Array, g.as_ptr() as u64)
     }
-    pub fn bigint(sign: u8, bytes: Vec<u8>, gc: &NyarGc) -> Self {
-        let g = gc.alloc(BigInt { sign, bytes });
+    pub fn bigint(bi: BigInt, gc: &NyarGc) -> Self {
+        let g = gc.alloc(bi);
         Self::encode(ValueTag::BigInt, g.as_ptr() as u64)
     }
     pub fn dyn_object(gc: &NyarGc) -> Self {
@@ -455,8 +457,7 @@ impl Value {
         Self::encode(ValueTag::WitnessTable, g.as_ptr() as u64)
     }
     pub fn bigint_from_i64(v: i64, gc: &NyarGc) -> Self {
-        let g = gc.alloc(BigInt::from_i64(v));
-        Self::encode(ValueTag::BigInt, g.as_ptr() as u64)
+        Self::bigint(BigInt::from_i64(v), gc)
     }
     pub fn closure(module_idx: usize, func_idx: u16, upvalues: Vec<Upvalue>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Closure {
@@ -665,41 +666,15 @@ pub struct Continuation {
     pub stack_slice: Vec<Value>,
 }
 
-#[derive(Clone)]
-pub struct BigInt {
-    pub sign: u8,
-    pub bytes: Vec<u8>,
-}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BigInt(pub NativeBigInt);
 
 impl BigInt {
     pub fn to_i64(&self) -> i64 {
-        let mut v: u64 = 0;
-        let mut shift = 0u32;
-        for &b in &self.bytes {
-            let part = (b as u64) << shift;
-            v = v.wrapping_add(part);
-            shift += 8;
-            if shift >= 64 {
-                break;
-            }
-        }
-        if self.sign != 0 {
-            -(v as i64)
-        } else {
-            v as i64
-        }
+        self.0.to_i64().unwrap_or(0)
     }
     pub fn from_i64(v: i64) -> Self {
-        let mut bytes = Vec::new();
-        let mut u = if v < 0 { (-v) as u64 } else { v as u64 };
-        while u > 0 {
-            bytes.push((u & 0xFF) as u8);
-            u >>= 8;
-        }
-        BigInt {
-            sign: if v < 0 { 1 } else { 0 },
-            bytes,
-        }
+        BigInt(NativeBigInt::from_i64(v).unwrap())
     }
 }
 #[derive(Clone)]

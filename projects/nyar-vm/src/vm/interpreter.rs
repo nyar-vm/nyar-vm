@@ -3,138 +3,10 @@ use crate::bytecode::format::{Constant, NyarcModule};
 use crate::vm::effects::{perform_effect_internal, HandlerFrame};
 use crate::vm::ffi::FFIRegistry;
 use crate::vm::value::{BigInt, Upvalue, Value, ValueTag};
+use num_bigint::{BigInt as NativeBigInt, Sign};
 use crate::vm::VmError;
 use nyar_gc::{MarkContext, NyarGc, Trace};
 
-fn normalize(mut v: Vec<u8>) -> Vec<u8> {
-    while let Some(&last) = v.last() {
-        if last == 0 {
-            v.pop();
-        } else {
-            break;
-        }
-    }
-    v
-}
-
-fn to_u128(bytes: &[u8]) -> Option<u128> {
-    if bytes.len() > 16 {
-        return None;
-    }
-    let mut x: u128 = 0;
-    let mut shift = 0u32;
-    for &b in bytes {
-        x |= (b as u128) << shift;
-        shift += 8;
-    }
-    Some(x)
-}
-
-fn from_u128(mut x: u128) -> Vec<u8> {
-    let mut out = Vec::new();
-    while x > 0 {
-        out.push((x & 0xFF) as u8);
-        x >>= 8;
-    }
-    out
-}
-
-fn cmp_abs(a: &[u8], b: &[u8]) -> i8 {
-    let la = a.len();
-    let lb = b.len();
-    if la != lb {
-        return if la < lb { -1 } else { 1 };
-    }
-    let mut i = la;
-    while i > 0 {
-        let aa = a[i - 1];
-        let bb = b[i - 1];
-        if aa != bb {
-            return if aa < bb { -1 } else { 1 };
-        }
-        i -= 1;
-    }
-    0
-}
-
-fn add_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
-    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) {
-        return from_u128(x + y);
-    }
-    let n = a.len().max(b.len());
-    let mut out = Vec::with_capacity(n + 1);
-    let mut carry = 0u16;
-    for i in 0..n {
-        let ai = if i < a.len() { a[i] as u16 } else { 0 };
-        let bi = if i < b.len() { b[i] as u16 } else { 0 };
-        let s = ai + bi + carry;
-        out.push((s & 0xFF) as u8);
-        carry = s >> 8;
-    }
-    if carry != 0 {
-        out.push(carry as u8);
-    }
-    normalize(out)
-}
-
-fn sub_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
-    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) {
-        return from_u128(x.wrapping_sub(y));
-    }
-    let n = a.len();
-    let mut out = Vec::with_capacity(n);
-    let mut borrow = 0i16;
-    for i in 0..n {
-        let ai = a[i] as i16;
-        let bi = if i < b.len() { b[i] as i16 } else { 0 };
-        let mut d = ai - bi - borrow;
-        if d < 0 {
-            d += 256;
-            borrow = 1;
-        } else {
-            borrow = 0;
-        }
-        out.push((d & 0xFF) as u8);
-    }
-    normalize(out)
-}
-
-fn mul_abs(a: &[u8], b: &[u8]) -> Vec<u8> {
-    if let (Some(x), Some(y)) = (to_u128(a), to_u128(b)) {
-        return from_u128(x * y);
-    }
-    let mut out = vec![0u8; a.len() + b.len()];
-    for i in 0..a.len() {
-        let mut carry = 0u16;
-        for j in 0..b.len() {
-            let k = i + j;
-            let prod = (a[i] as u16) * (b[j] as u16) + (out[k] as u16) + carry;
-            out[k] = (prod & 0xFF) as u8;
-            carry = prod >> 8;
-        }
-        if carry != 0 {
-            out[i + b.len()] = (out[i + b.len()] as u16 + carry) as u8;
-        }
-    }
-    normalize(out)
-}
-
-fn div_mod_abs(mut a: Vec<u8>, b: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    if b.is_empty() {
-        return (Vec::new(), a);
-    }
-    if let (Some(x), Some(y)) = (to_u128(&a), to_u128(b)) {
-        if y != 0 {
-            return (from_u128(x / y), from_u128(x % y));
-        }
-    }
-    let mut q = 0u128;
-    while cmp_abs(&a, b) >= 0 {
-        a = sub_abs(&a, b);
-        q = q.wrapping_add(1);
-    }
-    (from_u128(q), a)
-}
 
 #[derive(Clone)]
 pub struct Frame {
@@ -503,191 +375,103 @@ impl NyarVM {
             match ins {
                 Instruction::Nop => {}
                 Instruction::BigIntConst { sign, bytes } => {
-                    self.push(Value::bigint(*sign, bytes.clone(), &self.gc));
+                    let sign = if *sign == 0 { Sign::Plus } else { Sign::Minus };
+                    let bi = NativeBigInt::from_bytes_le(sign, bytes);
+                    self.push(Value::bigint(BigInt(bi), &self.gc));
                 }
                 Instruction::BigIntAdd => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
-                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
-                    let res = if l.sign == r.sign {
-                        BigInt {
-                            sign: l.sign,
-                            bytes: add_abs(&l.bytes, &r.bytes),
-                        }
-                    } else {
-                        match cmp_abs(&l.bytes, &r.bytes) {
-                            0 => BigInt {
-                                sign: 0,
-                                bytes: Vec::new(),
-                            },
-                            1 => BigInt {
-                                sign: l.sign,
-                                bytes: sub_abs(&l.bytes, &r.bytes),
-                            },
-                            _ => BigInt {
-                                sign: r.sign,
-                                bytes: sub_abs(&r.bytes, &l.bytes),
-                            },
-                        }
-                    };
-                    self.push(Value::bigint(res.sign, res.bytes, &self.gc));
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let res = BigInt(&l.0 + &r.0);
+                    self.push(Value::bigint(res, &self.gc));
                 }
                 Instruction::BigIntSub => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let mut r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
-                    if !r.bytes.is_empty() {
-                        r.sign ^= 1;
-                    }
-                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
-                    let res = if l.sign == r.sign {
-                        BigInt {
-                            sign: l.sign,
-                            bytes: add_abs(&l.bytes, &r.bytes),
-                        }
-                    } else {
-                        match cmp_abs(&l.bytes, &r.bytes) {
-                            0 => BigInt {
-                                sign: 0,
-                                bytes: Vec::new(),
-                            },
-                            1 => BigInt {
-                                sign: l.sign,
-                                bytes: sub_abs(&l.bytes, &r.bytes),
-                            },
-                            _ => BigInt {
-                                sign: r.sign,
-                                bytes: sub_abs(&r.bytes, &l.bytes),
-                            },
-                        }
-                    };
-                    self.push(Value::bigint(res.sign, res.bytes, &self.gc));
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let res = BigInt(&l.0 - &r.0);
+                    self.push(Value::bigint(res, &self.gc));
                 }
                 Instruction::BigIntMul => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let sign = if l.bytes.is_empty() || r.bytes.is_empty() {
-                        0
-                    } else {
-                        l.sign ^ r.sign
-                    };
-                    let bytes = mul_abs(&l.bytes, &r.bytes);
-                    self.push(Value::bigint(sign, bytes, &self.gc));
+                    let res = BigInt(&l.0 * &r.0);
+                    self.push(Value::bigint(res, &self.gc));
                 }
                 Instruction::BigIntDiv => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let (q, _) = div_mod_abs(l.bytes.clone(), &r.bytes);
-                    let sign = if q.is_empty() { 0 } else { l.sign ^ r.sign };
-                    self.push(Value::bigint(sign, q, &self.gc));
+                    if r.0 == NativeBigInt::from(0) {
+                        return Err(VmError::DivisionByZero);
+                    }
+                    let res = BigInt(&l.0 / &r.0);
+                    self.push(Value::bigint(res, &self.gc));
                 }
                 Instruction::BigIntMod => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let (_, rem) = div_mod_abs(l.bytes.clone(), &r.bytes);
-                    let sign = if rem.is_empty() { 0 } else { l.sign };
-                    self.push(Value::bigint(sign, rem, &self.gc));
+                    if r.0 == NativeBigInt::from(0) {
+                        return Err(VmError::DivisionByZero);
+                    }
+                    let res = BigInt(&l.0 % &r.0);
+                    self.push(Value::bigint(res, &self.gc));
                 }
                 Instruction::BigIntNeg => {
                     let v = self.pop()?;
-                    let mut b = v.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
-                    if !b.bytes.is_empty() {
-                        b.sign ^= 1;
-                    } else {
-                        b.sign = 0;
-                    }
-                    self.push(Value::bigint(b.sign, b.bytes, &self.gc));
+                    let bi = v.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let res = BigInt(-&bi.0);
+                    self.push(Value::bigint(res, &self.gc));
                 }
                 Instruction::BigIntEq => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let eq = l.sign == r.sign && cmp_abs(&l.bytes, &r.bytes) == 0;
-                    self.push(Value::bool(eq));
+                    self.push(Value::bool(l.0 == r.0));
                 }
                 Instruction::BigIntNe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let ne = !(l.sign == r.sign && cmp_abs(&l.bytes, &r.bytes) == 0);
-                    self.push(Value::bool(ne));
+                    self.push(Value::bool(l.0 != r.0));
                 }
                 Instruction::BigIntLt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let res = if l.sign != r.sign {
-                        l.sign != 0 && r.sign == 0
-                    } else {
-                        let c = cmp_abs(&l.bytes, &r.bytes);
-                        if l.sign == 0 {
-                            c < 0
-                        } else {
-                            c > 0
-                        }
-                    };
-                    self.push(Value::bool(res));
+                    self.push(Value::bool(l.0 < r.0));
                 }
                 Instruction::BigIntLe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let res = if l.sign != r.sign {
-                        l.sign != 0 && r.sign == 0
-                    } else {
-                        let c = cmp_abs(&l.bytes, &r.bytes);
-                        if l.sign == 0 {
-                            c <= 0
-                        } else {
-                            c >= 0
-                        }
-                    };
-                    self.push(Value::bool(res));
+                    self.push(Value::bool(l.0 <= r.0));
                 }
                 Instruction::BigIntGt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let res = if l.sign != r.sign {
-                        l.sign == 0 && r.sign != 0
-                    } else {
-                        let c = cmp_abs(&l.bytes, &r.bytes);
-                        if l.sign == 0 {
-                            c > 0
-                        } else {
-                            c < 0
-                        }
-                    };
-                    self.push(Value::bool(res));
+                    self.push(Value::bool(l.0 > r.0));
                 }
                 Instruction::BigIntGe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
                     let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let res = if l.sign != r.sign {
-                        l.sign == 0 && r.sign != 0
-                    } else {
-                        let c = cmp_abs(&l.bytes, &r.bytes);
-                        if l.sign == 0 {
-                            c >= 0
-                        } else {
-                            c <= 0
-                        }
-                    };
-                    self.push(Value::bool(res));
+                    self.push(Value::bool(l.0 >= r.0));
                 }
                 Instruction::BigIntToI64 => {
                     let v = self.pop()?;
@@ -703,7 +487,7 @@ impl NyarVM {
                 Instruction::BigIntToString => {
                     let v = self.pop()?;
                     let b = v.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
-                    let s = b.to_i64().to_string();
+                    let s = b.0.to_string();
                     self.push(Value::string(s, &self.gc));
                 }
                 Instruction::I32Const(v) => {

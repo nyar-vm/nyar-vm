@@ -169,6 +169,15 @@ impl<'a> UirConverter<'a> {
                 let inner = self.convert_statement(*export.declaration);
                 self.builder.extension("export", vec![inner], loc)
             }
+            ast::Statement::ReturnStatement(value) => {
+                let loc = self.to_loc(stmt.span().into());
+                let val = if let Some(expr) = value {
+                    self.convert_expression(expr)
+                } else {
+                    self.builder.constant(0, loc.clone())
+                };
+                self.builder.return_(val, loc)
+            }
             ast::Statement::ClassDeclaration(class) => {
                 println!("Lowering class: {}", class.name);
                 let loc = self.to_loc(class.span.into());

@@ -1,5 +1,5 @@
-use nyar_gc::NyarGc;
 use nyar_vm::vm::value::{Value, ValueTag};
+use nyar_gc::NyarGc;
 
 #[test]
 fn test_nan_boxing_basic() {
@@ -22,7 +22,7 @@ fn test_nan_boxing_basic() {
 #[test]
 fn test_nan_boxing_gc_types() {
     let gc = NyarGc::new();
-
+    
     let s = "Hello, NaN-boxing!".to_string();
     let v_str = Value::string(s.clone(), &gc);
     assert_eq!(v_str.tag(), ValueTag::String);
