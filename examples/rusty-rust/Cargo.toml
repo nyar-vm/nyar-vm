@@ -1,0 +1,21 @@
+[package]
+name = "rusty-rust"
+version = "0.1.0"
+edition = "2024"
+authors = ["Aster <192607617@qq.com>"]
+description = "Rewrite rust in rust!"
+
+[[bin]]
+name = "rustc"
+path = "bin/rustc.rs"
+
+[dependencies]
+oak-core = { workspace = true }
+oak-rust = { workspace = true }
+chomsky-full = { workspace = true }
+chomsky-source = { workspace = true }
+gaia-jit = { workspace = true }
+gaia-assembler = { workspace = true, features = ["clr"] }
+gaia-types = { workspace = true }
+serde = { workspace = true }
+clap = { workspace = true }
