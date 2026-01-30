@@ -4,7 +4,7 @@ pub mod object;
 pub mod ptr;
 pub mod tlab;
 
-pub use block::{GcBlock, GcBlockHeader, BLOCK_SIZE, CARD_SIZE};
+pub use block::{GcBlock, GcBlockHeader, BLOCK_SIZE};
 pub use collector::NyarGc;
 pub use object::{Gc, GcBox, GcCell, GcHeader, GcState, MarkContext, Trace};
 pub use ptr::SendPtr;

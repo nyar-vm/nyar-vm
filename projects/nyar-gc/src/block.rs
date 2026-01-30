@@ -1,7 +1,7 @@
 use std::alloc::{self, Layout};
 use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::ptr::NonNull;
-use crate::object::{GcHeader, GcBlockHeader, GcBlockIterator};
+use crate::object::GcHeader;
 
 pub const BLOCK_SIZE: usize = 1024 * 1024; // 1MB blocks
 pub const MARK_BITMAP_WORDS: usize = (BLOCK_SIZE / 16) / 64;

@@ -3,8 +3,9 @@ use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, 
 use std::sync::Mutex;
 use std::ptr::NonNull;
 use crate::ptr::SendPtr;
-use crate::block::{GcBlock, GcBlockHeader, BLOCK_SIZE, GC_BLOCK_MAGIC, CARD_SIZE};
-use crate::object::{GcHeader, GcBox, Gc, GcState, MarkContext, GcVTable, LargeObjectHeader, GcCell, Trace, THREAD_TLAB, Tlab, TLAB_SIZE};
+use crate::block::{GcBlock, GcBlockHeader, BLOCK_SIZE, GC_BLOCK_MAGIC};
+use crate::object::{Gc, GcBox, GcCell, GcHeader, GcState, GcVTable, LargeObjectHeader, MarkContext, Trace};
+use crate::tlab::{THREAD_TLAB, Tlab, TLAB_SIZE};
 
 pub static VTABLE_REGISTRY: Mutex<Vec<SendPtr<GcVTable>>> = Mutex::new(Vec::new());
 
@@ -633,18 +634,7 @@ impl NyarGc {
         self.set_state(GcState::Sweeping);
         self.sweep_all();
 
-        // 4. Clear card tables
-        let mut block_curr = self.blocks_head.load(Ordering::Acquire);
-        while !block_curr.is_null() {
-            unsafe {
-                for word in (*block_curr).card_table.iter() {
-                    word.store(0, Ordering::Release);
-                }
-                block_curr = (*block_curr).get_next();
-            }
-        }
-
-        // 5. Adjust threshold
+        // 4. Adjust threshold
         self.threshold.store(
             self.allocated_bytes.load(Ordering::Relaxed) * 2,
             Ordering::Relaxed,

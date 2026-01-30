@@ -95,8 +95,6 @@ pub struct GcHeader {
     /// Type ID for VTable lookup (low 16 bits) and Packed flags/size (high 16 bits).
     /// Bits 0-15: Type ID
     /// Bit 16: marked
-    /// Bit 17: generation
-    /// Bit 18: dirty
     /// Bit 19: large
     /// Bits 20-31: size_packed (size >> 2)
     pub(crate) type_and_flags: AtomicU32,
@@ -168,16 +166,6 @@ impl GcHeader {
             self.type_and_flags.fetch_and(!(1 << 16), Ordering::Release);
         }
     }
-    pub fn is_dirty(&self) -> bool {
-        (self.type_and_flags.load(Ordering::Acquire) & (1 << 18)) != 0
-    }
-    pub fn set_dirty(&self, dirty: bool) {
-        if dirty {
-            self.type_and_flags.fetch_or(1 << 18, Ordering::Release);
-        } else {
-            self.type_and_flags.fetch_and(!(1 << 18), Ordering::Release);
-        }
-    }
     pub fn is_large(&self) -> bool {
         (self.type_and_flags.load(Ordering::Acquire) & (1 << 19)) != 0
     }
@@ -186,16 +174,6 @@ impl GcHeader {
             self.type_and_flags.fetch_or(1 << 19, Ordering::Release);
         } else {
             self.type_and_flags.fetch_and(!(1 << 19), Ordering::Release);
-        }
-    }
-    pub fn get_generation(&self) -> u8 {
-        ((self.type_and_flags.load(Ordering::Acquire) >> 17) & 0x01) as u8
-    }
-    pub fn set_generation(&self, gen: u8) {
-        if gen != 0 {
-            self.type_and_flags.fetch_or(1 << 17, Ordering::Release);
-        } else {
-            self.type_and_flags.fetch_and(!(1 << 17), Ordering::Release);
         }
     }
     pub fn get_type_id(&self) -> u16 {
