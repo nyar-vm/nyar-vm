@@ -52,7 +52,6 @@ impl NyarDriver {
         
         // TODO: 使用 nyar-aot 进行原生代码生成
         println!("AOT: Compiling IKunTree to native at {:?}", output_path);
-        println!("IKunTree name: {}", tree.name);
         
         Err(NyarError::Compile("AOT compilation to native backend is not yet fully integrated".to_string()))
     }
@@ -70,7 +69,6 @@ impl NyarDriver {
         
         // TODO: 使用 nyar-aot 进行 WASM 生成
         println!("AOT: Compiling IKunTree to WASM at {:?}", output_path);
-        println!("IKunTree name: {}", tree.name);
         
         Err(NyarError::Compile("AOT compilation to WASM backend is not yet fully integrated".to_string()))
     }
