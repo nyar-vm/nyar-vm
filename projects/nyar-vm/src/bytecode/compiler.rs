@@ -1,5 +1,5 @@
 use crate::bytecode::format::{Chunk, ExportInfo, NyarModule, Constant as NyarConstant};
-use crate::bytecode::opcode::{Opcode, I32Ext, StringExt};
+use crate::bytecode::opcode::{Opcode, StringExt};
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
 use nyar_types::VmError;
 

@@ -12,6 +12,10 @@ pub trait Trace {
 pub struct GcHeader {
     /// Whether this object has been marked during the current collection cycle.
     pub(crate) marked: Cell<bool>,
+    /// Which generation this object belongs to (0 for young, 1 for old).
+    pub(crate) generation: Cell<u8>,
+    /// Whether this object is in the remembered set (old object pointing to young).
+    pub(crate) dirty: Cell<bool>,
     /// Link to the next object in the collector's list.
     pub(crate) next: Cell<Option<NonNull<GcHeader>>>,
     /// Function to drop and deallocate the object.

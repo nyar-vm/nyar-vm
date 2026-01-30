@@ -1,14 +1,14 @@
-# Valkyrie Language Features Guide
+# Nyar Language Features Guide
 
 ## Overview
 
-Valkyrie is a modern programming language designed to provide powerful expressiveness and extreme performance. This guide details the core features and advanced functionality of the Valkyrie language, helping developers deeply understand and utilize it.
+Nyar is a modern programming language designed to provide powerful expressiveness and extreme performance. This guide details the core features and advanced functionality of the Nyar language, helping developers deeply understand and utilize it.
 
 ## Compiler Architecture
 
-Valkyrie's compiler adopts a modern design, providing:
+Nyar's compiler adopts a modern design, providing:
 - Highly optimized incremental compilation infrastructure
-- Multi-layer intermediate representations (AST → HIR → MIR → LIR)
+- Multi-layer intermediate representations (AST → HIR → CFG → SSA → LIR)
 - Pluggable code generation backends
 - A unified error handling framework
 - Comprehensive Language Server Protocol (LSP) support
@@ -19,7 +19,7 @@ Valkyrie's compiler adopts a modern design, providing:
 
 #### Basic Types
 
-```valkyrie
+```nyar
 # Primitive types
 let integer: i32 = 42
 let float: f64 = 3.14159
@@ -35,7 +35,7 @@ let maybe_value: Option<i32> = Some(42)
 
 #### Generics and Type Parameters
 
-```valkyrie
+```nyar
 # Generic function
 micro identity<T>(value: T) -> T {
     value

@@ -3,14 +3,16 @@
 use crate::ast::*;
 use gaia_assembler::{
     instruction::{CmpCondition, CoreInstruction, GaiaInstruction},
-    program::{GaiaBlock, GaiaConstant, GaiaFunction, GaiaModule, GaiaStruct, GaiaTerminator},
-    types::{GaiaSignature, GaiaType},
+    program::{GaiaConstant, GaiaFunction, GaiaModule, GaiaStruct},
+    types::GaiaType,
 };
-use gaia_types::{GaiaError, Result, SourceLocation};
+use nyar_error::NyarError;
+use nyar_types::IKunTree;
+use oak_rust::RustRoot;
 use std::collections::{HashMap, HashSet};
 
-/// 代码生成器
-pub struct CodeGenerator {
+/// Gaia 转换器
+pub struct GaiaTranslator {
     /// 结构体定义映射
     structs: HashMap<String, StructDefinition>,
     /// 参数映射
@@ -29,7 +31,7 @@ pub struct CodeGenerator {
     variable_gaia_types: HashMap<String, GaiaType>,
 }
 
-impl CodeGenerator {
+impl GaiaTranslator {
     pub fn new() -> Self {
         Self {
             structs: HashMap::new(),
@@ -41,6 +43,14 @@ impl CodeGenerator {
             local_index: 0,
             label_count: 0,
         }
+    }
+
+    /// 转换为 IKunTree
+    pub fn translate_to_tree(&self, _ast: &RustRoot) -> Result<IKunTree, NyarError> {
+        // TODO: 实现真正的从 RustRoot 到 IKunTree 的转换
+        let mut tree = IKunTree::default();
+        tree.name = "mini-rust-program".to_string();
+        Ok(tree)
     }
 
     /// 推断表达式类型
@@ -182,26 +192,29 @@ impl CodeGenerator {
         }
     }
 
-    /// 获取表达式对应的结构体名称
+    /// 获取结构体名称
     fn get_struct_name(&self, expr: &Expression) -> String {
-        match expr {
-            Expression::Identifier(name) => self
-                .variable_types
-                .get(name)
-                .cloned()
-                .unwrap_or_else(|| "Object".to_string()),
-            Expression::FieldAccess { object, field } => {
-                let obj_struct_name = self.get_struct_name(object);
-                if let Some(struct_def) = self.structs.get(&obj_struct_name) {
-                    if let Some(field_def) = struct_def.fields.iter().find(|f| f.name == *field) {
-                        if let Type::Custom(name) = &field_def.field_type {
-                            return name.clone();
+        match self.infer_type(expr) {
+            GaiaType::Object => match expr {
+                Expression::Identifier(name) => self
+                    .variable_types
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| "Object".to_string()),
+                Expression::FieldAccess { object, field: _ } => {
+                    let struct_name = self.get_struct_name(object);
+                    if let Some(s) = self.structs.get(&struct_name) {
+                        for f in &s.fields {
+                            if let Type::Custom(name) = &f.field_type {
+                                return name.clone();
+                            }
                         }
                     }
+                    "Object".to_string()
                 }
-                "Object".to_string()
-            }
-            Expression::StructInstantiation { name, .. } => name.clone(),
+                Expression::StructInstantiation { name, .. } => name.clone(),
+                _ => "Object".to_string(),
+            },
             _ => "Object".to_string(),
         }
     }
@@ -214,7 +227,7 @@ impl CodeGenerator {
     }
 
     /// 生成 GaiaModule
-    pub fn generate(&mut self, program: &Program) -> Result<GaiaModule> {
+    pub fn generate(&mut self, program: &Program) -> Result<GaiaModule, NyarError> {
         let mut functions = Vec::new();
         let mut structs = Vec::new();
 
@@ -250,7 +263,7 @@ impl CodeGenerator {
     }
 
     /// 生成函数
-    fn generate_function(&mut self, function: &Function) -> Result<GaiaFunction> {
+    fn generate_function(&mut self, function: &Function) -> Result<GaiaFunction, NyarError> {
         // 重置状态
         self.parameters.clear();
         self.locals.clear();
@@ -325,7 +338,7 @@ impl CodeGenerator {
         &mut self,
         block: &Block,
         instructions: &mut Vec<GaiaInstruction>,
-    ) -> Result<()> {
+    ) -> Result<(), NyarError> {
         for statement in &block.statements {
             self.generate_statement(statement, instructions)?;
         }
@@ -337,25 +350,14 @@ impl CodeGenerator {
         &mut self,
         statement: &Statement,
         instructions: &mut Vec<GaiaInstruction>,
-    ) -> Result<()> {
+    ) -> Result<(), NyarError> {
         match statement {
             Statement::Expression(expr) => {
                 self.generate_expression(expr, instructions)?;
-                // 表达式语句需要弹出结果，除非是已知的 void 函数调用
-                let is_void = match expr {
-                    Expression::FunctionCall { name, .. } => name == "print" || name == "println",
-                    Expression::MacroCall { name, .. } => name == "println",
-                    Expression::MethodCall { object, method, .. } => {
-                        if let Expression::Identifier(obj_name) = object.as_ref() {
-                            obj_name == "console" && method == "log"
-                        } else {
-                            false
-                        }
-                    }
-                    _ => false,
-                };
-                if !is_void {
-                    instructions.push(GaiaInstruction::Core(CoreInstruction::Pop));
+                // 如果表达式有返回值，弹出它（除非是语句的一部分，这里简单处理）
+                let expr_type = self.infer_type(expr);
+                if expr_type != GaiaType::Void {
+                    instructions.push(GaiaInstruction::Core(CoreInstruction::Pop(expr_type)));
                 }
             }
             Statement::VariableDeclaration {
@@ -364,59 +366,35 @@ impl CodeGenerator {
                 initializer,
                 is_mutable,
             } => {
-                let mut gaia_type = GaiaType::I32; // 默认
-
-                if let Some(init_expr) = initializer {
-                    // 生成初始值
-                    self.generate_expression(init_expr, instructions)?;
-
-                    // 推断类型
-                    gaia_type = self.infer_type(init_expr);
-
-                    // 如果初始值是结构体实例化，记录类型名称（用于字段访问）
-                    if let Expression::StructInstantiation {
-                        name: struct_name, ..
-                    } = init_expr
-                    {
-                        self.variable_types
-                            .insert(name.clone(), struct_name.clone());
-                    }
-                } else {
-                    // 如果没有初始值，使用默认值 0
-                    instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(
-                        GaiaConstant::I32(0),
-                    )));
-                }
-
-                // 如果显式指定了类型，覆盖推断的类型
-                if let Some(vt) = var_type {
-                    gaia_type = vt.to_gaia_type();
-                    if let Type::Custom(type_name) = vt {
-                        self.variable_types.insert(name.clone(), type_name.clone());
-                    }
-                }
-
-                // 记录变量的 Gaia 类型
-                self.variable_gaia_types
-                    .insert(name.clone(), gaia_type.clone());
-
-                // 分配局部变量
                 let index = self.local_index;
+                self.local_index += 1;
                 self.locals.insert(name.clone(), index);
+
+                let gaia_type = var_type
+                    .as_ref()
+                    .map(|t| t.to_gaia_type())
+                    .unwrap_or(GaiaType::I32);
+                self.variable_gaia_types.insert(name.clone(), gaia_type.clone());
+
+                if let Some(Type::Custom(struct_name)) = var_type {
+                    self.variable_types.insert(name.clone(), struct_name.clone());
+                }
+
                 if *is_mutable {
                     self.mutable_vars.insert(name.clone());
                 }
-                self.local_index += 1;
 
-                // 存储到局部变量
-                instructions.push(GaiaInstruction::Core(CoreInstruction::StoreLocal(
-                    index as u32,
-                    gaia_type,
-                )));
+                if let Some(init) = initializer {
+                    self.generate_expression(init, instructions)?;
+                    instructions.push(GaiaInstruction::Core(CoreInstruction::StoreLocal(
+                        index as u32,
+                        gaia_type,
+                    )));
+                }
             }
             Statement::Return(expr) => {
-                if let Some(expr) = expr {
-                    self.generate_expression(expr, instructions)?;
+                if let Some(e) = expr {
+                    self.generate_expression(e, instructions)?;
                 }
                 instructions.push(GaiaInstruction::Core(CoreInstruction::Ret));
             }
@@ -428,55 +406,36 @@ impl CodeGenerator {
                 let else_label = self.new_label("else");
                 let end_label = self.new_label("end_if");
 
-                // 生成条件
                 self.generate_expression(condition, instructions)?;
-                // 如果为假，跳转到 else 或 end
                 instructions.push(GaiaInstruction::Core(CoreInstruction::BrFalse(
-                    if else_branch.is_some() {
-                        else_label.clone()
-                    } else {
-                        end_label.clone()
-                    },
+                    else_label.clone(),
                 )));
 
-                // 生成 then 分支
                 self.generate_block(then_branch, instructions)?;
+                instructions.push(GaiaInstruction::Core(CoreInstruction::Br(end_label.clone())));
 
-                if let Some(else_branch) = else_branch {
-                    // 跳转到结束
-                    instructions.push(GaiaInstruction::Core(CoreInstruction::Br(
-                        end_label.clone(),
-                    )));
-                    // 生成 else 标签
-                    instructions.push(GaiaInstruction::Core(CoreInstruction::Label(else_label)));
-                    // 生成 else 分支
-                    self.generate_block(else_branch, instructions)?;
+                instructions.push(GaiaInstruction::Core(CoreInstruction::Label(else_label)));
+                if let Some(else_b) = else_branch {
+                    self.generate_block(else_b, instructions)?;
                 }
 
-                // 生成结束标签
                 instructions.push(GaiaInstruction::Core(CoreInstruction::Label(end_label)));
             }
             Statement::While { condition, body } => {
                 let start_label = self.new_label("while_start");
                 let end_label = self.new_label("while_end");
 
-                // 生成开始标签
                 instructions.push(GaiaInstruction::Core(CoreInstruction::Label(
                     start_label.clone(),
                 )));
-                // 生成条件
                 self.generate_expression(condition, instructions)?;
-                // 如果为假，跳转到结束
                 instructions.push(GaiaInstruction::Core(CoreInstruction::BrFalse(
                     end_label.clone(),
                 )));
 
-                // 生成循环体
                 self.generate_block(body, instructions)?;
-                // 跳转到开始
                 instructions.push(GaiaInstruction::Core(CoreInstruction::Br(start_label)));
 
-                // 生成结束标签
                 instructions.push(GaiaInstruction::Core(CoreInstruction::Label(end_label)));
             }
             Statement::For {
@@ -484,19 +443,16 @@ impl CodeGenerator {
                 iterable,
                 body,
             } => {
-                // 目前仅支持 for i in start..end 形式
                 if let Expression::Range { start, end } = iterable {
                     let start_label = self.new_label("for_start");
                     let end_label = self.new_label("for_end");
 
-                    // 1. 初始化循环变量
-                    self.generate_expression(start, instructions)?;
+                    // 1. 初始化变量
                     let index = self.local_index;
-                    self.locals.insert(var_name.clone(), index);
-                    self.mutable_vars.insert(var_name.clone());
                     self.local_index += 1;
-
-                    let var_type = GaiaType::I32; // 范围变量默认为 I32
+                    self.locals.insert(var_name.clone(), index);
+                    self.generate_expression(start, instructions)?;
+                    let var_type = GaiaType::I32; // 范围迭代目前仅支持 i32
                     self.variable_gaia_types
                         .insert(var_name.clone(), var_type.clone());
                     instructions.push(GaiaInstruction::Core(CoreInstruction::StoreLocal(
@@ -548,9 +504,8 @@ impl CodeGenerator {
                     // 7. 结束标签
                     instructions.push(GaiaInstruction::Core(CoreInstruction::Label(end_label)));
                 } else {
-                    return Err(GaiaError::syntax_error(
+                    return Err(NyarError::Lower(
                         "目前 for 循环仅支持范围表达式 (start..end)".to_string(),
-                        SourceLocation::default(),
                     ));
                 }
             }
@@ -562,18 +517,15 @@ impl CodeGenerator {
                         let is_local = self.locals.contains_key(name);
 
                         if !is_param && !is_local {
-                            return Err(GaiaError::syntax_error(
-                                format!("未定义的变量: {}", name),
-                                SourceLocation::default(),
-                            ));
+                            return Err(NyarError::Lower(format!("未定义的变量: {}", name)));
                         }
 
                         // 检查可变性
                         if !self.mutable_vars.contains(name) {
-                            return Err(GaiaError::syntax_error(
-                                format!("不能对不可变变量赋值: {}", name),
-                                SourceLocation::default(),
-                            ));
+                            return Err(NyarError::Lower(format!(
+                                "不能对不可变变量赋值: {}",
+                                name
+                            )));
                         }
 
                         // 生成值
@@ -600,9 +552,8 @@ impl CodeGenerator {
                     Expression::FieldAccess { object, field } => {
                         // 1. 加载对象
                         self.generate_expression(object, instructions)?;
-                        // 2. 生成值
+                        // 2. 加载值
                         self.generate_expression(value, instructions)?;
-
                         // 3. 存储字段
                         let struct_name = self.get_struct_name(object);
                         instructions.push(GaiaInstruction::Core(CoreInstruction::StoreField(
@@ -615,20 +566,22 @@ impl CodeGenerator {
                         self.generate_expression(object, instructions)?;
                         // 2. 加载索引
                         self.generate_expression(index, instructions)?;
-                        // 3. 加载新值
+                        // 3. 加载值
                         self.generate_expression(value, instructions)?;
-
                         // 4. 存储元素
-                        let elem_type = self.infer_type(target);
+                        let elem_type = match self.infer_type(object) {
+                            GaiaType::Array(t, _) => *t,
+                            _ => GaiaType::I32,
+                        };
                         instructions.push(GaiaInstruction::Core(CoreInstruction::StoreElement(
                             elem_type,
                         )));
                     }
                     _ => {
-                        return Err(GaiaError::syntax_error(
-                            "无效的赋值目标".to_string(),
-                            SourceLocation::default(),
-                        ));
+                        return Err(NyarError::Lower(format!(
+                            "不支持的赋值目标: {:?}",
+                            target
+                        )));
                     }
                 }
             }
@@ -641,14 +594,35 @@ impl CodeGenerator {
         &mut self,
         expression: &Expression,
         instructions: &mut Vec<GaiaInstruction>,
-    ) -> Result<()> {
+    ) -> Result<(), NyarError> {
         match expression {
-            Expression::Literal(literal) => {
-                let constant = literal.to_gaia_constant();
-                instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(
-                    constant,
-                )));
-            }
+            Expression::Literal(literal) => match literal {
+                Literal::Integer(i) => {
+                    instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(
+                        GaiaConstant::I32(*i as i32),
+                    )));
+                }
+                Literal::Float(f) => {
+                    instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(
+                        GaiaConstant::F64(*f),
+                    )));
+                }
+                Literal::Boolean(b) => {
+                    instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(
+                        GaiaConstant::Bool(*b),
+                    )));
+                }
+                Literal::String(s) => {
+                    instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(
+                        GaiaConstant::String(s.clone()),
+                    )));
+                }
+                Literal::Char(c) => {
+                    instructions.push(GaiaInstruction::Core(CoreInstruction::PushConstant(
+                        GaiaConstant::I32(*c as i32),
+                    )));
+                }
+            },
             Expression::Identifier(name) => {
                 let gaia_type = self
                     .variable_gaia_types
@@ -666,10 +640,7 @@ impl CodeGenerator {
                         gaia_type,
                     )));
                 } else {
-                    return Err(GaiaError::syntax_error(
-                        format!("未定义的变量: {}", name),
-                        SourceLocation::default(),
-                    ));
+                    return Err(NyarError::Lower(format!("未定义的标识符: {}", name)));
                 }
             }
             Expression::BinaryOperation {
@@ -681,7 +652,6 @@ impl CodeGenerator {
                 self.generate_expression(right, instructions)?;
 
                 let left_type = self.infer_type(left);
-
                 let instruction = match operator {
                     BinaryOperator::Add => GaiaInstruction::Core(CoreInstruction::Add(left_type)),
                     BinaryOperator::Subtract => {
@@ -690,9 +660,7 @@ impl CodeGenerator {
                     BinaryOperator::Multiply => {
                         GaiaInstruction::Core(CoreInstruction::Mul(left_type))
                     }
-                    BinaryOperator::Divide => {
-                        GaiaInstruction::Core(CoreInstruction::Div(left_type))
-                    }
+                    BinaryOperator::Divide => GaiaInstruction::Core(CoreInstruction::Div(left_type)),
                     BinaryOperator::Equal => {
                         GaiaInstruction::Core(CoreInstruction::Cmp(CmpCondition::Eq, left_type))
                     }
@@ -714,9 +682,7 @@ impl CodeGenerator {
                     BinaryOperator::And => {
                         GaiaInstruction::Core(CoreInstruction::And(GaiaType::Bool))
                     }
-                    BinaryOperator::Or => {
-                        GaiaInstruction::Core(CoreInstruction::Or(GaiaType::Bool))
-                    }
+                    BinaryOperator::Or => GaiaInstruction::Core(CoreInstruction::Or(GaiaType::Bool)),
                 };
 
                 instructions.push(instruction);
@@ -770,14 +736,11 @@ impl CodeGenerator {
                     }
                 }
 
-                return Err(GaiaError::syntax_error(
-                    format!(
-                        "不支持的方法调用: {}.{}",
-                        self.expression_to_string(object),
-                        method
-                    ),
-                    SourceLocation::default(),
-                ));
+                return Err(NyarError::Lower(format!(
+                    "不支持的方法调用: {}.{}",
+                    self.expression_to_string(object),
+                    method
+                )));
             }
             Expression::MacroCall { name, arguments } => {
                 if name == "println" {
@@ -789,21 +752,17 @@ impl CodeGenerator {
                         arguments.len(),
                     )));
                 } else {
-                    return Err(GaiaError::syntax_error(
-                        format!("不支持的宏: {}!", name),
-                        SourceLocation::default(),
-                    ));
+                    return Err(NyarError::Lower(format!("不支持的宏: {}!", name)));
                 }
             }
             Expression::StructInstantiation { name, fields } => {
                 instructions.push(GaiaInstruction::Core(CoreInstruction::New(name.clone())));
-
-                for (field_name, value_expr) in fields {
+                for field_init in fields {
                     instructions.push(GaiaInstruction::Core(CoreInstruction::Dup));
-                    self.generate_expression(value_expr, instructions)?;
+                    self.generate_expression(&field_init.value, instructions)?;
                     instructions.push(GaiaInstruction::Core(CoreInstruction::StoreField(
                         name.clone(),
-                        field_name.clone(),
+                        field_init.name.clone(),
                     )));
                 }
             }
@@ -816,9 +775,8 @@ impl CodeGenerator {
                 )));
             }
             Expression::Range { .. } => {
-                return Err(GaiaError::syntax_error(
+                return Err(NyarError::Lower(
                     "范围表达式仅支持在 for 循环中使用".to_string(),
-                    SourceLocation::default(),
                 ));
             }
             Expression::ArrayLiteral(elements) => {

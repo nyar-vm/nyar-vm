@@ -12,8 +12,8 @@ impl NyarDriver {
         backend.lower_tree(&tree)?;
         let module = backend.finish();
         let mut vm = NyarVM::new();
-        vm.load_module(module)?;
-        vm.run().map_err(NyarError::from)
+        let module_idx = vm.load_module(module);
+        vm.execute(module_idx, 0).map(|_| ()).map_err(NyarError::from)
     }
 
     pub fn compile_to_native<F: NyarFrontend>(

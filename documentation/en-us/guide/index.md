@@ -1,10 +1,10 @@
-# Getting Started with Valkyrie
+# Getting Started with Nyar
 
-Welcome to Valkyrie! Valkyrie is a modern functional programming language that provides a powerful type system, a flexible module system, and rich language features.
+Welcome to Nyar! Nyar is a modern functional programming language that provides a powerful type system, a flexible module system, and rich language features.
 
-## What is Valkyrie?
+## What is Nyar?
 
-Valkyrie is a multi-paradigm programming language that offers:
+Nyar is a multi-paradigm programming language that offers:
 
 - 🎯 **Powerful Type System**: Supports generics, higher-kinded types, type inference, and other advanced features.
 - 🚀 **Modern Syntax**: Concise and intuitive syntax, supporting pattern matching, closures, and more.
@@ -16,7 +16,7 @@ Valkyrie is a multi-paradigm programming language that offers:
 
 ### Variable Definitions
 
-```valkyrie
+```nyar
 # Immutable variables
 let name = "Alice"
 let age = 30
@@ -34,7 +34,7 @@ let message: String = "Hello"
 
 ### Function Definitions
 
-```valkyrie
+```nyar
 # Basic function definition
 micro greet() {
     print("Hello, World!")

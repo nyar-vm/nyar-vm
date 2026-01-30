@@ -1,6 +1,6 @@
-# ValkyrieVM Maintenance Guide
+# NyarVM Maintenance Guide
 
-ValkyrieVM is the internal reference interpreter for Valkyrie.
+NyarVM is the internal reference interpreter for Nyar.
 
 ## Compilation Pipeline
 
@@ -8,30 +8,29 @@ ValkyrieVM is the internal reference interpreter for Valkyrie.
 
 ### 1. AST -> HIR
 - **Responsible for**: Desugaring, scope resolution, and handling shadowing.
-- **Implementation**: [ast_to_hir](file:///e:/RustroverProjects/nyar-framework/valkyrie.rs/projects/valkyrie-compiler/src/transform/ast_to_hir/mod.rs).
+- **Implementation**: Provided by the frontend (e.g., `oak-rust`).
 
 ### 2. HIR -> CFG
 - **Responsible for**: Converting structured control flow (`if`, `while`, `loop`) into basic blocks and jumps.
-- **Implementation**: [hir_to_cfg](file:///e:/RustroverProjects/nyar-framework/valkyrie.rs/projects/valkyrie-compiler/src/transform/hir_to_cfg/mod.rs).
+- **Implementation**: `nyar-aot`.
 
 ### 3. CFG -> SSA
 - **Responsible for**: Constructing Static Single Assignment form and inserting Phi nodes.
-- **Implementation**: [cfg_to_ssa](file:///e:/RustroverProjects/nyar-framework/valkyrie.rs/projects/valkyrie-compiler/src/transform/cfg_to_ssa/mod.rs).
+- **Implementation**: `nyar-aot`.
 
 ### 4. SSA -> LIR
-- **Responsible for**: Phi elimination, register allocation, and instruction lowering.
-- **Implementation**: [ssa_to_lir](file:///e:/RustroverProjects/nyar-framework/valkyrie.rs/projects/valkyrie-compiler/src/transform/ssa_to_lir/mod.rs).
+- **Responsible for**: Phi elimination and stack-based instruction lowering.
+- **Implementation**: [compiler.rs](file:///e:/%E6%99%AE%E9%81%8D%E4%BC%98%E5%8C%96/nyar-vm/projects/nyar-vm/src/bytecode/compiler.rs).
 - **Current Status**:
     - [x] Basic Phi elimination (via Move insertion at the end of predecessor blocks).
-    - [x] Basic instruction lowering.
-    - [ ] Optimized Phi elimination (handling parallel move issues).
-    - [x] Basic register allocation (simple reuse based on liveness analysis).
-    - [ ] Optimized register allocation (requires linear scan or coloring algorithms).
-    - [ ] Stack frame size calculation.
+    - [x] Basic instruction lowering to stack-based bytecode.
+    - [ ] Optimized stack usage (minimizing Push/Pop sequences).
+    - [x] Local variable slot allocation.
+    - [x] Stack depth calculation for VM frames.
 
 ### 5. VM Execution
-- **Responsible for**: Executing LIR instructions, managing the call stack, heap, and effect handlers.
-- **Implementation**: [valkyrie-runtime](file:///e:/RustroverProjects/nyar-framework/valkyrie.rs/projects/valkyrie-runtime/src/runtime/mod.rs).
+- **Responsible for**: Executing LIR instructions using a stack-based interpreter, managing the call stack, heap, and effect handlers.
+- **Implementation**: [interpreter.rs](file:///e:/%E6%99%AE%E9%81%8D%E4%BC%98%E5%8C%96/nyar-vm/projects/nyar-vm/src/vm/interpreter.rs).
 - **Current Status**:
     - [x] Basic arithmetic and logic instructions.
     - [x] Jumps and branches (Jmp, JmpIf).
@@ -46,7 +45,7 @@ ValkyrieVM is the internal reference interpreter for Valkyrie.
     - **Type Safety**: Using the function's `parameters` and `returns` definitions, the compiler can accurately generate marshaling code.
     - **Multi-backend Adaptation**: Interpreted and executed by different backends via the `target` parameter (e.g., `wasm`, `jvm`, `clr`, `dll`).
 - **Example**:
-    ```valkyrie
+    ```nyar
     ↯import(target: wasm, "wasi:random/insecure", "get-insecure-random-u64")
     micro get_random_u64() -> u64
     ```
@@ -60,8 +59,8 @@ ValkyrieVM is the internal reference interpreter for Valkyrie.
         - **Type Specialization**: Generating type-specific fast paths at the SSA level using runtime feedback.
         - **Memory Optimization**: Performing more accurate escape analysis to scalarize objects and allocate them to registers.
 
-### Register Machine
-The LIR of ValkyrieVM is a register-based instruction set, optimized for interpretation speed and easy to map from SSA.
+### Stack Machine
+The LIR of NyarVM is a stack-based instruction set, optimized for simplicity and easy to generate from HIR/SSA.
 
 ### Phi Elimination
-SSA is lowered to LIR by eliminating Phi nodes and performing register allocation.
+SSA is lowered to LIR by eliminating Phi nodes and mapping SSA variables to stack slots or local variable indices.

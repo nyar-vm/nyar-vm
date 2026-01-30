@@ -1,17 +1,17 @@
-# Valkyrie Execution Model
+# Nyar Execution Model
 
 ## 1. Overview
 
-Valkyrie is designed to support multiple execution environments, ranging from high-performance production environments to highly interactive development environments.
+Nyar is designed to support multiple execution environments, ranging from high-performance production environments to highly interactive development environments.
 
 ## 2. Multi-Export Backend Architecture
 
-Valkyrie employs a **Multi-Export Backend Architecture**. While the compiler frontend (AST -> HIR -> CFG -> SSA -> LIR) descends linearly, not all backends must start their transformation from LIR.
+Nyar employs a **Multi-Export Backend Architecture**. While the compiler frontend (AST -> HIR -> CFG -> SSA -> LIR) descends linearly, not all backends must start their transformation from LIR.
 
 Each IR layer has its unique structural advantages, making it suitable for interfacing with different target platforms:
 
 - **SSA (Static Single Assignment) -> LLVM IR**: 
-    - LLVM itself is SSA-based. Converting directly from Valkyrie SSA preserves the richest data flow information, facilitating deep optimization by LLVM.
+    - LLVM itself is SSA-based. Converting directly from Nyar SSA preserves the richest data flow information, facilitating deep optimization by LLVM.
 - **CFG (Control Flow Graph) -> WASM**: 
     - WASM is a structured control flow format. Converting directly from CFG makes it easier to recover the `block`, `loop`, `if`, and other structures required by WebAssembly, avoiding expensive control flow recovery after LIR flattening.
 - **HIR (High-level IR) -> C / Source-to-Source**: 
@@ -21,60 +21,51 @@ Each IR layer has its unique structural advantages, making it suitable for inter
 
 ---
 
-## 3. LIR Register Model Decisions
+## 3. LIR Stack Model Decisions
 
-Valkyrie's LIR chooses a **Register Machine** model over a stack model, based on the following core considerations:
+Nyar's LIR chooses a **Stack Machine** model, based on the following core considerations:
 
-### 3.1 Why Choose a Register Model?
+### 3.1 Why Choose a Stack Model?
 
-1.  **Reduced Dispatch Overhead**:
-    - Stack models typically require numerous `push`/`pop` operations, which significantly increase the number of instructions for a virtual machine.
-    - Register models allow a single instruction to complete multiple operations (e.g., `add r1, r2, r3`), reducing the frequency of instruction decoding and dispatching.
-2.  **Algebraic Effects and State Snapshots**:
-    - Valkyrie supports Algebraic Effects, which require frequent snapshotting and restoration of the execution state (Frame).
-    - In a register model, the state is laid out flat in a `Vec<Value>`. Creating a snapshot requires only a single `clone()`, and restoring state involves only replacing a pointer.
-    - In contrast, snapshots in stack models require handling complex stack frame offsets and deep copying, which is less efficient.
+1.  **Simplicity of Code Generation**:
+    - Stack-based bytecode is extremely easy to generate from an Abstract Syntax Tree (AST) or High-level IR (HIR).
+    - It eliminates the need for complex register allocation algorithms (like linear scan or graph coloring) in the interpreter, speeding up the compilation pipeline.
+2.  **Compact Instruction Format**:
+    - Most stack instructions (e.g., `Add`, `Mul`, `Pop`) do not require operand fields, as they implicitly operate on the top of the stack.
+    - This results in smaller bytecode files and reduced memory bandwidth during instruction fetching.
+3.  **Cross-Platform Alignment**:
+    - Many mainstream virtual machines (JVM, WASM, CLR) use stack-based architectures.
+    - Choosing a stack model makes it more straightforward to lower Nyar's LIR to these target platforms without reinventing the execution logic.
 
-### 3.2 Why Not Infinite Registers?
+### 3.2 Stack Frame Management
 
-While a virtual machine can simulate infinite registers (SSA style), Valkyrie LIR chooses **Dynamically Finite Registers**:
+Each function call in Nyar creates a new `Frame` that contains:
+- **Operand Stack**: A local stack for temporary values during expression evaluation.
+- **Locals**: An array for storing local variables and parameters, accessed by index.
+- **Upvalues**: References to variables in outer scopes for closure support.
 
-1.  **Memory Footprint and Snapshot Performance**:
-    - Infinite registers would lead to exceptionally large register arrays in the `Frame`, filled with holes (sparse).
-    - Every `Yield` instruction generates a snapshot. If the number of registers is excessive, the memory overhead and copying cost of snapshots become unacceptable.
-2.  **Locality Optimization**:
-    - Finite registers force the compiler to perform simple register allocation, making data more compact in memory and improving CPU cache hit rates.
+This hybrid approach (Stack for calculation + Locals for storage) provides a balance between simplicity and performance.
 
-### 3.3 Why Not a Fixed 256 Registers?
+### 4.1 Interpreted Execution
 
-1.  **Avoiding Spilling**:
-    - Fixed 256 registers (as in LuaVM or early virtual machines) can easily run out when handling very large functions or deeply nested expressions, forcing data to spill into stack memory and leading to a sharp drop in performance.
-2.  **Allocation on Demand**:
-    - Each function in Valkyrie LIR has its own `register_count`.
-    - **Small Functions**: Occupy very few registers, making snapshots extremely fast.
-    - **Complex Functions**: Automatically expand the number of registers, ensuring no spilling occurs.
-    - This flexibility offers significant advantages when handling a large number of micro-closures and coroutines.
-
-### 2.1 Interpreted Execution
-
-During development and debugging phases, Valkyrie uses its built-in virtual machine (`ValkyrieVM`) to directly interpret and execute LIR.
+During development and debugging phases, Nyar uses its built-in virtual machine (`nyar-vm`) to directly interpret and execute LIR.
 
 - **Advantages**:
   - **Rapid Startup**: No lengthy machine code generation process.
   - **Hot Reloading**: Allows replacing functions without recompiling the entire program.
   - **Deep Debugging**: The interpreter can directly access all runtime states.
 
-### 2.2 Static Compilation
+### 4.2 Static Compilation
 
-During the production deployment phase, LIR can be further lowered into target machine code (e.g., WASM or native instructions).
+During the production deployment phase, LIR can be further lowered into target machine code (e.g., WASM or native instructions) via `nyar-aot`.
 
 - **Target Platforms**:
   - **WebAssembly (WASM)**: Targeted at modern browsers and server-side WASM runtimes.
   - **Native Binary**: Generates high-performance machine code via backend generators (planned).
 
-## 3. Runtime Features
+## 5. Runtime Features
 
-Whether through interpretive execution or compiled execution, Valkyrie provides unified runtime support:
+Whether through interpretive execution or compiled execution, Nyar provides unified runtime support:
 
 - **Algebraic Effects**: Achieves efficient control flow jumps through stack-based handlers.
 - **Automatic Memory Management**: Memory management based on garbage collection (depending on configuration).
