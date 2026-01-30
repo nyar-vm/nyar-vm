@@ -1,7 +1,7 @@
 use std::alloc::{self, Layout};
-use std::cell::{Cell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicUsize, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Mutex, Arc};
 
 #[repr(transparent)]
@@ -27,6 +27,7 @@ const BLOCK_SIZE: usize = 1024 * 1024; // 1MB blocks
 const TLAB_SIZE: usize = 64 * 1024; // 64KB TLAB
 const CARD_SIZE: usize = 512;
 const CARDS_PER_BLOCK: usize = BLOCK_SIZE / CARD_SIZE;
+const CARD_BITMAP_WORDS: usize = CARDS_PER_BLOCK / 64;
 
 struct Tlab {
     start: *mut u8,
@@ -67,9 +68,9 @@ thread_local! {
 struct GcBlockHeader {
     cursor: AtomicUsize,
     live_bytes: AtomicUsize,
-    /// Card table for this block. Each byte represents CARD_SIZE bytes.
-    /// 0 = clean, 1 = dirty.
-    card_table: [AtomicU8; CARDS_PER_BLOCK],
+    /// Card table for this block. Each bit represents CARD_SIZE bytes.
+    /// 1 = dirty, 0 = clean.
+    card_table: [AtomicU64; CARD_BITMAP_WORDS],
 }
 
 struct GcBlock {
@@ -91,8 +92,8 @@ impl GcBlock {
             let header = ptr as *mut GcBlockHeader;
             (*header).cursor.store(std::mem::size_of::<GcBlockHeader>(), Ordering::Relaxed);
             (*header).live_bytes.store(0, Ordering::Relaxed);
-            for i in 0..CARDS_PER_BLOCK {
-                (*header).card_table[i].store(0, Ordering::Relaxed);
+            for word in (*header).card_table.iter() {
+                word.store(0, Ordering::Relaxed);
             }
 
             Self {
@@ -135,20 +136,34 @@ impl GcBlock {
         let header = base as *const GcBlockHeader;
         let offset = ptr as usize - base;
         let card_idx = offset / CARD_SIZE;
+        let word_idx = card_idx / 64;
+        let bit_idx = card_idx % 64;
+        let mask = 1u64 << bit_idx;
         unsafe {
-            (*header).card_table[card_idx].store(1, Ordering::Release);
+            (*header).card_table[word_idx].fetch_or(mask, Ordering::Release);
         }
     }
 
     fn is_card_dirty(&self, card_idx: usize) -> bool {
-        self.get_header().card_table[card_idx].load(Ordering::Acquire) == 1
+        let word_idx = card_idx / 64;
+        let bit_idx = card_idx % 64;
+        let mask = 1u64 << bit_idx;
+        (self.get_header().card_table[word_idx].load(Ordering::Acquire) & mask) != 0
     }
 
     fn clear_cards(&self) {
         let header = self.get_header();
-        for card in header.card_table.iter() {
-            card.store(0, Ordering::Release);
+        for word in header.card_table.iter() {
+            word.store(0, Ordering::Release);
         }
+    }
+
+    fn add_live_bytes(&self, bytes: usize) {
+        self.get_header().live_bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn reset_live_bytes(&self) {
+        self.get_header().live_bytes.store(0, Ordering::Relaxed);
     }
 }
 
@@ -347,7 +362,7 @@ pub struct NyarGc {
     gray_stack: Mutex<Vec<SendPtr<GcHeader>>>,
     /// Current state of the GC.
     state: AtomicU8,
-    sweep_state: Mutex<SweepState>,
+    sweep_state: SweepState,
     /// Total number of bytes allocated.
     allocated_bytes: AtomicUsize,
     /// Threshold for the next collection cycle.
@@ -407,12 +422,12 @@ impl NyarGc {
             blocks: Mutex::new(vec![Arc::new(GcBlock::new())]),
             gray_stack: Mutex::new(Vec::new()),
             state: AtomicU8::new(GcState::Idle as u8),
-            sweep_state: Mutex::new(SweepState {
+            sweep_state: SweepState {
                 young_curr: AtomicPtr::new(std::ptr::null_mut()),
                 young_prev: AtomicPtr::new(std::ptr::null_mut()),
                 old_curr: AtomicPtr::new(std::ptr::null_mut()),
                 old_prev: AtomicPtr::new(std::ptr::null_mut()),
-            }),
+            },
             allocated_bytes: AtomicUsize::new(0),
             threshold: AtomicUsize::new(1024 * 1024), // 1MB default threshold
         }
@@ -640,7 +655,10 @@ impl NyarGc {
     ///
     /// # Safety
     /// The caller must ensure that all root pointers are traced via the provided closure if GC is in Marking state.
-    pub unsafe fn step(&self, work_limit: usize) {
+    pub unsafe fn step<F>(&self, work_limit: usize, mark_roots: F)
+    where
+        F: FnOnce(&mut MarkContext<'_>),
+    {
         match self.get_state() {
             GcState::Idle => {
                 self.set_state(GcState::Marking);
@@ -649,6 +667,11 @@ impl NyarGc {
                 sweep.young_prev.store(std::ptr::null_mut(), Ordering::Release);
                 sweep.old_curr.store(self.old_head.load(Ordering::Acquire), Ordering::Release);
                 sweep.old_prev.store(std::ptr::null_mut(), Ordering::Release);
+
+                // Initial marking from roots
+                let mut gray_stack = self.gray_stack.lock().unwrap();
+                let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
+                mark_roots(&mut ctx);
             }
             GcState::Marking => {
                 let mut gray_stack = self.gray_stack.lock().unwrap();
@@ -722,6 +745,13 @@ impl NyarGc {
 
                             if header.get_color() != Color::White {
                                 header.set_color(Color::White);
+                                
+                                // Update live bytes
+                                if let Some(block_idx) = self.find_block(header_ptr.as_ptr() as *const u8) {
+                                    let blocks = self.blocks.lock().unwrap();
+                                    blocks[block_idx].add_live_bytes(header.size);
+                                }
+
                                 sweep.old_prev.store(old_curr_ptr, Ordering::Release);
                                 sweep.old_curr.store(next, Ordering::Release);
                             } else {
@@ -738,9 +768,7 @@ impl NyarGc {
                             work_done += 1;
                         } else {
                             // Finished sweeping
-                            for block in self.blocks.lock().unwrap().iter() {
-                                block.clear_cards();
-                            }
+                            self.reclaim_empty_blocks();
                             self.threshold.store(self.allocated_bytes.load(Ordering::Relaxed) * 2, Ordering::Relaxed);
                             self.set_state(GcState::Idle);
                             break;
@@ -751,8 +779,28 @@ impl NyarGc {
         }
     }
 
+    fn reclaim_empty_blocks(&self) {
+        let mut blocks = self.blocks.lock().unwrap();
+        if blocks.len() <= 1 {
+            return;
+        }
+
+        // Keep at least one block, and don't reclaim the last block if it's still being used
+        let mut i = 0;
+        while i < blocks.len() {
+            let block = &blocks[i];
+            let header = block.get_header();
+            // If block is empty and not the last one (potentially active)
+            if header.live_bytes.load(Ordering::Relaxed) == 0 && i < blocks.len() - 1 {
+                blocks.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
     unsafe fn sweep_young(&self) {
-        let prev: *mut GcHeader = std::ptr::null_mut();
+        let mut prev: *mut GcHeader = std::ptr::null_mut();
         let mut curr = self.young_head.load(Ordering::Acquire);
 
         while let Some(header_ptr) = NonNull::new(curr) {

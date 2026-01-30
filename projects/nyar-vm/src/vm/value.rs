@@ -333,10 +333,57 @@ impl Value {
     pub fn float(v: f64) -> Self {
         let u: u64 = v.to_bits();
         if (u & NAN_BASE) == NAN_BASE {
-            Value(u & !0x0008_0000_0000_0000)
+            // Canonicalize NaN to avoid collision with tags.
+            // We clear bit 51 (the bit that makes it look like a tag)
+            // and set bit 0 to ensure it remains a NaN.
+            Value((u & !0x0008_0000_0000_0000) | 1)
         } else {
             Value(u)
         }
+    }
+
+    pub fn is_int(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Int
+    }
+
+    pub fn is_bool(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Bool
+    }
+
+    pub fn is_null(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Null
+    }
+
+    pub fn is_string(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::String
+    }
+
+    pub fn is_object(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Object
+    }
+
+    pub fn is_array(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Array
+    }
+
+    pub fn is_list(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::List
+    }
+
+    pub fn is_tuple(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Tuple
+    }
+
+    pub fn is_closure(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Closure
+    }
+
+    pub fn is_dyn_object(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::DynObject
+    }
+
+    pub fn is_effect(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Effect
     }
     pub fn bool(v: bool) -> Self {
         Self::encode(ValueTag::Bool, if v { 1 } else { 0 })

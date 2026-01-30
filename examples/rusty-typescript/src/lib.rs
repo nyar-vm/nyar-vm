@@ -62,7 +62,7 @@ impl NyarFrontend for MiniTypescriptFrontend {
         let mut converter = UirConverter::new(&mut builder, self.source_id);
 
         let root_id = converter.convert_root(ast.clone());
-        let extractor = IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL);
+        let extractor = IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
         Ok(extractor.extract(root_id))
     }
 }
@@ -92,7 +92,7 @@ impl<'a> UirConverter<'a> {
     fn convert_statement(&mut self, stmt: ast::Statement) -> Id {
         match stmt {
             ast::Statement::VariableDeclaration(var) => {
-                let loc = self.to_loc(var.span);
+                let loc = self.to_loc(var.span.into());
                 let value = if let Some(expr) = var.value {
                     self.convert_expression(expr)
                 } else {
@@ -101,7 +101,7 @@ impl<'a> UirConverter<'a> {
                 self.builder.assign(&var.name, value, loc)
             }
             ast::Statement::FunctionDeclaration(func) => {
-                let loc = self.to_loc(func.span.clone());
+                let loc = self.to_loc(func.span.clone().into());
                 let mut body_ids = Vec::new();
                 for s in func.body {
                     body_ids.push(self.convert_statement(s));
@@ -113,7 +113,7 @@ impl<'a> UirConverter<'a> {
                 self.convert_expression(expr)
             }
             ast::Statement::ImportDeclaration(import) => {
-                let loc = self.to_loc(import.span);
+                let loc = self.to_loc(import.span.into());
                 let mut args = vec![self.builder.string(&import.module_specifier, loc.clone())];
                 for s in import.imports {
                     args.push(self.builder.symbol(&s, loc.clone()));
@@ -121,12 +121,12 @@ impl<'a> UirConverter<'a> {
                 self.builder.extension("import", args, loc)
             }
             ast::Statement::ExportDeclaration(export) => {
-                let loc = self.to_loc(export.span);
+                let loc = self.to_loc(export.span.into());
                 let inner = self.convert_statement(*export.declaration);
                 self.builder.extension("export", vec![inner], loc)
             }
             ast::Statement::ClassDeclaration(class) => {
-                let loc = self.to_loc(class.span);
+                let loc = self.to_loc(class.span.into());
                 let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
                 if let Some(ext) = class.extends {
                     args.push(self.builder.symbol(&ext, loc.clone()));
@@ -137,7 +137,7 @@ impl<'a> UirConverter<'a> {
                 for member in class.body {
                     match member {
                         ast::ClassMember::Property { name, ty, initializer, span } => {
-                            let mloc = self.to_loc(span);
+                            let mloc = self.to_loc(span.into());
                             let init_id = if let Some(expr) = initializer {
                                 self.convert_expression(expr)
                             } else {
@@ -155,7 +155,7 @@ impl<'a> UirConverter<'a> {
                             ], mloc));
                         }
                         ast::ClassMember::Method { name, params, body, span } => {
-                            let mloc = self.to_loc(span);
+                            let mloc = self.to_loc(span.into());
                             let mut body_ids = Vec::new();
                             for s in body {
                                 body_ids.push(self.convert_statement(s));

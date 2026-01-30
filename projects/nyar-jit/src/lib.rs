@@ -7,7 +7,7 @@ use dashmap::DashMap;
 use std::sync::Arc;
 
 /// Represents the compilation tiers in NyarJit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum JitTier {
     /// Tier 0: Interpreter (handled by VM)
     Interpreter = 0,
@@ -284,9 +284,9 @@ impl NyarJit {
     }
 }
 
-/// Helper for converting IKun (UIR) to IKunTree (extracted tree).
-trait FromUir {
-    fn from_uir(ikun: &IKun) -> IKunTree;
+pub trait FromUir {
+    fn from_uir(ikun: &IKun) -> Self;
+    fn from_uir_id(id: chomsky_uir::egraph::Id) -> Self;
 }
 
 impl FromUir for IKunTree {
@@ -312,7 +312,7 @@ impl FromUir for IKunTree {
         }
     }
 
-    fn from_uir_id(_id: chomsky::uir::Id) -> IKunTree {
+    fn from_uir_id(_id: chomsky_uir::egraph::Id) -> IKunTree {
         // In a real implementation, this would look up the ID in an EGraph or builder.
         IKunTree::Symbol("placeholder".to_string())
     }

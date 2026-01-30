@@ -1,13 +1,12 @@
-use nyar_gc::{NyarGc, Trace, Gc, MarkContext, GcCell, Tlab};
+use nyar_gc::{NyarGc, Trace, Gc, MarkContext, GcCell};
 use std::thread;
 use std::sync::Arc;
 
 #[test]
 fn test_tlab_basic() {
-    let gc = Arc::new(NyarGc::new());
-    let mut tlab = Tlab::new(&gc);
+    let gc = NyarGc::new();
 
-    let node1 = tlab.alloc(TestNode {
+    let node1 = gc.alloc(TestNode {
         value: 1,
         next: GcCell::new(None),
     });
@@ -23,9 +22,8 @@ fn test_tlab_multithreaded() {
     for i in 0..4 {
         let gc_clone = gc.clone();
         handles.push(thread::spawn(move || {
-            let mut tlab = Tlab::new(&gc_clone);
             for j in 0..1000 {
-                let _node = tlab.alloc(TestNode {
+                let _node = gc_clone.alloc(TestNode {
                     value: i * 1000 + j,
                     next: GcCell::new(None),
                 });

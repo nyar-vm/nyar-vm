@@ -925,79 +925,79 @@ impl NyarVM {
                 Instruction::F32Mul => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_float() as f32) * (rhs.as_float() as f32) } as f64;
+                    let r = ((lhs.as_float() as f32) * (rhs.as_float() as f32)) as f64;
                     self.push(Value::float(r));
                 }
                 Instruction::F32Div => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_float() as f32) / (rhs.as_float() as f32) } as f64;
+                    let r = ((lhs.as_float() as f32) / (rhs.as_float() as f32)) as f64;
                     self.push(Value::float(r));
                 }
                 Instruction::F32Neg => {
                     let v = self.pop()?;
-                    let r = unsafe { -v.as_float() as f32 } as f64;
+                    let r = (-(v.as_float() as f32)) as f64;
                     self.push(Value::float(r));
                 }
                 Instruction::F32Eq => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_float() as f32) == (rhs.as_float() as f32) };
+                    let r = (lhs.as_float() as f32) == (rhs.as_float() as f32);
                     self.push(Value::bool(r));
                 }
                 Instruction::F32Ne => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_float() as f32) != (rhs.as_float() as f32) };
+                    let r = (lhs.as_float() as f32) != (rhs.as_float() as f32);
                     self.push(Value::bool(r));
                 }
                 Instruction::F32Lt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_float() as f32) < (rhs.as_float() as f32) };
+                    let r = (lhs.as_float() as f32) < (rhs.as_float() as f32);
                     self.push(Value::bool(r));
                 }
                 Instruction::F32Le => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_float() as f32) <= (rhs.as_float() as f32) };
+                    let r = (lhs.as_float() as f32) <= (rhs.as_float() as f32);
                     self.push(Value::bool(r));
                 }
                 Instruction::F32Gt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_float() as f32) > (rhs.as_float() as f32) };
+                    let r = (lhs.as_float() as f32) > (rhs.as_float() as f32);
                     self.push(Value::bool(r));
                 }
                 Instruction::F32Ge => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_float() as f32) >= (rhs.as_float() as f32) };
+                    let r = (lhs.as_float() as f32) >= (rhs.as_float() as f32);
                     self.push(Value::bool(r));
                 }
                 Instruction::F32ToI32S => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() as i32 };
+                    let r = v.as_float() as i32;
                     self.push(Value::int(r as i64));
                 }
                 Instruction::F32ToI32U => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() as u32 };
+                    let r = v.as_float() as u32;
                     self.push(Value::int(r as i64));
                 }
                 Instruction::F32ToI64S => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() as i64 };
+                    let r = v.as_float() as i64;
                     self.push(Value::int(r));
                 }
                 Instruction::F32ToI64U => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() as u64 };
+                    let r = v.as_float() as u64;
                     self.push(Value::int(r as i64));
                 }
                 Instruction::F32ToF64 => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() };
+                    let r = v.as_float();
                     self.push(Value::float(r));
                 }
                 Instruction::F64Const(v) => {
@@ -1006,91 +1006,91 @@ impl NyarVM {
                 Instruction::F64Add => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() + rhs.as_float() };
+                    let r = lhs.as_float() + rhs.as_float();
                     self.push(Value::float(r));
                 }
                 Instruction::F64Sub => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() - rhs.as_float() };
+                    let r = lhs.as_float() - rhs.as_float();
                     self.push(Value::float(r));
                 }
                 Instruction::F64Mul => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() * rhs.as_float() };
+                    let r = lhs.as_float() * rhs.as_float();
                     self.push(Value::float(r));
                 }
                 Instruction::F64Div => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() / rhs.as_float() };
+                    let r = lhs.as_float() / rhs.as_float();
                     self.push(Value::float(r));
                 }
                 Instruction::F64Neg => {
                     let v = self.pop()?;
-                    let r = unsafe { -v.as_float() };
+                    let r = -v.as_float();
                     self.push(Value::float(r));
                 }
                 Instruction::F64Eq => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() == rhs.as_float() };
+                    let r = lhs.as_float() == rhs.as_float();
                     self.push(Value::bool(r));
                 }
                 Instruction::F64Ne => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() != rhs.as_float() };
+                    let r = lhs.as_float() != rhs.as_float();
                     self.push(Value::bool(r));
                 }
                 Instruction::F64Lt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() < rhs.as_float() };
+                    let r = lhs.as_float() < rhs.as_float();
                     self.push(Value::bool(r));
                 }
                 Instruction::F64Le => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() <= rhs.as_float() };
+                    let r = lhs.as_float() <= rhs.as_float();
                     self.push(Value::bool(r));
                 }
                 Instruction::F64Gt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() > rhs.as_float() };
+                    let r = lhs.as_float() > rhs.as_float();
                     self.push(Value::bool(r));
                 }
                 Instruction::F64Ge => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { lhs.as_float() >= rhs.as_float() };
+                    let r = lhs.as_float() >= rhs.as_float();
                     self.push(Value::bool(r));
                 }
                 Instruction::F64ToI32S => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() as i32 };
+                    let r = v.as_float() as i32;
                     self.push(Value::int(r as i64));
                 }
                 Instruction::F64ToI32U => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() as u32 };
+                    let r = v.as_float() as u32;
                     self.push(Value::int(r as i64));
                 }
                 Instruction::F64ToI64S => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() as i64 };
+                    let r = v.as_float() as i64;
                     self.push(Value::int(r));
                 }
                 Instruction::F64ToI64U => {
                     let v = self.pop()?;
-                    let r = unsafe { v.as_float() as u64 };
+                    let r = v.as_float() as u64;
                     self.push(Value::int(r as i64));
                 }
                 Instruction::F64ToF32 => {
                     let v = self.pop()?;
-                    let r = unsafe { (v.as_float() as f32) as f64 };
+                    let r = (v.as_float() as f32) as f64;
                     self.push(Value::float(r));
                 }
                 Instruction::StringConst(s) => {
@@ -1153,8 +1153,8 @@ impl NyarVM {
                     let start_v = self.pop()?;
                     let s_v = self.pop()?;
                     let s = unsafe { s_v.as_string().clone() };
-                    let start = unsafe { start_v.as_int() } as usize;
-                    let len = unsafe { len_v.as_int() } as usize;
+                    let start = start_v.as_int() as usize;
+                    let len = len_v.as_int() as usize;
                     let end = start.saturating_add(len);
                     let end = end.min(s.len());
                     let sub = if start <= end {
@@ -1250,12 +1250,10 @@ impl NyarVM {
                 Instruction::JumpIfFalse(off) => {
                     let off = *off;
                     let v = self.pop()?;
-                    let cond = unsafe {
-                        match v.tag() {
-                            ValueTag::Bool => v.as_bool(),
-                            ValueTag::Null => false,
-                            _ => true,
-                        }
+                    let cond = match v.tag() {
+                        ValueTag::Bool => v.as_bool(),
+                        ValueTag::Null => false,
+                        _ => true,
                     };
                     if !cond {
                         next_ip = Some((cur_ip as isize + off as isize) as usize);
@@ -1369,7 +1367,7 @@ impl NyarVM {
                     args.reverse();
 
                     let callee = self.pop()?;
-                    if callee.tag() != ValueTag::Closure {
+                    if !callee.is_closure() {
                         return Err(VmError::InvalidOpcode); // Expected closure
                     }
 
@@ -1905,7 +1903,7 @@ impl NyarVM {
                         .unwrap_or_default();
                     if name == "await" {
                         if let Some(v) = args.get(0) {
-                            if v.tag() == ValueTag::Closure {
+                            if v.is_closure() {
                                 let closure_ptr =
                                     unsafe { v.as_closure() as *const crate::vm::value::Closure as *mut crate::vm::value::Closure };
                                 let closure = unsafe { &*closure_ptr };
@@ -2179,12 +2177,10 @@ impl NyarVM {
                         }
                         "not" => {
                             if let Some(v) = args.first() {
-                                let b = unsafe {
-                                    match v.tag() {
-                                        ValueTag::Bool => v.as_bool(),
-                                        ValueTag::Null => false,
-                                        _ => true,
-                                    }
+                                let b = match v.tag() {
+                                    ValueTag::Bool => v.as_bool(),
+                                    ValueTag::Null => false,
+                                    _ => true,
                                 };
                                 self.push(Value::bool(!b));
                             } else {
@@ -2300,7 +2296,7 @@ impl NyarVM {
                             if args.len() == 2 {
                                 let val = args.pop().unwrap_or(Value::null()); // val is last arg
                                 let container = args.pop().unwrap_or(Value::null()); // container is first arg
-                                if container.tag() == ValueTag::List {
+                                if container.is_list() {
                                     let list_mut = unsafe { container.as_list_mut() };
                                     list_mut.items.push(val);
                                     self.push(Value::null());
@@ -2322,7 +2318,7 @@ impl NyarVM {
                                 let idx_v = args.pop().unwrap_or(Value::int(0));
                                 let container = args.pop().unwrap_or(Value::null());
 
-                                if container.tag() == ValueTag::List && idx_v.tag() == ValueTag::Int {
+                                if container.is_list() && idx_v.is_int() {
                                     let idx = idx_v.as_int() as usize;
                                     let list_mut = unsafe { container.as_list_mut() };
                                     if idx < list_mut.items.len() {
@@ -2331,8 +2327,8 @@ impl NyarVM {
                                     } else {
                                         self.push(Value::bool(false));
                                     }
-                                } else if container.tag() == ValueTag::Array
-                                    && idx_v.tag() == ValueTag::Int
+                                } else if container.is_array()
+                                    && idx_v.is_int()
                                 {
                                     let idx = idx_v.as_int() as usize;
                                     let arr_mut = unsafe { container.as_array_mut() };
@@ -2351,7 +2347,7 @@ impl NyarVM {
                         }
                         "chars" => {
                             if let Some(v) = args.last() {
-                                if v.tag() == ValueTag::String {
+                                if v.is_string() {
                                     let s = unsafe { v.as_string() };
                                     let items: Vec<Value> =
                                         s.chars().map(|c| Value::string(c.to_string(), &self.gc)).collect();
