@@ -9,7 +9,6 @@ pub mod codegen;
 pub mod project;
 pub mod type_system;
 pub mod errors;
-pub mod wasm;
 
 use oak_core::{Builder, Lexer, SourceText, ParseSession};
 use oak_typescript::{TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot, ast, TypeScriptSyntaxKind};
@@ -75,11 +74,10 @@ impl MiniTypescriptFrontend {
     pub fn compile_to_wasm(&mut self, source: &str) -> Result<Vec<u8>, String> {
         // 解析为 UIR
         let (_egraph, _root) = self.parse(source)?;
-        
-        // 暂时返回一个基础的 WASM 组件
-        let wat = include_str!("wasm/com.wat");
-        let wasm = wat::parse_str(wat).map_err(|e| format!("WAT parse error: {}", e))?;
-        Ok(wasm)
+
+        // TODO: 实现真正的 WASM 编译
+        // 目前仅移除对 wat 编译器的运行时依赖
+        Err("WASM compilation is not yet implemented".to_string())
     }
 
     /// 仅进行词法分析

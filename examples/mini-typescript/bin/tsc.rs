@@ -1,78 +1,154 @@
-use clap::Parser;
-use std::fs;
+use clap::{Parser, ValueEnum};
+use mini_typescript::errors::ScriptError;
 use mini_typescript::MiniTypescriptFrontend;
+use nyar_vm::bytecode::decoder::Decoder;
+use nyar_vm::vm::interpreter::NyarVM;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(name = "tsc", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Compiler")]
 struct Args {
     /// The input TypeScript file
     #[arg(index = 1)]
-    input: String,
+    input: PathBuf,
 
-    /// Output Nyar Binary file
+    /// Output file
     #[arg(short, long, value_name = "FILE")]
-    output: Option<String>,
+    output: Option<PathBuf>,
 
-    /// Compile to WASM component
-    #[arg(long)]
-    wasm: bool,
+    /// What to emit
+    #[arg(short, long, value_enum, default_value_t = EmitTarget::Nyar)]
+    emit: EmitTarget,
+
+    /// Run the compiled program immediately
+    #[arg(short, long)]
+    run: bool,
+
+    /// Enable verbose output
+    #[arg(short, long)]
+    verbose: bool,
 }
 
-fn main() {
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+enum EmitTarget {
+    /// Nyar Binary module (.nyar)
+    Nyar,
+    /// Nyar TOML module (.nyar.toml)
+    NyarToml,
+    /// WASM component (.wasm)
+    Wasm,
+    /// UIR as JSON
+    Json,
+    /// Tokens
+    Tokens,
+}
+
+fn main() -> Result<(), ScriptError> {
     let args = Args::parse();
 
+    if args.verbose {
+        println!("Compiling {:?}...", args.input);
+    }
+
     // Read input file
-    let source_code = match fs::read_to_string(&args.input) {
-        Ok(content) => content,
-        Err(e) => {
-            eprintln!("Error: Could not read file '{}': {}", args.input, e);
-            std::process::exit(1);
-        }
-    };
+    let source_code = fs::read_to_string(&args.input)
+        .map_err(|e| ScriptError::from(format!("Could not read file '{:?}': {}", args.input, e)))?;
 
     // Create frontend instance
     let mut frontend = MiniTypescriptFrontend::new();
 
-    if args.wasm {
-        match frontend.compile_to_wasm(&source_code) {
-            Ok(wasm) => {
-                if let Some(out_path) = args.output {
-                    if let Err(e) = fs::write(&out_path, wasm) {
-                        eprintln!("Error: Could not write to output file '{}': {}", out_path, e);
-                        std::process::exit(1);
-                    }
-                    println!("Compiled successfully to WASM '{}'", out_path);
-                } else {
-                    println!("Compiled successfully to WASM (size: {} bytes)", wasm.len());
+    let output_path = args.output.clone().unwrap_or_else(|| {
+        let mut path = args.input.clone();
+        match args.emit {
+            EmitTarget::Nyar => path.set_extension("nyar"),
+            EmitTarget::NyarToml => path.set_extension("nyar.toml"),
+            EmitTarget::Wasm => path.set_extension("wasm"),
+            EmitTarget::Json => path.set_extension("json"),
+            EmitTarget::Tokens => path.set_extension("tokens"),
+        };
+        path
+    });
+
+    match args.emit {
+        EmitTarget::Nyar => {
+            let module = frontend.compile_to_nyar(&source_code)
+                .map_err(|e| ScriptError::from(format!("Compilation error: {:?}", e)))?;
+            let data = module.encode();
+            
+            if args.run {
+                run_module(&module)?;
+            } else {
+                fs::write(&output_path, data).map_err(|e| ScriptError::from(e.to_string()))?;
+                if args.verbose {
+                    println!("Output written to {:?}", output_path);
                 }
             }
-            Err(e) => {
-                eprintln!("WASM Compilation error: {}", e);
-                std::process::exit(1);
+        }
+        EmitTarget::NyarToml => {
+            let module = frontend.compile_to_nyar(&source_code)
+                .map_err(|e| ScriptError::from(format!("Compilation error: {:?}", e)))?;
+            let toml = module.to_toml_string();
+            fs::write(&output_path, toml).map_err(|e| ScriptError::from(e.to_string()))?;
+            if args.verbose {
+                println!("Output written to {:?}", output_path);
             }
         }
-        return;
+        EmitTarget::Wasm => {
+            let wasm = frontend.compile_to_wasm(&source_code)
+                .map_err(|e| ScriptError::from(format!("WASM Compilation error: {}", e)))?;
+            fs::write(&output_path, wasm).map_err(|e| ScriptError::from(e.to_string()))?;
+            if args.verbose {
+                println!("Output written to {:?}", output_path);
+            }
+        }
+        EmitTarget::Json => {
+            let module = frontend.compile_to_nyar(&source_code)
+                .map_err(|e| ScriptError::from(format!("Compilation error: {:?}", e)))?;
+            let json = serde_json::to_string_pretty(&module).map_err(|e| ScriptError::from(e.to_string()))?;
+            fs::write(&output_path, json).map_err(|e| ScriptError::from(e.to_string()))?;
+            if args.verbose {
+                println!("Output written to {:?}", output_path);
+            }
+        }
+        EmitTarget::Tokens => {
+            let tokens = frontend.tokenize(&source_code)
+                .map_err(|e| ScriptError::from(format!("Tokenization error: {:?}", e)))?;
+            let mut output = String::new();
+            for token in tokens {
+                output.push_str(&format!("{:?}\n", token));
+            }
+            fs::write(&output_path, output).map_err(|e| ScriptError::from(e.to_string()))?;
+            if args.verbose {
+                println!("Output written to {:?}", output_path);
+            }
+        }
     }
 
-    // Compile to Nyar instructions
-    match frontend.compile_to_nyar(&source_code) {
-        Ok(module) => {
-            let data = module.encode();
-            if let Some(out_path) = args.output {
-                if let Err(e) = fs::write(&out_path, data) {
-                    eprintln!("Error: Could not write to output file '{}': {}", out_path, e);
-                    std::process::exit(1);
-                }
-                println!("Compiled successfully to '{}'", out_path);
-            } else {
-                // 如果没有指定输出文件，可以尝试反序列化为 JSON 打印或直接输出 16 进制
-                let json = serde_json::to_string_pretty(&module).unwrap();
-                println!("{}", json);
-            }
-        }
-        Err(e) => {
-            eprintln!("Compilation error: {:?}", e);
-            std::process::exit(1);
-        }
-    }
+    Ok(())
+}
+
+fn run_module(module: &nyar_vm::bytecode::format::NyarModule) -> Result<(), ScriptError> {
+    let chunk = module.chunks.get(0).cloned().ok_or_else(|| ScriptError::from("No chunk found in module"))?;
+    let program = Decoder::new(&chunk.code).decode_all()
+        .map_err(|e| ScriptError::from(format!("Decode error: {:?}", e)))?;
+    
+    let mut vm = NyarVM::new(
+        module.constants.clone(),
+        module.chunks.clone(),
+        module.classes.clone(),
+        module.traits.clone(),
+        module.impls.clone(),
+        module.effects.clone(),
+    );
+    
+    vm.stdout = Some(Box::new(|msg: &str| {
+        println!("{}", msg);
+    }));
+
+    let v = vm.execute(&program)
+        .map_err(|e| ScriptError::from(format!("Runtime error: {:?}", e)))?;
+    
+    println!("Execution finished. Result Tag: {:?}", v.tag);
+    Ok(())
 }

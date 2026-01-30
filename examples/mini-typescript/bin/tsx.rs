@@ -1,80 +1,62 @@
 use clap::Parser;
-use std::path::Path;
-use mini_typescript::MiniTypescriptFrontend;
+use mini_typescript::errors::ScriptError;
 use mini_typescript::project::ProjectLoader;
+use mini_typescript::MiniTypescriptFrontend;
 use nyar_vm::NyarVM;
-use oak_repl::{OakRepl, ReplHandler, HandleResult, ReplError};
+use oak_repl::{HandleResult, OakRepl, ReplError, ReplHandler};
+use std::path::Path;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "tsx", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Executor (Simulating tsx)")]
 struct Args {
     /// The input TypeScript file or directory. If not provided, enters REPL mode.
     #[arg(index = 1)]
     input: Option<String>,
+
+    /// Compile to WASM instead of running in the VM.
+    #[arg(long)]
+    wasm: bool,
+
+    /// Enable verbose output (VM tracing).
+    #[arg(short, long)]
+    verbose: bool,
 }
 
-use std::fmt::{Display, Formatter};
-use std::error::Error;
-
-#[derive(Debug)]
-pub enum TsError {
-    Other(String),
-}
-
-impl Display for TsError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TsError::Other(msg) => write!(f, "{}", msg),
-        }
-    }
-}
-
-impl Error for TsError {}
-
-impl From<String> for TsError {
-    fn from(s: String) -> Self {
-        TsError::Other(s)
-    }
-}
-
-impl From<&str> for TsError {
-    fn from(s: &str) -> Self {
-        TsError::Other(s.to_string())
-    }
-}
-
-impl From<TsError> for ReplError {
-    fn from(e: TsError) -> Self {
+impl From<ScriptError> for ReplError {
+    fn from(e: ScriptError) -> Self {
         ReplError::Other(e.to_string())
     }
 }
 
-impl From<ReplError> for TsError {
+impl From<ReplError> for ScriptError {
     fn from(e: ReplError) -> Self {
-        TsError::Other(e.to_string())
+        ScriptError::from(e.to_string())
     }
 }
 
 struct TsReplHandler {
     frontend: MiniTypescriptFrontend,
     vm: NyarVM,
+    args: Args,
 }
 
 impl TsReplHandler {
-    fn new() -> Self {
-        Self {
-            frontend: MiniTypescriptFrontend::new(),
-            vm: NyarVM::new(),
-        }
+    fn new(args: Args) -> Self {
+        Self { frontend: MiniTypescriptFrontend::new(), vm: NyarVM::new(), args }
     }
 
-    fn run_project(&mut self, path: &str) -> Result<(), TsError> {
+    fn run_project(&mut self, path: &str) -> Result<(), ScriptError> {
         let p = Path::new(path);
         let base_dir = if p.is_dir() { p } else { p.parent().unwrap_or(Path::new(".")) };
         let mut loader = ProjectLoader::new(base_dir);
-        
+
         match loader.load_project(p) {
             Ok(modules) => {
+                if self.args.wasm {
+                    println!("tsx: WASM compilation is not yet fully implemented for projects.");
+                    return Ok(());
+                }
+
                 let mut entry_module_idx = 0;
                 for (i, module) in modules.into_iter().enumerate() {
                     let idx = self.vm.load_module(module);
@@ -82,13 +64,20 @@ impl TsReplHandler {
                         entry_module_idx = idx;
                     }
                 }
-                
+
                 // Execute main chunk of the entry module (usually index 0)
                 match self.vm.execute(entry_module_idx, 0) {
                     Ok(val) => {
-                        println!("Execution finished. Result Tag: {:?}", val.tag);
+                        if self.args.verbose {
+                            println!("Execution finished. Result: {} (Tag: {:?})", val, val.tag);
+                        } else {
+                            println!("{}", val);
+                        }
                     }
-                    Err(e) => eprintln!("tsx: runtime error: {:?}", e),
+                    Err(e) => {
+                        eprintln!("tsx: runtime error: {:?}", e);
+                        self.vm.print_traceback(&e);
+                    }
                 }
             }
             Err(e) => eprintln!("tsx: project loading error: {}", e),
@@ -96,15 +85,32 @@ impl TsReplHandler {
         Ok(())
     }
 
-    fn run_code_internal(&mut self, source: &str) -> Result<(), TsError> {
+    fn run_code_internal(&mut self, source: &str) -> Result<(), ScriptError> {
+        if self.args.wasm {
+            match self.frontend.compile_to_wasm(source) {
+                Ok(wasm) => {
+                    println!("tsx: compiled to WASM ({} bytes)", wasm.len());
+                }
+                Err(e) => eprintln!("tsx: WASM compilation error: {:?}", e),
+            }
+            return Ok(());
+        }
+
         match self.frontend.compile_to_nyar(source) {
             Ok(module) => {
                 let module_idx = self.vm.load_module(module);
                 match self.vm.execute(module_idx, 0) {
                     Ok(val) => {
-                        println!("Result Tag: {:?}", val.tag);
+                        if self.args.verbose {
+                            println!("Result: {} (Tag: {:?})", val, val.tag);
+                        } else {
+                            println!("{}", val);
+                        }
                     }
-                    Err(e) => eprintln!("tsx: runtime error: {:?}", e),
+                    Err(e) => {
+                        eprintln!("tsx: runtime error: {:?}", e);
+                        self.vm.print_traceback(&e);
+                    }
                 }
             }
             Err(e) => eprintln!("tsx: compilation error: {:?}", e),
@@ -115,14 +121,18 @@ impl TsReplHandler {
 
 impl ReplHandler for TsReplHandler {
     fn prompt(&self, is_continuation: bool) -> &str {
-        if is_continuation { "  ... " } else { "tsx> " }
+        if is_continuation {
+            "  ... "
+        } else {
+            "tsx> "
+        }
     }
 
     fn is_complete(&self, code: &str) -> bool {
         if code.trim().is_empty() {
             return true;
         }
-        
+
         let mut depth = 0;
         for c in code.chars() {
             match c {
@@ -154,16 +164,17 @@ impl ReplHandler for TsReplHandler {
     }
 }
 
-fn main() -> Result<(), TsError> {
+fn main() -> Result<(), ScriptError> {
     let args = Args::parse();
-    let mut handler = TsReplHandler::new();
+    let args_for_handler = args.clone();
+    let mut handler = TsReplHandler::new(args_for_handler);
 
-    if let Some(input_file) = args.input {
-        handler.run_project(&input_file)?;
+    if let Some(input_file) = &args.input {
+        handler.run_project(input_file)?;
     } else {
         println!("Mini TypeScript REPL (Project Gaia)");
         println!("Type \"exit()\" or press Ctrl-D to exit.");
-        
+
         let mut repl = OakRepl::new(handler);
         repl.run()?;
     }
