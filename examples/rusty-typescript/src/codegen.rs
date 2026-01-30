@@ -316,7 +316,7 @@ impl NyarTranslator {
             handlers: vec![],
             lines: vec![],
             decoded: None,
-            hotness: 0,
+            hotness: std::sync::atomic::AtomicU32::new(0),
         });
 
         Ok(())
@@ -359,7 +359,7 @@ impl NyarTranslator {
             handlers: vec![],
             lines: vec![],
             decoded: None,
-            hotness: 0,
+            hotness: std::sync::atomic::AtomicU32::new(0),
         });
 
         Ok(())

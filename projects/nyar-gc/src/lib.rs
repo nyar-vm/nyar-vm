@@ -29,6 +29,12 @@ const CARD_SIZE: usize = 512;
 const CARDS_PER_BLOCK: usize = BLOCK_SIZE / CARD_SIZE;
 const CARD_BITMAP_WORDS: usize = CARDS_PER_BLOCK / 64;
 
+const SIZE_CLASSES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
+
+struct FreeNode {
+    next: *mut FreeNode,
+}
+
 struct Tlab {
     start: *mut u8,
     cursor: *mut u8,
@@ -246,12 +252,18 @@ pub struct GcHeader {
     pub(crate) generation: AtomicU8,
     /// Link to the next object in the collector's list.
     pub next: AtomicPtr<GcHeader>,
+    /// VTable containing function pointers for this object type.
+    pub vtable: *const GcVTable,
+    /// Size of the allocation in bytes.
+    pub size: u32,
+}
+
+/// VTable containing function pointers for GC operations.
+pub struct GcVTable {
     /// Function to drop and deallocate the object.
     pub drop_and_dealloc: unsafe fn(NonNull<GcHeader>),
     /// Function to trace the object.
     pub trace_object: unsafe fn(NonNull<GcHeader>, &mut MarkContext<'_>),
-    /// Size of the allocation in bytes.
-    pub size: usize,
 }
 
 impl GcHeader {
@@ -348,6 +360,8 @@ pub struct NyarGc {
     allocated_bytes: AtomicUsize,
     /// Threshold for the next collection cycle.
     threshold: AtomicUsize,
+    /// Free lists for different size classes.
+    free_lists: [AtomicPtr<FreeNode>; 7],
 }
 
 impl NyarGc {
@@ -369,9 +383,8 @@ impl NyarGc {
                     color: AtomicU8::new(color as u8),
                     generation: AtomicU8::new(0),
                     next: AtomicPtr::new(old_head),
-                    drop_and_dealloc: Self::drop_and_dealloc::<T>,
-                    trace_object: Self::trace_object::<T>,
-                    size: layout.size(),
+                    vtable: Self::get_vtable::<T>(),
+                    size: layout.size() as u32,
                 },
             );
             match self.young_head.compare_exchange_weak(
@@ -411,6 +424,15 @@ impl NyarGc {
             }),
             allocated_bytes: AtomicUsize::new(0),
             threshold: AtomicUsize::new(1024 * 1024), // 1MB default threshold
+            free_lists: [
+                AtomicPtr::new(std::ptr::null_mut()),
+                AtomicPtr::new(std::ptr::null_mut()),
+                AtomicPtr::new(std::ptr::null_mut()),
+                AtomicPtr::new(std::ptr::null_mut()),
+                AtomicPtr::new(std::ptr::null_mut()),
+                AtomicPtr::new(std::ptr::null_mut()),
+                AtomicPtr::new(std::ptr::null_mut()),
+            ],
         }
     }
 
@@ -430,8 +452,24 @@ impl NyarGc {
     /// Allocate a new value on the managed heap.
     pub fn alloc<T: Trace + 'static>(&self, value: T) -> Gc<T> {
         let layout = Layout::new::<GcBox<T>>();
+        let size = layout.size();
 
-        // Try to allocate from TLAB first
+        // 1. Try to allocate from free list first
+        if let Some(idx) = self.get_size_class(size) {
+            let free_head = &self.free_lists[idx];
+            let mut head = free_head.load(Ordering::Acquire);
+            while !head.is_null() {
+                let next = unsafe { (*head).next };
+                match free_head.compare_exchange_weak(head, next, Ordering::Release, Ordering::Acquire) {
+                    Ok(_) => {
+                        return unsafe { self.init_gc_box(head as *mut GcBox<T>, value, layout) };
+                    }
+                    Err(actual) => head = actual,
+                }
+            }
+        }
+
+        // 2. Try to allocate from TLAB
         let ptr = THREAD_TLAB.with(|tlab_cell| {
             let tlab = unsafe { &mut *tlab_cell.get() };
             if let Some(ptr) = tlab.alloc(layout) {
@@ -443,6 +481,15 @@ impl NyarGc {
         });
 
         unsafe { self.init_gc_box(ptr as *mut GcBox<T>, value, layout) }
+    }
+
+    fn get_size_class(&self, size: usize) -> Option<usize> {
+        for (i, &sc) in SIZE_CLASSES.iter().enumerate() {
+            if size <= sc {
+                return Some(i);
+            }
+        }
+        None
     }
 
     fn refill_tlab(&self, tlab: &mut Tlab, layout: Layout) -> *mut u8 {
@@ -534,9 +581,47 @@ impl NyarGc {
         // In a compacting GC, this memory would be reclaimed during compaction.
     }
 
+    unsafe fn free_object(&self, header_ptr: NonNull<GcHeader>) {
+        let header = header_ptr.as_ref();
+        let size = header.size as usize;
+
+        // 1. Drop the data
+        ((*header.vtable).drop_and_dealloc)(header_ptr);
+
+        // 2. Try to add to free list if it's a small object
+        if let Some(idx) = self.get_size_class(size) {
+            let free_head = &self.free_lists[idx];
+            let node_ptr = header_ptr.as_ptr() as *mut FreeNode;
+            let mut old_head = free_head.load(Ordering::Acquire);
+            loop {
+                (*node_ptr).next = old_head;
+                match free_head.compare_exchange_weak(
+                    old_head,
+                    node_ptr,
+                    Ordering::Release,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => break,
+                    Err(actual) => old_head = actual,
+                }
+            }
+        }
+    }
+
     unsafe fn trace_object<T: Trace + 'static>(header_ptr: NonNull<GcHeader>, ctx: &mut MarkContext<'_>) {
         let ptr = header_ptr.cast::<GcBox<T>>();
         (*ptr.as_ptr()).data.trace(ctx);
+    }
+
+    fn get_vtable<T: Trace + 'static>() -> *const GcVTable {
+        struct VTableHolder<T>(T);
+        impl<T: Trace + 'static> VTableHolder<T> {
+            const VTABLE: GcVTable = GcVTable {
+                drop_and_dealloc: NyarGc::drop_and_dealloc::<T>,
+                trace_object: NyarGc::trace_object::<T>,
+            };
+        }
+        &VTableHolder::<T>::VTABLE
     }
 
     /// Run a collection cycle.
@@ -584,7 +669,7 @@ impl NyarGc {
         while let Some(ptr) = ctx.gray_stack.pop() {
             let header = ptr.as_ref();
             // Object is being scanned, its children will be added to gray stack
-            (header.trace_object)(ptr.0, ctx);
+            unsafe { ((*header.vtable).trace_object)(ptr.0, ctx); }
             // Scanning finished, object is now black
             header.set_color(Color::Black);
         }
@@ -604,9 +689,9 @@ impl NyarGc {
 
         // 2. Mark from dirty cards in old generation (old -> young)
         let mut curr = self.old_head.load(Ordering::Relaxed);
-        let mut last_card_idx = usize::MAX;
+        let mut last_word_idx = usize::MAX;
         let mut last_block_base = usize::MAX;
-        let mut is_last_card_dirty = false;
+        let mut current_word_val = 0u64;
         let mut is_last_block_dirty = true;
 
         while let Some(header_ptr) = NonNull::new(curr) {
@@ -615,12 +700,14 @@ impl NyarGc {
             let base = addr & !(BLOCK_SIZE - 1);
             let offset = addr - base;
             let card_idx = offset / CARD_SIZE;
+            let word_idx = card_idx / 64;
+            let bit_idx = card_idx % 64;
 
             if base != last_block_base {
                 last_block_base = base;
-                last_card_idx = card_idx;
+                last_word_idx = word_idx;
                 let block_header = base as *const GcBlockHeader;
-                
+
                 // Check if the whole block is clean
                 unsafe {
                     is_last_block_dirty = false;
@@ -633,30 +720,22 @@ impl NyarGc {
                 }
 
                 if is_last_block_dirty {
-                    let word_idx = card_idx / 64;
-                    let bit_idx = card_idx % 64;
                     unsafe {
-                        is_last_card_dirty = ((*block_header).card_table[word_idx].load(Ordering::Acquire) & (1 << bit_idx)) != 0;
+                        current_word_val = (*block_header).card_table[word_idx].load(Ordering::Acquire);
                     }
-                } else {
-                    is_last_card_dirty = false;
                 }
-            } else if card_idx != last_card_idx {
-                last_card_idx = card_idx;
+            } else if word_idx != last_word_idx {
+                last_word_idx = word_idx;
                 if is_last_block_dirty {
                     let block_header = base as *const GcBlockHeader;
-                    let word_idx = card_idx / 64;
-                    let bit_idx = card_idx % 64;
                     unsafe {
-                        is_last_card_dirty = ((*block_header).card_table[word_idx].load(Ordering::Acquire) & (1 << bit_idx)) != 0;
+                        current_word_val = (*block_header).card_table[word_idx].load(Ordering::Acquire);
                     }
-                } else {
-                    is_last_card_dirty = false;
                 }
             }
 
-            if is_last_card_dirty {
-                unsafe { (header.trace_object)(header_ptr, &mut ctx); }
+            if is_last_block_dirty && (current_word_val & (1 << bit_idx)) != 0 {
+                unsafe { ((*header.vtable).trace_object)(header_ptr, &mut ctx); }
             }
             curr = header.next.load(Ordering::Relaxed);
         }
@@ -737,7 +816,7 @@ impl NyarGc {
                             let base = addr & !(BLOCK_SIZE - 1);
                             let block_header = base as *const GcBlockHeader;
                             unsafe {
-                                (*block_header).live_bytes.fetch_add(header.size, Ordering::Relaxed);
+                                (*block_header).live_bytes.fetch_add(header.size as usize, Ordering::Relaxed);
                             }
 
                             // Remove from young
@@ -771,8 +850,8 @@ impl NyarGc {
                             } else {
                                 self.young_head.store(next, Ordering::Release);
                             }
-                            self.allocated_bytes.fetch_sub(header.size, Ordering::SeqCst);
-                            (header.drop_and_dealloc)(header_ptr);
+                            self.allocated_bytes.fetch_sub(header.size as usize, Ordering::SeqCst);
+                            self.free_object(header_ptr);
                             sweep.young_curr.store(next, Ordering::Release);
                         }
                         work_done += 1;
@@ -791,7 +870,7 @@ impl NyarGc {
                                 let base = addr & !(BLOCK_SIZE - 1);
                                 let block_header = base as *const GcBlockHeader;
                                 unsafe {
-                                    (*block_header).live_bytes.fetch_add(header.size, Ordering::Relaxed);
+                                    (*block_header).live_bytes.fetch_add(header.size as usize, Ordering::Relaxed);
                                 }
 
                                 sweep.old_prev.store(old_curr_ptr, Ordering::Release);
@@ -803,14 +882,13 @@ impl NyarGc {
                                 } else {
                                     self.old_head.store(next, Ordering::Release);
                                 }
-                                self.allocated_bytes.fetch_sub(header.size, Ordering::SeqCst);
-                                (header.drop_and_dealloc)(header_ptr);
+                                self.allocated_bytes.fetch_sub(header.size as usize, Ordering::SeqCst);
+                                self.free_object(header_ptr);
                                 sweep.old_curr.store(next, Ordering::Release);
                             }
                             work_done += 1;
                         } else {
                             // Finished sweeping
-                            self.reclaim_empty_blocks();
                             self.threshold.store(self.allocated_bytes.load(Ordering::Relaxed) * 2, Ordering::Relaxed);
                             self.set_state(GcState::Idle);
                             break;
@@ -821,25 +899,7 @@ impl NyarGc {
         }
     }
 
-    fn reclaim_empty_blocks(&self) {
-        let mut blocks = self.blocks.lock().unwrap();
-        if blocks.len() <= 1 {
-            return;
-        }
 
-        // Keep at least one block, and don't reclaim the last block if it's still being used
-        let mut i = 0;
-        while i < blocks.len() {
-            let block = &blocks[i];
-            let header = block.get_header();
-            // If block is empty and not the last one (potentially active)
-            if header.live_bytes.load(Ordering::Relaxed) == 0 && i < blocks.len() - 1 {
-                blocks.remove(i);
-            } else {
-                i += 1;
-            }
-        }
-    }
 
     unsafe fn sweep_young(&self) {
         // Reset live bytes for all blocks before sweeping
@@ -864,7 +924,7 @@ impl NyarGc {
                 // Update live bytes in the block it belongs to
                 if let Some(block_idx) = self.find_block(header_ptr.as_ptr() as *const u8) {
                     let blocks = self.blocks.lock().unwrap();
-                    blocks[block_idx].add_live_bytes(header.size);
+                    blocks[block_idx].add_live_bytes(header.size as usize);
                 }
 
                 // Remove from young list (always head since we promote everything)
@@ -890,8 +950,8 @@ impl NyarGc {
                 self.young_head.store(next, Ordering::Release);
 
                 // Update allocated_bytes
-                self.allocated_bytes.fetch_sub(header.size, Ordering::SeqCst);
-                (header.drop_and_dealloc)(header_ptr);
+                self.allocated_bytes.fetch_sub(header.size as usize, Ordering::SeqCst);
+                self.free_object(header_ptr);
                 curr = next;
             }
         }
@@ -914,7 +974,7 @@ impl NyarGc {
                 // Update live bytes in the block it belongs to
                 if let Some(block_idx) = self.find_block(header_ptr.as_ptr() as *const u8) {
                     let blocks = self.blocks.lock().unwrap();
-                    blocks[block_idx].add_live_bytes(header.size);
+                    blocks[block_idx].add_live_bytes(header.size as usize);
                 }
 
                 prev = curr;
@@ -927,8 +987,8 @@ impl NyarGc {
                 }
 
                 // Update allocated_bytes
-                self.allocated_bytes.fetch_sub(header.size, Ordering::SeqCst);
-                (header.drop_and_dealloc)(header_ptr);
+                self.allocated_bytes.fetch_sub(header.size as usize, Ordering::SeqCst);
+                self.free_object(header_ptr);
                 curr = next;
             }
         }

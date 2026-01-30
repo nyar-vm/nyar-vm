@@ -43,6 +43,40 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
         }
     }
 }
+
+pub struct AllocationSinking;
+
+impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A> for AllocationSinking {
+    fn name(&self) -> &str {
+        "allocation-sinking"
+    }
+
+    fn apply(&self, egraph: &chomsky_uir::egraph::EGraph<IKun, A>) {
+        let mut matches = Vec::new();
+        for entry in egraph.classes.iter() {
+            let (&id, eclass) = entry.pair();
+            for node in &eclass.nodes {
+                if let IKun::Extension(op, args) = node {
+                    if op == "alloc" {
+                        // Check if this allocation escapes
+                        let mut escapes = false;
+                        // In a real E-Graph, we would check all uses of this class ID.
+                        // For this demo, we'll just check if it's used in any non-field-access op.
+                        
+                        // Placeholder for escape analysis:
+                        if !escapes {
+                            matches.push(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        // For matches, we would replace the allocation with scalar fields.
+        // This is a complex transformation that usually happens during code generation
+        // or via more complex rewrite rules.
+    }
+}
 use dashmap::DashMap;
 use gaia_jit::JitMemory;
 use nyar_types::VmError;
@@ -179,7 +213,10 @@ impl JitProvider for NyarJit {
                 
                 let threshold = self.get_threshold(next_tier);
                 let chunk = &vm.modules[module_idx].chunks[chunk_idx];
-                let hotness = chunk.hotness.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                
+                // Use the same u8 overflow logic in JIT compiled code if needed, 
+                // but here we are in the JIT controller, so we just check the current hotness.
+                let hotness = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
                 
                 if hotness >= threshold {
                     match self.compile(vm, module_idx, chunk_idx, next_tier) {
@@ -195,7 +232,10 @@ impl JitProvider for NyarJit {
         // 2. Increment hotness in VM's chunk for baseline trigger
         let threshold = self.get_threshold(JitTier::Baseline);
         let chunk = &vm.modules[module_idx].chunks[chunk_idx];
-        let hotness = chunk.hotness.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        
+        // We only trigger baseline when hotness is checked.
+        // The actual increment happens in the interpreter using u8 overflow.
+        let hotness = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
 
         if hotness >= threshold {
             // Trigger baseline compilation
@@ -224,6 +264,8 @@ pub struct NyarJit {
     jit_mem: std::sync::Mutex<JitMemory>,
     /// Cache of compiled functions, indexed by (module_idx, chunk_idx).
     code_cache: DashMap<(usize, usize), Arc<CompiledCode>>,
+    /// Cache for On-Stack Replacement entries, indexed by (module_idx, chunk_idx, target_offset).
+    osr_cache: DashMap<(usize, usize, u32), Arc<CompiledCode>>,
     /// Inline Cache registry.
     ic_registry: DashMap<(usize, usize), Arc<InlineCache>>,
     /// Thresholds for triggering compilation to each tier.
@@ -248,19 +290,24 @@ impl NyarJit {
             chomsky_rule_engine::RuleCategory::Aggressive,
             Box::new(BarrierElision),
         );
+        optimizer.register_rule(
+            chomsky_rule_engine::RuleCategory::Aggressive,
+            Box::new(AllocationSinking),
+        );
 
         let optimizer = std::sync::Mutex::new(optimizer);
         let jit_mem = std::sync::Mutex::new(JitMemory::new(capacity).map_err(|e| VmError::RuntimeError(e.to_string()))?);
         
         let mut thresholds = HashMap::new();
-        thresholds.insert(JitTier::Baseline, 100);
-        thresholds.insert(JitTier::Optimizing, 10_000);
-        thresholds.insert(JitTier::Extreme, 50_000);
+        thresholds.insert(JitTier::Baseline, 256);
+        thresholds.insert(JitTier::Optimizing, 5120);
+        thresholds.insert(JitTier::Extreme, 51200);
 
         Ok(Self {
             optimizer,
             jit_mem,
             code_cache: DashMap::new(),
+            osr_cache: DashMap::new(),
             ic_registry: DashMap::new(),
             thresholds,
         })
@@ -270,16 +317,14 @@ impl NyarJit {
     fn execute_compiled(&self, compiled: &CompiledCode, vm: &mut NyarVM) -> Result<Value, VmError> {
         let entry: JitEntry = unsafe { std::mem::transmute(compiled.entry_point) };
         
-        // Prepare locals for this execution.
-        // In a real VM, we might use a dedicated JIT stack or reuse the VM stack for locals.
-        // For now, we simulate a frame's locals.
-        let mut locals = vec![Value::null(); 32];
+        // Use the locals from the current VM frame.
+        let frame = vm.frames.last_mut().ok_or(VmError::RuntimeError("No active frame".to_string()))?;
         
         unsafe {
             let res_code = entry(
                 vm.stack.as_mut_ptr(),
                 &mut vm.sp as *mut usize,
-                locals.as_mut_ptr(),
+                frame.locals.as_mut_ptr(),
             );
             
             if res_code == 0 {
@@ -311,7 +356,7 @@ impl NyarJit {
         let ic = self.ic_registry.entry(key).or_insert_with(|| Arc::new(InlineCache::new())).value().clone();
 
         // 2. Intent Extraction
-        let intents = self.extract_intents(vm, module_idx, chunk_idx);
+        let intents = self.extract_intents(vm, module_idx, chunk_idx, 0);
 
         // 3. Build initial IKunTree from intents
         let context = intents.clone();
@@ -390,12 +435,17 @@ impl NyarJit {
         }
     }
 
-    fn extract_intents(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize) -> Vec<IKun> {
+    fn extract_intents(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize, start_offset: usize) -> Vec<IKun> {
         let module = &vm.modules[module_idx];
         let chunk = &module.chunks[chunk_idx];
         let mut intents = Vec::new();
         let mut stack = Vec::new();
         let mut decoder = Decoder::new(&chunk.code);
+        
+        // Skip instructions until start_offset
+        for _ in 0..start_offset {
+            let _ = decoder.next_result();
+        }
 
         while let Ok(instruction) = decoder.next_result() {
             match instruction {
@@ -430,24 +480,52 @@ impl NyarJit {
                     intents.push(IKun::FloatConstant(v.to_bits()));
                     stack.push(id);
                 }
-                Instruction::I32Add | Instruction::I64Add => {
+                Instruction::Pop => {
+                    stack.pop();
+                }
+                Instruction::Dup(depth) => {
+                    if let Some(&id) = stack.iter().rev().nth(depth as usize) {
+                        stack.push(id);
+                    }
+                }
+                Instruction::Swap(depth) => {
+                    let len = stack.len();
+                    if len > depth as usize {
+                        stack.swap(len - 1, len - 1 - depth as usize);
+                    }
+                }
+                Instruction::I32Add | Instruction::I64Add | Instruction::F32Add | Instruction::F64Add => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Map(lhs, rhs));
                         stack.push(id);
                     }
                 }
-                Instruction::I32Sub | Instruction::I64Sub => {
+                Instruction::I32Sub | Instruction::I64Sub | Instruction::F32Sub | Instruction::F64Sub => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("sub".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
-                Instruction::I32Mul | Instruction::I64Mul => {
+                Instruction::I32Mul | Instruction::I64Mul | Instruction::F32Mul | Instruction::F64Mul => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
                         intents.push(IKun::Extension("mul".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::F32Div | Instruction::F64Div => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("div".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32Neg | Instruction::I64Neg | Instruction::F32Neg | Instruction::F64Neg => {
+                    if let Some(val) = stack.pop() {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("neg".to_string(), vec![val]));
                         stack.push(id);
                     }
                 }
@@ -592,7 +670,7 @@ impl NyarJit {
                         }
                     }
                     args.reverse();
-                    let const_id = intents.len();
+                    let _const_id = intents.len();
                     intents.push(IKun::Constant(idx as i64));
                     
                     let id = intents.len();
@@ -618,6 +696,34 @@ impl NyarJit {
                         let _id = intents.len();
                         intents.push(IKun::Extension("return".to_string(), vec![val]));
                     }
+                }
+                Instruction::TypeOf => {
+                    if let Some(val) = stack.pop() {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("type_of".to_string(), vec![val]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::InstanceOf(idx) => {
+                    if let Some(val) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
+                        let id = intents.len();
+                        intents.push(IKun::Extension("instance_of".to_string(), vec![val, const_id]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::CheckCast(idx) | Instruction::Cast(idx) => {
+                    if let Some(val) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
+                        let id = intents.len();
+                        intents.push(IKun::Extension("cast_to".to_string(), vec![val, const_id]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::Halt => {
+                    intents.push(IKun::Extension("halt".to_string(), vec![]));
                 }
                 _ => {
                     // Other instructions can be added here
@@ -678,9 +784,33 @@ impl NyarJit {
     }
 
     /// Triggers On-Stack Replacement (OSR) for long-running loops.
-    pub fn osr_internal(&self, _module_idx: usize, _chunk_idx: usize, _loop_id: u32) -> Result<*const u8, VmError> {
-        // OSR allows transitioning from the interpreter to JITed code in the middle of a function.
-        Err(VmError::RuntimeError("OSR not yet implemented".to_string()))
+    pub fn osr_internal(&self, module_idx: usize, chunk_idx: usize, target_offset: u32) -> Result<*const u8, VmError> {
+        let key = (module_idx, chunk_idx, target_offset);
+        
+        // 1. Check if already compiled for this OSR target
+        if let Some(compiled) = self.osr_cache.get(&key) {
+            return Ok(compiled.entry_point);
+        }
+        
+        // 2. Perform OSR compilation
+        // Note: For simplicity, we use a basic compilation here. 
+        // In a real VM, we might need more VM context to correctly reconstruct the stack.
+        
+        // In a real OSR, we would need to know the stack state at target_offset.
+        // For now, we assume a simple case where the stack is relatively stable.
+        
+        // Trigger a baseline compilation starting from target_offset
+        // We'll need a specialized compile_osr method or similar.
+        
+        // For now, let's just use a placeholder result or try to compile the whole chunk
+        // but mark it as an OSR entry.
+        
+        // In a real implementation, we would call something like:
+        // let compiled = self.compile_osr(vm, module_idx, chunk_idx, target_offset)?;
+        // self.osr_cache.insert(key, compiled.clone());
+        // Ok(compiled.entry_point)
+        
+        Err(VmError::RuntimeError("Full OSR compilation logic not yet implemented".to_string()))
     }
 
     /// GC-JIT Co-optimization: Barrier Elision.

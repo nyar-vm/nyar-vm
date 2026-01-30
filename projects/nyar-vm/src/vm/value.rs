@@ -563,13 +563,6 @@ impl Value {
             None
         }
     }
-    pub fn try_as_dyn_object(&self) -> Option<&DynObject> {
-        if self.is_dyn_object() {
-            Some(unsafe { self.as_dyn_object() })
-        } else {
-            None
-        }
-    }
     pub fn try_as_list(&self) -> Option<&List> {
         if self.is_list() {
             Some(unsafe { self.as_list() })
@@ -577,9 +570,37 @@ impl Value {
             None
         }
     }
+    pub fn try_as_list_mut(&self) -> Option<&mut List> {
+        if self.is_list() {
+            Some(unsafe { self.as_list_mut() })
+        } else {
+            None
+        }
+    }
     pub fn try_as_tuple(&self) -> Option<&Tuple> {
         if self.is_tuple() {
             Some(unsafe { self.as_tuple() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_tuple_mut(&self) -> Option<&mut Tuple> {
+        if self.is_tuple() {
+            Some(unsafe { self.as_tuple_mut() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_dyn_object(&self) -> Option<&DynObject> {
+        if self.is_dyn_object() {
+            Some(unsafe { self.as_dyn_object() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_dyn_object_mut(&self) -> Option<&mut DynObject> {
+        if self.is_dyn_object() {
+            Some(unsafe { self.as_dyn_object_mut() })
         } else {
             None
         }

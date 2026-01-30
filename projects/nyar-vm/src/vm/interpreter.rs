@@ -170,6 +170,7 @@ pub struct NyarVM {
     pub symbol_table: std::collections::HashMap<String, (usize, u16)>, // (module_idx, chunk_idx)
     pub builtins: std::collections::HashMap<String, Value>,
     pub jit: Option<std::sync::Arc<dyn JitProvider>>,
+    pub local_hotness: u8,
 }
 
 impl Trace for NyarVM {
@@ -200,6 +201,7 @@ impl NyarVM {
             symbol_table: std::collections::HashMap::new(),
             builtins: std::collections::HashMap::new(),
             jit: None,
+            local_hotness: 0,
         };
         vm.register_builtins();
         vm
@@ -383,6 +385,42 @@ impl NyarVM {
         let instrs = std::sync::Arc::new(instructions);
         chunk.decoded = Some(instrs.clone());
         Ok(instrs)
+    }
+
+    fn execute_jit_at(&mut self, entry_ptr: *const u8) -> Result<Option<Value>, VmError> {
+        type JitEntry = unsafe extern "C" fn(
+            stack_ptr: *mut Value,
+            sp: *mut usize,
+            locals_ptr: *mut Value,
+        ) -> i32;
+
+        let entry: JitEntry = unsafe { std::mem::transmute(entry_ptr) };
+        let frame = self.frames.last_mut().ok_or(VmError::RuntimeError("No active frame".to_string()))?;
+
+        unsafe {
+            let res_code = entry(
+                self.stack.as_mut_ptr(),
+                &mut self.sp as *mut usize,
+                frame.locals.as_mut_ptr(),
+            );
+
+            if res_code == 0 {
+                // Success! JIT finished the whole function.
+                if self.sp > 0 {
+                    self.sp -= 1;
+                    Ok(Some(self.stack[self.sp]))
+                } else {
+                    Ok(Some(Value::null()))
+                }
+            } else if res_code == 1 {
+                // JIT finished a portion (like a loop) and wants to return to interpreter.
+                // State is already updated via pointers.
+                Ok(None)
+            } else {
+                // Deoptimization or error.
+                Err(VmError::RuntimeError(format!("JIT execution failed or requested deopt with code {}", res_code)))
+            }
+        }
     }
 
     fn run_loop(&mut self) -> Result<Value, VmError> {
@@ -1096,8 +1134,10 @@ impl NyarVM {
                 Instruction::StringConcat => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { format!("{}{}", lhs.as_string(), rhs.as_string()) };
-                    self.push(Value::string(r, &self.gc));
+                    let l = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let result = format!("{}{}", l, r);
+                    self.push(Value::string(result, &self.gc));
                 }
                 Instruction::StringLenBytes => {
                     let v = self.pop()?;
@@ -1149,9 +1189,9 @@ impl NyarVM {
                     let len_v = self.pop()?;
                     let start_v = self.pop()?;
                     let s_v = self.pop()?;
-                    let s = unsafe { s_v.as_string().clone() };
-                    let start = start_v.as_int() as usize;
-                    let len = len_v.as_int() as usize;
+                    let s = s_v.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                    let start = start_v.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
+                    let len = len_v.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
                     let end = start.saturating_add(len);
                     let end = end.min(s.len());
                     let sub = if start <= end {
@@ -1246,15 +1286,24 @@ impl NyarVM {
                         if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
                             let m_idx = self.frames.last().unwrap().module_idx;
                             let chunk = &self.modules[m_idx].chunks[chunk_idx];
-                            chunk.hotness.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            if let Some(jit) = self.jit.clone() {
-                                // Trigger OSR if hot enough
-                                if chunk.hotness.load(std::sync::atomic::Ordering::Relaxed) >= 1000 {
-                                    if let Ok(_entry) = jit.osr(m_idx, chunk_idx, target as u32) {
-                                        // In a real VM, we would transition to JIT code here.
-                                        // For now, this is a placeholder for OSR transition.
-                                        println!("OSR triggered for chunk {} at target {}", chunk_idx, target);
-                                        // self.execute_jit_at(entry, ...);
+                            
+                            self.local_hotness = self.local_hotness.wrapping_add(1);
+                            if self.local_hotness == 0 {
+                                chunk.hotness.fetch_add(256, std::sync::atomic::Ordering::Relaxed);
+                                if let Some(jit) = self.jit.clone() {
+                                    // Trigger OSR if hot enough
+                                    if chunk.hotness.load(std::sync::atomic::Ordering::Relaxed) >= 10240 {
+                                        if let Ok(entry) = jit.osr(m_idx, chunk_idx, target as u32) {
+                                            // Transition to JIT code
+                                            println!("OSR triggered for chunk {} at target {}", chunk_idx, target);
+                                            match self.execute_jit_at(entry) {
+                                                Ok(Some(val)) => return Ok(val),
+                                                Ok(None) => {
+                                                    // JIT returned to interpreter, continue from next_ip
+                                                }
+                                                Err(e) => return Err(e),
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1275,7 +1324,11 @@ impl NyarVM {
                         if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
                             let m_idx = self.frames.last().unwrap().module_idx;
                             let chunk = &self.modules[m_idx].chunks[chunk_idx];
-                            chunk.hotness.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            
+                            self.local_hotness = self.local_hotness.wrapping_add(1);
+                            if self.local_hotness == 0 {
+                                chunk.hotness.fetch_add(256, std::sync::atomic::Ordering::Relaxed);
+                            }
                         }
                     }
                     next_ip = Some(target);
@@ -1493,19 +1546,20 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    match (lhs.tag(), rhs.tag()) {
-                                        (ValueTag::Int, ValueTag::Int) => {
-                                            self.push(Value::int(lhs.as_int() + rhs.as_int()))
-                                        }
-                                        (ValueTag::Float, ValueTag::Float) => self.push(
-                                            Value::float(lhs.as_float() + rhs.as_float()),
-                                        ),
-                                        (ValueTag::String, ValueTag::String) => unsafe {
-                                            let mut s = lhs.as_string().to_string();
-                                            s.push_str(rhs.as_string());
-                                            self.push(Value::string(s, &self.gc));
-                                        }
-                                        _ => self.push(Value::null()),
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                        self.push(Value::int(l + r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
+                                    {
+                                        self.push(Value::float(l + r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_str(), rhs.try_as_str())
+                                    {
+                                        let mut s = l.to_string();
+                                        s.push_str(r);
+                                        self.push(Value::string(s, &self.gc));
+                                    } else {
+                                        self.push(Value::null());
                                     }
                                 } else {
                                     self.push(Value::null());
@@ -1515,14 +1569,14 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    match (lhs.tag(), rhs.tag()) {
-                                        (ValueTag::Int, ValueTag::Int) => {
-                                            self.push(Value::int(lhs.as_int() - rhs.as_int()))
-                                        }
-                                        (ValueTag::Float, ValueTag::Float) => self.push(
-                                            Value::float(lhs.as_float() - rhs.as_float()),
-                                        ),
-                                        _ => self.push(Value::null()),
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                        self.push(Value::int(l - r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
+                                    {
+                                        self.push(Value::float(l - r));
+                                    } else {
+                                        self.push(Value::null());
                                     }
                                 } else {
                                     self.push(Value::null());
@@ -1532,14 +1586,14 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    match (lhs.tag(), rhs.tag()) {
-                                        (ValueTag::Int, ValueTag::Int) => {
-                                            self.push(Value::int(lhs.as_int() * rhs.as_int()))
-                                        }
-                                        (ValueTag::Float, ValueTag::Float) => self.push(
-                                            Value::float(lhs.as_float() * rhs.as_float()),
-                                        ),
-                                        _ => self.push(Value::null()),
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                        self.push(Value::int(l * r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
+                                    {
+                                        self.push(Value::float(l * r));
+                                    } else {
+                                        self.push(Value::null());
                                     }
                                 } else {
                                     self.push(Value::null());
@@ -1549,14 +1603,19 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    match (lhs.tag(), rhs.tag()) {
-                                        (ValueTag::Int, ValueTag::Int) => {
-                                            self.push(Value::int(lhs.as_int() / rhs.as_int()))
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                        if r == 0 {
+                                            return Err(VmError::RuntimeError(
+                                                "Division by zero".to_string(),
+                                            ));
                                         }
-                                        (ValueTag::Float, ValueTag::Float) => self.push(
-                                            Value::float(lhs.as_float() / rhs.as_float()),
-                                        ),
-                                        _ => self.push(Value::null()),
+                                        self.push(Value::int(l / r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
+                                    {
+                                        self.push(Value::float(l / r));
+                                    } else {
+                                        self.push(Value::null());
                                     }
                                 } else {
                                     self.push(Value::null());
@@ -1566,20 +1625,28 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let eq = if lhs.tag() != rhs.tag() {
-                                        false
+                                    let eq = if let (Some(l), Some(r)) =
+                                        (lhs.try_as_int(), rhs.try_as_int())
+                                    {
+                                        l == r
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
+                                    {
+                                        l == r
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_bool(), rhs.try_as_bool())
+                                    {
+                                        l == r
+                                    } else if lhs.is_null() && rhs.is_null() {
+                                        true
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_str(), rhs.try_as_str())
+                                    {
+                                        l == r
+                                    } else if lhs.is_object() && rhs.is_object() {
+                                        lhs.payload() == rhs.payload()
                                     } else {
-                                        match lhs.tag() {
-                                            ValueTag::Int => lhs.as_int() == rhs.as_int(),
-                                            ValueTag::Float => lhs.as_float() == rhs.as_float(),
-                                            ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
-                                            ValueTag::Null => true,
-                                            ValueTag::String => unsafe {
-                                                lhs.as_string() == rhs.as_string()
-                                            },
-                                            ValueTag::Object => lhs.payload() == rhs.payload(),
-                                            _ => false,
-                                        }
+                                        false
                                     };
                                     self.push(Value::bool(eq));
                                 } else {
@@ -1590,22 +1657,30 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let eq = if lhs.tag() != rhs.tag() {
+                                    let ne = if let (Some(l), Some(r)) =
+                                        (lhs.try_as_int(), rhs.try_as_int())
+                                    {
+                                        l != r
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
+                                    {
+                                        l != r
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_bool(), rhs.try_as_bool())
+                                    {
+                                        l != r
+                                    } else if lhs.is_null() && rhs.is_null() {
                                         false
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_str(), rhs.try_as_str())
+                                    {
+                                        l != r
+                                    } else if lhs.is_object() && rhs.is_object() {
+                                        lhs.payload() != rhs.payload()
                                     } else {
-                                        match lhs.tag() {
-                                            ValueTag::Int => lhs.as_int() == rhs.as_int(),
-                                            ValueTag::Float => lhs.as_float() == rhs.as_float(),
-                                            ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
-                                            ValueTag::Null => true,
-                                            ValueTag::String => unsafe {
-                                                lhs.as_string() == rhs.as_string()
-                                            },
-                                            ValueTag::Object => lhs.payload() == rhs.payload(),
-                                            _ => false,
-                                        }
+                                        true
                                     };
-                                    self.push(Value::bool(!eq));
+                                    self.push(Value::bool(ne));
                                 } else {
                                     self.push(Value::bool(true));
                                 }
@@ -1614,12 +1689,16 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.is_int() && rhs.is_int() {
-                                        self.push(Value::bool(lhs.as_int() < rhs.as_int()));
-                                    } else if lhs.is_float()
-                                        && rhs.is_float()
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                        self.push(Value::bool(l < r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
                                     {
-                                        self.push(Value::bool(lhs.as_float() < rhs.as_float()));
+                                        self.push(Value::bool(l < r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_str(), rhs.try_as_str())
+                                    {
+                                        self.push(Value::bool(l < r));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1631,12 +1710,16 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.is_int() && rhs.is_int() {
-                                        self.push(Value::bool(lhs.as_int() <= rhs.as_int()));
-                                    } else if lhs.is_float()
-                                        && rhs.is_float()
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                        self.push(Value::bool(l <= r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
                                     {
-                                        self.push(Value::bool(lhs.as_float() <= rhs.as_float()));
+                                        self.push(Value::bool(l <= r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_str(), rhs.try_as_str())
+                                    {
+                                        self.push(Value::bool(l <= r));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1648,12 +1731,16 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.is_int() && rhs.is_int() {
-                                        self.push(Value::bool(lhs.as_int() > rhs.as_int()));
-                                    } else if lhs.is_float()
-                                        && rhs.is_float()
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                        self.push(Value::bool(l > r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
                                     {
-                                        self.push(Value::bool(lhs.as_float() > rhs.as_float()));
+                                        self.push(Value::bool(l > r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_str(), rhs.try_as_str())
+                                    {
+                                        self.push(Value::bool(l > r));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1665,12 +1752,16 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.is_int() && rhs.is_int() {
-                                        self.push(Value::bool(lhs.as_int() >= rhs.as_int()));
-                                    } else if lhs.is_float()
-                                        && rhs.is_float()
+                                    if let (Some(l), Some(r)) = (lhs.try_as_int(), rhs.try_as_int()) {
+                                        self.push(Value::bool(l >= r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_float(), rhs.try_as_float())
                                     {
-                                        self.push(Value::bool(lhs.as_float() >= rhs.as_float()));
+                                        self.push(Value::bool(l >= r));
+                                    } else if let (Some(l), Some(r)) =
+                                        (lhs.try_as_str(), rhs.try_as_str())
+                                    {
+                                        self.push(Value::bool(l >= r));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1682,16 +1773,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let ba = if lhs.is_bool() {
-                                        lhs.as_bool()
-                                    } else {
-                                        false
-                                    };
-                                    let bb = if rhs.is_bool() {
-                                        rhs.as_bool()
-                                    } else {
-                                        false
-                                    };
+                                    let ba = lhs.is_truthy();
+                                    let bb = rhs.is_truthy();
                                     self.push(Value::bool(ba && bb));
                                 } else {
                                     self.push(Value::bool(false));
@@ -1701,16 +1784,8 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let ba = if lhs.is_bool() {
-                                        lhs.as_bool()
-                                    } else {
-                                        false
-                                    };
-                                    let bb = if rhs.is_bool() {
-                                        rhs.as_bool()
-                                    } else {
-                                        false
-                                    };
+                                    let ba = lhs.is_truthy();
+                                    let bb = rhs.is_truthy();
                                     self.push(Value::bool(ba || bb));
                                 } else {
                                     self.push(Value::bool(false));
@@ -1719,10 +1794,10 @@ impl NyarVM {
                             "neg" => {
                                 if args.is_empty() {
                                     let a = receiver;
-                                    if a.is_int() {
-                                        self.push(Value::int(-a.as_int()));
-                                    } else if a.is_float() {
-                                        self.push(Value::float(-a.as_float()));
+                                    if let Some(i) = a.try_as_int() {
+                                        self.push(Value::int(-i));
+                                    } else if let Some(f) = a.try_as_float() {
+                                        self.push(Value::float(-f));
                                     } else {
                                         self.push(Value::null());
                                     }
@@ -1732,27 +1807,22 @@ impl NyarVM {
                             }
                             "not" => {
                                 if args.is_empty() {
-                                    let a = receiver;
-                                    if a.is_bool() {
-                                        self.push(Value::bool(!a.as_bool()));
-                                    } else {
-                                        self.push(Value::bool(false));
-                                    }
+                                    self.push(Value::bool(!receiver.is_truthy()));
                                 } else {
                                     self.push(Value::bool(false));
                                 }
                             }
                             "len" => {
-                                let len = if receiver.is_string() {
-                                    unsafe { receiver.as_string().len() }
-                                } else if receiver.is_array() {
-                                    unsafe { receiver.as_array().items.len() }
-                                } else if receiver.is_list() {
-                                    unsafe { receiver.as_list().items.len() }
-                                } else if receiver.is_tuple() {
-                                    unsafe { receiver.as_tuple().items.len() }
-                                } else if receiver.is_dyn_object() {
-                                    unsafe { receiver.as_dyn_object().entries.len() }
+                                let len = if let Some(s) = receiver.try_as_str() {
+                                    s.len()
+                                } else if let Some(a) = receiver.try_as_array() {
+                                    a.items.len()
+                                } else if let Some(l) = receiver.try_as_list() {
+                                    l.items.len()
+                                } else if let Some(t) = receiver.try_as_tuple() {
+                                    t.items.len()
+                                } else if let Some(d) = receiver.try_as_dyn_object() {
+                                    d.entries.len()
                                 } else {
                                     0
                                 };
@@ -1760,17 +1830,19 @@ impl NyarVM {
                             }
                             "get" => {
                                 let idx_v = args.first().cloned().unwrap_or(Value::int(0));
-                                if receiver.is_list() && idx_v.is_int() {
-                                    let list = unsafe { receiver.as_list() };
-                                    let idx = idx_v.as_int() as usize;
+                                if let (Some(list), Some(idx)) =
+                                    (receiver.try_as_list(), idx_v.try_as_int())
+                                {
+                                    let idx = idx as usize;
                                     if idx < list.items.len() {
                                         self.push(list.items[idx]);
                                     } else {
                                         self.push(Value::null());
                                     }
-                                } else if receiver.is_string() && idx_v.is_int() {
-                                    let s = unsafe { receiver.as_string() };
-                                    let idx = idx_v.as_int() as usize;
+                                } else if let (Some(s), Some(idx)) =
+                                    (receiver.try_as_str(), idx_v.try_as_int())
+                                {
+                                    let idx = idx as usize;
                                     let c = s
                                         .chars()
                                         .nth(idx)
@@ -1782,21 +1854,17 @@ impl NyarVM {
                                 }
                             }
                             "push" => {
-                                if let Some(val) = args.first() {
-                                    if receiver.is_list() {
-                                        let list_mut = unsafe { receiver.as_list_mut() };
-                                        list_mut.items.push(*val);
-                                        self.push(Value::null());
-                                    } else {
-                                        self.push(Value::null());
-                                    }
+                                if let (Some(val), Some(list_mut)) =
+                                    (args.first(), receiver.try_as_list_mut())
+                                {
+                                    list_mut.items.push(*val);
+                                    self.push(Value::null());
                                 } else {
                                     self.push(Value::null());
                                 }
                             }
                             "pop" => {
-                                if receiver.is_list() {
-                                    let list_mut = unsafe { receiver.as_list_mut() };
+                                if let Some(list_mut) = receiver.try_as_list_mut() {
                                     if let Some(val) = list_mut.items.pop() {
                                         self.push(val);
                                     } else {
@@ -1807,21 +1875,15 @@ impl NyarVM {
                                 }
                             }
                             "unshift" => {
-                                if let Some(val) = args.first() {
-                                    if receiver.is_list() {
-                                        let list_mut = unsafe { receiver.as_list_mut() };
-                                        list_mut.items.insert(0, *val);
-                                        self.push(Value::null());
-                                    } else {
-                                        self.push(Value::null());
-                                    }
+                                if let (Some(val), Some(list_mut)) = (args.first(), receiver.try_as_list_mut()) {
+                                    list_mut.items.insert(0, *val);
+                                    self.push(Value::null());
                                 } else {
                                     self.push(Value::null());
                                 }
                             }
                             "shift" => {
-                                if receiver.is_list() {
-                                    let list_mut = unsafe { receiver.as_list_mut() };
+                                if let Some(list_mut) = receiver.try_as_list_mut() {
                                     if !list_mut.items.is_empty() {
                                         let val = list_mut.items.remove(0);
                                         self.push(val);
@@ -1839,9 +1901,7 @@ impl NyarVM {
                                 )))
                             }
                         }
-                    } else {
-                        let obj_ptr = unsafe { receiver.as_object() as *const crate::vm::value::Object as *mut crate::vm::value::Object };
-                        let obj_ref = unsafe { &*obj_ptr };
+                    } else if let Some(obj_ref) = receiver.try_as_object() {
                         let class_idx = obj_ref.class_idx;
                         let _class_name = self.modules[module_idx]
                             .classes
@@ -1909,6 +1969,12 @@ impl NyarVM {
                         }
                         self.frames.push(new_frame);
                         next_ip = None;
+                    } else {
+                        return Err(VmError::RuntimeError(format!(
+                            "Method {} not found for receiver {:?}",
+                            name,
+                            receiver.tag()
+                        )));
                     }
                 }
                 Instruction::Perform(idx, argc) => {
@@ -1925,10 +1991,8 @@ impl NyarVM {
                         .unwrap_or_default();
                     if name == "await" {
                         if let Some(v) = args.get(0) {
-                            if v.is_closure() {
-                                let closure_ptr =
-                                    unsafe { v.as_closure() as *const crate::vm::value::Closure as *mut crate::vm::value::Closure };
-                                let closure = unsafe { &*closure_ptr };
+                            if let Some(closure) = v.try_as_closure() {
+                                let closure_ptr = closure as *const Closure;
                                 let chunk_idx = closure.func;
                                 let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                                 let new_frame = Frame {
@@ -2062,9 +2126,8 @@ impl NyarVM {
                                 let path_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
                                 let mut res = Value::string("".to_string(), &self.gc);
                                 use std::fs;
-                                if path_v.is_string() {
-                                    let path = unsafe { path_v.as_string() }.clone();
-                                    if let Ok(content) = fs::read_to_string(&path) {
+                                if let Some(path) = path_v.try_as_str() {
+                                    if let Ok(content) = fs::read_to_string(path) {
                                         res = Value::string(content, &self.gc);
                                     }
                                 }
@@ -2076,14 +2139,13 @@ impl NyarVM {
                                 let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
-                                if path_v.is_string() && data_v.is_string()
+                                if let (Some(path), Some(data)) = (path_v.try_as_str(), data_v.try_as_str())
                                 {
-                                    let path = unsafe { path_v.as_string() }.clone();
-                                    let bytes = unsafe { data_v.as_string() }.as_bytes().to_vec();
-                                    if let Some(dir) = Path::new(&path).parent() {
+                                    let bytes = data.as_bytes();
+                                    if let Some(dir) = Path::new(path).parent() {
                                         let _ = fs::create_dir_all(dir);
                                     }
-                                    let res = fs::write(&path, &bytes);
+                                    let res = fs::write(path, bytes);
                                     ok = res.is_ok();
                                     println!(
                                         "DEBUG: write_file path={} len={} ok={}",
@@ -2106,23 +2168,20 @@ impl NyarVM {
                                 let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
-                                if path_v.is_string() && bytes_v.is_list() {
-                                    let path = unsafe { path_v.as_string() }.clone();
-                                    let list_ref = unsafe { bytes_v.as_list() };
+                                if let (Some(path), Some(list_ref)) = (path_v.try_as_str(), bytes_v.try_as_list()) {
                                     let mut data = Vec::with_capacity(list_ref.items.len());
                                     for item in &list_ref.items {
-                                        if item.is_int() {
-                                            let v = item.as_int();
+                                        if let Some(v) = item.try_as_int() {
                                             let b = (v & 0xFF) as u8;
                                             data.push(b);
                                         } else {
                                             data.push(0u8);
                                         }
                                     }
-                                    if let Some(dir) = Path::new(&path).parent() {
+                                    if let Some(dir) = Path::new(path).parent() {
                                         let _ = fs::create_dir_all(dir);
                                     }
-                                    ok = fs::write(&path, &data).is_ok();
+                                    ok = fs::write(path, &data).is_ok();
                                 }
                                 self.push(Value::bool(ok));
                             }
@@ -2137,31 +2196,26 @@ impl NyarVM {
                             ValueTag::Float => format!("{}", v.as_float()),
                             ValueTag::Bool => format!("{}", v.as_bool()),
                                     ValueTag::Null => "null".to_string(),
-                                    ValueTag::String => unsafe { v.as_string().clone() },
+                                    ValueTag::String => v.try_as_str().unwrap_or_default().to_string(),
                                     ValueTag::Object => {
-                                        let obj_ptr =
-                                            unsafe { v.as_object() as *const crate::vm::value::Object as *mut crate::vm::value::Object };
-                                        let obj_ref = unsafe { &*obj_ptr };
-                                        let cls_name = self.modules[module_idx]
-                                            .classes
-                                            .get(obj_ref.class_idx as usize)
-                                            .map(|c| c.name.clone())
-                                            .unwrap_or_else(|| "Object".to_string());
-                                        let variant = obj_ref
-                                            .fields
-                                            .get(0)
-                                            .and_then(|f| {
-                                                if f.is_string() {
-                                                    Some(unsafe { f.as_string().clone() })
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .unwrap_or_else(|| "".to_string());
-                                        if variant.is_empty() {
-                                            format!("{}", cls_name)
+                                        if let Some(obj_ref) = v.try_as_object() {
+                                            let cls_name = self.modules[module_idx]
+                                                .classes
+                                                .get(obj_ref.class_idx as usize)
+                                                .map(|c| c.name.clone())
+                                                .unwrap_or_else(|| "Object".to_string());
+                                            let variant = obj_ref
+                                                .fields
+                                                .get(0)
+                                                .and_then(|f| f.try_as_str().map(|s| s.to_string()))
+                                                .unwrap_or_default();
+                                            if variant.is_empty() {
+                                                format!("{}", cls_name)
+                                            } else {
+                                                format!("{}::{}", cls_name, variant)
+                                            }
                                         } else {
-                                            format!("{}::{}", cls_name, variant)
+                                            "Object".to_string()
                                         }
                                     }
                                     _ => "<unsupported>".to_string(),
@@ -2218,7 +2272,7 @@ impl NyarVM {
                                         ValueTag::Float => format!("assertion failed: {}", v.as_float()),
                                         ValueTag::Bool => format!("assertion failed: {}", v.as_bool()),
                                         ValueTag::Null => "assertion failed: null".to_string(),
-                                        ValueTag::String => unsafe { v.as_string().clone() },
+                                        ValueTag::String => v.try_as_str().unwrap_or("").to_string(),
                                         _ => "assertion failed".to_string(),
                                     }
                                 } else {
@@ -2230,15 +2284,18 @@ impl NyarVM {
                         }
                         "len" => {
                             if let Some(v) = args.last() {
-                                let len = match v.tag() {
-                                    ValueTag::String => unsafe { v.as_string().len() },
-                                    ValueTag::Array => unsafe { v.as_array().items.len() },
-                                    ValueTag::List => unsafe { v.as_list().items.len() },
-                                    ValueTag::Tuple => unsafe { v.as_tuple().items.len() },
-                                    ValueTag::DynObject => unsafe {
-                                        v.as_dyn_object().entries.len()
-                                    },
-                                    _ => 0,
+                                let len = if let Some(s) = v.try_as_str() {
+                                    s.len()
+                                } else if let Some(a) = v.try_as_array() {
+                                    a.items.len()
+                                } else if let Some(l) = v.try_as_list() {
+                                    l.items.len()
+                                } else if let Some(t) = v.try_as_tuple() {
+                                    t.items.len()
+                                } else if let Some(d) = v.try_as_dyn_object() {
+                                    d.entries.len()
+                                } else {
+                                    0
                                 };
                                 self.push(Value::int(len as i64));
                             } else {
@@ -2247,8 +2304,7 @@ impl NyarVM {
                         }
                         "ord" => {
                             if let Some(v) = args.last() {
-                                let code = if v.is_string() {
-                                    let s = unsafe { v.as_string() };
+                                let code = if let Some(s) = v.try_as_str() {
                                     if let Some(c) = s.chars().next() {
                                         c as i64
                                     } else {
@@ -2264,8 +2320,7 @@ impl NyarVM {
                         }
                         "chr" => {
                             if let Some(v) = args.last() {
-                                let c = if v.is_int() {
-                                    let i = v.as_int();
+                                let c = if let Some(i) = v.try_as_int() {
                                     std::char::from_u32(i as u32).unwrap_or('\0').to_string()
                                 } else {
                                     "\0".to_string()
@@ -2277,33 +2332,25 @@ impl NyarVM {
                         }
                         "get" => {
                             let idx_v = args.pop().unwrap_or(Value::int(0));
-                            // Since this is FFICall, there is no separate 'receiver'.
-                            // Everything is in 'args'.
-                            // If user called get(obj, idx), args is [obj, idx] (after reversal).
-                            // We popped idx_v. args is now [obj].
-                            // So container is next pop.
                             let container = args.pop().unwrap_or(Value::null());
 
-                            if container.is_string() && idx_v.is_int() {
-                                let s = unsafe { container.as_string() };
-                                let idx = idx_v.as_int() as usize;
+                            if let (Some(s), Some(idx)) = (container.try_as_str(), idx_v.try_as_int()) {
+                                let idx = idx as usize;
                                 let c = s
                                     .chars()
                                     .nth(idx)
                                     .map(|c| c.to_string())
                                     .unwrap_or_default();
                                 self.push(Value::string(c, &self.gc));
-                            } else if container.is_list() && idx_v.is_int() {
-                                 let list = unsafe { container.as_list() };
-                                let idx = idx_v.as_int() as usize;
+                            } else if let (Some(list), Some(idx)) = (container.try_as_list(), idx_v.try_as_int()) {
+                                let idx = idx as usize;
                                 if idx < list.items.len() {
                                     self.push(list.items[idx]);
                                 } else {
                                     self.push(Value::null());
                                 }
-                            } else if container.is_array() && idx_v.is_int() {
-                                 let arr = unsafe { container.as_array() };
-                                let idx = idx_v.as_int() as usize;
+                            } else if let (Some(arr), Some(idx)) = (container.try_as_array(), idx_v.try_as_int()) {
+                                let idx = idx as usize;
                                 if idx < arr.items.len() {
                                     self.push(arr.items[idx]);
                                 } else {
@@ -2315,10 +2362,9 @@ impl NyarVM {
                         }
                         "push" => {
                             if args.len() == 2 {
-                                let val = args.pop().unwrap_or(Value::null()); // val is last arg
-                                let container = args.pop().unwrap_or(Value::null()); // container is first arg
-                                if container.is_list() {
-                                    let list_mut = unsafe { container.as_list_mut() };
+                                let val = args.pop().unwrap_or(Value::null());
+                                let container = args.pop().unwrap_or(Value::null());
+                                if let Some(list_mut) = container.try_as_list_mut() {
                                     list_mut.items.push(val);
                                     self.push(Value::null());
                                 } else {
@@ -2329,30 +2375,21 @@ impl NyarVM {
                             }
                         }
                         "set" => {
-                            // set(container, idx, val) -> args: [container, idx, val]
-                            // reversed args: [container, idx, val] (wait, reverse() on [val, idx, container] -> [container, idx, val])
-                            // pop() -> val
-                            // pop() -> idx
-                            // pop() -> container
                             if args.len() == 3 {
                                 let val_v = args.pop().unwrap_or(Value::null());
                                 let idx_v = args.pop().unwrap_or(Value::int(0));
                                 let container = args.pop().unwrap_or(Value::null());
 
-                                if container.is_list() && idx_v.is_int() {
-                                    let idx = idx_v.as_int() as usize;
-                                    let list_mut = unsafe { container.as_list_mut() };
+                                if let (Some(list_mut), Some(idx)) = (container.try_as_list_mut(), idx_v.try_as_int()) {
+                                    let idx = idx as usize;
                                     if idx < list_mut.items.len() {
                                         list_mut.items[idx] = val_v;
                                         self.push(Value::bool(true));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
-                                } else if container.is_array()
-                                    && idx_v.is_int()
-                                {
-                                    let idx = idx_v.as_int() as usize;
-                                    let arr_mut = unsafe { container.as_array_mut() };
+                                } else if let (Some(arr_mut), Some(idx)) = (container.try_as_array_mut(), idx_v.try_as_int()) {
+                                    let idx = idx as usize;
                                     if idx < arr_mut.items.len() {
                                         arr_mut.items[idx] = val_v;
                                         self.push(Value::bool(true));
@@ -2368,8 +2405,7 @@ impl NyarVM {
                         }
                         "chars" => {
                             if let Some(v) = args.last() {
-                                if v.is_string() {
-                                    let s = unsafe { v.as_string() };
+                                if let Some(s) = v.try_as_str() {
                                     let items: Vec<Value> =
                                         s.chars().map(|c| Value::string(c.to_string(), &self.gc)).collect();
                                     self.push(Value::list(items, &self.gc));
@@ -2387,7 +2423,7 @@ impl NyarVM {
                                     ValueTag::Float => format!("{}", v.as_float()),
                                     ValueTag::Bool => format!("{}", v.as_bool()),
                                     ValueTag::Null => "null".to_string(),
-                                    ValueTag::String => unsafe { v.as_string().clone() },
+                                    ValueTag::String => v.try_as_str().unwrap_or("").to_string(),
                                     _ => format!("{:?}", v.tag()),
                                 };
                                 self.push(Value::string(s, &self.gc));

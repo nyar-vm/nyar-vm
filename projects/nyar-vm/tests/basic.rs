@@ -363,6 +363,12 @@ fn dynobject_get_set_remove_key() {
 #[test]
 fn list_set_get_remove() {
     let mut code = Vec::new();
+    // Push 3 items for NewList(3)
+    for i in 0..3i64 {
+        code.push(Opcode::I64Ext as u8);
+        code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+        code.extend_from_slice(&i.to_le_bytes());
+    }
     code.push(Opcode::NewList as u8);
     code.extend_from_slice(&3u16.to_le_bytes());
     code.push(Opcode::I64Ext as u8);
