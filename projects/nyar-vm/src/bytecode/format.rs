@@ -123,6 +123,21 @@ pub fn write_string(buf: &mut Vec<u8>, s: &str) {
     buf.extend_from_slice(s.as_bytes());
 }
 
+impl Default for Chunk {
+    fn default() -> Self {
+        Self {
+            locals: 0,
+            upvalues: 0,
+            max_stack: 0,
+            code: vec![],
+            handlers: vec![],
+            lines: vec![],
+            decoded: None,
+            hotness: 0,
+        }
+    }
+}
+
 impl Default for NyarcModule {
     fn default() -> Self {
         Self {

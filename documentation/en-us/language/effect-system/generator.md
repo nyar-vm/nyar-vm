@@ -70,6 +70,59 @@ let total_count = processor.return_value()  # Get the final return value
 
 ## Generator State Management
 
+### Sequence Environments
+
+In addition to defining an entire `micro` function as a generator, Valkyrie supports using `sequence` environments to define generators locally within regular functions. This allows you to produce a lazy sequence without changing the nature of the entire function.
+
+#### Local Generators
+
+Use a `sequence` block to create an anonymous generator object:
+
+```valkyrie
+micro process_data(data: [i32]) {
+    # Define a local generator within a regular function
+    let gen = sequence {
+        for item in data {
+            if item > 0 {
+                yield item * 2
+            }
+        }
+    }
+    
+    # Use the local generator
+    for val in gen {
+        print(val)
+    }
+}
+```
+
+#### Explicit Type Declaration
+
+You can also explicitly specify the element type produced by the `sequence` environment:
+
+```valkyrie
+let gen = sequence Iterator<string> {
+    yield "Hello"
+    yield "World"
+}
+```
+
+#### Expression Usage
+
+The `sequence` environment is an expression and can be passed as an argument or returned directly:
+
+```valkyrie
+micro get_numbers() {
+    return sequence {
+        yield 1
+        yield 2
+        yield 3
+    }
+}
+```
+
+## Generator State Management
+
 ### Generator Lifecycle
 
 ```valkyrie

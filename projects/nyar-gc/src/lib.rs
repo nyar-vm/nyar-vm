@@ -143,22 +143,6 @@ impl GcBlock {
         }
     }
 
-    fn is_card_dirty(&self, card_idx: usize) -> bool {
-        let word_idx = card_idx / 64;
-        let bit_idx = card_idx % 64;
-        (self.get_header().card_table[word_idx].load(Ordering::Acquire) & (1 << bit_idx)) != 0
-    }
-
-    fn has_dirty_cards(&self) -> bool {
-        let header = self.get_header();
-        for word in header.card_table.iter() {
-            if word.load(Ordering::Acquire) != 0 {
-                return true;
-            }
-        }
-        false
-    }
-
     fn clear_cards(&self) {
         let header = self.get_header();
         for word in header.card_table.iter() {
@@ -359,7 +343,7 @@ pub struct NyarGc {
     gray_stack: Mutex<Vec<SendPtr<GcHeader>>>,
     /// Current state of the GC.
     state: AtomicU8,
-    sweep_state: SweepState,
+    sweep_state: Mutex<SweepState>,
     /// Total number of bytes allocated.
     allocated_bytes: AtomicUsize,
     /// Threshold for the next collection cycle.
@@ -419,12 +403,12 @@ impl NyarGc {
             blocks: Mutex::new(vec![Arc::new(GcBlock::new())]),
             gray_stack: Mutex::new(Vec::new()),
             state: AtomicU8::new(GcState::Idle as u8),
-            sweep_state: SweepState {
+            sweep_state: Mutex::new(SweepState {
                 young_curr: AtomicPtr::new(std::ptr::null_mut()),
                 young_prev: AtomicPtr::new(std::ptr::null_mut()),
                 old_curr: AtomicPtr::new(std::ptr::null_mut()),
                 old_prev: AtomicPtr::new(std::ptr::null_mut()),
-            },
+            }),
             allocated_bytes: AtomicUsize::new(0),
             threshold: AtomicUsize::new(1024 * 1024), // 1MB default threshold
         }
@@ -702,7 +686,7 @@ impl NyarGc {
         match self.get_state() {
             GcState::Idle => {
                 self.set_state(GcState::Marking);
-                let sweep = &self.sweep_state;
+                let sweep = self.sweep_state.lock().unwrap();
                 sweep.young_curr.store(self.young_head.load(Ordering::Acquire), Ordering::Release);
                 sweep.young_prev.store(std::ptr::null_mut(), Ordering::Release);
                 sweep.old_curr.store(self.old_head.load(Ordering::Acquire), Ordering::Release);
@@ -735,7 +719,7 @@ impl NyarGc {
             }
             GcState::Sweeping => {
                 let mut work_done = 0;
-                let sweep = &self.sweep_state;
+                let sweep = self.sweep_state.lock().unwrap();
                 while work_done < work_limit {
                     // 1. Sweep young generation
                     let young_curr_ptr = sweep.young_curr.load(Ordering::Acquire);

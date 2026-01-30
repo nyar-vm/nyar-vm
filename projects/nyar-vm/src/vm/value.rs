@@ -385,6 +385,18 @@ impl Value {
     pub fn is_effect(&self) -> bool {
         !self.is_float() && self.tag() == ValueTag::Effect
     }
+
+    pub fn is_continuation(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Continuation
+    }
+
+    pub fn is_function(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Function
+    }
+
+    pub fn is_trait_object(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::TraitObject
+    }
     pub fn bool(v: bool) -> Self {
         Self::encode(ValueTag::Bool, if v { 1 } else { 0 })
     }

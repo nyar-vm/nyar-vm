@@ -48,7 +48,7 @@ impl NyarDriver {
     ) -> Result<(), NyarError> {
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let tree = frontend.lower(&ast)?;
+        let _tree = frontend.lower(&ast)?;
         
         // TODO: 使用 nyar-aot 进行原生代码生成
         println!("AOT: Compiling IKunTree to native at {:?}", output_path);
@@ -65,7 +65,7 @@ impl NyarDriver {
     ) -> Result<(), NyarError> {
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let tree = frontend.lower(&ast)?;
+        let _tree = frontend.lower(&ast)?;
         
         // TODO: 使用 nyar-aot 进行 WASM 生成
         println!("AOT: Compiling IKunTree to WASM at {:?}", output_path);

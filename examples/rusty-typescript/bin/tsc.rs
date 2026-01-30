@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(output_path) = args.output {
         println!("tsc: Compiling to {:?}", output_path);
-        driver.compile_to_native(&frontend, &args.input.to_string_lossy(), &output_path)?;
+        driver.compile_to_native(&frontend, &args.input, &output_path)?;
     } else {
         println!("tsc: Running {:?}", args.input);
         driver.run_source(&frontend, &args.input)?;

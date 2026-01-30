@@ -1,10 +1,17 @@
-use chomsky::optimizer::UniversalOptimizer;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use chomsky::adapters::GaiaX86Adapter;
 use chomsky::extract::{Backend, BackendArtifact, IKunTree};
+use chomsky::optimizer::UniversalOptimizer;
 use chomsky::uir::IKun;
-use gaia_jit::JitMemory;
-use hashbrown::HashMap;
 use dashmap::DashMap;
-use std::sync::Arc;
+use gaia_jit::JitMemory;
+use nyar_types::VmError;
+
+use nyar_vm::bytecode::decoder::{Decoder, Instruction};
+use nyar_vm::bytecode::format::{Constant as NyarConstant};
+use nyar_vm::vm::interpreter::NyarVM;
 
 /// Represents the compilation tiers in NyarJit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,6 +37,9 @@ pub struct CompiledCode {
     /// Metadata for deoptimization, mapping machine code offsets to VM state.
     pub deopt_metadata: Vec<DeoptPoint>,
 }
+
+unsafe impl Send for CompiledCode {}
+unsafe impl Sync for CompiledCode {}
 
 /// Metadata for a single deoptimization point.
 pub struct DeoptPoint {
@@ -66,9 +76,8 @@ impl InlineCache {
 }
 
 /// The main JIT compiler for NyarVM.
-use nyar_vm::vm::interpreter::{JitProvider, NyarVM};
+use nyar_vm::vm::interpreter::JitProvider;
 use nyar_vm::vm::value::Value;
-use nyar_vm::vm::VmError;
 
 impl JitProvider for NyarJit {
     fn try_execute(&self, vm: &mut NyarVM, module_idx: usize, chunk_idx: usize) -> Option<Result<Value, VmError>> {
@@ -150,61 +159,132 @@ impl NyarJit {
         let intents = self.extract_intents(vm, module_idx, chunk_idx);
 
         // 2. Build initial IKunTree from intents
-        let mut tree = self.build_tree(intents);
+        let context = intents.clone();
+        let tree = if !intents.is_empty() {
+            IKunTree::from_uir_id(intents.len() - 1, &context)
+        } else {
+            IKunTree::Symbol("empty_chunk".to_string())
+        };
 
-        // 3. Optimization
-        if tier == JitTier::Optimizing {
-            // Apply E-Graph equality saturation
+        // 3. E-Graph Optimization (if Tier 2)
+        let optimized_tree = if tier == JitTier::Optimizing {
             let mut optimizer = self.optimizer.lock().unwrap();
             let root_id = self.add_tree_to_egraph(&mut optimizer, &tree);
-            
-            // Perform saturation and extraction
             let backend = self.get_backend();
-            tree = optimizer.optimize(&optimizer.egraph, root_id, backend.get_cost_model());
-
-            // GC-JIT co-optimizations
-            self.elide_barriers(&mut tree);
-            self.sink_allocations(&mut tree);
-        }
+            optimizer.optimize(&optimizer.egraph, root_id, backend.get_model())
+        } else {
+            tree
+        };
 
         // 4. Machine Code Generation via Gaia
         let key = (module_idx, chunk_idx);
         let backend = self.get_backend();
-        self.generate_and_cache(key, &tree, tier, backend.as_ref())
+        self.generate_and_cache(key, &optimized_tree, tier, backend.as_ref())
     }
 
-    fn add_tree_to_egraph(&self, optimizer: &mut UniversalOptimizer<()>, tree: &IKunTree) -> chomsky_uir::egraph::Id {
+    fn add_tree_to_egraph(&self, optimizer: &mut UniversalOptimizer<()>, tree: &IKunTree) -> chomsky::uir::Id {
         // Recursively add IKunTree nodes to E-Graph.
-        // This is a simplified version; a full implementation would map IKunTree variants to IKun enodes.
         match tree {
             IKunTree::Constant(v) => optimizer.add_intent(&IKun::Constant(*v)),
+            IKunTree::FloatConstant(v) => optimizer.add_intent(&IKun::FloatConstant(*v)),
+            IKunTree::BooleanConstant(v) => optimizer.add_intent(&IKun::BooleanConstant(*v)),
+            IKunTree::StringConstant(s) => optimizer.add_intent(&IKun::StringConstant(s.clone())),
             IKunTree::Symbol(s) => optimizer.add_intent(&IKun::Symbol(s.clone())),
+            IKunTree::Map(f, x) => {
+                let f_id = self.add_tree_to_egraph(optimizer, f);
+                let x_id = self.add_tree_to_egraph(optimizer, x);
+                optimizer.add_intent(&IKun::Map(f_id, x_id))
+            }
+            IKunTree::Filter(f, x) => {
+                let f_id = self.add_tree_to_egraph(optimizer, f);
+                let x_id = self.add_tree_to_egraph(optimizer, x);
+                optimizer.add_intent(&IKun::Filter(f_id, x_id))
+            }
+            IKunTree::Reduce(f, init, list) => {
+                let f_id = self.add_tree_to_egraph(optimizer, f);
+                let init_id = self.add_tree_to_egraph(optimizer, init);
+                let list_id = self.add_tree_to_egraph(optimizer, list);
+                optimizer.add_intent(&IKun::Reduce(f_id, init_id, list_id))
+            }
+            IKunTree::Apply(f, args) => {
+                let f_id = self.add_tree_to_egraph(optimizer, f);
+                let arg_ids = args.iter().map(|arg| self.add_tree_to_egraph(optimizer, arg)).collect();
+                optimizer.add_intent(&IKun::Apply(f_id, arg_ids))
+            }
             _ => {
-                // For complex trees, we would need to decompose them back to IKun intents
-                // or have a direct way to add IKunTree to EGraph.
-                optimizer.add_intent(&IKun::Symbol("complex_node".to_string()))
+                // For other nodes, we use a placeholder or expand the match
+                optimizer.add_intent(&IKun::Symbol("unsupported_tree_node".to_string()))
             }
         }
     }
 
-    fn extract_intents(&self, _vm: &NyarVM, _module_idx: usize, _chunk_idx: usize) -> Vec<IKun> {
-        // In a full implementation, this would iterate over the bytecode
-        // and translate each instruction to its corresponding IKun intent.
-        // For now, we return a symbolic representation.
-        vec![]
+    fn extract_intents(&self, vm: &NyarVM, module_idx: usize, chunk_idx: usize) -> Vec<IKun> {
+        let module = &vm.modules[module_idx];
+        let chunk = &module.chunks[chunk_idx];
+        let mut intents = Vec::new();
+        let mut stack = Vec::new();
+        let mut decoder = Decoder::new(&chunk.code);
+
+        while let Ok(instruction) = decoder.next_result() {
+            match instruction {
+                Instruction::Push(idx) => {
+                    let constant = &module.constants[idx as usize];
+                    let intent = match constant {
+                        NyarConstant::Int(v) => IKun::Constant(*v),
+                        NyarConstant::Float(v) => IKun::FloatConstant(v.to_bits()),
+                        NyarConstant::String(s) => IKun::StringConstant(s.clone()),
+                    };
+                    let id = intents.len();
+                    intents.push(intent);
+                    stack.push(id);
+                }
+                Instruction::I64Add => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Map(lhs, rhs)); // Map can represent binary operations
+                        stack.push(id);
+                    }
+                }
+                Instruction::I64Sub => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("i64.sub".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::LoadLocal(idx) => {
+                    let id = intents.len();
+                    intents.push(IKun::Symbol(format!("local_{}", idx)));
+                    stack.push(id);
+                }
+                Instruction::StoreLocal(_idx) => {
+                    if let Some(val) = stack.pop() {
+                        intents.push(IKun::StateUpdate(val, val)); // Simplified
+                    }
+                }
+                Instruction::Return => {
+                    // Handled by the caller or final result
+                }
+                _ => {
+                    // Other instructions can be added here
+                }
+            }
+        }
+
+        intents
     }
 
     fn get_backend(&self) -> Box<dyn Backend> {
         // Returns the appropriate Gaia backend for the current architecture.
-        // For now, return a placeholder or use a default.
-        unimplemented!("Gaia backend selection not implemented")
+        // For now, use the X86_64 adapter as a default.
+        Box::new(GaiaX86Adapter)
     }
 
     fn build_tree(&self, intents: Vec<IKun>) -> IKunTree {
         if intents.is_empty() {
             return IKunTree::Symbol("nop".to_string());
         }
-        <IKunTree as FromUir>::from_uir(&intents[0])
+        <IKunTree as FromUir>::from_uir(&intents[0], &intents)
     }
 
     /// Generates machine code from an IKunTree and caches it.
@@ -285,35 +365,44 @@ impl NyarJit {
 }
 
 pub trait FromUir {
-    fn from_uir(ikun: &IKun) -> Self;
-    fn from_uir_id(id: chomsky_uir::egraph::Id) -> Self;
+    fn from_uir(ikun: &IKun, context: &[IKun]) -> Self;
+    fn from_uir_id(id: chomsky::uir::Id, context: &[IKun]) -> Self;
 }
 
 impl FromUir for IKunTree {
-    fn from_uir(ikun: &IKun) -> IKunTree {
+    fn from_uir(ikun: &IKun, context: &[IKun]) -> IKunTree {
         match ikun {
             IKun::Constant(v) => IKunTree::Constant(*v),
             IKun::FloatConstant(v) => IKunTree::FloatConstant(*v),
             IKun::BooleanConstant(v) => IKunTree::BooleanConstant(*v),
             IKun::StringConstant(s) => IKunTree::StringConstant(s.clone()),
             IKun::Symbol(s) => IKunTree::Symbol(s.clone()),
-            IKun::Map(f, x) => IKunTree::Map(Box::new(Self::from_uir_id(*f)), Box::new(Self::from_uir_id(*x))),
-            IKun::Filter(f, x) => IKunTree::Filter(Box::new(Self::from_uir_id(*f)), Box::new(Self::from_uir_id(*x))),
+            IKun::Map(f, x) => IKunTree::Map(
+                Box::new(Self::from_uir_id(*f, context)),
+                Box::new(Self::from_uir_id(*x, context)),
+            ),
+            IKun::Filter(f, x) => IKunTree::Filter(
+                Box::new(Self::from_uir_id(*f, context)),
+                Box::new(Self::from_uir_id(*x, context)),
+            ),
             IKun::Reduce(f, init, list) => IKunTree::Reduce(
-                Box::new(Self::from_uir_id(*f)),
-                Box::new(Self::from_uir_id(*init)),
-                Box::new(Self::from_uir_id(*list)),
+                Box::new(Self::from_uir_id(*f, context)),
+                Box::new(Self::from_uir_id(*init, context)),
+                Box::new(Self::from_uir_id(*list, context)),
             ),
             IKun::Apply(f, args) => IKunTree::Apply(
-                Box::new(Self::from_uir_id(*f)),
-                args.iter().map(|&id| Self::from_uir_id(id)).collect(),
+                Box::new(Self::from_uir_id(*f, context)),
+                args.iter().map(|&id| Self::from_uir_id(id, context)).collect(),
             ),
             _ => IKunTree::Symbol("unsupported".to_string()),
         }
     }
 
-    fn from_uir_id(_id: chomsky_uir::egraph::Id) -> IKunTree {
-        // In a real implementation, this would look up the ID in an EGraph or builder.
-        IKunTree::Symbol("placeholder".to_string())
+    fn from_uir_id(id: chomsky::uir::Id, context: &[IKun]) -> IKunTree {
+        if id < context.len() {
+            Self::from_uir(&context[id], context)
+        } else {
+            IKunTree::Symbol(format!("invalid_id_{}", id))
+        }
     }
 }

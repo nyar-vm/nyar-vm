@@ -136,9 +136,6 @@ fn run_try_raise_catch_effect() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![
             Constant::String("boom".to_string()),
             Constant::Int(0),
@@ -149,37 +146,22 @@ fn run_try_raise_catch_effect() {
         chunks: vec![
             Chunk {
                 locals: 2,
-                upvalues: 0,
                 max_stack: 8,
                 code: catch,
-                handlers: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[1].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 1);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 1).unwrap();
+    assert_eq!(v.as_int(), 1);
 }
 
 #[test]
@@ -212,9 +194,6 @@ fn run_algebraic_effect_xxeffect() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![
             Constant::String("XXeffect".to_string()),
             Constant::Int(0), // index 0 for args list
@@ -225,37 +204,22 @@ fn run_algebraic_effect_xxeffect() {
         chunks: vec![
             Chunk {
                 locals: 2,
-                upvalues: 0,
                 max_stack: 8,
                 code: catch,
-                handlers: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[1].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 42);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 1).unwrap();
+    assert_eq!(v.as_int(), 42);
 }
 
 #[test]
@@ -275,49 +239,26 @@ fn run_perform_await_on_closure() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![Constant::Int(99)],
         effects: vec!["await".to_string()],
         chunks: vec![
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: callee,
-                handlers: vec![],
-                lines: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
-                lines: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
-        imports: vec![],
-        exports: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[1].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 99);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 1).unwrap();
+    assert_eq!(v.as_int(), 99);
 }
 
 #[test]
@@ -473,9 +414,6 @@ fn run_effect_multi_layer_two_effects() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![
             Constant::String("XXeffect".to_string()),
             Constant::String("YYeffect".to_string()),
@@ -491,44 +429,28 @@ fn run_effect_multi_layer_two_effects() {
         chunks: vec![
             Chunk {
                 locals: 3,
-                upvalues: 0,
                 max_stack: 8,
                 code: catch_x,
-                handlers: vec![],
+                ..Default::default()
             },
             Chunk {
                 locals: 3,
-                upvalues: 0,
                 max_stack: 8,
                 code: catch_y,
-                handlers: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[2].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 33);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 2).unwrap();
+    assert_eq!(v.as_int(), 33);
 }
 
 #[test]
@@ -595,9 +517,6 @@ fn run_effect_propagates_to_next_handler() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![
             Constant::String("XXeffect".to_string()), // 0
             Constant::String("YYeffect".to_string()), // 1
@@ -613,44 +532,28 @@ fn run_effect_propagates_to_next_handler() {
         chunks: vec![
             Chunk {
                 locals: 3,
-                upvalues: 0,
                 max_stack: 8,
                 code: catch_x,
-                handlers: vec![],
+                ..Default::default()
             },
             Chunk {
                 locals: 3,
-                upvalues: 0,
                 max_stack: 8,
                 code: catch_y,
-                handlers: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[2].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 10);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 2).unwrap();
+    assert_eq!(v.as_int(), 10);
 }
 
 #[test]
@@ -665,36 +568,18 @@ fn run_effect_unhandled_error_top_level() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![Constant::Int(1)],
         effects: vec!["XXeffect".to_string()],
         chunks: vec![Chunk {
-            locals: 0,
-            upvalues: 0,
             max_stack: 8,
-            code,
-            handlers: vec![],
-            lines: vec![],
+            code: main,
+            ..Default::default()
         }],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
-        imports: vec![],
-        exports: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let r = vm.execute(&program);
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let r = vm.execute(module_idx, 0);
     assert!(r.is_err());
 }
 
@@ -725,9 +610,6 @@ fn run_throw_effect_catch_returns() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![
             Constant::String("throw".to_string()), // 0
             Constant::Int(1),                      // 1 arg
@@ -738,37 +620,22 @@ fn run_throw_effect_catch_returns() {
         chunks: vec![
             Chunk {
                 locals: 1,
-                upvalues: 0,
                 max_stack: 8,
                 code: catch,
-                handlers: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[1].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 123);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 1).unwrap();
+    assert_eq!(v.as_int(), 123);
 }
 
 #[test]
@@ -783,33 +650,18 @@ fn run_throw_effect_uncaught_is_unhandled_error() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![Constant::Int(1)],
         effects: vec!["throw".to_string()],
         chunks: vec![Chunk {
-            locals: 0,
-            upvalues: 0,
             max_stack: 8,
             code: main,
-            handlers: vec![],
+            ..Default::default()
         }],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let r = vm.execute(&program);
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let r = vm.execute(module_idx, 0);
     match r {
         Err(_) => {}
         _ => panic!("expected error for uncaught throw"),
@@ -827,32 +679,17 @@ fn run_throw_effect_uncaught_prints_traceback() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![Constant::Int(1)],
         effects: vec!["throw".to_string()],
         chunks: vec![Chunk {
-            locals: 0,
-            upvalues: 0,
             max_stack: 8,
             code: main,
-            handlers: vec![],
+            ..Default::default()
         }],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
     use std::cell::RefCell;
     use std::rc::Rc;
     let output = Rc::new(RefCell::new(Vec::<String>::new()));
@@ -860,7 +697,7 @@ fn run_throw_effect_uncaught_prints_traceback() {
     vm.stdout = Some(Box::new(move |msg: &str| {
         out_clone.borrow_mut().push(msg.to_string());
     }));
-    let r = vm.execute(&program);
+    let r = vm.execute(module_idx, 0);
     assert!(r.is_err());
     vm.print_traceback(&VmError::UnhandledError);
     let lines = output.borrow();
@@ -884,32 +721,17 @@ fn run_logger_event_default_prints() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![Constant::Int(0), Constant::Int(0)],
         effects: vec!["LoggerEvent".to_string()],
         chunks: vec![Chunk {
-            locals: 0,
-            upvalues: 0,
             max_stack: 8,
             code: main,
-            handlers: vec![],
+            ..Default::default()
         }],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
     use std::cell::RefCell;
     use std::rc::Rc;
     let output = Rc::new(RefCell::new(Vec::<String>::new()));
@@ -917,7 +739,7 @@ fn run_logger_event_default_prints() {
     vm.stdout = Some(Box::new(move |msg: &str| {
         out_clone.borrow_mut().push(msg.to_string());
     }));
-    let v = vm.execute(&program).unwrap();
+    let v = vm.execute(module_idx, 0).unwrap();
     unsafe {
         assert_eq!(v.as_int(), 0);
     }
@@ -969,9 +791,6 @@ fn run_logger_event_handler_prints_and_resumes() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![
             Constant::Int(0),
             Constant::Int(0),
@@ -980,38 +799,20 @@ fn run_logger_event_handler_prints_and_resumes() {
         effects: vec!["LoggerEvent".to_string()],
         chunks: vec![
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
-                code: callee,
-                handlers: vec![],
-                lines: vec![],
+                code: catch,
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
-                lines: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
-        imports: vec![],
-        exports: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[1].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
     use std::cell::RefCell;
     use std::rc::Rc;
     let output = Rc::new(RefCell::new(Vec::<String>::new()));
@@ -1019,7 +820,7 @@ fn run_logger_event_handler_prints_and_resumes() {
     vm.stdout = Some(Box::new(move |msg: &str| {
         out_clone.borrow_mut().push(msg.to_string());
     }));
-    let v = vm.execute(&program).unwrap();
+    let v = vm.execute(module_idx, 1).unwrap();
     unsafe {
         assert_eq!(v.as_int(), 0);
     }

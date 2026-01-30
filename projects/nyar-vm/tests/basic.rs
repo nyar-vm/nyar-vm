@@ -62,17 +62,11 @@ fn perform_throw_unhandled() {
         imports: vec![],
         exports: vec![],
     };
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let chunk = module.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let err = vm.execute(&program).err().unwrap();
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module.clone());
+    let _chunk = module.chunks[0].clone();
+    let _program = Decoder::new(&_chunk.code).decode_all().unwrap();
+    let err = vm.execute(module_idx, 0).err().unwrap();
     match err {
         VmError::UnhandledError => {}
         _ => panic!(),

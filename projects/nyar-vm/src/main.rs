@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_string_lossy()
         .to_string();
 
-    let driver = NyarDriver::new();
+    let _driver = NyarDriver::new();
 
     match program_name.as_str() {
         // Frontends are currently disabled as they are not in the workspace

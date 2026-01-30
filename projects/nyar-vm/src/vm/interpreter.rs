@@ -772,19 +772,19 @@ impl NyarVM {
                 Instruction::I64Add => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64).wrapping_add(rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64).wrapping_add(rhs.as_int() as i64);
                     self.push(Value::int(r));
                 }
                 Instruction::I64Sub => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64).wrapping_sub(rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64).wrapping_sub(rhs.as_int() as i64);
                     self.push(Value::int(r));
                 }
                 Instruction::I64Mul => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let r = unsafe { (lhs.as_int() as i64).wrapping_mul(rhs.as_int() as i64) };
+                    let r = (lhs.as_int() as i64).wrapping_mul(rhs.as_int() as i64);
                     self.push(Value::int(r));
                 }
                 Instruction::I64DivS => {
@@ -1360,7 +1360,7 @@ impl NyarVM {
                         return Err(VmError::InvalidOpcode); // Expected closure
                     }
 
-                    let closure_ptr = unsafe { callee.as_closure() as *const crate::vm::value::Closure as *mut crate::vm::value::Closure };
+                    let closure_ptr = unsafe { callee.as_closure() as *const Closure as *mut Closure };
                     let (instrs, locals_count, c_module_idx, c_chunk_idx) = {
                         let closure = unsafe { &*closure_ptr };
                         let chunk_idx = closure.func;
@@ -1446,10 +1446,10 @@ impl NyarVM {
                     };
                     // self.log(&format!(
                     //    "InvokeMethod: name={}, argc={}, receiver_tag={:?}",
-                    //    name, argc, receiver.tag
+                    //    name, argc, receiver.tag()
                     // ));
 
-                    if receiver.tag() != ValueTag::Object {
+                    if !receiver.is_object() {
                         match name {
                             "println" => {
                                 for arg in args {
@@ -1788,7 +1788,7 @@ impl NyarVM {
                                 }
                             }
                             "shift" => {
-                                if receiver.tag() == ValueTag::List {
+                                if receiver.is_list() {
                                     let list_mut = unsafe { receiver.as_list_mut() };
                                     if !list_mut.items.is_empty() {
                                         let val = list_mut.items.remove(0);
@@ -2030,7 +2030,7 @@ impl NyarVM {
                                 let path_v = args.pop().unwrap_or(Value::string("".to_string(), &self.gc));
                                 let mut res = Value::string("".to_string(), &self.gc);
                                 use std::fs;
-                                if path_v.tag() == ValueTag::String {
+                                if path_v.is_string() {
                                     let path = unsafe { path_v.as_string() }.clone();
                                     if let Ok(content) = fs::read_to_string(&path) {
                                         res = Value::string(content, &self.gc);
@@ -2044,7 +2044,7 @@ impl NyarVM {
                                 let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
-                                if path_v.tag() == ValueTag::String && data_v.tag() == ValueTag::String
+                                if path_v.is_string() && data_v.is_string()
                                 {
                                     let path = unsafe { path_v.as_string() }.clone();
                                     let bytes = unsafe { data_v.as_string() }.as_bytes().to_vec();
@@ -2074,12 +2074,12 @@ impl NyarVM {
                                 let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
-                                if path_v.tag() == ValueTag::String && bytes_v.tag() == ValueTag::List {
+                                if path_v.is_string() && bytes_v.is_list() {
                                     let path = unsafe { path_v.as_string() }.clone();
                                     let list_ref = unsafe { bytes_v.as_list() };
                                     let mut data = Vec::with_capacity(list_ref.items.len());
                                     for item in &list_ref.items {
-                                        if item.tag() == ValueTag::Int {
+                                        if item.is_int() {
                                             let v = item.as_int();
                                             let b = (v & 0xFF) as u8;
                                             data.push(b);
@@ -2119,7 +2119,7 @@ impl NyarVM {
                                             .fields
                                             .get(0)
                                             .and_then(|f| {
-                                                if f.tag() == ValueTag::String {
+                                                if f.is_string() {
                                                     Some(unsafe { f.as_string().clone() })
                                                 } else {
                                                     None
@@ -2216,7 +2216,7 @@ impl NyarVM {
                         }
                         "ord" => {
                             if let Some(v) = args.last() {
-                                let code = if v.tag() == ValueTag::String {
+                                let code = if v.is_string() {
                                     let s = unsafe { v.as_string() };
                                     if let Some(c) = s.chars().next() {
                                         c as i64
@@ -2233,7 +2233,7 @@ impl NyarVM {
                         }
                         "chr" => {
                             if let Some(v) = args.last() {
-                                let c = if v.tag() == ValueTag::Int {
+                                let c = if v.is_int() {
                                     let i = v.as_int();
                                     std::char::from_u32(i as u32).unwrap_or('\0').to_string()
                                 } else {
@@ -2253,7 +2253,7 @@ impl NyarVM {
                             // So container is next pop.
                             let container = args.pop().unwrap_or(Value::null());
 
-                            if container.tag() == ValueTag::String && idx_v.tag() == ValueTag::Int {
+                            if container.is_string() && idx_v.is_int() {
                                 let s = unsafe { container.as_string() };
                                 let idx = idx_v.as_int() as usize;
                                 let c = s
@@ -2262,7 +2262,7 @@ impl NyarVM {
                                     .map(|c| c.to_string())
                                     .unwrap_or_default();
                                 self.push(Value::string(c, &self.gc));
-                            } else if container.tag() == ValueTag::List && idx_v.tag() == ValueTag::Int {
+                            } else if container.is_list() && idx_v.is_int() {
                                  let list = unsafe { container.as_list() };
                                 let idx = idx_v.as_int() as usize;
                                 if idx < list.items.len() {
@@ -2270,7 +2270,7 @@ impl NyarVM {
                                 } else {
                                     self.push(Value::null());
                                 }
-                            } else if container.tag() == ValueTag::Array && idx_v.tag() == ValueTag::Int {
+                            } else if container.is_array() && idx_v.is_int() {
                                  let arr = unsafe { container.as_array() };
                                 let idx = idx_v.as_int() as usize;
                                 if idx < arr.items.len() {
@@ -2799,7 +2799,7 @@ impl NyarVM {
                 Instruction::HasKey => {
                     let mut key = self.pop()?;
                     let mut container = self.pop()?;
-                    if container.tag() != ValueTag::Object && key.tag() == ValueTag::Object {
+                    if !container.is_object() && key.is_object() {
                         let tmp = key;
                         key = container;
                         container = tmp;
@@ -2868,11 +2868,11 @@ impl NyarVM {
                     let mut ok = false;
                     if !f.locals.is_empty() {
                         let v = f.locals[0];
-                        if v.tag() == ValueTag::String {
+                        if v.is_string() {
                             unsafe {
                                 ok = v.as_string() == name;
                             }
-                        } else if v.tag() == ValueTag::Effect {
+                        } else if v.is_effect() {
                             if let Some(i) = eff_idx {
                                 let e = unsafe { v.as_effect() };
                                 ok = e.type_idx as usize == i;
@@ -2950,7 +2950,7 @@ impl NyarVM {
                             // self.log("GetField: name_const_missing");
                         }
                     }
-                    if obj.tag() == ValueTag::Object {
+                    if obj.is_object() {
                         let obj_ref = unsafe { obj.as_object() };
 
                         let name = match module.constants.get(name_idx as usize) {
@@ -2971,7 +2971,7 @@ impl NyarVM {
                         } else {
                             return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
                         }
-                    } else if obj.tag() == ValueTag::DynObject {
+                    } else if obj.is_dyn_object() {
                         let obj_ref = unsafe { obj.as_dyn_object() };
 
                         let name = match module.constants.get(name_idx as usize) {
@@ -3000,7 +3000,7 @@ impl NyarVM {
                     let val = self.pop()?;
                     let obj = self.pop()?;
                     let module = &self.modules[module_idx];
-                    // self.log(&format!("SetField: obj_tag={:?}, name_idx={}", obj.tag, name_idx));
+                    // self.log(&format!("SetField: obj_tag={:?}, name_idx={}", obj.tag(), name_idx));
                     match module.constants.get(name_idx as usize) {
                         Some(Constant::String(_s)) => {
                             // self.log(&format!("SetField: name_const=String({})", _s));
@@ -3044,7 +3044,7 @@ impl NyarVM {
                 Instruction::InstanceOf(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.pop()?;
-                    let is_instance = if obj.tag() == ValueTag::Object {
+                    let is_instance = if obj.is_object() {
                         let obj_ref = unsafe { obj.as_object() };
                         obj_ref.class_idx == class_idx
                     } else {
@@ -3055,7 +3055,7 @@ impl NyarVM {
                 Instruction::CheckCast(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.pop()?;
-                    if obj.tag() == ValueTag::Object {
+                    if obj.is_object() {
                         let obj_ref = unsafe { obj.as_object() };
                         if obj_ref.class_idx == class_idx {
                             self.push(obj);
@@ -3069,7 +3069,7 @@ impl NyarVM {
                 Instruction::Cast(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.peek_at(0)?;
-                    if obj.tag() == ValueTag::Object {
+                    if obj.is_object() {
                         let obj_ref = unsafe { obj.as_object() };
                         if obj_ref.class_idx != class_idx {
                             return Err(VmError::RuntimeError("Cast failed".into()));
@@ -3094,7 +3094,7 @@ impl NyarVM {
                 Instruction::ResumeWith => {
                     let result = self.pop()?;
                     let cont_v = self.pop()?;
-                    if cont_v.tag() != ValueTag::Continuation {
+                    if !cont_v.is_continuation() {
                         return Err(VmError::InvalidOpcode);
                     }
                     let cont = unsafe { cont_v.as_continuation().clone() };
@@ -3110,7 +3110,7 @@ impl NyarVM {
                 }
                 Instruction::Await => {
                     let v = self.pop()?;
-                    if v.tag() == ValueTag::Closure {
+                    if v.is_closure() {
                         let closure = unsafe { v.as_closure() };
                         let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
@@ -3135,7 +3135,7 @@ impl NyarVM {
                 }
                 Instruction::BlockOn => {
                     let v = self.pop()?;
-                    if v.tag() == ValueTag::Closure {
+                    if v.is_closure() {
                         let closure = unsafe { v.as_closure() };
                         let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;

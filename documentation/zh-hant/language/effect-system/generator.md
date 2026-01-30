@@ -70,6 +70,59 @@ let total_count = processor.return_value()  # 獲取最終返回值
 
 ## 生成器狀態管理
 
+### 序列環境
+
+除了將整個 `micro` 函數定義為生成器外，Valkyrie 還支持在普通函數中使用 `sequence` 環境來局部定義生成器。這允許你在不改變整個函數性質的情況下，產生一個惰性序列。
+
+#### 局部生成器
+
+使用 `sequence` 塊可以創建一個匿名的生成器對象：
+
+```valkyrie
+micro process_data(data: [i32]) {
+    # 在普通函數中定義局部生成器
+    let gen = sequence {
+        for item in data {
+            if item > 0 {
+                yield item * 2
+            }
+        }
+    }
+    
+    # 使用局部生成器
+    for val in gen {
+        print(val)
+    }
+}
+```
+
+#### 顯式類型聲明
+
+你也可以為 `sequence` 環境顯式指定產生的元素類型：
+
+```valkyrie
+let gen = sequence Iterator<string> {
+    yield "Hello"
+    yield "World"
+}
+```
+
+#### 表達式用法
+
+`sequence` 環境是一個表達式，可以直接作為參數傳遞或返回：
+
+```valkyrie
+micro get_numbers() {
+    return sequence {
+        yield 1
+        yield 2
+        yield 3
+    }
+}
+```
+
+## 生成器狀態管理
+
 ### 生成器生命週期
 
 ```valkyrie

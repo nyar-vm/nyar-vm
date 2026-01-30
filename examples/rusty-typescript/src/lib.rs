@@ -50,9 +50,12 @@ impl MiniTypescriptFrontend {
     pub fn compile_to_nyar(&self, source: &str) -> Result<NyarModule, String> {
         let ast = self.parse(source).map_err(|e| format!("Parse error: {:?}", e))?;
         let tree = self.lower(&ast).map_err(|e| format!("Lowering error: {:?}", e))?;
-        
+
+        let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
+        let root_id = tree.to_egraph(&mut egraph);
+
         let mut translator = codegen::NyarTranslator::new();
-        translator.generate(&tree.egraph, tree.root).map_err(|e| format!("Codegen error: {:?}", e))
+        translator.generate(&egraph, root_id).map_err(|e| format!("Codegen error: {:?}", e))
     }
 }
 
@@ -160,8 +163,9 @@ impl<'a> UirConverter<'a> {
                             } else {
                                 self.builder.symbol("any", mloc.clone())
                             };
+                            let field_name = self.builder.symbol(&name, mloc.clone());
                             args.push(self.builder.extension("gc.field", vec![
-                                self.builder.symbol(&name, mloc.clone()),
+                                field_name,
                                 ty_id,
                                 init_id,
                             ], mloc));
@@ -173,8 +177,9 @@ impl<'a> UirConverter<'a> {
                                 body_ids.push(self.convert_statement(s));
                             }
                             let lambda = self.builder.function(&name, params, body_ids);
+                            let method_name = self.builder.symbol(&name, mloc.clone());
                             args.push(self.builder.extension("gc.method", vec![
-                                self.builder.symbol(&name, mloc.clone()),
+                                method_name,
                                 lambda,
                             ], mloc));
                         }
