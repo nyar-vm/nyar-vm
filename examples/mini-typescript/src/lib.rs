@@ -14,7 +14,7 @@ use oak_core::{Builder, Lexer, SourceText, ParseSession};
 use oak_typescript::{TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot, ast, TypeScriptSyntaxKind};
 use codegen::NyarTranslator;
 use nyar_vm::bytecode::format::NyarModule;
-use nyar_error::FormatError;
+use nyar_types::FormatError;
 use chomsky_uir::{EGraph, Id, IntentBuilder, ConstraintAnalysis, intent::IKun};
 use chomsky_source::Loc;
 use core::range::Range;

@@ -1,4 +1,4 @@
-use nyar_error::CliError;
+use nyar_types::CliError;
 use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::NyarModule;
 use std::fs;

@@ -13,7 +13,12 @@ nyar-gc = { path = "../nyar-gc" }
 nyar-jit = { path = "../nyar-jit" }
 nyar-aot = { path = "../nyar-aot" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-full = { path = "../../../ProjectChomsky/packages/chomsky-full" }
+chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
+chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
+chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 toml = { workspace = true }
 byteorder = { workspace = true }
 clap = { workspace = true, optional = true }

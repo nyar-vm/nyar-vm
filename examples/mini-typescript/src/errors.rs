@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::error::Error;
 use std::path::PathBuf;
-use nyar_error::{FormatError, VmError};
+use nyar_types::{FormatError, VmError};
 
 pub type Result<T> = std::result::Result<T, ScriptError>;
 

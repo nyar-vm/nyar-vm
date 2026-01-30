@@ -1,4 +1,4 @@
-use nyar_error::VmError;
+use nyar_types::VmError;
 use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;

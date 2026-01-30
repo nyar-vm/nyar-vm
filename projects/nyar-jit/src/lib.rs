@@ -2,7 +2,7 @@ use chomsky_full::optimizer::UniversalOptimizer;
 use chomsky_full::extract::{Backend, BackendArtifact, IKunTree};
 use chomsky_uir::{IKun, Id};
 use gaia_jit::JitMemory;
-use nyar_error::VmError;
+use nyar_types::VmError;
 
 pub struct NyarJit {
     optimizer: UniversalOptimizer<()>,

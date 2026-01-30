@@ -7,4 +7,4 @@ pub mod stage;
 pub mod traits;
 pub mod value;
 
-pub use nyar_error::VmError;
+pub use nyar_types::VmError;

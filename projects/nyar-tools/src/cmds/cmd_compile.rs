@@ -1,4 +1,4 @@
-use nyar_error::{CliError, FormatError};
+use nyar_types::{CliError, FormatError};
 use nyar_vm::bytecode::format::NyarModule;
 use std::fs;
 

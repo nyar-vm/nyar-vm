@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use nyar_error::CliError;
+use nyar_types::CliError;
 
 mod cmds;
 

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use chomsky_uir::{ConstraintAnalysis, EGraph, Id, IKun};
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, ImportInfo, NyarModule};
 use nyar_vm::bytecode::opcode::{I32Ext, Opcode};
-use nyar_error::FormatError;
+use nyar_types::FormatError;
 
 /// Nyar 翻译器，将 UIR 转换为 Nyar 字节码
 pub struct NyarTranslator {

@@ -1,6 +1,6 @@
 use crate::bytecode::opcode::{BigIntExt, F32Ext, F64Ext, I32Ext, I64Ext, Opcode, StringExt};
 use byteorder::{LittleEndian, ReadBytesExt};
-pub use nyar_error::DecodeError;
+pub use nyar_types::DecodeError;
 use std::io::Cursor;
 
 #[derive(Debug, Clone, PartialEq)]

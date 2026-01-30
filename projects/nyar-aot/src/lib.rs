@@ -1,7 +1,7 @@
 use chomsky_full::optimizer::UniversalOptimizer;
 use chomsky_full::extract::{Backend, BackendArtifact};
 use chomsky_uir::IKun;
-use nyar_error::VmError;
+use nyar_types::VmError;
 
 pub struct NyarAot {
     optimizer: UniversalOptimizer<()>,

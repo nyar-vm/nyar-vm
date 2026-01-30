@@ -78,7 +78,7 @@ pub struct NyarcModule {
 
 pub type NyarModule = NyarcModule;
 
-pub use nyar_error::FormatError;
+pub use nyar_types::FormatError;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
