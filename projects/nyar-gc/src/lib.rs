@@ -85,7 +85,7 @@ struct GcBlockHeader {
     /// 1 = dirty, 0 = clean.
     card_table: [AtomicU64; CARD_BITMAP_WORDS],
     /// Mark bitmap for this block. Each bit represents 16 bytes.
-    /// 1 = marked, 0 = white.
+    /// 1 = marked, 0 = unmarked.
     mark_bitmap: [AtomicU64; MARK_BITMAP_WORDS],
 }
 
@@ -249,7 +249,7 @@ pub trait Trace {
 
 /// Context used during the marking phase of GC.
 pub struct MarkContext<'a> {
-    pub(crate) gray_stack: &'a mut Vec<SendPtr<GcHeader>>,
+    pub(crate) mark_stack: &'a mut Vec<SendPtr<GcHeader>>,
 }
 
 impl<'a> MarkContext<'a> {
@@ -259,13 +259,13 @@ impl<'a> MarkContext<'a> {
         if header.is_large() {
             if !header.is_marked() {
                 header.set_marked(true);
-                self.gray_stack.push(SendPtr(ptr));
+                self.mark_stack.push(SendPtr(ptr));
             }
         } else {
             let base = (ptr.as_ptr() as usize) & !(BLOCK_SIZE - 1);
             let block_header = base as *const GcBlockHeader;
             if (*block_header).set_marked(header) {
-                self.gray_stack.push(SendPtr(ptr));
+                self.mark_stack.push(SendPtr(ptr));
             }
         }
     }
@@ -441,8 +441,8 @@ pub struct NyarGc {
     large_head: AtomicPtr<GcHeader>,
     /// Memory blocks managed by the GC (lock-free linked list).
     blocks_head: AtomicPtr<GcBlockHeader>,
-    /// Gray stack for bitmapped marking.
-    gray_stack: Mutex<Vec<SendPtr<GcHeader>>>,
+    /// Mark stack for bitmapped marking.
+    mark_stack: Mutex<Vec<SendPtr<GcHeader>>>,
     /// Current state of the GC.
     state: AtomicU8,
     sweep_state: Mutex<SweepState>,
@@ -672,7 +672,7 @@ impl NyarGc {
             old_head: AtomicPtr::new(std::ptr::null_mut()),
             large_head: AtomicPtr::new(std::ptr::null_mut()),
             blocks_head: AtomicPtr::new(head),
-            gray_stack: Mutex::new(Vec::new()),
+            mark_stack: Mutex::new(Vec::new()),
             state: AtomicU8::new(GcState::Idle as u8),
             sweep_state: Mutex::new(SweepState {
                 young_curr: AtomicPtr::new(std::ptr::null_mut()),
@@ -1010,14 +1010,14 @@ impl NyarGc {
             large_curr = header_ptr.as_ref().get_next();
         }
 
-        let mut gray_stack = self.gray_stack.lock().unwrap();
-        let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
+        let mut mark_stack = self.mark_stack.lock().unwrap();
+        let mut ctx = MarkContext { mark_stack: &mut *mark_stack };
 
         // 1. Mark roots
         mark_roots(&mut ctx);
 
-        // 2. Process gray stack
-        self.process_gray_stack(&mut ctx);
+        // 2. Process mark stack
+        self.process_mark_stack(&mut ctx);
 
         // 3. Sweep everything
         self.set_state(GcState::Sweeping);

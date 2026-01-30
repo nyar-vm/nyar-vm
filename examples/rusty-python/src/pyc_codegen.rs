@@ -38,7 +38,6 @@ pub enum OpCode {
     RaiseVarargs = 130,
     MakeFunction = 132,
     BuildSlice = 133,
-    CompareOp = 107,
     Resume = 151,
     LoadMethod = 160,
     Call = 171,
@@ -290,19 +289,25 @@ impl PycTranslator {
             }
             IKunTree::Choice(cond, then_branch, else_branch) => {
                 self.compile_tree_node(cond);
-                let jump_to_false_placeholder = self.instructions.len();
+                let start_offset = self.get_current_unit_offset();
+                let jump_to_false_idx = self.instructions.len();
                 self.emit(OpCode::PopJumpIfFalse, 0);
+                let jump_instr_size = self.get_instruction_size(OpCode::PopJumpIfFalse);
 
                 self.compile_tree_node(then_branch);
-                let jump_to_end_placeholder = self.instructions.len();
+                let jump_to_end_idx = self.instructions.len();
                 self.emit(OpCode::JumpForward, 0);
+                let jump_to_end_instr_size = self.get_instruction_size(OpCode::JumpForward);
 
-                let false_target = self.instructions.len() as u32;
-                self.instructions[jump_to_false_placeholder].arg = false_target;
-
+                let else_start_offset = self.get_current_unit_offset();
                 self.compile_tree_node(else_branch);
-                let end_target = (self.instructions.len() - jump_to_end_placeholder - 1) as u32;
-                self.instructions[jump_to_end_placeholder].arg = end_target;
+                let end_offset = self.get_current_unit_offset();
+
+                // Set jump_to_false arg: offset from instruction AFTER jump to else_start
+                self.instructions[jump_to_false_idx].arg = else_start_offset - (start_offset + jump_instr_size);
+
+                // Set jump_to_end arg: offset from instruction AFTER jump to end
+                self.instructions[jump_to_end_idx].arg = end_offset - (else_start_offset + jump_to_end_instr_size);
             }
             IKunTree::Apply(func, args) => {
                 if let IKunTree::Symbol(name) = &**func {
@@ -319,28 +324,28 @@ impl PycTranslator {
                 self.emit(OpCode::Call, args.len() as u32);
             }
             IKunTree::Repeat(cond, body) => {
-                let start_target = self.instructions.len() as u32;
+                let start_offset = self.get_current_unit_offset();
                 self.compile_tree_node(cond);
-                let jump_to_end_placeholder = self.instructions.len();
+
+                let jump_to_end_offset_base = self.get_current_unit_offset();
+                let jump_to_end_idx = self.instructions.len();
                 self.emit(OpCode::PopJumpIfFalse, 0);
+                let jump_to_end_size = self.get_instruction_size(OpCode::PopJumpIfFalse);
 
                 self.compile_tree_node(body);
-                self.emit(OpCode::JumpForward, 0);
-                let jump_to_start_placeholder = self.instructions.len() - 1;
-                
-                // Back to start
-                let back_jump = (self.instructions.len() - (start_target as usize) - 1) as u32;
-                // In Python 3.11+, JUMP_BACKWARD is used, but for 3.10 we use JUMP_ABSOLUTE or similar.
-                // However, our OpCode enum only has JumpForward.
-                // Let's add JumpBackward or repurpose JumpForward if needed.
-                // Actually, let's just use JumpForward for now if it supports negative offsets or large offsets.
-                // For Python 3.11+, JumpForward is relative.
-                
-                let end_target = self.instructions.len() as u32;
-                self.instructions[jump_to_end_placeholder].arg = end_target;
-                
-                // Fix back jump - we need a backward jump opcode.
-                // Let's add JumpBackward = 140 to OpCode enum.
+
+                let jump_back_offset_base = self.get_current_unit_offset();
+                let jump_back_idx = self.instructions.len();
+                self.emit(OpCode::JumpBackward, 0);
+                let jump_back_size = self.get_instruction_size(OpCode::JumpBackward);
+
+                let end_offset = self.get_current_unit_offset();
+
+                // Set jump_to_end arg
+                self.instructions[jump_to_end_idx].arg = end_offset - (jump_to_end_offset_base + jump_to_end_size);
+
+                // Set jump_back arg: offset from instruction AFTER jump back to start_offset
+                self.instructions[jump_back_idx].arg = (jump_back_offset_base + jump_back_size) - start_offset;
             }
             IKunTree::Extension(name, args) => {
                 match name.as_str() {
@@ -604,5 +609,9 @@ impl PycTranslator {
 
     fn get_instruction_size(&self, opcode: OpCode) -> u32 {
         1 + self.get_cache_count(opcode)
+    }
+
+    fn get_current_unit_offset(&self) -> u32 {
+        self.instructions.iter().map(|i| self.get_instruction_size(i.opcode)).sum()
     }
 }
