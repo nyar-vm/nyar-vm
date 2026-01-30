@@ -73,16 +73,10 @@ fn run_make_tuple_and_get_element() {
     code.push(Opcode::GetElement as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
     let mut vm = NyarVM::new();
-    let module_idx = vm.load_module(parsed);
+    let module_idx = vm.load_module(module);
     let v = vm.execute(module_idx, 0).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 2);
-    }
+    assert_eq!(v.as_int(), 2);
 }
 
 #[test]
@@ -105,22 +99,10 @@ fn run_has_key_tuple() {
     code.push(Opcode::HasKey as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_bool(), true);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_bool(), true);
 }
 
 #[test]
@@ -147,22 +129,10 @@ fn tuple_set_element_same_type_should_pass() {
     code.push(Opcode::GetElement as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 99);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_int(), 99);
 }
 
 #[test]
@@ -186,19 +156,9 @@ fn tuple_set_element_mismatch_should_fail() {
     code.push(Opcode::SetElement as u8);
     code.push(Opcode::Return as u8);
     let module = minimal_module_with_chunk(code, vec![]);
-    let data = module.encode();
-    let parsed = NyarModule::parse(&data).unwrap();
-    let chunk = parsed.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let err = vm.execute(&program).err().unwrap();
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let err = vm.execute(module_idx, 0).err().unwrap();
     match err {
         VmError::RuntimeError(_) => {}
         _ => panic!(),
@@ -242,20 +202,10 @@ fn run_has_key_object() {
         traits: vec![],
         impls: vec![],
     };
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let chunk = module.chunks[0].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_bool(), true);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module.clone());
+    let v = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(v.as_bool(), true);
 }
 
 #[test]

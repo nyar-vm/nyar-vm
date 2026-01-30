@@ -85,24 +85,33 @@ impl JitProvider for NyarJit {
         
         // 1. Check if already compiled
         if let Some(compiled) = self.code_cache.get(&key) {
-            // Found compiled code, execute it
-            // In a real implementation, this would involve jumping to machine code.
-            // For now, we simulate execution or trigger tier upgrade if it's Tier 1.
-            if compiled.tier == JitTier::Baseline {
-                // Potential upgrade to Optimizing JIT
-                // (Increment hotness in compiled code, etc.)
+            if compiled.tier == JitTier::Optimizing {
+                // Already fully optimized
+                return None; // Fallback to interpreter for now until machine code execution is implemented
             }
-            // return Some(execute_machine_code(compiled, vm));
+            
+            // Baseline compiled, check if we should upgrade to Optimizing
+            let threshold = self.get_threshold(JitTier::Optimizing);
+            let chunk = &mut vm.modules[module_idx].chunks[chunk_idx];
+            chunk.hotness += 1;
+            
+            if chunk.hotness >= threshold {
+                match self.compile(vm, module_idx, chunk_idx, JitTier::Optimizing) {
+                    Ok(_) => { /* Upgrade successful, next call will use it */ }
+                    Err(e) => return Some(Err(e)),
+                }
+            }
+            
             return None; // Fallback to interpreter for now
         }
 
-        // 2. Increment hotness in VM's chunk
-        let threshold = 1000; // Example threshold
+        // 2. Increment hotness in VM's chunk for baseline trigger
+        let threshold = self.get_threshold(JitTier::Baseline);
         let chunk = &mut vm.modules[module_idx].chunks[chunk_idx];
         chunk.hotness += 1;
 
         if chunk.hotness >= threshold {
-            // Trigger compilation
+            // Trigger baseline compilation
             match self.compile(vm, module_idx, chunk_idx, JitTier::Baseline) {
                 Ok(_) => {
                     // Compilation successful, next call will use it
@@ -211,9 +220,14 @@ impl NyarJit {
                 let arg_ids = args.iter().map(|arg| self.add_tree_to_egraph(optimizer, arg)).collect();
                 optimizer.add_intent(&IKun::Apply(f_id, arg_ids))
             }
-            _ => {
-                // For other nodes, we use a placeholder or expand the match
-                optimizer.add_intent(&IKun::Symbol("unsupported_tree_node".to_string()))
+            IKunTree::Extension(name, args) => {
+                let arg_ids = args.iter().map(|arg| self.add_tree_to_egraph(optimizer, arg)).collect();
+                optimizer.add_intent(&IKun::Extension(name.clone(), arg_ids))
+            }
+            IKunTree::StateUpdate(key, val) => {
+                let key_id = self.add_tree_to_egraph(optimizer, key);
+                let val_id = self.add_tree_to_egraph(optimizer, val);
+                optimizer.add_intent(&IKun::StateUpdate(key_id, val_id))
             }
         }
     }
@@ -238,17 +252,51 @@ impl NyarJit {
                     intents.push(intent);
                     stack.push(id);
                 }
-                Instruction::I64Add => {
+                Instruction::I32Const(v) => {
+                    let id = intents.len();
+                    intents.push(IKun::Constant(v as i64));
+                    stack.push(id);
+                }
+                Instruction::I64Const(v) => {
+                    let id = intents.len();
+                    intents.push(IKun::Constant(v));
+                    stack.push(id);
+                }
+                Instruction::F32Const(v) => {
+                    let id = intents.len();
+                    intents.push(IKun::FloatConstant(v.to_bits() as u64));
+                    stack.push(id);
+                }
+                Instruction::F64Const(v) => {
+                    let id = intents.len();
+                    intents.push(IKun::FloatConstant(v.to_bits()));
+                    stack.push(id);
+                }
+                Instruction::I32Add | Instruction::I64Add => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
-                        intents.push(IKun::Map(lhs, rhs)); // Map can represent binary operations
+                        intents.push(IKun::Map(lhs, rhs));
                         stack.push(id);
                     }
                 }
-                Instruction::I64Sub => {
+                Instruction::I32Sub | Instruction::I64Sub => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
-                        intents.push(IKun::Extension("i64.sub".to_string(), vec![lhs, rhs]));
+                        intents.push(IKun::Extension("sub".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32Mul | Instruction::I64Mul => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("mul".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32Eq | Instruction::I64Eq => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("eq".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
@@ -257,9 +305,11 @@ impl NyarJit {
                     intents.push(IKun::Symbol(format!("local_{}", idx)));
                     stack.push(id);
                 }
-                Instruction::StoreLocal(_idx) => {
+                Instruction::StoreLocal(idx) => {
                     if let Some(val) = stack.pop() {
-                        intents.push(IKun::StateUpdate(val, val)); // Simplified
+                        let id = intents.len();
+                        intents.push(IKun::StateUpdate(val, val)); // Simplified: should map to local variable update
+                        // We might need a way to represent state in IKun
                     }
                 }
                 Instruction::Return => {
@@ -394,15 +444,23 @@ impl FromUir for IKunTree {
                 Box::new(Self::from_uir_id(*f, context)),
                 args.iter().map(|&id| Self::from_uir_id(id, context)).collect(),
             ),
+            IKun::Extension(name, args) => IKunTree::Extension(
+                name.clone(),
+                args.iter().map(|&id| Self::from_uir_id(id, context)).collect(),
+            ),
+            IKun::StateUpdate(key, val) => IKunTree::StateUpdate(
+                Box::new(Self::from_uir_id(*key, context)),
+                Box::new(Self::from_uir_id(*val, context)),
+            ),
             _ => IKunTree::Symbol("unsupported".to_string()),
         }
     }
 
-    fn from_uir_id(id: chomsky::uir::Id, context: &[IKun]) -> IKunTree {
+    fn from_uir_id(id: chomsky::uir::Id, context: &[IKun]) -> Self {
         if id < context.len() {
             Self::from_uir(&context[id], context)
         } else {
-            IKunTree::Symbol(format!("invalid_id_{}", id))
+            IKunTree::Symbol(format!("unknown_id_{}", id))
         }
     }
 }

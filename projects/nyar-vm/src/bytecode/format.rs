@@ -502,30 +502,13 @@ impl NyarcModule {
 }
 
 pub fn minimal_module_with_chunk(code: Vec<u8>, constants: Vec<Constant>) -> NyarcModule {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
     NyarcModule {
-        version: 1,
-        flags: 0,
-        timestamp: ts,
         constants,
-        effects: vec![],
         chunks: vec![Chunk {
-            locals: 0,
-            upvalues: 0,
             max_stack: 8,
             code,
-            handlers: vec![],
-            lines: vec![],
-            decoded: None,
-            hotness: 0,
+            ..Default::default()
         }],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
-        imports: vec![],
-        exports: vec![],
+        ..Default::default()
     }
 }
