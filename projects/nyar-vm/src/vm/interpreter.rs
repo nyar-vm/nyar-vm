@@ -153,6 +153,7 @@ pub struct Frame {
 
 pub trait JitProvider: Send + Sync {
     fn try_execute(&self, vm: &mut NyarVM, module_idx: usize, chunk_idx: usize) -> Option<Result<Value, VmError>>;
+    fn osr(&self, module_idx: usize, chunk_idx: usize, target: u32) -> Result<*const u8, VmError>;
 }
 
 pub struct NyarVM {
@@ -419,8 +420,8 @@ impl NyarVM {
                 Instruction::BigIntAdd => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint().clone() };
-                    let r = unsafe { rhs.as_bigint().clone() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
                     let res = if l.sign == r.sign {
                         BigInt {
                             sign: l.sign,
@@ -447,11 +448,11 @@ impl NyarVM {
                 Instruction::BigIntSub => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let mut r = unsafe { rhs.as_bigint().clone() };
+                    let mut r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
                     if !r.bytes.is_empty() {
                         r.sign ^= 1;
                     }
-                    let l = unsafe { lhs.as_bigint().clone() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
                     let res = if l.sign == r.sign {
                         BigInt {
                             sign: l.sign,
@@ -478,8 +479,8 @@ impl NyarVM {
                 Instruction::BigIntMul => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint().clone() };
-                    let r = unsafe { rhs.as_bigint().clone() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let sign = if l.bytes.is_empty() || r.bytes.is_empty() {
                         0
                     } else {
@@ -491,8 +492,8 @@ impl NyarVM {
                 Instruction::BigIntDiv => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint().clone() };
-                    let r = unsafe { rhs.as_bigint().clone() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let (q, _) = div_mod_abs(l.bytes.clone(), &r.bytes);
                     let sign = if q.is_empty() { 0 } else { l.sign ^ r.sign };
                     self.push(Value::bigint(sign, q, &self.gc));
@@ -500,15 +501,15 @@ impl NyarVM {
                 Instruction::BigIntMod => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint().clone() };
-                    let r = unsafe { rhs.as_bigint().clone() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let (_, rem) = div_mod_abs(l.bytes.clone(), &r.bytes);
                     let sign = if rem.is_empty() { 0 } else { l.sign };
                     self.push(Value::bigint(sign, rem, &self.gc));
                 }
                 Instruction::BigIntNeg => {
                     let v = self.pop()?;
-                    let mut b = unsafe { v.as_bigint().clone() };
+                    let mut b = v.try_as_bigint().ok_or(VmError::InvalidOpcode)?.clone();
                     if !b.bytes.is_empty() {
                         b.sign ^= 1;
                     } else {
@@ -519,24 +520,24 @@ impl NyarVM {
                 Instruction::BigIntEq => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint() };
-                    let r = unsafe { rhs.as_bigint() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let eq = l.sign == r.sign && cmp_abs(&l.bytes, &r.bytes) == 0;
                     self.push(Value::bool(eq));
                 }
                 Instruction::BigIntNe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint() };
-                    let r = unsafe { rhs.as_bigint() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let ne = !(l.sign == r.sign && cmp_abs(&l.bytes, &r.bytes) == 0);
                     self.push(Value::bool(ne));
                 }
                 Instruction::BigIntLt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint() };
-                    let r = unsafe { rhs.as_bigint() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let res = if l.sign != r.sign {
                         l.sign != 0 && r.sign == 0
                     } else {
@@ -552,8 +553,8 @@ impl NyarVM {
                 Instruction::BigIntLe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint() };
-                    let r = unsafe { rhs.as_bigint() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let res = if l.sign != r.sign {
                         l.sign != 0 && r.sign == 0
                     } else {
@@ -569,8 +570,8 @@ impl NyarVM {
                 Instruction::BigIntGt => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint() };
-                    let r = unsafe { rhs.as_bigint() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let res = if l.sign != r.sign {
                         l.sign == 0 && r.sign != 0
                     } else {
@@ -586,8 +587,8 @@ impl NyarVM {
                 Instruction::BigIntGe => {
                     let rhs = self.pop()?;
                     let lhs = self.pop()?;
-                    let l = unsafe { lhs.as_bigint() };
-                    let r = unsafe { rhs.as_bigint() };
+                    let l = lhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
+                    let r = rhs.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let res = if l.sign != r.sign {
                         l.sign == 0 && r.sign != 0
                     } else {
@@ -602,18 +603,18 @@ impl NyarVM {
                 }
                 Instruction::BigIntToI64 => {
                     let v = self.pop()?;
-                    let b = unsafe { v.as_bigint() };
+                    let b = v.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let i = b.to_i64();
                     self.push(Value::int(i));
                 }
                 Instruction::BigIntFromI64 => {
                     let v = self.pop()?;
-                    let i = v.as_int();
+                    let i = v.try_as_int().ok_or(VmError::InvalidOpcode)?;
                     self.push(Value::bigint_from_i64(i, &self.gc));
                 }
                 Instruction::BigIntToString => {
                     let v = self.pop()?;
-                    let b = unsafe { v.as_bigint() };
+                    let b = v.try_as_bigint().ok_or(VmError::InvalidOpcode)?;
                     let s = b.to_i64().to_string();
                     self.push(Value::string(s, &self.gc));
                 }
@@ -1241,14 +1242,43 @@ impl NyarVM {
                 Instruction::Jump(off) => {
                     let off = *off;
                     let target = (cur_ip as isize + off as isize) as usize;
+                    if off < 0 {
+                        if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
+                            let m_idx = self.frames.last().unwrap().module_idx;
+                            let chunk = &self.modules[m_idx].chunks[chunk_idx];
+                            chunk.hotness.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            if let Some(jit) = self.jit.clone() {
+                                // Trigger OSR if hot enough
+                                if chunk.hotness.load(std::sync::atomic::Ordering::Relaxed) >= 1000 {
+                                    if let Ok(_entry) = jit.osr(m_idx, chunk_idx, target as u32) {
+                                        // In a real VM, we would transition to JIT code here.
+                                        // For now, this is a placeholder for OSR transition.
+                                        println!("OSR triggered for chunk {} at target {}", chunk_idx, target);
+                                        // self.execute_jit_at(entry, ...);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     next_ip = Some(target);
                 }
                 Instruction::JumpIfFalse(off) => {
                     let off = *off;
                     let v = self.pop()?;
-                    if !v.is_truthy() {
-                        next_ip = Some((cur_ip as isize + off as isize) as usize);
+                    let target = if !v.is_truthy() {
+                        (cur_ip as isize + off as isize) as usize
+                    } else {
+                        cur_ip + 1
+                    };
+                    
+                    if off < 0 && !v.is_truthy() {
+                        if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
+                            let m_idx = self.frames.last().unwrap().module_idx;
+                            let chunk = &self.modules[m_idx].chunks[chunk_idx];
+                            chunk.hotness.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
                     }
+                    next_ip = Some(target);
                 }
                 Instruction::Return => {
                     #[cfg(debug_assertions)]
@@ -3045,8 +3075,7 @@ impl NyarVM {
                 Instruction::InstanceOf(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.pop()?;
-                    let is_instance = if obj.is_object() {
-                        let obj_ref = unsafe { obj.as_object() };
+                    let is_instance = if let Some(obj_ref) = obj.try_as_object() {
                         obj_ref.class_idx == class_idx
                     } else {
                         false
@@ -3056,8 +3085,7 @@ impl NyarVM {
                 Instruction::CheckCast(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.pop()?;
-                    if obj.is_object() {
-                        let obj_ref = unsafe { obj.as_object() };
+                    if let Some(obj_ref) = obj.try_as_object() {
                         if obj_ref.class_idx == class_idx {
                             self.push(obj);
                         } else {
@@ -3070,8 +3098,7 @@ impl NyarVM {
                 Instruction::Cast(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.peek_at(0)?;
-                    if obj.is_object() {
-                        let obj_ref = unsafe { obj.as_object() };
+                    if let Some(obj_ref) = obj.try_as_object() {
                         if obj_ref.class_idx != class_idx {
                             return Err(VmError::RuntimeError("Cast failed".into()));
                         }
@@ -3095,10 +3122,10 @@ impl NyarVM {
                 Instruction::ResumeWith => {
                     let result = self.pop()?;
                     let cont_v = self.pop()?;
-                    if !cont_v.is_continuation() {
-                        return Err(VmError::InvalidOpcode);
-                    }
-                    let cont = unsafe { cont_v.as_continuation().clone() };
+                    let cont = cont_v
+                        .try_as_continuation()
+                        .ok_or(VmError::InvalidOpcode)?
+                        .clone();
                     if self.frames.is_empty() {
                         return Err(VmError::StackUnderflow);
                     }
@@ -3111,8 +3138,7 @@ impl NyarVM {
                 }
                 Instruction::Await => {
                     let v = self.pop()?;
-                    if v.is_closure() {
-                        let closure = unsafe { v.as_closure() };
+                    if let Some(closure) = v.try_as_closure() {
                         let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
                         let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
@@ -3136,8 +3162,7 @@ impl NyarVM {
                 }
                 Instruction::BlockOn => {
                     let v = self.pop()?;
-                    if v.is_closure() {
-                        let closure = unsafe { v.as_closure() };
+                    if let Some(closure) = v.try_as_closure() {
                         let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
                         let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;

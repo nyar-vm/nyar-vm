@@ -64,7 +64,7 @@ impl NyarBackend {
                                     handlers: vec![],
                                     lines: vec![],
                                     decoded: None,
-                                    hotness: 0,
+                                    hotness: std::sync::atomic::AtomicU32::new(0),
                                 });
                                 self.module.exports.push(ExportInfo {
                                     symbol: name.clone(),

@@ -768,9 +768,7 @@ fn run_logger_event_handler_prints_and_resumes() {
         out_clone.borrow_mut().push(msg.to_string());
     }));
     let v = vm.execute(module_idx, 1).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 0);
-    }
+    assert_eq!(v.as_int(), 0);
     let lines = output.borrow();
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0], "x");

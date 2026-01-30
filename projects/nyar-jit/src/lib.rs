@@ -58,8 +58,10 @@ pub enum JitTier {
     Interpreter = 0,
     /// Tier 1: Baseline JIT - fast compilation, minimal optimizations.
     Baseline = 1,
-    /// Tier 2: Optimizing JIT - expensive E-Graph saturation.
+    /// Tier 2: Mid-tier JIT - moderate optimizations.
     Optimizing = 2,
+    /// Tier 3: Extreme JIT - expensive E-Graph saturation and global optimizations.
+    Extreme = 3,
 }
 
 /// Represents a compiled function artifact.
@@ -167,14 +169,20 @@ impl JitProvider for NyarJit {
             // Found compiled code, execute it!
             let result = self.execute_compiled(compiled.value(), vm);
             
-            if compiled.tier == JitTier::Baseline {
-                // Baseline compiled, check if we should upgrade to Optimizing
-                let threshold = self.get_threshold(JitTier::Optimizing);
-                let chunk = &mut vm.modules[module_idx].chunks[chunk_idx];
-                chunk.hotness += 1;
+            if compiled.tier < JitTier::Extreme {
+                // Check if we should upgrade to the next tier
+                let next_tier = match compiled.tier {
+                    JitTier::Baseline => JitTier::Optimizing,
+                    JitTier::Optimizing => JitTier::Extreme,
+                    _ => unreachable!(),
+                };
                 
-                if chunk.hotness >= threshold {
-                    match self.compile(vm, module_idx, chunk_idx, JitTier::Optimizing) {
+                let threshold = self.get_threshold(next_tier);
+                let chunk = &vm.modules[module_idx].chunks[chunk_idx];
+                let hotness = chunk.hotness.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                
+                if hotness >= threshold {
+                    match self.compile(vm, module_idx, chunk_idx, next_tier) {
                         Ok(_) => { /* Upgrade successful, next call will use it */ }
                         Err(e) => return Some(Err(e)),
                     }
@@ -186,10 +194,10 @@ impl JitProvider for NyarJit {
 
         // 2. Increment hotness in VM's chunk for baseline trigger
         let threshold = self.get_threshold(JitTier::Baseline);
-        let chunk = &mut vm.modules[module_idx].chunks[chunk_idx];
-        chunk.hotness += 1;
+        let chunk = &vm.modules[module_idx].chunks[chunk_idx];
+        let hotness = chunk.hotness.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        if chunk.hotness >= threshold {
+        if hotness >= threshold {
             // Trigger baseline compilation
             match self.compile(vm, module_idx, chunk_idx, JitTier::Baseline) {
                 Ok(_) => {
@@ -200,6 +208,12 @@ impl JitProvider for NyarJit {
         }
 
         None
+    }
+
+    fn osr(&self, module_idx: usize, chunk_idx: usize, target: u32) -> Result<*const u8, VmError> {
+        // OSR allows transitioning from the interpreter to JITed code in the middle of a function.
+        // For now, delegate to the internal osr method.
+        self.osr_internal(module_idx, chunk_idx, target)
     }
 }
 
@@ -240,7 +254,8 @@ impl NyarJit {
         
         let mut thresholds = HashMap::new();
         thresholds.insert(JitTier::Baseline, 100);
-        thresholds.insert(JitTier::Optimizing, 1000);
+        thresholds.insert(JitTier::Optimizing, 10_000);
+        thresholds.insert(JitTier::Extreme, 50_000);
 
         Ok(Self {
             optimizer,
@@ -306,14 +321,24 @@ impl NyarJit {
             IKunTree::Symbol("empty_chunk".to_string())
         };
 
-        // 4. E-Graph Optimization (if Tier 2)
-        let optimized_tree = if tier == JitTier::Optimizing {
-            let mut optimizer = self.optimizer.lock().unwrap();
-            let root_id = self.add_tree_to_egraph(&mut optimizer, &tree);
-            let backend = self.get_backend();
-            optimizer.optimize(&optimizer.egraph, root_id, backend.get_model())
-        } else {
-            tree
+        // 4. E-Graph Optimization
+        let optimized_tree = match tier {
+            JitTier::Extreme => {
+                let mut optimizer = self.optimizer.lock().unwrap();
+                let root_id = self.add_tree_to_egraph(&mut optimizer, &tree);
+                let backend = self.get_backend();
+                // Extreme tier: Full optimization with more iterations/rules if possible
+                optimizer.optimize(&optimizer.egraph, root_id, backend.get_model())
+            }
+            JitTier::Optimizing => {
+                let mut optimizer = self.optimizer.lock().unwrap();
+                let root_id = self.add_tree_to_egraph(&mut optimizer, &tree);
+                let backend = self.get_backend();
+                // Mid-tier: Faster optimization, maybe fewer iterations
+                // For now, using the same optimize call but we could configure it
+                optimizer.optimize(&optimizer.egraph, root_id, backend.get_model())
+            }
+            _ => tree,
         };
 
         // 5. Machine Code Generation via Gaia
@@ -475,9 +500,10 @@ impl NyarJit {
                 }
                 Instruction::StoreLocal(idx) => {
                     if let Some(val) = stack.pop() {
-                        let id = intents.len();
-                        intents.push(IKun::StateUpdate(id, val)); // Use unique ID for state update
-                        // We also need to record that local_{idx} is now 'val'
+                        let _id = intents.len();
+                        let key_id = intents.len() + 1;
+                        intents.push(IKun::StateUpdate(key_id, val));
+                        intents.push(IKun::Symbol(format!("local_{}", idx)));
                     }
                 }
                 Instruction::LoadGlobal(idx) => {
@@ -487,46 +513,111 @@ impl NyarJit {
                 }
                 Instruction::StoreGlobal(idx) => {
                     if let Some(val) = stack.pop() {
+                        let _id = intents.len();
+                        let key_id = intents.len() + 1;
+                        intents.push(IKun::StateUpdate(key_id, val));
+                        intents.push(IKun::Symbol(format!("global_{}", idx)));
+                    }
+                }
+                Instruction::Jump(offset) => {
+                    let id = intents.len();
+                    intents.push(IKun::Extension("jump".to_string(), vec![]));
+                    // Target offset could be stored in metadata or as a constant
+                    let _target_id = intents.len();
+                    intents.push(IKun::Constant(offset as i64));
+                }
+                Instruction::JumpIfFalse(offset) => {
+                    if let Some(cond) = stack.pop() {
                         let id = intents.len();
-                        intents.push(IKun::StateUpdate(id, val));
+                        let target_id = id + 1;
+                        intents.push(IKun::Extension("branch_false".to_string(), vec![cond, target_id]));
+                        intents.push(IKun::Constant(offset as i64));
                     }
                 }
                 Instruction::Call(idx, _args_count) => {
                     // Simplified: treat as an extension for now
-                    let id = intents.len();
+                    let _id = intents.len();
                     intents.push(IKun::Extension(format!("call_{}", idx), vec![]));
-                    stack.push(id);
+                    stack.push(_id);
                 }
                 Instruction::NewObject(idx) => {
-                    let id = intents.len();
-                    let const_id = id;
+                    let _id = intents.len();
+                    let const_id = _id;
                     intents.push(IKun::Constant(idx as i64));
                     
                     let alloc_id = intents.len();
                     intents.push(IKun::Extension("alloc".to_string(), vec![const_id]));
                     stack.push(alloc_id);
                 }
+                Instruction::GetField(idx) => {
+                    if let Some(obj) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
+                        
+                        let id = intents.len();
+                        intents.push(IKun::Extension("load_field".to_string(), vec![obj, const_id]));
+                        stack.push(id);
+                    }
+                }
                 Instruction::SetField(idx) => {
                     if let (Some(val), Some(obj)) = (stack.pop(), stack.pop()) {
                         let const_id = intents.len();
                         intents.push(IKun::Constant(idx as i64));
                         
-                        let store_id = intents.len();
+                        let _store_id = intents.len();
                         intents.push(IKun::Extension("store_field".to_string(), vec![obj, const_id, val]));
                         
                         let _barrier_id = intents.len();
                         intents.push(IKun::Extension("barrier".to_string(), vec![obj]));
-                        // Barriers usually don't push to stack
+                    }
+                }
+                Instruction::LoadUpvalue(idx) => {
+                    let id = intents.len();
+                    intents.push(IKun::Symbol(format!("upvalue_{}", idx)));
+                    stack.push(id);
+                }
+                Instruction::StoreUpvalue(idx) => {
+                    if let Some(val) = stack.pop() {
+                        let _id = intents.len();
+                        let key_id = intents.len() + 1;
+                        intents.push(IKun::StateUpdate(key_id, val));
+                        intents.push(IKun::Symbol(format!("upvalue_{}", idx)));
+                    }
+                }
+                Instruction::CallVirtual(idx, args_count) | Instruction::CallDynamic(idx, args_count) | Instruction::InvokeMethod(idx, args_count) | Instruction::CallSymbol(idx, args_count) => {
+                    let mut args = Vec::new();
+                    for _ in 0..args_count {
+                        if let Some(arg) = stack.pop() {
+                            args.push(arg);
+                        }
+                    }
+                    args.reverse();
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
+                    
+                    let id = intents.len();
+                    intents.push(IKun::Extension("dynamic_call".to_string(), args));
+                    stack.push(id);
+                }
+                Instruction::I32DivS | Instruction::I64DivS => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("div_s".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::I32RemS | Instruction::I64RemS => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("rem_s".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
                     }
                 }
                 Instruction::Return => {
                     if let Some(val) = stack.pop() {
-                        let id = intents.len();
+                        let _id = intents.len();
                         intents.push(IKun::Extension("return".to_string(), vec![val]));
                     }
-                }
-                Instruction::Return => {
-                    // Handled by the caller or final result
                 }
                 _ => {
                     // Other instructions can be added here
@@ -587,7 +678,7 @@ impl NyarJit {
     }
 
     /// Triggers On-Stack Replacement (OSR) for long-running loops.
-    pub fn osr(&self, _module_idx: usize, _chunk_idx: usize, _loop_id: u32) -> Result<*const u8, VmError> {
+    pub fn osr_internal(&self, _module_idx: usize, _chunk_idx: usize, _loop_id: u32) -> Result<*const u8, VmError> {
         // OSR allows transitioning from the interpreter to JITed code in the middle of a function.
         Err(VmError::RuntimeError("OSR not yet implemented".to_string()))
     }

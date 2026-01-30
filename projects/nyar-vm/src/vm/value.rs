@@ -28,6 +28,14 @@ impl Display for Value {
     }
 }
 
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "Value(")?;
+        Display::fmt(self, f)?;
+        write!(f, ")")
+    }
+}
+
 impl Trace for Value {
     fn trace(&self, ctx: &mut MarkContext) {
         if self.is_float() {
@@ -537,6 +545,55 @@ impl Value {
     pub fn try_as_bool(&self) -> Option<bool> {
         if self.is_bool() {
             Some(self.as_bool())
+        } else {
+            None
+        }
+    }
+    pub fn try_as_object(&self) -> Option<&Object> {
+        if self.is_object() {
+            Some(unsafe { self.as_object() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_closure(&self) -> Option<&Closure> {
+        if self.is_closure() {
+            Some(unsafe { self.as_closure() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_dyn_object(&self) -> Option<&DynObject> {
+        if self.is_dyn_object() {
+            Some(unsafe { self.as_dyn_object() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_list(&self) -> Option<&List> {
+        if self.is_list() {
+            Some(unsafe { self.as_list() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_tuple(&self) -> Option<&Tuple> {
+        if self.is_tuple() {
+            Some(unsafe { self.as_tuple() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_continuation(&self) -> Option<&Continuation> {
+        if self.is_continuation() {
+            Some(unsafe { self.as_continuation() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_witness_table(&self) -> Option<&WitnessTable> {
+        if self.is_witness_table() {
+            Some(unsafe { self.as_witness_table() })
         } else {
             None
         }

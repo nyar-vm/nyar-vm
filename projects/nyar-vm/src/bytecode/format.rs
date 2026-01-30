@@ -14,7 +14,7 @@ pub enum Constant {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Handler {}
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Chunk {
     pub locals: u16,
     pub upvalues: u16,
@@ -26,7 +26,35 @@ pub struct Chunk {
     #[serde(skip)]
     pub decoded: Option<std::sync::Arc<Vec<crate::bytecode::decoder::Instruction>>>,
     #[serde(skip)]
-    pub hotness: u32,
+    pub hotness: std::sync::atomic::AtomicU32,
+}
+
+impl Clone for Chunk {
+    fn clone(&self) -> Self {
+        Self {
+            locals: self.locals,
+            upvalues: self.upvalues,
+            max_stack: self.max_stack,
+            code: self.code.clone(),
+            handlers: self.handlers.clone(),
+            lines: self.lines.clone(),
+            decoded: self.decoded.clone(),
+            hotness: std::sync::atomic::AtomicU32::new(self.hotness.load(std::sync::atomic::Ordering::Relaxed)),
+        }
+    }
+}
+
+impl PartialEq for Chunk {
+    fn eq(&self, other: &Self) -> bool {
+        self.locals == other.locals &&
+        self.upvalues == other.upvalues &&
+        self.max_stack == other.max_stack &&
+        self.code == other.code &&
+        self.handlers == other.handlers &&
+        self.lines == other.lines &&
+        self.decoded == other.decoded &&
+        self.hotness.load(std::sync::atomic::Ordering::Relaxed) == other.hotness.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -133,7 +161,7 @@ impl Default for Chunk {
             handlers: vec![],
             lines: vec![],
             decoded: None,
-            hotness: 0,
+            hotness: std::sync::atomic::AtomicU32::new(0),
         }
     }
 }
@@ -258,7 +286,7 @@ impl NyarcModule {
                 handlers: vec![],
                 lines,
                 decoded: None,
-                hotness: 0,
+                hotness: std::sync::atomic::AtomicU32::new(0),
             });
         }
 

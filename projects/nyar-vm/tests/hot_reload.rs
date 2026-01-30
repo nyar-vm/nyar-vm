@@ -1,6 +1,5 @@
-use nyar_vm::bytecode::format::{Constant, NyarcModule, minimal_module_with_chunk};
+use nyar_vm::bytecode::format::minimal_module_with_chunk;
 use nyar_vm::vm::interpreter::NyarVM;
-use nyar_vm::bytecode::decoder::Instruction;
 
 #[test]
 fn test_hot_reload_basic() {
