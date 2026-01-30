@@ -397,6 +397,14 @@ impl Value {
     pub fn is_trait_object(&self) -> bool {
         !self.is_float() && self.tag() == ValueTag::TraitObject
     }
+
+    pub fn is_witness_table(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::WitnessTable
+    }
+
+    pub fn is_bigint(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::BigInt
+    }
     pub fn bool(v: bool) -> Self {
         Self::encode(ValueTag::Bool, if v { 1 } else { 0 })
     }

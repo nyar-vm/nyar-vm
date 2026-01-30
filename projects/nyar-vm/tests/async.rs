@@ -1,5 +1,4 @@
 use nyar_types::VmError;
-use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::interpreter::NyarVM;
@@ -19,41 +18,25 @@ fn run_await_on_closure() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![Constant::Int(42)],
-        effects: vec![],
         chunks: vec![
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: callee,
-                handlers: vec![],
-                lines: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
-                lines: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
-        imports: vec![],
-        exports: vec![],
+        ..Default::default()
     };
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
     let v = vm.execute(module_idx, 1).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 42);
-    }
+    assert_eq!(v.as_int(), 42);
 }
 
 #[test]
@@ -71,41 +54,25 @@ fn run_block_on_closure() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![Constant::Int(7)],
-        effects: vec![],
         chunks: vec![
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: callee,
-                handlers: vec![],
-                lines: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
-                lines: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
-        imports: vec![],
-        exports: vec![],
+        ..Default::default()
     };
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
     let v = vm.execute(module_idx, 1).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 7);
-    }
+    assert_eq!(v.as_int(), 7);
 }
 
 #[test]
@@ -297,9 +264,6 @@ fn run_effect_handler_resume_with_continuation() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![
             Constant::String("XXeffect".to_string()),
             Constant::String("add".to_string()),
@@ -312,37 +276,22 @@ fn run_effect_handler_resume_with_continuation() {
         chunks: vec![
             Chunk {
                 locals: 3,
-                upvalues: 0,
                 max_stack: 8,
                 code: catch_x,
-                handlers: vec![],
+                ..Default::default()
             },
             Chunk {
-                locals: 0,
-                upvalues: 0,
                 max_stack: 8,
                 code: main,
-                handlers: vec![],
+                ..Default::default()
             },
         ],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
-    let chunk = module.chunks[1].clone();
-    let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    let v = vm.execute(&program).unwrap();
-    unsafe {
-        assert_eq!(v.as_int(), 11);
-    }
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    let v = vm.execute(module_idx, 1).unwrap();
+    assert_eq!(v.as_int(), 11);
 }
 
 #[test]

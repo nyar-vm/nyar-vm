@@ -2923,7 +2923,7 @@ impl NyarVM {
                 Instruction::WitnessMethod(method_idx) => {
                     let method_idx = *method_idx as usize;
                     let v = self.pop()?;
-                    if v.tag() != ValueTag::WitnessTable {
+                    if !v.is_witness_table() {
                         return Err(VmError::InvalidOpcode);
                     }
                     let witness = unsafe { v.as_witness_table() };
@@ -3013,7 +3013,7 @@ impl NyarVM {
                         }
                     }
                     // self.log(&format!("SetField: value_tag={:?}", val.tag()));
-                    if obj.tag() != ValueTag::Object {
+                    if !obj.is_object() {
                         return Err(VmError::RuntimeError(format!(
                             "SetField on non-object: found {:?}",
                             obj.tag()

@@ -10,22 +10,14 @@ fn test_chunk_lines_encoding() {
     code.push(Opcode::Return as u8);
     let lines = vec![(0, 10), (1, 20)];
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![],
-        effects: vec![],
         chunks: vec![nyar_vm::bytecode::format::Chunk {
-            locals: 0,
-            upvalues: 0,
             max_stack: 8,
             code: code.clone(),
-            handlers: vec![],
             lines: lines.clone(),
+            ..Default::default()
         }],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
+        ..Default::default()
     };
     let encoded = module.encode();
     let decoded = NyarModule::parse(&encoded).unwrap();
@@ -43,29 +35,17 @@ fn perform_throw_unhandled() {
     code.push(1u8);
     code.push(Opcode::Return as u8);
     let module = NyarModule {
-        version: 1,
-        flags: 0,
-        timestamp: 0,
         constants: vec![Constant::Int(7)],
         effects: vec!["throw".to_string()],
         chunks: vec![nyar_vm::bytecode::format::Chunk {
-            locals: 0,
-            upvalues: 0,
             max_stack: 8,
             code,
-            handlers: vec![],
-            lines: vec![],
+            ..Default::default()
         }],
-        classes: vec![],
-        traits: vec![],
-        impls: vec![],
-        imports: vec![],
-        exports: vec![],
+        ..Default::default()
     };
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module.clone());
-    let _chunk = module.chunks[0].clone();
-    let _program = Decoder::new(&_chunk.code).decode_all().unwrap();
     let err = vm.execute(module_idx, 0).err().unwrap();
     match err {
         VmError::UnhandledError => {}
@@ -97,15 +77,9 @@ fn run_make_tuple_and_get_element() {
     let parsed = NyarModule::parse(&data).unwrap();
     let chunk = parsed.chunks[0].clone();
     let program = Decoder::new(&chunk.code).decode_all().unwrap();
-    let mut vm = NyarVM::new(
-        parsed.constants,
-        parsed.chunks.clone(),
-        parsed.classes,
-        parsed.traits,
-        parsed.impls,
-        parsed.effects,
-    );
-    let v = vm.execute(&program).unwrap();
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(parsed);
+    let v = vm.execute(module_idx, 0).unwrap();
     unsafe {
         assert_eq!(v.as_int(), 2);
     }

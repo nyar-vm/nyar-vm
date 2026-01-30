@@ -141,6 +141,7 @@ impl<'a> UirConverter<'a> {
                 self.builder.extension("export", vec![inner], loc)
             }
             ast::Statement::ClassDeclaration(class) => {
+                println!("Lowering class: {}", class.name);
                 let loc = self.to_loc(class.span.into());
                 let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
                 if let Some(ext) = class.extends {
@@ -149,9 +150,11 @@ impl<'a> UirConverter<'a> {
                     args.push(self.builder.constant(0, loc.clone())); // No base class
                 }
 
+                println!("Class body size: {}", class.body.len());
                 for member in class.body {
                     match member {
                         ast::ClassMember::Property { name, ty, initializer, span } => {
+                            println!("  Property: {}", name);
                             let mloc = self.to_loc(span.into());
                             let init_id = if let Some(expr) = initializer {
                                 self.convert_expression(expr)
