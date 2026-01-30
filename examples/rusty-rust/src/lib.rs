@@ -39,10 +39,7 @@ impl NyarFrontend for MiniRustFrontend {
     }
 
     fn lower(&self, _ast: &RustRoot) -> Result<IKunTree, NyarError> {
-        // TODO: 实现从 RustRoot 到 IKunTree 的转换
-        // 目前这里还是占位符，因为我们需要重构 codegen 模块以生成 IKunTree
-        let mut tree = IKunTree::default();
-        tree.name = "mini-rust-program".to_string();
-        Ok(tree)
+        let translator = codegen::GaiaTranslator::new();
+        translator.translate_to_tree(_ast)
     }
 }

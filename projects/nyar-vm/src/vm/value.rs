@@ -252,13 +252,13 @@ impl Value {
         self.payload() != 0
     }
     pub unsafe fn as_string<'a>(&self) -> &'a String {
-        transmute(self.payload())
+        &*(self.payload() as *const String)
     }
     pub unsafe fn as_array<'a>(&self) -> &'a Array {
-        transmute(self.payload())
+        &*(self.payload() as *const Array)
     }
     pub unsafe fn as_bigint<'a>(&self) -> &'a BigInt {
-        transmute(self.payload())
+        &*(self.payload() as *const BigInt)
     }
 }
 

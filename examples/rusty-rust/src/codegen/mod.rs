@@ -817,7 +817,7 @@ impl GaiaTranslator {
     }
 
     /// 将表达式转换为字符串（用于错误消息）
-    fn expression_to_string(&self, expr: &Expression) -> String {
+    pub fn expression_to_string(&self, expr: &Expression) -> String {
         match expr {
             Expression::Identifier(name) => name.clone(),
             Expression::Literal(Literal::String(s)) => format!("\"{}\"", s),

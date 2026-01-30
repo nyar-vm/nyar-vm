@@ -22,6 +22,8 @@ pub struct GcHeader {
     pub(crate) drop_and_dealloc: unsafe fn(NonNull<GcHeader>),
     /// Function to trace the object.
     pub(crate) trace_object: unsafe fn(NonNull<GcHeader>),
+    /// Size of the allocation in bytes.
+    pub(crate) size: usize,
 }
 
 #[repr(C)]
@@ -203,7 +205,7 @@ impl NyarGc {
     }
 
     unsafe fn sweep_young(&self) {
-        let mut prev: Option<NonNull<GcHeader>> = None;
+        let prev: Option<NonNull<GcHeader>> = None;
         let mut curr = self.young_head.get();
 
         while let Some(header_ptr) = curr {
@@ -226,6 +228,7 @@ impl NyarGc {
                 header.next.set(self.old_head.get());
                 self.old_head.set(Some(header_ptr));
 
+                // Since we removed it from the current list, prev doesn't change
                 curr = next;
             } else {
                 // Object is unreachable, free it
@@ -235,7 +238,6 @@ impl NyarGc {
                     self.young_head.set(next);
                 }
 
-                // TODO: Update allocated_bytes (needs to know size)
                 (header.drop_and_dealloc)(header_ptr);
                 curr = next;
             }
