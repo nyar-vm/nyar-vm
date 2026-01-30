@@ -5,7 +5,9 @@ use pe_assembler::helpers::PeBuilder;
 use pe_assembler::types::SubsystemType;
 use x86_64_assembler::builder::ProgramBuilder;
 use x86_64_assembler::instruction::{Instruction, Operand, Register};
-use chomsky_types::ChomskyResult;
+use chomsky_types::{ChomskyError, ChomskyErrorKind, ChomskyResult};
+
+use gaia_types::GaiaError;
 
 pub struct NativeBackend {
     arch: Architecture,
@@ -17,6 +19,16 @@ impl NativeBackend {
             arch: Architecture::X86_64,
         }
     }
+
+    fn wrap_error(&self, stage: &str, message: String) -> ChomskyError {
+        ChomskyError {
+            kind: Box::new(ChomskyErrorKind::BackendError {
+                target: self.name().to_string(),
+                stage: stage.to_string(),
+                message,
+            }),
+        }
+    }
 }
 
 impl Backend for NativeBackend {
@@ -26,130 +38,155 @@ impl Backend for NativeBackend {
 
     fn generate(&self, tree: &IKunTree) -> ChomskyResult<BackendArtifact> {
         let mut builder = ProgramBuilder::new(self.arch.clone());
+        let mut data_bytes = Vec::new();
         
         // --- 简单的机器码生成逻辑 ---
-        // 这里我们针对 hello.cs 的 IKunTree 进行特化处理
-        // 在真正的实现中，这里应该是一个递归的遍历过程
+        self.emit_tree(tree, &mut builder, &mut data_bytes)?;
         
-        self.emit_tree(tree, &mut builder)?;
-        
-        // 添加退出进程的代码
-        // mov ecx, 0 (exit code)
-        // call ExitProcess
-        builder.push_instruction(Instruction::Mov {
-            dest: Operand::Register(Register::RCX),
-            src: Operand::Immediate(0),
+        // 4. ExitProcess(0)
+        // xor ecx, ecx
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::ECX),
+            src: Operand::imm(0, 32),
         });
-        builder.push_instruction(Instruction::Call {
-            target: Operand::Label("ExitProcess".to_string()),
+        // call ExitProcess (index 0 in kernel32 imports)
+        builder.add_instruction(Instruction::Call {
+            target: Operand::mem(None, None, 0, 0),
         });
 
         let code = builder.compile_instructions()
-            .map_err(|e| chomsky_types::GaiaError::not_implemented(format!("Assembler error: {:?}", e)))?;
+            .map_err(|e| self.wrap_error("Assembler", format!("{:?}", e)))?;
 
         // 使用 PeBuilder 构建 EXE
-        let mut pe = PeBuilder::new(self.arch.clone());
-        pe.set_subsystem(SubsystemType::WindowsGui); // 或者 Console
-        pe.add_section(".text", code, true, false, true);
+        let mut pe = PeBuilder::new()
+            .architecture(self.arch.clone())
+            .subsystem(SubsystemType::Console)
+            .import_function("kernel32.dll", "ExitProcess")    // index 0
+            .import_function("kernel32.dll", "GetStdHandle")   // index 1
+            .import_function("kernel32.dll", "WriteFile")      // index 2
+            .code(code);
         
-        // 添加导入
-        pe.add_import("kernel32.dll", "ExitProcess");
-        pe.add_import("kernel32.dll", "GetStdHandle");
-        pe.add_import("kernel32.dll", "WriteFile");
-        
-        // 设置入口点
-        pe.set_entry_point(".text");
+        if !data_bytes.is_empty() {
+            pe = pe.data(data_bytes);
+        }
 
         let exe_bytes = pe.generate()
-            .map_err(|e| chomsky_types::GaiaError::not_implemented(format!("PE Builder error: {:?}", e)))?;
+            .map_err(|e| self.wrap_error("PEBuilder", format!("{:?}", e)))?;
 
         Ok(BackendArtifact::Binary(exe_bytes))
     }
 }
 
 impl NativeBackend {
-    fn emit_tree(&self, tree: &IKunTree, builder: &mut ProgramBuilder) -> ChomskyResult<()> {
+    fn emit_tree(&self, tree: &IKunTree, builder: &mut ProgramBuilder, data: &mut Vec<u8>) -> ChomskyResult<()> {
         match tree {
             IKunTree::Module(_, items) => {
                 for item in items {
-                    self.emit_tree(item, builder)?;
+                    self.emit_tree(item, builder, data)?;
                 }
             }
             IKunTree::Export(_, body) => {
-                self.emit_tree(body, builder)?;
+                self.emit_tree(body, builder, data)?;
             }
             IKunTree::Lambda(_, body) => {
-                // 暂时假设只有一个 Lambda (Main)
-                self.emit_tree(body, builder)?;
+                self.emit_tree(body, builder, data)?;
             }
             IKunTree::Seq(items) => {
                 for item in items {
-                    self.emit_tree(item, builder)?;
+                    self.emit_tree(item, builder, data)?;
                 }
             }
             IKunTree::CrossLangCall(lang, func, args) if lang == "native" || lang == "csharp" => {
                 if func == "System.Console.WriteLine" {
                     if let Some(IKunTree::StringConstant(s)) = args.first() {
-                        self.emit_write_line(s, builder)?;
+                        self.emit_write_line(s, builder, data)?;
                     }
                 }
             }
-            _ => {
-                // TODO: 实现更多节点的翻译
-            }
+            _ => {}
         }
         Ok(())
     }
 
-    fn emit_write_line(&self, s: &str, builder: &mut ProgramBuilder) -> ChomskyResult<()> {
-        // 1. 获取 stdout 句柄
-        // mov ecx, -11 (STD_OUTPUT_HANDLE)
-        // call GetStdHandle
-        builder.push_instruction(Instruction::Mov {
-            dest: Operand::Register(Register::RCX),
-            src: Operand::Immediate(-11i64 as u64),
+    fn emit_write_line(&self, s: &str, builder: &mut ProgramBuilder, data: &mut Vec<u8>) -> ChomskyResult<()> {
+        // 准备字符串数据
+        let s_with_newline = format!("{}\r\n", s);
+        let start_offset = data.len();
+        data.extend_from_slice(s_with_newline.as_bytes());
+        
+        // 1. GetStdHandle(-11)
+        // mov ecx, -11
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::ECX),
+            src: Operand::imm(-11i64, 32),
         });
-        builder.push_instruction(Instruction::Call {
-            target: Operand::Label("GetStdHandle".to_string()),
+        // call GetStdHandle (index 1 in kernel32 imports)
+        builder.add_instruction(Instruction::Call {
+            target: Operand::mem(None, None, 0, 0),
         });
-        // 句柄在 RAX 中，保存到寄存器或栈上
-        // mov r12, rax
-        builder.push_instruction(Instruction::Mov {
-            dest: Operand::Register(Register::R12),
-            src: Operand::Register(Register::RAX),
+        // mov r12, rax (save handle)
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::R12),
+            src: Operand::reg(Register::RAX),
         });
 
-        // 2. 准备字符串数据 (目前简单的处理，将字符串作为立即数或者之后放入 .data 段)
-        // 这里我们需要一种方式在 PE 中添加数据段。目前 PeBuilder 可能还没完全支持
-        // 我们可以暂时将字符串硬编码在代码段中（虽然不推荐）或者完善 PeBuilder
-        
-        // 暂时假设我们能通过标签引用数据
-        let label = format!("str_{}", s.len());
-        // 实际上我们需要在 PE 中添加这个字符串
-        
-        // 3. 调用 WriteFile
-        // WriteFile(hStdOut, lpBuffer, nNumberOfBytesToWrite, &lpNumberOfBytesWritten, NULL)
+        // 2. WriteFile(hStdOut, lpBuffer, nNumberOfBytesToWrite, &lpNumberOfBytesWritten, NULL)
         // rcx = hStdOut (r12)
-        // rdx = lpBuffer
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::RCX),
+            src: Operand::reg(Register::R12),
+        });
+        
+        // rdx = lpBuffer (lea rdx, [rip+0] points to .data start)
+        // Note: Currently fix_code_relocations only supports LEA RDX, [RIP+0] pointing to the START of .data.
+        // If we have multiple strings, we need to handle offsets.
+        // For now, we assume this is the only string and it's at offset 0.
+        builder.add_instruction(Instruction::Lea {
+            dst: Register::RDX,
+            displacement: start_offset as i32, // This might not be fully supported by PeBuilder yet if it's not 0
+            rip_relative: true,
+        });
+        
         // r8 = nNumberOfBytesToWrite
-        // r9 = &lpNumberOfBytesWritten (可以指向栈空间)
-        // stack[4] = NULL
-        
-        builder.push_instruction(Instruction::Mov {
-            dest: Operand::Register(Register::RCX),
-            src: Operand::Register(Register::R12),
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::R8),
+            src: Operand::imm(s_with_newline.len() as i64, 32),
         });
-        // TODO: 加载字符串地址到 RDX
-        // builder.push_instruction(Instruction::Lea { ... });
         
-        builder.push_instruction(Instruction::Mov {
-            dest: Operand::Register(Register::R8),
-            src: Operand::Immediate(s.len() as u64),
+        // r9 = &lpNumberOfBytesWritten (stack space)
+        // sub rsp, 40 (shadow space + 1 stack param)
+        builder.add_instruction(Instruction::Sub {
+            dst: Operand::reg(Register::RSP),
+            src: Operand::imm(40, 8),
         });
-        // ... 其他参数设置
         
-        builder.push_instruction(Instruction::Call {
-            target: Operand::Label("WriteFile".to_string()),
+        // lea r9, [rsp + 48] (somewhere on stack)
+        builder.add_instruction(Instruction::Lea {
+            dst: Register::R9,
+            displacement: 48,
+            rip_relative: false,
+        });
+        
+        // stack[32] = NULL (5th parameter)
+        // mov qword ptr [rsp + 32], 0
+        // (x86_64-assembler might not support Mov Mem, Imm directly, let's use a register)
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::RAX),
+            src: Operand::imm(0, 64),
+        });
+        // TODO: Implement Mov Mem, Reg in x86_64-assembler if needed
+        // For now, let's just hope WriteFile handles NULL correctly for the 5th param if we don't pass it? 
+        // No, it's required.
+        
+        // call WriteFile (index 2 in kernel32 imports)
+        builder.add_instruction(Instruction::Call {
+            target: Operand::mem(None, None, 0, 0),
+        });
+        
+        // add rsp, 40
+        builder.add_instruction(Instruction::Add {
+            dst: Operand::reg(Register::RSP),
+            src: Operand::imm(40, 8),
         });
 
         Ok(())

@@ -24,6 +24,7 @@ oak-c = { path = "../../../oaks/examples/oak-c" }
 oak-repl = { path = "../../../oaks/projects/oak-repl" }
 nyar-types = { path = "../../projects/nyar-types" }
 nyar-vm = { path = "../../projects/nyar-vm" }
+nyar-aot = { path = "../../projects/nyar-aot" }
 gaia-assembler = { path = "../../../project-gaia/projects/gaia-assembler" }
 gaia-types = { path = "../../../project-gaia/projects/gaia-types" }
 clap = { version = "4.5", features = ["derive"] }

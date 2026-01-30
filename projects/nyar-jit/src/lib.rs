@@ -72,7 +72,8 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
                                         if other_args.contains(&id) && 
                                            other_op != "load_field" && 
                                            other_op != "store_field" &&
-                                           other_op != "barrier" {
+                                           other_op != "barrier" &&
+                                           other_op != "type_of" {
                                             escapes = true;
                                             break;
                                         }

@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 nyar-gc = { path = "../nyar-gc" }
 nyar-types = { path = "../nyar-types" }
-nyar-aot = { path = "../nyar-aot" }
+nyar-aot = { path = "../nyar-aot", default-features = false }
 chomsky-uir = { workspace = true }
 chomsky-source = { workspace = true }
 chomsky-cost = { workspace = true }
@@ -18,11 +18,13 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 thiserror = "1.0"
 indexmap = "2.2"
-pe-assembler = { workspace = true }
-gaia-assembler = { workspace = true }
+pe-assembler = { workspace = true, optional = true }
+gaia-assembler = { workspace = true, optional = true }
 gaia-types = { workspace = true }
-x86_64-assembler = { workspace = true }
+x86_64-assembler = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 
 [features]
+default = ["native", "clap"]
+native = ["nyar-aot/native", "dep:pe-assembler", "dep:gaia-assembler", "dep:x86_64-assembler"]
 clap = ["dep:clap"]

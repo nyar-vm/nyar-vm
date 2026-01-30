@@ -641,7 +641,7 @@ impl NyarGc {
                     return tlab.alloc(layout).unwrap();
                 }
                 std::mem::forget(block);
-                curr = (*curr).next.load(Ordering::Acquire);
+                curr = (*curr).get_next();
             }
         }
 
@@ -654,7 +654,7 @@ impl NyarGc {
         let mut old_head = self.blocks_head.load(Ordering::Acquire);
         loop {
             unsafe {
-                (*new_header).next.store(old_head, Ordering::Relaxed);
+                (*new_header).set_next(old_head);
                 match self.blocks_head.compare_exchange_weak(
                     old_head,
                     new_header,
@@ -819,7 +819,7 @@ impl NyarGc {
                 for word in (*block_curr).card_table.iter() {
                     word.store(0, Ordering::Release);
                 }
-                block_curr = (*block_curr).get_next();
+                block_curr = (*block_curr).next.load(Ordering::Acquire);
             }
         }
 
@@ -836,7 +836,7 @@ impl NyarGc {
 
         while !curr.is_null() {
             let header = &*curr;
-            let next = header.get_next();
+            let next = header.next.load(Ordering::Acquire);
 
             // Reclaim block if it's full (cursor == BLOCK_SIZE) and has no live objects
             if header.cursor.load(Ordering::Relaxed) >= BLOCK_SIZE && header.live_bytes.load(Ordering::Relaxed) == 0 {
@@ -847,23 +847,15 @@ impl NyarGc {
                     continue;
                 }
 
-                // Unlink
                 if prev.is_null() {
-                    // It's the head
-                    if self.blocks_head.compare_exchange_weak(curr, next, Ordering::Release, Ordering::Acquire).is_ok() {
-                        let layout = Layout::from_size_align(BLOCK_SIZE, BLOCK_SIZE).unwrap();
-                        alloc::dealloc(curr as *mut u8, layout);
-                        curr = next;
-                        continue;
-                    }
+                    self.blocks_head.store(next, Ordering::Release);
                 } else {
-                    // It's in the middle or end
-                    (*prev).set_next(next);
-                    let layout = Layout::from_size_align(BLOCK_SIZE, BLOCK_SIZE).unwrap();
-                    alloc::dealloc(curr as *mut u8, layout);
-                    curr = next;
-                    continue;
+                    (*prev).next.store(next, Ordering::Release);
                 }
+                let layout = Layout::from_size_align(BLOCK_SIZE, BLOCK_SIZE).unwrap();
+                alloc::dealloc(curr as *mut u8, layout);
+                curr = next;
+                continue;
             }
             prev = curr;
             curr = next;
@@ -1126,7 +1118,7 @@ impl NyarGc {
         while !block_curr.is_null() {
             unsafe {
                 (*block_curr).live_bytes.store(0, Ordering::Relaxed);
-                block_curr = (*block_curr).next.load(Ordering::Acquire);
+                block_curr = (*block_curr).get_next();
             }
         }
 
