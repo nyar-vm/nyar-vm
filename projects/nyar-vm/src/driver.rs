@@ -48,12 +48,28 @@ impl NyarDriver {
     ) -> Result<(), NyarError> {
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let _tree = frontend.lower(&ast)?;
-        
-        // TODO: 使用 nyar-aot 进行原生代码生成
-        println!("AOT: Compiling IKunTree to native at {:?}", output_path);
-        
-        Err(NyarError::Compile("AOT compilation to native backend is not yet fully integrated".to_string()))
+        let tree = frontend.lower(&ast)?;
+
+        let mut aot = crate::aot::NyarAot::new();
+        let backend = crate::aot::NativeBackend::new();
+
+        // 这里的 tree 是 IKunTree，需要转换成 IKun 才能传给 aot.compile
+        // 或者我们直接调用 backend.generate 如果不需要优化的话
+        // 为了简单起见，我们先直接调用 backend.generate
+
+        use chomsky_extract::Backend;
+        let artifact = backend
+            .generate(&tree)
+            .map_err(|e| NyarError::Compile(format!("Backend error: {:?}", e)))?;
+
+        match artifact {
+            chomsky_extract::BackendArtifact::Binary(bytes) => {
+                fs::write(output_path, bytes).map_err(NyarError::from)?;
+                println!("AOT: Compiled to native at {:?}", output_path);
+                Ok(())
+            }
+            _ => Err(NyarError::Compile("Unexpected artifact type".to_string())),
+        }
     }
 
     /// AOT 编译到 WASM

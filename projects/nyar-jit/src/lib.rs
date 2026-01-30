@@ -367,6 +367,7 @@ impl NyarJit {
                 vm.stack.as_mut_ptr(),
                 &mut vm.sp as *mut usize,
                 frame.locals.as_mut_ptr(),
+                &mut frame.ip as *mut usize,
             );
             
             if res_code == 0 {
@@ -622,29 +623,31 @@ impl NyarJit {
                     }
                 }
                 Instruction::LoadLocal(idx) => {
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
-                    intents.push(IKun::Symbol(format!("local_{}", idx)));
+                    intents.push(IKun::Extension("load_local".to_string(), vec![const_id]));
                     stack.push(id);
                 }
                 Instruction::StoreLocal(idx) => {
-                    if let Some(val) = stack.pop() {
-                        let _id = intents.len();
-                        let key_id = intents.len() + 1;
-                        intents.push(IKun::StateUpdate(key_id, val));
-                        intents.push(IKun::Symbol(format!("local_{}", idx)));
+                    if let Some(val_id) = stack.pop() {
+                        let key_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
+                        intents.push(IKun::StateUpdate(key_id, val_id));
                     }
                 }
                 Instruction::LoadGlobal(idx) => {
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
-                    intents.push(IKun::Symbol(format!("global_{}", idx)));
+                    intents.push(IKun::Extension("load_global".to_string(), vec![const_id]));
                     stack.push(id);
                 }
                 Instruction::StoreGlobal(idx) => {
-                    if let Some(val) = stack.pop() {
-                        let _id = intents.len();
-                        let key_id = intents.len() + 1;
-                        intents.push(IKun::StateUpdate(key_id, val));
-                        intents.push(IKun::Symbol(format!("global_{}", idx)));
+                    if let Some(val_id) = stack.pop() {
+                        let key_id = intents.len();
+                        intents.push(IKun::Extension("global_key".to_string(), vec![IKun::Constant(idx as i64)]));
+                        intents.push(IKun::StateUpdate(key_id, val_id));
                     }
                 }
                 Instruction::Jump(offset) => {
@@ -662,11 +665,21 @@ impl NyarJit {
                         intents.push(IKun::Constant(offset as i64));
                     }
                 }
-                Instruction::Call(idx, _args_count) => {
-                    // Simplified: treat as an extension for now
-                    let _id = intents.len();
-                    intents.push(IKun::Extension(format!("call_{}", idx), vec![]));
-                    stack.push(_id);
+                Instruction::Call(idx, args_count) => {
+                    let mut args = Vec::new();
+                    for _ in 0..args_count {
+                        if let Some(id) = stack.pop() {
+                            args.push(id);
+                        }
+                    }
+                    args.reverse();
+                    
+                    let func_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
+                    
+                    let id = intents.len();
+                    intents.push(IKun::Apply(func_id, args));
+                    stack.push(id);
                 }
                 Instruction::NewObject(idx) => {
                     let _id = intents.len();
@@ -742,9 +755,10 @@ impl NyarJit {
                     }
                 }
                 Instruction::Return => {
-                    if let Some(val) = stack.pop() {
-                        let _id = intents.len();
-                        intents.push(IKun::Extension("return".to_string(), vec![val]));
+                    if let Some(val_id) = stack.pop() {
+                        let intent_id = intents.len();
+                        intents.push(IKun::Symbol(format!("id_{}", val_id)));
+                        intents.push(IKun::Extension("return".to_string(), vec![intent_id]));
                     }
                 }
                 Instruction::TypeOf => {

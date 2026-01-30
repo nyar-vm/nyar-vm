@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 nyar-vm = { path = "../../projects/nyar-vm" }
 nyar-types = { path = "../../projects/nyar-types" }
-nyar-error = { path = "../../projects/nyar-types" }
 nyar-aot = { path = "../../projects/nyar-aot" }
 oak-core = { workspace = true }
 oak-rust = { workspace = true }

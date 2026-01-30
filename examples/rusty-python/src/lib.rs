@@ -25,7 +25,14 @@ impl NyarFrontend for MiniPythonFrontend {
     fn parse(&self, source: &str) -> Result<PythonRoot, NyarError> {
         let config = oak_python::PythonLanguage;
         let parser = oak_python::PythonParser::new(config);
-        let ast = parser.parse(source).map_err(|e| NyarError::Parse(e.to_string()))?;
+        let mut cache = oak_core::parser::session::ParseSession::<oak_python::PythonLanguage>::default();
+        let parse_result = parser.parse(source, &[], &mut cache);
+        
+        let green_node = parse_result.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))?;
+        
+        let builder = oak_python::PythonBuilder::new(config);
+        let source_text = oak_core::source::SourceText::new(source.to_string());
+        let ast = builder.build_root(green_node, &source_text).map_err(|e| NyarError::Parse(format!("{:?}", e)))?;
         Ok(ast)
     }
 

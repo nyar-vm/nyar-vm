@@ -25,36 +25,81 @@ impl NyarTranslator {
 
     pub fn translate_to_graph(&self, root: &KotlinRoot, egraph: &mut EGraph<IKun, ConstraintAnalysis>) -> Result<Id, NyarError> {
         let mut builder = IntentBuilder::new(egraph);
+        let mut members = Vec::new();
         
-        if let Some(green) = &root.green {
-            let mut context = TranslationContext {
-                builder: &mut builder,
-                source: &root.source,
-                offset: 0,
-            };
-            let id = context.translate_node(green)?;
-            context.builder.set_root(id);
-            Ok(id)
-        } else {
-            // Fallback for empty/invalid tree
-            let hello_str = builder.string("Hello from Mini Kotlin!");
-            let print_sym = builder.symbol("println");
-            let call = builder.extension("call", vec![print_sym, hello_str]);
-            let main_body = builder.seq(vec![call]);
-            let main_method = builder.extension("method", vec![
-                builder.string("main"),
-                builder.string("void"),
-                builder.seq(vec![]), // params
-                main_body
-            ]);
-            let class_members = builder.seq(vec![main_method]);
-            let class_node = builder.extension("class", vec![
-                builder.string("MainKt"),
-                class_members
-            ]);
-            let root_id = builder.seq(vec![class_node]);
-            builder.set_root(root_id);
-            Ok(root_id)
+        for decl in &root.declarations {
+            members.push(self.translate_declaration(decl, &mut builder)?);
+        }
+        
+        let root_id = builder.seq(members);
+        builder.set_root(root_id);
+        Ok(root_id)
+    }
+
+    fn translate_declaration(&self, decl: &Declaration, builder: &mut IntentBuilder) -> Result<Id, NyarError> {
+        match decl {
+            Declaration::Class { name, members, .. } => {
+                let mut class_members = Vec::new();
+                for member in members {
+                    class_members.push(self.translate_declaration(member, builder)?);
+                }
+                let members_seq = builder.seq(class_members);
+                Ok(builder.extension("class", vec![
+                    builder.string(name.clone()),
+                    members_seq
+                ]))
+            }
+            Declaration::Function { name, params, body, .. } => {
+                let mut param_ids = Vec::new();
+                for param in params {
+                    param_ids.push(builder.extension("parameter", vec![
+                        builder.string(param.name.clone()),
+                        builder.string(param.type_name.clone().unwrap_or_else(|| "Any".to_string())),
+                    ]));
+                }
+                let params_seq = builder.seq(param_ids);
+                
+                let mut stmt_ids = Vec::new();
+                for stmt in body {
+                    stmt_ids.push(self.translate_statement(stmt, builder)?);
+                }
+                let body_seq = builder.seq(stmt_ids);
+                
+                Ok(builder.extension("method", vec![
+                    builder.string(name.clone()),
+                    builder.string("void"), // TODO: proper return type
+                    params_seq,
+                    body_seq
+                ]))
+            }
+            Declaration::Variable { name, is_val, .. } => {
+                Ok(builder.extension("variable", vec![
+                    builder.string(name.clone()),
+                    builder.bool(*is_val),
+                ]))
+            }
+        }
+    }
+
+    fn translate_statement(&self, stmt: &Statement, builder: &mut IntentBuilder) -> Result<Id, NyarError> {
+        match stmt {
+            Statement::Return(expr) => {
+                let expr_id = if let Some(e) = expr {
+                    builder.string(e.clone()) // TODO: parse expression
+                } else {
+                    builder.seq(vec![])
+                };
+                Ok(builder.extension("return", vec![expr_id]))
+            }
+            Statement::Expression(expr) => {
+                Ok(builder.string(expr.clone())) // TODO: proper expression translation
+            }
+            Statement::Variable { name, is_val } => {
+                Ok(builder.extension("variable", vec![
+                    builder.string(name.clone()),
+                    builder.bool(*is_val),
+                ]))
+            }
         }
     }
 }
@@ -67,140 +112,7 @@ struct TranslationContext<'a> {
 
 impl<'a> TranslationContext<'a> {
     fn translate_node(&mut self, node: &GreenNode<'static, KotlinLanguage>) -> Result<Id, NyarError> {
-        let kind: KotlinSyntaxKind = node.kind.into();
-        let old_offset = self.offset;
-        
-        let result = match kind {
-            KotlinSyntaxKind::SourceFile => {
-                let mut members = Vec::new();
-                for child in node.children() {
-                    if let GreenTree::Node(child_node) = child {
-                        members.push(self.translate_node(child_node)?);
-                    } else {
-                        self.offset += child.len() as usize;
-                    }
-                }
-                Ok(self.builder.seq(members))
-            }
-            KotlinSyntaxKind::ClassDeclaration => {
-                let mut name = "Anonymous".to_string();
-                let mut members = Vec::new();
-                for child in node.children() {
-                    match child {
-                        GreenTree::Node(child_node) => {
-                            let child_kind: KotlinSyntaxKind = child_node.kind.into();
-                            if child_kind == KotlinSyntaxKind::Block {
-                                for member in child_node.children() {
-                                    if let GreenTree::Node(m_node) = member {
-                                        members.push(self.translate_node(m_node)?);
-                                    } else {
-                                        self.offset += member.len() as usize;
-                                    }
-                                }
-                            } else {
-                                members.push(self.translate_node(child_node)?);
-                            }
-                        }
-                        GreenTree::Leaf(leaf) => {
-                            let leaf_kind: KotlinSyntaxKind = leaf.kind.into();
-                            if leaf_kind == KotlinSyntaxKind::Identifier {
-                                name = self.source[self.offset..self.offset + leaf.length as usize].to_string();
-                            }
-                            self.offset += leaf.length as usize;
-                        }
-                    }
-                }
-                let class_members = self.builder.seq(members);
-                Ok(self.builder.extension("class", vec![
-                    self.builder.string(name),
-                    class_members
-                ]))
-            }
-            KotlinSyntaxKind::FunctionDeclaration => {
-                let mut name = "anonymous".to_string();
-                let mut body = self.builder.seq(vec![]);
-                let mut params = Vec::new();
-
-                for child in node.children() {
-                    match child {
-                        GreenTree::Node(child_node) => {
-                            let child_kind: KotlinSyntaxKind = child_node.kind.into();
-                            match child_kind {
-                                KotlinSyntaxKind::Block => {
-                                    body = self.translate_node(child_node)?;
-                                }
-                                KotlinSyntaxKind::Parameter => {
-                                    params.push(self.translate_node(child_node)?);
-                                }
-                                _ => {
-                                    self.translate_node(child_node)?;
-                                }
-                            }
-                        }
-                        GreenTree::Leaf(leaf) => {
-                            let leaf_kind: KotlinSyntaxKind = leaf.kind.into();
-                            if leaf_kind == KotlinSyntaxKind::Identifier {
-                                name = self.source[self.offset..self.offset + leaf.length as usize].to_string();
-                            }
-                            self.offset += leaf.length as usize;
-                        }
-                    }
-                }
-                
-                let params_seq = self.builder.seq(params);
-                Ok(self.builder.extension("method", vec![
-                    self.builder.string(name),
-                    self.builder.string("void"), // TODO: proper return type
-                    params_seq,
-                    body
-                ]))
-            }
-            KotlinSyntaxKind::Block => {
-                let mut stmts = Vec::new();
-                for child in node.children() {
-                    if let GreenTree::Node(child_node) = child {
-                        stmts.push(self.translate_node(child_node)?);
-                    } else {
-                        self.offset += child.len() as usize;
-                    }
-                }
-                Ok(self.builder.seq(stmts))
-            }
-            KotlinSyntaxKind::Parameter => {
-                let mut name = "p".to_string();
-                for child in node.children() {
-                    if let GreenTree::Leaf(leaf) = child {
-                        let leaf_kind: KotlinSyntaxKind = leaf.kind.into();
-                        if leaf_kind == KotlinSyntaxKind::Identifier {
-                            name = self.source[self.offset..self.offset + leaf.length as usize].to_string();
-                        }
-                        self.offset += leaf.length as usize;
-                    } else if let GreenTree::Node(n) = child {
-                        self.translate_node(n)?;
-                    }
-                }
-                Ok(self.builder.extension("parameter", vec![
-                    self.builder.string(name),
-                    self.builder.string("Any"), // TODO: proper type
-                ]))
-            }
-            _ => {
-                // For other nodes, just advance offset and return a placeholder
-                for child in node.children() {
-                    match child {
-                        GreenTree::Node(child_node) => {
-                            self.translate_node(child_node)?;
-                        }
-                        GreenTree::Leaf(leaf) => {
-                            self.offset += leaf.length as usize;
-                        }
-                    }
-                }
-                Ok(self.builder.seq(vec![]))
-            }
-        };
-        
-        self.offset = old_offset + node.text_len as usize;
-        result
+        // This is no longer used, but kept for reference if needed
+        Ok(self.builder.seq(vec![]))
     }
 }

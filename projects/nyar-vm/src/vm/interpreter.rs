@@ -403,6 +403,7 @@ impl NyarVM {
             stack_ptr: *mut Value,
             sp: *mut usize,
             locals_ptr: *mut Value,
+            ip_ptr: *mut usize,
         ) -> i32;
 
         let entry: JitEntry = unsafe { std::mem::transmute(entry_ptr) };
@@ -413,6 +414,7 @@ impl NyarVM {
                 self.stack.as_mut_ptr(),
                 &mut self.sp as *mut usize,
                 frame.locals.as_mut_ptr(),
+                &mut frame.ip as *mut usize,
             );
 
             if res_code == 0 {

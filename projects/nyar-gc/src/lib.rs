@@ -85,6 +85,18 @@ struct GcBlockHeader {
     card_table: [AtomicU64; CARD_BITMAP_WORDS],
 }
 
+impl GcBlockHeader {
+    fn get_next(&self) -> *mut GcBlockHeader {
+        self.next.load(Ordering::Acquire)
+    }
+    fn set_next(&self, next: *mut GcBlockHeader) {
+        self.next.store(next, Ordering::Release)
+    }
+    fn reset_live_bytes(&self) {
+        self.live_bytes.store(0, Ordering::Relaxed);
+    }
+}
+
 struct GcBlock {
     ptr: NonNull<u8>,
 }
@@ -237,8 +249,9 @@ pub enum Color {
 
 /// Metadata stored at the beginning of every GC-managed allocation.
 pub struct GcHeader {
-    /// Link to the next object in the collector's list.
-    pub next: AtomicPtr<GcHeader>,
+    /// Relative offset to the next object in the collector's list.
+    /// 0 means null.
+    pub next_offset: AtomicI32,
     /// Size of the allocation in bytes.
     pub size: u32,
     /// Type ID for VTable lookup.
@@ -257,6 +270,25 @@ pub struct GcVTable {
 }
 
 impl GcHeader {
+    pub fn get_next(&self) -> *mut GcHeader {
+        let offset = self.next_offset.load(Ordering::Acquire);
+        if offset == 0 {
+            std::ptr::null_mut()
+        } else {
+            (self as *const GcHeader as isize + offset as isize) as *mut GcHeader
+        }
+    }
+
+    pub fn set_next(&self, next: *mut GcHeader) {
+        let offset = if next.is_null() {
+            0
+        } else {
+            let offset = next as isize - self as *const GcHeader as isize;
+            assert!(offset <= i32::MAX as isize && offset >= i32::MIN as isize, "GC pointer offset out of range");
+            offset as i32
+        };
+        self.next_offset.store(offset, Ordering::Release);
+    }
     pub fn get_color(&self) -> Color {
         match self.flags.load(Ordering::Acquire) & 0x3 {
             0 => Color::White,
@@ -452,10 +484,17 @@ impl NyarGc {
         // Insert into young_head atomically
         let mut old_head = self.young_head.load(Ordering::Acquire);
         loop {
+            let offset = if old_head.is_null() {
+                0
+            } else {
+                let offset = old_head as isize - ptr as isize;
+                assert!(offset <= i32::MAX as isize && offset >= i32::MIN as isize, "GC pointer offset out of range");
+                offset as i32
+            };
             std::ptr::write(
                 &mut (*ptr).header,
                 GcHeader {
-                    next: AtomicPtr::new(old_head),
+                    next_offset: AtomicI32::new(offset),
                     size: layout.size() as u32,
                     type_id,
                     flags: AtomicU8::new(flags),
@@ -780,7 +819,7 @@ impl NyarGc {
                 for word in (*block_curr).card_table.iter() {
                     word.store(0, Ordering::Release);
                 }
-                block_curr = (*block_curr).next.load(Ordering::Acquire);
+                block_curr = (*block_curr).get_next();
             }
         }
 
@@ -797,7 +836,7 @@ impl NyarGc {
 
         while !curr.is_null() {
             let header = &*curr;
-            let next = header.next.load(Ordering::Acquire);
+            let next = header.get_next();
 
             // Reclaim block if it's full (cursor == BLOCK_SIZE) and has no live objects
             if header.cursor.load(Ordering::Relaxed) >= BLOCK_SIZE && header.live_bytes.load(Ordering::Relaxed) == 0 {
@@ -819,7 +858,7 @@ impl NyarGc {
                     }
                 } else {
                     // It's in the middle or end
-                    (*prev).next.store(next, Ordering::Release);
+                    (*prev).set_next(next);
                     let layout = Layout::from_size_align(BLOCK_SIZE, BLOCK_SIZE).unwrap();
                     alloc::dealloc(curr as *mut u8, layout);
                     curr = next;
@@ -908,7 +947,7 @@ impl NyarGc {
                     unsafe { ((*header.get_vtable()).trace_object)(header_ptr, &mut ctx); }
                 }
             }
-            curr = header.next.load(Ordering::Relaxed);
+            curr = header.get_next();
         }
 
         // 3. Process gray stack
@@ -983,7 +1022,7 @@ impl NyarGc {
                     let young_curr_ptr = sweep.young_curr.load(Ordering::Acquire);
                     if let Some(header_ptr) = NonNull::new(young_curr_ptr) {
                         let header = header_ptr.as_ref();
-                        let next = header.next.load(Ordering::Acquire);
+                        let next = header.get_next();
 
                         if header.get_color() != Color::White {
                             // Survive and promote
@@ -1001,7 +1040,7 @@ impl NyarGc {
                             // Remove from young
                             let young_prev_ptr = sweep.young_prev.load(Ordering::Acquire);
                             if let Some(mut p) = NonNull::new(young_prev_ptr) {
-                                p.as_mut().next.store(next, Ordering::Release);
+                                p.as_mut().set_next(next);
                             } else {
                                 self.young_head.store(next, Ordering::Release);
                             }
@@ -1009,7 +1048,7 @@ impl NyarGc {
                             // Add to old
                             let mut old_head = self.old_head.load(Ordering::Acquire);
                             loop {
-                                header.next.store(old_head, Ordering::Release);
+                                header.set_next(old_head);
                                 match self.old_head.compare_exchange_weak(
                                      old_head,
                                     young_curr_ptr,
@@ -1025,7 +1064,7 @@ impl NyarGc {
                             // Free
                             let young_prev_ptr = sweep.young_prev.load(Ordering::Acquire);
                             if let Some(mut p) = NonNull::new(young_prev_ptr) {
-                                p.as_mut().next.store(next, Ordering::Release);
+                                p.as_mut().set_next(next);
                             } else {
                                 self.young_head.store(next, Ordering::Release);
                             }
@@ -1039,7 +1078,7 @@ impl NyarGc {
                         let old_curr_ptr = sweep.old_curr.load(Ordering::Acquire);
                         if let Some(header_ptr) = NonNull::new(old_curr_ptr) {
                             let header = header_ptr.as_ref();
-                            let next = header.next.load(Ordering::Acquire);
+                            let next = header.get_next();
 
                             if header.get_color() != Color::White {
                                 header.set_color(Color::White);
@@ -1055,9 +1094,10 @@ impl NyarGc {
                                 sweep.old_prev.store(old_curr_ptr, Ordering::Release);
                                 sweep.old_curr.store(next, Ordering::Release);
                             } else {
+                                // Free
                                 let old_prev_ptr = sweep.old_prev.load(Ordering::Acquire);
                                 if let Some(mut p) = NonNull::new(old_prev_ptr) {
-                                    p.as_mut().next.store(next, Ordering::Release);
+                                    p.as_mut().set_next(next);
                                 } else {
                                     self.old_head.store(next, Ordering::Release);
                                 }
@@ -1094,7 +1134,7 @@ impl NyarGc {
 
         while let Some(header_ptr) = NonNull::new(curr) {
             let header = header_ptr.as_ref();
-            let next = header.next.load(Ordering::Acquire);
+            let next = header.get_next();
 
             if header.get_color() != Color::White {
                 // Object survived! Promote to old generation.
@@ -1112,7 +1152,7 @@ impl NyarGc {
                 // Add to old list
                 let mut old_head = self.old_head.load(Ordering::Acquire);
                 loop {
-                    header.next.store(old_head, Ordering::Release);
+                    header.set_next(old_head);
                     match self.old_head.compare_exchange_weak(
                         old_head,
                         curr,
@@ -1145,7 +1185,7 @@ impl NyarGc {
 
         while let Some(header_ptr) = NonNull::new(curr) {
             let header = header_ptr.as_ref();
-            let next = header.next.load(Ordering::Acquire);
+            let next = header.get_next();
 
             if header.get_color() != Color::White {
                 header.set_color(Color::White);
@@ -1159,7 +1199,7 @@ impl NyarGc {
                 curr = next;
             } else {
                 if let Some(mut p) = NonNull::new(prev) {
-                    p.as_mut().next.store(next, Ordering::Release);
+                    p.as_mut().set_next(next);
                 } else {
                     self.old_head.store(next, Ordering::Release);
                 }

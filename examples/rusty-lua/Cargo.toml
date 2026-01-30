@@ -1,1 +1,9 @@
-tempfile = "3.3"
+[package]
+name = "mini-lua"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-vm = { path = "../../projects/nyar-vm" }
+nyar-types = { path = "../../projects/nyar-types" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
