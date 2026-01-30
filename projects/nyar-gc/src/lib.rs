@@ -157,7 +157,7 @@ pub trait Trace {
 
 /// Context used during the marking phase of GC.
 pub struct MarkContext<'a> {
-    pub(crate) gray_stack: &'a mut Vec<NonNull<GcHeader>>,
+    pub(crate) gray_stack: &'a mut Vec<SendPtr<GcHeader>>,
 }
 
 impl<'a> MarkContext<'a> {
@@ -166,7 +166,7 @@ impl<'a> MarkContext<'a> {
         let header = ptr.as_ref();
         if header.color.get() == Color::White {
             header.color.set(Color::Gray);
-            self.gray_stack.push(ptr);
+            self.gray_stack.push(SendPtr(ptr));
         }
     }
 }
@@ -385,6 +385,19 @@ impl NyarGc {
         }
     }
 
+    fn get_state(&self) -> GcState {
+        match self.state.load(Ordering::Acquire) {
+            0 => GcState::Idle,
+            1 => GcState::Marking,
+            2 => GcState::Sweeping,
+            _ => unreachable!(),
+        }
+    }
+
+    fn set_state(&self, state: GcState) {
+        self.state.store(state as u8, Ordering::Release);
+    }
+
     /// Allocate a new value on the managed heap.
     pub fn alloc<T: Trace + 'static>(&self, value: T) -> Gc<T> {
         let layout = Layout::new::<GcBox<T>>();
@@ -427,7 +440,7 @@ impl NyarGc {
                 let mut gray_stack = self.gray_stack.lock().unwrap();
                 let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
                 parent_header.color.set(Color::Gray);
-                ctx.gray_stack.push(NonNull::new_unchecked(parent_header as *const _ as *mut _));
+                ctx.gray_stack.push(SendPtr(NonNull::new_unchecked(parent_header as *const _ as *mut _)));
             }
         }
     }
@@ -513,7 +526,7 @@ impl NyarGc {
         while let Some(ptr) = ctx.gray_stack.pop() {
             let header = ptr.as_ref();
             // Object is being scanned, its children will be added to gray stack
-            (header.trace_object)(ptr, ctx);
+            (header.trace_object)(*ptr, ctx);
             // Scanning finished, object is now black
             header.color.set(Color::Black);
         }

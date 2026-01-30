@@ -25,6 +25,8 @@ pub struct Chunk {
     pub lines: Vec<(u32, u32)>, // offset, line
     #[serde(skip)]
     pub decoded: Option<std::sync::Arc<Vec<crate::bytecode::decoder::Instruction>>>,
+    #[serde(skip)]
+    pub hotness: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -240,6 +242,7 @@ impl NyarcModule {
                 code,
                 handlers: vec![],
                 lines,
+                hotness: 0,
             });
         }
 

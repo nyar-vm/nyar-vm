@@ -1946,15 +1946,7 @@ impl NyarVM {
                             }
                             chosen
                         } {
-                            let chunk = self.modules[module_idx]
-                                .chunks
-                                .get(hf.catch_chunk)
-                                .cloned()
-                                .ok_or(VmError::IndexOutOfBounds)?;
-                            use crate::bytecode::decoder::Decoder;
-                            let decoder = Decoder::new(&chunk.code);
-                            let instrs =
-                                decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+                            let instrs = self.get_chunk_instructions(module_idx, hf.catch_chunk)?;
                             let mut locals = Vec::new();
                             locals.push(Value::effect(idx as u16, args.clone(), &self.gc));
                             locals.push(Value::list(args.clone(), &self.gc));
@@ -1966,8 +1958,9 @@ impl NyarVM {
                             let cont_slice = self.stack[..self.sp].to_vec();
                             let cont = Value::continuation(cont_ip, cont_slice, &self.gc);
                             locals.push(cont);
-                            if locals.len() < chunk.locals as usize {
-                                locals.resize(chunk.locals as usize, Value::null());
+                            let locals_count = self.modules[module_idx].chunks[hf.catch_chunk].locals as usize;
+                            if locals.len() < locals_count {
+                                locals.resize(locals_count, Value::null());
                             }
                             let new_frame = Frame {
                                 instrs,
@@ -3096,14 +3089,7 @@ impl NyarVM {
                         let closure = unsafe { v.as_closure() };
                         let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
-                        let chunk = self.modules[closure.module_idx]
-                            .chunks
-                            .get(chunk_idx)
-                            .cloned()
-                            .ok_or(VmError::IndexOutOfBounds)?;
-                        use crate::bytecode::decoder::Decoder;
-                        let decoder = Decoder::new(&chunk.code);
-                        let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+                        let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                         let args: Vec<Value> = Vec::new();
                         let new_frame = Frame {
                             instrs,
@@ -3128,14 +3114,7 @@ impl NyarVM {
                         let closure = unsafe { v.as_closure() };
                         let closure_ptr = closure as *const _ as *mut crate::vm::value::Closure;
                         let chunk_idx = closure.func;
-                        let chunk = self.modules[closure.module_idx]
-                            .chunks
-                            .get(chunk_idx)
-                            .cloned()
-                            .ok_or(VmError::IndexOutOfBounds)?;
-                        use crate::bytecode::decoder::Decoder;
-                        let decoder = Decoder::new(&chunk.code);
-                        let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+                        let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                         let args: Vec<Value> = Vec::new();
                         let new_frame = Frame {
                             instrs,
