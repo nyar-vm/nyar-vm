@@ -10,28 +10,30 @@ pub mod project;
 pub mod type_system;
 pub mod errors;
 
-use oak_core::{Builder, Lexer, SourceText, ParseSession};
-use oak_typescript::{TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot, ast, TypeScriptSyntaxKind};
-use codegen::NyarTranslator;
-use nyar_vm::bytecode::format::NyarModule;
-use nyar_types::FormatError;
-use chomsky_uir::{EGraph, Id, IntentBuilder, ConstraintAnalysis, intent::IKun};
-use chomsky_source::Loc;
-use core::range::Range;
+use chomsky_extract::IKunExtractor;
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IntentBuilder, Loc, Id};
+use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use oak_core::{ParseSession, SourceText};
+use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
+use std::ops::Range;
 
 /// Mini TypeScript 前端
 pub struct MiniTypescriptFrontend {
     language: TypeScriptLanguage,
-    translator: NyarTranslator,
     source_id: u32,
+}
+
+impl Default for MiniTypescriptFrontend {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MiniTypescriptFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self { 
+        Self {
             language: TypeScriptLanguage::standard(),
-            translator: NyarTranslator::new(),
             source_id: 1, // 默认 source_id
         }
     }
@@ -40,69 +42,28 @@ impl MiniTypescriptFrontend {
     pub fn set_source_id(&mut self, id: u32) {
         self.source_id = id;
     }
+}
 
-    /// 解析 TypeScript 源代码为 UIR
-    pub fn parse(&mut self, source: &str) -> Result<(EGraph<IKun, ConstraintAnalysis>, Id), String> {
+impl NyarFrontend for MiniTypescriptFrontend {
+    type Language = TypeScriptLanguage;
+
+    fn parse(&self, source: &str) -> Result<TypeScriptRoot, NyarError> {
         let builder = TypeScriptBuilder::new(&self.language);
         let mut session = ParseSession::<TypeScriptLanguage>::default();
         let source_text = SourceText::new(source);
-        let diagnostics = Builder::build(&builder, &source_text, &[], &mut session);
-        
-        let ast = diagnostics.result.map_err(|e| format!("Parse error: {:?}", e))?;
-        
-        let mut egraph = EGraph::new();
-        let mut intent_builder = IntentBuilder::new(&mut egraph);
-        
-        let mut converter = UirConverter::new(&mut intent_builder, self.source_id);
-        let root_id = converter.convert_root(ast);
-        
-        Ok((egraph, root_id))
+        let output = oak_core::Builder::build(&builder, &source_text, &[], &mut session);
+
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    /// 将 TypeScript 源代码编译为 Nyar 程序
-    pub fn compile_to_nyar(&mut self, source: &str) -> Result<NyarModule, FormatError> {
-        // 解析为 UIR
-        let (egraph, root) = self.parse(source).map_err(|_e| {
-            FormatError::InvalidHeader
-        })?;
+    fn lower(&self, ast: &TypeScriptRoot) -> Result<IKunTree, NyarError> {
+        let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
+        let mut builder = IntentBuilder::new(&mut egraph);
+        let mut converter = UirConverter::new(&mut builder, self.source_id);
 
-        // 翻译为 Nyar 程序
-        self.translator.generate(&egraph, root)
-    }
-
-    /// 将 TypeScript 源代码编译为 WASM 程序
-    pub fn compile_to_wasm(&mut self, source: &str) -> Result<Vec<u8>, String> {
-        // 解析为 UIR
-        let (_egraph, _root) = self.parse(source)?;
-
-        // TODO: 实现真正的 WASM 编译
-        // 目前仅移除对 wat 编译器的运行时依赖
-        Err("WASM compilation is not yet implemented".to_string())
-    }
-
-    /// 仅进行词法分析
-    pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<TypeScriptSyntaxKind>>, String> {
-        let lexer = oak_typescript::TypeScriptLexer::new(&self.language);
-        let mut session = ParseSession::<TypeScriptLanguage>::default();
-        let source_text = SourceText::new(source);
-        let output = Lexer::lex(&lexer, &source_text, &[], &mut session);
-        
-        if !output.diagnostics.is_empty() {
-            return Err(format!("Lexer errors: {:?}", output.diagnostics));
-        }
-        
-        let tokens = output.result.map_err(|e| format!("Lexer error: {:?}", e))?;
-        Ok(tokens.to_vec())
-    }
-
-    /// 获取翻译器的可变引用
-    pub fn translator_mut(&mut self) -> &mut NyarTranslator {
-        &mut self.translator
-    }
-
-    /// 获取翻译器的不可变引用
-    pub fn translator(&self) -> &NyarTranslator {
-        &self.translator
+        let root_id = converter.convert_root(ast.clone());
+        let extractor = IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL);
+        Ok(extractor.extract(root_id))
     }
 }
 

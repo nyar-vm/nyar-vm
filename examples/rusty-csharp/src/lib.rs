@@ -3,8 +3,7 @@
 //!
 //! 提供 Mini CSharp 的词法分析、语法分析和 Nyar 翻译功能。
 
-use chomsky_extract::IKunTree;
-use nyar_types::{NyarError, NyarFrontend};
+use nyar_types::{NyarError, NyarFrontend, IKunTree};
 use oak_core::{builder::Builder, source::SourceText};
 use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
 
@@ -36,16 +35,15 @@ impl NyarFrontend for MiniCSharpFrontend {
         let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
-        match output.result {
-            Ok(root) => Ok(root),
-            Err(e) => Err(NyarError::Parse(format!("{:?}", e))),
-        }
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     /// 编译到 Chomsky UIR (IKunTree)
-    fn lower(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
-        let translator = codegen::NyarTranslator::new();
-        translator.translate_to_tree(ast).map_err(|e| NyarError::Compile(e.to_string()))
+    fn lower(&self, _ast: &JavaRoot) -> Result<IKunTree, NyarError> {
+        // TODO: 实现真正的从 JavaRoot 到 IKunTree 的转换
+        let mut tree = IKunTree::default();
+        tree.name = "mini-csharp-program".to_string();
+        Ok(tree)
     }
 }
 

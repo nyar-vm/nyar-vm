@@ -204,14 +204,13 @@ impl NyarVM {
     }
 
     fn register_java_builtins(&mut self) {
-        let out = Value::dyn_object();
+        let out = Value::dyn_object(&self.gc);
 
         // System.out.println
         // For now, System.out is just a DynObject
 
-        let system = Value::dyn_object();
-        let system_ptr = unsafe { system.as_dyn_object() as *const DynObject as *mut DynObject };
-        let system_mut = unsafe { &mut *system_ptr };
+        let system = Value::dyn_object(&self.gc);
+        let system_mut = unsafe { system.as_dyn_object_mut() };
         system_mut.entries.insert("out".to_string(), out);
 
         self.builtins.insert("System".to_string(), system);
@@ -391,7 +390,7 @@ impl NyarVM {
             match ins {
                 Instruction::Nop => {}
                 Instruction::BigIntConst { sign, bytes } => {
-                    self.push(Value::bigint(*sign, bytes.clone()));
+                    self.push(Value::bigint(*sign, bytes.clone(), &self.gc));
                 }
                 Instruction::BigIntAdd => {
                     let rhs = self.pop()?;
@@ -419,7 +418,7 @@ impl NyarVM {
                             },
                         }
                     };
-                    self.push(Value::bigint(res.sign, res.bytes));
+                    self.push(Value::bigint(res.sign, res.bytes, &self.gc));
                 }
                 Instruction::BigIntSub => {
                     let rhs = self.pop()?;
@@ -450,7 +449,7 @@ impl NyarVM {
                             },
                         }
                     };
-                    self.push(Value::bigint(res.sign, res.bytes));
+                    self.push(Value::bigint(res.sign, res.bytes, &self.gc));
                 }
                 Instruction::BigIntMul => {
                     let rhs = self.pop()?;
@@ -463,7 +462,7 @@ impl NyarVM {
                         l.sign ^ r.sign
                     };
                     let bytes = mul_abs(&l.bytes, &r.bytes);
-                    self.push(Value::bigint(sign, bytes));
+                    self.push(Value::bigint(sign, bytes, &self.gc));
                 }
                 Instruction::BigIntDiv => {
                     let rhs = self.pop()?;
@@ -472,7 +471,7 @@ impl NyarVM {
                     let r = unsafe { rhs.as_bigint().clone() };
                     let (q, _) = div_mod_abs(l.bytes.clone(), &r.bytes);
                     let sign = if q.is_empty() { 0 } else { l.sign ^ r.sign };
-                    self.push(Value::bigint(sign, q));
+                    self.push(Value::bigint(sign, q, &self.gc));
                 }
                 Instruction::BigIntMod => {
                     let rhs = self.pop()?;
@@ -481,7 +480,7 @@ impl NyarVM {
                     let r = unsafe { rhs.as_bigint().clone() };
                     let (_, rem) = div_mod_abs(l.bytes.clone(), &r.bytes);
                     let sign = if rem.is_empty() { 0 } else { l.sign };
-                    self.push(Value::bigint(sign, rem));
+                    self.push(Value::bigint(sign, rem, &self.gc));
                 }
                 Instruction::BigIntNeg => {
                     let v = self.pop()?;
@@ -491,7 +490,7 @@ impl NyarVM {
                     } else {
                         b.sign = 0;
                     }
-                    self.push(Value::bigint(b.sign, b.bytes));
+                    self.push(Value::bigint(b.sign, b.bytes, &self.gc));
                 }
                 Instruction::BigIntEq => {
                     let rhs = self.pop()?;
@@ -586,13 +585,13 @@ impl NyarVM {
                 Instruction::BigIntFromI64 => {
                     let v = self.pop()?;
                     let i = unsafe { v.as_int() };
-                    self.push(Value::bigint_from_i64(i));
+                    self.push(Value::bigint_from_i64(i, &self.gc));
                 }
                 Instruction::BigIntToString => {
                     let v = self.pop()?;
                     let b = unsafe { v.as_bigint() };
                     let s = b.to_i64().to_string();
-                    self.push(Value::string(s));
+                    self.push(Value::string(s, &self.gc));
                 }
                 Instruction::I32Const(v) => {
                     self.push(Value::int(*v as i64));
@@ -1235,7 +1234,7 @@ impl NyarVM {
                     let off = *off;
                     let v = self.pop()?;
                     let cond = unsafe {
-                        match v.tag {
+                        match v.tag() {
                             ValueTag::Bool => v.as_bool(),
                             ValueTag::Null => false,
                             _ => true,
@@ -1362,11 +1361,11 @@ impl NyarVM {
                     args.reverse();
 
                     let callee = self.pop()?;
-                    if callee.tag != ValueTag::Closure {
+                    if callee.tag() != ValueTag::Closure {
                         return Err(VmError::InvalidOpcode); // Expected closure
                     }
 
-                    let closure_ptr = unsafe { callee.data.ptr as *mut crate::vm::value::Closure };
+                    let closure_ptr = unsafe { callee.as_closure() as *const crate::vm::value::Closure as *mut crate::vm::value::Closure };
                     let (instrs, locals_count, c_module_idx, c_chunk_idx) = {
                         let closure = unsafe { &*closure_ptr };
                         let chunk_idx = closure.func;
@@ -1468,7 +1467,7 @@ impl NyarVM {
                     //    name, argc, receiver.tag
                     // ));
 
-                    if receiver.tag != ValueTag::Object {
+                    if receiver.tag() != ValueTag::Object {
                         match name {
                             "println" => {
                                 for arg in args {
@@ -1480,21 +1479,19 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    unsafe {
-                                        match (lhs.tag, rhs.tag) {
-                                            (ValueTag::Int, ValueTag::Int) => {
-                                                self.push(Value::int(lhs.as_int() + rhs.as_int()))
-                                            }
-                                            (ValueTag::Float, ValueTag::Float) => self.push(
-                                                Value::float(lhs.as_float() + rhs.as_float()),
-                                            ),
-                                            (ValueTag::String, ValueTag::String) => {
-                                                let mut s = lhs.as_string().clone();
-                                                s.push_str(rhs.as_string());
-                                                self.push(Value::string(s));
-                                            }
-                                            _ => self.push(Value::null()),
+                                    match (lhs.tag(), rhs.tag()) {
+                                        (ValueTag::Int, ValueTag::Int) => {
+                                            self.push(Value::int(lhs.as_int() + rhs.as_int()))
                                         }
+                                        (ValueTag::Float, ValueTag::Float) => self.push(
+                                            Value::float(lhs.as_float() + rhs.as_float()),
+                                        ),
+                                        (ValueTag::String, ValueTag::String) => unsafe {
+                                            let mut s = lhs.as_string().clone();
+                                            s.push_str(rhs.as_string());
+                                            self.push(Value::string(s));
+                                        }
+                                        _ => self.push(Value::null()),
                                     }
                                 } else {
                                     self.push(Value::null());
@@ -1504,16 +1501,14 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    unsafe {
-                                        match (lhs.tag, rhs.tag) {
-                                            (ValueTag::Int, ValueTag::Int) => {
-                                                self.push(Value::int(lhs.as_int() - rhs.as_int()))
-                                            }
-                                            (ValueTag::Float, ValueTag::Float) => self.push(
-                                                Value::float(lhs.as_float() - rhs.as_float()),
-                                            ),
-                                            _ => self.push(Value::null()),
+                                    match (lhs.tag(), rhs.tag()) {
+                                        (ValueTag::Int, ValueTag::Int) => {
+                                            self.push(Value::int(lhs.as_int() - rhs.as_int()))
                                         }
+                                        (ValueTag::Float, ValueTag::Float) => self.push(
+                                            Value::float(lhs.as_float() - rhs.as_float()),
+                                        ),
+                                        _ => self.push(Value::null()),
                                     }
                                 } else {
                                     self.push(Value::null());
@@ -1523,16 +1518,14 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    unsafe {
-                                        match (lhs.tag, rhs.tag) {
-                                            (ValueTag::Int, ValueTag::Int) => {
-                                                self.push(Value::int(lhs.as_int() * rhs.as_int()))
-                                            }
-                                            (ValueTag::Float, ValueTag::Float) => self.push(
-                                                Value::float(lhs.as_float() * rhs.as_float()),
-                                            ),
-                                            _ => self.push(Value::null()),
+                                    match (lhs.tag(), rhs.tag()) {
+                                        (ValueTag::Int, ValueTag::Int) => {
+                                            self.push(Value::int(lhs.as_int() * rhs.as_int()))
                                         }
+                                        (ValueTag::Float, ValueTag::Float) => self.push(
+                                            Value::float(lhs.as_float() * rhs.as_float()),
+                                        ),
+                                        _ => self.push(Value::null()),
                                     }
                                 } else {
                                     self.push(Value::null());
@@ -1542,16 +1535,14 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    unsafe {
-                                        match (lhs.tag, rhs.tag) {
-                                            (ValueTag::Int, ValueTag::Int) => {
-                                                self.push(Value::int(lhs.as_int() / rhs.as_int()))
-                                            }
-                                            (ValueTag::Float, ValueTag::Float) => self.push(
-                                                Value::float(lhs.as_float() / rhs.as_float()),
-                                            ),
-                                            _ => self.push(Value::null()),
+                                    match (lhs.tag(), rhs.tag()) {
+                                        (ValueTag::Int, ValueTag::Int) => {
+                                            self.push(Value::int(lhs.as_int() / rhs.as_int()))
                                         }
+                                        (ValueTag::Float, ValueTag::Float) => self.push(
+                                            Value::float(lhs.as_float() / rhs.as_float()),
+                                        ),
+                                        _ => self.push(Value::null()),
                                     }
                                 } else {
                                     self.push(Value::null());
@@ -1561,21 +1552,19 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let eq = unsafe {
-                                        if lhs.tag != rhs.tag {
-                                            false
-                                        } else {
-                                            match lhs.tag {
-                                                ValueTag::Int => lhs.as_int() == rhs.as_int(),
-                                                ValueTag::Float => lhs.as_float() == rhs.as_float(),
-                                                ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
-                                                ValueTag::Null => true,
-                                                ValueTag::String => {
-                                                    lhs.as_string() == rhs.as_string()
-                                                }
-                                                ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
-                                                _ => false,
-                                            }
+                                    let eq = if lhs.tag() != rhs.tag() {
+                                        false
+                                    } else {
+                                        match lhs.tag() {
+                                            ValueTag::Int => lhs.as_int() == rhs.as_int(),
+                                            ValueTag::Float => lhs.as_float() == rhs.as_float(),
+                                            ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
+                                            ValueTag::Null => true,
+                                            ValueTag::String => unsafe {
+                                                lhs.as_string() == rhs.as_string()
+                                            },
+                                            ValueTag::Object => lhs.payload() == rhs.payload(),
+                                            _ => false,
                                         }
                                     };
                                     self.push(Value::bool(eq));
@@ -1587,21 +1576,19 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let eq = unsafe {
-                                        if lhs.tag != rhs.tag {
-                                            false
-                                        } else {
-                                            match lhs.tag {
-                                                ValueTag::Int => lhs.as_int() == rhs.as_int(),
-                                                ValueTag::Float => lhs.as_float() == rhs.as_float(),
-                                                ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
-                                                ValueTag::Null => true,
-                                                ValueTag::String => {
-                                                    lhs.as_string() == rhs.as_string()
-                                                }
-                                                ValueTag::Object => lhs.data.ptr == rhs.data.ptr,
-                                                _ => false,
-                                            }
+                                    let eq = if lhs.tag() != rhs.tag() {
+                                        false
+                                    } else {
+                                        match lhs.tag() {
+                                            ValueTag::Int => lhs.as_int() == rhs.as_int(),
+                                            ValueTag::Float => lhs.as_float() == rhs.as_float(),
+                                            ValueTag::Bool => lhs.as_bool() == rhs.as_bool(),
+                                            ValueTag::Null => true,
+                                            ValueTag::String => unsafe {
+                                                lhs.as_string() == rhs.as_string()
+                                            },
+                                            ValueTag::Object => lhs.payload() == rhs.payload(),
+                                            _ => false,
                                         }
                                     };
                                     self.push(Value::bool(!eq));
@@ -1613,16 +1600,12 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
-                                        self.push(Value::bool(unsafe {
-                                            lhs.as_int() < rhs.as_int()
-                                        }));
-                                    } else if lhs.tag == ValueTag::Float
-                                        && rhs.tag == ValueTag::Float
+                                    if lhs.tag() == ValueTag::Int && rhs.tag() == ValueTag::Int {
+                                        self.push(Value::bool(lhs.as_int() < rhs.as_int()));
+                                    } else if lhs.tag() == ValueTag::Float
+                                        && rhs.tag() == ValueTag::Float
                                     {
-                                        self.push(Value::bool(unsafe {
-                                            lhs.as_float() < rhs.as_float()
-                                        }));
+                                        self.push(Value::bool(lhs.as_float() < rhs.as_float()));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1634,16 +1617,12 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
-                                        self.push(Value::bool(unsafe {
-                                            lhs.as_int() <= rhs.as_int()
-                                        }));
-                                    } else if lhs.tag == ValueTag::Float
-                                        && rhs.tag == ValueTag::Float
+                                    if lhs.tag() == ValueTag::Int && rhs.tag() == ValueTag::Int {
+                                        self.push(Value::bool(lhs.as_int() <= rhs.as_int()));
+                                    } else if lhs.tag() == ValueTag::Float
+                                        && rhs.tag() == ValueTag::Float
                                     {
-                                        self.push(Value::bool(unsafe {
-                                            lhs.as_float() <= rhs.as_float()
-                                        }));
+                                        self.push(Value::bool(lhs.as_float() <= rhs.as_float()));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1655,16 +1634,12 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
-                                        self.push(Value::bool(unsafe {
-                                            lhs.as_int() > rhs.as_int()
-                                        }));
-                                    } else if lhs.tag == ValueTag::Float
-                                        && rhs.tag == ValueTag::Float
+                                    if lhs.tag() == ValueTag::Int && rhs.tag() == ValueTag::Int {
+                                        self.push(Value::bool(lhs.as_int() > rhs.as_int()));
+                                    } else if lhs.tag() == ValueTag::Float
+                                        && rhs.tag() == ValueTag::Float
                                     {
-                                        self.push(Value::bool(unsafe {
-                                            lhs.as_float() > rhs.as_float()
-                                        }));
+                                        self.push(Value::bool(lhs.as_float() > rhs.as_float()));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1676,16 +1651,12 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    if lhs.tag == ValueTag::Int && rhs.tag == ValueTag::Int {
-                                        self.push(Value::bool(unsafe {
-                                            lhs.as_int() >= rhs.as_int()
-                                        }));
-                                    } else if lhs.tag == ValueTag::Float
-                                        && rhs.tag == ValueTag::Float
+                                    if lhs.tag() == ValueTag::Int && rhs.tag() == ValueTag::Int {
+                                        self.push(Value::bool(lhs.as_int() >= rhs.as_int()));
+                                    } else if lhs.tag() == ValueTag::Float
+                                        && rhs.tag() == ValueTag::Float
                                     {
-                                        self.push(Value::bool(unsafe {
-                                            lhs.as_float() >= rhs.as_float()
-                                        }));
+                                        self.push(Value::bool(lhs.as_float() >= rhs.as_float()));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1697,19 +1668,15 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let ba = unsafe {
-                                        if lhs.tag == ValueTag::Bool {
-                                            lhs.as_bool()
-                                        } else {
-                                            false
-                                        }
+                                    let ba = if lhs.tag() == ValueTag::Bool {
+                                        lhs.as_bool()
+                                    } else {
+                                        false
                                     };
-                                    let bb = unsafe {
-                                        if rhs.tag == ValueTag::Bool {
-                                            rhs.as_bool()
-                                        } else {
-                                            false
-                                        }
+                                    let bb = if rhs.tag() == ValueTag::Bool {
+                                        rhs.as_bool()
+                                    } else {
+                                        false
                                     };
                                     self.push(Value::bool(ba && bb));
                                 } else {
@@ -1720,19 +1687,15 @@ impl NyarVM {
                                 if args.len() == 1 {
                                     let rhs = args[0];
                                     let lhs = receiver;
-                                    let ba = unsafe {
-                                        if lhs.tag == ValueTag::Bool {
-                                            lhs.as_bool()
-                                        } else {
-                                            false
-                                        }
+                                    let ba = if lhs.tag() == ValueTag::Bool {
+                                        lhs.as_bool()
+                                    } else {
+                                        false
                                     };
-                                    let bb = unsafe {
-                                        if rhs.tag == ValueTag::Bool {
-                                            rhs.as_bool()
-                                        } else {
-                                            false
-                                        }
+                                    let bb = if rhs.tag() == ValueTag::Bool {
+                                        rhs.as_bool()
+                                    } else {
+                                        false
                                     };
                                     self.push(Value::bool(ba || bb));
                                 } else {
@@ -1742,10 +1705,10 @@ impl NyarVM {
                             "neg" => {
                                 if args.is_empty() {
                                     let a = receiver;
-                                    if a.tag == ValueTag::Int {
-                                        self.push(Value::int(unsafe { -a.as_int() }));
-                                    } else if a.tag == ValueTag::Float {
-                                        self.push(Value::float(unsafe { -a.as_float() }));
+                                    if a.tag() == ValueTag::Int {
+                                        self.push(Value::int(-a.as_int()));
+                                    } else if a.tag() == ValueTag::Float {
+                                        self.push(Value::float(-a.as_float()));
                                     } else {
                                         self.push(Value::null());
                                     }
@@ -1756,8 +1719,8 @@ impl NyarVM {
                             "not" => {
                                 if args.is_empty() {
                                     let a = receiver;
-                                    if a.tag == ValueTag::Bool {
-                                        self.push(Value::bool(unsafe { !a.as_bool() }));
+                                    if a.tag() == ValueTag::Bool {
+                                        self.push(Value::bool(!a.as_bool()));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
@@ -1766,30 +1729,38 @@ impl NyarVM {
                                 }
                             }
                             "len" => {
-                                let len = match receiver.tag {
+                                let len = match receiver.tag() {
                                     ValueTag::String => unsafe { receiver.as_string().len() },
                                     ValueTag::Array => unsafe { receiver.as_array().items.len() },
                                     ValueTag::List => unsafe { receiver.as_list().items.len() },
                                     ValueTag::Tuple => unsafe { receiver.as_tuple().items.len() },
-                                    ValueTag::DynObject => unsafe { receiver.as_dyn_object().entries.len() },
+                                    ValueTag::Object => unsafe {
+                                        receiver.as_dyn_object().entries.len()
+                                    },
                                     _ => 0,
                                 };
                                 self.push(Value::int(len as i64));
                             }
                             "get" => {
                                 let idx_v = args.first().cloned().unwrap_or(Value::int(0));
-                                if receiver.tag == ValueTag::List && idx_v.tag == ValueTag::Int {
+                                if receiver.tag() == ValueTag::List && idx_v.tag() == ValueTag::Int {
                                     let list = unsafe { receiver.as_list() };
-                                    let idx = unsafe { idx_v.as_int() } as usize;
+                                    let idx = idx_v.as_int() as usize;
                                     if idx < list.items.len() {
                                         self.push(list.items[idx]);
                                     } else {
                                         self.push(Value::null());
                                     }
-                                } else if receiver.tag == ValueTag::String && idx_v.tag == ValueTag::Int {
+                                } else if receiver.tag() == ValueTag::String
+                                    && idx_v.tag() == ValueTag::Int
+                                {
                                     let s = unsafe { receiver.as_string() };
-                                    let idx = unsafe { idx_v.as_int() } as usize;
-                                    let c = s.chars().nth(idx).map(|c| c.to_string()).unwrap_or_default();
+                                    let idx = idx_v.as_int() as usize;
+                                    let c = s
+                                        .chars()
+                                        .nth(idx)
+                                        .map(|c| c.to_string())
+                                        .unwrap_or_default();
                                     self.push(Value::string(c));
                                 } else {
                                     self.push(Value::null());
@@ -1797,9 +1768,8 @@ impl NyarVM {
                             }
                             "push" => {
                                 if let Some(val) = args.first() {
-                                    if receiver.tag == ValueTag::List {
-                                        let list_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::List };
-                                        let list_mut = unsafe { &mut *list_ptr };
+                                    if receiver.tag() == ValueTag::List {
+                                        let list_mut = unsafe { receiver.as_list_mut() };
                                         list_mut.items.push(*val);
                                         self.push(Value::null());
                                     } else {
@@ -1810,9 +1780,8 @@ impl NyarVM {
                                 }
                             }
                             "pop" => {
-                                if receiver.tag == ValueTag::List {
-                                    let list_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::List };
-                                    let list_mut = unsafe { &mut *list_ptr };
+                                if receiver.tag() == ValueTag::List {
+                                    let list_mut = unsafe { receiver.as_list_mut() };
                                     if let Some(val) = list_mut.items.pop() {
                                         self.push(val);
                                     } else {
@@ -1824,9 +1793,8 @@ impl NyarVM {
                             }
                             "unshift" => {
                                 if let Some(val) = args.first() {
-                                    if receiver.tag == ValueTag::List {
-                                        let list_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::List };
-                                        let list_mut = unsafe { &mut *list_ptr };
+                                    if receiver.tag() == ValueTag::List {
+                                        let list_mut = unsafe { receiver.as_list_mut() };
                                         list_mut.items.insert(0, *val);
                                         self.push(Value::null());
                                     } else {
@@ -1837,9 +1805,8 @@ impl NyarVM {
                                 }
                             }
                             "shift" => {
-                                if receiver.tag == ValueTag::List {
-                                    let list_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::List };
-                                    let list_mut = unsafe { &mut *list_ptr };
+                                if receiver.tag() == ValueTag::List {
+                                    let list_mut = unsafe { receiver.as_list_mut() };
                                     if !list_mut.items.is_empty() {
                                         let val = list_mut.items.remove(0);
                                         self.push(val);
@@ -1853,12 +1820,12 @@ impl NyarVM {
                             _ => {
                                 return Err(VmError::RuntimeError(format!(
                                     "Receiver is not an object. tag={:?}, method={}",
-                                    receiver.tag, name
+                                    receiver.tag(), name
                                 )))
                             }
                         }
                     } else {
-                        let obj_ptr = unsafe { receiver.data.ptr as *mut crate::vm::value::Object };
+                        let obj_ptr = unsafe { receiver.as_object() as *const crate::vm::value::Object as *mut crate::vm::value::Object };
                         let obj_ref = unsafe { &*obj_ptr };
                         let class_idx = obj_ref.class_idx;
                         let _class_name = self.modules[module_idx]
@@ -1943,9 +1910,9 @@ impl NyarVM {
                         .unwrap_or_default();
                     if name == "await" {
                         if let Some(v) = args.get(0) {
-                            if v.tag == ValueTag::Closure {
+                            if v.tag() == ValueTag::Closure {
                                 let closure_ptr =
-                                    unsafe { v.data.ptr as *mut crate::vm::value::Closure };
+                                    unsafe { v.as_closure() as *const crate::vm::value::Closure as *mut crate::vm::value::Closure };
                                 let closure = unsafe { &*closure_ptr };
                                 let chunk_idx = closure.func;
                                 let chunk = self.modules[closure.module_idx]
@@ -2072,7 +2039,7 @@ impl NyarVM {
                 }
                 Instruction::TypeOf => {
                     let v = self.pop()?;
-                    let tid = match v.tag {
+                    let tid = match v.tag() {
                         ValueTag::Int => 0i64,
                         ValueTag::Float => 1,
                         ValueTag::Bool => 2,
@@ -2099,30 +2066,27 @@ impl NyarVM {
                     } else {
                         match name {
                             "read_file" => {
-                            let path_v = args.pop().unwrap_or(Value::string("".to_string()));
-                            let mut res = Value::string("".to_string());
-                            unsafe {
+                                let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                                let mut res = Value::string("".to_string());
                                 use std::fs;
-                                if path_v.tag == ValueTag::String {
-                                    let path = path_v.as_string().clone();
+                                if path_v.tag() == ValueTag::String {
+                                    let path = unsafe { path_v.as_string() }.clone();
                                     if let Ok(content) = fs::read_to_string(&path) {
                                         res = Value::string(content);
                                     }
                                 }
+                                self.push(res);
                             }
-                            self.push(res);
-                        }
-                        "write_file" => {
-                            let data_v = args.pop().unwrap_or(Value::string("".to_string()));
-                            let path_v = args.pop().unwrap_or(Value::string("".to_string()));
-                            let mut ok = false;
-                            unsafe {
+                            "write_file" => {
+                                let data_v = args.pop().unwrap_or(Value::string("".to_string()));
+                                let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                                let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
-                                if path_v.tag == ValueTag::String && data_v.tag == ValueTag::String
+                                if path_v.tag() == ValueTag::String && data_v.tag() == ValueTag::String
                                 {
-                                    let path = path_v.as_string().clone();
-                                    let bytes = data_v.as_string().as_bytes().to_vec();
+                                    let path = unsafe { path_v.as_string() }.clone();
+                                    let bytes = unsafe { data_v.as_string() }.as_bytes().to_vec();
                                     if let Some(dir) = Path::new(&path).parent() {
                                         let _ = fs::create_dir_all(dir);
                                     }
@@ -2137,25 +2101,24 @@ impl NyarVM {
                                 } else {
                                     println!(
                                         "DEBUG: write_file invalid args path_tag={:?} data_tag={:?}",
-                                        path_v.tag, data_v.tag
+                                        path_v.tag(),
+                                        data_v.tag()
                                     );
                                 }
+                                self.push(Value::bool(ok));
                             }
-                            self.push(Value::bool(ok));
-                        }
-                        "write_bytes" => {
-                            let bytes_v = args.pop().unwrap_or(Value::list(vec![]));
-                            let path_v = args.pop().unwrap_or(Value::string("".to_string()));
-                            let mut ok = false;
-                            unsafe {
+                            "write_bytes" => {
+                                let bytes_v = args.pop().unwrap_or(Value::list(vec![]));
+                                let path_v = args.pop().unwrap_or(Value::string("".to_string()));
+                                let mut ok = false;
                                 use std::fs;
                                 use std::path::Path;
-                                if path_v.tag == ValueTag::String && bytes_v.tag == ValueTag::List {
-                                    let path = path_v.as_string().clone();
-                                    let list_ref = bytes_v.as_list();
+                                if path_v.tag() == ValueTag::String && bytes_v.tag() == ValueTag::List {
+                                    let path = unsafe { path_v.as_string() }.clone();
+                                    let list_ref = unsafe { bytes_v.as_list() };
                                     let mut data = Vec::with_capacity(list_ref.items.len());
                                     for item in &list_ref.items {
-                                        if item.tag == ValueTag::Int {
+                                        if item.tag() == ValueTag::Int {
                                             let v = item.as_int();
                                             let b = (v & 0xFF) as u8;
                                             data.push(b);
@@ -2168,16 +2131,15 @@ impl NyarVM {
                                     }
                                     ok = fs::write(&path, &data).is_ok();
                                 }
+                                self.push(Value::bool(ok));
                             }
-                            self.push(Value::bool(ok));
-                        }
                         "compile_jvm" => {
                             let ok = false;
                             self.push(Value::bool(ok));
                         }
                         "print" => {
                             if let Some(v) = args.last() {
-                                let msg = match v.tag {
+                                let msg = match v.tag() {
                                     ValueTag::Int => format!("{}", unsafe { v.as_int() }),
                                     ValueTag::Float => format!("{}", unsafe { v.as_float() }),
                                     ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
@@ -2185,7 +2147,7 @@ impl NyarVM {
                                     ValueTag::String => unsafe { v.as_string().clone() },
                                     ValueTag::Object => {
                                         let obj_ptr =
-                                            unsafe { v.data.ptr as *mut crate::vm::value::Object };
+                                            unsafe { v.as_object() as *const crate::vm::value::Object as *mut crate::vm::value::Object };
                                         let obj_ref = unsafe { &*obj_ptr };
                                         let cls_name = self.modules[module_idx]
                                             .classes
@@ -2196,7 +2158,7 @@ impl NyarVM {
                                             .fields
                                             .get(0)
                                             .and_then(|f| {
-                                                if f.tag == ValueTag::String {
+                                                if f.tag() == ValueTag::String {
                                                     Some(unsafe { f.as_string().clone() })
                                                 } else {
                                                     None
@@ -2227,7 +2189,7 @@ impl NyarVM {
                         }
                         "yield" => {
                             if let Some(v) = args.last() {
-                                let msg = match v.tag {
+                                let msg = match v.tag() {
                                     ValueTag::Int => format!("{}", unsafe { v.as_int() }),
                                     ValueTag::Float => format!("{}", unsafe { v.as_float() }),
                                     ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
@@ -2245,7 +2207,7 @@ impl NyarVM {
                         "not" => {
                             if let Some(v) = args.first() {
                                 let b = unsafe {
-                                    match v.tag {
+                                    match v.tag() {
                                         ValueTag::Bool => v.as_bool(),
                                         ValueTag::Null => false,
                                         _ => true,
@@ -2258,7 +2220,7 @@ impl NyarVM {
                         }
                         "assert" => {
                             let msg = if let Some(v) = args.last() {
-                                match v.tag {
+                                match v.tag() {
                                     ValueTag::Int => {
                                         format!("assertion failed: {}", unsafe { v.as_int() })
                                     }
@@ -2278,7 +2240,7 @@ impl NyarVM {
                         }
                         "len" => {
                             if let Some(v) = args.last() {
-                                let len = match v.tag {
+                                let len = match v.tag() {
                                     ValueTag::String => unsafe { v.as_string().len() },
                                     ValueTag::Array => unsafe { v.as_array().items.len() },
                                     ValueTag::List => unsafe { v.as_list().items.len() },
@@ -2295,7 +2257,7 @@ impl NyarVM {
                         }
                         "ord" => {
                             if let Some(v) = args.last() {
-                                let code = if v.tag == ValueTag::String {
+                                let code = if v.tag() == ValueTag::String {
                                     let s = unsafe { v.as_string() };
                                     if let Some(c) = s.chars().next() {
                                         c as i64
@@ -2312,7 +2274,7 @@ impl NyarVM {
                         }
                         "chr" => {
                             if let Some(v) = args.last() {
-                                let c = if v.tag == ValueTag::Int {
+                                let c = if v.tag() == ValueTag::Int {
                                     let i = unsafe { v.as_int() };
                                     std::char::from_u32(i as u32).unwrap_or('\0').to_string()
                                 } else {
@@ -2332,7 +2294,7 @@ impl NyarVM {
                             // So container is next pop.
                             let container = args.pop().unwrap_or(Value::null());
 
-                            if container.tag == ValueTag::String && idx_v.tag == ValueTag::Int {
+                            if container.tag() == ValueTag::String && idx_v.tag() == ValueTag::Int {
                                 let s = unsafe { container.as_string() };
                                 let idx = unsafe { idx_v.as_int() } as usize;
                                 let c = s
@@ -2341,18 +2303,16 @@ impl NyarVM {
                                     .map(|c| c.to_string())
                                     .unwrap_or_default();
                                 self.push(Value::string(c));
-                            } else if container.tag == ValueTag::List && idx_v.tag == ValueTag::Int
-                            {
-                                let list = unsafe { container.as_list() };
+                            } else if container.tag() == ValueTag::List && idx_v.tag() == ValueTag::Int {
+                                 let list = unsafe { container.as_list() };
                                 let idx = unsafe { idx_v.as_int() } as usize;
                                 if idx < list.items.len() {
                                     self.push(list.items[idx]);
                                 } else {
                                     self.push(Value::null());
                                 }
-                            } else if container.tag == ValueTag::Array && idx_v.tag == ValueTag::Int
-                            {
-                                let arr = unsafe { container.as_array() };
+                            } else if container.tag() == ValueTag::Array && idx_v.tag() == ValueTag::Int {
+                                 let arr = unsafe { container.as_array() };
                                 let idx = unsafe { idx_v.as_int() } as usize;
                                 if idx < arr.items.len() {
                                     self.push(arr.items[idx]);
@@ -2367,9 +2327,9 @@ impl NyarVM {
                             if args.len() == 2 {
                                 let val = args.pop().unwrap_or(Value::null()); // val is last arg
                                 let container = args.pop().unwrap_or(Value::null()); // container is first arg
-                                if container.tag == ValueTag::List {
+                                if container.tag() == ValueTag::List {
                                     let list_ptr = unsafe {
-                                        container.data.ptr as *mut crate::vm::value::List
+                                        container.as_list() as *const crate::vm::value::List as *mut crate::vm::value::List
                                     };
                                     let list_mut = unsafe { &mut *list_ptr };
                                     list_mut.items.push(val);
@@ -2392,26 +2352,20 @@ impl NyarVM {
                                 let idx_v = args.pop().unwrap_or(Value::int(0));
                                 let container = args.pop().unwrap_or(Value::null());
 
-                                if container.tag == ValueTag::List && idx_v.tag == ValueTag::Int {
-                                    let idx = unsafe { idx_v.as_int() } as usize;
-                                    let list_ptr = unsafe {
-                                        container.data.ptr as *mut crate::vm::value::List
-                                    };
-                                    let list_mut = unsafe { &mut *list_ptr };
+                                if container.tag() == ValueTag::List && idx_v.tag() == ValueTag::Int {
+                                    let idx = idx_v.as_int() as usize;
+                                    let list_mut = unsafe { container.as_list_mut() };
                                     if idx < list_mut.items.len() {
                                         list_mut.items[idx] = val_v;
                                         self.push(Value::bool(true));
                                     } else {
                                         self.push(Value::bool(false));
                                     }
-                                } else if container.tag == ValueTag::Array
-                                    && idx_v.tag == ValueTag::Int
+                                } else if container.tag() == ValueTag::Array
+                                    && idx_v.tag() == ValueTag::Int
                                 {
-                                    let idx = unsafe { idx_v.as_int() } as usize;
-                                    let arr_ptr = unsafe {
-                                        container.data.ptr as *mut crate::vm::value::Array
-                                    };
-                                    let arr_mut = unsafe { &mut *arr_ptr };
+                                    let idx = idx_v.as_int() as usize;
+                                    let arr_mut = unsafe { container.as_array_mut() };
                                     if idx < arr_mut.items.len() {
                                         arr_mut.items[idx] = val_v;
                                         self.push(Value::bool(true));
@@ -2427,7 +2381,7 @@ impl NyarVM {
                         }
                         "chars" => {
                             if let Some(v) = args.last() {
-                                if v.tag == ValueTag::String {
+                                if v.tag() == ValueTag::String {
                                     let s = unsafe { v.as_string() };
                                     let items: Vec<Value> =
                                         s.chars().map(|c| Value::string(c.to_string())).collect();
@@ -2441,13 +2395,13 @@ impl NyarVM {
                         }
                         "str" => {
                             if let Some(v) = args.last() {
-                                let s = match v.tag {
+                                let s = match v.tag() {
                                     ValueTag::Int => format!("{}", unsafe { v.as_int() }),
                                     ValueTag::Float => format!("{}", unsafe { v.as_float() }),
                                     ValueTag::Bool => format!("{}", unsafe { v.as_bool() }),
                                     ValueTag::Null => "null".to_string(),
                                     ValueTag::String => unsafe { v.as_string().clone() },
-                                    _ => format!("{:?}", v.tag),
+                                    _ => format!("{:?}", v.tag()),
                                 };
                                 self.push(Value::string(s));
                             } else {
@@ -2457,16 +2411,16 @@ impl NyarVM {
                         "eq" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                            let r = match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
                                     a.as_int() == b.as_int()
-                                },
-                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                }
+                                (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() == b.as_float()
-                                },
-                                (ValueTag::Bool, ValueTag::Bool) => unsafe {
+                                }
+                                (ValueTag::Bool, ValueTag::Bool) => {
                                     a.as_bool() == b.as_bool()
-                                },
+                                }
                                 (ValueTag::String, ValueTag::String) => unsafe {
                                     a.as_string() == b.as_string()
                                 },
@@ -2478,16 +2432,16 @@ impl NyarVM {
                         "ne" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                            let r = match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
                                     a.as_int() != b.as_int()
-                                },
-                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                }
+                                (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() != b.as_float()
-                                },
-                                (ValueTag::Bool, ValueTag::Bool) => unsafe {
+                                }
+                                (ValueTag::Bool, ValueTag::Bool) => {
                                     a.as_bool() != b.as_bool()
-                                },
+                                }
                                 (ValueTag::String, ValueTag::String) => unsafe {
                                     a.as_string() != b.as_string()
                                 },
@@ -2499,13 +2453,13 @@ impl NyarVM {
                         "lt" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                            let r = match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
                                     a.as_int() < b.as_int()
-                                },
-                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                }
+                                (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() < b.as_float()
-                                },
+                                }
                                 (ValueTag::String, ValueTag::String) => unsafe {
                                     a.as_string() < b.as_string()
                                 },
@@ -2516,13 +2470,13 @@ impl NyarVM {
                         "le" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                            let r = match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
                                     a.as_int() <= b.as_int()
-                                },
-                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                }
+                                (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() <= b.as_float()
-                                },
+                                }
                                 (ValueTag::String, ValueTag::String) => unsafe {
                                     a.as_string() <= b.as_string()
                                 },
@@ -2533,13 +2487,13 @@ impl NyarVM {
                         "gt" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                            let r = match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
                                     a.as_int() > b.as_int()
-                                },
-                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                }
+                                (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() > b.as_float()
-                                },
+                                }
                                 (ValueTag::String, ValueTag::String) => unsafe {
                                     a.as_string() > b.as_string()
                                 },
@@ -2550,13 +2504,13 @@ impl NyarVM {
                         "ge" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            let r = match (a.tag, b.tag) {
-                                (ValueTag::Int, ValueTag::Int) => unsafe {
+                            let r = match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
                                     a.as_int() >= b.as_int()
-                                },
-                                (ValueTag::Float, ValueTag::Float) => unsafe {
+                                }
+                                (ValueTag::Float, ValueTag::Float) => {
                                     a.as_float() >= b.as_float()
-                                },
+                                }
                                 (ValueTag::String, ValueTag::String) => unsafe {
                                     a.as_string() >= b.as_string()
                                 },
@@ -2567,66 +2521,58 @@ impl NyarVM {
                         "add" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            unsafe {
-                                match (a.tag, b.tag) {
-                                    (ValueTag::Int, ValueTag::Int) => {
-                                        self.push(Value::int(a.as_int() + b.as_int()))
-                                    }
-                                    (ValueTag::Float, ValueTag::Float) => {
-                                        self.push(Value::float(a.as_float() + b.as_float()))
-                                    }
-                                    (ValueTag::String, ValueTag::String) => {
-                                        let mut s = a.as_string().clone();
-                                        s.push_str(b.as_string());
-                                        self.push(Value::string(s));
-                                    }
-                                    _ => self.push(Value::null()),
+                            match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
+                                    self.push(Value::int(a.as_int() + b.as_int()))
                                 }
+                                (ValueTag::Float, ValueTag::Float) => {
+                                    self.push(Value::float(a.as_float() + b.as_float()))
+                                }
+                                (ValueTag::String, ValueTag::String) => unsafe {
+                                    let mut s = a.as_string().clone();
+                                    s.push_str(b.as_string());
+                                    self.push(Value::string(s));
+                                }
+                                _ => self.push(Value::null()),
                             }
                         }
                         "sub" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            unsafe {
-                                match (a.tag, b.tag) {
-                                    (ValueTag::Int, ValueTag::Int) => {
-                                        self.push(Value::int(a.as_int() - b.as_int()))
-                                    }
-                                    (ValueTag::Float, ValueTag::Float) => {
-                                        self.push(Value::float(a.as_float() - b.as_float()))
-                                    }
-                                    _ => self.push(Value::null()),
+                            match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
+                                    self.push(Value::int(a.as_int() - b.as_int()))
                                 }
+                                (ValueTag::Float, ValueTag::Float) => {
+                                    self.push(Value::float(a.as_float() - b.as_float()))
+                                }
+                                _ => self.push(Value::null()),
                             }
                         }
                         "mul" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            unsafe {
-                                match (a.tag, b.tag) {
-                                    (ValueTag::Int, ValueTag::Int) => {
-                                        self.push(Value::int(a.as_int() * b.as_int()))
-                                    }
-                                    (ValueTag::Float, ValueTag::Float) => {
-                                        self.push(Value::float(a.as_float() * b.as_float()))
-                                    }
-                                    _ => self.push(Value::null()),
+                            match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
+                                    self.push(Value::int(a.as_int() * b.as_int()))
                                 }
+                                (ValueTag::Float, ValueTag::Float) => {
+                                    self.push(Value::float(a.as_float() * b.as_float()))
+                                }
+                                _ => self.push(Value::null()),
                             }
                         }
                         "div" => {
                             let b = args.pop().unwrap_or(Value::null());
                             let a = args.pop().unwrap_or(Value::null());
-                            unsafe {
-                                match (a.tag, b.tag) {
-                                    (ValueTag::Int, ValueTag::Int) => {
-                                        self.push(Value::int(a.as_int() / b.as_int()))
-                                    }
-                                    (ValueTag::Float, ValueTag::Float) => {
-                                        self.push(Value::float(a.as_float() / b.as_float()))
-                                    }
-                                    _ => self.push(Value::null()),
+                            match (a.tag(), b.tag()) {
+                                (ValueTag::Int, ValueTag::Int) => {
+                                    self.push(Value::int(a.as_int() / b.as_int()))
                                 }
+                                (ValueTag::Float, ValueTag::Float) => {
+                                    self.push(Value::float(a.as_float() / b.as_float()))
+                                }
+                                _ => self.push(Value::null()),
                             }
                         }
                         _ => {
@@ -2724,20 +2670,18 @@ impl NyarVM {
                 Instruction::PushElementRight => {
                     let val = self.pop()?;
                     let list_v = self.pop()?;
-                    if list_v.tag == ValueTag::List {
-                        let list_ptr = unsafe { list_v.data.ptr as *mut crate::vm::value::List };
-                        let list_mut = unsafe { &mut *list_ptr };
+                    if list_v.tag() == ValueTag::List {
+                        let list_mut = unsafe { list_v.as_list_mut() };
                         list_mut.items.push(val);
                         self.push(Value::null());
                     } else {
-                        return Err(VmError::RuntimeError(format!("PushElementRight on non-list: found {:?}", list_v.tag).into()));
+                        return Err(VmError::RuntimeError(format!("PushElementRight on non-list: found {:?}", list_v.tag()).into()));
                     }
                 }
                 Instruction::PopElementRight => {
                     let list_v = self.pop()?;
-                    if list_v.tag == ValueTag::List {
-                        let list_ptr = unsafe { list_v.data.ptr as *mut crate::vm::value::List };
-                        let list_mut = unsafe { &mut *list_ptr };
+                    if list_v.tag() == ValueTag::List {
+                        let list_mut = unsafe { list_v.as_list_mut() };
                         if let Some(val) = list_mut.items.pop() {
                             self.push(val);
                         } else {
@@ -2750,9 +2694,8 @@ impl NyarVM {
                 Instruction::PushElementLeft => {
                     let val = self.pop()?;
                     let list_v = self.pop()?;
-                    if list_v.tag == ValueTag::List {
-                        let list_ptr = unsafe { list_v.data.ptr as *mut crate::vm::value::List };
-                        let list_mut = unsafe { &mut *list_ptr };
+                    if list_v.tag() == ValueTag::List {
+                        let list_mut = unsafe { list_v.as_list_mut() };
                         list_mut.items.insert(0, val);
                         self.push(Value::null());
                     } else {
@@ -2761,9 +2704,8 @@ impl NyarVM {
                 }
                 Instruction::PopElementLeft => {
                     let list_v = self.pop()?;
-                    if list_v.tag == ValueTag::List {
-                        let list_ptr = unsafe { list_v.data.ptr as *mut crate::vm::value::List };
-                        let list_mut = unsafe { &mut *list_ptr };
+                    if list_v.tag() == ValueTag::List {
+                        let list_mut = unsafe { list_v.as_list_mut() };
                         if !list_mut.items.is_empty() {
                             let val = list_mut.items.remove(0);
                             self.push(val);
@@ -2777,28 +2719,28 @@ impl NyarVM {
                 Instruction::GetElement => {
                     let idx_v = self.pop()?;
                     let arr_v = self.pop()?;
-                    if arr_v.tag == ValueTag::Array {
-                        let idx = unsafe { idx_v.as_int() };
+                    if arr_v.tag() == ValueTag::Array {
+                        let idx = idx_v.as_int();
                         let arr_ref = unsafe { arr_v.as_array() };
                         if idx < 0 || (idx as usize) >= arr_ref.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         self.push(arr_ref.items[idx as usize]);
-                    } else if arr_v.tag == ValueTag::Tuple {
-                        let idx = unsafe { idx_v.as_int() };
+                    } else if arr_v.tag() == ValueTag::Tuple {
+                        let idx = idx_v.as_int();
                         let tup_ref = unsafe { arr_v.as_tuple() };
                         if idx < 0 || (idx as usize) >= tup_ref.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         self.push(tup_ref.items[idx as usize]);
-                    } else if arr_v.tag == ValueTag::List {
-                        let idx = unsafe { idx_v.as_int() };
+                    } else if arr_v.tag() == ValueTag::List {
+                        let idx = idx_v.as_int();
                         let list_ref = unsafe { arr_v.as_list() };
                         if idx < 0 || (idx as usize) >= list_ref.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         self.push(list_ref.items[idx as usize]);
-                    } else if arr_v.tag == ValueTag::DynObject {
+                    } else if arr_v.tag() == ValueTag::DynObject {
                         if key_is_string(&idx_v) {
                             let k = unsafe { idx_v.as_string() };
                             let obj_ref = unsafe { arr_v.as_dyn_object() };
@@ -2818,43 +2760,38 @@ impl NyarVM {
                     let val = self.pop()?;
                     let idx_v = self.pop()?;
                     let arr_v = self.pop()?;
-                    if arr_v.tag == ValueTag::Array {
-                        let idx = unsafe { idx_v.as_int() };
-                        let arr_ptr = unsafe { arr_v.data.ptr as *mut crate::vm::value::Array };
-                        let arr_mut = unsafe { &mut *arr_ptr };
+                    if arr_v.tag() == ValueTag::Array {
+                        let idx = idx_v.as_int();
+                        let arr_mut = unsafe { arr_v.as_array_mut() };
                         if idx < 0 || (idx as usize) >= arr_mut.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         arr_mut.items[idx as usize] = val;
                         self.push(arr_v);
-                    } else if arr_v.tag == ValueTag::Tuple {
-                        let idx = unsafe { idx_v.as_int() };
-                        let tup_ptr = unsafe { arr_v.data.ptr as *mut crate::vm::value::Tuple };
-                        let tup_mut = unsafe { &mut *tup_ptr };
+                    } else if arr_v.tag() == ValueTag::Tuple {
+                        let idx = idx_v.as_int();
+                        let tup_mut = unsafe { arr_v.as_tuple_mut() };
                         if idx < 0 || (idx as usize) >= tup_mut.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
-                        let slot_tag = tup_mut.items[idx as usize].tag;
-                        if slot_tag != val.tag {
+                        let slot_tag = tup_mut.items[idx as usize].tag();
+                        if slot_tag != val.tag() {
                             return Err(VmError::RuntimeError("Tuple type mismatch".into()));
                         }
                         tup_mut.items[idx as usize] = val;
                         self.push(arr_v);
-                    } else if arr_v.tag == ValueTag::List {
-                        let idx = unsafe { idx_v.as_int() };
-                        let list_ptr = unsafe { arr_v.data.ptr as *mut crate::vm::value::List };
-                        let list_mut = unsafe { &mut *list_ptr };
+                    } else if arr_v.tag() == ValueTag::List {
+                        let idx = idx_v.as_int();
+                        let list_mut = unsafe { arr_v.as_list_mut() };
                         if idx < 0 || (idx as usize) >= list_mut.items.len() {
                             return Err(VmError::IndexOutOfBounds);
                         }
                         list_mut.items[idx as usize] = val;
                         self.push(arr_v);
-                    } else if arr_v.tag == ValueTag::DynObject {
+                    } else if arr_v.tag() == ValueTag::DynObject {
                         if key_is_string(&idx_v) {
                             let k = unsafe { idx_v.as_string().clone() };
-                            let obj_ptr =
-                                unsafe { arr_v.data.ptr as *mut crate::vm::value::DynObject };
-                            let obj_mut = unsafe { &mut *obj_ptr };
+                            let obj_mut = unsafe { arr_v.as_dyn_object_mut() };
                             obj_mut.entries.insert(k, val);
                             self.push(arr_v);
                         } else {
@@ -2867,32 +2804,29 @@ impl NyarVM {
                 Instruction::RemoveKey => {
                     let key_v = self.pop()?;
                     let container = self.pop()?;
-                    if container.tag == ValueTag::DynObject {
+                    if container.tag() == ValueTag::DynObject {
                         if key_is_string(&key_v) {
                             let k = unsafe { key_v.as_string().clone() };
-                            let obj_ptr =
-                                unsafe { container.data.ptr as *mut crate::vm::value::DynObject };
-                            let obj_mut = unsafe { &mut *obj_ptr };
+                            let obj_mut = unsafe { container.as_dyn_object_mut() };
                             let existed = obj_mut.entries.remove(&k).is_some();
                             self.push(Value::bool(existed));
                         } else {
                             return Err(VmError::InvalidOpcode);
                         }
-                    } else if container.tag == ValueTag::List {
-                        let idx = unsafe { key_v.as_int() };
-                        let list_ptr = unsafe { container.data.ptr as *mut crate::vm::value::List };
-                        let list_mut = unsafe { &mut *list_ptr };
+                    } else if container.tag() == ValueTag::List {
+                        let idx = key_v.as_int();
+                        let list_mut = unsafe { container.as_list_mut() };
                         if idx < 0 || (idx as usize) >= list_mut.items.len() {
                             self.push(Value::bool(false));
                         } else {
                             list_mut.items.remove(idx as usize);
                             self.push(Value::bool(true));
                         }
-                    } else if container.tag == ValueTag::Array {
+                    } else if container.tag() == ValueTag::Array {
                         return Err(VmError::RuntimeError(
                             "Cannot remove from static array".into(),
                         ));
-                    } else if container.tag == ValueTag::Tuple {
+                    } else if container.tag() == ValueTag::Tuple {
                         return Err(VmError::RuntimeError("Cannot remove from tuple".into()));
                     } else {
                         return Err(VmError::InvalidOpcode);
@@ -2909,17 +2843,15 @@ impl NyarVM {
                 Instruction::HasKey => {
                     let mut key = self.pop()?;
                     let mut container = self.pop()?;
-                    if container.tag != ValueTag::Object && key.tag == ValueTag::Object {
+                    if container.tag() != ValueTag::Object && key.tag() == ValueTag::Object {
                         let tmp = key;
                         key = container;
                         container = tmp;
                     }
                     let mut exists = false;
-                    if container.tag == ValueTag::Object {
-                        let obj_ptr =
-                            unsafe { container.data.ptr as *mut crate::vm::value::Object };
-                        let obj_ref = unsafe { &*obj_ptr };
-                        if let ValueTag::String = key.tag {
+                    if container.tag() == ValueTag::Object {
+                        let obj_ref = unsafe { container.as_object() };
+                        if let ValueTag::String = key.tag() {
                             let name = unsafe { key.as_string() };
                             let cls = self.modules[module_idx]
                                 .classes
@@ -2930,27 +2862,27 @@ impl NyarVM {
                                 exists = true;
                             }
                         }
-                    } else if container.tag == ValueTag::DynObject {
-                        if let ValueTag::String = key.tag {
+                    } else if container.tag() == ValueTag::DynObject {
+                        if let ValueTag::String = key.tag() {
                             let k = unsafe { key.as_string() };
                             let obj_ref = unsafe { container.as_dyn_object() };
                             exists = obj_ref.entries.contains_key(k);
                         }
-                    } else if container.tag == ValueTag::Array {
-                        if let ValueTag::Int = key.tag {
-                            let idx = unsafe { key.as_int() };
+                    } else if container.tag() == ValueTag::Array {
+                        if let ValueTag::Int = key.tag() {
+                            let idx = key.as_int();
                             let arr_ref = unsafe { container.as_array() };
                             exists = idx >= 0 && (idx as usize) < arr_ref.items.len();
                         }
-                    } else if container.tag == ValueTag::Tuple {
-                        if let ValueTag::Int = key.tag {
-                            let idx = unsafe { key.as_int() };
+                    } else if container.tag() == ValueTag::Tuple {
+                        if let ValueTag::Int = key.tag() {
+                            let idx = key.as_int();
                             let tup_ref = unsafe { container.as_tuple() };
                             exists = idx >= 0 && (idx as usize) < tup_ref.items.len();
                         }
-                    } else if container.tag == ValueTag::List {
-                        if let ValueTag::Int = key.tag {
-                            let idx = unsafe { key.as_int() };
+                    } else if container.tag() == ValueTag::List {
+                        if let ValueTag::Int = key.tag() {
+                            let idx = key.as_int();
                             let list_ref = unsafe { container.as_list() };
                             exists = idx >= 0 && (idx as usize) < list_ref.items.len();
                         }
@@ -2960,9 +2892,8 @@ impl NyarVM {
                 Instruction::MatchVariant(class_idx) => {
                     let class_idx = *class_idx;
                     let val = self.pop()?;
-                    let is_match = if val.tag == ValueTag::Object {
-                        let obj_ptr = unsafe { val.data.ptr as *mut crate::vm::value::Object };
-                        let obj_ref = unsafe { &*obj_ptr };
+                    let is_match = if val.tag() == ValueTag::Object {
+                        let obj_ref = unsafe { val.as_object() };
                         obj_ref.class_idx == class_idx
                     } else {
                         false
@@ -2981,11 +2912,11 @@ impl NyarVM {
                     let mut ok = false;
                     if !f.locals.is_empty() {
                         let v = f.locals[0];
-                        if v.tag == ValueTag::String {
+                        if v.tag() == ValueTag::String {
                             unsafe {
                                 ok = v.as_string() == name;
                             }
-                        } else if v.tag == ValueTag::Effect {
+                        } else if v.tag() == ValueTag::Effect {
                             if let Some(i) = eff_idx {
                                 let e = unsafe { v.as_effect() };
                                 ok = e.type_idx as usize == i;
@@ -2998,7 +2929,7 @@ impl NyarVM {
                     use std::mem::size_of;
                     let v = self.pop()?;
                     let ptr_sz = size_of::<*mut ()>() as i64;
-                    let n = match v.tag {
+                    let n = match v.tag() {
                         ValueTag::Int => size_of::<i64>() as i64,
                         ValueTag::Float => size_of::<f64>() as i64,
                         ValueTag::Bool => size_of::<u8>() as i64,
@@ -3024,7 +2955,7 @@ impl NyarVM {
                     let name_idx = *name_idx;
                     let obj = self.pop()?;
                     let module = &self.modules[module_idx];
-                    // self.log(&format!("GetField: obj_tag={:?}, name_idx={}", obj.tag, name_idx));
+                    // self.log(&format!("GetField: obj_tag={:?}, name_idx={}", obj.tag(), name_idx));
                     match module.constants.get(name_idx as usize) {
                         Some(Constant::String(_s)) => {
                             // self.log(&format!("GetField: name_const=String({})", _s));
@@ -3036,9 +2967,8 @@ impl NyarVM {
                             // self.log("GetField: name_const_missing");
                         }
                     }
-                    if obj.tag == ValueTag::Object {
-                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
-                        let obj_ref = unsafe { &*obj_ptr };
+                    if obj.tag() == ValueTag::Object {
+                        let obj_ref = unsafe { obj.as_object() };
 
                         let name = match module.constants.get(name_idx as usize) {
                             Some(Constant::String(s)) => s,
@@ -3058,9 +2988,8 @@ impl NyarVM {
                         } else {
                             return Err(VmError::RuntimeError(format!("Field not found: {}", name)));
                         }
-                    } else if obj.tag == ValueTag::DynObject {
-                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::DynObject };
-                        let obj_ref = unsafe { &*obj_ptr };
+                    } else if obj.tag() == ValueTag::DynObject {
+                        let obj_ref = unsafe { obj.as_dyn_object() };
 
                         let name = match module.constants.get(name_idx as usize) {
                             Some(Constant::String(s)) => s,
@@ -3079,7 +3008,7 @@ impl NyarVM {
                     } else {
                         return Err(VmError::RuntimeError(format!(
                             "GetField on non-object: found {:?}",
-                            obj.tag
+                            obj.tag()
                         )));
                     }
                 }
@@ -3100,15 +3029,14 @@ impl NyarVM {
                             // self.log("SetField: name_const_missing");
                         }
                     }
-                    // self.log(&format!("SetField: value_tag={:?}", val.tag));
-                    if obj.tag != ValueTag::Object {
+                    // self.log(&format!("SetField: value_tag={:?}", val.tag()));
+                    if obj.tag() != ValueTag::Object {
                         return Err(VmError::RuntimeError(format!(
                             "SetField on non-object: found {:?}",
-                            obj.tag
+                            obj.tag()
                         )));
                     }
-                    let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
-                    let obj_mut = unsafe { &mut *obj_ptr };
+                    let obj_mut = unsafe { obj.as_object_mut() };
 
                     let name = match module.constants.get(name_idx as usize) {
                         Some(Constant::String(s)) => s,
@@ -3133,9 +3061,8 @@ impl NyarVM {
                 Instruction::InstanceOf(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.pop()?;
-                    let is_instance = if obj.tag == ValueTag::Object {
-                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
-                        let obj_ref = unsafe { &*obj_ptr };
+                    let is_instance = if obj.tag() == ValueTag::Object {
+                        let obj_ref = unsafe { obj.as_object() };
                         obj_ref.class_idx == class_idx
                     } else {
                         false
@@ -3145,9 +3072,8 @@ impl NyarVM {
                 Instruction::CheckCast(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.pop()?;
-                    if obj.tag == ValueTag::Object {
-                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
-                        let obj_ref = unsafe { &*obj_ptr };
+                    if obj.tag() == ValueTag::Object {
+                        let obj_ref = unsafe { obj.as_object() };
                         if obj_ref.class_idx == class_idx {
                             self.push(obj);
                         } else {
@@ -3160,16 +3086,15 @@ impl NyarVM {
                 Instruction::Cast(class_idx) => {
                     let class_idx = *class_idx;
                     let obj = self.peek_at(0)?;
-                    if obj.tag == ValueTag::Object {
-                        let obj_ptr = unsafe { obj.data.ptr as *mut crate::vm::value::Object };
-                        let obj_ref = unsafe { &*obj_ptr };
+                    if obj.tag() == ValueTag::Object {
+                        let obj_ref = unsafe { obj.as_object() };
                         if obj_ref.class_idx != class_idx {
                             return Err(VmError::RuntimeError("Cast failed".into()));
                         }
                     } else {
                         return Err(VmError::RuntimeError(format!(
                             "Cast failed: not an object, found {:?}",
-                            obj.tag
+                            obj.tag()
                         )));
                     }
                 }

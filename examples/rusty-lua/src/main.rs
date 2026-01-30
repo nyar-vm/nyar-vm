@@ -2,9 +2,9 @@
 //!
 //! 这是一个类似 Lua 的语言前端演示程序，支持编译到 Nyar 字节码
 
+use std::{path::Path, process::exit};
 use virtual_lua::MiniLuaFrontend;
 use nyar_vm::NyarDriver;
-use std::{fs, process::exit};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -13,22 +13,11 @@ fn main() {
         exit(1);
     }
 
-    let input_file = &args[1];
-
-    // 读取输入文件
-    let source_code = match fs::read_to_string(input_file) {
-        Ok(content) => content,
-        Err(e) => {
-            eprintln!("错误：无法读取文件 '{}': {}", input_file, e);
-            exit(1);
-        }
-    };
-
-    // 创建前端实例
+    let input_file = Path::new(&args[1]);
     let frontend = MiniLuaFrontend::new();
-
-    // 使用 NyarDriver 运行
-    if let Err(e) = NyarDriver::run_source(&frontend, &source_code) {
+    let driver = NyarDriver::new();
+    
+    if let Err(e) = driver.run_source(&frontend, input_file) {
         eprintln!("Runtime error: {:?}", e);
         exit(1);
     }

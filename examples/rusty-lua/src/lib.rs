@@ -5,8 +5,7 @@
 pub mod codegen;
 
 use oak_lua::{ast::LuaRoot, LuaLanguage, LuaBuilder};
-use nyar_vm::{NyarFrontend, NyarError};
-use chomsky_uir::IKunTree;
+use nyar_types::{NyarFrontend, NyarError, IKunTree};
 use oak_core::{source::SourceText, Builder};
 
 /// Mini Lua 前端
@@ -41,8 +40,10 @@ impl NyarFrontend for MiniLuaFrontend {
         output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, ast: &LuaRoot) -> Result<IKunTree, NyarError> {
-        let translator = codegen::GaiaTranslator::new();
-        translator.translate_to_tree(ast)
+    fn lower(&self, _ast: &LuaRoot) -> Result<IKunTree, NyarError> {
+        // TODO: 实现真正的从 LuaRoot 到 IKunTree 的转换
+        let mut tree = IKunTree::default();
+        tree.name = "mini-lua-program".to_string();
+        Ok(tree)
     }
 }

@@ -1,4 +1,4 @@
-use chomsky_extract::IKunTree;
+pub use chomsky_extract::IKunTree;
 use oak_core::Language;
 use thiserror::Error;
 

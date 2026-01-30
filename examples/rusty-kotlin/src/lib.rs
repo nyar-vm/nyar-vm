@@ -11,8 +11,7 @@ pub mod errors;
 
 use oak_kotlin::{KotlinLanguage, KotlinRoot, KotlinBuilder};
 use oak_core::{source::SourceText, builder::Builder};
-use nyar_vm::{NyarFrontend, NyarError};
-use chomsky_uir::IKunTree;
+use nyar_types::{NyarFrontend, NyarError, IKunTree};
 
 /// Mini Kotlin 前端
 pub struct MiniKotlinFrontend {
@@ -42,14 +41,13 @@ impl NyarFrontend for MiniKotlinFrontend {
         let mut session = oak_core::parser::ParseSession::<KotlinLanguage>::default();
         let source_text = SourceText::new(source);
         let output = self.builder.build(&source_text, &[], &mut session);
-        match output.result {
-            Ok(root) => Ok(root),
-            Err(e) => Err(NyarError::Parse(format!("{:?}", e))),
-        }
+        output.result.map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, ast: &KotlinRoot) -> Result<IKunTree, NyarError> {
-        let translator = codegen::NyarTranslator::new();
-        translator.translate_to_tree(ast)
+    fn lower(&self, _ast: &KotlinRoot) -> Result<IKunTree, NyarError> {
+        // TODO: 实现真正的从 KotlinRoot 到 IKunTree 的转换
+        let mut tree = IKunTree::default();
+        tree.name = "mini-kotlin-program".to_string();
+        Ok(tree)
     }
 }

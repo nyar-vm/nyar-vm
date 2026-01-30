@@ -7,9 +7,7 @@ pub mod frontend;
 pub mod optimizer;
 pub mod runtime;
 
-use nyar_error::NyarError;
-use nyar_frontend::NyarFrontend;
-use nyar_types::IKunTree;
+use nyar_types::{NyarError, NyarFrontend, IKunTree};
 use oak_c::{CLanguage, CRoot, CBuilder};
 use oak_core::source::SourceText;
 

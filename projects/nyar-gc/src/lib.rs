@@ -5,31 +5,74 @@ use std::ptr::NonNull;
 /// A trait for types that can be traced by the garbage collector.
 pub trait Trace {
     /// Trace all GC pointers contained within this object.
-    fn trace(&self);
+    fn trace(&self, ctx: &mut MarkContext);
+}
+
+/// Context used during the marking phase of GC.
+pub struct MarkContext {
+    pub(crate) gray_stack: Vec<NonNull<GcHeader>>,
+}
+
+impl MarkContext {
+    /// Mark a GC pointer as reachable.
+    pub unsafe fn mark(&mut self, ptr: NonNull<GcHeader>) {
+        let header = ptr.as_ref();
+        if header.color.get() == Color::White {
+            header.color.set(Color::Gray);
+            self.gray_stack.push(ptr);
+        }
+    }
+}
+
+/// Color of an object for tri-color marking.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Color {
+    /// Not yet visited.
+    White = 0,
+    /// Visited, but children not yet visited.
+    Gray = 1,
+    /// Visited and children visited.
+    Black = 2,
 }
 
 /// Metadata stored at the beginning of every GC-managed allocation.
 pub struct GcHeader {
-    /// Whether this object has been marked during the current collection cycle.
-    pub(crate) marked: Cell<bool>,
+    /// Color of this object for tri-color marking.
+    pub color: Cell<Color>,
     /// Which generation this object belongs to (0 for young, 1 for old).
     pub(crate) generation: Cell<u8>,
     /// Whether this object is in the remembered set (old object pointing to young).
     pub(crate) dirty: Cell<bool>,
     /// Link to the next object in the collector's list.
-    pub(crate) next: Cell<Option<NonNull<GcHeader>>>,
+    pub next: Cell<Option<NonNull<GcHeader>>>,
     /// Function to drop and deallocate the object.
-    pub(crate) drop_and_dealloc: unsafe fn(NonNull<GcHeader>),
+    pub drop_and_dealloc: unsafe fn(NonNull<GcHeader>),
     /// Function to trace the object.
-    pub(crate) trace_object: unsafe fn(NonNull<GcHeader>),
+    pub trace_object: unsafe fn(NonNull<GcHeader>),
     /// Size of the allocation in bytes.
-    pub(crate) size: usize,
+    pub size: usize,
+}
+
+impl GcHeader {
+    /// Mark the object and trace its children if it wasn't already marked.
+    pub unsafe fn mark_and_trace(ptr: NonNull<GcHeader>) {
+        let header = ptr.as_ref();
+        if header.color.get() == Color::White {
+            header.color.set(Color::Gray);
+            // In a full tri-color implementation, this would push to a gray stack.
+            // For now, we'll keep it simple and trace immediately to keep compatibility
+            // with the current single-threaded Stop-the-World model, but use the color.
+            (header.trace_object)(ptr);
+            header.color.set(Color::Black);
+        }
+    }
 }
 
 #[repr(C)]
-struct GcBox<T: Trace + 'static> {
-    header: GcHeader,
-    data: T,
+pub struct GcBox<T: Trace + 'static> {
+    pub header: GcHeader,
+    pub data: T,
 }
 
 /// A garbage-collected pointer to a value of type `T`.
@@ -89,12 +132,13 @@ impl NyarGc {
             std::ptr::write(
                 &mut (*ptr).header,
                 GcHeader {
-                    marked: Cell::new(false),
+                    color: Cell::new(Color::White),
                     generation: Cell::new(0), // New objects are always in young generation
                     dirty: Cell::new(false),
                     next: Cell::new(self.young_head.get()),
                     drop_and_dealloc: Self::drop_and_dealloc::<T>,
                     trace_object: Self::trace_object::<T>,
+                    size: layout.size(),
                 },
             );
             std::ptr::write(&mut (*ptr).data, value);
@@ -212,9 +256,9 @@ impl NyarGc {
             let header = header_ptr.as_ref();
             let next = header.next.get();
 
-            if header.marked.get() {
+            if header.color.get() != Color::White {
                 // Object survived! Promote to old generation.
-                header.marked.set(false);
+                header.color.set(Color::White);
                 header.generation.set(1);
 
                 // Remove from young list
@@ -238,6 +282,8 @@ impl NyarGc {
                     self.young_head.set(next);
                 }
 
+                // Update allocated_bytes
+                self.allocated_bytes.set(self.allocated_bytes.get() - header.size);
                 (header.drop_and_dealloc)(header_ptr);
                 curr = next;
             }
@@ -256,8 +302,8 @@ impl NyarGc {
             let header = header_ptr.as_ref();
             let next = header.next.get();
 
-            if header.marked.get() {
-                header.marked.set(false);
+            if header.color.get() != Color::White {
+                header.color.set(Color::White);
                 prev = Some(header_ptr);
                 curr = next;
             } else {
@@ -267,6 +313,8 @@ impl NyarGc {
                     self.old_head.set(next);
                 }
 
+                // Update allocated_bytes
+                self.allocated_bytes.set(self.allocated_bytes.get() - header.size);
                 (header.drop_and_dealloc)(header_ptr);
                 curr = next;
             }
@@ -277,11 +325,8 @@ impl NyarGc {
 impl<T: Trace + 'static> Trace for Gc<T> {
     fn trace(&self) {
         unsafe {
-            let header = &self.ptr.as_ref().header;
-            if !header.marked.get() {
-                header.marked.set(true);
-                self.ptr.as_ref().data.trace();
-            }
+            let header_ptr = NonNull::new_unchecked(&self.ptr.as_ref().header as *const _ as *mut _);
+            GcHeader::mark_and_trace(header_ptr);
         }
     }
 }

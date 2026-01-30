@@ -2,9 +2,9 @@
 //!
 //! 这是一个类似 Python 的语言前端演示程序，支持编译到 Gaia 指令或 Python 字节码 (.pyc)
 
+use std::{path::Path, process::exit};
 use virtual_python::MiniPythonFrontend;
 use nyar_vm::NyarDriver;
-use std::{fs, process::exit};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -13,14 +13,11 @@ fn main() {
         exit(1);
     }
 
-    let input_file = &args[1];
-    let source_code = fs::read_to_string(input_file).unwrap_or_else(|e| {
-        eprintln!("Error reading file: {}", e);
-        exit(1);
-    });
-
+    let input_file = Path::new(&args[1]);
     let frontend = MiniPythonFrontend::new();
-    if let Err(e) = NyarDriver::run_source(&frontend, &source_code) {
+    let driver = NyarDriver::new();
+    
+    if let Err(e) = driver.run_source(&frontend, input_file) {
         eprintln!("Runtime error: {:?}", e);
         exit(1);
     }

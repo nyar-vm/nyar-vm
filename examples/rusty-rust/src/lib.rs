@@ -5,9 +5,7 @@ pub mod ast;
 pub mod codegen;
 pub mod converter;
 
-use nyar_error::NyarError;
-use nyar_frontend::NyarFrontend;
-use nyar_types::IKunTree;
+use nyar_types::{NyarError, NyarFrontend, IKunTree};
 use oak_core::source::SourceText;
 use oak_rust::{RustBuilder, RustLanguage, RustRoot};
 
