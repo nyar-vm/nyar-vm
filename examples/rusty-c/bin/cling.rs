@@ -13,8 +13,7 @@ struct Args {
     input: Option<String>,
 }
 
-use std::fmt::{Display, Formatter};
-use std::error::Error;
+use std::fmt;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
@@ -112,7 +111,7 @@ impl ReplHandler for CReplHandler {
 
 fn main() -> Result<(), ClingError> {
     let args = Args::parse();
-    let mut handler = CReplHandler::new();
+    let handler = CReplHandler::new();
 
     if let Some(input_file) = args.input {
         let source = fs::read_to_string(input_file)?;

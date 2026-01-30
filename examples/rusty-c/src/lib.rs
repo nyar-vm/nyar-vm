@@ -268,12 +268,24 @@ impl<'a> UirConverter<'a> {
                 self.builder.branch(t, c, a, loc)
             }
             ast::ExpressionKind::FunctionCall { function, arguments, .. } => {
-                let func = self.convert_expression(function);
+                let func_id = self.convert_expression(function);
                 let mut args = Vec::new();
                 for arg in arguments {
                     args.push(self.convert_expression(arg));
                 }
-                self.builder.call(func, args, loc)
+
+                // 特殊处理 printf -> System.Console.WriteLine
+                if let ast::ExpressionKind::Identifier(id) = &*function.kind {
+                    if id.name == "printf" {
+                        return self.builder.call(
+                            self.builder.symbol("System.Console.WriteLine", loc.clone()),
+                            args,
+                            loc,
+                        );
+                    }
+                }
+
+                self.builder.call(func_id, args, loc)
             }
             ast::ExpressionKind::ArraySubscript { array, index, .. } => {
                 let arr = self.convert_expression(array);

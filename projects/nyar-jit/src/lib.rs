@@ -549,7 +549,7 @@ impl NyarJit {
                 Instruction::I32Add | Instruction::I64Add | Instruction::F32Add | Instruction::F64Add => {
                     if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
                         let id = intents.len();
-                        intents.push(IKun::Map(lhs, rhs));
+                        intents.push(IKun::Extension("add".to_string(), vec![lhs, rhs]));
                         stack.push(id);
                     }
                 }
@@ -747,7 +747,11 @@ impl NyarJit {
                     intents.push(IKun::Constant(idx as i64));
                     
                     let id = intents.len();
-                    intents.push(IKun::Apply(func_id, args));
+                    intents.push(IKun::Extension("call".to_string(), {
+                        let mut v = vec![func_id];
+                        v.extend(args);
+                        v
+                    }));
                     stack.push(id);
                 }
                 Instruction::NewObject(idx) => {
@@ -882,20 +886,24 @@ impl NyarJit {
                           intents.push(IKun::Extension("tail_call".to_string(), vec![val_id]));
                      }
                  }
-                 Instruction::CallClosure(argc) => {
-                     let mut args = Vec::new();
-                     for _ in 0..argc {
-                         if let Some(arg) = stack.pop() {
-                             args.push(arg);
-                         }
-                     }
-                     args.reverse();
-                     if let Some(closure_id) = stack.pop() {
-                         let id = intents.len();
-                         intents.push(IKun::Apply(closure_id, args));
-                         stack.push(id);
-                     }
-                 }
+                Instruction::CallClosure(argc) => {
+                    let mut args = Vec::new();
+                    for _ in 0..argc {
+                        if let Some(arg) = stack.pop() {
+                            args.push(arg);
+                        }
+                    }
+                    args.reverse();
+                    if let Some(closure_id) = stack.pop() {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("call_closure".to_string(), {
+                            let mut v = vec![closure_id];
+                            v.extend(args);
+                            v
+                        }));
+                        stack.push(id);
+                    }
+                }
                  Instruction::MakeTuple(argc) => {
                      let mut args = Vec::new();
                      for _ in 0..argc {

@@ -13,7 +13,7 @@ impl MiniCOptimizer {
     }
 
     pub fn optimize(&self, intent_graph: (EGraph<IKun, ()>, Id)) -> (EGraph<IKun, ()>, Id) {
-        let (mut egraph, root_id) = intent_graph;
+        let (egraph, root_id) = intent_graph;
         
         // 1. Run saturation search using registered rules
         self.optimizer.scheduler.run(&egraph, &self.optimizer.registry);
