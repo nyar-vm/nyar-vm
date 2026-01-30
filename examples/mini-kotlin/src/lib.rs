@@ -6,7 +6,6 @@
 pub mod codegen;
 pub mod visitor;
 pub mod tagless;
-pub mod wasm;
 pub mod row_type;
 pub mod errors;
 

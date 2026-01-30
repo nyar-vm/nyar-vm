@@ -1,10 +1,9 @@
 use clap::{Parser, ValueEnum};
 use mini_typescript::errors::ScriptError;
 use mini_typescript::MiniTypescriptFrontend;
-use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::vm::interpreter::NyarVM;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "tsc", version = "0.1.0", author = "Nyar Project", about = "Mini TypeScript Compiler")]
@@ -42,6 +41,8 @@ enum EmitTarget {
     Json,
     /// Tokens
     Tokens,
+    /// UIR EGraph debug output
+    Uir,
 }
 
 fn main() -> Result<(), ScriptError> {
@@ -66,6 +67,7 @@ fn main() -> Result<(), ScriptError> {
             EmitTarget::Wasm => path.set_extension("wasm"),
             EmitTarget::Json => path.set_extension("json"),
             EmitTarget::Tokens => path.set_extension("tokens"),
+            EmitTarget::Uir => path.set_extension("uir"),
         };
         path
     });
@@ -75,7 +77,7 @@ fn main() -> Result<(), ScriptError> {
             let module = frontend.compile_to_nyar(&source_code)
                 .map_err(|e| ScriptError::from(format!("Compilation error: {:?}", e)))?;
             let data = module.encode();
-            
+
             if args.run {
                 run_module(&module)?;
             } else {
@@ -113,11 +115,20 @@ fn main() -> Result<(), ScriptError> {
         }
         EmitTarget::Tokens => {
             let tokens = frontend.tokenize(&source_code)
-                .map_err(|e| ScriptError::from(format!("Tokenization error: {:?}", e)))?;
+                .map_err(|e| ScriptError::from(format!("Tokenization error: {}", e)))?;
             let mut output = String::new();
             for token in tokens {
                 output.push_str(&format!("{:?}\n", token));
             }
+            fs::write(&output_path, output).map_err(|e| ScriptError::from(e.to_string()))?;
+            if args.verbose {
+                println!("Output written to {:?}", output_path);
+            }
+        }
+        EmitTarget::Uir => {
+            let (egraph, _root) = frontend.parse(&source_code)
+                .map_err(|e| ScriptError::from(format!("Parse error: {}", e)))?;
+            let output = format!("{:?}", egraph);
             fs::write(&output_path, output).map_err(|e| ScriptError::from(e.to_string()))?;
             if args.verbose {
                 println!("Output written to {:?}", output_path);
@@ -129,26 +140,16 @@ fn main() -> Result<(), ScriptError> {
 }
 
 fn run_module(module: &nyar_vm::bytecode::format::NyarModule) -> Result<(), ScriptError> {
-    let chunk = module.chunks.get(0).cloned().ok_or_else(|| ScriptError::from("No chunk found in module"))?;
-    let program = Decoder::new(&chunk.code).decode_all()
-        .map_err(|e| ScriptError::from(format!("Decode error: {:?}", e)))?;
-    
-    let mut vm = NyarVM::new(
-        module.constants.clone(),
-        module.chunks.clone(),
-        module.classes.clone(),
-        module.traits.clone(),
-        module.impls.clone(),
-        module.effects.clone(),
-    );
-    
+    let mut vm = NyarVM::new();
+
     vm.stdout = Some(Box::new(|msg: &str| {
         println!("{}", msg);
     }));
 
-    let v = vm.execute(&program)
+    let module_idx = vm.load_module(module.clone());
+    let v = vm.execute(module_idx, 0)
         .map_err(|e| ScriptError::from(format!("Runtime error: {:?}", e)))?;
-    
+
     println!("Execution finished. Result Tag: {:?}", v.tag);
     Ok(())
 }

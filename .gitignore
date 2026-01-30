@@ -26,6 +26,9 @@ package-lock.json
 # Wasm
 *.wasm
 
+# Python
+*.pyc
+
 #
 *.nyar
 *.nyarc
