@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["projects/*", "examples/*"]
+members = ["projects/*"]
 default-members = [
     "projects/nyar-types",
     "projects/nyar-vm",
@@ -16,6 +16,7 @@ chomsky = { path = "../ProjectChomsky/packages/chomsky" }
 chomsky-source = { path = "../ProjectChomsky/packages/chomsky-source" }
 chomsky-uir = { path = "../ProjectChomsky/packages/chomsky-uir" }
 chomsky-cost = { path = "../ProjectChomsky/packages/chomsky-cost" }
+chomsky-extract = { path = "../ProjectChomsky/packages/chomsky-extract" }
 oak-core = { path = "../oaks/projects/oak-core" }
 oak-rust = { path = "../oaks/examples/oak-rust" }
 oak-c = { path = "../oaks/examples/oak-c" }

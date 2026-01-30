@@ -96,17 +96,20 @@ impl NyarBackend {
 }
 
 impl Backend for NyarBackend {
-    fn get_model(&self) -> &dyn chomsky_extract::CostModel {
+    fn name(&self) -> &str {
+        "nyar"
+    }
+
+    fn get_model(&self) -> &dyn chomsky_cost::CostModel {
         &chomsky_cost::DEFAULT_COST_MODEL
     }
 
-    fn generate(&self, tree: &IKunTree) -> Result<BackendArtifact, String> {
+    fn generate(&self, tree: &IKunTree) -> Result<BackendArtifact, chomsky_types::ChomskyError> {
         let mut backend = NyarBackend::new();
-        backend.lower_tree(tree).map_err(|e| format!("{:?}", e))?;
+        backend.lower_tree(tree).map_err(|e| chomsky_types::ChomskyError::backend_error(format!("{:?}", e)))?;
         let module = backend.finish();
         
-        // 简单序列化为 JSON 字符串作为示例，或者返回二进制
-        let json = serde_json::to_string_pretty(&module).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(&module).map_err(|e| chomsky_types::ChomskyError::backend_error(e.to_string()))?;
         Ok(BackendArtifact::Source(json))
     }
 }

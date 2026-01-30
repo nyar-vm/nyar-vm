@@ -375,22 +375,25 @@ impl NyarVM {
                 return Err(err);
             }
             
-            let (ins, cur_ip, module_idx) = {
+            let (cur_ip, module_idx) = {
                 let f = self.frames.last().unwrap();
                 if f.ip >= f.instrs.len() {
                     break;
                 }
-                (f.instrs[f.ip].clone(), f.ip, f.module_idx)
+                (f.ip, f.module_idx)
             };
+
+            let ins = &self.frames.last().unwrap().instrs[cur_ip];
 
             let mut next_ip = Some(cur_ip + 1);
             
+            #[cfg(debug_assertions)]
             println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
             
             match ins {
                 Instruction::Nop => {}
                 Instruction::BigIntConst { sign, bytes } => {
-                    self.push(Value::bigint(sign, bytes));
+                    self.push(Value::bigint(*sign, bytes.clone()));
                 }
                 Instruction::BigIntAdd => {
                     let rhs = self.pop()?;
@@ -1077,7 +1080,7 @@ impl NyarVM {
                     self.push(Value::float(r));
                 }
                 Instruction::StringConst(s) => {
-                    self.push(Value::string(s));
+                    self.push(Value::string(s.clone()));
                 }
                 Instruction::StringConcat => {
                     let rhs = self.pop()?;

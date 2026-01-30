@@ -1,1 +1,10 @@
+[package]
+name = "nyar-types"
+version = "0.1.0"
+edition = "2021"
 
+[dependencies]
+serde = { workspace = true }
+thiserror = "1.0"
+oak-core = { workspace = true }
+chomsky-extract = { workspace = true }

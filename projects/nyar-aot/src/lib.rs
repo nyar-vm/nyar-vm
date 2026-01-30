@@ -1,5 +1,5 @@
-use chomsky_full::optimizer::UniversalOptimizer;
-use chomsky_full::extract::{Backend, BackendArtifact};
+use chomsky::optimizer::UniversalOptimizer;
+use chomsky_extract::{Backend, BackendArtifact};
 use chomsky_uir::IKun;
 use nyar_types::VmError;
 

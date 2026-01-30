@@ -1,147 +1,218 @@
-#![feature(new_range_api)]
-//! Mini C 语言前端
+//! Mini TypeScript 语言前端
 //!
-//! 这个库提供了 Mini C 语言的词法分析、语法分析和 Gaia 翻译功能。
+//! 这个库提供了 Mini TypeScript 语言的解析和 Nyar 翻译功能。
+//! 遵循 Project Chomsky Whitebook 规范。
 
-pub mod ast;
+#![feature(new_range_api)]
+
 pub mod codegen;
-pub mod config;
-pub mod converter;
+pub mod project;
+pub mod type_system;
+pub mod errors;
 
-pub use chomsky_full::optimizer::UniversalOptimizer;
-use chomsky_uir::{IntentBuilder, egraph::EGraph};
-pub use oak_c::{CLanguage, CLexer, CParser, CRoot};
-use codegen::GaiaTranslator;
-use config::ReadConfig;
-use gaia_assembler::assembler::GaiaAssembler;
-use gaia_assembler::program::GaiaModule;
-use gaia_types::{GaiaError, helpers::CompilationTarget};
-use oak_core::{
-    parser::{ParseSession, Parser},
-    source::SourceText,
-};
+use oak_core::{Builder, Lexer, SourceText, ParseSession};
+use oak_typescript::{TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot, ast, TypeScriptSyntaxKind};
+use codegen::NyarTranslator;
+use nyar_vm::bytecode::format::NyarModule;
+use nyar_types::FormatError;
+use chomsky_uir::{EGraph, Id, IntentBuilder, ConstraintAnalysis, intent::IKun};
+use chomsky_source::Loc;
+use core::range::Range;
 
-/// Mini C 前端
-pub struct MiniCFrontend {
-    _config: ReadConfig,
-    translator: GaiaTranslator,
-    language: CLanguage,
+/// Mini TypeScript 前端
+pub struct MiniTypescriptFrontend {
+    language: TypeScriptLanguage,
+    translator: NyarTranslator,
+    source_id: u32,
 }
 
-impl MiniCFrontend {
+impl MiniTypescriptFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            _config: ReadConfig::new(),
-            translator: GaiaTranslator::new(),
-            language: CLanguage::default(),
+        Self { 
+            language: TypeScriptLanguage::standard(),
+            translator: NyarTranslator::new(),
+            source_id: 1, // 默认 source_id
         }
     }
 
-    /// 解析 C 源代码为 GreenNode
-    pub fn parse<'a>(
-        &self,
-        source: &'a SourceText,
-        session: &'a mut ParseSession<CLanguage>,
-    ) -> Result<oak_core::tree::RedNode<'a, CLanguage>, GaiaError> {
-        let parser = CParser::new(&self.language);
-
-        let output = parser.parse(source, &[], session);
-
-        if let Ok(root) = output.result {
-            Ok(oak_core::tree::RedNode::new(root, 0))
-        } else {
-            Err(GaiaError::syntax_error(
-                "Parse failed",
-                gaia_types::SourceLocation::default(),
-            ))
-        }
+    /// 设置当前处理的源码 ID
+    pub fn set_source_id(&mut self, id: u32) {
+        self.source_id = id;
     }
 
-    /// 将 C 源代码编译为 Gaia 程序
-    pub fn compile_to_gaia(&mut self, source: &str) -> Result<GaiaModule, GaiaError> {
-        // 创建解析会话
-        let mut session = ParseSession::new(16);
-
-        // 解析为 RedNode
+    /// 解析 TypeScript 源代码为 UIR
+    pub fn parse(&mut self, source: &str) -> Result<(EGraph<IKun, ConstraintAnalysis>, Id), String> {
+        let builder = TypeScriptBuilder::new(&self.language);
+        let mut session = ParseSession::<TypeScriptLanguage>::default();
         let source_text = SourceText::new(source);
-        let red_node = self.parse(&source_text, &mut session)?;
-
-        // 转换 RedNode 到 UIR (Intent Builder)
+        let diagnostics = Builder::build(&builder, &source_text, &[], &mut session);
+        
+        let ast = diagnostics.result.map_err(|e| format!("Parse error: {:?}", e))?;
+        
         let mut egraph = EGraph::new();
-        let mut builder = IntentBuilder::new(&mut egraph);
-        let root = converter::red_to_uir(&red_node, source, &mut builder);
-
-        // 应用 ProjectChomsky 优化
-        // let optimized_root = self.optimize_uir(&mut egraph, root);
-
-        // 转换 UIR 回 MiniC AST
-        let minic_ast = converter::uir_to_minic(&egraph, root);
-
-        self.translator.generate(&minic_ast)
+        let mut intent_builder = IntentBuilder::new(&mut egraph);
+        
+        let mut converter = UirConverter::new(&mut intent_builder, self.source_id);
+        let root_id = converter.convert_root(ast);
+        
+        Ok((egraph, root_id))
     }
 
-    /// 将 C 源代码直接编译为二进制
-    pub fn compile_to_binary(
-        &mut self,
-        source: &str,
-        target: CompilationTarget,
-    ) -> Result<Vec<u8>, GaiaError> {
-        let module = self.compile_to_gaia(source)?;
-        let assembler = GaiaAssembler::new();
-        let generated_files = assembler.compile(&module, &target)?;
+    /// 将 TypeScript 源代码编译为 Nyar 程序
+    pub fn compile_to_nyar(&mut self, source: &str) -> Result<NyarModule, FormatError> {
+        // 解析为 UIR
+        let (egraph, root) = self.parse(source).map_err(|_e| {
+            FormatError::InvalidHeader
+        })?;
 
-        // 返回主要的二进制文件
-        if let Some((_, bytes)) = generated_files.files.iter().next() {
-            Ok(bytes.clone())
-        } else {
-            Err(GaiaError::invalid_data("No output files generated"))
+        // 翻译为 Nyar 程序
+        self.translator.generate(&egraph, root)
+    }
+
+    /// 将 TypeScript 源代码编译为 WASM 程序
+    pub fn compile_to_wasm(&mut self, source: &str) -> Result<Vec<u8>, String> {
+        // 解析为 UIR
+        let (_egraph, _root) = self.parse(source)?;
+
+        // TODO: 实现真正的 WASM 编译
+        // 目前仅移除对 wat 编译器的运行时依赖
+        Err("WASM compilation is not yet implemented".to_string())
+    }
+
+    /// 仅进行词法分析
+    pub fn tokenize(&mut self, source: &str) -> Result<Vec<oak_core::lexer::Token<TypeScriptSyntaxKind>>, String> {
+        let lexer = oak_typescript::TypeScriptLexer::new(&self.language);
+        let mut session = ParseSession::<TypeScriptLanguage>::default();
+        let source_text = SourceText::new(source);
+        let output = Lexer::lex(&lexer, &source_text, &[], &mut session);
+        
+        if !output.diagnostics.is_empty() {
+            return Err(format!("Lexer errors: {:?}", output.diagnostics));
         }
+        
+        let tokens = output.result.map_err(|e| format!("Lexer error: {:?}", e))?;
+        Ok(tokens.to_vec())
     }
 
     /// 获取翻译器的可变引用
-    pub fn translator_mut(&mut self) -> &mut GaiaTranslator {
+    pub fn translator_mut(&mut self) -> &mut NyarTranslator {
         &mut self.translator
     }
 
     /// 获取翻译器的不可变引用
-    pub fn translator(&self) -> &GaiaTranslator {
+    pub fn translator(&self) -> &NyarTranslator {
         &self.translator
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mini_c_frontend() {
-        let source = r#"
-int add(int a, int b) {
-    return a + b;
+struct UirConverter<'a> {
+    builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>,
+    source_id: u32,
 }
 
-char* message = "Hello, World!";
-int count = 42;
-"#;
-
-        let frontend = MiniCFrontend::new();
-        let mut session = ParseSession::new(16);
-        let root = frontend.parse(source, &mut session).unwrap();
-
-        // 验证解析成功
-        assert!(root.green.children().count() > 0);
+impl<'a> UirConverter<'a> {
+    fn new(builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>, source_id: u32) -> Self {
+        Self { builder, source_id }
     }
 
-    #[test]
-    fn test_compile_to_gaia() {
-        let code = r#"
-int main() {
-    return 0;
-}
-"#;
-        let mut frontend = MiniCFrontend::new();
-        let result = frontend.compile_to_gaia(code);
-        assert!(result.is_ok());
+    fn to_loc(&self, range: Range<usize>) -> Loc {
+        Loc::new(self.source_id, range.start as u32, range.end as u32)
+    }
+
+    fn convert_root(&mut self, root: TypeScriptRoot) -> Id {
+        let mut items = Vec::new();
+        for stmt in root.statements {
+            items.push(self.convert_statement(stmt));
+        }
+        self.builder.module("main", items)
+    }
+
+    fn convert_statement(&mut self, stmt: ast::Statement) -> Id {
+        match stmt {
+            ast::Statement::VariableDeclaration(var) => {
+                let loc = self.to_loc(var.span);
+                let value = if let Some(expr) = var.value {
+                    self.convert_expression(expr)
+                } else {
+                    self.builder.constant(0, loc.clone())
+                };
+                self.builder.assign(&var.name, value, loc)
+            }
+            ast::Statement::FunctionDeclaration(func) => {
+                let loc = self.to_loc(func.span.clone());
+                let mut body_ids = Vec::new();
+                for s in func.body {
+                    body_ids.push(self.convert_statement(s));
+                }
+                let lambda = self.builder.function(&func.name, func.params, body_ids);
+                self.builder.assign(&func.name, lambda, loc)
+            }
+            ast::Statement::ExpressionStatement(expr) => {
+                self.convert_expression(expr)
+            }
+            ast::Statement::ImportDeclaration(import) => {
+                let loc = self.to_loc(import.span);
+                let mut args = vec![self.builder.string(&import.module_specifier, loc.clone())];
+                for s in import.imports {
+                    args.push(self.builder.symbol(&s, loc.clone()));
+                }
+                self.builder.extension("import", args, loc)
+            }
+            ast::Statement::ExportDeclaration(export) => {
+                let loc = self.to_loc(export.span);
+                let inner = self.convert_statement(*export.declaration);
+                self.builder.extension("export", vec![inner], loc)
+            }
+        }
+    }
+
+    fn convert_expression(&mut self, expr: ast::Expression) -> Id {
+        match expr {
+            ast::Expression::Identifier(name) => {
+                self.builder.symbol(&name, Loc::default())
+            }
+            ast::Expression::NumericLiteral(val) => {
+                self.builder.constant(val as i64, Loc::default())
+            }
+            ast::Expression::StringLiteral(val) => {
+                self.builder.string(&val, Loc::default())
+            }
+            ast::Expression::BooleanLiteral(val) => {
+                self.builder.bool(val, Loc::default())
+            }
+            ast::Expression::BinaryExpression { left, operator, right } => {
+                let l = self.convert_expression(*left);
+                let r = self.convert_expression(*right);
+                self.builder.binary_op(&operator, l, r, Loc::default())
+            }
+            ast::Expression::CallExpression { func, args } => {
+                let f = self.convert_expression(*func);
+                let mut arg_ids = Vec::new();
+                for arg in args {
+                    arg_ids.push(self.convert_expression(arg));
+                }
+                self.builder.call(f, arg_ids, Loc::default())
+            }
+            ast::Expression::UnaryExpression { operator, argument } => {
+                let arg = self.convert_expression(*argument);
+                self.builder.extension(&operator, vec![arg], Loc::default())
+            }
+            ast::Expression::MemberExpression { object, property, computed, .. } => {
+                let obj = self.convert_expression(*object);
+                let prop = self.convert_expression(*property);
+                let op = if computed { "index" } else { "member" };
+                self.builder.extension(op, vec![obj, prop], Loc::default())
+            }
+            ast::Expression::ConditionalExpression { test, consequent, alternate } => {
+                let t = self.convert_expression(*test);
+                let c = self.convert_expression(*consequent);
+                let a = self.convert_expression(*alternate);
+                self.builder.branch(t, c, a, Loc::default())
+            }
+            _ => {
+                self.builder.constant(0, Loc::default())
+            }
+        }
     }
 }

@@ -1,1 +1,11 @@
-zip = "0.6"
+[package]
+name = "nyar-tools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { workspace = true }
+nyar-vm = { path = "../nyar-vm" }
+nyar-types = { path = "../nyar-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
