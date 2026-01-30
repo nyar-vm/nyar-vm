@@ -1321,17 +1321,8 @@ impl NyarVM {
                 }
                 Instruction::Call(chunk_idx, argc) => {
                     let (chunk_idx, argc) = (*chunk_idx, *argc);
-                    let (instrs, locals_count) = {
-                        let module = &self.modules[module_idx];
-                        let chunk = module
-                            .chunks
-                            .get(chunk_idx as usize)
-                            .ok_or(VmError::IndexOutOfBounds)?;
-                        use crate::bytecode::decoder::Decoder;
-                        let decoder = Decoder::new(&chunk.code);
-                        let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
-                        (instrs, chunk.locals as usize)
-                    };
+                    let instrs = self.get_chunk_instructions(module_idx, chunk_idx as usize)?;
+                    let locals_count = self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
 
                     let mut args = Vec::with_capacity(argc as usize);
                     for _ in 0..argc {
@@ -1375,14 +1366,9 @@ impl NyarVM {
                     let (instrs, locals_count, c_module_idx, c_chunk_idx) = {
                         let closure = unsafe { &*closure_ptr };
                         let chunk_idx = closure.func;
-                        let chunk = self.modules[closure.module_idx]
-                            .chunks
-                            .get(chunk_idx)
-                            .ok_or(VmError::IndexOutOfBounds)?;
-                        use crate::bytecode::decoder::Decoder;
-                        let decoder = Decoder::new(&chunk.code);
-                        let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
-                        (instrs, chunk.locals as usize, closure.module_idx, chunk_idx)
+                        let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
+                        let locals_count = self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
+                        (instrs, locals_count, closure.module_idx, chunk_idx)
                     };
 
                     if args.len() < locals_count {
@@ -1414,16 +1400,8 @@ impl NyarVM {
                     println!("VM: CallSymbol {} with {} args", name, argc);
 
                     if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
-                        let (instrs, locals_count) = {
-                            let chunk = self.modules[m_idx]
-                                .chunks
-                                .get(chunk_idx as usize)
-                                .ok_or(VmError::IndexOutOfBounds)?;
-                            use crate::bytecode::decoder::Decoder;
-                            let decoder = Decoder::new(&chunk.code);
-                            let instrs = decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
-                            (instrs, chunk.locals as usize)
-                        };
+                        let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
+                        let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 
                         let mut args = Vec::with_capacity(argc as usize);
                         for _ in 0..argc {
@@ -1921,15 +1899,7 @@ impl NyarVM {
                                     unsafe { v.as_closure() as *const crate::vm::value::Closure as *mut crate::vm::value::Closure };
                                 let closure = unsafe { &*closure_ptr };
                                 let chunk_idx = closure.func;
-                                let chunk = self.modules[closure.module_idx]
-                                    .chunks
-                                    .get(chunk_idx)
-                                    .cloned()
-                                    .ok_or(VmError::IndexOutOfBounds)?;
-                                use crate::bytecode::decoder::Decoder;
-                                let decoder = Decoder::new(&chunk.code);
-                                let instrs =
-                                    decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+                                let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
                                 let new_frame = Frame {
                                     instrs,
                                     ip: 0,
@@ -1951,15 +1921,7 @@ impl NyarVM {
                         if let Some(hf) = {
                             let mut chosen = None;
                             for h in self.handler_stack.iter().rev() {
-                                let chunk = self.modules[module_idx]
-                                    .chunks
-                                    .get(h.catch_chunk)
-                                    .cloned()
-                                    .ok_or(VmError::IndexOutOfBounds)?;
-                                use crate::bytecode::decoder::Decoder;
-                                let decoder = Decoder::new(&chunk.code);
-                                let instrs =
-                                    decoder.decode_all().map_err(|_| VmError::InvalidOpcode)?;
+                                let instrs = self.get_chunk_instructions(module_idx, h.catch_chunk)?;
                                 let mut matches = true;
                                 if let Some(crate::bytecode::decoder::Instruction::MatchEffect(
                                     name_idx,

@@ -4,6 +4,25 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, AtomicU8, Ordering};
 use std::sync::{Mutex, Arc};
 
+#[repr(transparent)]
+pub struct SendPtr<T>(pub NonNull<T>);
+unsafe impl<T> Send for SendPtr<T> {}
+unsafe impl<T> Sync for SendPtr<T> {}
+
+impl<T> Clone for SendPtr<T> {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+impl<T> Copy for SendPtr<T> {}
+impl<T> std::ops::Deref for SendPtr<T> {
+    type Target = NonNull<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+
 const BLOCK_SIZE: usize = 1024 * 1024; // 1MB blocks
 const CARD_SIZE: usize = 512;
 const CARDS_PER_BLOCK: usize = BLOCK_SIZE / CARD_SIZE;
@@ -257,7 +276,7 @@ pub struct NyarGc {
     /// Memory blocks managed by the GC.
     blocks: Mutex<Vec<Arc<GcBlock>>>,
     /// Gray stack for tri-color marking.
-    gray_stack: Mutex<Vec<NonNull<GcHeader>>>,
+    gray_stack: Mutex<Vec<SendPtr<GcHeader>>>,
     /// Current state of the GC.
     state: AtomicU8,
     sweep_state: SweepState,
@@ -404,12 +423,9 @@ impl NyarGc {
                 }
             }
             // Incremental barrier: if GC is marking and parent is black, ensure invariant holds.
-            // We use a "Yuasa-style" or "Dijkstra-style" barrier. Dijkstra style: turn child gray.
             if self.state.load(Ordering::Acquire) == GcState::Marking as u8 && parent_header.color.get() == Color::Black {
                 let mut gray_stack = self.gray_stack.lock().unwrap();
-                let ctx = MarkContext { gray_stack: &mut *gray_stack };
-                // Since we don't know the child's GC pointers here (value might be an Option<Gc<T>> etc),
-                // the easiest way is to mark the parent as gray again so it gets re-scanned.
+                let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
                 parent_header.color.set(Color::Gray);
                 ctx.gray_stack.push(NonNull::new_unchecked(parent_header as *const _ as *mut _));
             }
@@ -567,7 +583,8 @@ impl NyarGc {
                 let mut ctx = MarkContext { gray_stack: &mut *gray_stack };
                 let mut work_done = 0;
                 while work_done < work_limit {
-                    if let Some(ptr) = ctx.gray_stack.pop() {
+                    if let Some(send_ptr) = ctx.gray_stack.pop() {
+                        let ptr = send_ptr.0;
                         let header = ptr.as_ref();
                         (header.trace_object)(ptr, &mut ctx);
                         header.color.set(Color::Black);
