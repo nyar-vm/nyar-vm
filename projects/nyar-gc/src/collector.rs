@@ -787,8 +787,7 @@ impl NyarGc {
 
     /// Trigger a full blocking garbage collection.
     /// This is intended to be called when the system is idle or requires a deep cleanup.
-    /// Reference: Unity's System.GC.Collect()
-    pub fn collect(&self) {
+    pub fn full_gc(&self) {
         unsafe {
             // In a real VM, we would need to capture all thread stacks.
             // For now, we use a placeholder root marker.

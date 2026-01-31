@@ -8,7 +8,7 @@ pub mod i64;
 pub mod stack;
 pub mod string;
 
-use crate::bytecode::decoder::Instruction;
+use crate::bytecode::instruction::Instruction;
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use crate::vm::VmError;

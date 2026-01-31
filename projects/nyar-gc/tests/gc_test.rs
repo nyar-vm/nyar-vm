@@ -168,8 +168,8 @@ fn test_gc_idle_collect() {
     let gc = NyarGc::new();
     let _ptr = gc.alloc(42i64);
     
-    // Simulate entering idle period (Unity style)
-    gc.collect();
+    // Simulate entering idle period
+    gc.full_gc();
     
     // The collection should have happened
     assert!(gc.allocated_bytes() >= 0);

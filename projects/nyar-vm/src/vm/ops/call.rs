@@ -1,4 +1,4 @@
-use crate::bytecode::decoder::Instruction;
+use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::Constant;
 use crate::vm::core::{Frame, NyarVM};
 use crate::vm::value::Value;

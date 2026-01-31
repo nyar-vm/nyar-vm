@@ -45,9 +45,8 @@ pub trait GcRuntime {
         F::Output: Send + 'static;
 
     /// Notify the GC that the VM is currently in an idle state.
-    /// This can trigger a full collection or more aggressive incremental steps.
-    /// Reference: Unity's System.GC.Collect()
-    fn collect(&self);
+    /// This will trigger a full collection.
+    fn full_gc(&self);
 }
 
 impl GcRuntime for crate::NyarGc {
@@ -59,9 +58,9 @@ impl GcRuntime for crate::NyarGc {
         GcRuntimeFuture::new(self, future)
     }
 
-    fn collect(&self) {
+    fn full_gc(&self) {
         // When the VM enters an idle period (e.g., waiting for user input or frame sync),
         // we can perform a full GC to reduce heap pressure and fragmentation.
-        self.collect();
+        self.full_gc();
     }
 }

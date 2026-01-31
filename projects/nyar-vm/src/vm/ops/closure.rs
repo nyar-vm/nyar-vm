@@ -23,7 +23,7 @@ impl NyarVM {
                     };
                     captured.push(Upvalue(val));
                 }
-                let v = Value::closure(module_idx, idx as usize, captured, &self.gc);
+                let v = Value::closure(module_idx, idx, captured, &self.gc);
                 self.push(v);
             }
             Instruction::LoadUpvalue(idx) => {

@@ -1,4 +1,4 @@
-use crate::bytecode::decoder::Instruction;
+use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::{Chunk, Constant as NyarConstant, ExportInfo, NyarModule};
 use crate::bytecode::opcode::{Opcode, StringExt};
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};

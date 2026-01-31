@@ -1,4 +1,4 @@
-use crate::bytecode::decoder::Instruction;
+use crate::bytecode::instruction::Instruction;
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use crate::vm::VmError;
