@@ -485,11 +485,18 @@ impl NyarGc {
     ) {
         // Incremental barrier: mark the value being written (Dijkstra style)
         if self.get_state() == GcState::Marking {
-            let mut mark_stack = self.mark_stack.lock().unwrap();
-            let mut ctx = MarkContext {
-                mark_stack: &mut *mark_stack,
-            };
-            value.trace(&mut ctx);
+            crate::tlab::THREAD_TLAB.with(|tlab_cell| {
+                let tlab = unsafe { &mut *tlab_cell.get() };
+                let mut mark_stack = Vec::new();
+                let mut ctx = MarkContext {
+                    mark_stack: &mut mark_stack,
+                };
+                value.trace(&mut ctx);
+
+                for ptr in mark_stack {
+                    self.local_mark(tlab, ptr.0);
+                }
+            });
         }
         cell.set(value);
     }
@@ -505,14 +512,45 @@ impl NyarGc {
 
             // Incremental barrier: Dijkstra style
             if self.get_state() == GcState::Marking {
-                let mut mark_stack = self.mark_stack.lock().unwrap();
-                let mut ctx = MarkContext {
-                    mark_stack: &mut *mark_stack,
-                };
-                ctx.mark(NonNull::new_unchecked(
-                    child_header as *const GcHeader as *mut GcHeader,
-                ));
+                crate::tlab::THREAD_TLAB.with(|tlab_cell| {
+                    let tlab = &mut *tlab_cell.get();
+                    self.local_mark(tlab, NonNull::new_unchecked(child_header as *const GcHeader as *mut GcHeader));
+                });
             }
+        }
+    }
+
+    /// Mark an object using a thread-local buffer to reduce contention.
+    pub fn local_mark(&self, tlab: &mut Tlab, ptr: NonNull<GcHeader>) {
+        unsafe {
+            let header = ptr.as_ref();
+            let marked = if header.is_large() {
+                if !header.is_marked() {
+                    header.set_marked(true);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                let base = (ptr.as_ptr() as usize) & !(BLOCK_SIZE - 1);
+                let block_header = base as *const GcBlockHeader;
+                (*block_header).set_marked(header)
+            };
+
+            if marked {
+                tlab.mark_buffer.push(SendPtr(ptr));
+                if tlab.mark_buffer.len() >= crate::tlab::MARK_BUFFER_SIZE {
+                    self.flush_mark_buffer(tlab);
+                }
+            }
+        }
+    }
+
+    /// Flush the thread-local mark buffer to the global mark stack.
+    pub fn flush_mark_buffer(&self, tlab: &mut Tlab) {
+        if !tlab.mark_buffer.is_empty() {
+            let mut global_stack = self.mark_stack.lock().unwrap();
+            global_stack.append(&mut tlab.mark_buffer);
         }
     }
 
