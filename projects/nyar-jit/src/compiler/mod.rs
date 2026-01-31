@@ -42,7 +42,11 @@ impl JitProvider for NyarJit {
         let key = (module_idx, chunk_idx);
 
         if let Some(compiled) = self.code_cache.get(&key) {
-            let result = self.execute_compiled(compiled.value(), vm);
+            let result = match self.execute_compiled(compiled.value(), vm) {
+                Ok(Some(val)) => Ok(val),
+                Ok(None) => return None, // OSR Exit, continue with interpreter
+                Err(e) => return Some(Err(e)),
+            };
 
             if compiled.tier < JitTier::Extreme {
                 let next_tier = match compiled.tier {
@@ -130,7 +134,11 @@ impl NyarJit {
         })
     }
 
-    fn execute_compiled(&self, compiled: &CompiledCode, vm: &mut NyarVM) -> Result<Value, VmError> {
+    fn execute_compiled(
+        &self,
+        compiled: &CompiledCode,
+        vm: &mut NyarVM,
+    ) -> Result<Option<Value>, VmError> {
         let entry: JitEntry = unsafe { std::mem::transmute(compiled.entry_point) };
         let frame = vm
             .frames
@@ -145,20 +153,25 @@ impl NyarJit {
                 &mut frame.ip as *mut usize,
             );
 
-            if res_code == 0 {
-                if vm.sp > 0 {
-                    vm.sp -= 1;
-                    Ok(vm.stack[vm.sp])
-                } else {
-                    Ok(Value::null())
+            match res_code {
+                0 => {
+                    if vm.sp > 0 {
+                        vm.sp -= 1;
+                        Ok(Some(vm.stack[vm.sp]))
+                    } else {
+                        Ok(Some(Value::null()))
+                    }
                 }
-            } else if res_code == 1 {
-                Ok(Value::null())
-            } else {
-                Err(VmError::RuntimeError(format!(
+                1 => Ok(Some(Value::null())),
+                2 => {
+                    // OSR Exit: The JIT code has updated frame.ip and vm.sp.
+                    // We need to return to the interpreter.
+                    Ok(None)
+                }
+                _ => Err(VmError::RuntimeError(format!(
                     "JIT execution failed with code {}",
                     res_code
-                )))
+                ))),
             }
         }
     }
@@ -547,17 +560,87 @@ impl NyarJit {
                         stack.push(id);
                     }
                 }
-                Instruction::InstanceOf(idx) => {
+                Instruction::I32GeS
+                | Instruction::I64GeS
+                | Instruction::F32Ge
+                | Instruction::F64Ge
+                | Instruction::I32GeU
+                | Instruction::I64GeU => {
+                    if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("ge".to_string(), vec![lhs, rhs]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::LoadGlobal(idx) => {
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
+                    let id = intents.len();
+                    intents.push(IKun::Extension("load_global".to_string(), vec![const_id]));
+                    stack.push(id);
+                }
+                Instruction::StoreGlobal(idx) => {
                     if let Some(val) = stack.pop() {
                         let const_id = intents.len();
                         intents.push(IKun::Constant(idx as i64));
-                        let id = intents.len();
                         intents.push(IKun::Extension(
-                            "instance_of".to_string(),
-                            vec![val, const_id],
+                            "store_global".to_string(),
+                            vec![const_id, val],
                         ));
-                        stack.push(id);
                     }
+                }
+                Instruction::LoadUpvalue(idx) => {
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
+                    let id = intents.len();
+                    intents.push(IKun::Extension("load_upvalue".to_string(), vec![const_id]));
+                    stack.push(id);
+                }
+                Instruction::StoreUpvalue(idx) => {
+                    if let Some(val) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
+                        intents.push(IKun::Extension(
+                            "store_upvalue".to_string(),
+                            vec![const_id, val],
+                        ));
+                    }
+                }
+                Instruction::Call(idx, args_count) => {
+                    let mut args = Vec::new();
+                    for _ in 0..args_count {
+                        if let Some(arg) = stack.pop() {
+                            args.push(arg);
+                        }
+                    }
+                    args.reverse();
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
+                    let id = intents.len();
+                    intents.push(IKun::Extension("call".to_string(), {
+                        let mut v = vec![const_id];
+                        v.extend(args);
+                        v
+                    }));
+                    stack.push(id);
+                }
+                Instruction::CallSymbol(idx, args_count) => {
+                    let mut args = Vec::new();
+                    for _ in 0..args_count {
+                        if let Some(arg) = stack.pop() {
+                            args.push(arg);
+                        }
+                    }
+                    args.reverse();
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
+                    let id = intents.len();
+                    intents.push(IKun::Extension("call_symbol".to_string(), {
+                        let mut v = vec![const_id];
+                        v.extend(args);
+                        v
+                    }));
+                    stack.push(id);
                 }
                 Instruction::CheckCast(idx) | Instruction::Cast(idx) => {
                     if let Some(val) = stack.pop() {

@@ -125,7 +125,9 @@ impl NyarVM {
                 } else {
                     Ok(Some(Value::null()))
                 }
-            } else if res_code == 1 {
+            } else if res_code == 1 || res_code == 2 {
+                // 1: Success but no value (e.g. tail call or special exit)
+                // 2: OSR Exit (return to interpreter)
                 Ok(None)
             } else {
                 Err(VmError::RuntimeError(format!(

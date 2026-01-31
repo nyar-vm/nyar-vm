@@ -308,6 +308,21 @@ impl NyarGc {
         }
     }
 
+    /// Flush the current thread's TLAB and mark buffers.
+    pub fn flush_thread_local(&self) {
+        crate::tlab::THREAD_TLAB.with(|tlab_cell| {
+            let tlab = unsafe { &mut *tlab_cell.get() };
+            // 1. Flush mark buffer to global stack
+            if !tlab.mark_buffer.is_empty() {
+                let mut global_stack = self.mark_stack.lock().unwrap();
+                global_stack.extend(tlab.mark_buffer.drain(..));
+                self.mark_condvar.notify_all();
+            }
+            // 2. Return remaining TLAB space to blocks? 
+            // For now we just keep it, but in a moving GC we would retire it.
+        });
+    }
+
     pub fn get_state(&self) -> GcState {
         match self.state.load(Ordering::Acquire) {
             0 => GcState::Idle,
@@ -739,12 +754,10 @@ impl NyarGc {
                                 #[cfg(target_arch = "x86_64")]
                                 if let Some(next) = local_stack.last() {
                                     use std::arch::x86_64::_mm_prefetch;
-                                    unsafe {
-                                        _mm_prefetch(
-                                            next.0.as_ptr() as *const i8,
-                                            std::arch::x86_64::_MM_HINT_T0,
-                                        );
-                                    }
+                                    _mm_prefetch(
+                                        next.0.as_ptr() as *const i8,
+                                        std::arch::x86_64::_MM_HINT_T0,
+                                    );
                                 }
 
                                 let header = ptr.as_ref();
