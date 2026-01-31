@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-nyar-gc = { path = "../nyar-gc" }
+nyar-gc = { path = "../nyar-gc", features = ["tokio"] }
 nyar-types = { path = "../nyar-types" }
 nyar-aot = { path = "../nyar-aot", default-features = false }
 chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false, features = ["jvm"] }
@@ -26,9 +26,11 @@ gaia-assembler = { workspace = true, optional = true }
 gaia-types = { workspace = true }
 x86_64-assembler = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
+tokio = { version = "1.0", features = ["full"], optional = true }
 
 [features]
 default = ["native", "clap", "jvm"]
 native = ["nyar-aot/native", "dep:pe-assembler", "dep:gaia-assembler", "dep:x86_64-assembler"]
 jvm = ["chomsky/jvm"]
 clap = ["dep:clap"]
+tokio = ["dep:tokio", "nyar-gc/tokio"]

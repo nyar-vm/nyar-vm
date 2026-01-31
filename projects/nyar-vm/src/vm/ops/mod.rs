@@ -186,13 +186,209 @@ impl NyarVM {
             let next_ip = match ins {
                 Instruction::Nop => Ok(None),
                 // I32 operations
-                ins if ins.is_i32_op() => {
-                    self.execute_i32_op(ins)?;
+                Instruction::I32Const(v) => {
+                    self.execute_i32_const(v);
+                    Ok(None)
+                }
+                Instruction::I32Add => {
+                    self.execute_i32_add()?;
+                    Ok(None)
+                }
+                Instruction::I32Sub => {
+                    self.execute_i32_sub()?;
+                    Ok(None)
+                }
+                Instruction::I32Mul => {
+                    self.execute_i32_mul()?;
+                    Ok(None)
+                }
+                Instruction::I32DivS => {
+                    self.execute_i32_div_s()?;
+                    Ok(None)
+                }
+                Instruction::I32DivU => {
+                    self.execute_i32_div_u()?;
+                    Ok(None)
+                }
+                Instruction::I32RemS => {
+                    self.execute_i32_rem_s()?;
+                    Ok(None)
+                }
+                Instruction::I32RemU => {
+                    self.execute_i32_rem_u()?;
+                    Ok(None)
+                }
+                Instruction::I32Neg => {
+                    self.execute_i32_neg()?;
+                    Ok(None)
+                }
+                Instruction::I32Eq => {
+                    self.execute_i32_eq()?;
+                    Ok(None)
+                }
+                Instruction::I32Ne => {
+                    self.execute_i32_ne()?;
+                    Ok(None)
+                }
+                Instruction::I32LtS => {
+                    self.execute_i32_lt_s()?;
+                    Ok(None)
+                }
+                Instruction::I32LtU => {
+                    self.execute_i32_lt_u()?;
+                    Ok(None)
+                }
+                Instruction::I32LeS => {
+                    self.execute_i32_le_s()?;
+                    Ok(None)
+                }
+                Instruction::I32LeU => {
+                    self.execute_i32_le_u()?;
+                    Ok(None)
+                }
+                Instruction::I32GtS => {
+                    self.execute_i32_gt_s()?;
+                    Ok(None)
+                }
+                Instruction::I32GtU => {
+                    self.execute_i32_gt_u()?;
+                    Ok(None)
+                }
+                Instruction::I32GeS => {
+                    self.execute_i32_ge_s()?;
+                    Ok(None)
+                }
+                Instruction::I32GeU => {
+                    self.execute_i32_ge_u()?;
+                    Ok(None)
+                }
+                Instruction::I32ToF32S => {
+                    self.execute_i32_to_f32_s()?;
+                    Ok(None)
+                }
+                Instruction::I32ToF32U => {
+                    self.execute_i32_to_f32_u()?;
+                    Ok(None)
+                }
+                Instruction::I32ToF64S => {
+                    self.execute_i32_to_f64_s()?;
+                    Ok(None)
+                }
+                Instruction::I32ToF64U => {
+                    self.execute_i32_to_f64_u()?;
+                    Ok(None)
+                }
+                Instruction::I32Extend64S => {
+                    self.execute_i32_extend64_s()?;
+                    Ok(None)
+                }
+                Instruction::I32Extend64U => {
+                    self.execute_i32_extend64_u()?;
+                    Ok(None)
+                }
+                Instruction::I32Trunc64SLow => {
+                    self.execute_i32_trunc64_s_low()?;
+                    Ok(None)
+                }
+                Instruction::I32Trunc64S => {
+                    self.execute_i32_trunc64_s()?;
+                    Ok(None)
+                }
+                Instruction::I32Trunc64U => {
+                    self.execute_i32_trunc64_u()?;
                     Ok(None)
                 }
                 // I64 operations
-                ins if ins.is_i64_op() => {
-                    self.execute_i64_op(ins)?;
+                Instruction::I64Const(v) => {
+                    self.execute_i64_const(v);
+                    Ok(None)
+                }
+                Instruction::I64Add => {
+                    self.execute_i64_add()?;
+                    Ok(None)
+                }
+                Instruction::I64Sub => {
+                    self.execute_i64_sub()?;
+                    Ok(None)
+                }
+                Instruction::I64Mul => {
+                    self.execute_i64_mul()?;
+                    Ok(None)
+                }
+                Instruction::I64DivS => {
+                    self.execute_i64_div_s()?;
+                    Ok(None)
+                }
+                Instruction::I64DivU => {
+                    self.execute_i64_div_u()?;
+                    Ok(None)
+                }
+                Instruction::I64RemS => {
+                    self.execute_i64_rem_s()?;
+                    Ok(None)
+                }
+                Instruction::I64RemU => {
+                    self.execute_i64_rem_u()?;
+                    Ok(None)
+                }
+                Instruction::I64Neg => {
+                    self.execute_i64_neg()?;
+                    Ok(None)
+                }
+                Instruction::I64Eq => {
+                    self.execute_i64_eq()?;
+                    Ok(None)
+                }
+                Instruction::I64Ne => {
+                    self.execute_i64_ne()?;
+                    Ok(None)
+                }
+                Instruction::I64LtS => {
+                    self.execute_i64_lt_s()?;
+                    Ok(None)
+                }
+                Instruction::I64LtU => {
+                    self.execute_i64_lt_u()?;
+                    Ok(None)
+                }
+                Instruction::I64LeS => {
+                    self.execute_i64_le_s()?;
+                    Ok(None)
+                }
+                Instruction::I64LeU => {
+                    self.execute_i64_le_u()?;
+                    Ok(None)
+                }
+                Instruction::I64GtS => {
+                    self.execute_i64_gt_s()?;
+                    Ok(None)
+                }
+                Instruction::I64GtU => {
+                    self.execute_i64_gt_u()?;
+                    Ok(None)
+                }
+                Instruction::I64GeS => {
+                    self.execute_i64_ge_s()?;
+                    Ok(None)
+                }
+                Instruction::I64GeU => {
+                    self.execute_i64_ge_u()?;
+                    Ok(None)
+                }
+                Instruction::I64ToF32S => {
+                    self.execute_i64_to_f32_s()?;
+                    Ok(None)
+                }
+                Instruction::I64ToF32U => {
+                    self.execute_i64_to_f32_u()?;
+                    Ok(None)
+                }
+                Instruction::I64ToF64S => {
+                    self.execute_i64_to_f64_s()?;
+                    Ok(None)
+                }
+                Instruction::I64ToF64U => {
+                    self.execute_i64_to_f64_u()?;
                     Ok(None)
                 }
                 // Float operations
@@ -211,15 +407,53 @@ impl NyarVM {
                     Ok(None)
                 }
                 // Stack operations
-                ins if ins.is_stack_op() => {
-                    self.execute_stack_op(ins, module_idx)?;
+                Instruction::Push(idx) => {
+                    self.execute_push(idx, module_idx)?;
+                    Ok(None)
+                }
+                Instruction::Pop => {
+                    self.execute_pop()?;
+                    Ok(None)
+                }
+                Instruction::Dup(d) => {
+                    self.execute_dup(d)?;
+                    Ok(None)
+                }
+                Instruction::Swap(d) => {
+                    self.execute_swap(d)?;
+                    Ok(None)
+                }
+                Instruction::LoadLocal(idx) => {
+                    self.execute_load_local(idx)?;
+                    Ok(None)
+                }
+                Instruction::StoreLocal(idx) => {
+                    self.execute_store_local(idx)?;
+                    Ok(None)
+                }
+                Instruction::LoadGlobal(idx) => {
+                    self.execute_load_global(idx, module_idx)?;
+                    Ok(None)
+                }
+                Instruction::StoreGlobal(idx) => {
+                    self.execute_store_global(idx, module_idx)?;
                     Ok(None)
                 }
                 // Control operations
-                ins if ins.is_control_op() => self.execute_control_op(ins, cur_ip),
+                Instruction::Jump(off) => self.execute_jump(off, cur_ip),
+                Instruction::JumpIfFalse(off) => self.execute_jump_if_false(off, cur_ip),
+                Instruction::Return => self.execute_return(),
                 // Closure operations
-                ins if ins.is_closure_op() => {
-                    self.execute_closure_op(ins, module_idx)?;
+                Instruction::MakeClosure(idx, upvalues) => {
+                    self.execute_make_closure(idx, upvalues, module_idx)?;
+                    Ok(None)
+                }
+                Instruction::LoadUpvalue(idx) => {
+                    self.execute_load_upvalue(idx)?;
+                    Ok(None)
+                }
+                Instruction::StoreUpvalue(idx) => {
+                    self.execute_store_upvalue(idx)?;
                     Ok(None)
                 }
                 // Object operations
@@ -228,7 +462,12 @@ impl NyarVM {
                     Ok(None)
                 }
                 // Call operations
-                ins if ins.is_call_op() => self.execute_call_op(ins, module_idx),
+                Instruction::Call(idx, argc) => self.execute_call(idx, argc, module_idx),
+                Instruction::CallClosure(argc) => self.execute_call_closure(argc),
+                Instruction::CallSymbol(idx, argc) => self.execute_call_symbol(idx, argc, module_idx),
+                Instruction::InvokeMethod(idx, argc) => {
+                    self.execute_invoke_method(idx, argc, module_idx)
+                }
                 _ => Err(VmError::InvalidOpcode),
             }?;
 

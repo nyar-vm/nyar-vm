@@ -147,6 +147,27 @@ impl NyarVM {
         self.print_line(msg);
     }
 
+    pub fn get_traceback_summary(&self) -> String {
+        let mut res = String::new();
+        for (i, f) in self.frames.iter().enumerate().rev().take(10) {
+            let info = match f.chunk_idx {
+                Some(ci) => format!(
+                    "  frame {}: module={}, chunk={}, ip={}\n",
+                    i, f.module_idx, ci, f.ip
+                ),
+                None => format!(
+                    "  frame {}: module={}, chunk=<entry>, ip={}\n",
+                    i, f.module_idx, f.ip
+                ),
+            };
+            res.push_str(&info);
+        }
+        if self.frames.len() > 10 {
+            res.push_str(&format!("  ... ({} more frames)\n", self.frames.len() - 10));
+        }
+        res
+    }
+
     pub fn decay_hotness(&self) {
         for module in &self.modules {
             for chunk in &module.chunks {

@@ -3,6 +3,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+#[cfg(feature = "tokio")]
+tokio::task_local! {
+    /// Task-local storage for the current VM's traceback.
+    /// This allows async tasks to report their VM-level call stack.
+    pub static VM_TRACEBACK: String;
+}
+
 #[derive(Default)]
 pub struct AsyncRuntime {}
 
@@ -23,6 +30,20 @@ impl<'a> Future for VmFuture<'a> {
     type Output = Result<crate::vm::value::Value, crate::vm::VmError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        #[cfg(feature = "tokio")]
+        {
+            // If we are in a tokio task, update the traceback summary
+            let summary = self.vm.get_traceback_summary();
+            return VM_TRACEBACK.scope(summary, || self.poll_internal(cx));
+        }
+
+        #[cfg(not(feature = "tokio"))]
+        self.poll_internal(cx)
+    }
+}
+
+impl<'a> VmFuture<'a> {
+    fn poll_internal(&mut self, cx: &mut Context<'_>) -> Poll<Result<crate::vm::value::Value, crate::vm::VmError>> {
         // 1. Check if GC requested a stop
         if nyar_gc::runtime::GC_STOP_THE_WORLD.load(std::sync::atomic::Ordering::Acquire) {
             // Cooperative yield for GC

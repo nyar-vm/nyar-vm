@@ -653,34 +653,92 @@ impl NyarJit {
                         ));
                     }
                 }
-                Instruction::Call(idx, args_count) => {
+                Instruction::Call(idx, args_count)
+                | Instruction::CallVirtual(idx, args_count)
+                | Instruction::CallDynamic(idx, args_count)
+                | Instruction::InvokeMethod(idx, args_count) => {
                     let mut args = Vec::new();
-                    for _ in 0..args_count {
+                    for _ in 0..*args_count {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
                     }
                     args.reverse();
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(idx as i64));
+                    intents.push(IKun::Constant(*idx as i64));
                     let id = intents.len();
-                    intents.push(IKun::Extension("call".to_string(), {
+                    let op = match instruction {
+                        Instruction::Call(_, _) => "call",
+                        Instruction::CallVirtual(_, _) => "call_virtual",
+                        Instruction::CallDynamic(_, _) => "call_dynamic",
+                        Instruction::InvokeMethod(_, _) => "invoke_method",
+                        _ => unreachable!(),
+                    };
+                    intents.push(IKun::Extension(op.to_string(), {
                         let mut v = vec![const_id];
                         v.extend(args);
                         v
                     }));
                     stack.push(id);
                 }
+                Instruction::GetField(idx) => {
+                    if let Some(obj) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(*idx as i64));
+                        let id = intents.len();
+                        intents.push(IKun::Extension("get_field".to_string(), vec![obj, const_id]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::SetField(idx) => {
+                    if let (Some(val), Some(obj)) = (stack.pop(), stack.pop()) {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(*idx as i64));
+                        intents.push(IKun::Extension(
+                            "set_field".to_string(),
+                            vec![obj, const_id, val],
+                        ));
+                    }
+                }
+                Instruction::NewObject(idx) => {
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(*idx as i64));
+                    let id = intents.len();
+                    intents.push(IKun::Extension("new_object".to_string(), vec![const_id]));
+                    stack.push(id);
+                }
+                Instruction::NewArray(count) => {
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(*count as i64));
+                    let id = intents.len();
+                    intents.push(IKun::Extension("new_array".to_string(), vec![const_id]));
+                    stack.push(id);
+                }
+                Instruction::GetElement => {
+                    if let (Some(idx), Some(arr)) = (stack.pop(), stack.pop()) {
+                        let id = intents.len();
+                        intents.push(IKun::Extension("get_element".to_string(), vec![arr, idx]));
+                        stack.push(id);
+                    }
+                }
+                Instruction::SetElement => {
+                    if let (Some(val), Some(idx), Some(arr)) = (stack.pop(), stack.pop(), stack.pop()) {
+                        intents.push(IKun::Extension(
+                            "set_element".to_string(),
+                            vec![arr, idx, val],
+                        ));
+                    }
+                }
                 Instruction::CallSymbol(idx, args_count) => {
                     let mut args = Vec::new();
-                    for _ in 0..args_count {
+                    for _ in 0..*args_count {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
                     }
                     args.reverse();
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(idx as i64));
+                    intents.push(IKun::Constant(*idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("call_symbol".to_string(), {
                         let mut v = vec![const_id];
@@ -692,7 +750,7 @@ impl NyarJit {
                 Instruction::CheckCast(idx) | Instruction::Cast(idx) => {
                     if let Some(val) = stack.pop() {
                         let const_id = intents.len();
-                        intents.push(IKun::Constant(idx as i64));
+                        intents.push(IKun::Constant(*idx as i64));
                         let id = intents.len();
                         intents.push(IKun::Extension("cast_to".to_string(), vec![val, const_id]));
                         stack.push(id);
@@ -716,7 +774,7 @@ impl NyarJit {
                         captures.push(cap_id);
                     }
                     let func_const_id = intents.len();
-                    intents.push(IKun::Constant(idx as i64));
+                    intents.push(IKun::Constant(*idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("make_closure".to_string(), {
                         let mut v = vec![func_const_id];
@@ -732,7 +790,7 @@ impl NyarJit {
                 }
                 Instruction::CallClosure(argc) => {
                     let mut args = Vec::new();
-                    for _ in 0..argc {
+                    for _ in 0..*argc {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
@@ -750,7 +808,7 @@ impl NyarJit {
                 }
                 Instruction::MakeTuple(argc) => {
                     let mut args = Vec::new();
-                    for _ in 0..argc {
+                    for _ in 0..*argc {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
