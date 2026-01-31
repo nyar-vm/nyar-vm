@@ -59,6 +59,36 @@ impl NyarVM {
                     <= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
                 self.push(Value::bool(r));
             }
+            Instruction::StringGt => {
+                let rhs = self.pop()?;
+                let lhs = self.pop()?;
+                let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?
+                    > rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                self.push(Value::bool(r));
+            }
+            Instruction::StringGe => {
+                let rhs = self.pop()?;
+                let lhs = self.pop()?;
+                let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?
+                    >= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                self.push(Value::bool(r));
+            }
+            Instruction::StringSubstr => {
+                let len_v = self.pop()?;
+                let start_v = self.pop()?;
+                let s_v = self.pop()?;
+                let s = s_v.try_as_str().ok_or(VmError::InvalidOpcode)?;
+                let start = start_v.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
+                let len = len_v.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
+                let end = start.saturating_add(len);
+                let end = end.min(s.len());
+                let sub = if start <= end {
+                    s[start..end].to_string()
+                } else {
+                    String::new()
+                };
+                self.push(Value::string(sub, &self.gc));
+            }
             _ => Err(VmError::InvalidOpcode),
         }
     }

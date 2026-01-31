@@ -3,6 +3,10 @@ pub mod i32;
 pub mod i64;
 pub mod float;
 pub mod string;
+pub mod stack;
+pub mod control;
+pub mod closure;
+pub mod call;
 
 use crate::bytecode::decoder::Instruction;
 use crate::vm::core::NyarVM;
@@ -144,8 +148,11 @@ impl NyarVM {
                 return Err(err);
             }
 
-            let (cur_ip, _module_idx) = {
-                let f = self.frames.last().unwrap();
+            let (cur_ip, module_idx) = {
+                let f = match self.frames.last() {
+                    Some(f) => f,
+                    None => break,
+                };
                 if f.ip >= f.instrs.len() {
                     break;
                 }
@@ -153,17 +160,22 @@ impl NyarVM {
             };
 
             let ins = self.frames.last().unwrap().instrs[cur_ip].clone();
-            let _next_ip = Some(cur_ip + 1);
 
             #[cfg(debug_assertions)]
             println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
 
-            match ins {
-                Instruction::Nop => {}
-                _ => self.dispatch_instruction(ins)?,
-            }
+            let next_ip = self.dispatch_instruction(ins, cur_ip, module_idx)?;
             
-            self.frames.last_mut().unwrap().ip += 1;
+            if let Some(f) = self.frames.last_mut() {
+                if let Some(new_ip) = next_ip {
+                    f.ip = new_ip;
+                } else {
+                    f.ip += 1;
+                }
+            } else {
+                // Return called and it was the last frame
+                break;
+            }
         }
 
         if self.sp > 0 {
@@ -173,20 +185,82 @@ impl NyarVM {
         }
     }
 
-    fn dispatch_instruction(&mut self, ins: Instruction) -> Result<(), VmError> {
+    fn dispatch_instruction(&mut self, ins: Instruction, cur_ip: usize, module_idx: usize) -> Result<Option<usize>, VmError> {
         match ins {
-            Instruction::Nop => Ok(()),
-            ins if ins.is_bigint_op() => self.execute_bigint_op(ins),
-            ins if ins.is_i32_op() => self.execute_i32_op(ins),
-            ins if ins.is_i64_op() => self.execute_i64_op(ins),
-            ins if ins.is_float_op() => self.execute_float_op(ins),
-            ins if ins.is_string_op() => self.execute_string_op(ins),
+            Instruction::Nop => Ok(None),
+            ins if ins.is_bigint_op() => {
+                self.execute_bigint_op(ins)?;
+                Ok(None)
+            }
+            ins if ins.is_i32_op() => {
+                self.execute_i32_op(ins)?;
+                Ok(None)
+            }
+            ins if ins.is_i64_op() => {
+                self.execute_i64_op(ins)?;
+                Ok(None)
+            }
+            ins if ins.is_float_op() => {
+                self.execute_float_op(ins)?;
+                Ok(None)
+            }
+            ins if ins.is_string_op() => {
+                self.execute_string_op(ins)?;
+                Ok(None)
+            }
+            ins if ins.is_stack_op() => {
+                self.execute_stack_op(ins, module_idx)?;
+                Ok(None)
+            }
+            ins if ins.is_control_op() => self.execute_control_op(ins, cur_ip),
+            ins if ins.is_closure_op() => {
+                self.execute_closure_op(ins, module_idx)?;
+                Ok(None)
+            }
+            ins if ins.is_call_op() => self.execute_call_op(ins, module_idx),
             _ => Err(VmError::InvalidOpcode),
         }
     }
 }
 
 impl Instruction {
+    pub fn is_stack_op(&self) -> bool {
+        matches!(self,
+            Instruction::Push(_) |
+            Instruction::Pop |
+            Instruction::Dup(_) |
+            Instruction::Swap(_) |
+            Instruction::LoadLocal(_) |
+            Instruction::StoreLocal(_) |
+            Instruction::LoadGlobal(_) |
+            Instruction::StoreGlobal(_)
+        )
+    }
+
+    pub fn is_control_op(&self) -> bool {
+        matches!(self,
+            Instruction::Jump(_) |
+            Instruction::JumpIfFalse(_) |
+            Instruction::Return
+        )
+    }
+
+    pub fn is_closure_op(&self) -> bool {
+        matches!(self,
+            Instruction::MakeClosure(_, _) |
+            Instruction::LoadUpvalue(_) |
+            Instruction::StoreUpvalue(_)
+        )
+    }
+
+    pub fn is_call_op(&self) -> bool {
+        matches!(self,
+            Instruction::Call(_, _) |
+            Instruction::CallClosure(_) |
+            Instruction::CallSymbol(_, _) |
+            Instruction::InvokeMethod(_, _)
+        )
+    }
     pub fn is_bigint_op(&self) -> bool {
         matches!(self, 
             Instruction::BigIntConst { .. } |

@@ -808,7 +808,9 @@ impl NyarJit {
         if let Some(compiled) = self.osr_cache.get(&key) {
             return Ok(compiled.entry_point);
         }
-        let compiled = self.compile(vm, module_idx, chunk_idx, JitTier::Baseline, target_offset as usize, 0)?;
+        // OSR: Determine current stack depth for initialization
+        let initial_stack_depth = vm.sp;
+        let compiled = self.compile(vm, module_idx, chunk_idx, JitTier::Baseline, target_offset as usize, initial_stack_depth)?;
         self.osr_cache.insert(key, compiled.clone());
         Ok(compiled.entry_point)
     }
