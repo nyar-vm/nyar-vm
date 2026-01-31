@@ -13,8 +13,8 @@ impl NyarVM {
                     .get(idx as usize)
                     .ok_or(VmError::IndexOutOfBounds)?;
                 match c {
-                    Constant::Int(i) => self.push(Value::int(*i)),
-                    Constant::Float(x) => self.push(Value::float(*x)),
+                    Constant::Int(i) => self.push(Value::int(i.clone())),
+                    Constant::Float(x) => self.push(Value::float(x.clone())),
                     Constant::String(s) => self.push(Value::string(s.clone(), &self.gc)),
                 }
             }

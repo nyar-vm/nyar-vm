@@ -21,7 +21,7 @@ fn test_derive_trace() {
     });
 
     unsafe {
-        gc.collect(|ctx| {
+        gc.collect_with(|ctx| {
             node2.trace(ctx);
         });
     }
@@ -63,7 +63,7 @@ fn test_tlab_multithreaded() {
 
     // Trigger GC to ensure everything is fine
     unsafe {
-        gc.collect(|_| {});
+        gc.collect_with(|_| {});
     }
 }
 
@@ -168,9 +168,9 @@ fn test_gc_idle_collect() {
     let gc = NyarGc::new();
     let _ptr = gc.alloc(42i64);
     
-    // Simulate entering idle period
+    // Simulate entering idle period (Unity style)
     use nyar_gc::runtime::GcRuntime;
-    gc.enter_idle_period();
+    gc.collect();
     
     // The collection should have happened
     assert!(gc.allocated_bytes() >= 0);

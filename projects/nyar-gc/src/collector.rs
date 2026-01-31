@@ -678,11 +678,11 @@ impl NyarGc {
         &VTableHolder::<T>::VTABLE
     }
 
-    /// Run a collection cycle.
+    /// Run a collection cycle with custom root tracing.
     ///
     /// # Safety
     /// The caller must ensure that all root pointers are traced via the provided closure.
-    pub unsafe fn collect<F>(&self, mark_roots: F)
+    pub unsafe fn collect_with<F>(&self, mark_roots: F)
     where
         F: FnOnce(&mut MarkContext<'_>),
     {
