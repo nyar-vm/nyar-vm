@@ -24,7 +24,7 @@ impl NyarFrontend for MiniPythonFrontend {
     type Language = oak_python::PythonLanguage;
 
     fn parse(&self, source: &str) -> Result<PythonRoot, NyarError> {
-        let config = oak_python::PythonLanguage;
+        let config = oak_python::PythonLanguage {};
         let parser = oak_python::PythonParser::new(config);
         let mut cache =
             oak_core::parser::session::ParseSession::<oak_python::PythonLanguage>::default();

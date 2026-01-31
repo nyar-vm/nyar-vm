@@ -98,7 +98,7 @@ fn test_gc_basic() {
 
     // Both should be reachable if we start from node2
     unsafe {
-        gc.collect(|ctx| {
+        gc.collect_with(|ctx| {
             node2.trace(ctx);
         });
     }
@@ -127,7 +127,7 @@ fn test_gc_collect() {
     });
 
     unsafe {
-        gc.collect(|ctx| {
+        gc.collect_with(|ctx| {
             node2.trace(ctx);
         });
     }
@@ -169,7 +169,6 @@ fn test_gc_idle_collect() {
     let _ptr = gc.alloc(42i64);
     
     // Simulate entering idle period (Unity style)
-    use nyar_gc::runtime::GcRuntime;
     gc.collect();
     
     // The collection should have happened
