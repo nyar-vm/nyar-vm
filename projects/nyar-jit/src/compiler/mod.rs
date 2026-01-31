@@ -287,7 +287,11 @@ impl NyarJit {
             let _ = decoder.next_result();
         }
 
-        while let Ok(instruction) = decoder.next_result() {
+        while let Ok(instruction) = {
+            let pos = decoder.position() as u32;
+            intents.push(IKun::Extension(format!("label_{}", pos), vec![]));
+            decoder.next_result()
+        } {
             match instruction {
                 Instruction::LoadLocal(idx) => {
                     let id = intents.len();
