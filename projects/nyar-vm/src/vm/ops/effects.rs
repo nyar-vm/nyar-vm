@@ -86,51 +86,72 @@ impl NyarVM {
         // Pop the value to resume with and the continuation
         let val = self.pop()?;
         let cont_val = self.pop()?;
-        
-        let cont = cont_val.try_as_continuation().ok_or(VmError::RuntimeError("Resume requires a continuation".to_string()))?;
-        
+
+        let cont = cont_val
+            .try_as_continuation()
+            .ok_or(VmError::RuntimeError("Resume requires a continuation".to_string()))?;
+
         // Restore frames and stack
         self.frames = cont.frames.clone();
         self.stack = cont.stack_slice.clone();
         self.sp = self.stack.len();
-        
+
         // Push the resumed value as the result of the 'perform' instruction
         self.push(val)?;
-        
+
         Ok(Some(cont.ip))
     }
 
     #[inline(always)]
     pub fn execute_capture_cont(&mut self) -> Result<Option<usize>, VmError> {
-        // Capture the current stack, frames and IP as a continuation
         let frame = self.frames.last().ok_or(VmError::RuntimeError("No frame".to_string()))?;
-        let cont = Value::continuation(frame.ip, self.stack[..self.sp].to_vec(), self.frames.clone(), &self.gc);
+        let cont = Value::continuation(
+            frame.ip,
+            self.stack[..self.sp].to_vec(),
+            self.frames.clone(),
+            &self.gc,
+        );
         self.push(cont)?;
         Ok(None)
     }
 
     #[inline(always)]
+    pub fn execute_match_effect(&mut self, idx: u16) -> Result<Option<usize>, VmError> {
+        // Pop an effect object and check if it matches the type_idx
+        let val = self.pop()?;
+        if let Some(effect) = val.try_as_effect() {
+            if effect.type_idx == idx {
+                // Match! Push arguments and then true
+                for arg in &effect.args {
+                    self.push(*arg)?;
+                }
+                self.push(Value::bool(true))?;
+            } else {
+                // No match. Push the effect back and then false
+                self.push(val)?;
+                self.push(Value::bool(false))?;
+            }
+        } else {
+            // Not an effect.
+            self.push(val)?;
+            self.push(Value::bool(false))?;
+        }
+        Ok(None)
+    }
+
+    #[inline(always)]
     pub fn execute_await(&mut self) -> Result<Option<usize>, VmError> {
-        // Pop a value (presumably a future/promise) and await it.
-        // For now, it's a no-op that assumes the value is already resolved.
-        let _val = self.pop()?;
-        self.push(_val)?;
+        // Placeholder for async await
+        let val = self.pop()?;
+        self.push(val)?;
         Ok(None)
     }
 
     #[inline(always)]
     pub fn execute_block_on(&mut self) -> Result<Option<usize>, VmError> {
-        // Similar to await but blocking.
-        let _val = self.pop()?;
-        self.push(_val)?;
-        Ok(None)
-    }
-
-    #[inline(always)]
-    pub fn execute_match_effect(&mut self, _idx: u16) -> Result<Option<usize>, VmError> {
-        // Used in effect handlers to check if the effect matches.
-        // For now, return false (0) as a placeholder.
-        self.push(Value::bool(false))?;
+        // Placeholder for async block_on
+        let val = self.pop()?;
+        self.push(val)?;
         Ok(None)
     }
 }

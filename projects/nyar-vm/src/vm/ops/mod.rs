@@ -318,10 +318,10 @@ impl NyarVM {
                 // Stack operations
                 Instruction::Push(idx) => self.execute_push(idx, module_idx),
                 Instruction::Pop => self.execute_pop_stack(),
-                Instruction::Dup(d) => self.execute_dup(d),
-                Instruction::Swap(d) => self.execute_swap(d),
-                Instruction::LoadLocal(idx) => self.execute_load_local(idx),
-                Instruction::StoreLocal(idx) => self.execute_store_local(idx),
+                Instruction::Dup(d) => self.execute_dup(d.into()),
+                Instruction::Swap(d) => self.execute_swap(d.into()),
+                Instruction::LoadLocal(idx) => self.execute_load_local(idx.into()),
+                Instruction::StoreLocal(idx) => self.execute_store_local(idx.into()),
                 Instruction::LoadGlobal(idx) => self.execute_load_global(idx, module_idx),
                 Instruction::StoreGlobal(idx) => self.execute_store_global(idx, module_idx),
                 // Control operations
@@ -333,19 +333,19 @@ impl NyarVM {
                 Instruction::MakeClosure(idx, upvalues) => {
                     self.execute_make_closure(idx, upvalues, module_idx)
                 }
-                Instruction::LoadUpvalue(idx) => self.execute_load_upvalue(idx),
-                Instruction::StoreUpvalue(idx) => self.execute_store_upvalue(idx),
+                Instruction::LoadUpvalue(idx) => self.execute_load_upvalue(idx.into()),
+                Instruction::StoreUpvalue(idx) => self.execute_store_upvalue(idx.into()),
                 Instruction::CloseUpvalues => self.execute_close_upvalues(),
                 // Object operations
                 Instruction::NewObject(idx) => self.execute_new_object(idx),
                 Instruction::GetField(idx) => self.execute_get_field(idx),
                 Instruction::SetField(idx) => self.execute_set_field(idx),
-                Instruction::NewArray(len) => self.execute_new_array(len),
+                Instruction::NewArray(len) => self.execute_new_array(len.into()),
                 Instruction::GetElement => self.execute_get_element(),
                 Instruction::SetElement => self.execute_set_element(),
                 Instruction::NewDynObject => self.execute_new_dyn_object(),
-                Instruction::NewList(len) => self.execute_new_list(len),
-                Instruction::MakeTuple(len) => self.execute_make_tuple(len),
+                Instruction::NewList(len) => self.execute_new_list(len.into()),
+                Instruction::MakeTuple(len) => self.execute_make_tuple(len.into()),
                 Instruction::HasKey => self.execute_has_key(),
                 Instruction::RemoveKey => self.execute_remove_key(),
                 Instruction::PushElementRight => self.execute_push_element_right(),
@@ -359,7 +359,7 @@ impl NyarVM {
                 Instruction::CheckCast(idx) => self.execute_check_cast(idx),
                 Instruction::Cast(idx) => self.execute_cast(idx),
                 // Effects operations
-                Instruction::Perform(idx, argc) => self.execute_perform(idx, argc, module_idx),
+                Instruction::Perform(idx, argc) => self.execute_perform(idx, argc.into(), module_idx),
                 Instruction::WithHandler(idx) => self.execute_with_handler(idx, module_idx),
                 Instruction::ResumeWith => self.execute_resume_with(),
                 Instruction::CaptureCont => self.execute_capture_cont(),
@@ -377,24 +377,24 @@ impl NyarVM {
                 // Metaprogramming operations
                 Instruction::Quote(idx) => self.execute_quote(idx),
                 Instruction::Splice => self.execute_splice(),
-                Instruction::Eval(argc) => self.execute_eval(argc),
-                Instruction::ExpandMacro(idx, argc) => self.execute_expand_macro(idx, argc, module_idx),
+                Instruction::Eval(argc) => self.execute_eval(argc.into()),
+                Instruction::ExpandMacro(idx, argc) => self.execute_expand_macro(idx, argc.into(), module_idx),
                 // Call operations
-                Instruction::Call(idx, argc) => self.execute_call(idx, argc, module_idx),
-                Instruction::CallClosure(argc) => self.execute_call_closure(argc),
+                Instruction::Call(idx, argc) => self.execute_call(idx, argc.into(), module_idx),
+                Instruction::CallClosure(argc) => self.execute_call_closure(argc.into()),
                 Instruction::CallSymbol(idx, argc) => {
-                    self.execute_call_symbol(idx, argc, module_idx)
+                    self.execute_call_symbol(idx, argc.into(), module_idx)
                 }
                 Instruction::CallDynamic(idx, argc) => {
-                    self.execute_call_dynamic(idx, argc, module_idx)
+                    self.execute_call_dynamic(idx, argc.into(), module_idx)
                 }
                 Instruction::CallVirtual(idx, argc) => {
-                    self.execute_call_virtual(idx, argc, module_idx)
+                    self.execute_call_virtual(idx, argc.into(), module_idx)
                 }
-                Instruction::TailCall(argc) => self.execute_tail_call(argc),
-                Instruction::FFICall(idx, argc) => self.execute_ffi_call(idx, argc),
+                Instruction::TailCall(argc) => self.execute_tail_call(argc.into()),
+                Instruction::FFICall(idx, argc) => self.execute_ffi_call(idx, argc.into()),
                 Instruction::InvokeMethod(idx, argc) => {
-                    self.execute_invoke_method(idx, argc, module_idx)
+                    self.execute_invoke_method(idx, argc.into(), module_idx)
                 }
                 Instruction::Halt => break,
                 _ => Err(VmError::InvalidOpcode),
@@ -422,15 +422,11 @@ impl NyarVM {
     pub fn print_traceback(&self, error: &VmError) {
         eprintln!("Runtime Error: {:?}", error);
         for (i, frame) in self.frames.iter().enumerate().rev() {
-            let module_name = if frame.module_idx < self.modules.len() {
-                &self.modules[frame.module_idx].name
-            } else {
-                "unknown"
-            };
+            let module_idx = frame.module_idx;
             eprintln!(
                 "  [{}] Module: {}, Chunk: {:?}, IP: {}",
                 i,
-                module_name,
+                module_idx,
                 frame.chunk_idx,
                 frame.ip
             );
