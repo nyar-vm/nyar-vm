@@ -186,7 +186,13 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_tail_call(&mut self) -> Result<Option<usize>, VmError> {
+    pub fn execute_tail_call(&mut self, argc: u8) -> Result<Option<usize>, VmError> {
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
         let callee = self.pop()?;
         let (instrs, locals_count, c_module_idx, c_chunk_idx) =
             if let Some(closure) = callee.try_as_closure() {
@@ -199,27 +205,18 @@ impl NyarVM {
                 return Err(VmError::InvalidOpcode);
             };
 
+        if args.len() < locals_count {
+            args.resize(locals_count, Value::null());
+        }
+
         // Reuse the current frame
         if let Some(frame) = self.frames.last_mut() {
             frame.instrs = instrs;
             frame.ip = 0;
+            frame.locals = args;
             frame.closure = callee;
             frame.module_idx = c_module_idx;
             frame.chunk_idx = Some(c_chunk_idx);
-            
-            // Note: arguments should have been pushed onto the stack by the caller
-            // and then they become the new frame's locals.
-            // But how many arguments? TailCall needs to know argc.
-            // If TailCall doesn't have argc, it might assume the current stack contains them.
-            // Usually TailCall is used when the current frame's arguments are already what we want,
-            // or new arguments have been pushed.
-            
-            // For now, let's assume the stack contains the arguments.
-            // We need to move them to frame.locals.
-            // This is complex without argc. 
-            // Let's check if Instruction enum should have argc for TailCall.
-            // Looking at instruction.rs:28: TailCall,
-            // It doesn't have argc.
         }
         
         Ok(Some(0))
@@ -230,11 +227,46 @@ impl NyarVM {
         &mut self,
         idx: u16,
         argc: u8,
-        module_idx: usize,
+        _module_idx: usize,
     ) -> Result<Option<usize>, VmError> {
-        // Virtual call logic: find the method in the witness table or object's vtable
-        // For now, let's just delegate to a normal call as a placeholder
-        self.execute_call(idx, argc as u16, module_idx)
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
+        let trait_val = self.pop()?;
+        let trait_obj = trait_val.try_as_trait_object().ok_or(VmError::InvalidOpcode)?;
+        
+        let witness_val = trait_obj.witness;
+        let witness = unsafe { witness_val.as_witness_table() };
+        
+        let chunk_idx = witness.methods.get(idx as usize).ok_or(VmError::IndexOutOfBounds)?;
+        let target_module_idx = witness.module_idx;
+
+        // The first argument to a trait method is usually the data (self)
+        let mut final_args = Vec::with_capacity(argc as usize + 1);
+        final_args.push(trait_obj.data);
+        final_args.extend(args);
+
+        let instrs = self.get_chunk_instructions(target_module_idx, *chunk_idx as usize)?;
+        let locals_count = self.modules[target_module_idx].chunks[*chunk_idx as usize].locals as usize;
+
+        if final_args.len() < locals_count {
+            final_args.resize(locals_count, Value::null());
+        }
+
+        let new_frame = Frame {
+            instrs,
+            ip: 0,
+            locals: final_args,
+            closure: Value::null(),
+            module_idx: target_module_idx,
+            chunk_idx: Some(*chunk_idx as usize),
+        };
+
+        self.frames.push(new_frame);
+        Ok(Some(0))
     }
 
     #[inline(always)]

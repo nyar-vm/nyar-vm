@@ -268,3 +268,271 @@ pub unsafe extern "win64" fn nyar_vm_close_upvalues(vm_ptr: *mut NyarVM) {
     let _vm = &mut *vm_ptr;
     // Placeholder for CloseUpvalues
 }
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_new_list(vm_ptr: *mut NyarVM, len: u32) -> Value {
+    let vm = &mut *vm_ptr;
+    let mut items = Vec::with_capacity(len as usize);
+    for _ in 0..len {
+        items.push(vm.pop().unwrap());
+    }
+    items.reverse();
+    let list = Value::list(items, &vm.gc);
+    vm.push(list).unwrap();
+    list
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_list_push_right(vm_ptr: *mut NyarVM, list_val: Value, val: Value) {
+    let vm = &mut *vm_ptr;
+    let list = list_val.as_list_mut();
+    list.items.push(val);
+    val.write_barrier(&vm.gc);
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_list_pop_right(_vm_ptr: *mut NyarVM, list_val: Value) -> Value {
+    let list = list_val.as_list_mut();
+    list.items.pop().unwrap_or(Value::null())
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_list_push_left(vm_ptr: *mut NyarVM, list_val: Value, val: Value) {
+    let vm = &mut *vm_ptr;
+    let list = list_val.as_list_mut();
+    list.items.insert(0, val);
+    val.write_barrier(&vm.gc);
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_list_pop_left(_vm_ptr: *mut NyarVM, list_val: Value) -> Value {
+    let list = list_val.as_list_mut();
+    if list.items.is_empty() {
+        Value::null()
+    } else {
+        list.items.remove(0)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_has_key(_vm_ptr: *mut NyarVM, obj_val: Value, key_val: Value) -> bool {
+    if obj_val.is_dyn_object() {
+        let obj = obj_val.as_dyn_object();
+        let key = key_val.try_as_str().unwrap_or("");
+        obj.entries.contains_key(key)
+    } else {
+        false
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_remove_key(_vm_ptr: *mut NyarVM, obj_val: Value, key_val: Value) -> Value {
+    if obj_val.is_dyn_object() {
+        let obj = obj_val.as_dyn_object_mut();
+        let key = key_val.try_as_str().unwrap_or("");
+        obj.entries.remove(key).unwrap_or(Value::null())
+    } else {
+        Value::null()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_bytes(vm_ptr: *mut NyarVM, bytes_len: u32) -> Value {
+    let vm = &mut *vm_ptr;
+    let mut bytes = Vec::with_capacity(bytes_len as usize);
+    for _ in 0..bytes_len {
+        bytes.push(vm.pop().unwrap().as_int() as u8);
+    }
+    bytes.reverse();
+    use num_bigint::BigInt as NativeBigInt;
+    let bi = NativeBigInt::from_bytes_be(num_bigint::Sign::Plus, &bytes);
+    Value::bigint(BigInt(bi), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_const(vm_ptr: *mut NyarVM, sign: i64, bytes_val: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let bi_val = bytes_val.as_bigint();
+    let mut bi = bi_val.0.clone();
+    if sign < 0 {
+        bi = -bi;
+    }
+    Value::bigint(BigInt(bi), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_add(vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    Value::bigint(BigInt(&l.0 + &r.0), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_sub(vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    Value::bigint(BigInt(&l.0 - &r.0), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_mul(vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    Value::bigint(BigInt(&l.0 * &r.0), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_div(vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    Value::bigint(BigInt(&l.0 / &r.0), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_mod(vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    Value::bigint(BigInt(&l.0 % &r.0), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_neg(vm_ptr: *mut NyarVM, val: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let v = val.as_bigint();
+    Value::bigint(BigInt(-v.0.clone()), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_eq(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    l.0 == r.0
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_ne(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    l.0 != r.0
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_lt(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    l.0 < r.0
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_le(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    l.0 <= r.0
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_gt(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    l.0 > r.0
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_ge(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    let l = lhs.as_bigint();
+    let r = rhs.as_bigint();
+    l.0 >= r.0
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_to_i64(_vm_ptr: *mut NyarVM, val: Value) -> i64 {
+    val.as_bigint().to_i64()
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_from_i64(vm_ptr: *mut NyarVM, val: i64) -> Value {
+    let vm = &mut *vm_ptr;
+    Value::bigint_from_i64(val, &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_bigint_to_string(vm_ptr: *mut NyarVM, val: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let s = val.as_bigint().0.to_string();
+    Value::string(s, &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_len_bytes(_vm_ptr: *mut NyarVM, val: Value) -> i64 {
+    val.try_as_str().unwrap_or("").len() as i64
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_len_chars(_vm_ptr: *mut NyarVM, val: Value) -> i64 {
+    val.try_as_str().unwrap_or("").chars().count() as i64
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_substr(vm_ptr: *mut NyarVM, val: Value, start: i64, len: i64) -> Value {
+    let vm = &mut *vm_ptr;
+    let s = val.try_as_str().unwrap_or("");
+    let start = start as usize;
+    let len = len as usize;
+    let end = (start + len).min(s.len());
+    let sub = if start < s.len() {
+        &s[start..end]
+    } else {
+        ""
+    };
+    Value::string(sub.to_string(), &vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_eq(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    lhs.try_as_str().unwrap_or("") == rhs.try_as_str().unwrap_or("")
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_ne(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    lhs.try_as_str().unwrap_or("") != rhs.try_as_str().unwrap_or("")
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_lt(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    lhs.try_as_str().unwrap_or("") < rhs.try_as_str().unwrap_or("")
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_le(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    lhs.try_as_str().unwrap_or("") <= rhs.try_as_str().unwrap_or("")
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_gt(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    lhs.try_as_str().unwrap_or("") > rhs.try_as_str().unwrap_or("")
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_str_ge(_vm_ptr: *mut NyarVM, lhs: Value, rhs: Value) -> bool {
+    lhs.try_as_str().unwrap_or("") >= rhs.try_as_str().unwrap_or("")
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_new_dyn_object(vm_ptr: *mut NyarVM) -> Value {
+    let vm = &mut *vm_ptr;
+    Value::dyn_object(&vm.gc)
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_match_variant(_vm_ptr: *mut NyarVM, val: Value, variant_idx: i64) -> bool {
+    if let Some(obj) = val.try_as_object() {
+        obj.class_idx as i64 == variant_idx
+    } else {
+        false
+    }
+}

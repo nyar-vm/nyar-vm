@@ -83,8 +83,9 @@ impl Trace for Value {
 }
 
 impl Trace for TraitObject {
-    fn trace(&self, _ctx: &mut MarkContext) {
-        // TODO: Trace data if it contains GC pointers
+    fn trace(&self, ctx: &mut MarkContext) {
+        self.data.trace(ctx);
+        self.witness.trace(ctx);
     }
 }
 
@@ -357,6 +358,14 @@ impl Value {
         let ptr = self.payload() as *mut GcBox<Continuation>;
         &mut (*ptr).data
     }
+    pub unsafe fn as_trait_object<'a>(&self) -> &'a TraitObject {
+        let ptr = self.payload() as *const GcBox<TraitObject>;
+        &(*ptr).data
+    }
+    pub unsafe fn as_trait_object_mut<'a>(&self) -> &'a mut TraitObject {
+        let ptr = self.payload() as *mut GcBox<TraitObject>;
+        &mut (*ptr).data
+    }
     pub fn int(v: i64) -> Self {
         Self::encode(ValueTag::Int, v as u64)
     }
@@ -505,6 +514,13 @@ impl Value {
         });
         Self::encode(ValueTag::WitnessTable, g.as_ptr() as u64)
     }
+    pub fn code(module_idx: usize, chunk_idx: usize, gc: &NyarGc) -> Self {
+        let g = gc.alloc(Code {
+            module_idx,
+            chunk_idx,
+        });
+        Self::encode(ValueTag::Code, g.as_ptr() as u64)
+    }
     pub fn bigint_from_i64(v: i64, gc: &NyarGc) -> Self {
         Self::bigint(BigInt::from_i64(v), gc)
     }
@@ -519,6 +535,10 @@ impl Value {
     pub fn object(class_idx: u16, fields: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Object { class_idx, fields });
         Self::encode(ValueTag::Object, g.as_ptr() as u64)
+    }
+    pub fn trait_object(data: Value, witness: Value, gc: &NyarGc) -> Self {
+        let g = gc.alloc(TraitObject { data, witness });
+        Self::encode(ValueTag::TraitObject, g.as_ptr() as u64)
     }
     pub fn continuation(ip: usize, stack_slice: Vec<Value>, gc: &NyarGc) -> Self {
         let g = gc.alloc(Continuation { ip, stack_slice });
@@ -597,6 +617,13 @@ impl Value {
     pub fn try_as_object(&self) -> Option<&Object> {
         if self.is_object() {
             Some(unsafe { self.as_object() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_trait_object(&self) -> Option<&TraitObject> {
+        if self.tag() == ValueTag::TraitObject {
+            Some(unsafe { self.as_trait_object() })
         } else {
             None
         }
@@ -689,8 +716,8 @@ impl Value {
 
 #[derive(Clone)]
 pub struct TraitObject {
-    pub data: *mut (),
-    pub witness: *const (),
+    pub data: Value,
+    pub witness: Value,
 }
 
 #[derive(Clone)]
@@ -755,6 +782,16 @@ pub struct Effect {
 pub struct WitnessTable {
     pub module_idx: usize,
     pub methods: Vec<u16>,
+}
+
+#[derive(Clone)]
+pub struct Code {
+    pub module_idx: usize,
+    pub chunk_idx: usize,
+}
+
+impl Trace for Code {
+    fn trace(&self, _ctx: &mut MarkContext) {}
 }
 
 impl Trace for WitnessTable {

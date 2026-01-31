@@ -25,7 +25,7 @@ pub enum Instruction {
     JumpIfNull(i16),
     Return,
     MakeClosure(u16, Vec<UpvalueRef>),
-    TailCall,
+    TailCall(u8),
     Call(u16, u8),
     CallVirtual(u16, u8),
     CallDynamic(u16, u8),
