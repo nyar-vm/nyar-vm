@@ -246,6 +246,39 @@ impl NyarJit {
 
         while let Ok(instruction) = decoder.next_result() {
             match instruction {
+                Instruction::LoadLocal(idx) => {
+                    let id = intents.len();
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
+                    intents.push(IKun::Extension("load_local".to_string(), vec![const_id]));
+                    stack.push(id + 1);
+                }
+                Instruction::StoreLocal(idx) => {
+                    if let Some(val) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(idx as i64));
+                        intents.push(IKun::Extension("store_local".to_string(), vec![const_id, val]));
+                    }
+                }
+                Instruction::Return => {
+                    if let Some(val) = stack.pop() {
+                        intents.push(IKun::Extension("return".to_string(), vec![val]));
+                    } else {
+                        intents.push(IKun::Extension("return".to_string(), vec![]));
+                    }
+                }
+                Instruction::Jump(off) => {
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(off as i64));
+                    intents.push(IKun::Extension("jump".to_string(), vec![const_id]));
+                }
+                Instruction::JumpIfFalse(off) => {
+                    if let Some(cond) = stack.pop() {
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(off as i64));
+                        intents.push(IKun::Extension("jump_if_false".to_string(), vec![cond, const_id]));
+                    }
+                }
                 Instruction::Push(idx) => {
                     let constant = &module.constants[idx as usize];
                     let intent = match constant {

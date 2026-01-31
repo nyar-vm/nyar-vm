@@ -9,7 +9,7 @@ use crate::tlab::{Tlab, TLAB_SIZE};
 
 pub static VTABLE_REGISTRY: Mutex<Vec<SendPtr<GcVTable>>> = Mutex::new(Vec::new());
 
-pub const SIZE_CLASSES: [usize; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
+pub const SIZE_CLASSES: [usize; 10] = [16, 32, 48, 64, 128, 256, 512, 1024, 2048, 4096];
 
 pub struct FreeNode {
     pub next: *mut FreeNode,
@@ -37,7 +37,7 @@ pub struct NyarGc {
     /// Threshold for the next collection cycle.
     pub threshold: AtomicUsize,
     /// Free lists for different size classes.
-    pub free_lists: [AtomicUptr<FreeNode>; 7],
+    pub free_lists: [AtomicUptr<FreeNode>; 10],
     /// Optional callback to run after each GC cycle.
     pub post_collect: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Total number of collection cycles performed.
@@ -279,6 +279,9 @@ impl NyarGc {
                 AtomicUptr::new(std::ptr::null_mut()),
                 AtomicUptr::new(std::ptr::null_mut()),
                 AtomicUptr::new(std::ptr::null_mut()),
+                AtomicUptr::new(std::ptr::null_mut()),
+                AtomicUptr::new(std::ptr::null_mut()),
+                AtomicUptr::new(std::ptr::null_mut()),
             ],
             post_collect: Mutex::new(None),
             total_collections: AtomicU64::new(0),
@@ -299,6 +302,7 @@ impl NyarGc {
     }
 
     /// Allocate a new value on the managed heap.
+    #[inline(always)]
     pub fn alloc<T: Trace + 'static>(&self, value: T) -> Gc<T> {
         let layout = Layout::new::<GcBox<T>>();
         let size = layout.size();
@@ -342,6 +346,7 @@ impl NyarGc {
         unsafe { self.init_gc_box(ptr as *mut GcBox<T>, value, layout) }
     }
 
+    #[inline(always)]
     pub fn get_size_class(&self, size: usize) -> Option<usize> {
         for (i, &sc) in SIZE_CLASSES.iter().enumerate() {
             if size <= sc {
@@ -666,7 +671,16 @@ impl NyarGc {
         // 2. Process mark stack
         self.process_mark_stack(&mut ctx);
 
-        // 3. Sweep everything
+        // 3. Flush all thread-local mark buffers before sweeping
+        // In a real multi-threaded environment, we would need to coordinate this.
+        // For now, since collect_all is usually STW, we assume current thread's buffer is the main one.
+        crate::tlab::THREAD_TLAB.with(|tlab_cell| {
+            let tlab = unsafe { &mut *tlab_cell.get() };
+            self.flush_mark_buffer(tlab);
+        });
+        self.process_mark_stack(&mut ctx);
+
+        // 4. Sweep everything
         self.set_state(GcState::Sweeping);
         self.sweep_all();
 
@@ -768,6 +782,12 @@ impl NyarGc {
     pub unsafe fn process_mark_stack(&self, ctx: &mut MarkContext<'_>) {
         while let Some(ptr) = ctx.mark_stack.pop() {
             let header = ptr.as_ref();
+            // Prefetch the object's data to improve cache locality
+            #[cfg(target_arch = "x86_64")]
+            {
+                use std::arch::x86_64::_mm_prefetch;
+                _mm_prefetch(ptr.as_ptr() as *const i8, std::arch::x86_64::_MM_HINT_T0);
+            }
             // Object is being scanned, its children will be added to mark stack
             unsafe {
                 ((*header.get_vtable()).trace_object)(ptr.0, ctx);
