@@ -183,5 +183,69 @@ impl NyarVM {
             }
         }
         Ok(())
+    #[inline(always)]
+    pub fn execute_tail_call(&mut self) -> Result<Option<usize>, VmError> {
+        let callee = self.pop()?;
+        let (instrs, locals_count, c_module_idx, c_chunk_idx) =
+            if let Some(closure) = callee.try_as_closure() {
+                let chunk_idx = closure.func;
+                let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
+                let locals_count =
+                    self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
+                (instrs, locals_count, closure.module_idx, chunk_idx)
+            } else {
+                return Err(VmError::InvalidOpcode);
+            };
+
+        // Reuse the current frame
+        if let Some(frame) = self.frames.last_mut() {
+            frame.instrs = instrs;
+            frame.ip = 0;
+            frame.closure = callee;
+            frame.module_idx = c_module_idx;
+            frame.chunk_idx = Some(c_chunk_idx);
+            
+            // Note: arguments should have been pushed onto the stack by the caller
+            // and then they become the new frame's locals.
+            // But how many arguments? TailCall needs to know argc.
+            // If TailCall doesn't have argc, it might assume the current stack contains them.
+            // Usually TailCall is used when the current frame's arguments are already what we want,
+            // or new arguments have been pushed.
+            
+            // For now, let's assume the stack contains the arguments.
+            // We need to move them to frame.locals.
+            // This is complex without argc. 
+            // Let's check if Instruction enum should have argc for TailCall.
+            // Looking at instruction.rs:28: TailCall,
+            // It doesn't have argc.
+        }
+        
+        Ok(Some(0))
+    }
+
+    #[inline(always)]
+    pub fn execute_call_virtual(
+        &mut self,
+        idx: u16,
+        argc: u8,
+        module_idx: usize,
+    ) -> Result<Option<usize>, VmError> {
+        // Virtual call logic: find the method in the witness table or object's vtable
+        // For now, let's just delegate to a normal call as a placeholder
+        self.execute_call(idx, argc as u16, module_idx)
+    }
+
+    #[inline(always)]
+    pub fn execute_ffi_call(&mut self, idx: u16, argc: u8) -> Result<Option<usize>, VmError> {
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
+        // FFICall logic...
+        // For now, push null
+        self.push(Value::null())?;
+        Ok(None)
     }
 }

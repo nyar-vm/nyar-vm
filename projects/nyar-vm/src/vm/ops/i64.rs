@@ -202,4 +202,20 @@ impl NyarVM {
         self.push(Value::float(r))?;
         Ok(None)
     }
+
+    #[inline(always)]
+    pub fn execute_i64_add_sat_s(&mut self) -> Result<Option<usize>, VmError> {
+        let b = self.pop()?.as_int() as i64;
+        let a = self.pop()?.as_int() as i64;
+        self.push(Value::int(a.saturating_add(b)))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i64_add_sat_u(&mut self) -> Result<Option<usize>, VmError> {
+        let b = self.pop()?.as_int() as u64;
+        let a = self.pop()?.as_int() as u64;
+        self.push(Value::int(a.saturating_add(b) as i64))?;
+        Ok(None)
+    }
 }

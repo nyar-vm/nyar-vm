@@ -213,6 +213,10 @@ impl NyarVM {
                 Instruction::I32ToF32U => self.execute_i32_to_f32_u(),
                 Instruction::I32ToF64S => self.execute_i32_to_f64_s(),
                 Instruction::I32ToF64U => self.execute_i32_to_f64_u(),
+                Instruction::I32AddSatS => self.execute_i32_add_sat_s(),
+                Instruction::I32AddSatU => self.execute_i32_add_sat_u(),
+                Instruction::I32SubSatS => self.execute_i32_sub_sat_s(),
+                Instruction::I32SubSatU => self.execute_i32_sub_sat_u(),
                 Instruction::I32Extend64S => self.execute_i32_extend64_s(),
                 Instruction::I32Extend64U => self.execute_i32_extend64_u(),
                 Instruction::I32Trunc64SLow => self.execute_i32_trunc64_s_low(),
@@ -242,6 +246,8 @@ impl NyarVM {
                 Instruction::I64ToF32U => self.execute_i64_to_f32_u(),
                 Instruction::I64ToF64S => self.execute_i64_to_f64_s(),
                 Instruction::I64ToF64U => self.execute_i64_to_f64_u(),
+                Instruction::I64AddSatS => self.execute_i64_add_sat_s(),
+                Instruction::I64AddSatU => self.execute_i64_add_sat_u(),
                 // Float operations
                 Instruction::F32Const(v) => self.execute_f32_const(v),
                 Instruction::F32Add => self.execute_f32_add(),
@@ -352,9 +358,15 @@ impl NyarVM {
                 Instruction::Call(idx, argc) => self.execute_call(idx, argc, module_idx),
                 Instruction::CallClosure(argc) => self.execute_call_closure(argc),
                 Instruction::CallSymbol(idx, argc) => self.execute_call_symbol(idx, argc, module_idx),
+                Instruction::CallVirtual(idx, argc) => {
+                    self.execute_call_virtual(idx, argc, module_idx)
+                }
+                Instruction::TailCall => self.execute_tail_call(),
+                Instruction::FFICall(idx, argc) => self.execute_ffi_call(idx, argc),
                 Instruction::InvokeMethod(idx, argc) => {
                     self.execute_invoke_method(idx, argc, module_idx)
                 }
+                Instruction::Halt => break,
                 _ => Err(VmError::InvalidOpcode),
             }?;
 

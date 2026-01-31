@@ -243,4 +243,36 @@ impl NyarVM {
         self.push(Value::int(r as i64))?;
         Ok(None)
     }
+
+    #[inline(always)]
+    pub fn execute_i32_add_sat_s(&mut self) -> Result<Option<usize>, VmError> {
+        let b = self.pop()?.as_int() as i32;
+        let a = self.pop()?.as_int() as i32;
+        self.push(Value::int(a.saturating_add(b) as i64))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i32_add_sat_u(&mut self) -> Result<Option<usize>, VmError> {
+        let b = self.pop()?.as_int() as u32;
+        let a = self.pop()?.as_int() as u32;
+        self.push(Value::int(a.saturating_add(b) as i64))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i32_sub_sat_s(&mut self) -> Result<Option<usize>, VmError> {
+        let b = self.pop()?.as_int() as i32;
+        let a = self.pop()?.as_int() as i32;
+        self.push(Value::int(a.saturating_sub(b) as i64))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i32_sub_sat_u(&mut self) -> Result<Option<usize>, VmError> {
+        let b = self.pop()?.as_int() as u32;
+        let a = self.pop()?.as_int() as u32;
+        self.push(Value::int(a.saturating_sub(b) as i64))?;
+        Ok(None)
+    }
 }
