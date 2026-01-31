@@ -1,11 +1,13 @@
+use crate::block::{GcBlock, GcBlockHeader, BLOCK_SIZE, GC_BLOCK_MAGIC};
+use crate::object::{
+    Gc, GcBox, GcCell, GcHeader, GcState, GcVTable, LargeObjectHeader, MarkContext, Trace,
+};
+use crate::ptr::SendPtr;
+use crate::tlab::{Tlab, TLAB_SIZE};
 use std::alloc::{self, Layout};
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::ptr::NonNull;
-use crate::ptr::SendPtr;
-use crate::block::{GcBlock, GcBlockHeader, BLOCK_SIZE, GC_BLOCK_MAGIC};
-use crate::object::{Gc, GcBox, GcCell, GcHeader, GcState, GcVTable, LargeObjectHeader, MarkContext, Trace};
-use crate::tlab::{Tlab, TLAB_SIZE};
 
 pub static VTABLE_REGISTRY: Mutex<Vec<SendPtr<GcVTable>>> = Mutex::new(Vec::new());
 
@@ -221,7 +223,8 @@ impl NyarGc {
         std::ptr::write(&mut (*ptr).data, value);
 
         let gc_box = NonNull::new_unchecked(ptr);
-        self.allocated_bytes.fetch_add(layout.size(), Ordering::SeqCst);
+        self.allocated_bytes
+            .fetch_add(layout.size(), Ordering::SeqCst);
 
         Gc { ptr: gc_box }
     }
@@ -519,7 +522,10 @@ impl NyarGc {
             if self.get_state() == GcState::Marking {
                 crate::tlab::THREAD_TLAB.with(|tlab_cell| {
                     let tlab = &mut *tlab_cell.get();
-                    self.local_mark(tlab, NonNull::new_unchecked(child_header as *const GcHeader as *mut GcHeader));
+                    self.local_mark(
+                        tlab,
+                        NonNull::new_unchecked(child_header as *const GcHeader as *mut GcHeader),
+                    );
                 });
             }
         }
@@ -918,9 +924,9 @@ impl NyarGc {
                                 }
                                 self.allocated_bytes
                                     .fetch_sub(header.size() as usize, Ordering::SeqCst);
-                                self.free_object(NonNull::new_unchecked(
-                                    header.get_gc_header() as *const GcHeader as *mut GcHeader,
-                                ));
+                                self.free_object(NonNull::new_unchecked(header.get_gc_header()
+                                    as *const GcHeader
+                                    as *mut GcHeader));
                                 sweep.large_curr.store(next, Ordering::Release);
                             }
                             work_done += 1;

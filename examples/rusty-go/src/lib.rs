@@ -9,7 +9,7 @@ use crate::frontend::MiniGoFrontend as FrontendImpl;
 use crate::optimizer::MiniGoOptimizer;
 use crate::runtime::MiniGoRuntime;
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
-use oak_go::{GoLanguage, GoRoot, GoBuilder};
+use oak_go::{GoBuilder, GoLanguage, GoRoot};
 
 /// Mini Go 前端实现
 #[derive(Default)]

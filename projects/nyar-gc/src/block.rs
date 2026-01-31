@@ -1,7 +1,7 @@
-use std::alloc::{self, Layout};
-use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use std::ptr::NonNull;
 use crate::object::GcHeader;
+use std::alloc::{self, Layout};
+use std::ptr::NonNull;
+use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 pub const BLOCK_SIZE: usize = 1024 * 1024; // 1MB blocks
 pub const MARK_BITMAP_WORDS: usize = (BLOCK_SIZE / 16) / 64;
@@ -77,17 +77,18 @@ impl<'a> Iterator for GcBlockIterator<'a> {
         }
 
         unsafe {
-            let ptr = (self.block as *const GcBlockHeader as *const u8).add(self.cursor) as *mut GcHeader;
+            let ptr =
+                (self.block as *const GcBlockHeader as *const u8).add(self.cursor) as *mut GcHeader;
             let header = &*ptr;
             let size = header.size();
-            
+
             // Validate size to avoid infinite loop or out of bounds
             if size < 4 || self.cursor + size > BLOCK_SIZE {
                 return None;
             }
 
             self.cursor += size;
-            
+
             // Skip padding objects (Type ID 0)
             if header.get_type_id() == 0 {
                 return self.next();

@@ -75,7 +75,9 @@ impl NyarBackend {
                         code.extend(self.lower_tree(arg)?);
                     }
                     let name_idx = self.add_constant(NyarConstant::String(name.clone()));
-                    code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
+                    code.extend_from_slice(
+                        &Instruction::FFICall(name_idx, args.len() as u8).encode(),
+                    );
                 }
             }
             IKunTree::Extension(name, args) => {

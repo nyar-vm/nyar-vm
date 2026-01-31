@@ -4,7 +4,11 @@ use crate::vm::value::{Upvalue, Value};
 use crate::vm::VmError;
 
 impl NyarVM {
-    pub fn execute_closure_op(&mut self, ins: Instruction, module_idx: usize) -> Result<(), VmError> {
+    pub fn execute_closure_op(
+        &mut self,
+        ins: Instruction,
+        module_idx: usize,
+    ) -> Result<(), VmError> {
         match ins {
             Instruction::MakeClosure(idx, upvalues) => {
                 let mut captured = Vec::with_capacity(upvalues.len());
@@ -34,7 +38,10 @@ impl NyarVM {
             Instruction::StoreUpvalue(idx) => {
                 let val = self.pop()?;
                 let f = self.frames.last().unwrap();
-                let closure = f.closure.try_as_closure_mut().ok_or(VmError::InvalidOpcode)?;
+                let closure = f
+                    .closure
+                    .try_as_closure_mut()
+                    .ok_or(VmError::InvalidOpcode)?;
                 if (idx as usize) < closure.upvalues.len() {
                     closure.upvalues[idx as usize].0 = val;
                 } else {

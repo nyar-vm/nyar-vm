@@ -1,12 +1,12 @@
 pub mod bigint;
+pub mod call;
+pub mod closure;
+pub mod control;
+pub mod float;
 pub mod i32;
 pub mod i64;
-pub mod float;
-pub mod string;
 pub mod stack;
-pub mod control;
-pub mod closure;
-pub mod call;
+pub mod string;
 
 use crate::bytecode::decoder::Instruction;
 use crate::vm::core::NyarVM;
@@ -165,7 +165,7 @@ impl NyarVM {
             println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
 
             let next_ip = self.dispatch_instruction(ins, cur_ip, module_idx)?;
-            
+
             if let Some(f) = self.frames.last_mut() {
                 if let Some(new_ip) = next_ip {
                     f.ip = new_ip;
@@ -185,7 +185,12 @@ impl NyarVM {
         }
     }
 
-    fn dispatch_instruction(&mut self, ins: Instruction, cur_ip: usize, module_idx: usize) -> Result<Option<usize>, VmError> {
+    fn dispatch_instruction(
+        &mut self,
+        ins: Instruction,
+        cur_ip: usize,
+        module_idx: usize,
+    ) -> Result<Option<usize>, VmError> {
         match ins {
             Instruction::Nop => Ok(None),
             ins if ins.is_bigint_op() => {
@@ -225,173 +230,180 @@ impl NyarVM {
 
 impl Instruction {
     pub fn is_stack_op(&self) -> bool {
-        matches!(self,
-            Instruction::Push(_) |
-            Instruction::Pop |
-            Instruction::Dup(_) |
-            Instruction::Swap(_) |
-            Instruction::LoadLocal(_) |
-            Instruction::StoreLocal(_) |
-            Instruction::LoadGlobal(_) |
-            Instruction::StoreGlobal(_)
+        matches!(
+            self,
+            Instruction::Push(_)
+                | Instruction::Pop
+                | Instruction::Dup(_)
+                | Instruction::Swap(_)
+                | Instruction::LoadLocal(_)
+                | Instruction::StoreLocal(_)
+                | Instruction::LoadGlobal(_)
+                | Instruction::StoreGlobal(_)
         )
     }
 
     pub fn is_control_op(&self) -> bool {
-        matches!(self,
-            Instruction::Jump(_) |
-            Instruction::JumpIfFalse(_) |
-            Instruction::Return
+        matches!(
+            self,
+            Instruction::Jump(_) | Instruction::JumpIfFalse(_) | Instruction::Return
         )
     }
 
     pub fn is_closure_op(&self) -> bool {
-        matches!(self,
-            Instruction::MakeClosure(_, _) |
-            Instruction::LoadUpvalue(_) |
-            Instruction::StoreUpvalue(_)
+        matches!(
+            self,
+            Instruction::MakeClosure(_, _)
+                | Instruction::LoadUpvalue(_)
+                | Instruction::StoreUpvalue(_)
         )
     }
 
     pub fn is_call_op(&self) -> bool {
-        matches!(self,
-            Instruction::Call(_, _) |
-            Instruction::CallClosure(_) |
-            Instruction::CallSymbol(_, _) |
-            Instruction::InvokeMethod(_, _)
+        matches!(
+            self,
+            Instruction::Call(_, _)
+                | Instruction::CallClosure(_)
+                | Instruction::CallSymbol(_, _)
+                | Instruction::InvokeMethod(_, _)
         )
     }
     pub fn is_bigint_op(&self) -> bool {
-        matches!(self, 
-            Instruction::BigIntConst { .. } |
-            Instruction::BigIntAdd |
-            Instruction::BigIntSub |
-            Instruction::BigIntMul |
-            Instruction::BigIntDiv |
-            Instruction::BigIntMod |
-            Instruction::BigIntNeg |
-            Instruction::BigIntEq |
-            Instruction::BigIntNe |
-            Instruction::BigIntLt |
-            Instruction::BigIntLe |
-            Instruction::BigIntGt |
-            Instruction::BigIntGe |
-            Instruction::BigIntToI64 |
-            Instruction::BigIntFromI64 |
-            Instruction::BigIntToString
+        matches!(
+            self,
+            Instruction::BigIntConst { .. }
+                | Instruction::BigIntAdd
+                | Instruction::BigIntSub
+                | Instruction::BigIntMul
+                | Instruction::BigIntDiv
+                | Instruction::BigIntMod
+                | Instruction::BigIntNeg
+                | Instruction::BigIntEq
+                | Instruction::BigIntNe
+                | Instruction::BigIntLt
+                | Instruction::BigIntLe
+                | Instruction::BigIntGt
+                | Instruction::BigIntGe
+                | Instruction::BigIntToI64
+                | Instruction::BigIntFromI64
+                | Instruction::BigIntToString
         )
     }
 
     pub fn is_i32_op(&self) -> bool {
-        matches!(self,
-            Instruction::I32Const(_) |
-            Instruction::I32Add |
-            Instruction::I32Sub |
-            Instruction::I32Mul |
-            Instruction::I32DivS |
-            Instruction::I32DivU |
-            Instruction::I32RemS |
-            Instruction::I32RemU |
-            Instruction::I32Neg |
-            Instruction::I32Eq |
-            Instruction::I32Ne |
-            Instruction::I32LtS |
-            Instruction::I32LtU |
-            Instruction::I32LeS |
-            Instruction::I32LeU |
-            Instruction::I32GtS |
-            Instruction::I32GtU |
-            Instruction::I32GeS |
-            Instruction::I32GeU |
-            Instruction::I32ToF32S |
-            Instruction::I32ToF32U |
-            Instruction::I32ToF64S |
-            Instruction::I32ToF64U |
-            Instruction::I32Extend64S |
-            Instruction::I32Extend64U |
-            Instruction::I32Trunc64SLow |
-            Instruction::I32Trunc64S |
-            Instruction::I32Trunc64U
+        matches!(
+            self,
+            Instruction::I32Const(_)
+                | Instruction::I32Add
+                | Instruction::I32Sub
+                | Instruction::I32Mul
+                | Instruction::I32DivS
+                | Instruction::I32DivU
+                | Instruction::I32RemS
+                | Instruction::I32RemU
+                | Instruction::I32Neg
+                | Instruction::I32Eq
+                | Instruction::I32Ne
+                | Instruction::I32LtS
+                | Instruction::I32LtU
+                | Instruction::I32LeS
+                | Instruction::I32LeU
+                | Instruction::I32GtS
+                | Instruction::I32GtU
+                | Instruction::I32GeS
+                | Instruction::I32GeU
+                | Instruction::I32ToF32S
+                | Instruction::I32ToF32U
+                | Instruction::I32ToF64S
+                | Instruction::I32ToF64U
+                | Instruction::I32Extend64S
+                | Instruction::I32Extend64U
+                | Instruction::I32Trunc64SLow
+                | Instruction::I32Trunc64S
+                | Instruction::I32Trunc64U
         )
     }
 
     pub fn is_i64_op(&self) -> bool {
-        matches!(self,
-            Instruction::I64Const(_) |
-            Instruction::I64Add |
-            Instruction::I64Sub |
-            Instruction::I64Mul |
-            Instruction::I64DivS |
-            Instruction::I64DivU |
-            Instruction::I64RemS |
-            Instruction::I64RemU |
-            Instruction::I64Neg |
-            Instruction::I64Eq |
-            Instruction::I64Ne |
-            Instruction::I64LtS |
-            Instruction::I64LtU |
-            Instruction::I64LeS |
-            Instruction::I64LeU |
-            Instruction::I64GtS |
-            Instruction::I64GtU |
-            Instruction::I64GeS |
-            Instruction::I64GeU |
-            Instruction::I64ToF32S |
-            Instruction::I64ToF32U |
-            Instruction::I64ToF64S |
-            Instruction::I64ToF64U
+        matches!(
+            self,
+            Instruction::I64Const(_)
+                | Instruction::I64Add
+                | Instruction::I64Sub
+                | Instruction::I64Mul
+                | Instruction::I64DivS
+                | Instruction::I64DivU
+                | Instruction::I64RemS
+                | Instruction::I64RemU
+                | Instruction::I64Neg
+                | Instruction::I64Eq
+                | Instruction::I64Ne
+                | Instruction::I64LtS
+                | Instruction::I64LtU
+                | Instruction::I64LeS
+                | Instruction::I64LeU
+                | Instruction::I64GtS
+                | Instruction::I64GtU
+                | Instruction::I64GeS
+                | Instruction::I64GeU
+                | Instruction::I64ToF32S
+                | Instruction::I64ToF32U
+                | Instruction::I64ToF64S
+                | Instruction::I64ToF64U
         )
     }
 
     pub fn is_float_op(&self) -> bool {
-        matches!(self,
-            Instruction::F32Const(_) |
-            Instruction::F32Add |
-            Instruction::F32Sub |
-            Instruction::F32Mul |
-            Instruction::F32Div |
-            Instruction::F32Neg |
-            Instruction::F32Eq |
-            Instruction::F32Ne |
-            Instruction::F32Lt |
-            Instruction::F32Le |
-            Instruction::F32Gt |
-            Instruction::F32Ge |
-            Instruction::F32ToI32S |
-            Instruction::F32ToI32U |
-            Instruction::F32ToI64S |
-            Instruction::F32ToI64U |
-            Instruction::F32ToF64 |
-            Instruction::F64Const(_) |
-            Instruction::F64Add |
-            Instruction::F64Sub |
-            Instruction::F64Mul |
-            Instruction::F64Div |
-            Instruction::F64Neg |
-            Instruction::F64Eq |
-            Instruction::F64Ne |
-            Instruction::F64Lt |
-            Instruction::F64Le |
-            Instruction::F64Gt |
-            Instruction::F64Ge |
-            Instruction::F64ToI32S |
-            Instruction::F64ToI32U |
-            Instruction::F64ToI64S |
-            Instruction::F64ToI64U |
-            Instruction::F64ToF32
+        matches!(
+            self,
+            Instruction::F32Const(_)
+                | Instruction::F32Add
+                | Instruction::F32Sub
+                | Instruction::F32Mul
+                | Instruction::F32Div
+                | Instruction::F32Neg
+                | Instruction::F32Eq
+                | Instruction::F32Ne
+                | Instruction::F32Lt
+                | Instruction::F32Le
+                | Instruction::F32Gt
+                | Instruction::F32Ge
+                | Instruction::F32ToI32S
+                | Instruction::F32ToI32U
+                | Instruction::F32ToI64S
+                | Instruction::F32ToI64U
+                | Instruction::F32ToF64
+                | Instruction::F64Const(_)
+                | Instruction::F64Add
+                | Instruction::F64Sub
+                | Instruction::F64Mul
+                | Instruction::F64Div
+                | Instruction::F64Neg
+                | Instruction::F64Eq
+                | Instruction::F64Ne
+                | Instruction::F64Lt
+                | Instruction::F64Le
+                | Instruction::F64Gt
+                | Instruction::F64Ge
+                | Instruction::F64ToI32S
+                | Instruction::F64ToI32U
+                | Instruction::F64ToI64S
+                | Instruction::F64ToI64U
+                | Instruction::F64ToF32
         )
     }
 
     pub fn is_string_op(&self) -> bool {
-        matches!(self,
-            Instruction::StringConst(_) |
-            Instruction::StringConcat |
-            Instruction::StringLenBytes |
-            Instruction::StringLenChars |
-            Instruction::StringEq |
-            Instruction::StringNe |
-            Instruction::StringLt |
-            Instruction::StringLe
+        matches!(
+            self,
+            Instruction::StringConst(_)
+                | Instruction::StringConcat
+                | Instruction::StringLenBytes
+                | Instruction::StringLenChars
+                | Instruction::StringEq
+                | Instruction::StringNe
+                | Instruction::StringLt
+                | Instruction::StringLe
         )
     }
 }

@@ -2,7 +2,9 @@ use chomsky::uir::IKun;
 
 pub struct BarrierElision;
 
-impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A> for BarrierElision {
+impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
+    for BarrierElision
+{
     fn name(&self) -> &str {
         "barrier-elision"
     }
@@ -38,7 +40,9 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
 
 pub struct AllocationSinking;
 
-impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A> for AllocationSinking {
+impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
+    for AllocationSinking
+{
     fn name(&self) -> &str {
         "allocation-sinking"
     }
@@ -113,7 +117,7 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
                     if op == "load_field" && args.len() == 2 {
                         let obj_id = args[0];
                         let field_id = args[1];
-                        
+
                         // Check if object is virtual
                         let is_virtual = egraph.classes.get(&obj_id).map_or(false, |c| {
                             c.nodes.iter().any(|n| matches!(n, IKun::Extension(name, _) if name == "virtual_object"))
@@ -125,7 +129,8 @@ impl<A: chomsky_uir::egraph::Analysis<IKun>> chomsky_rule_engine::RewriteRule<A>
                                 for other_node in &other_entry.value().nodes {
                                     if let IKun::Extension(other_op, other_args) = other_node {
                                         if other_op == "store_field" && other_args.len() == 3 {
-                                            if other_args[0] == obj_id && other_args[1] == field_id {
+                                            if other_args[0] == obj_id && other_args[1] == field_id
+                                            {
                                                 field_replacements.push((id, other_args[2]));
                                             }
                                         }

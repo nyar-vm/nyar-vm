@@ -1,10 +1,10 @@
 use chomsky_source::Loc;
 use chomsky_uir::{EGraph, IKun, IKunTree, Id, IntentBuilder};
-use oak_go::{GoLanguage, GoLexer, GoParser, GoRoot, GoSyntaxKind, ast};
 use oak_core::parser::ParseSession;
 use oak_core::source::SourceText;
 use oak_core::tree::{RedNode, RedTree};
 use oak_core::{Lexer, LexerCache, Parser};
+use oak_go::{ast, GoLanguage, GoLexer, GoParser, GoRoot, GoSyntaxKind};
 
 #[derive(Default)]
 pub struct MiniGoFrontend;
@@ -54,7 +54,7 @@ impl MiniGoFrontend {
             match decl {
                 ast::Declaration::Function(func) => {
                     let body = self.lower_block(&func.body)?;
-                    
+
                     // 为 main 函数创建导出
                     if func.name == "main" {
                         items.push(IKunTree::Export(

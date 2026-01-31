@@ -2,7 +2,7 @@ use crate::bytecode::decoder::Instruction;
 use crate::bytecode::format::NyarcModule;
 use crate::vm::effects::HandlerFrame;
 use crate::vm::ffi::FFIRegistry;
-use crate::vm::value::{Value};
+use crate::vm::value::Value;
 use crate::vm::VmError;
 use nyar_gc::{MarkContext, NyarGc, Trace};
 

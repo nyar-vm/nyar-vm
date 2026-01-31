@@ -1,7 +1,7 @@
-use std::io::Cursor;
-use byteorder::{LittleEndian, ReadBytesExt};
 use crate::bytecode::instruction::{Instruction, UpvalueRef};
 use crate::bytecode::opcode::*;
+use byteorder::{LittleEndian, ReadBytesExt};
+use std::io::Cursor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DecodeError {

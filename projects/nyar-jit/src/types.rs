@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use chomsky::extract::IKunTree;
 use chomsky::uir::IKun;
 use nyar_types::VmError;
 use nyar_vm::vm::value::Value;
+use std::sync::Arc;
 
 /// Represents the compilation tiers in NyarJit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

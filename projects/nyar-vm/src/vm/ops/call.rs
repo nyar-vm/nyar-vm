@@ -5,11 +5,16 @@ use crate::vm::value::Value;
 use crate::vm::VmError;
 
 impl NyarVM {
-    pub fn execute_call_op(&mut self, ins: Instruction, module_idx: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_call_op(
+        &mut self,
+        ins: Instruction,
+        module_idx: usize,
+    ) -> Result<Option<usize>, VmError> {
         match ins {
             Instruction::Call(chunk_idx, argc) => {
                 let instrs = self.get_chunk_instructions(module_idx, chunk_idx as usize)?;
-                let locals_count = self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
+                let locals_count =
+                    self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
 
                 let mut args = Vec::with_capacity(argc as usize);
                 for _ in 0..argc {
@@ -41,14 +46,16 @@ impl NyarVM {
                 args.reverse();
 
                 let callee = self.pop()?;
-                let (instrs, locals_count, c_module_idx, c_chunk_idx) = if let Some(closure) = callee.try_as_closure() {
-                    let chunk_idx = closure.func;
-                    let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
-                    let locals_count = self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
-                    (instrs, locals_count, closure.module_idx, chunk_idx)
-                } else {
-                    return Err(VmError::InvalidOpcode);
-                };
+                let (instrs, locals_count, c_module_idx, c_chunk_idx) =
+                    if let Some(closure) = callee.try_as_closure() {
+                        let chunk_idx = closure.func;
+                        let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
+                        let locals_count =
+                            self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
+                        (instrs, locals_count, closure.module_idx, chunk_idx)
+                    } else {
+                        return Err(VmError::InvalidOpcode);
+                    };
 
                 if args.len() < locals_count {
                     args.resize(locals_count, Value::null());
@@ -74,7 +81,8 @@ impl NyarVM {
 
                 if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
                     let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-                    let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+                    let locals_count =
+                        self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 
                     let mut args = Vec::with_capacity(argc as usize);
                     for _ in 0..argc {
@@ -127,7 +135,12 @@ impl NyarVM {
         }
     }
 
-    fn invoke_primitive_method(&mut self, receiver: Value, name: &str, args: Vec<Value>) -> Result<(), VmError> {
+    fn invoke_primitive_method(
+        &mut self,
+        receiver: Value,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<(), VmError> {
         match name {
             "println" => {
                 for arg in args {
@@ -140,7 +153,8 @@ impl NyarVM {
                     let rhs = args[0];
                     if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
                         self.push(Value::int(l + r));
-                    } else if let (Some(l), Some(r)) = (receiver.try_as_float(), rhs.try_as_float()) {
+                    } else if let (Some(l), Some(r)) = (receiver.try_as_float(), rhs.try_as_float())
+                    {
                         self.push(Value::float(l + r));
                     } else if let (Some(l), Some(r)) = (receiver.try_as_str(), rhs.try_as_str()) {
                         let mut s = l.to_string();

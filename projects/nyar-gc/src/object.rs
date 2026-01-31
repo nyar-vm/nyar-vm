@@ -1,9 +1,9 @@
+use crate::block::{GcBlockHeader, BLOCK_SIZE};
+use crate::collector::VTABLE_REGISTRY;
+use crate::ptr::SendPtr;
+use std::cell::UnsafeCell;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
-use std::cell::UnsafeCell;
-use crate::ptr::SendPtr;
-use crate::block::{BLOCK_SIZE, GcBlockHeader};
-use crate::collector::VTABLE_REGISTRY;
 
 /// A cell that can be used within GC-managed objects to store GC pointers.
 pub struct GcCell<T: Trace + 'static> {

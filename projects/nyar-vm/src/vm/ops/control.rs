@@ -4,7 +4,11 @@ use crate::vm::value::Value;
 use crate::vm::VmError;
 
 impl NyarVM {
-    pub fn execute_control_op(&mut self, ins: Instruction, cur_ip: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_control_op(
+        &mut self,
+        ins: Instruction,
+        cur_ip: usize,
+    ) -> Result<Option<usize>, VmError> {
         match ins {
             Instruction::Jump(off) => {
                 let target = (cur_ip as isize + off as isize) as usize;
@@ -36,13 +40,13 @@ impl NyarVM {
                     }
                 }
                 if self.frames.is_empty() {
-                    // This is handled by the caller of run_loop usually, 
+                    // This is handled by the caller of run_loop usually,
                     // but we need to signal that we returned.
                     // We can't return Value here easily without changing signature.
                     // Let's use a special error or just push it back if we want to continue?
                     // Actually, Instruction::Return is the end of run_loop if frames empty.
                     self.push(val);
-                    Ok(None) 
+                    Ok(None)
                 } else {
                     self.push(val);
                     Ok(None)
@@ -58,15 +62,20 @@ impl NyarVM {
 
             self.local_hotness = self.local_hotness.wrapping_add(1);
             if self.local_hotness == 0 {
-                let gc_count = self.gc.total_collections.load(std::sync::atomic::Ordering::Relaxed);
+                let gc_count = self
+                    .gc
+                    .total_collections
+                    .load(std::sync::atomic::Ordering::Relaxed);
                 if gc_count > self.last_gc_count {
                     self.decay_hotness();
                     self.last_gc_count = gc_count;
                 }
 
                 let chunk = &self.modules[m_idx].chunks[chunk_idx];
-                chunk.hotness.fetch_add(256, std::sync::atomic::Ordering::Relaxed);
-                
+                chunk
+                    .hotness
+                    .fetch_add(256, std::sync::atomic::Ordering::Relaxed);
+
                 if let Some(jit) = self.jit.clone() {
                     if chunk.hotness.load(std::sync::atomic::Ordering::Relaxed) >= 10240 {
                         if let Ok(entry) = jit.osr(self, m_idx, chunk_idx, target as u32) {

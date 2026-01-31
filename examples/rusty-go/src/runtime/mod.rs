@@ -169,7 +169,9 @@ impl MiniGoRuntime {
                     // FFICall expects (constant_idx_of_name, argc)
                     let name_idx = module.constants.len() as u16;
                     module.constants.push(Constant::String(name.clone()));
-                    code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
+                    code.extend_from_slice(
+                        &Instruction::FFICall(name_idx, args.len() as u8).encode(),
+                    );
                 }
             }
             IKunTree::Extension(name, args) => {
