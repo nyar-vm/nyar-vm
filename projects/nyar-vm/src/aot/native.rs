@@ -139,9 +139,11 @@ impl NativeBackend {
         builder: &mut ProgramBuilder,
         data: &mut Vec<u8>,
     ) -> ChomskyResult<()> {
+        let string_offset = data.len();
         data.extend_from_slice(s.as_bytes());
         data.push(0);
         // 为 lpNumberOfBytesWritten 预留 4 字节
+        let written_offset = data.len();
         data.extend_from_slice(&[0, 0, 0, 0]);
 
         // 1. GetStdHandle(STD_OUTPUT_HANDLE = -11)
@@ -160,10 +162,10 @@ impl NativeBackend {
             src: Operand::reg(Register::RAX),
         });
 
-        // lpBuffer (rdx) = [rip + disp32] -> .data start
+        // lpBuffer (rdx) = [rip + disp32] -> string_offset
         builder.add_instruction(Instruction::Lea {
             dst: Register::RDX,
-            displacement: 0,
+            displacement: string_offset as i32,
             rip_relative: true,
         });
 
@@ -173,10 +175,10 @@ impl NativeBackend {
             src: Operand::imm(s.len() as i64, 32),
         });
 
-        // lpNumberOfBytesWritten (r9) = [rip + disp32] -> .data + offset
+        // lpNumberOfBytesWritten (r9) = [rip + disp32] -> written_offset
         builder.add_instruction(Instruction::Lea {
             dst: Register::R9,
-            displacement: 0,
+            displacement: written_offset as i32,
             rip_relative: true,
         });
 

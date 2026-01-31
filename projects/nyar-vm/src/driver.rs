@@ -1,5 +1,5 @@
 use crate::bytecode::compiler::NyarBackend;
-use crate::vm::interpreter::NyarVM;
+use crate::vm::core::NyarVM;
 use nyar_types::{NyarError, NyarFrontend};
 use std::fs;
 use std::path::Path;

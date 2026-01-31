@@ -9,14 +9,12 @@ use oak_go::{ast, GoLanguage, GoLexer, GoParser, GoRoot, GoSyntaxKind};
 #[derive(Default)]
 pub struct MiniGoFrontend;
 
-impl MiniGoFrontend {
-    pub fn new() -> Self {
-        Self
-    }
+impl nyar_types::NyarFrontend for MiniGoFrontend {
+    type Language = GoLanguage;
 
-    pub fn parse(&self, source: &str) -> Result<(EGraph<IKun, ()>, Id), String> {
+    fn parse(&self, source: &str) -> Result<GoRoot, nyar_types::NyarError> {
         let language = GoLanguage::default();
-        let lexer = GoLexer::new(language);
+        let lexer = GoLexer::new(&language);
         let mut session = ParseSession::<GoLanguage>::new(16);
 
         let source_text = SourceText::new(source.to_string());
@@ -24,30 +22,24 @@ impl MiniGoFrontend {
         let lex_output = lexer.lex(&source_text, &[], &mut session);
         let tokens = lex_output
             .result
-            .map_err(|e| format!("Lex error: {:?}", e))?;
+            .map_err(|e| nyar_types::NyarError::Parse(format!("Lex error: {:?}", e)))?;
         session.set_lex_output(oak_core::LexOutput::<GoLanguage> {
             result: Ok(tokens),
             diagnostics: lex_output.diagnostics,
         });
 
-        let parser = GoParser::new(language);
+        let parser = GoParser::new(&language);
         let parse_output = Parser::<GoLanguage>::parse(&parser, &source_text, &[], &mut session);
 
         let green_node = parse_output
             .result
-            .map_err(|e| format!("Parse error: {:?}", e))?;
+            .map_err(|e| nyar_types::NyarError::Parse(format!("Parse error: {:?}", e)))?;
         let red_node = RedNode::new(green_node, 0);
 
-        let mut egraph = EGraph::new();
-        let mut builder = IntentBuilder::new(&mut egraph);
-
-        // Assume source_id 1 for the main file
-        let root_id = self.convert_red_to_uir(&mut builder, red_node, source, 1);
-
-        Ok((egraph, root_id))
+        Ok(GoRoot::new(red_node))
     }
 
-    pub fn lower(&self, ast: &GoRoot) -> Result<IKunTree, nyar_types::NyarError> {
+    fn lower(&self, ast: &GoRoot) -> Result<IKunTree, nyar_types::NyarError> {
         let mut items = vec![];
 
         for decl in &ast.declarations {
@@ -73,6 +65,12 @@ impl MiniGoFrontend {
         }
 
         Ok(IKunTree::Module("mini-go-program".to_string(), items))
+    }
+}
+
+impl MiniGoFrontend {
+    pub fn new() -> Self {
+        Self
     }
 
     fn lower_block(&self, block: &ast::Block) -> Result<IKunTree, nyar_types::NyarError> {

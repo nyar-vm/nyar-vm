@@ -52,7 +52,7 @@ impl NyarVM {
                     Ok(None)
                 }
             }
-            _ => Err(VmError::InvalidOpcode),
+            _ => return Err(VmError::InvalidOpcode),
         }
     }
 

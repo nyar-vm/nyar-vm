@@ -8,7 +8,7 @@ pub struct HandlerFrame {
 }
 
 pub fn perform_effect_internal(
-    vm: &mut crate::vm::interpreter::NyarVM,
+    vm: &mut crate::vm::core::NyarVM,
     module_idx: usize,
     name: String,
     args: Vec<Value>,

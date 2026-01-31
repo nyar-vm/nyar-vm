@@ -95,7 +95,14 @@ impl NyarVM {
         } else {
             self.stack[self.sp] = v
         }
-        self.sp += 1
+        self.sp += 1;
+        
+        // Implicitly check for GC on significant stack growth
+        if self.sp % 256 == 0 {
+            if nyar_gc::runtime::GC_STOP_THE_WORLD.load(std::sync::atomic::Ordering::Acquire) {
+                self.gc.flush_thread_local();
+            }
+        }
     }
 
     pub fn pop(&mut self) -> Result<Value, VmError> {

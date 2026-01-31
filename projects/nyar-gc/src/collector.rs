@@ -789,12 +789,18 @@ impl NyarGc {
     /// This is intended to be called when the system is idle or requires a deep cleanup.
     pub fn full_gc(&self) {
         unsafe {
-            // In a real VM, we would need to capture all thread stacks.
-            // For now, we use a placeholder root marker.
-            self.collect_all(|_ctx| {
-                // TODO: In the actual VM integration, iterate over all registered global roots
-                // and local thread stacks to mark objects.
+            // Request all threads to pause if they are in an async loop
+            crate::runtime::GC_STOP_THE_WORLD.store(true, Ordering::Release);
+            
+            self.collect_all(|ctx| {
+                // 1. Scan roots registered in the current thread
+                crate::stack::scan_thread_roots(ctx);
+                
+                // TODO: In a multi-threaded VM, we would need to wait for other threads
+                // to reach a safepoint/yield and then scan their roots.
             });
+            
+            crate::runtime::GC_STOP_THE_WORLD.store(false, Ordering::Release);
         }
     }
 

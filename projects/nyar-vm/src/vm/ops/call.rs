@@ -118,12 +118,12 @@ impl NyarVM {
 
                 let receiver = self.pop()?;
                 let name = match self.modules[module_idx].constants.get(name_idx as usize) {
-                    Some(Constant::String(s)) => s.as_str(),
+                    Some(Constant::String(s)) => s.clone(),
                     _ => return Err(VmError::InvalidOpcode),
                 };
 
                 if !receiver.is_object() {
-                    self.invoke_primitive_method(receiver, name, args)?;
+                    self.invoke_primitive_method(receiver, &name, args)?;
                 } else {
                     // Object method invocation logic...
                     // For now, let's just push null as a placeholder if not handled
@@ -131,7 +131,7 @@ impl NyarVM {
                 }
                 Ok(None)
             }
-            _ => Err(VmError::InvalidOpcode),
+            _ => return Err(VmError::InvalidOpcode),
         }
     }
 

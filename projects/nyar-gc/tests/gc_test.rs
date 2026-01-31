@@ -174,3 +174,19 @@ fn test_gc_idle_collect() {
     // The collection should have happened
     assert!(gc.allocated_bytes() >= 0);
 }
+
+#[test]
+fn test_stack_root_scanning() {
+    let gc = NyarGc::new();
+    let ptr = gc.alloc(42i64);
+    
+    // Register the pointer as a root on the stack
+    use nyar_gc::stack::StackRootGuard;
+    let _guard = StackRootGuard::new(&ptr);
+    
+    // Trigger full GC, it should scan THREAD_ROOTS automatically
+    gc.full_gc();
+    
+    // The pointer should still be valid
+    assert_eq!(*ptr, 42);
+}

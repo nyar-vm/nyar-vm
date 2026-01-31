@@ -4,6 +4,7 @@ pub mod ffi;
 pub mod object;
 pub mod ptr;
 pub mod runtime;
+pub mod stack;
 pub mod tlab;
 
 pub use nyar_gc_derive::Trace;

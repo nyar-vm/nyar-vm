@@ -172,6 +172,7 @@ impl GcBlock {
                                 padding_ptr,
                                 GcHeader {
                                     type_and_flags: AtomicU32::new(type_and_flags),
+                                    next_offset: AtomicU32::new(0),
                                 },
                             );
                         }

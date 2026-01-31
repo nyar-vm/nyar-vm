@@ -140,14 +140,30 @@ impl NyarVM {
 
     pub fn run_loop(&mut self) -> Result<Value, VmError> {
         let mut loop_count = 0u64;
+        
+        // Use StackRootGuard to register VM as a root
+        use nyar_gc::stack::StackRootGuard;
+        let _vm_root = StackRootGuard::new(self);
+        
         loop {
             loop_count += 1;
-            if loop_count > 10_000_000 {
-                let err = VmError::RuntimeError(
-                    "Maximum instruction limit exceeded (potential infinite loop)".to_string(),
-                );
-                self.print_traceback(&err);
-                return Err(err);
+            
+            // Periodically check for GC requests (Cooperative Safepoint)
+            if loop_count % 1024 == 0 {
+                if nyar_gc::runtime::GC_STOP_THE_WORLD.load(std::sync::atomic::Ordering::Acquire) {
+                    // If GC requested a stop, we flush TLAB and potentially wait
+                    self.gc.flush_thread_local();
+                    // In a multi-threaded VM, we might want to park the thread here
+                    // For now, we just ensure data is visible to GC
+                }
+                
+                if loop_count > 10_000_000 {
+                    let err = VmError::RuntimeError(
+                        "Maximum instruction limit exceeded (potential infinite loop)".to_string(),
+                    );
+                    self.print_traceback(&err);
+                    return Err(err);
+                }
             }
 
             let (cur_ip, module_idx) = {
@@ -187,7 +203,7 @@ impl NyarVM {
         }
     }
 
-    fn dispatch_instruction(
+    pub(crate) fn dispatch_instruction(
         &mut self,
         ins: Instruction,
         cur_ip: usize,

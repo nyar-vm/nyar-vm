@@ -1,6 +1,11 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
+
+/// A global flag to request all threads to pause for GC.
+/// In an async context, this is used for cooperative yielding.
+pub static GC_STOP_THE_WORLD: AtomicBool = AtomicBool::new(false);
 
 /// A wrapper for futures that ensures GC state is handled correctly during task switches.
 pub struct GcRuntimeFuture<'a, F: Future> {
@@ -18,21 +23,34 @@ impl<'a, F: Future> Future for GcRuntimeFuture<'a, F> {
     type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Before polling, we could register this task's stack as a root.
-        // After polling, if it returns Pending, we flush the thread-local buffers
-        // to ensure that any objects marked during the task's execution are visible to GC.
-        
+        // 1. Check if GC requested a pause
+        if GC_STOP_THE_WORLD.load(Ordering::Acquire) {
+            // Cooperative yield: if GC is marking/sweeping and needs STW,
+            // we yield the current task to allow GC to proceed.
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
+        }
+
         let gc = self.gc;
         let inner = unsafe { self.map_unchecked_mut(|s| &mut s.inner) };
         let result = inner.poll(cx);
-        
+
         if result.is_pending() {
             // Task is being suspended, flush local state to ensure GC visibility
-            // This is crucial for incremental/concurrent GC.
             gc.flush_thread_local();
         }
-        
+
         result
+    }
+}
+
+/// Helper to check if the current task should yield for GC.
+/// This should be called in hot loops within async tasks.
+#[cfg(feature = "tokio")]
+#[inline(always)]
+pub async fn yield_now_for_gc() {
+    if GC_STOP_THE_WORLD.load(Ordering::Acquire) {
+        tokio::task::yield_now().await;
     }
 }
 
