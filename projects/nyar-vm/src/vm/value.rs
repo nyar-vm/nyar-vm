@@ -1,3 +1,4 @@
+use crate::bytecode::instruction::Instruction;
 use num_bigint::BigInt as NativeBigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
 use nyar_gc::{GcBox, GcHeader, MarkContext, NyarGc, Trace};
@@ -109,6 +110,18 @@ impl Trace for Continuation {
     fn trace(&self, ctx: &mut MarkContext) {
         for val in &self.stack_slice {
             val.trace(ctx);
+        }
+        for frame in &self.frames {
+            frame.trace(ctx);
+        }
+    }
+}
+
+impl Trace for Frame {
+    fn trace(&self, ctx: &mut MarkContext) {
+        self.closure.trace(ctx);
+        for local in &self.locals {
+            local.trace(ctx);
         }
     }
 }
@@ -540,8 +553,12 @@ impl Value {
         let g = gc.alloc(TraitObject { data, witness });
         Self::encode(ValueTag::TraitObject, g.as_ptr() as u64)
     }
-    pub fn continuation(ip: usize, stack_slice: Vec<Value>, gc: &NyarGc) -> Self {
-        let g = gc.alloc(Continuation { ip, stack_slice });
+    pub fn continuation(ip: usize, stack_slice: Vec<Value>, frames: Vec<Frame>, gc: &NyarGc) -> Self {
+        let g = gc.alloc(Continuation {
+            ip,
+            stack_slice,
+            frames,
+        });
         Self::encode(ValueTag::Continuation, g.as_ptr() as u64)
     }
     pub fn as_int(&self) -> i64 {
@@ -740,6 +757,17 @@ pub struct Object {
 pub struct Continuation {
     pub ip: usize,
     pub stack_slice: Vec<Value>,
+    pub frames: Vec<Frame>,
+}
+
+#[derive(Clone)]
+pub struct Frame {
+    pub instrs: std::sync::Arc<Vec<Instruction>>,
+    pub ip: usize,
+    pub locals: Vec<Value>,
+    pub closure: Value,
+    pub module_idx: usize,
+    pub chunk_idx: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

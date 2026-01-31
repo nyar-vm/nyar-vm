@@ -1,5 +1,4 @@
-use crate::vm::core::NyarVM;
-use crate::vm::value::Value;
+use crate::vm::value::{Value, Frame};
 use crate::vm::VmError;
 
 impl NyarVM {
@@ -17,16 +16,17 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_splice(&mut self) -> Result<Option<usize>, VmError> {
-        // Splice takes a Value and injects it into the current quote context.
-        // This is complex and usually handled during macro expansion or quote evaluation.
-        // For now, it's a no-op that pops the value.
-        let _val = self.pop()?;
+        // Splice takes a value and returns it. In a more advanced implementation,
+        // this might involve code generation or AST manipulation.
+        // For now, it just ensures the value on stack is treated as part of the current execution.
+        let val = self.pop()?;
+        self.push(val)?;
         Ok(None)
     }
 
     #[inline(always)]
-    pub fn execute_eval(&mut self, _argc: u8) -> Result<Option<usize>, VmError> {
-        // Eval takes a Value (code/AST) and executes it.
+    pub fn execute_eval(&mut self, argc: u8) -> Result<Option<usize>, VmError> {
+        // Eval takes a Value (code/AST) and executes it with optional arguments.
         let val = self.pop()?;
         if val.tag() == crate::vm::value::ValueTag::Code {
             let code = unsafe {
@@ -41,10 +41,21 @@ impl NyarVM {
             let chunk = &self.modules[module_idx].chunks[chunk_idx];
             
             let mut locals = vec![Value::null(); chunk.locals as usize];
-            // If we have argc, we might want to pass arguments to the eval'd code.
-            // For now, let's just use empty locals or nulls.
             
-            let new_frame = crate::vm::core::Frame {
+            // Pop argc arguments from stack and put into locals
+            let mut args = Vec::with_capacity(argc as usize);
+            for _ in 0..argc {
+                args.push(self.pop()?);
+            }
+            args.reverse();
+            
+            for (i, arg) in args.into_iter().enumerate() {
+                if i < locals.len() {
+                    locals[i] = arg;
+                }
+            }
+            
+            let new_frame = Frame {
                 instrs,
                 ip: 0,
                 locals,

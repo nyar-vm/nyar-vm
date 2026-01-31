@@ -2,19 +2,10 @@ use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::NyarcModule;
 use crate::vm::effects::HandlerFrame;
 use crate::vm::ffi::FFIRegistry;
-use crate::vm::value::Value;
+use crate::vm::value::{Value, Frame};
 use crate::vm::VmError;
 use nyar_gc::{MarkContext, NyarGc, Trace};
 
-#[derive(Clone)]
-pub struct Frame {
-    pub instrs: std::sync::Arc<Vec<Instruction>>,
-    pub ip: usize,
-    pub locals: Vec<Value>,
-    pub closure: Value,
-    pub module_idx: usize,
-    pub chunk_idx: Option<usize>,
-}
 
 pub trait JitProvider: Send + Sync {
     fn try_execute(
@@ -56,10 +47,7 @@ impl Trace for NyarVM {
             self.stack[i].trace(ctx);
         }
         for frame in &self.frames {
-            frame.closure.trace(ctx);
-            for local in &frame.locals {
-                local.trace(ctx);
-            }
+            frame.trace(ctx);
         }
         for builtin in self.builtins.values() {
             builtin.trace(ctx);
