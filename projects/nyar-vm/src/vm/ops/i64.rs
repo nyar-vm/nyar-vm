@@ -136,7 +136,8 @@ impl NyarVM {
                 let r = (v.as_int() as u64) as f64;
                 self.push(Value::float(r));
             }
-            _ => Err(VmError::InvalidOpcode),
+            _ => return Err(VmError::InvalidOpcode),
         }
+        Ok(())
     }
 }

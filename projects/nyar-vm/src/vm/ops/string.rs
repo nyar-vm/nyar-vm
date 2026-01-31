@@ -89,7 +89,8 @@ impl NyarVM {
                 };
                 self.push(Value::string(sub, &self.gc));
             }
-            _ => Err(VmError::InvalidOpcode),
+            _ => return Err(VmError::InvalidOpcode),
         }
+        Ok(())
     }
 }

@@ -151,6 +151,8 @@ impl NyarJit {
                 &mut vm.sp as *mut usize,
                 frame.locals.as_mut_ptr(),
                 &mut frame.ip as *mut usize,
+                frame.closure,
+                vm as *mut NyarVM,
             );
 
             match res_code {
@@ -343,6 +345,31 @@ impl NyarJit {
                         intents.push(IKun::Extension("osr_exit".to_string(), vec![const_id]));
                     } else {
                         intents.push(IKun::Extension("jump".to_string(), vec![const_id]));
+                    }
+                }
+                Instruction::JumpIfTrue(off) => {
+                    if let Some(cond) = stack.pop() {
+                        let target = (current_pos + off as i64) as u32;
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(target as i64));
+                        if target < start_offset as u32 {
+                            // jump_if_true target < start => if cond then osr_exit else continue
+                            let next_pos = decoder.position() as u32;
+                            let next_label_id = intents.len();
+                            intents.push(IKun::Constant(next_pos as i64));
+
+                            // if !cond goto next_label
+                            // osr_exit target
+                            // next_label:
+                            intents.push(IKun::Extension("jump_if_false".to_string(), vec![cond, next_label_id]));
+                            intents.push(IKun::Extension("osr_exit".to_string(), vec![const_id]));
+                            intents.push(IKun::Extension(format!("label_{}", next_pos), vec![]));
+                        } else {
+                            intents.push(IKun::Extension(
+                                "jump_if_true".to_string(),
+                                vec![cond, const_id],
+                            ));
+                        }
                     }
                 }
                 Instruction::JumpIfFalse(off) => {

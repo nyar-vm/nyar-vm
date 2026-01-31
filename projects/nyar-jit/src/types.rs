@@ -35,11 +35,13 @@ unsafe impl Send for CompiledCode {}
 unsafe impl Sync for CompiledCode {}
 
 /// The function signature for JIT-compiled code.
-pub type JitEntry = unsafe extern "C" fn(
+pub type JitEntry = unsafe extern "win64" fn(
     stack_ptr: *mut Value,
     sp: *mut usize,
     locals_ptr: *mut Value,
     ip_ptr: *mut usize,
+    closure: Value,
+    vm_ptr: *mut nyar_vm::vm::interpreter::NyarVM,
 ) -> i32;
 
 /// Metadata for a single deoptimization point.

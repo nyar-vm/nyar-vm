@@ -42,6 +42,8 @@ pub enum VmError {
     UnhandledError,
     #[error("Runtime error: {0}")]
     RuntimeError(String),
+    #[error("Division by zero")]
+    DivisionByZero,
 }
 
 #[derive(Debug, Error)]

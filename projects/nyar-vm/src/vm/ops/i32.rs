@@ -162,7 +162,8 @@ impl NyarVM {
                 let r = (v.as_int() as u64) as u32;
                 self.push(Value::int(r as i64));
             }
-            _ => Err(VmError::InvalidOpcode),
+            _ => return Err(VmError::InvalidOpcode),
         }
+        Ok(())
     }
 }

@@ -308,18 +308,16 @@ impl NyarGc {
         }
     }
 
-    /// Flush the current thread's TLAB and mark buffers.
+    /// Get total allocated bytes.
+    pub fn allocated_bytes(&self) -> usize {
+        self.allocated_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Flush all thread-local mark buffers and allocation states.
     pub fn flush_thread_local(&self) {
         crate::tlab::THREAD_TLAB.with(|tlab_cell| {
             let tlab = unsafe { &mut *tlab_cell.get() };
-            // 1. Flush mark buffer to global stack
-            if !tlab.mark_buffer.is_empty() {
-                let mut global_stack = self.mark_stack.lock().unwrap();
-                global_stack.extend(tlab.mark_buffer.drain(..));
-                self.mark_condvar.notify_all();
-            }
-            // 2. Return remaining TLAB space to blocks? 
-            // For now we just keep it, but in a moving GC we would retire it.
+            self.flush_mark_buffer(tlab);
         });
     }
 
@@ -785,6 +783,20 @@ impl NyarGc {
                 });
             }
         });
+    }
+
+    /// Trigger a full blocking garbage collection.
+    /// This is intended to be called when the system is idle or requires a deep cleanup.
+    /// Reference: Unity's System.GC.Collect()
+    pub fn collect(&self) {
+        unsafe {
+            // In a real VM, we would need to capture all thread stacks.
+            // For now, we use a placeholder root marker.
+            self.collect_all(|_ctx| {
+                // TODO: In the actual VM integration, iterate over all registered global roots
+                // and local thread stacks to mark objects.
+            });
+        }
     }
 
     pub unsafe fn collect_all<F>(&self, mark_roots: F)

@@ -46,6 +46,45 @@ pub trait Trace {
     fn trace(&self, ctx: &mut MarkContext<'_>);
 }
 
+impl Trace for i32 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for u32 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for i64 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for u64 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for f32 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for f64 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for bool {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for String {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl<T: Trace> Trace for Option<T> {
+    fn trace(&self, ctx: &mut MarkContext<'_>) {
+        if let Some(inner) = self {
+            inner.trace(ctx);
+        }
+    }
+}
+impl<T: Trace> Trace for Vec<T> {
+    fn trace(&self, ctx: &mut MarkContext<'_>) {
+        for item in self {
+            item.trace(ctx);
+        }
+    }
+}
+
 /// Context used during the marking phase of GC.
 pub struct MarkContext<'a> {
     pub(crate) mark_stack: &'a mut Vec<SendPtr<GcHeader>>,
@@ -249,29 +288,3 @@ impl<T: Trace + 'static> Trace for Gc<T> {
 }
 
 // Implement Trace for common types
-impl Trace for i64 {
-    fn trace(&self, _ctx: &mut MarkContext) {}
-}
-impl Trace for f64 {
-    fn trace(&self, _ctx: &mut MarkContext) {}
-}
-impl Trace for bool {
-    fn trace(&self, _ctx: &mut MarkContext) {}
-}
-impl Trace for String {
-    fn trace(&self, _ctx: &mut MarkContext) {}
-}
-impl<T: Trace> Trace for Vec<T> {
-    fn trace(&self, ctx: &mut MarkContext) {
-        for item in self {
-            item.trace(ctx);
-        }
-    }
-}
-impl<T: Trace> Trace for Option<T> {
-    fn trace(&self, ctx: &mut MarkContext) {
-        if let Some(inner) = self {
-            inner.trace(ctx);
-        }
-    }
-}

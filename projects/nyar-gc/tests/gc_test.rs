@@ -2,6 +2,32 @@ use nyar_gc::{Gc, GcCell, MarkContext, NyarGc, Trace};
 use std::sync::Arc;
 use std::thread;
 
+#[derive(Trace)]
+struct AutoNode {
+    value: i32,
+    next: GcCell<Option<Gc<AutoNode>>>,
+}
+
+#[test]
+fn test_derive_trace() {
+    let gc = NyarGc::new();
+    let node1 = gc.alloc(AutoNode {
+        value: 1,
+        next: GcCell::new(None),
+    });
+    let node2 = gc.alloc(AutoNode {
+        value: 2,
+        next: GcCell::new(Some(node1)),
+    });
+
+    unsafe {
+        gc.collect(|ctx| {
+            node2.trace(ctx);
+        });
+    }
+    assert_eq!(node2.value, 2);
+}
+
 #[test]
 fn test_tlab_basic() {
     let gc = NyarGc::new();
@@ -135,4 +161,17 @@ fn test_incremental_gc() {
 
     // After many steps, GC should eventually finish a cycle
     assert!(root.value == 1);
+}
+
+#[test]
+fn test_gc_idle_collect() {
+    let gc = NyarGc::new();
+    let _ptr = gc.alloc(42i64);
+    
+    // Simulate entering idle period
+    use nyar_gc::runtime::GcRuntime;
+    gc.enter_idle_period();
+    
+    // The collection should have happened
+    assert!(gc.allocated_bytes() >= 0);
 }

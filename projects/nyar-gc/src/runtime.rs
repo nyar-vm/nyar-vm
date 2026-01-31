@@ -43,6 +43,10 @@ pub trait GcRuntime {
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static;
+
+    /// Notify the GC that the VM is currently in an idle state.
+    /// This can trigger a full collection or more aggressive incremental steps.
+    fn enter_idle_period(&self);
 }
 
 impl GcRuntime for crate::NyarGc {
@@ -52,5 +56,11 @@ impl GcRuntime for crate::NyarGc {
         F::Output: Send + 'static,
     {
         GcRuntimeFuture::new(self, future)
+    }
+
+    fn enter_idle_period(&self) {
+        // When the VM enters an idle period (e.g., waiting for user input or frame sync),
+        // we can perform a full GC to reduce heap pressure and fragmentation.
+        self.trigger_full_gc();
     }
 }

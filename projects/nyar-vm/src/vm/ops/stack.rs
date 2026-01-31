@@ -77,7 +77,7 @@ impl NyarVM {
                 };
                 self.builtins.insert(name, v);
             }
-            _ => Err(VmError::InvalidOpcode),
+            _ => return Err(VmError::InvalidOpcode),
         }
         Ok(())
     }

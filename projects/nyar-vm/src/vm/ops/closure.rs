@@ -48,7 +48,7 @@ impl NyarVM {
                     return Err(VmError::IndexOutOfBounds);
                 }
             }
-            _ => Err(VmError::InvalidOpcode),
+            _ => return Err(VmError::InvalidOpcode),
         }
         Ok(())
     }

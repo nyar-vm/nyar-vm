@@ -123,7 +123,8 @@ impl NyarVM {
                 let s = b.0.to_string();
                 self.push(Value::string(s, &self.gc));
             }
-            _ => Err(VmError::InvalidOpcode),
+            _ => return Err(VmError::InvalidOpcode),
         }
+        Ok(())
     }
 }
