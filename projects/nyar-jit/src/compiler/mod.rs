@@ -361,17 +361,27 @@ impl NyarJit {
                 }
                 Instruction::JumpIfNull(off) => {
                     if let Some(val) = stack.pop() {
-                        // For simplicity, we can implement jump_if_null as:
-                        // cond = is_null(val)
-                        // jump_if_true(cond, target)
-                        // But let's add a direct extension for now.
                         let target = (current_pos + off as i64) as u32;
                         let const_id = intents.len();
                         intents.push(IKun::Constant(target as i64));
-                        intents.push(IKun::Extension(
-                            "jump_if_null".to_string(),
-                            vec![val, const_id],
-                        ));
+                        if target < start_offset as u32 {
+                            // jump_if_null target < start => if val is null then osr_exit else continue
+                            let next_pos = decoder.position() as u32;
+                            let next_label_id = intents.len();
+                            intents.push(IKun::Constant(next_pos as i64));
+
+                            // if val is NOT null goto next_label
+                            // osr_exit target
+                            // next_label:
+                            intents.push(IKun::Extension("jump_if_not_null".to_string(), vec![val, next_label_id]));
+                            intents.push(IKun::Extension("osr_exit".to_string(), vec![const_id]));
+                            intents.push(IKun::Extension(format!("label_{}", next_pos), vec![]));
+                        } else {
+                            intents.push(IKun::Extension(
+                                "jump_if_null".to_string(),
+                                vec![val, const_id],
+                            ));
+                        }
                     }
                 }
                 Instruction::Push(idx) => {

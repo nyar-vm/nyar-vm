@@ -1,7 +1,7 @@
 use crate::object::GcHeader;
 use std::alloc::{self, Layout};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 pub const BLOCK_SIZE: usize = 1024 * 1024; // 1MB blocks
 pub const MARK_BITMAP_WORDS: usize = (BLOCK_SIZE / 16) / 64;
@@ -12,6 +12,8 @@ pub struct GcBlockHeader {
     pub cursor: AtomicUsize,
     pub live_bytes: AtomicUsize,
     pub next: AtomicPtr<GcBlockHeader>,
+    /// State of the block: 0 = normal, 1 = needs sweep
+    pub state: AtomicU8,
     /// Mark bitmap for this block. Each bit represents 16 bytes.
     /// 1 = marked, 0 = unmarked.
     pub mark_bitmap: [AtomicU64; MARK_BITMAP_WORDS],
@@ -124,6 +126,7 @@ impl GcBlock {
             (*header)
                 .next
                 .store(std::ptr::null_mut(), Ordering::Relaxed);
+            (*header).state.store(0, Ordering::Relaxed);
             for word in (*header).mark_bitmap.iter() {
                 word.store(0, Ordering::Relaxed);
             }

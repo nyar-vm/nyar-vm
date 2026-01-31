@@ -437,9 +437,25 @@ impl NyarGc {
     }
 
     pub fn refill_tlab(&self, tlab: &mut Tlab, layout: Layout) -> *mut u8 {
-        // Try to get a new chunk from existing blocks
-        let tlab_layout = Layout::from_size_align(TLAB_SIZE, 8).unwrap();
+        let tlab_layout = Layout::from_size_align(TLAB_SIZE, 16).unwrap();
 
+        // If we are in sweeping state, try to find a block that needs sweeping
+        if self.get_state() == GcState::Sweeping {
+            let mut curr = self.blocks_head.load(Ordering::Acquire);
+            while !curr.is_null() {
+                unsafe {
+                    if (*curr).state.load(Ordering::Acquire) == 1 {
+                        self.sweep_block(curr);
+                        // After sweeping, some free list entries might be available.
+                        // However, the current thread is already in refill_tlab, 
+                        // so we might as well continue to find a block or allocate new.
+                    }
+                    curr = (*curr).get_next();
+                }
+            }
+        }
+
+        // Try to find space in existing blocks
         let mut curr = self.blocks_head.load(Ordering::Acquire);
         while !curr.is_null() {
             unsafe {
@@ -698,7 +714,20 @@ impl NyarGc {
                             // Take some work
                             let len = global_stack.len();
                             let take_count = ((len + 1) / 2).min(128);
-                            local_stack.extend(global_stack.drain(len - take_count..));
+                            let start = len - take_count;
+
+                            #[cfg(target_arch = "x86_64")]
+                            {
+                                use std::arch::x86_64::_mm_prefetch;
+                                for i in 0..take_count.min(8) {
+                                    let p = global_stack[start + i].0.as_ptr();
+                                    unsafe {
+                                        _mm_prefetch(p as *const i8, std::arch::x86_64::_MM_HINT_T0);
+                                    }
+                                }
+                            }
+
+                            local_stack.extend(global_stack.drain(start..));
                         }
 
                         // 2. Process local stack
@@ -706,6 +735,18 @@ impl NyarGc {
                         unsafe {
                             while !local_stack.is_empty() {
                                 let ptr = local_stack.pop().unwrap();
+
+                                #[cfg(target_arch = "x86_64")]
+                                if let Some(next) = local_stack.last() {
+                                    use std::arch::x86_64::_mm_prefetch;
+                                    unsafe {
+                                        _mm_prefetch(
+                                            next.0.as_ptr() as *const i8,
+                                            std::arch::x86_64::_MM_HINT_T0,
+                                        );
+                                    }
+                                }
+
                                 let header = ptr.as_ref();
                                 {
                                     let mut ctx = MarkContext {
@@ -775,9 +816,21 @@ impl NyarGc {
         });
         self.parallel_mark();
 
-        // 4. Sweep everything
+        // 4. Start concurrent/lazy sweeping
         self.set_state(GcState::Sweeping);
-        self.sweep_all();
+        // Mark all blocks as needing sweep
+        let mut block_curr = self.blocks_head.load(Ordering::Acquire);
+        while !block_curr.is_null() {
+            unsafe {
+                (*block_curr).state.store(1, Ordering::Release);
+                block_curr = (*block_curr).get_next();
+            }
+        }
+
+        // Synchronously sweep large objects (they don't support lazy sweep yet)
+        unsafe {
+            self.sweep_all();
+        }
 
         // 5. Adjust threshold (Adaptive based on live bytes)
         let live_bytes = self.allocated_bytes.load(Ordering::Relaxed);
@@ -790,27 +843,34 @@ impl NyarGc {
         self.set_state(GcState::Idle);
     }
 
-    pub unsafe fn sweep_all(&self) {
-        // Sweep blocks
-        let mut block_ptr = self.blocks_head.load(Ordering::Acquire);
-        while !block_ptr.is_null() {
-            let block = &*block_ptr;
-            for header_ptr in block.iter_objects() {
-                let header = &*header_ptr;
-                let size = header.size();
-
-                let marked = block.is_marked(header);
-                if marked {
-                    block.live_bytes.fetch_add(size, Ordering::Relaxed);
-                } else {
-                    self.allocated_bytes.fetch_sub(size, Ordering::SeqCst);
-                    self.free_object(NonNull::new_unchecked(header_ptr));
-                }
-            }
-            block_ptr = block.get_next();
+    pub unsafe fn sweep_block(&self, block_ptr: *mut GcBlockHeader) {
+        let block = &*block_ptr;
+        // Check if another thread already started sweeping this block
+        if block
+            .state
+            .compare_exchange(1, 2, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
         }
 
-        // Sweep large objects
+        for header_ptr in block.iter_objects() {
+            let header = &*header_ptr;
+            let size = header.size();
+
+            let marked = block.is_marked(header);
+            if marked {
+                block.live_bytes.fetch_add(size, Ordering::Relaxed);
+            } else {
+                self.allocated_bytes.fetch_sub(size, Ordering::SeqCst);
+                self.free_object(NonNull::new_unchecked(header_ptr));
+            }
+        }
+        block.state.store(0, Ordering::Release);
+    }
+
+    pub unsafe fn sweep_all(&self) {
+        // Sweep large objects (STW for now, they are few)
         let mut prev: *mut LargeObjectHeader = std::ptr::null_mut();
         let mut curr = self.large_head.load(Ordering::Acquire);
 
@@ -952,6 +1012,14 @@ impl NyarGc {
                 }
                 if ctx.mark_stack.is_empty() {
                     self.set_state(GcState::Sweeping);
+                    // Mark all blocks as needing sweep for lazy/concurrent sweepers
+                    let mut block_curr = self.blocks_head.load(Ordering::Acquire);
+                    while !block_curr.is_null() {
+                        unsafe {
+                            (*block_curr).state.store(1, Ordering::Release);
+                            block_curr = (*block_curr).get_next();
+                        }
+                    }
                 }
             }
             GcState::Sweeping => {
@@ -962,6 +1030,12 @@ impl NyarGc {
                     let block_ptr = sweep.block_curr.load(Ordering::Acquire);
                     if !block_ptr.is_null() {
                         let block = &*block_ptr;
+                        
+                        // Try to take ownership of sweeping this block if we just started it
+                        if sweep.block_cursor.load(Ordering::Acquire) == std::mem::size_of::<GcBlockHeader>() {
+                            let _ = block.state.compare_exchange(1, 2, Ordering::SeqCst, Ordering::Relaxed);
+                        }
+
                         let cursor = sweep.block_cursor.load(Ordering::Acquire);
                         let limit = block.cursor.load(Ordering::Acquire);
 
@@ -996,6 +1070,7 @@ impl NyarGc {
                             sweep.block_cursor.store(cursor + size, Ordering::Release);
                         } else {
                             // Finished this block, move to next
+                            block.state.store(0, Ordering::Release);
                             sweep.block_curr.store(block.get_next(), Ordering::Release);
                             sweep
                                 .block_cursor
