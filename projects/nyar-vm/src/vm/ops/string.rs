@@ -5,7 +5,7 @@ use crate::vm::VmError;
 impl NyarVM {
     #[inline(always)]
     pub fn execute_string_const(&mut self, s: String) -> Result<Option<usize>, VmError> {
-        self.push(Value::string(s, &self.gc));
+        self.push(Value::string(s, &self.gc))?;
         Ok(None)
     }
 
@@ -16,7 +16,7 @@ impl NyarVM {
         let l = lhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
         let r = rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
         let result = format!("{}{}", l, r);
-        self.push(Value::string(result, &self.gc));
+        self.push(Value::string(result, &self.gc))?;
         Ok(None)
     }
 
@@ -24,7 +24,7 @@ impl NyarVM {
     pub fn execute_string_len_bytes(&mut self) -> Result<Option<usize>, VmError> {
         let v = self.pop()?;
         let n = v.try_as_str().ok_or(VmError::InvalidOpcode)?.len() as i64;
-        self.push(Value::int(n));
+        self.push(Value::int(n))?;
         Ok(None)
     }
 
@@ -32,7 +32,7 @@ impl NyarVM {
     pub fn execute_string_len_chars(&mut self) -> Result<Option<usize>, VmError> {
         let v = self.pop()?;
         let n = v.try_as_str().ok_or(VmError::InvalidOpcode)?.chars().count() as i64;
-        self.push(Value::int(n));
+        self.push(Value::int(n))?;
         Ok(None)
     }
 
@@ -41,7 +41,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? == rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -50,7 +50,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? != rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -59,7 +59,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? < rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -68,7 +68,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? <= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -77,7 +77,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? > rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -86,7 +86,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = lhs.try_as_str().ok_or(VmError::InvalidOpcode)? >= rhs.try_as_str().ok_or(VmError::InvalidOpcode)?;
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -101,7 +101,7 @@ impl NyarVM {
         let end = start.saturating_add(len);
         let end = end.min(s.len());
         let sub = if start <= end { s[start..end].to_string() } else { String::new() };
-        self.push(Value::string(sub, &self.gc));
+        self.push(Value::string(sub, &self.gc))?;
         Ok(None)
     }
 }

@@ -5,7 +5,7 @@ use crate::vm::VmError;
 
 impl NyarVM {
     #[inline(always)]
-    pub fn execute_jump(&mut self, off: i32, cur_ip: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_jump(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, VmError> {
         let target = (cur_ip as isize + off as isize) as usize;
         if off < 0 {
             self.handle_backedge(target)?;
@@ -14,9 +14,23 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_jump_if_false(&mut self, off: i32, cur_ip: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_jump_if_false(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, VmError> {
         let v = self.pop()?;
         if !v.is_truthy() {
+            let target = (cur_ip as isize + off as isize) as usize;
+            if off < 0 {
+                self.handle_backedge(target)?;
+            }
+            Ok(Some(target))
+        } else {
+            Ok(Some(cur_ip + 1))
+        }
+    }
+
+    #[inline(always)]
+    pub fn execute_jump_if_null(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, VmError> {
+        let v = self.pop()?;
+        if v.is_null() {
             let target = (cur_ip as isize + off as isize) as usize;
             if off < 0 {
                 self.handle_backedge(target)?;
@@ -38,7 +52,7 @@ impl NyarVM {
                 break;
             }
         }
-        self.push(val);
+        self.push(val)?;
         Ok(None)
     }
 
@@ -71,7 +85,7 @@ impl NyarVM {
                                     // This is tricky, JIT finished the whole function.
                                     // We might need a way to exit run_loop.
                                     // For now, let's just push and signal.
-                                    self.push(val);
+                                    self.push(val)?;
                                     return Ok(());
                                 }
                                 Ok(None) => return Ok(()),

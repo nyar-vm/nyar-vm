@@ -141,7 +141,7 @@ impl NyarVM {
         } else {
             // Object method invocation logic...
             // For now, let's just push null as a placeholder if not handled
-            self.push(Value::null());
+            self.push(Value::null())?;
         }
         Ok(None)
     }
@@ -157,29 +157,29 @@ impl NyarVM {
                 for arg in args {
                     self.print_line(&arg.to_string());
                 }
-                self.push(Value::null());
+                self.push(Value::null())?;
             }
             "add" => {
                 if args.len() == 1 {
                     let rhs = args[0];
                     if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
-                        self.push(Value::int(l + r));
+                        self.push(Value::int(l + r))?;
                     } else if let (Some(l), Some(r)) = (receiver.try_as_float(), rhs.try_as_float())
                     {
-                        self.push(Value::float(l + r));
+                        self.push(Value::float(l + r))?;
                     } else if let (Some(l), Some(r)) = (receiver.try_as_str(), rhs.try_as_str()) {
                         let mut s = l.to_string();
                         s.push_str(r);
-                        self.push(Value::string(s, &self.gc));
+                        self.push(Value::string(s, &self.gc))?;
                     } else {
-                        self.push(Value::null());
+                        self.push(Value::null())?;
                     }
                 } else {
-                    self.push(Value::null());
+                    self.push(Value::null())?;
                 }
             }
             _ => {
-                self.push(Value::null());
+                self.push(Value::null())?;
             }
         }
         Ok(())
