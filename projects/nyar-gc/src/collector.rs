@@ -7,9 +7,11 @@ use crate::tlab::{Tlab, TLAB_SIZE};
 use std::alloc::{self, Layout};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 
-pub static VTABLE_REGISTRY: Mutex<Vec<SendPtr<GcVTable>>> = Mutex::new(Vec::new());
+pub static VTABLE_REGISTRY: [AtomicPtr<GcVTable>; 65536] =
+    [const { AtomicPtr::new(std::ptr::null_mut()) }; 65536];
+pub static VTABLE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 pub const SIZE_CLASSES: [usize; 10] = [16, 32, 48, 64, 128, 256, 512, 1024, 2048, 4096];
 
@@ -31,6 +33,8 @@ pub struct NyarGc {
     pub blocks_head: AtomicPtr<GcBlockHeader>,
     /// Mark stack for bitmapped marking.
     pub mark_stack: Mutex<Vec<SendPtr<GcHeader>>>,
+    /// Condvar for parallel marking synchronization.
+    pub mark_condvar: Condvar,
     /// Current state of the GC.
     pub state: AtomicU8,
     pub sweep_state: Mutex<SweepState>,
@@ -44,6 +48,8 @@ pub struct NyarGc {
     pub post_collect: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Total number of collection cycles performed.
     pub total_collections: AtomicU64,
+    /// Number of threads to use for parallel marking.
+    pub marking_threads: usize,
 }
 
 #[repr(transparent)]
@@ -230,31 +236,38 @@ impl NyarGc {
     }
 
     pub fn get_type_info<T: Trace + 'static>() -> (u16, *const GcVTable) {
-        let mut registry = VTABLE_REGISTRY.lock().unwrap();
         let vtable_ptr = Self::get_vtable::<T>();
 
-        if let Some(pos) = registry
-            .iter()
-            .position(|&p| p.as_ptr() as *const GcVTable == vtable_ptr)
-        {
-            (pos as u16, vtable_ptr)
-        } else {
-            let id = registry.len() as u16;
-            registry.push(SendPtr(NonNull::new(vtable_ptr as *mut GcVTable).unwrap()));
-            (id, vtable_ptr)
+        // Linear search in the registry (usually few types)
+        let count = VTABLE_COUNT.load(Ordering::Acquire);
+        for i in 0..count {
+            if VTABLE_REGISTRY[i].load(Ordering::Acquire) == vtable_ptr as *mut GcVTable {
+                return (i as u16, vtable_ptr);
+            }
         }
+
+        // Not found, add it
+        let id = VTABLE_COUNT.fetch_add(1, Ordering::SeqCst);
+        if id >= 65536 {
+            panic!("Too many types registered in GC");
+        }
+        VTABLE_REGISTRY[id].store(vtable_ptr as *mut GcVTable, Ordering::Release);
+        (id as u16, vtable_ptr)
     }
 
     pub fn new() -> Self {
         // Ensure Type ID 0 is reserved for padding/empty slots
         {
-            let mut registry = VTABLE_REGISTRY.lock().unwrap();
-            if registry.is_empty() {
+            if VTABLE_COUNT.load(Ordering::Acquire) == 0 {
                 static PADDING_VTABLE: GcVTable = GcVTable {
                     drop_and_dealloc: |_ptr| { /* Nothing to do */ },
                     trace_object: |_ptr, _ctx| { /* Nothing to do */ },
                 };
-                registry.push(SendPtr(NonNull::from(&PADDING_VTABLE)));
+                let id = VTABLE_COUNT.fetch_add(1, Ordering::SeqCst);
+                VTABLE_REGISTRY[id].store(
+                    &PADDING_VTABLE as *const GcVTable as *mut GcVTable,
+                    Ordering::Release,
+                );
             }
         }
 
@@ -265,6 +278,7 @@ impl NyarGc {
             large_head: AtomicPtr::new(std::ptr::null_mut()),
             blocks_head: AtomicPtr::new(head),
             mark_stack: Mutex::new(Vec::new()),
+            mark_condvar: Condvar::new(),
             state: AtomicU8::new(GcState::Idle as u8),
             sweep_state: Mutex::new(SweepState {
                 block_curr: AtomicPtr::new(std::ptr::null_mut()),
@@ -288,6 +302,9 @@ impl NyarGc {
             ],
             post_collect: Mutex::new(None),
             total_collections: AtomicU64::new(0),
+            marking_threads: std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1),
         }
     }
 
@@ -364,7 +381,8 @@ impl NyarGc {
         let size = layout.size();
         let total_size =
             size + std::mem::size_of::<LargeObjectHeader>() + std::mem::size_of::<GcHeader>();
-        let total_layout = Layout::from_size_align(total_size, 16).unwrap();
+        // Alignment increased to 64 to support AVX-512 and high-performance FFI/GPU buffers
+        let total_layout = Layout::from_size_align(total_size, 64).unwrap();
 
         let ptr = alloc::alloc(total_layout);
         if ptr.is_null() {
@@ -643,6 +661,78 @@ impl NyarGc {
     }
 
     /// Full collection: collect all objects using block-based scanning.
+    pub fn parallel_mark(&self) {
+        let num_threads = self.marking_threads;
+        if num_threads <= 1 {
+            let mut stack = self.mark_stack.lock().unwrap();
+            let mut ctx = MarkContext {
+                mark_stack: &mut *stack,
+            };
+            unsafe {
+                self.process_mark_stack(&mut ctx);
+            }
+            return;
+        }
+
+        let active_workers = AtomicUsize::new(0);
+
+        std::thread::scope(|s| {
+            for _ in 0..num_threads {
+                s.spawn(|| {
+                    let mut local_stack = Vec::with_capacity(256);
+                    loop {
+                        // 1. Try to get work from global stack
+                        {
+                            let mut global_stack = self.mark_stack.lock().unwrap();
+                            while global_stack.is_empty() {
+                                if active_workers.load(Ordering::Acquire) == 0 {
+                                    return; // No more work and no active workers
+                                }
+                                global_stack = self.mark_condvar.wait(global_stack).unwrap();
+                                if global_stack.is_empty()
+                                    && active_workers.load(Ordering::Acquire) == 0
+                                {
+                                    return;
+                                }
+                            }
+                            // Take some work
+                            let len = global_stack.len();
+                            let take_count = ((len + 1) / 2).min(128);
+                            local_stack.extend(global_stack.drain(len - take_count..));
+                        }
+
+                        // 2. Process local stack
+                        active_workers.fetch_add(1, Ordering::SeqCst);
+                        unsafe {
+                            while !local_stack.is_empty() {
+                                let ptr = local_stack.pop().unwrap();
+                                let header = ptr.as_ref();
+                                {
+                                    let mut ctx = MarkContext {
+                                        mark_stack: &mut local_stack,
+                                    };
+                                    ((*header.get_vtable()).trace_object)(ptr.0, &mut ctx);
+                                }
+
+                                // If local stack is too large, push some to global
+                                if local_stack.len() > 512 {
+                                    let mut global_stack = self.mark_stack.lock().unwrap();
+                                    let len = local_stack.len();
+                                    let push_count = len / 2;
+                                    global_stack
+                                        .extend(local_stack.drain(len - push_count..));
+                                    self.mark_condvar.notify_all();
+                                }
+                            }
+                        }
+                        active_workers.fetch_sub(1, Ordering::SeqCst);
+                        self.mark_condvar.notify_all();
+                    }
+                });
+            }
+        });
+    }
+
     pub unsafe fn collect_all<F>(&self, mark_roots: F)
     where
         F: FnOnce(&mut MarkContext<'_>),
@@ -673,28 +763,27 @@ impl NyarGc {
 
         // 1. Mark roots
         mark_roots(&mut ctx);
+        drop(mark_stack);
 
-        // 2. Process mark stack
-        self.process_mark_stack(&mut ctx);
+        // 2. Parallel marking
+        self.parallel_mark();
 
         // 3. Flush all thread-local mark buffers before sweeping
-        // In a real multi-threaded environment, we would need to coordinate this.
-        // For now, since collect_all is usually STW, we assume current thread's buffer is the main one.
         crate::tlab::THREAD_TLAB.with(|tlab_cell| {
             let tlab = unsafe { &mut *tlab_cell.get() };
             self.flush_mark_buffer(tlab);
         });
-        self.process_mark_stack(&mut ctx);
+        self.parallel_mark();
 
         // 4. Sweep everything
         self.set_state(GcState::Sweeping);
         self.sweep_all();
 
-        // 4. Adjust threshold
-        self.threshold.store(
-            self.allocated_bytes.load(Ordering::Relaxed) * 2,
-            Ordering::Relaxed,
-        );
+        // 5. Adjust threshold (Adaptive based on live bytes)
+        let live_bytes = self.allocated_bytes.load(Ordering::Relaxed);
+        let next_threshold = (live_bytes * 2).max(live_bytes + 1024 * 1024).max(1024 * 1024);
+        self.threshold.store(next_threshold, Ordering::Relaxed);
+
         self.reclaim_empty_blocks();
         self.coalesce_free_lists();
         self.total_collections.fetch_add(1, Ordering::SeqCst);
@@ -728,6 +817,15 @@ impl NyarGc {
         while let Some(header_ptr) = NonNull::new(curr) {
             let header = header_ptr.as_ref();
             let next = header.get_next();
+
+            // Prefetch the next large object header to reduce cache misses in the list traversal
+            if !next.is_null() {
+                #[cfg(target_arch = "x86_64")]
+                unsafe {
+                    use std::arch::x86_64::_mm_prefetch;
+                    _mm_prefetch(next as *const i8, std::arch::x86_64::_MM_HINT_T0);
+                }
+            }
 
             if header.is_marked() {
                 header.set_marked(false);

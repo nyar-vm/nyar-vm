@@ -292,13 +292,18 @@ impl NyarJit {
             intents.push(IKun::Extension(format!("label_{}", pos), vec![]));
             decoder.next_result()
         } {
+            let current_pos = decoder.position() as i64;
+            // The position before decoding was captured in the loop condition.
+            // But we need the position relative to which the jump offset is calculated.
+            // Usually, jump offsets are relative to the start of the next instruction.
+            
             match instruction {
                 Instruction::LoadLocal(idx) => {
-                    let id = intents.len();
                     let const_id = intents.len();
                     intents.push(IKun::Constant(idx as i64));
+                    let id = intents.len();
                     intents.push(IKun::Extension("load_local".to_string(), vec![const_id]));
-                    stack.push(id + 1);
+                    stack.push(id);
                 }
                 Instruction::StoreLocal(idx) => {
                     if let Some(val) = stack.pop() {
@@ -318,17 +323,54 @@ impl NyarJit {
                     }
                 }
                 Instruction::Jump(off) => {
+                    let target = (current_pos + off as i64) as u32;
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(off as i64));
-                    intents.push(IKun::Extension("jump".to_string(), vec![const_id]));
+                    intents.push(IKun::Constant(target as i64));
+                    if target < start_offset as u32 {
+                        intents.push(IKun::Extension("osr_exit".to_string(), vec![const_id]));
+                    } else {
+                        intents.push(IKun::Extension("jump".to_string(), vec![const_id]));
+                    }
                 }
                 Instruction::JumpIfFalse(off) => {
                     if let Some(cond) = stack.pop() {
+                        let target = (current_pos + off as i64) as u32;
                         let const_id = intents.len();
-                        intents.push(IKun::Constant(off as i64));
+                        intents.push(IKun::Constant(target as i64));
+                        if target < start_offset as u32 {
+                            // jump_if_false target < start => if !cond then osr_exit else continue
+                            // We can use a local label for the "continue" case
+                            let next_pos = decoder.position() as u32;
+                            let next_label_id = intents.len();
+                            intents.push(IKun::Constant(next_pos as i64));
+                            
+                            // Implementation of conditional OSR exit:
+                            // if cond goto next_label
+                            // osr_exit target
+                            // next_label:
+                            intents.push(IKun::Extension("jump_if_true".to_string(), vec![cond, next_label_id]));
+                            intents.push(IKun::Extension("osr_exit".to_string(), vec![const_id]));
+                            intents.push(IKun::Extension(format!("label_{}", next_pos), vec![]));
+                        } else {
+                            intents.push(IKun::Extension(
+                                "jump_if_false".to_string(),
+                                vec![cond, const_id],
+                            ));
+                        }
+                    }
+                }
+                Instruction::JumpIfNull(off) => {
+                    if let Some(val) = stack.pop() {
+                        // For simplicity, we can implement jump_if_null as:
+                        // cond = is_null(val)
+                        // jump_if_true(cond, target)
+                        // But let's add a direct extension for now.
+                        let target = (current_pos + off as i64) as u32;
+                        let const_id = intents.len();
+                        intents.push(IKun::Constant(target as i64));
                         intents.push(IKun::Extension(
-                            "jump_if_false".to_string(),
-                            vec![cond, const_id],
+                            "jump_if_null".to_string(),
+                            vec![val, const_id],
                         ));
                     }
                 }

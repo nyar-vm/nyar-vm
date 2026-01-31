@@ -1,5 +1,4 @@
 use crate::block::{GcBlockHeader, BLOCK_SIZE};
-use crate::collector::VTABLE_REGISTRY;
 use crate::ptr::SendPtr;
 use std::cell::UnsafeCell;
 use std::ptr::NonNull;
@@ -196,8 +195,7 @@ impl GcHeader {
     }
 
     pub unsafe fn get_vtable(&self) -> *const GcVTable {
-        let registry = VTABLE_REGISTRY.lock().unwrap();
-        registry[self.get_type_id() as usize].as_ptr()
+        crate::collector::VTABLE_REGISTRY[self.get_type_id() as usize].load(Ordering::Acquire)
     }
 
     /// Mark the object and trace its children if it wasn't already marked.
