@@ -4,56 +4,42 @@ use crate::vm::value::Value;
 use crate::vm::VmError;
 
 impl NyarVM {
-    pub fn execute_control_op(
-        &mut self,
-        ins: Instruction,
-        cur_ip: usize,
-    ) -> Result<Option<usize>, VmError> {
-        match ins {
-            Instruction::Jump(off) => {
-                let target = (cur_ip as isize + off as isize) as usize;
-                if off < 0 {
-                    self.handle_backedge(target)?;
-                }
-                Ok(Some(target))
-            }
-            Instruction::JumpIfFalse(off) => {
-                let v = self.pop()?;
-                if !v.is_truthy() {
-                    let target = (cur_ip as isize + off as isize) as usize;
-                    if off < 0 {
-                        self.handle_backedge(target)?;
-                    }
-                    Ok(Some(target))
-                } else {
-                    Ok(Some(cur_ip + 1))
-                }
-            }
-            Instruction::Return => {
-                let val = self.pop()?;
-                self.frames.pop();
-                while let Some(hf) = self.handler_stack.last() {
-                    if hf.frame_depth > self.frames.len() {
-                        self.handler_stack.pop();
-                    } else {
-                        break;
-                    }
-                }
-                if self.frames.is_empty() {
-                    // This is handled by the caller of run_loop usually,
-                    // but we need to signal that we returned.
-                    // We can't return Value here easily without changing signature.
-                    // Let's use a special error or just push it back if we want to continue?
-                    // Actually, Instruction::Return is the end of run_loop if frames empty.
-                    self.push(val);
-                    Ok(None)
-                } else {
-                    self.push(val);
-                    Ok(None)
-                }
-            }
-            _ => return Err(VmError::InvalidOpcode),
+    #[inline(always)]
+    pub fn execute_jump(&mut self, off: i32, cur_ip: usize) -> Result<Option<usize>, VmError> {
+        let target = (cur_ip as isize + off as isize) as usize;
+        if off < 0 {
+            self.handle_backedge(target)?;
         }
+        Ok(Some(target))
+    }
+
+    #[inline(always)]
+    pub fn execute_jump_if_false(&mut self, off: i32, cur_ip: usize) -> Result<Option<usize>, VmError> {
+        let v = self.pop()?;
+        if !v.is_truthy() {
+            let target = (cur_ip as isize + off as isize) as usize;
+            if off < 0 {
+                self.handle_backedge(target)?;
+            }
+            Ok(Some(target))
+        } else {
+            Ok(Some(cur_ip + 1))
+        }
+    }
+
+    #[inline(always)]
+    pub fn execute_return(&mut self) -> Result<Option<usize>, VmError> {
+        let val = self.pop()?;
+        self.frames.pop();
+        while let Some(hf) = self.handler_stack.last() {
+            if hf.frame_depth > self.frames.len() {
+                self.handler_stack.pop();
+            } else {
+                break;
+            }
+        }
+        self.push(val);
+        Ok(None)
     }
 
     fn handle_backedge(&mut self, target: usize) -> Result<(), VmError> {

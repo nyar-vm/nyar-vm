@@ -5,134 +5,145 @@ use crate::vm::value::Value;
 use crate::vm::VmError;
 
 impl NyarVM {
-    pub fn execute_call_op(
+    #[inline(always)]
+    pub fn execute_call(
         &mut self,
-        ins: Instruction,
+        chunk_idx: u16,
+        argc: u16,
         module_idx: usize,
     ) -> Result<Option<usize>, VmError> {
-        match ins {
-            Instruction::Call(chunk_idx, argc) => {
-                let instrs = self.get_chunk_instructions(module_idx, chunk_idx as usize)?;
-                let locals_count =
-                    self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
+        let instrs = self.get_chunk_instructions(module_idx, chunk_idx as usize)?;
+        let locals_count = self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
 
-                let mut args = Vec::with_capacity(argc as usize);
-                for _ in 0..argc {
-                    args.push(self.pop()?);
-                }
-                args.reverse();
-
-                if args.len() < locals_count {
-                    args.resize(locals_count, Value::null());
-                }
-
-                let new_frame = Frame {
-                    instrs,
-                    ip: 0,
-                    locals: args,
-                    closure: Value::null(),
-                    module_idx,
-                    chunk_idx: Some(chunk_idx as usize),
-                };
-
-                self.frames.push(new_frame);
-                Ok(Some(0))
-            }
-            Instruction::CallClosure(argc) => {
-                let mut args = Vec::with_capacity(argc as usize);
-                for _ in 0..argc {
-                    args.push(self.pop()?);
-                }
-                args.reverse();
-
-                let callee = self.pop()?;
-                let (instrs, locals_count, c_module_idx, c_chunk_idx) =
-                    if let Some(closure) = callee.try_as_closure() {
-                        let chunk_idx = closure.func;
-                        let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
-                        let locals_count =
-                            self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
-                        (instrs, locals_count, closure.module_idx, chunk_idx)
-                    } else {
-                        return Err(VmError::InvalidOpcode);
-                    };
-
-                if args.len() < locals_count {
-                    args.resize(locals_count, Value::null());
-                }
-
-                let new_frame = Frame {
-                    instrs,
-                    ip: 0,
-                    locals: args,
-                    closure: callee,
-                    module_idx: c_module_idx,
-                    chunk_idx: Some(c_chunk_idx),
-                };
-
-                self.frames.push(new_frame);
-                Ok(Some(0))
-            }
-            Instruction::CallSymbol(name_idx, argc) => {
-                let name = match self.modules[module_idx].constants.get(name_idx as usize) {
-                    Some(Constant::String(s)) => s.as_str(),
-                    _ => return Err(VmError::IndexOutOfBounds),
-                };
-
-                if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
-                    let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-                    let locals_count =
-                        self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
-
-                    let mut args = Vec::with_capacity(argc as usize);
-                    for _ in 0..argc {
-                        args.push(self.pop()?);
-                    }
-                    args.reverse();
-
-                    if args.len() < locals_count {
-                        args.resize(locals_count, Value::null());
-                    }
-
-                    let new_frame = Frame {
-                        instrs,
-                        ip: 0,
-                        locals: args,
-                        closure: Value::null(),
-                        module_idx: m_idx,
-                        chunk_idx: Some(chunk_idx as usize),
-                    };
-
-                    self.frames.push(new_frame);
-                    Ok(Some(0))
-                } else {
-                    return Err(VmError::RuntimeError(format!("Symbol not found: {}", name)));
-                }
-            }
-            Instruction::InvokeMethod(name_idx, argc) => {
-                let mut args = Vec::with_capacity(argc as usize);
-                for _ in 0..argc {
-                    args.push(self.pop()?);
-                }
-                args.reverse();
-
-                let receiver = self.pop()?;
-                let name = match self.modules[module_idx].constants.get(name_idx as usize) {
-                    Some(Constant::String(s)) => s.clone(),
-                    _ => return Err(VmError::InvalidOpcode),
-                };
-
-                if !receiver.is_object() {
-                    self.invoke_primitive_method(receiver, &name, args)?;
-                } else {
-                    // Object method invocation logic...
-                    // For now, let's just push null as a placeholder if not handled
-                    self.push(Value::null());
-                }
-                Ok(None)
-            }
-            _ => return Err(VmError::InvalidOpcode),
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
         }
+        args.reverse();
+
+        if args.len() < locals_count {
+            args.resize(locals_count, Value::null());
+        }
+
+        let new_frame = Frame {
+            instrs,
+            ip: 0,
+            locals: args,
+            closure: Value::null(),
+            module_idx,
+            chunk_idx: Some(chunk_idx as usize),
+        };
+
+        self.frames.push(new_frame);
+        Ok(Some(0))
+    }
+
+    #[inline(always)]
+    pub fn execute_call_closure(&mut self, argc: u16) -> Result<Option<usize>, VmError> {
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
+        let callee = self.pop()?;
+        let (instrs, locals_count, c_module_idx, c_chunk_idx) =
+            if let Some(closure) = callee.try_as_closure() {
+                let chunk_idx = closure.func;
+                let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
+                let locals_count =
+                    self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
+                (instrs, locals_count, closure.module_idx, chunk_idx)
+            } else {
+                return Err(VmError::InvalidOpcode);
+            };
+
+        if args.len() < locals_count {
+            args.resize(locals_count, Value::null());
+        }
+
+        let new_frame = Frame {
+            instrs,
+            ip: 0,
+            locals: args,
+            closure: callee,
+            module_idx: c_module_idx,
+            chunk_idx: Some(c_chunk_idx),
+        };
+
+        self.frames.push(new_frame);
+        Ok(Some(0))
+    }
+
+    #[inline(always)]
+    pub fn execute_call_symbol(
+        &mut self,
+        name_idx: u16,
+        argc: u16,
+        module_idx: usize,
+    ) -> Result<Option<usize>, VmError> {
+        let name = match self.modules[module_idx].constants.get(name_idx as usize) {
+            Some(Constant::String(s)) => s.as_str(),
+            _ => return Err(VmError::IndexOutOfBounds),
+        };
+
+        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
+            let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
+            let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+
+            let mut args = Vec::with_capacity(argc as usize);
+            for _ in 0..argc {
+                args.push(self.pop()?);
+            }
+            args.reverse();
+
+            if args.len() < locals_count {
+                args.resize(locals_count, Value::null());
+            }
+
+            let new_frame = Frame {
+                instrs,
+                ip: 0,
+                locals: args,
+                closure: Value::null(),
+                module_idx: m_idx,
+                chunk_idx: Some(chunk_idx as usize),
+            };
+
+            self.frames.push(new_frame);
+            Ok(Some(0))
+        } else {
+            Err(VmError::RuntimeError(format!("Symbol not found: {}", name)))
+        }
+    }
+
+    #[inline(always)]
+    pub fn execute_invoke_method(
+        &mut self,
+        name_idx: u16,
+        argc: u16,
+        module_idx: usize,
+    ) -> Result<Option<usize>, VmError> {
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
+        let receiver = self.pop()?;
+        let name = match self.modules[module_idx].constants.get(name_idx as usize) {
+            Some(Constant::String(s)) => s.clone(),
+            _ => return Err(VmError::InvalidOpcode),
+        };
+
+        if !receiver.is_object() {
+            self.invoke_primitive_method(receiver, &name, args)?;
+        } else {
+            // Object method invocation logic...
+            // For now, let's just push null as a placeholder if not handled
+            self.push(Value::null());
+        }
+        Ok(None)
     }
 
     fn invoke_primitive_method(

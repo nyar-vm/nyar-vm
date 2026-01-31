@@ -89,7 +89,7 @@ impl NyarVM {
         vm
     }
 
-    pub fn push(&mut self, v: Value) {
+    pub fn push(&mut self, v: Value) -> Result<(), VmError> {
         if self.sp >= self.stack.len() {
             self.stack.push(v)
         } else {
@@ -103,6 +103,7 @@ impl NyarVM {
                 self.gc.flush_thread_local();
             }
         }
+        Ok(())
     }
 
     pub fn pop(&mut self) -> Result<Value, VmError> {

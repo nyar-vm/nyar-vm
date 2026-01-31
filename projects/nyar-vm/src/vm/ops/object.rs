@@ -137,6 +137,18 @@ impl NyarVM {
                     let key_str = key.try_as_str().ok_or(VmError::InvalidOpcode)?;
                     let obj = unsafe { obj_val.as_dyn_object() };
                     self.push(Value::bool(obj.entries.contains_key(key_str)))?;
+                } else if obj_val.is_array() {
+                    let idx = key.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
+                    let arr = unsafe { obj_val.as_array() };
+                    self.push(Value::bool(idx < arr.items.len()))?;
+                } else if obj_val.is_list() {
+                    let idx = key.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
+                    let list = unsafe { obj_val.as_list() };
+                    self.push(Value::bool(idx < list.items.len()))?;
+                } else if obj_val.is_tuple() {
+                    let idx = key.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
+                    let tuple = unsafe { obj_val.as_tuple() };
+                    self.push(Value::bool(idx < tuple.items.len()))?;
                 } else {
                     return Err(VmError::InvalidOpcode);
                 }
@@ -149,6 +161,15 @@ impl NyarVM {
                     let obj = unsafe { obj_val.as_dyn_object_mut() };
                     let removed = obj.entries.remove(key_str);
                     self.push(removed.unwrap_or(Value::null()))?;
+                } else if obj_val.is_list() {
+                    let idx = key.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
+                    let list = unsafe { obj_val.as_list_mut() };
+                    if idx < list.items.len() {
+                        let removed = list.items.remove(idx);
+                        self.push(removed)?;
+                    } else {
+                        return Err(VmError::IndexOutOfBounds);
+                    }
                 } else {
                     return Err(VmError::InvalidOpcode);
                 }

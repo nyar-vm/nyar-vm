@@ -6,7 +6,7 @@ use crate::vm::VmError;
 impl NyarVM {
     #[inline(always)]
     pub fn execute_i64_const(&mut self, v: i64) -> Result<Option<usize>, VmError> {
-        self.push(Value::int(v));
+        self.push(Value::int(v))?;
         Ok(None)
     }
 
@@ -15,7 +15,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64).wrapping_add(rhs.as_int() as i64);
-        self.push(Value::int(r));
+        self.push(Value::int(r))?;
         Ok(None)
     }
 
@@ -24,7 +24,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64).wrapping_sub(rhs.as_int() as i64);
-        self.push(Value::int(r));
+        self.push(Value::int(r))?;
         Ok(None)
     }
 
@@ -33,7 +33,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64).wrapping_mul(rhs.as_int() as i64);
-        self.push(Value::int(r));
+        self.push(Value::int(r))?;
         Ok(None)
     }
 
@@ -42,7 +42,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let (r, _) = (lhs.as_int() as i64).overflowing_div(rhs.as_int() as i64);
-        self.push(Value::int(r));
+        self.push(Value::int(r))?;
         Ok(None)
     }
 
@@ -51,7 +51,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let (r, _) = (lhs.as_int() as u64).overflowing_div(rhs.as_int() as u64);
-        self.push(Value::int(r as i64));
+        self.push(Value::int(r as i64))?;
         Ok(None)
     }
 
@@ -60,7 +60,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let (r, _) = (lhs.as_int() as i64).overflowing_rem(rhs.as_int() as i64);
-        self.push(Value::int(r));
+        self.push(Value::int(r))?;
         Ok(None)
     }
 
@@ -69,7 +69,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let (r, _) = (lhs.as_int() as u64).overflowing_rem(rhs.as_int() as u64);
-        self.push(Value::int(r as i64));
+        self.push(Value::int(r as i64))?;
         Ok(None)
     }
 
@@ -77,7 +77,7 @@ impl NyarVM {
     pub fn execute_i64_neg(&mut self) -> Result<Option<usize>, VmError> {
         let v = self.pop()?;
         let r = -(v.as_int() as i64);
-        self.push(Value::int(r));
+        self.push(Value::int(r))?;
         Ok(None)
     }
 
@@ -86,7 +86,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64) == (rhs.as_int() as i64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -95,7 +95,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64) != (rhs.as_int() as i64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -104,7 +104,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64) < (rhs.as_int() as i64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -113,7 +113,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as u64) < (rhs.as_int() as u64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -122,7 +122,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64) <= (rhs.as_int() as i64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -131,7 +131,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as u64) <= (rhs.as_int() as u64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -140,7 +140,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64) > (rhs.as_int() as i64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -149,7 +149,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as u64) > (rhs.as_int() as u64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -158,7 +158,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as i64) >= (rhs.as_int() as i64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -167,7 +167,7 @@ impl NyarVM {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let r = (lhs.as_int() as u64) >= (rhs.as_int() as u64);
-        self.push(Value::bool(r));
+        self.push(Value::bool(r))?;
         Ok(None)
     }
 
@@ -175,7 +175,7 @@ impl NyarVM {
     pub fn execute_i64_to_f32_s(&mut self) -> Result<Option<usize>, VmError> {
         let v = self.pop()?;
         let r = (v.as_int() as i64) as f32 as f64;
-        self.push(Value::float(r));
+        self.push(Value::float(r))?;
         Ok(None)
     }
 
@@ -183,7 +183,7 @@ impl NyarVM {
     pub fn execute_i64_to_f32_u(&mut self) -> Result<Option<usize>, VmError> {
         let v = self.pop()?;
         let r = (v.as_int() as u64) as f32 as f64;
-        self.push(Value::float(r));
+        self.push(Value::float(r))?;
         Ok(None)
     }
 
@@ -191,7 +191,7 @@ impl NyarVM {
     pub fn execute_i64_to_f64_s(&mut self) -> Result<Option<usize>, VmError> {
         let v = self.pop()?;
         let r = (v.as_int() as i64) as f64;
-        self.push(Value::float(r));
+        self.push(Value::float(r))?;
         Ok(None)
     }
 
@@ -199,7 +199,7 @@ impl NyarVM {
     pub fn execute_i64_to_f64_u(&mut self) -> Result<Option<usize>, VmError> {
         let v = self.pop()?;
         let r = (v.as_int() as u64) as f64;
-        self.push(Value::float(r));
+        self.push(Value::float(r))?;
         Ok(None)
     }
 }

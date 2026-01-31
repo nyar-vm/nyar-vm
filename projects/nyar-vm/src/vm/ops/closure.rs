@@ -24,13 +24,13 @@ impl NyarVM {
                     captured.push(Upvalue(val));
                 }
                 let v = Value::closure(module_idx, idx, captured, &self.gc);
-                self.push(v);
+                self.push(v)?;
             }
             Instruction::LoadUpvalue(idx) => {
                 let f = self.frames.last().unwrap();
                 let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
                 if (idx as usize) < closure.upvalues.len() {
-                    self.push(closure.upvalues[idx as usize].0);
+                    self.push(closure.upvalues[idx as usize].0)?;
                 } else {
                     return Err(VmError::IndexOutOfBounds);
                 }

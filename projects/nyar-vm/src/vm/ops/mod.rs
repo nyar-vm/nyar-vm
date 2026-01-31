@@ -219,300 +219,134 @@ impl NyarVM {
                 Instruction::I32Trunc64S => self.execute_i32_trunc64_s(),
                 Instruction::I32Trunc64U => self.execute_i32_trunc64_u(),
                 // I64 operations
-                Instruction::I64Const(v) => {
-                    self.execute_i64_const(v);
-                    Ok(None)
-                }
-                Instruction::I64Add => {
-                    self.execute_i64_add()?;
-                    Ok(None)
-                }
-                Instruction::I64Sub => {
-                    self.execute_i64_sub()?;
-                    Ok(None)
-                }
-                Instruction::I64Mul => {
-                    self.execute_i64_mul()?;
-                    Ok(None)
-                }
-                Instruction::I64DivS => {
-                    self.execute_i64_div_s()?;
-                    Ok(None)
-                }
-                Instruction::I64DivU => {
-                    self.execute_i64_div_u()?;
-                    Ok(None)
-                }
-                Instruction::I64RemS => {
-                    self.execute_i64_rem_s()?;
-                    Ok(None)
-                }
-                Instruction::I64RemU => {
-                    self.execute_i64_rem_u()?;
-                    Ok(None)
-                }
-                Instruction::I64Neg => {
-                    self.execute_i64_neg()?;
-                    Ok(None)
-                }
-                Instruction::I64Eq => {
-                    self.execute_i64_eq()?;
-                    Ok(None)
-                }
-                Instruction::I64Ne => {
-                    self.execute_i64_ne()?;
-                    Ok(None)
-                }
-                Instruction::I64LtS => {
-                    self.execute_i64_lt_s()?;
-                    Ok(None)
-                }
-                Instruction::I64LtU => {
-                    self.execute_i64_lt_u()?;
-                    Ok(None)
-                }
-                Instruction::I64LeS => {
-                    self.execute_i64_le_s()?;
-                    Ok(None)
-                }
-                Instruction::I64LeU => {
-                    self.execute_i64_le_u()?;
-                    Ok(None)
-                }
-                Instruction::I64GtS => {
-                    self.execute_i64_gt_s()?;
-                    Ok(None)
-                }
-                Instruction::I64GtU => {
-                    self.execute_i64_gt_u()?;
-                    Ok(None)
-                }
-                Instruction::I64GeS => {
-                    self.execute_i64_ge_s()?;
-                    Ok(None)
-                }
-                Instruction::I64GeU => {
-                    self.execute_i64_ge_u()?;
-                    Ok(None)
-                }
-                Instruction::I64ToF32S => {
-                    self.execute_i64_to_f32_s()?;
-                    Ok(None)
-                }
-                Instruction::I64ToF32U => {
-                    self.execute_i64_to_f32_u()?;
-                    Ok(None)
-                }
-                Instruction::I64ToF64S => {
-                    self.execute_i64_to_f64_s()?;
-                    Ok(None)
-                }
-                Instruction::I64ToF64U => {
-                    self.execute_i64_to_f64_u()?;
-                    Ok(None)
-                }
+                Instruction::I64Const(v) => self.execute_i64_const(v),
+                Instruction::I64Add => self.execute_i64_add(),
+                Instruction::I64Sub => self.execute_i64_sub(),
+                Instruction::I64Mul => self.execute_i64_mul(),
+                Instruction::I64DivS => self.execute_i64_div_s(),
+                Instruction::I64DivU => self.execute_i64_div_u(),
+                Instruction::I64RemS => self.execute_i64_rem_s(),
+                Instruction::I64RemU => self.execute_i64_rem_u(),
+                Instruction::I64Neg => self.execute_i64_neg(),
+                Instruction::I64Eq => self.execute_i64_eq(),
+                Instruction::I64Ne => self.execute_i64_ne(),
+                Instruction::I64LtS => self.execute_i64_lt_s(),
+                Instruction::I64LtU => self.execute_i64_lt_u(),
+                Instruction::I64LeS => self.execute_i64_le_s(),
+                Instruction::I64LeU => self.execute_i64_le_u(),
+                Instruction::I64GtS => self.execute_i64_gt_s(),
+                Instruction::I64GtU => self.execute_i64_gt_u(),
+                Instruction::I64GeS => self.execute_i64_ge_s(),
+                Instruction::I64GeU => self.execute_i64_ge_u(),
+                Instruction::I64ToF32S => self.execute_i64_to_f32_s(),
+                Instruction::I64ToF32U => self.execute_i64_to_f32_u(),
+                Instruction::I64ToF64S => self.execute_i64_to_f64_s(),
+                Instruction::I64ToF64U => self.execute_i64_to_f64_u(),
                 // Float operations
-                Instruction::F32Const(v) => {
-                    self.execute_f32_const(v);
-                    Ok(None)
-                }
-                Instruction::F32Add => {
-                    self.execute_f32_add()?;
-                    Ok(None)
-                }
-                Instruction::F32Sub => {
-                    self.execute_f32_sub()?;
-                    Ok(None)
-                }
-                Instruction::F32Mul => {
-                    self.execute_f32_mul()?;
-                    Ok(None)
-                }
-                Instruction::F32Div => {
-                    self.execute_f32_div()?;
-                    Ok(None)
-                }
-                Instruction::F32Neg => {
-                    self.execute_f32_neg()?;
-                    Ok(None)
-                }
-                Instruction::F32Eq => {
-                    self.execute_f32_eq()?;
-                    Ok(None)
-                }
-                Instruction::F32Ne => {
-                    self.execute_f32_ne()?;
-                    Ok(None)
-                }
-                Instruction::F32Lt => {
-                    self.execute_f32_lt()?;
-                    Ok(None)
-                }
-                Instruction::F32Le => {
-                    self.execute_f32_le()?;
-                    Ok(None)
-                }
-                Instruction::F32Gt => {
-                    self.execute_f32_gt()?;
-                    Ok(None)
-                }
-                Instruction::F32Ge => {
-                    self.execute_f32_ge()?;
-                    Ok(None)
-                }
-                Instruction::F32ToI32S => {
-                    self.execute_f32_to_i32_s()?;
-                    Ok(None)
-                }
-                Instruction::F32ToI32U => {
-                    self.execute_f32_to_i32_u()?;
-                    Ok(None)
-                }
-                Instruction::F32ToI64S => {
-                    self.execute_f32_to_i64_s()?;
-                    Ok(None)
-                }
-                Instruction::F32ToI64U => {
-                    self.execute_f32_to_i64_u()?;
-                    Ok(None)
-                }
-                Instruction::F32ToF64 => {
-                    self.execute_f32_to_f64()?;
-                    Ok(None)
-                }
-                Instruction::F64Const(v) => {
-                    self.execute_f64_const(v);
-                    Ok(None)
-                }
-                Instruction::F64Add => {
-                    self.execute_f64_add()?;
-                    Ok(None)
-                }
-                Instruction::F64Sub => {
-                    self.execute_f64_sub()?;
-                    Ok(None)
-                }
-                Instruction::F64Mul => {
-                    self.execute_f64_mul()?;
-                    Ok(None)
-                }
-                Instruction::F64Div => {
-                    self.execute_f64_div()?;
-                    Ok(None)
-                }
-                Instruction::F64Neg => {
-                    self.execute_f64_neg()?;
-                    Ok(None)
-                }
-                Instruction::F64Eq => {
-                    self.execute_f64_eq()?;
-                    Ok(None)
-                }
-                Instruction::F64Ne => {
-                    self.execute_f64_ne()?;
-                    Ok(None)
-                }
-                Instruction::F64Lt => {
-                    self.execute_f64_lt()?;
-                    Ok(None)
-                }
-                Instruction::F64Le => {
-                    self.execute_f64_le()?;
-                    Ok(None)
-                }
-                Instruction::F64Gt => {
-                    self.execute_f64_gt()?;
-                    Ok(None)
-                }
-                Instruction::F64Ge => {
-                    self.execute_f64_ge()?;
-                    Ok(None)
-                }
-                Instruction::F64ToI32S => {
-                    self.execute_f64_to_i32_s()?;
-                    Ok(None)
-                }
-                Instruction::F64ToI32U => {
-                    self.execute_f64_to_i32_u()?;
-                    Ok(None)
-                }
-                Instruction::F64ToI64S => {
-                    self.execute_f64_to_i64_s()?;
-                    Ok(None)
-                }
-                Instruction::F64ToI64U => {
-                    self.execute_f64_to_i64_u()?;
-                    Ok(None)
-                }
-                Instruction::F64ToF32 => {
-                    self.execute_f64_to_f32()?;
-                    Ok(None)
-                }
+                Instruction::F32Const(v) => self.execute_f32_const(v),
+                Instruction::F32Add => self.execute_f32_add(),
+                Instruction::F32Sub => self.execute_f32_sub(),
+                Instruction::F32Mul => self.execute_f32_mul(),
+                Instruction::F32Div => self.execute_f32_div(),
+                Instruction::F32Neg => self.execute_f32_neg(),
+                Instruction::F32Eq => self.execute_f32_eq(),
+                Instruction::F32Ne => self.execute_f32_ne(),
+                Instruction::F32Lt => self.execute_f32_lt(),
+                Instruction::F32Le => self.execute_f32_le(),
+                Instruction::F32Gt => self.execute_f32_gt(),
+                Instruction::F32Ge => self.execute_f32_ge(),
+                Instruction::F32ToI32S => self.execute_f32_to_i32_s(),
+                Instruction::F32ToI32U => self.execute_f32_to_i32_u(),
+                Instruction::F32ToI64S => self.execute_f32_to_i64_s(),
+                Instruction::F32ToI64U => self.execute_f32_to_i64_u(),
+                Instruction::F32ToF64 => self.execute_f32_to_f64(),
+                Instruction::F64Const(v) => self.execute_f64_const(v),
+                Instruction::F64Add => self.execute_f64_add(),
+                Instruction::F64Sub => self.execute_f64_sub(),
+                Instruction::F64Mul => self.execute_f64_mul(),
+                Instruction::F64Div => self.execute_f64_div(),
+                Instruction::F64Neg => self.execute_f64_neg(),
+                Instruction::F64Eq => self.execute_f64_eq(),
+                Instruction::F64Ne => self.execute_f64_ne(),
+                Instruction::F64Lt => self.execute_f64_lt(),
+                Instruction::F64Le => self.execute_f64_le(),
+                Instruction::F64Gt => self.execute_f64_gt(),
+                Instruction::F64Ge => self.execute_f64_ge(),
+                Instruction::F64ToI32S => self.execute_f64_to_i32_s(),
+                Instruction::F64ToI32U => self.execute_f64_to_i32_u(),
+                Instruction::F64ToI64S => self.execute_f64_to_i64_s(),
+                Instruction::F64ToI64U => self.execute_f64_to_i64_u(),
+                Instruction::F64ToF32 => self.execute_f64_to_f32(),
                 // BigInt operations
-                ins if ins.is_bigint_op() => {
-                    self.execute_bigint_op(ins)?;
-                    Ok(None)
-                }
+                Instruction::BigIntConst { sign, bytes } => self.execute_bigint_const(sign, bytes),
+                Instruction::BigIntAdd => self.execute_bigint_add(),
+                Instruction::BigIntSub => self.execute_bigint_sub(),
+                Instruction::BigIntMul => self.execute_bigint_mul(),
+                Instruction::BigIntDiv => self.execute_bigint_div(),
+                Instruction::BigIntMod => self.execute_bigint_mod(),
+                Instruction::BigIntNeg => self.execute_bigint_neg(),
+                Instruction::BigIntEq => self.execute_bigint_eq(),
+                Instruction::BigIntNe => self.execute_bigint_ne(),
+                Instruction::BigIntLt => self.execute_bigint_lt(),
+                Instruction::BigIntLe => self.execute_bigint_le(),
+                Instruction::BigIntGt => self.execute_bigint_gt(),
+                Instruction::BigIntGe => self.execute_bigint_ge(),
+                Instruction::BigIntToI64 => self.execute_bigint_to_i64(),
+                Instruction::BigIntFromI64 => self.execute_bigint_from_i64(),
+                Instruction::BigIntToString => self.execute_bigint_to_string(),
                 // String operations
-                ins if ins.is_string_op() => {
-                    self.execute_string_op(ins)?;
-                    Ok(None)
-                }
+                Instruction::StringConst(s) => self.execute_string_const(s),
+                Instruction::StringConcat => self.execute_string_concat(),
+                Instruction::StringLenBytes => self.execute_string_len_bytes(),
+                Instruction::StringLenChars => self.execute_string_len_chars(),
+                Instruction::StringEq => self.execute_string_eq(),
+                Instruction::StringNe => self.execute_string_ne(),
+                Instruction::StringLt => self.execute_string_lt(),
+                Instruction::StringLe => self.execute_string_le(),
+                Instruction::StringGt => self.execute_string_gt(),
+                Instruction::StringGe => self.execute_string_ge(),
+                Instruction::StringSubstr => self.execute_string_substr(),
                 // Stack operations
-                Instruction::Push(idx) => {
-                    self.execute_push(idx, module_idx)?;
-                    Ok(None)
-                }
-                Instruction::Pop => {
-                    self.execute_pop()?;
-                    Ok(None)
-                }
-                Instruction::Dup(d) => {
-                    self.execute_dup(d)?;
-                    Ok(None)
-                }
-                Instruction::Swap(d) => {
-                    self.execute_swap(d)?;
-                    Ok(None)
-                }
-                Instruction::LoadLocal(idx) => {
-                    self.execute_load_local(idx)?;
-                    Ok(None)
-                }
-                Instruction::StoreLocal(idx) => {
-                    self.execute_store_local(idx)?;
-                    Ok(None)
-                }
-                Instruction::LoadGlobal(idx) => {
-                    self.execute_load_global(idx, module_idx)?;
-                    Ok(None)
-                }
-                Instruction::StoreGlobal(idx) => {
-                    self.execute_store_global(idx, module_idx)?;
-                    Ok(None)
-                }
+                Instruction::Push(idx) => self.execute_push(idx, module_idx),
+                Instruction::Pop => self.execute_pop(),
+                Instruction::Dup(d) => self.execute_dup(d),
+                Instruction::Swap(d) => self.execute_swap(d),
+                Instruction::LoadLocal(idx) => self.execute_load_local(idx),
+                Instruction::StoreLocal(idx) => self.execute_store_local(idx),
+                Instruction::LoadGlobal(idx) => self.execute_load_global(idx, module_idx),
+                Instruction::StoreGlobal(idx) => self.execute_store_global(idx, module_idx),
                 // Control operations
                 Instruction::Jump(off) => self.execute_jump(off, cur_ip),
                 Instruction::JumpIfFalse(off) => self.execute_jump_if_false(off, cur_ip),
                 Instruction::Return => self.execute_return(),
                 // Closure operations
                 Instruction::MakeClosure(idx, upvalues) => {
-                    self.execute_make_closure(idx, upvalues, module_idx)?;
-                    Ok(None)
+                    self.execute_make_closure(idx, upvalues, module_idx)
                 }
-                Instruction::LoadUpvalue(idx) => {
-                    self.execute_load_upvalue(idx)?;
-                    Ok(None)
-                }
-                Instruction::StoreUpvalue(idx) => {
-                    self.execute_store_upvalue(idx)?;
-                    Ok(None)
-                }
+                Instruction::LoadUpvalue(idx) => self.execute_load_upvalue(idx),
+                Instruction::StoreUpvalue(idx) => self.execute_store_upvalue(idx),
                 // Object operations
-                ins if ins.is_object_op() => {
-                    self.execute_object_op(ins)?;
-                    Ok(None)
-                }
+                Instruction::NewObject(idx) => self.execute_new_object(idx),
+                Instruction::GetField(idx) => self.execute_get_field(idx),
+                Instruction::SetField(idx) => self.execute_set_field(idx),
+                Instruction::NewArray(len) => self.execute_new_array(len),
+                Instruction::GetElement => self.execute_get_element(),
+                Instruction::SetElement => self.execute_set_element(),
+                Instruction::NewDynObject => self.execute_new_dyn_object(),
+                Instruction::NewList(len) => self.execute_new_list(len),
+                Instruction::MakeTuple(len) => self.execute_make_tuple(len),
+                Instruction::HasKey => self.execute_has_key(),
+                Instruction::RemoveKey => self.execute_remove_key(),
+                Instruction::PushElementRight => self.execute_push_element_right(),
+                Instruction::PopElementRight => self.execute_pop_element_right(),
+                Instruction::PushElementLeft => self.execute_push_element_left(),
+                Instruction::PopElementLeft => self.execute_pop_element_left(),
+                Instruction::SizeOf => self.execute_size_of(),
+                Instruction::TypeOf => self.execute_type_of(),
+                Instruction::InstanceOf(idx) => self.execute_instance_of(idx),
+                Instruction::MatchVariant(idx) => self.execute_match_variant(idx),
+                Instruction::CheckCast(idx) => self.execute_check_cast(idx),
+                Instruction::Cast(idx) => self.execute_cast(idx),
                 // Call operations
                 Instruction::Call(idx, argc) => self.execute_call(idx, argc, module_idx),
                 Instruction::CallClosure(argc) => self.execute_call_closure(argc),
