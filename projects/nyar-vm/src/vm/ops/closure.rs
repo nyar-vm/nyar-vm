@@ -57,5 +57,16 @@ impl NyarVM {
             Err(VmError::IndexOutOfBounds)
         }
     }
+
+    #[inline(always)]
+    pub fn execute_close_upvalues(&mut self) -> Result<Option<usize>, VmError> {
+        // In a more complex VM, this would "close" upvalues by moving them
+        // from the stack to the heap. Since our Upvalues already hold Value
+        // (which are either primitives or GC pointers), they are effectively
+        // always "closed" or handled by GC.
+        // For now, this is a no-op as the frame-based local management 
+        // handles the lifecycle.
+        Ok(None)
+    }
 }
 

@@ -2,12 +2,15 @@ pub mod bigint;
 pub mod call;
 pub mod closure;
 pub mod control;
+pub mod effects;
 pub mod float;
 pub mod i32;
 pub mod i64;
+pub mod metaprogramming;
 pub mod object;
 pub mod stack;
 pub mod string;
+pub mod traits;
 
 use crate::bytecode::instruction::Instruction;
 use crate::vm::core::NyarVM;
@@ -332,6 +335,7 @@ impl NyarVM {
                 }
                 Instruction::LoadUpvalue(idx) => self.execute_load_upvalue(idx),
                 Instruction::StoreUpvalue(idx) => self.execute_store_upvalue(idx),
+                Instruction::CloseUpvalues => self.execute_close_upvalues(),
                 // Object operations
                 Instruction::NewObject(idx) => self.execute_new_object(idx),
                 Instruction::GetField(idx) => self.execute_get_field(idx),
@@ -354,10 +358,36 @@ impl NyarVM {
                 Instruction::MatchVariant(idx) => self.execute_match_variant(idx),
                 Instruction::CheckCast(idx) => self.execute_check_cast(idx),
                 Instruction::Cast(idx) => self.execute_cast(idx),
+                // Effects operations
+                Instruction::Perform(idx, argc) => self.execute_perform(idx, argc, module_idx),
+                Instruction::WithHandler(idx) => self.execute_with_handler(idx, module_idx),
+                Instruction::ResumeWith => self.execute_resume_with(),
+                Instruction::CaptureCont => self.execute_capture_cont(),
+                Instruction::Await => self.execute_await(),
+                Instruction::BlockOn => self.execute_block_on(),
+                Instruction::MatchEffect(idx) => self.execute_match_effect(idx),
+                // Trait operations
+                Instruction::GetWitnessTable(t_idx, i_idx) => {
+                    self.execute_get_witness_table(t_idx, i_idx, module_idx)
+                }
+                Instruction::WitnessMethod(idx) => self.execute_witness_method(idx),
+                // Existential operations
+                Instruction::OpenExistential => self.execute_open_existential(),
+                Instruction::CloseExistential => self.execute_close_existential(),
+                // Metaprogramming operations
+                Instruction::Quote(idx) => self.execute_quote(idx),
+                Instruction::Splice => self.execute_splice(),
+                Instruction::Eval(argc) => self.execute_eval(argc),
+                Instruction::ExpandMacro(idx, argc) => self.execute_expand_macro(idx, argc, module_idx),
                 // Call operations
                 Instruction::Call(idx, argc) => self.execute_call(idx, argc, module_idx),
                 Instruction::CallClosure(argc) => self.execute_call_closure(argc),
-                Instruction::CallSymbol(idx, argc) => self.execute_call_symbol(idx, argc, module_idx),
+                Instruction::CallSymbol(idx, argc) => {
+                    self.execute_call_symbol(idx, argc, module_idx)
+                }
+                Instruction::CallDynamic(idx, argc) => {
+                    self.execute_call_dynamic(idx, argc, module_idx)
+                }
                 Instruction::CallVirtual(idx, argc) => {
                     self.execute_call_virtual(idx, argc, module_idx)
                 }
@@ -386,6 +416,24 @@ impl NyarVM {
             self.pop()
         } else {
             Ok(Value::null())
+        }
+    }
+    
+    pub fn print_traceback(&self, error: &VmError) {
+        eprintln!("Runtime Error: {:?}", error);
+        for (i, frame) in self.frames.iter().enumerate().rev() {
+            let module_name = if frame.module_idx < self.modules.len() {
+                &self.modules[frame.module_idx].name
+            } else {
+                "unknown"
+            };
+            eprintln!(
+                "  [{}] Module: {}, Chunk: {:?}, IP: {}",
+                i,
+                module_name,
+                frame.chunk_idx,
+                frame.ip
+            );
         }
     }
 }

@@ -183,6 +183,8 @@ impl NyarVM {
             }
         }
         Ok(())
+    }
+
     #[inline(always)]
     pub fn execute_tail_call(&mut self) -> Result<Option<usize>, VmError> {
         let callee = self.pop()?;
@@ -233,6 +235,34 @@ impl NyarVM {
         // Virtual call logic: find the method in the witness table or object's vtable
         // For now, let's just delegate to a normal call as a placeholder
         self.execute_call(idx, argc as u16, module_idx)
+    }
+
+    #[inline(always)]
+    pub fn execute_call_dynamic(
+        &mut self,
+        _idx: u16,
+        argc: u8,
+        _module_idx: usize,
+    ) -> Result<Option<usize>, VmError> {
+        // Dynamic call logic: receiver is on stack, method name is on stack
+        // Pop method name, pop receiver, find method, call it.
+        let method_name = self.pop()?;
+        let receiver = self.pop()?;
+        
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
+        // Placeholder: try to invoke as a method
+        if let Some(name) = method_name.try_as_str() {
+            self.invoke_primitive_method(receiver, name, args)?;
+        } else {
+            return Err(VmError::InvalidOpcode);
+        }
+        
+        Ok(None)
     }
 
     #[inline(always)]

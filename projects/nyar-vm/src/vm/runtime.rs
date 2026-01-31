@@ -152,6 +152,26 @@ pub unsafe extern "win64" fn nyar_vm_call_closure(vm_ptr: *mut NyarVM, argc: u32
 }
 
 #[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_load_upvalue(_vm_ptr: *mut NyarVM, closure_val: Value, idx: u32) -> Value {
+    let closure = closure_val.as_closure();
+    if (idx as usize) < closure.upvalues.len() {
+        closure.upvalues[idx as usize].0
+    } else {
+        Value::null()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_store_upvalue(vm_ptr: *mut NyarVM, closure_val: Value, idx: u32, val: Value) {
+    let vm = &mut *vm_ptr;
+    let closure = closure_val.as_closure_mut();
+    if (idx as usize) < closure.upvalues.len() {
+        closure.upvalues[idx as usize].0 = val;
+        val.write_barrier(&vm.gc);
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_tail_call(_vm_ptr: *mut NyarVM, _target: Value) -> i32 {
     3 // StatusTailCall
 }
