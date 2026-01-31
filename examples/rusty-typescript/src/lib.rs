@@ -11,10 +11,12 @@ pub mod project;
 pub mod type_system;
 
 use chomsky_cost;
+use chomsky_emit::{Backend, GaiaEmitter};
 use chomsky_extract::IKunExtractor;
 use chomsky_source::Loc;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder};
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree};
+use nyar_aot::NyarAot;
+use nyar_types::{NyarError, NyarFrontend};
 use nyar_vm::bytecode::format::NyarModule;
 use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
@@ -45,8 +47,7 @@ struct Compiler;
 impl Guest for Compiler {
     fn compile(source: String) -> Result<Vec<u8>, String> {
         let frontend = MiniTypescriptFrontend::new();
-        let module = frontend.compile_to_nyar(&source)?;
-        Ok(module.encode())
+        frontend.compile_to_wasm(&source)
     }
 }
 
@@ -67,14 +68,35 @@ impl MiniTypescriptFrontend {
         self.source_id = id;
     }
 
-    /// 编译源码为 Nyar 模块
-    pub fn compile_to_nyar(&self, source: &str) -> Result<NyarModule, String> {
+    /// 编译源码为 WASM (AOT)
+    pub fn compile_to_wasm(&self, source: &str) -> Result<Vec<u8>, String> {
+        let tree = self.lower_to_tree(source)?;
+
+        let mut aot = NyarAot::<ConstraintAnalysis>::new();
+        let emitter = GaiaEmitter::new("wasm32-wasi");
+
+        // 使用 AOT 编译器进行优化和生成
+        // 由于 GaiaEmitter 实现了 Backend 接口，可以直接调用 generate
+        let artifact = emitter.generate(&tree)
+            .map_err(|e| format!("AOT error: {:?}", e))?;
+
+        match artifact {
+            chomsky_extract::BackendArtifact::Binary(bytes) => Ok(bytes),
+            _ => Err("Expected binary artifact from AOT compiler".to_string()),
+        }
+    }
+
+    fn lower_to_tree(&self, source: &str) -> Result<IKunTree, String> {
         let ast = self
             .parse(source)
             .map_err(|e| format!("Parse error: {:?}", e))?;
-        let tree = self
-            .lower(&ast)
-            .map_err(|e| format!("Lowering error: {:?}", e))?;
+        self.lower(&ast)
+            .map_err(|e| format!("Lowering error: {:?}", e))
+    }
+
+    /// 编译源码为 Nyar 模块
+    pub fn compile_to_nyar(&self, source: &str) -> Result<NyarModule, String> {
+        let tree = self.lower_to_tree(source)?;
 
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = tree.to_egraph(&mut egraph);

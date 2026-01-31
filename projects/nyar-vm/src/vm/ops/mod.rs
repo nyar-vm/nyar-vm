@@ -143,7 +143,7 @@ impl NyarVM {
         
         // Use StackRootGuard to register VM as a root
         use nyar_gc::stack::StackRootGuard;
-        let _vm_root = StackRootGuard::new(self);
+        let _vm_root = unsafe { StackRootGuard::from_raw(self as *const _) };
         
         loop {
             loop_count += 1;
@@ -422,6 +422,21 @@ impl Instruction {
                 | Instruction::StringNe
                 | Instruction::StringLt
                 | Instruction::StringLe
+        )
+    }
+
+    pub fn is_object_op(&self) -> bool {
+        matches!(
+            self,
+            Instruction::NewObject(_)
+                | Instruction::GetField(_)
+                | Instruction::SetField(_)
+                | Instruction::NewArray(_)
+                | Instruction::GetElement
+                | Instruction::SetElement
+                | Instruction::NewDynObject
+                | Instruction::NewList(_)
+                | Instruction::MakeTuple(_)
         )
     }
 }

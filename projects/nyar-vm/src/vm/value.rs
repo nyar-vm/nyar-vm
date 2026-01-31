@@ -113,7 +113,10 @@ impl Trace for Continuation {
 }
 
 impl Trace for BigInt {
-    fn trace(&self, _ctx: &mut MarkContext) {}
+    fn trace(&self, _ctx: &mut MarkContext) {
+        // BigInt does not contain any GC-managed pointers, so tracing is a no-op.
+        // It is stored as a raw byte array (via num_bigint::BigInt).
+    }
 }
 
 impl Trace for DynObject {
@@ -184,6 +187,35 @@ pub enum ValueTag {
 pub struct Value(u64);
 
 impl Value {
+    pub fn write_barrier(&self, gc: &NyarGc) {
+        if self.is_float() {
+            return;
+        }
+        let payload = self.payload();
+        if payload == 0 {
+            return;
+        }
+        match self.tag() {
+            ValueTag::WitnessTable
+            | ValueTag::String
+            | ValueTag::BigInt
+            | ValueTag::Array
+            | ValueTag::Object
+            | ValueTag::Closure
+            | ValueTag::DynObject
+            | ValueTag::List
+            | ValueTag::Tuple
+            | ValueTag::Continuation
+            | ValueTag::Function
+            | ValueTag::TraitObject
+            | ValueTag::Effect => unsafe {
+                let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
+                gc.write_barrier_ptr(header_ptr);
+            },
+            _ => {}
+        }
+    }
+
     pub fn tag(&self) -> ValueTag {
         if self.is_float() {
             return ValueTag::Float;

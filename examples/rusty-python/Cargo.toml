@@ -18,7 +18,6 @@ chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
 oak-core = { path = "../../../oaks/projects/oak-core" }
 oak-python = { path = "../../../oaks/examples/oak-python" }
 nyar-types = { path = "../../projects/nyar-types" }
-nyar-vm = { path = "../../projects/nyar-vm" }
 gaia-assembler = { workspace = true }
 gaia-types = { workspace = true }
 clap = { version = "4.5", features = ["derive"] }

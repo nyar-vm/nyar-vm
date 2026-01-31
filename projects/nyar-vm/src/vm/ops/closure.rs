@@ -37,6 +37,7 @@ impl NyarVM {
             }
             Instruction::StoreUpvalue(idx) => {
                 let val = self.pop()?;
+                let gc = &self.gc;
                 let f = self.frames.last().unwrap();
                 let closure = f
                     .closure
@@ -44,6 +45,7 @@ impl NyarVM {
                     .ok_or(VmError::InvalidOpcode)?;
                 if (idx as usize) < closure.upvalues.len() {
                     closure.upvalues[idx as usize].0 = val;
+                    val.write_barrier(gc);
                 } else {
                     return Err(VmError::IndexOutOfBounds);
                 }

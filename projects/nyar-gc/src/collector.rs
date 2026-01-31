@@ -562,17 +562,17 @@ impl NyarGc {
         _parent: Gc<T>,
         child: Gc<U>,
     ) {
-        unsafe {
-            let child_header = &child.ptr.as_ref().header;
+        self.write_barrier_ptr(child.ptr.cast());
+    }
 
+    /// Write barrier for a raw pointer to a GC object header.
+    pub fn write_barrier_ptr(&self, child_header: NonNull<GcHeader>) {
+        unsafe {
             // Incremental barrier: Dijkstra style
             if self.get_state() == GcState::Marking {
                 crate::tlab::THREAD_TLAB.with(|tlab_cell| {
                     let tlab = &mut *tlab_cell.get();
-                    self.local_mark(
-                        tlab,
-                        NonNull::new_unchecked(child_header as *const GcHeader as *mut GcHeader),
-                    );
+                    self.local_mark(tlab, child_header);
                 });
             }
         }
