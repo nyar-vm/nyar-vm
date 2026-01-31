@@ -28,7 +28,7 @@ impl nyar_types::NyarFrontend for MiniGoFrontend {
             diagnostics: lex_output.diagnostics,
         });
 
-        let parser = GoParser::new(&language);
+        let parser = GoParser::new(language);
         let parse_output = Parser::<GoLanguage>::parse(&parser, &source_text, &[], &mut session);
 
         let green_node = parse_output
@@ -36,7 +36,7 @@ impl nyar_types::NyarFrontend for MiniGoFrontend {
             .map_err(|e| nyar_types::NyarError::Parse(format!("Parse error: {:?}", e)))?;
         let red_node = RedNode::new(green_node, 0);
 
-        Ok(GoRoot::new(red_node))
+        Ok(GoRoot::from(red_node))
     }
 
     fn lower(&self, ast: &GoRoot) -> Result<IKunTree, nyar_types::NyarError> {

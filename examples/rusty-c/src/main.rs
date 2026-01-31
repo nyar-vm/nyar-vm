@@ -6,6 +6,7 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("DEBUG: rusty-c started");
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         println!(

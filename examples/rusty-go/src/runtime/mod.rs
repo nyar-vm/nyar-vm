@@ -2,9 +2,9 @@ use chomsky::optimizer::UniversalOptimizer;
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
 use chomsky_uir::{EGraph, IKun, IKunTree, Id};
-use nyar_vm::bytecode::decoder::Instruction;
+use nyar_vm::bytecode::instruction::Instruction;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, NyarcModule};
-use nyar_vm::vm::interpreter::NyarVM;
+use nyar_vm::vm::NyarVM;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 

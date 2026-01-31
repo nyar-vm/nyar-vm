@@ -16,3 +16,4 @@ gaia-types = { workspace = true }
 [features]
 default = ["native"]
 native = ["chomsky/default"]
+wasi = ["chomsky/wasi"]

@@ -5,6 +5,7 @@ pub mod control;
 pub mod float;
 pub mod i32;
 pub mod i64;
+pub mod object;
 pub mod stack;
 pub mod string;
 
@@ -143,7 +144,7 @@ impl NyarVM {
         
         // Use StackRootGuard to register VM as a root
         use nyar_gc::stack::StackRootGuard;
-        let _vm_root = unsafe { StackRootGuard::from_raw(self as *const _) };
+        let _vm_root = unsafe { StackRootGuard::<'static, NyarVM>::from_raw(self as *const NyarVM) };
         
         loop {
             loop_count += 1;
@@ -182,7 +183,54 @@ impl NyarVM {
             #[cfg(debug_assertions)]
             println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
 
-            let next_ip = self.dispatch_instruction(ins, cur_ip, module_idx)?;
+            let next_ip = match ins {
+                Instruction::Nop => Ok(None),
+                // I32 operations
+                ins if ins.is_i32_op() => {
+                    self.execute_i32_op(ins)?;
+                    Ok(None)
+                }
+                // I64 operations
+                ins if ins.is_i64_op() => {
+                    self.execute_i64_op(ins)?;
+                    Ok(None)
+                }
+                // Float operations
+                ins if ins.is_float_op() => {
+                    self.execute_float_op(ins)?;
+                    Ok(None)
+                }
+                // BigInt operations
+                ins if ins.is_bigint_op() => {
+                    self.execute_bigint_op(ins)?;
+                    Ok(None)
+                }
+                // String operations
+                ins if ins.is_string_op() => {
+                    self.execute_string_op(ins)?;
+                    Ok(None)
+                }
+                // Stack operations
+                ins if ins.is_stack_op() => {
+                    self.execute_stack_op(ins, module_idx)?;
+                    Ok(None)
+                }
+                // Control operations
+                ins if ins.is_control_op() => self.execute_control_op(ins, cur_ip),
+                // Closure operations
+                ins if ins.is_closure_op() => {
+                    self.execute_closure_op(ins, module_idx)?;
+                    Ok(None)
+                }
+                // Object operations
+                ins if ins.is_object_op() => {
+                    self.execute_object_op(ins)?;
+                    Ok(None)
+                }
+                // Call operations
+                ins if ins.is_call_op() => self.execute_call_op(ins, module_idx),
+                _ => Err(VmError::InvalidOpcode),
+            }?;
 
             if let Some(f) = self.frames.last_mut() {
                 if let Some(new_ip) = next_ip {
@@ -238,6 +286,10 @@ impl NyarVM {
             ins if ins.is_control_op() => self.execute_control_op(ins, cur_ip),
             ins if ins.is_closure_op() => {
                 self.execute_closure_op(ins, module_idx)?;
+                Ok(None)
+            }
+            ins if ins.is_object_op() => {
+                self.execute_object_op(ins)?;
                 Ok(None)
             }
             ins if ins.is_call_op() => self.execute_call_op(ins, module_idx),

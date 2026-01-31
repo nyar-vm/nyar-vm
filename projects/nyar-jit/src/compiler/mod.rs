@@ -262,6 +262,23 @@ impl NyarJit {
                     .collect();
                 optimizer.add_intent(&IKun::Apply(f_id, arg_ids))
             }
+            IKunTree::Choice(c, t, f) => {
+                let c_id = self.add_tree_to_egraph(optimizer, c);
+                let t_id = self.add_tree_to_egraph(optimizer, t);
+                let f_id = self.add_tree_to_egraph(optimizer, f);
+                optimizer.add_intent(&IKun::Choice(c_id, t_id, f_id))
+            }
+            IKunTree::Return(v) => {
+                let v_id = self.add_tree_to_egraph(optimizer, v);
+                optimizer.add_intent(&IKun::Return(v_id))
+            }
+            IKunTree::Seq(nodes) => {
+                let node_ids = nodes
+                    .iter()
+                    .map(|n| self.add_tree_to_egraph(optimizer, n))
+                    .collect();
+                optimizer.add_intent(&IKun::Seq(node_ids))
+            }
             IKunTree::Extension(name, args) => {
                 let arg_ids = args
                     .iter()
@@ -274,7 +291,10 @@ impl NyarJit {
                 let val_id = self.add_tree_to_egraph(optimizer, val);
                 optimizer.add_intent(&IKun::StateUpdate(key_id, val_id))
             }
-            _ => optimizer.add_intent(&IKun::Symbol("unsupported_tree_node".to_string())),
+            _ => {
+                // For other nodes, we might want to log them or handle them generically
+                optimizer.add_intent(&IKun::Symbol("unsupported_tree_node".to_string()))
+            }
         }
     }
 

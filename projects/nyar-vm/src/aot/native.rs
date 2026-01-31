@@ -30,11 +30,10 @@ impl Backend for NativeBackend {
 
         // --- 简单的机器码生成逻辑 ---
         // 为影子空间和第 5 个参数预留空间 (4 * 8 + 8 = 40)
-        // 为了保持 16 字节对齐，我们分配 48 字节 (16 * 3)
-        // 进入 entry 时 rsp 是 16 字节对齐的
+        // 进入 entry 时 rsp 是 16n + 8 (由 OS 调用)，减去 40 后是 16 字节对齐的
         builder.add_instruction(Instruction::Sub {
             dst: Operand::reg(Register::RSP),
-            src: Operand::imm(48, 32),
+            src: Operand::imm(40, 32),
         });
 
         self.emit_tree(tree, &mut builder, &mut data_bytes)?;
@@ -49,10 +48,10 @@ impl Backend for NativeBackend {
             target: Operand::mem(None, None, 0, 2),
         });
 
-        // 恢复栈指针 (虽然 ExitProcess 不会返回，但为了代码完整性加上)
+        // 恢复栈指针
         builder.add_instruction(Instruction::Add {
             dst: Operand::reg(Register::RSP),
-            src: Operand::imm(48, 32),
+            src: Operand::imm(40, 32),
         });
 
         let code = builder.compile_instructions().map_err(|e| {

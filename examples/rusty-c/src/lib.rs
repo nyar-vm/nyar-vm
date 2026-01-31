@@ -358,13 +358,10 @@ impl<'a> UirConverter<'a> {
                 }
 
                 // 特殊处理 printf -> System.Console.WriteLine
-                if let ast::ExpressionKind::Identifier(id) = &*function.kind {
-                    if id.name == "printf" {
-                        return self.builder.call(
-                            self.builder.symbol("System.Console.WriteLine", loc.clone()),
-                            args,
-                            loc,
-                        );
+                if let ast::ExpressionKind::Identifier(name, _) = &*function.kind {
+                    if name == "printf" {
+                        let symbol = self.builder.symbol("System.Console.WriteLine", loc.clone());
+                        return self.builder.call(symbol, args, loc);
                     }
                 }
 

@@ -15,7 +15,7 @@ impl MiniCFrontend {
 
     pub fn parse(&self, source: &str) -> Result<(EGraph<IKun, ()>, Id), String> {
         let language = CLanguage::default();
-        let lexer = CLexer::new(language);
+        let lexer = CLexer::new(&language);
         let mut session = ParseSession::<CLanguage>::new(16);
 
         let source_text = SourceText::new(source.to_string());

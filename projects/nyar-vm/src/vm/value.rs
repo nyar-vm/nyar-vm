@@ -115,7 +115,16 @@ impl Trace for Continuation {
 impl Trace for BigInt {
     fn trace(&self, _ctx: &mut MarkContext) {
         // BigInt does not contain any GC-managed pointers, so tracing is a no-op.
-        // It is stored as a raw byte array (via num_bigint::BigInt).
+        // It is stored as a raw byte array (via num_bigint::BigInt) which is
+        // allocated as part of the GcBox<BigInt> on the GC heap.
+        // 
+        // Memory Layout:
+        // [ GcHeader (4/8 bytes) ]
+        // [ BigInt struct (24-32 bytes) ] -> [ num_bigint::BigInt (Sign, Vec<u32>) ]
+        // Note: The Vec<u32> inside num_bigint::BigInt is allocated on the standard 
+        // heap, not the GC heap. To fully manage BigInt memory in GC, we would
+        // need a custom BigInt implementation that uses GC-allocated buffers.
+        // For now, this is a hybrid approach where the descriptor is GC-managed.
     }
 }
 
