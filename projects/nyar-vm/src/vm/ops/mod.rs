@@ -98,11 +98,13 @@ impl NyarVM {
     }
 
     pub fn execute_jit_at(&mut self, entry_ptr: *const u8) -> Result<Option<Value>, VmError> {
-        type JitEntry = unsafe extern "C" fn(
+        type JitEntry = unsafe extern "win64" fn(
             stack_ptr: *mut Value,
             sp: *mut usize,
             locals_ptr: *mut Value,
             ip_ptr: *mut usize,
+            closure: Value,
+            vm_ptr: *mut NyarVM,
         ) -> i32;
 
         let entry: JitEntry = unsafe { std::mem::transmute(entry_ptr) };
@@ -117,6 +119,8 @@ impl NyarVM {
                 &mut self.sp as *mut usize,
                 frame.locals.as_mut_ptr(),
                 &mut frame.ip as *mut usize,
+                frame.closure,
+                self as *mut NyarVM,
             );
 
             if res_code == 0 {
@@ -186,118 +190,34 @@ impl NyarVM {
             let next_ip = match ins {
                 Instruction::Nop => Ok(None),
                 // I32 operations
-                Instruction::I32Const(v) => {
-                    self.execute_i32_const(v);
-                    Ok(None)
-                }
-                Instruction::I32Add => {
-                    self.execute_i32_add()?;
-                    Ok(None)
-                }
-                Instruction::I32Sub => {
-                    self.execute_i32_sub()?;
-                    Ok(None)
-                }
-                Instruction::I32Mul => {
-                    self.execute_i32_mul()?;
-                    Ok(None)
-                }
-                Instruction::I32DivS => {
-                    self.execute_i32_div_s()?;
-                    Ok(None)
-                }
-                Instruction::I32DivU => {
-                    self.execute_i32_div_u()?;
-                    Ok(None)
-                }
-                Instruction::I32RemS => {
-                    self.execute_i32_rem_s()?;
-                    Ok(None)
-                }
-                Instruction::I32RemU => {
-                    self.execute_i32_rem_u()?;
-                    Ok(None)
-                }
-                Instruction::I32Neg => {
-                    self.execute_i32_neg()?;
-                    Ok(None)
-                }
-                Instruction::I32Eq => {
-                    self.execute_i32_eq()?;
-                    Ok(None)
-                }
-                Instruction::I32Ne => {
-                    self.execute_i32_ne()?;
-                    Ok(None)
-                }
-                Instruction::I32LtS => {
-                    self.execute_i32_lt_s()?;
-                    Ok(None)
-                }
-                Instruction::I32LtU => {
-                    self.execute_i32_lt_u()?;
-                    Ok(None)
-                }
-                Instruction::I32LeS => {
-                    self.execute_i32_le_s()?;
-                    Ok(None)
-                }
-                Instruction::I32LeU => {
-                    self.execute_i32_le_u()?;
-                    Ok(None)
-                }
-                Instruction::I32GtS => {
-                    self.execute_i32_gt_s()?;
-                    Ok(None)
-                }
-                Instruction::I32GtU => {
-                    self.execute_i32_gt_u()?;
-                    Ok(None)
-                }
-                Instruction::I32GeS => {
-                    self.execute_i32_ge_s()?;
-                    Ok(None)
-                }
-                Instruction::I32GeU => {
-                    self.execute_i32_ge_u()?;
-                    Ok(None)
-                }
-                Instruction::I32ToF32S => {
-                    self.execute_i32_to_f32_s()?;
-                    Ok(None)
-                }
-                Instruction::I32ToF32U => {
-                    self.execute_i32_to_f32_u()?;
-                    Ok(None)
-                }
-                Instruction::I32ToF64S => {
-                    self.execute_i32_to_f64_s()?;
-                    Ok(None)
-                }
-                Instruction::I32ToF64U => {
-                    self.execute_i32_to_f64_u()?;
-                    Ok(None)
-                }
-                Instruction::I32Extend64S => {
-                    self.execute_i32_extend64_s()?;
-                    Ok(None)
-                }
-                Instruction::I32Extend64U => {
-                    self.execute_i32_extend64_u()?;
-                    Ok(None)
-                }
-                Instruction::I32Trunc64SLow => {
-                    self.execute_i32_trunc64_s_low()?;
-                    Ok(None)
-                }
-                Instruction::I32Trunc64S => {
-                    self.execute_i32_trunc64_s()?;
-                    Ok(None)
-                }
-                Instruction::I32Trunc64U => {
-                    self.execute_i32_trunc64_u()?;
-                    Ok(None)
-                }
+                Instruction::I32Const(v) => self.execute_i32_const(v),
+                Instruction::I32Add => self.execute_i32_add(),
+                Instruction::I32Sub => self.execute_i32_sub(),
+                Instruction::I32Mul => self.execute_i32_mul(),
+                Instruction::I32DivS => self.execute_i32_div_s(),
+                Instruction::I32DivU => self.execute_i32_div_u(),
+                Instruction::I32RemS => self.execute_i32_rem_s(),
+                Instruction::I32RemU => self.execute_i32_rem_u(),
+                Instruction::I32Neg => self.execute_i32_neg(),
+                Instruction::I32Eq => self.execute_i32_eq(),
+                Instruction::I32Ne => self.execute_i32_ne(),
+                Instruction::I32LtS => self.execute_i32_lt_s(),
+                Instruction::I32LtU => self.execute_i32_lt_u(),
+                Instruction::I32LeS => self.execute_i32_le_s(),
+                Instruction::I32LeU => self.execute_i32_le_u(),
+                Instruction::I32GtS => self.execute_i32_gt_s(),
+                Instruction::I32GtU => self.execute_i32_gt_u(),
+                Instruction::I32GeS => self.execute_i32_ge_s(),
+                Instruction::I32GeU => self.execute_i32_ge_u(),
+                Instruction::I32ToF32S => self.execute_i32_to_f32_s(),
+                Instruction::I32ToF32U => self.execute_i32_to_f32_u(),
+                Instruction::I32ToF64S => self.execute_i32_to_f64_s(),
+                Instruction::I32ToF64U => self.execute_i32_to_f64_u(),
+                Instruction::I32Extend64S => self.execute_i32_extend64_s(),
+                Instruction::I32Extend64U => self.execute_i32_extend64_u(),
+                Instruction::I32Trunc64SLow => self.execute_i32_trunc64_s_low(),
+                Instruction::I32Trunc64S => self.execute_i32_trunc64_s(),
+                Instruction::I32Trunc64U => self.execute_i32_trunc64_u(),
                 // I64 operations
                 Instruction::I64Const(v) => {
                     self.execute_i64_const(v);
@@ -392,8 +312,140 @@ impl NyarVM {
                     Ok(None)
                 }
                 // Float operations
-                ins if ins.is_float_op() => {
-                    self.execute_float_op(ins)?;
+                Instruction::F32Const(v) => {
+                    self.execute_f32_const(v);
+                    Ok(None)
+                }
+                Instruction::F32Add => {
+                    self.execute_f32_add()?;
+                    Ok(None)
+                }
+                Instruction::F32Sub => {
+                    self.execute_f32_sub()?;
+                    Ok(None)
+                }
+                Instruction::F32Mul => {
+                    self.execute_f32_mul()?;
+                    Ok(None)
+                }
+                Instruction::F32Div => {
+                    self.execute_f32_div()?;
+                    Ok(None)
+                }
+                Instruction::F32Neg => {
+                    self.execute_f32_neg()?;
+                    Ok(None)
+                }
+                Instruction::F32Eq => {
+                    self.execute_f32_eq()?;
+                    Ok(None)
+                }
+                Instruction::F32Ne => {
+                    self.execute_f32_ne()?;
+                    Ok(None)
+                }
+                Instruction::F32Lt => {
+                    self.execute_f32_lt()?;
+                    Ok(None)
+                }
+                Instruction::F32Le => {
+                    self.execute_f32_le()?;
+                    Ok(None)
+                }
+                Instruction::F32Gt => {
+                    self.execute_f32_gt()?;
+                    Ok(None)
+                }
+                Instruction::F32Ge => {
+                    self.execute_f32_ge()?;
+                    Ok(None)
+                }
+                Instruction::F32ToI32S => {
+                    self.execute_f32_to_i32_s()?;
+                    Ok(None)
+                }
+                Instruction::F32ToI32U => {
+                    self.execute_f32_to_i32_u()?;
+                    Ok(None)
+                }
+                Instruction::F32ToI64S => {
+                    self.execute_f32_to_i64_s()?;
+                    Ok(None)
+                }
+                Instruction::F32ToI64U => {
+                    self.execute_f32_to_i64_u()?;
+                    Ok(None)
+                }
+                Instruction::F32ToF64 => {
+                    self.execute_f32_to_f64()?;
+                    Ok(None)
+                }
+                Instruction::F64Const(v) => {
+                    self.execute_f64_const(v);
+                    Ok(None)
+                }
+                Instruction::F64Add => {
+                    self.execute_f64_add()?;
+                    Ok(None)
+                }
+                Instruction::F64Sub => {
+                    self.execute_f64_sub()?;
+                    Ok(None)
+                }
+                Instruction::F64Mul => {
+                    self.execute_f64_mul()?;
+                    Ok(None)
+                }
+                Instruction::F64Div => {
+                    self.execute_f64_div()?;
+                    Ok(None)
+                }
+                Instruction::F64Neg => {
+                    self.execute_f64_neg()?;
+                    Ok(None)
+                }
+                Instruction::F64Eq => {
+                    self.execute_f64_eq()?;
+                    Ok(None)
+                }
+                Instruction::F64Ne => {
+                    self.execute_f64_ne()?;
+                    Ok(None)
+                }
+                Instruction::F64Lt => {
+                    self.execute_f64_lt()?;
+                    Ok(None)
+                }
+                Instruction::F64Le => {
+                    self.execute_f64_le()?;
+                    Ok(None)
+                }
+                Instruction::F64Gt => {
+                    self.execute_f64_gt()?;
+                    Ok(None)
+                }
+                Instruction::F64Ge => {
+                    self.execute_f64_ge()?;
+                    Ok(None)
+                }
+                Instruction::F64ToI32S => {
+                    self.execute_f64_to_i32_s()?;
+                    Ok(None)
+                }
+                Instruction::F64ToI32U => {
+                    self.execute_f64_to_i32_u()?;
+                    Ok(None)
+                }
+                Instruction::F64ToI64S => {
+                    self.execute_f64_to_i64_s()?;
+                    Ok(None)
+                }
+                Instruction::F64ToI64U => {
+                    self.execute_f64_to_i64_u()?;
+                    Ok(None)
+                }
+                Instruction::F64ToF32 => {
+                    self.execute_f64_to_f32()?;
                     Ok(None)
                 }
                 // BigInt operations

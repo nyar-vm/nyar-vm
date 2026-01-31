@@ -16,17 +16,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let input_path = PathBuf::from(&args[1]);
+    let mut input_file = None;
+    let mut output_file = None;
+    let mut compile_only = false;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-c" | "--compile" => {
+                compile_only = true;
+            }
+            "-o" | "--output" => {
+                if i + 1 < args.len() {
+                    output_file = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            }
+            _ => {
+                if input_file.is_none() {
+                    input_file = Some(args[i].clone());
+                }
+            }
+        }
+        i += 1;
+    }
+
+    let input_path = match input_file {
+        Some(f) => PathBuf::from(f),
+        None => {
+            println!("Error: No input file specified");
+            return Ok(());
+        }
+    };
+
     let frontend = MiniCFrontend::new();
     let driver = NyarDriver::new();
 
-    if let Some(pos) = args.iter().position(|a| a == "-c" || a == "--compile") {
-        let output_path = if pos + 1 < args.len() {
-            PathBuf::from(&args[pos + 1])
-        } else {
-            let mut p = input_path.clone();
-            p.set_extension("exe");
-            p
+    if compile_only {
+        let output_path = match output_file {
+            Some(f) => PathBuf::from(f),
+            None => {
+                let mut p = input_path.clone();
+                p.set_extension("exe");
+                p
+            }
         };
         println!(
             "正在编译 Mini C 文件: {:?} -> {:?}",
