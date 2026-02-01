@@ -24,15 +24,9 @@ impl std::fmt::Display for CliError {
                 write!(f, "decode error: invalid opcode 0x{:02X}", op)
             }
             CliError::Decode(DecodeError::Truncated) => write!(f, "decode error: truncated code"),
-            CliError::Vm(VmError::InvalidOpcode) => write!(f, "vm error: invalid opcode"),
-            CliError::Vm(VmError::StackUnderflow) => write!(f, "vm error: stack underflow"),
-            CliError::Vm(VmError::IndexOutOfBounds) => write!(f, "vm error: index out of bounds"),
-            CliError::Vm(VmError::UnhandledEffect(name)) => {
-                write!(f, "vm error: unhandled effect {}", name)
+            CliError::Vm(VmError::Runtime { kind, location }) => {
+                write!(f, "vm error: {} at {}", kind, location)
             }
-            CliError::Vm(VmError::UnhandledError) => write!(f, "vm error: unhandled error"),
-            CliError::Vm(VmError::RuntimeError(msg)) => write!(f, "vm error: {}", msg),
-            CliError::Vm(VmError::DivisionByZero) => write!(f, "vm error: division by zero"),
             CliError::Vm(VmError::YieldAsync) => write!(f, "vm error: async yield"),
             CliError::Aot(WasmAotError::EmptyModule) => write!(f, "aot error: empty module"),
             CliError::Aot(WasmAotError::Decode(msg)) => write!(f, "aot error: decode: {}", msg),

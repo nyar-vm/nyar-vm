@@ -15,7 +15,7 @@ impl NyarVM {
     ) -> Result<Option<usize>, VmError> {
         let name = match self.modules[module_idx].constants.get(idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::new(s.split("::").map(|s| s.to_string()).collect()),
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
             _ => return Err(VmError::IndexOutOfBounds),
         };
 
@@ -33,6 +33,12 @@ impl NyarVM {
                 offset: current_frame.ip as u32,
             },
         };
+
+        #[cfg(debug_assertions)]
+        self.log(&format!(
+            "[Effect] Perform {} with {} args at {}",
+            name, argc, effect_info.location
+        ));
 
         // 1. Check for dynamic handler
         if let Some(handler) = self.handler_stack.pop() {

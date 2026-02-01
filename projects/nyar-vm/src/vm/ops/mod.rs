@@ -122,7 +122,7 @@ impl NyarVM {
         let frame = self
             .frames
             .last_mut()
-            .ok_or(VmError::RuntimeError("No active frame".to_string()))?;
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::RuntimeError("No active frame".to_string())))?;
 
         unsafe {
             let res_code = entry(
@@ -147,10 +147,10 @@ impl NyarVM {
                 // 2: OSR Exit (return to interpreter)
                 Ok(None)
             } else {
-                Err(VmError::RuntimeError(format!(
+                Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!(
                     "JIT execution failed or requested deopt with code {}",
                     res_code
-                )))
+                ))))
             }
         }
     }
@@ -175,9 +175,9 @@ impl NyarVM {
                 }
                 
                 if loop_count > 10_000_000 {
-                    let err = VmError::RuntimeError(
+                    let err = self.error(nyar_types::VmErrorKind::RuntimeError(
                         "Maximum instruction limit exceeded (potential infinite loop)".to_string(),
-                    );
+                    ));
                     self.print_traceback(&err);
                     return Err(err);
                 }
@@ -196,7 +196,7 @@ impl NyarVM {
     }
 
     pub fn execute_step(&mut self) -> Result<Option<()>, VmError> {
-        let (cur_ip, module_idx) = {
+        let (cur_ip, module_idx, chunk_idx) = {
             let f = match self.frames.last() {
                 Some(f) => f,
                 None => return Ok(None),
@@ -204,13 +204,35 @@ impl NyarVM {
             if f.ip >= f.instrs.len() {
                 return Ok(None);
             }
-            (f.ip, f.module_idx)
+            (f.ip, f.module_idx, f.chunk_idx)
         };
+
+        // Update location before dispatch
+        if let Some(c_idx) = chunk_idx {
+            let chunk = &self.modules[module_idx].chunks[c_idx];
+            // Find the line info for the current IP
+            // lines is Vec<(offset, line)>
+            let mut line_offset = 0;
+            for &(offset, line) in &chunk.lines {
+                if cur_ip as u32 >= offset {
+                    line_offset = line;
+                } else {
+                    break;
+                }
+            }
+            if let Some(f) = self.frames.last_mut() {
+                f.location = nyar_types::SourceLocation::new(module_idx as u32, line_offset);
+            }
+        }
 
         let ins = self.frames.last().unwrap().instrs[cur_ip].clone();
 
         #[cfg(debug_assertions)]
-        println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
+        {
+            let log_msg = format!("VM: [{:04}] {:?} (stack size: {}) at {}", cur_ip, ins, self.sp, self.frames.last().unwrap().location);
+            println!("{}", log_msg);
+            self.trace_log.borrow_mut().push(log_msg);
+        }
 
         let next_ip = {
             let frame_count_before = self.frames.len();

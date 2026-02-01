@@ -146,9 +146,22 @@ impl NyarVM {
     pub fn get_traceback_summary(&self) -> String {
         let mut res = String::new();
         for (i, f) in self.frames.iter().enumerate().rev().take(10) {
+            let func_name = if let Some(closure) = f.closure.try_as_closure() {
+                format!("Closure#{}", closure.func)
+            } else if let Some(chunk_idx) = f.chunk_idx {
+                // Try to find a symbol for this chunk
+                self.symbol_table
+                    .iter()
+                    .find(|(_, &(m_idx, c_idx))| m_idx == f.module_idx && c_idx as usize == chunk_idx)
+                    .map(|(name, _)| name.to_string())
+                    .unwrap_or_else(|| format!("Chunk#{}", chunk_idx))
+            } else {
+                "Anonymous".to_string()
+            };
+
             let info = format!(
-                "  frame {}: {}, ip={}\n",
-                i, f.location, f.ip
+                "  [frame {}] {} at {}\n",
+                i, func_name, f.location
             );
             res.push_str(&info);
         }
@@ -178,13 +191,40 @@ impl NyarVM {
             0
         };
         for (i, f) in self.frames.iter().enumerate().skip(start) {
+            let func_name = if let Some(closure) = f.closure.try_as_closure() {
+                format!("Closure#{}", closure.func)
+            } else if let Some(chunk_idx) = f.chunk_idx {
+                self.symbol_table
+                    .iter()
+                    .find(|(_, &(m_idx, c_idx))| m_idx == f.module_idx && c_idx as usize == chunk_idx)
+                    .map(|(name, _)| name.to_string())
+                    .unwrap_or_else(|| format!("Chunk#{}", chunk_idx))
+            } else {
+                "Anonymous".to_string()
+            };
+
             let info = format!(
-                "frame {}: {}, ip={}",
-                i, f.location, f.ip
+                "  [frame {}] {} at {}",
+                i, func_name, f.location
             );
             self.print_line(&info);
         }
         self.print_line(&format!("{}", err));
+    }
+
+    pub fn dump_symbol_table(&self) -> String {
+        let mut res = String::new();
+        res.push_str("Symbol Table Dump:\n");
+        let mut symbols: Vec<_> = self.symbol_table.iter().collect();
+        symbols.sort_by(|a, b| a.0.to_string().cmp(&b.0.to_string()));
+
+        for (name, &(m_idx, c_idx)) in symbols {
+            res.push_str(&format!(
+                "  {} -> Module {}, Chunk {}\n",
+                name, m_idx, c_idx
+            ));
+        }
+        res
     }
 
     pub fn load_module(&mut self, module: NyarcModule) -> usize {

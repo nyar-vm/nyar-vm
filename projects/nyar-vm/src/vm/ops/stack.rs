@@ -89,9 +89,7 @@ impl NyarVM {
         let module = &self.modules[module_idx];
         let name = match module.constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => {
-                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
-            }
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
             _ => return Err(VmError::InvalidOpcode),
         };
         if let Some(v) = self.builtins.get(&name) {

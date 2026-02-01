@@ -299,7 +299,7 @@ impl NyarVM {
 
         // Placeholder: try to invoke as a method
         if let Some(name_str) = method_name.try_as_str() {
-            let name = QualifiedName::new(name_str.split("::").map(|s| s.to_string()).collect());
+            let name = QualifiedName::from(name_str);
             self.invoke_primitive_method(receiver, &name, args)?;
         } else {
             return Err(VmError::InvalidOpcode);
@@ -317,9 +317,7 @@ impl NyarVM {
     ) -> Result<Option<usize>, VmError> {
         let name_qn = match self.modules[module_idx].constants.get(idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => {
-                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
-            }
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
             _ => return Err(VmError::IndexOutOfBounds),
         };
         let name = name_qn.to_string();

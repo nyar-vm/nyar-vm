@@ -392,9 +392,7 @@ pub unsafe extern "win64" fn nyar_vm_load_global(vm_ptr: *mut NyarVM, name_idx: 
     let module_idx = vm.frames.last().unwrap().module_idx;
     let module = &vm.modules[module_idx];
     let name = match module.constants.get(name_idx as usize) {
-        Some(Constant::String(s)) => {
-            QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
-        }
+        Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
         Some(Constant::QualifiedName(qn)) => qn.clone(),
         _ => return Value::null(),
     };
@@ -443,9 +441,7 @@ pub unsafe extern "win64" fn nyar_vm_store_global(vm_ptr: *mut NyarVM, name_idx:
     let module = &vm.modules[module_idx];
     let name = match module.constants.get(name_idx as usize) {
         Some(Constant::QualifiedName(qn)) => qn.clone(),
-        Some(Constant::String(s)) => {
-            QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
-        }
+        Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
         _ => return,
     };
     vm.builtins.insert(name, val);
