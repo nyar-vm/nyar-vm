@@ -3,6 +3,8 @@ use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Frame};
 use crate::vm::VmError;
 
+use nyar_types::QualifiedName;
+
 impl NyarVM {
     #[inline(always)]
     pub fn execute_call(
@@ -84,11 +86,14 @@ impl NyarVM {
         module_idx: usize,
     ) -> Result<Option<usize>, VmError> {
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
-            Some(Constant::String(s)) => s.as_str(),
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => {
+                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
+            }
             _ => return Err(VmError::IndexOutOfBounds),
         };
 
-        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
+        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&name) {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
             let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 
@@ -134,7 +139,10 @@ impl NyarVM {
 
         let receiver = self.pop()?;
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
-            Some(Constant::String(s)) => s.clone(),
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => {
+                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
+            }
             _ => return Err(VmError::InvalidOpcode),
         };
 
@@ -151,10 +159,11 @@ impl NyarVM {
     fn invoke_primitive_method(
         &mut self,
         receiver: Value,
-        name: &str,
+        name: &QualifiedName,
         args: Vec<Value>,
     ) -> Result<(), VmError> {
-        match name {
+        let name_str = name.to_string();
+        match name_str.as_str() {
             "println" => {
                 for arg in args {
                     self.print_line(&arg.to_string());
@@ -308,6 +317,7 @@ impl NyarVM {
         module_idx: usize,
     ) -> Result<Option<usize>, VmError> {
         let name = match self.modules[module_idx].constants.get(idx as usize) {
+            Some(Constant::QualifiedName(qn)) => qn.to_string(),
             Some(Constant::String(s)) => s.clone(),
             _ => return Err(VmError::IndexOutOfBounds),
         };

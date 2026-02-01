@@ -42,7 +42,7 @@ impl NyarVM {
         self.run_loop()
     }
 
-    pub fn execute_symbol(&mut self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
+    pub fn execute_symbol(&mut self, name: &QualifiedName, args: Vec<Value>) -> Result<Value, VmError> {
         if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
             if let Some(jit) = self.jit.clone() {
                 if let Some(res) = jit.try_execute(self, m_idx, chunk_idx as usize) {
@@ -180,32 +180,7 @@ impl NyarVM {
                 }
             }
 
-            let (cur_ip, module_idx) = {
-                let f = match self.frames.last() {
-                    Some(f) => f,
-                    None => break,
-                };
-                if f.ip >= f.instrs.len() {
-                    break;
-                }
-                (f.ip, f.module_idx)
-            };
-
-            let ins = self.frames.last().unwrap().instrs[cur_ip].clone();
-
-            #[cfg(debug_assertions)]
-            println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
-
-            let next_ip = self.dispatch_instruction(ins, cur_ip, module_idx)?;
-
-            if let Some(f) = self.frames.last_mut() {
-                if let Some(new_ip) = next_ip {
-                    f.ip = new_ip;
-                } else {
-                    f.ip += 1;
-                }
-            } else {
-                // Return called and it was the last frame
+            if self.execute_step()?.is_none() {
                 break;
             }
         }
@@ -214,6 +189,51 @@ impl NyarVM {
             self.pop()
         } else {
             Ok(Value::null())
+        }
+    }
+
+    pub fn execute_step(&mut self) -> Result<Option<()>, VmError> {
+        let (cur_ip, module_idx) = {
+            let f = match self.frames.last() {
+                Some(f) => f,
+                None => return Ok(None),
+            };
+            if f.ip >= f.instrs.len() {
+                return Ok(None);
+            }
+            (f.ip, f.module_idx)
+        };
+
+        let ins = self.frames.last().unwrap().instrs[cur_ip].clone();
+
+        #[cfg(debug_assertions)]
+        println!("VM: [{:04}] {:?} (stack size: {})", cur_ip, ins, self.sp);
+
+        let next_ip = {
+            let frame_count_before = self.frames.len();
+            let res = self.dispatch_instruction(ins, cur_ip, module_idx)?;
+            let frame_count_after = self.frames.len();
+
+            if frame_count_after > frame_count_before {
+                // A new frame was pushed.
+                // Increment IP of the PREVIOUS frame so it continues after the call.
+                if let Some(prev_f) = self.frames.get_mut(frame_count_before - 1) {
+                    prev_f.ip += 1;
+                }
+            }
+            res
+        };
+
+        if let Some(f) = self.frames.last_mut() {
+            if let Some(new_ip) = next_ip {
+                f.ip = new_ip;
+            } else {
+                f.ip += 1;
+            }
+            Ok(Some(()))
+        } else {
+            // Return called and it was the last frame
+            Ok(None)
         }
     }
 

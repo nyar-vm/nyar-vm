@@ -63,30 +63,9 @@ impl<'a> VmFuture<'a> {
         while loop_count < 1024 {
             loop_count += 1;
             
-            let (cur_ip, module_idx) = {
-                let f = match self.vm.frames.last() {
-                    Some(f) => f,
-                    None => return Poll::Ready(self.vm.pop()),
-                };
-                if f.ip >= f.instrs.len() {
-                    return Poll::Ready(self.vm.pop());
-                }
-                (f.ip, f.module_idx)
-            };
-
-            let ins = self.vm.frames.last().unwrap().instrs[cur_ip].clone();
-            match self.vm.dispatch_instruction(ins, cur_ip, module_idx) {
-                Ok(next_ip) => {
-                    if let Some(f) = self.vm.frames.last_mut() {
-                        if let Some(new_ip) = next_ip {
-                            f.ip = new_ip;
-                        } else {
-                            f.ip += 1;
-                        }
-                    } else {
-                        return Poll::Ready(self.vm.pop());
-                    }
-                }
+            match self.vm.execute_step() {
+                Ok(Some(())) => {}
+                Ok(None) => return Poll::Ready(self.vm.pop()),
                 Err(crate::vm::VmError::YieldAsync) => {
                     // Instruction requested a yield
                     cx.waker().wake_by_ref();

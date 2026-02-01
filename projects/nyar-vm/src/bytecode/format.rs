@@ -65,13 +65,13 @@ impl PartialEq for Chunk {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClassInfo {
-    pub name: String,
+    pub name: QualifiedName,
     pub fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TraitInfo {
-    pub name: String,
+    pub name: QualifiedName,
     pub methods: Vec<String>,
 }
 
@@ -85,12 +85,12 @@ pub struct ImplInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ImportInfo {
     pub provider: String,
-    pub symbol: String,
+    pub symbol: QualifiedName,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExportInfo {
-    pub symbol: String,
+    pub symbol: QualifiedName,
     pub chunk_idx: u16,
 }
 
@@ -100,7 +100,7 @@ pub struct NyarcModule {
     pub flags: u32,
     pub timestamp: u64,
     pub constants: Vec<Constant>,
-    pub effects: Vec<String>,
+    pub effects: Vec<QualifiedName>,
     pub chunks: Vec<Chunk>,
     #[serde(default)]
     pub classes: Vec<ClassInfo>,

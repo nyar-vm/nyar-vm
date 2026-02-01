@@ -74,7 +74,9 @@ pub fn perform_effect_internal(
         let class_idx = vm.modules[module_idx]
             .classes
             .iter()
-            .position(|c| c.name.ends_with("::Token") || c.name == "Token");
+            .position(|c| {
+                c.name.parts.last().map(|s| s.as_str()) == Some("Token")
+            });
         if let Some(idx) = class_idx {
             let idx = idx as u16;
             let val = args.get(0).cloned().unwrap_or(Value::null());

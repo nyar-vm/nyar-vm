@@ -1,5 +1,6 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
+use nyar_types::QualifiedName;
 
 impl NyarVM {
     pub fn register_builtins(&mut self) {
@@ -19,6 +20,6 @@ impl NyarVM {
             system_mut.entries.insert("out".to_string(), out);
         }
 
-        self.builtins.insert("System".to_string(), system);
+        self.builtins.insert(QualifiedName::new(vec!["System".to_string()]), system);
     }
 }

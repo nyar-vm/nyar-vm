@@ -2,6 +2,7 @@ use crate::bytecode::format::Constant;
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use crate::vm::VmError;
+use nyar_types::QualifiedName;
 
 impl NyarVM {
     #[inline(always)]
@@ -87,13 +88,16 @@ impl NyarVM {
     pub fn execute_load_global(&mut self, name_idx: u16, module_idx: usize) -> Result<Option<usize>, VmError> {
         let module = &self.modules[module_idx];
         let name = match module.constants.get(name_idx as usize) {
-            Some(Constant::String(s)) => s,
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => {
+                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
+            }
             _ => return Err(VmError::InvalidOpcode),
         };
-        if let Some(v) = self.builtins.get(name) {
+        if let Some(v) = self.builtins.get(&name) {
             self.push(*v)?;
             Ok(None)
-        } else if let Some(&(_m_idx, _c_idx)) = self.symbol_table.get(name) {
+        } else if let Some(&(_m_idx, _c_idx)) = self.symbol_table.get(&name) {
             self.push(Value::null())?;
             Ok(None)
         } else {
@@ -107,7 +111,10 @@ impl NyarVM {
         let gc = &self.gc;
         let module = &self.modules[module_idx];
         let name = match module.constants.get(name_idx as usize) {
-            Some(Constant::String(s)) => s.clone(),
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => {
+                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
+            }
             _ => return Err(VmError::InvalidOpcode),
         };
         self.builtins.insert(name, v);

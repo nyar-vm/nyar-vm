@@ -6,6 +6,9 @@ use crate::vm::VmError;
 use nyar_gc::{MarkContext, NyarGc, Trace};
 
 
+use nyar_types::{EffectInfo, QualifiedName, SourceLocation};
+
+
 pub trait JitProvider: Send + Sync {
     fn try_execute(
         &self,
@@ -33,8 +36,8 @@ pub struct NyarVM {
     pub stdout: Option<Box<dyn Fn(&str)>>,
     pub trace_log: std::cell::RefCell<Vec<String>>,
     pub ffi: FFIRegistry,
-    pub symbol_table: std::collections::HashMap<String, (usize, u16)>, // (module_idx, chunk_idx)
-    pub builtins: std::collections::HashMap<String, Value>,
+    pub symbol_table: std::collections::HashMap<QualifiedName, (usize, u16)>, // (module_idx, chunk_idx)
+    pub builtins: std::collections::HashMap<QualifiedName, Value>,
     pub jit: Option<std::sync::Arc<dyn JitProvider>>,
     pub local_hotness: u8,
     pub last_gc_count: u64,
