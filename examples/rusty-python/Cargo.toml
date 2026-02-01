@@ -1,10 +1,10 @@
 [package]
-name = "virtual-python"
+name = "rusty-python"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "virtual_python"
+name = "rusty_python"
 path = "src/lib.rs"
 
 [[bin]]

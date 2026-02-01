@@ -1,6 +1,8 @@
+use nyar_types::QualifiedName;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, ImplInfo, NyarcModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::core::NyarVM;
+use std::sync::atomic::AtomicU32;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
@@ -48,7 +50,7 @@ fn test_witness_table_instructions() {
                 handlers: vec![],
                 lines: vec![],
                 decoded: None,
-                hotness: 0,
+                hotness: AtomicU32::new(0),
             },
             Chunk {
                 locals: 0,
@@ -58,7 +60,7 @@ fn test_witness_table_instructions() {
                 handlers: vec![],
                 lines: vec![],
                 decoded: None,
-                hotness: 0,
+                hotness: AtomicU32::new(0),
             },
         ],
         classes: vec![],
@@ -70,7 +72,7 @@ fn test_witness_table_instructions() {
         }],
         imports: vec![],
         exports: vec![ExportInfo {
-            symbol: "main".to_string(),
+            symbol: QualifiedName::new(vec!["main".to_string()]),
             chunk_idx: 0,
         }],
     };

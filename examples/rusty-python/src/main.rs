@@ -3,7 +3,7 @@
 //! 这是一个类似 Python 的语言前端演示程序，支持编译到 Gaia 指令或 Python 字节码 (.pyc)
 
 use std::{fs, path::Path, process::exit};
-use virtual_python::MiniPythonFrontend;
+use rusty_python::MiniPythonFrontend;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

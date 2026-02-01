@@ -104,12 +104,12 @@ fn run_try_raise_catch_effect() {
 
     let module = NyarModule {
         constants: vec![
-            Constant::String("boom".to_string()),
+            Constant::QualifiedName(QualifiedName::new(vec!["boom".to_string()])),
             Constant::Int(0),
             Constant::Int(0),
             Constant::Int(1),
         ],
-        effects: vec!["boom".to_string()],
+        effects: vec![QualifiedName::new(vec!["boom".to_string()])],
         chunks: vec![
             Chunk {
                 locals: 2,
@@ -162,7 +162,7 @@ fn run_algebraic_effect_xxeffect() {
 
     let module = NyarModule {
         constants: vec![
-            Constant::String("XXeffect".to_string()),
+            Constant::QualifiedName(QualifiedName::new(vec!["XXeffect".to_string()])),
             Constant::Int(0), // index 0 for args list
             Constant::Int(0), // fallback 0
             Constant::Int(42),
@@ -206,8 +206,11 @@ fn run_perform_await_on_closure() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        constants: vec![Constant::Int(99)],
-        effects: vec!["await".to_string()],
+        constants: vec![
+            Constant::QualifiedName(QualifiedName::new(vec!["await".to_string()])),
+            Constant::Int(99),
+        ],
+        effects: vec![QualifiedName::new(vec!["await".to_string()])],
         chunks: vec![
             Chunk {
                 max_stack: 8,
@@ -265,7 +268,7 @@ fn run_effect_handler_resume_with_continuation() {
 
     let module = NyarModule {
         constants: vec![
-            Constant::String("XXeffect".to_string()),
+            Constant::QualifiedName(QualifiedName::new(vec!["XXeffect".to_string()])),
             Constant::String("add".to_string()),
             Constant::Int(0),
             Constant::Int(1),
@@ -364,8 +367,8 @@ fn run_effect_multi_layer_two_effects() {
 
     let module = NyarModule {
         constants: vec![
-            Constant::String("XXeffect".to_string()),
-            Constant::String("YYeffect".to_string()),
+            Constant::QualifiedName(QualifiedName::new(vec!["XXeffect".to_string()])),
+            Constant::QualifiedName(QualifiedName::new(vec!["YYeffect".to_string()])),
             Constant::String("add".to_string()),
             Constant::Int(0),
             Constant::Int(1),
@@ -470,8 +473,8 @@ fn run_effect_propagates_to_next_handler() {
 
     let module = NyarModule {
         constants: vec![
-            Constant::String("XXeffect".to_string()), // 0
-            Constant::String("YYeffect".to_string()), // 1
+            Constant::QualifiedName(QualifiedName::new(vec!["XXeffect".to_string()])), // 0
+            Constant::QualifiedName(QualifiedName::new(vec!["YYeffect".to_string()])), // 1
             Constant::String("add".to_string()),      // 2
             Constant::Int(0),                         // 3 index 0
             Constant::Int(3),                         // 4 +3
@@ -566,12 +569,12 @@ fn run_throw_effect_catch_returns() {
 
     let module = NyarModule {
         constants: vec![
-            Constant::String("throw".to_string()), // 0
+            Constant::QualifiedName(QualifiedName::new(vec!["throw".to_string()])), // 0
             Constant::Int(1),                      // 1 arg
             Constant::Int(123),                    // 2 expected
             Constant::Int(0),                      // 3 fallback
         ],
-        effects: vec!["throw".to_string()],
+        effects: vec![QualifiedName::new(vec!["throw".to_string()])],
         chunks: vec![
             Chunk {
                 locals: 1,
@@ -605,8 +608,11 @@ fn run_throw_effect_uncaught_is_unhandled_error() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        constants: vec![Constant::Int(1)],
-        effects: vec!["throw".to_string()],
+        constants: vec![
+            Constant::QualifiedName(QualifiedName::new(vec!["throw".to_string()])),
+            Constant::Int(1),
+        ],
+        effects: vec![QualifiedName::new(vec!["throw".to_string()])],
         chunks: vec![Chunk {
             max_stack: 8,
             code: main,
@@ -634,8 +640,11 @@ fn run_throw_effect_uncaught_prints_traceback() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        constants: vec![Constant::Int(1)],
-        effects: vec!["throw".to_string()],
+        constants: vec![
+            Constant::QualifiedName(QualifiedName::new(vec!["throw".to_string()])),
+            Constant::Int(1),
+        ],
+        effects: vec![QualifiedName::new(vec!["throw".to_string()])],
         chunks: vec![Chunk {
             max_stack: 8,
             code: main,
@@ -676,8 +685,12 @@ fn run_logger_event_default_prints() {
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
-        constants: vec![Constant::Int(0), Constant::Int(0)],
-        effects: vec!["LoggerEvent".to_string()],
+        constants: vec![
+            Constant::QualifiedName(QualifiedName::new(vec!["LoggerEvent".to_string()])),
+            Constant::Int(0),
+            Constant::Int(0),
+        ],
+        effects: vec![QualifiedName::new(vec!["LoggerEvent".to_string()])],
         chunks: vec![Chunk {
             max_stack: 8,
             code: main,
@@ -745,13 +758,14 @@ fn run_logger_event_handler_prints_and_resumes() {
 
     let module = NyarModule {
         constants: vec![
-            Constant::Int(0),
+            Constant::QualifiedName(QualifiedName::new(vec!["LoggerEvent".to_string()])),
             Constant::Int(0),
             Constant::String("print".to_string()),
         ],
-        effects: vec!["LoggerEvent".to_string()],
+        effects: vec![QualifiedName::new(vec!["LoggerEvent".to_string()])],
         chunks: vec![
             Chunk {
+                locals: 3,
                 max_stack: 8,
                 code: catch,
                 ..Default::default()
