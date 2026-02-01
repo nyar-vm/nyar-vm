@@ -36,9 +36,13 @@ impl NyarVM {
 
         // 1. Check for dynamic handler
         if let Some(handler) = self.handler_stack.pop() {
-            // Capture continuation
-            let frame = self.frames.last().ok_or(VmError::RuntimeError("No frame".to_string()))?;
-            let cont = Value::continuation(frame.ip, self.stack[..self.sp].to_vec(), self.frames.clone(), &self.gc);
+            // Capture continuation. The current instruction is 'perform', 
+            // so we want the continuation to resume at the NEXT instruction.
+            let mut captured_frames = self.frames.clone();
+            if let Some(f) = captured_frames.last_mut() {
+                f.ip += 1;
+            }
+            let cont = Value::continuation(0, self.stack[..self.sp].to_vec(), captured_frames, &self.gc);
             
             // Unwind to handler depth
             self.frames.truncate(handler.frame_depth);
@@ -48,7 +52,20 @@ impl NyarVM {
             let instrs = self.get_chunk_instructions(handler_module_idx, handler.catch_chunk)?;
             let chunk = &self.modules[handler_module_idx].chunks[handler.catch_chunk];
             let locals_count = chunk.locals as usize;
-            let locals = vec![Value::null(); locals_count];
+            
+            let effect_obj = Value::effect(effect_info, args.clone(), &self.gc);
+            let args_list = Value::list(args, &self.gc);
+            
+            let mut locals = vec![Value::null(); locals_count];
+            if locals_count >= 1 {
+                locals[0] = effect_obj;
+            }
+            if locals_count >= 2 {
+                locals[1] = args_list;
+            }
+            if locals_count >= 3 {
+                locals[2] = cont;
+            }
             
             let new_frame = Frame {
                 instrs,
@@ -61,10 +78,8 @@ impl NyarVM {
             };
             self.frames.push(new_frame);
             
-            // Push effect object and continuation to handler
-            let effect_obj = Value::effect(effect_info, args, &self.gc);
+            // Push effect object to the stack for MatchEffect
             self.push(effect_obj)?;
-            self.push(cont)?;
             
             return Ok(Some(0));
         }
@@ -117,7 +132,10 @@ impl NyarVM {
         // Push the resumed value as the result of the 'perform' instruction.
         self.push(val)?;
 
-        Ok(Some(cont.ip))
+        // Return the instruction pointer where we should resume execution.
+        // The continuation's last frame IP already points to the next instruction
+        // because we incremented it during capture in execute_perform.
+        Ok(Some(cont.frames.last().map(|f| f.ip).unwrap_or(0)))
     }
 
     #[inline(always)]
@@ -140,8 +158,11 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_match_effect(&mut self, idx: u16, module_idx: usize) -> Result<Option<usize>, VmError> {
-        // Pop an effect object and check if it matches the name at constants[idx]
-        let val = self.pop()?;
+        // The effect object is on the stack, pushed by the VM during perform dispatch
+        // OR it's in locals[0] of the handler frame if we are using the new logic.
+        // Let's check the stack first, as it's more direct for the MatchEffect opcode.
+        let val = self.peek_at(0)?;
+        
         let target_name = match self.modules[module_idx].constants.get(idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn,
             Some(Constant::String(s)) => {
@@ -153,19 +174,18 @@ impl NyarVM {
 
         if let Some(effect) = val.try_as_effect() {
             if &effect.info.name == target_name {
-                // Match! Push arguments and then true
+                // Match! Pop the effect, push arguments and then true
+                self.pop()?;
                 for arg in &effect.args {
                     self.push(*arg)?;
                 }
                 self.push(Value::bool(true))?;
             } else {
-                // No match. Push the effect back and then false
-                self.push(val)?;
+                // No match. Keep the effect on stack, push false
                 self.push(Value::bool(false))?;
             }
         } else {
             // Not an effect.
-            self.push(val)?;
             self.push(Value::bool(false))?;
         }
         Ok(None)
