@@ -491,6 +491,13 @@ impl NyarcModule {
                     buf.push(2);
                     write_string(&mut buf, s);
                 }
+                Constant::QualifiedName(qn) => {
+                    buf.push(3);
+                    buf.extend_from_slice(&(qn.parts.len() as u32).to_le_bytes());
+                    for p in &qn.parts {
+                        write_string(&mut buf, p);
+                    }
+                }
             }
         }
         buf.extend_from_slice(&(self.effects.len() as u32).to_le_bytes());

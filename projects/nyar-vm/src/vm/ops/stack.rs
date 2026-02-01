@@ -14,6 +14,9 @@ impl NyarVM {
             Constant::Int(i) => self.push(Value::int(i.clone())),
             Constant::Float(x) => self.push(Value::float(x.clone())),
             Constant::String(s) => self.push(Value::string(s.clone(), &self.gc)),
+            Constant::QualifiedName(qn) => {
+                self.push(Value::qualified_name(qn.clone(), &self.gc))
+            }
         }?;
         Ok(None)
     }

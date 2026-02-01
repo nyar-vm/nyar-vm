@@ -320,7 +320,7 @@ pub unsafe extern "win64" fn nyar_vm_capture_ref(vm_ptr: *mut NyarVM, idx: u32, 
     } else {
         let frame = vm.frames.last().unwrap();
         let closure = frame.closure.as_closure();
-        closure.upvalues[idx as usize].0
+        closure.upvalues[idx as usize].get()
     }
 }
 
