@@ -157,6 +157,35 @@ pub fn write_string(buf: &mut Vec<u8>, s: &str) {
     buf.extend_from_slice(s.as_bytes());
 }
 
+pub fn write_qualified_name(buf: &mut Vec<u8>, qn: &QualifiedName) {
+    let l = qn.parts.len() as u32;
+    buf.extend_from_slice(&l.to_le_bytes());
+    for p in &qn.parts {
+        write_string(buf, p);
+    }
+}
+
+pub fn read_string(cur: &mut Cursor<&[u8]>) -> Result<String, FormatError> {
+    let l = cur
+        .read_u32::<LittleEndian>()
+        .map_err(|_| FormatError::Truncated)? as usize;
+    let mut buf = vec![0u8; l];
+    cur.read_exact(&mut buf)
+        .map_err(|_| FormatError::Truncated)?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
+pub fn read_qualified_name(cur: &mut Cursor<&[u8]>) -> Result<QualifiedName, FormatError> {
+    let count = cur
+        .read_u32::<LittleEndian>()
+        .map_err(|_| FormatError::Truncated)? as usize;
+    let mut parts = Vec::with_capacity(count);
+    for _ in 0..count {
+        parts.push(read_string(cur)?);
+    }
+    Ok(QualifiedName::new(parts))
+}
+
 impl Default for Chunk {
     fn default() -> Self {
         Self {
@@ -231,30 +260,12 @@ impl NyarcModule {
                     constants.push(Constant::Float(f64::from_bits(raw)));
                 }
                 2 => {
-                    let l = cur
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| FormatError::Truncated)? as usize;
-                    let mut buf = vec![0u8; l];
-                    cur.read_exact(&mut buf)
-                        .map_err(|_| FormatError::Truncated)?;
-                    let s = String::from_utf8_lossy(&buf).into_owned();
+                    let s = read_string(&mut cur)?;
                     constants.push(Constant::String(s));
                 }
                 3 => {
-                    let count = cur
-                        .read_u32::<LittleEndian>()
-                        .map_err(|_| FormatError::Truncated)? as usize;
-                    let mut parts = Vec::with_capacity(count);
-                    for _ in 0..count {
-                        let l = cur
-                            .read_u32::<LittleEndian>()
-                            .map_err(|_| FormatError::Truncated)? as usize;
-                        let mut buf = vec![0u8; l];
-                        cur.read_exact(&mut buf)
-                            .map_err(|_| FormatError::Truncated)?;
-                        parts.push(String::from_utf8_lossy(&buf).into_owned());
-                    }
-                    constants.push(Constant::QualifiedName(QualifiedName::new(parts)));
+                    let qn = read_qualified_name(&mut cur)?;
+                    constants.push(Constant::QualifiedName(qn));
                 }
                 _ => return Err(FormatError::Truncated),
             }
@@ -264,13 +275,7 @@ impl NyarcModule {
             .map_err(|_| FormatError::Truncated)? as usize;
         let mut effects = Vec::with_capacity(eff_count);
         for _ in 0..eff_count {
-            let l = cur
-                .read_u32::<LittleEndian>()
-                .map_err(|_| FormatError::Truncated)? as usize;
-            let mut buf = vec![0u8; l];
-            cur.read_exact(&mut buf)
-                .map_err(|_| FormatError::Truncated)?;
-            effects.push(String::from_utf8_lossy(&buf).into_owned());
+            effects.push(read_qualified_name(&mut cur)?);
         }
         let chunk_count = cur
             .read_u32::<LittleEndian>()
@@ -325,25 +330,13 @@ impl NyarcModule {
                 .read_u32::<LittleEndian>()
                 .map_err(|_| FormatError::Truncated)? as usize;
             for _ in 0..class_count {
-                let name_len = cur
-                    .read_u32::<LittleEndian>()
-                    .map_err(|_| FormatError::Truncated)? as usize;
-                let mut buf = vec![0u8; name_len];
-                cur.read_exact(&mut buf)
-                    .map_err(|_| FormatError::Truncated)?;
-                let name = String::from_utf8_lossy(&buf).into_owned();
+                let name = read_qualified_name(&mut cur)?;
                 let field_count = cur
                     .read_u16::<LittleEndian>()
                     .map_err(|_| FormatError::Truncated)?;
                 let mut fields = Vec::with_capacity(field_count as usize);
                 for _ in 0..field_count {
-                    let flen =
-                        cur.read_u32::<LittleEndian>()
-                            .map_err(|_| FormatError::Truncated)? as usize;
-                    let mut fbuf = vec![0u8; flen];
-                    cur.read_exact(&mut fbuf)
-                        .map_err(|_| FormatError::Truncated)?;
-                    fields.push(String::from_utf8_lossy(&fbuf).into_owned());
+                    fields.push(read_string(&mut cur)?);
                 }
                 classes.push(ClassInfo { name, fields });
             }
@@ -355,25 +348,13 @@ impl NyarcModule {
                 .read_u32::<LittleEndian>()
                 .map_err(|_| FormatError::Truncated)? as usize;
             for _ in 0..trait_count {
-                let name_len = cur
-                    .read_u32::<LittleEndian>()
-                    .map_err(|_| FormatError::Truncated)? as usize;
-                let mut buf = vec![0u8; name_len];
-                cur.read_exact(&mut buf)
-                    .map_err(|_| FormatError::Truncated)?;
-                let name = String::from_utf8_lossy(&buf).into_owned();
+                let name = read_qualified_name(&mut cur)?;
                 let method_count = cur
                     .read_u16::<LittleEndian>()
                     .map_err(|_| FormatError::Truncated)?;
                 let mut methods = Vec::with_capacity(method_count as usize);
                 for _ in 0..method_count {
-                    let mlen =
-                        cur.read_u32::<LittleEndian>()
-                            .map_err(|_| FormatError::Truncated)? as usize;
-                    let mut mbuf = vec![0u8; mlen];
-                    cur.read_exact(&mut mbuf)
-                        .map_err(|_| FormatError::Truncated)?;
-                    methods.push(String::from_utf8_lossy(&mbuf).into_owned());
+                    methods.push(read_string(&mut cur)?);
                 }
                 traits.push(TraitInfo { name, methods });
             }
@@ -415,22 +396,8 @@ impl NyarcModule {
                 .read_u32::<LittleEndian>()
                 .map_err(|_| FormatError::Truncated)? as usize;
             for _ in 0..import_count {
-                let plen = cur
-                    .read_u32::<LittleEndian>()
-                    .map_err(|_| FormatError::Truncated)? as usize;
-                let mut pbuf = vec![0u8; plen];
-                cur.read_exact(&mut pbuf)
-                    .map_err(|_| FormatError::Truncated)?;
-                let provider = String::from_utf8_lossy(&pbuf).into_owned();
-
-                let slen = cur
-                    .read_u32::<LittleEndian>()
-                    .map_err(|_| FormatError::Truncated)? as usize;
-                let mut sbuf = vec![0u8; slen];
-                cur.read_exact(&mut sbuf)
-                    .map_err(|_| FormatError::Truncated)?;
-                let symbol = String::from_utf8_lossy(&sbuf).into_owned();
-
+                let provider = read_string(&mut cur)?;
+                let symbol = read_qualified_name(&mut cur)?;
                 imports.push(ImportInfo { provider, symbol });
             }
         }
@@ -441,14 +408,7 @@ impl NyarcModule {
                 .read_u32::<LittleEndian>()
                 .map_err(|_| FormatError::Truncated)? as usize;
             for _ in 0..export_count {
-                let slen = cur
-                    .read_u32::<LittleEndian>()
-                    .map_err(|_| FormatError::Truncated)? as usize;
-                let mut sbuf = vec![0u8; slen];
-                cur.read_exact(&mut sbuf)
-                    .map_err(|_| FormatError::Truncated)?;
-                let symbol = String::from_utf8_lossy(&sbuf).into_owned();
-
+                let symbol = read_qualified_name(&mut cur)?;
                 let chunk_idx = cur
                     .read_u16::<LittleEndian>()
                     .map_err(|_| FormatError::Truncated)?;
@@ -493,16 +453,13 @@ impl NyarcModule {
                 }
                 Constant::QualifiedName(qn) => {
                     buf.push(3);
-                    buf.extend_from_slice(&(qn.parts.len() as u32).to_le_bytes());
-                    for p in &qn.parts {
-                        write_string(&mut buf, p);
-                    }
+                    write_qualified_name(&mut buf, qn);
                 }
             }
         }
         buf.extend_from_slice(&(self.effects.len() as u32).to_le_bytes());
         for e in &self.effects {
-            write_string(&mut buf, e);
+            write_qualified_name(&mut buf, e);
         }
         buf.extend_from_slice(&(self.chunks.len() as u32).to_le_bytes());
         for ch in &self.chunks {
@@ -520,7 +477,7 @@ impl NyarcModule {
 
         buf.extend_from_slice(&(self.classes.len() as u32).to_le_bytes());
         for c in &self.classes {
-            write_string(&mut buf, &c.name);
+            write_qualified_name(&mut buf, &c.name);
             buf.extend_from_slice(&(c.fields.len() as u16).to_le_bytes());
             for f in &c.fields {
                 write_string(&mut buf, f);
@@ -529,7 +486,7 @@ impl NyarcModule {
 
         buf.extend_from_slice(&(self.traits.len() as u32).to_le_bytes());
         for t in &self.traits {
-            write_string(&mut buf, &t.name);
+            write_qualified_name(&mut buf, &t.name);
             buf.extend_from_slice(&(t.methods.len() as u16).to_le_bytes());
             for m in &t.methods {
                 write_string(&mut buf, m);
@@ -549,12 +506,12 @@ impl NyarcModule {
         buf.extend_from_slice(&(self.imports.len() as u32).to_le_bytes());
         for i in &self.imports {
             write_string(&mut buf, &i.provider);
-            write_string(&mut buf, &i.symbol);
+            write_qualified_name(&mut buf, &i.symbol);
         }
 
         buf.extend_from_slice(&(self.exports.len() as u32).to_le_bytes());
         for e in &self.exports {
-            write_string(&mut buf, &e.symbol);
+            write_qualified_name(&mut buf, &e.symbol);
             buf.extend_from_slice(&e.chunk_idx.to_le_bytes());
         }
 

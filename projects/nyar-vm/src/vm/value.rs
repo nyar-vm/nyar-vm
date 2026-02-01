@@ -83,6 +83,7 @@ impl Trace for Value {
             | ValueTag::Function
             | ValueTag::TraitObject
             | ValueTag::QualifiedName
+            | ValueTag::Future
             | ValueTag::Effect => unsafe {
                 let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
                 GcHeader::mark(header_ptr, ctx);
@@ -199,6 +200,24 @@ impl Trace for Effect {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FutureStatus {
+    Pending,
+    Ready,
+    Failed,
+}
+
+pub struct Future {
+    pub status: FutureStatus,
+    pub result: Value,
+}
+
+impl Trace for Future {
+    fn trace(&self, ctx: &mut MarkContext) {
+        self.result.trace(ctx);
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ValueTag {
@@ -221,6 +240,7 @@ pub enum ValueTag {
     Function = 16,
     TraitObject = 17,
     QualifiedName = 18,
+    Future = 19,
 }
 
 #[repr(transparent)]
@@ -287,6 +307,7 @@ impl Value {
             16 => ValueTag::Function,
             17 => ValueTag::TraitObject,
             18 => ValueTag::QualifiedName,
+            19 => ValueTag::Future,
             _ => panic!("Invalid tag value: {} (raw={:016x})", tag_val, self.0),
         }
     }
@@ -392,6 +413,14 @@ impl Value {
         let ptr = self.payload() as *mut GcBox<TraitObject>;
         &mut (*ptr).data
     }
+    pub unsafe fn as_future<'a>(&self) -> &'a Future {
+        let ptr = self.payload() as *const GcBox<Future>;
+        &(*ptr).data
+    }
+    pub unsafe fn as_future_mut<'a>(&self) -> &'a mut Future {
+        let ptr = self.payload() as *mut GcBox<Future>;
+        &mut (*ptr).data
+    }
     pub fn int(v: i64) -> Self {
         Self::encode(ValueTag::Int, v as u64)
     }
@@ -441,6 +470,10 @@ impl Value {
 
     pub fn is_dyn_object(&self) -> bool {
         !self.is_float() && self.tag() == ValueTag::DynObject
+    }
+
+    pub fn is_future(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Future
     }
 
     pub fn is_closure(&self) -> bool {
@@ -584,6 +617,13 @@ impl Value {
             frames,
         });
         Self::encode(ValueTag::Continuation, g.as_ptr() as u64)
+    }
+    pub fn future(gc: &NyarGc) -> Self {
+        let g = gc.alloc(Future {
+            status: FutureStatus::Pending,
+            result: Value::null(),
+        });
+        Self::encode(ValueTag::Future, g.as_ptr() as u64)
     }
     pub fn as_int(&self) -> i64 {
         self.payload() as i64
@@ -743,6 +783,13 @@ impl Value {
     pub fn try_as_dyn_object_mut(&self) -> Option<&mut DynObject> {
         if self.is_dyn_object() {
             Some(unsafe { self.as_dyn_object_mut() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_future(&self) -> Option<&Future> {
+        if self.is_future() {
+            Some(unsafe { self.as_future() })
         } else {
             None
         }

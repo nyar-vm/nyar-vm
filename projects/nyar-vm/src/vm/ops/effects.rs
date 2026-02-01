@@ -157,10 +157,27 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_await(&mut self) -> Result<Option<usize>, VmError> {
-        // Simple busy-yield for now
-        // In a real implementation, we would check if the future is ready
-        // and if not, save the current continuation and yield.
-        Err(VmError::YieldAsync)
+        let val = self.pop()?;
+        if let Some(future) = val.try_as_future() {
+            match future.status {
+                crate::vm::value::FutureStatus::Ready => {
+                    self.push(future.result)?;
+                    Ok(None)
+                }
+                crate::vm::value::FutureStatus::Failed => {
+                    Err(VmError::RuntimeError(format!("Future failed: {}", future.result)))
+                }
+                crate::vm::value::FutureStatus::Pending => {
+                    // Push the future back and yield
+                    self.push(val)?;
+                    Err(VmError::YieldAsync)
+                }
+            }
+        } else {
+            // Not a future, just treat as ready
+            self.push(val)?;
+            Ok(None)
+        }
     }
 
     #[inline(always)]

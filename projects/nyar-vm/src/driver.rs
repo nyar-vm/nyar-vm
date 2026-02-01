@@ -1,6 +1,6 @@
 use crate::bytecode::compiler::NyarBackend;
 use crate::vm::core::NyarVM;
-use nyar_types::{NyarError, NyarFrontend};
+use nyar_types::{NyarError, NyarFrontend, QualifiedName};
 use std::fs;
 use std::path::Path;
 
@@ -24,7 +24,8 @@ impl NyarDriver {
         let module = backend.finish();
         let mut vm = NyarVM::new();
         let module_idx = vm.load_module(module);
-        if vm.execute_symbol("main", vec![]).is_ok() {
+        let main_name = QualifiedName::new(vec!["main".to_string()]);
+        if vm.execute_symbol(&main_name, vec![]).is_ok() {
             Ok(())
         } else {
             vm.execute(module_idx, 0)

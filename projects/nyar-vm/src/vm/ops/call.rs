@@ -300,8 +300,9 @@ impl NyarVM {
         args.reverse();
 
         // Placeholder: try to invoke as a method
-        if let Some(name) = method_name.try_as_str() {
-            self.invoke_primitive_method(receiver, name, args)?;
+        if let Some(name_str) = method_name.try_as_str() {
+            let name = QualifiedName::new(name_str.split("::").map(|s| s.to_string()).collect());
+            self.invoke_primitive_method(receiver, &name, args)?;
         } else {
             return Err(VmError::InvalidOpcode);
         }
@@ -316,11 +317,14 @@ impl NyarVM {
         argc: u8,
         module_idx: usize,
     ) -> Result<Option<usize>, VmError> {
-        let name = match self.modules[module_idx].constants.get(idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.to_string(),
-            Some(Constant::String(s)) => s.clone(),
+        let name_qn = match self.modules[module_idx].constants.get(idx as usize) {
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => {
+                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
+            }
             _ => return Err(VmError::IndexOutOfBounds),
         };
+        let name = name_qn.to_string();
 
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
@@ -361,7 +365,7 @@ impl NyarVM {
             self.push(result)?;
         } else {
             // If not found in FFI, maybe it's a builtin?
-            if let Some(val) = self.builtins.get(&name).cloned() {
+            if let Some(val) = self.builtins.get(&name_qn).cloned() {
                 // If it's a closure/function, we should probably call it, 
                 // but FFICall usually implies direct native call.
                 // For now, return error if not a native function.

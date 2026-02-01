@@ -89,3 +89,20 @@ impl FFIFunction for NativeAdd {
     }
 }
 
+pub struct NativeGetTime;
+impl FFIFunction for NativeGetTime {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![],
+            ret: FFIType::Int,
+        })
+    }
+    fn call(&self, _args: Vec<Value>) -> FFIResult {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Ok(Value::int(now as i64))
+    }
+}
+

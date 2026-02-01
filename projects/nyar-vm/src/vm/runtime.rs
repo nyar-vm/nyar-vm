@@ -2,6 +2,7 @@ use crate::vm::core::NyarVM;
 use crate::vm::value::{Upvalue, Value};
 use crate::bytecode::format::Constant;
 use crate::vm::value::BigInt;
+use nyar_types::QualifiedName;
 
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_upvalue_get(upvalue_ptr: *const Option<Upvalue>) -> Value {
@@ -301,12 +302,6 @@ pub unsafe extern "win64" fn nyar_vm_store_upvalue(vm_ptr: *mut NyarVM, closure_
 }
 
 #[no_mangle]
-pub unsafe extern "win64" fn nyar_vm_close_upvalues(vm_ptr: *mut NyarVM) {
-    let vm = &mut *vm_ptr;
-    vm.execute_close_upvalues().unwrap();
-}
-
-#[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_tail_call(_vm_ptr: *mut NyarVM, _target: Value) -> i32 {
     3 // StatusTailCall
 }
@@ -372,7 +367,10 @@ pub unsafe extern "win64" fn nyar_vm_store_global(vm_ptr: *mut NyarVM, name_idx:
     let module_idx = vm.frames.last().unwrap().module_idx;
     let module = &vm.modules[module_idx];
     let name = match module.constants.get(name_idx as usize) {
-        Some(Constant::String(s)) => s.clone(),
+        Some(Constant::QualifiedName(qn)) => qn.clone(),
+        Some(Constant::String(s)) => {
+            QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
+        }
         _ => return,
     };
     vm.builtins.insert(name, val);

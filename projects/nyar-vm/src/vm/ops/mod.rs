@@ -16,6 +16,7 @@ use crate::bytecode::instruction::Instruction;
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use crate::vm::VmError;
+use nyar_types::QualifiedName;
 
 impl NyarVM {
     pub fn execute(&mut self, module_idx: usize, chunk_idx: usize) -> Result<Value, VmError> {

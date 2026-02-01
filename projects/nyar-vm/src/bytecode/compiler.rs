@@ -2,7 +2,7 @@ use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::{Chunk, Constant as NyarConstant, ExportInfo, NyarModule};
 use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
-use nyar_types::VmError;
+use nyar_types::{QualifiedName, VmError};
 
 pub struct NyarBackend {
     module: NyarModule,
@@ -44,7 +44,7 @@ impl NyarBackend {
                         hotness: std::sync::atomic::AtomicU32::new(0),
                     });
                     self.module.exports.push(ExportInfo {
-                        symbol: name.clone(),
+                        symbol: QualifiedName::new(name.split("::").map(|s| s.to_string()).collect()),
                         chunk_idx,
                     });
                 }
@@ -122,7 +122,7 @@ impl NyarBackend {
                                     hotness: std::sync::atomic::AtomicU32::new(0),
                                 });
                                 self.module.exports.push(ExportInfo {
-                                    symbol: name.clone(),
+                                    symbol: QualifiedName::new(name.split("::").map(|s| s.to_string()).collect()),
                                     chunk_idx,
                                 });
                             }
