@@ -357,6 +357,10 @@ impl NyarVM {
             unsafe { val.as_string().len() }
         } else if val.is_dyn_object() {
             unsafe { val.as_dyn_object().entries.len() }
+        } else if val.is_object() {
+            unsafe { val.as_object().fields.len() }
+        } else if val.is_bigint() {
+            unsafe { val.as_bigint().to_bytes_le().1.len() }
         } else {
             return Err(VmError::InvalidOpcode);
         };

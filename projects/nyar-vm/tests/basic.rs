@@ -181,12 +181,6 @@ fn run_has_key_object() {
     code.push(nyar_vm::bytecode::opcode::StringExt::Const as u8);
     code.push(1u8);
     code.extend_from_slice(b"a");
-    code.push(Opcode::Swap as u8);
-    code.push(3u8);
-    code.push(Opcode::Swap as u8);
-    code.push(2u8);
-    code.push(Opcode::Swap as u8);
-    code.push(1u8);
     code.push(Opcode::HasKey as u8);
     code.push(Opcode::Return as u8);
     let module = NyarModule {
