@@ -1,7 +1,7 @@
-use nyar_types::VmError;
+use nyar_types::{QualifiedName, VmError};
 use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
-use nyar_vm::vm::interpreter::NyarVM;
+use nyar_vm::vm::core::NyarVM;
 
 #[test]
 fn run_await_on_closure() {
@@ -167,7 +167,7 @@ fn run_algebraic_effect_xxeffect() {
             Constant::Int(0), // fallback 0
             Constant::Int(42),
         ],
-        effects: vec!["XXeffect".to_string()],
+        effects: vec![QualifiedName::new(vec!["XXeffect".to_string()])],
         chunks: vec![
             Chunk {
                 locals: 2,
@@ -272,7 +272,7 @@ fn run_effect_handler_resume_with_continuation() {
             Constant::Int(0),
             Constant::Int(10),
         ],
-        effects: vec!["XXeffect".to_string()],
+        effects: vec![QualifiedName::new(vec!["XXeffect".to_string()])],
         chunks: vec![
             Chunk {
                 locals: 3,
@@ -374,7 +374,10 @@ fn run_effect_multi_layer_two_effects() {
             Constant::Int(20),
             Constant::Int(0),
         ],
-        effects: vec!["XXeffect".to_string(), "YYeffect".to_string()],
+        effects: vec![
+            QualifiedName::new(vec!["XXeffect".to_string()]),
+            QualifiedName::new(vec!["YYeffect".to_string()]),
+        ],
         chunks: vec![
             Chunk {
                 locals: 3,
@@ -477,7 +480,10 @@ fn run_effect_propagates_to_next_handler() {
             Constant::Int(0),                         // 7 unused
             Constant::Int(0),                         // 8 fallback 0
         ],
-        effects: vec!["XXeffect".to_string(), "YYeffect".to_string()],
+        effects: vec![
+            QualifiedName::new(vec!["XXeffect".to_string()]),
+            QualifiedName::new(vec!["YYeffect".to_string()]),
+        ],
         chunks: vec![
             Chunk {
                 locals: 3,
@@ -518,7 +524,7 @@ fn run_effect_unhandled_error_top_level() {
 
     let module = NyarModule {
         constants: vec![Constant::Int(1)],
-        effects: vec!["XXeffect".to_string()],
+        effects: vec![QualifiedName::new(vec!["XXeffect".to_string()])],
         chunks: vec![Chunk {
             max_stack: 8,
             code: main,

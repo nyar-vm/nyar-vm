@@ -1,6 +1,6 @@
 use nyar_vm::bytecode::format::minimal_module_with_chunk;
 use nyar_vm::bytecode::opcode::{BigIntExt, F32Ext, F64Ext, I32Ext, I64Ext, Opcode, StringExt};
-use nyar_vm::vm::interpreter::NyarVM;
+use nyar_vm::vm::core::NyarVM;
 
 #[test]
 fn run_i32_add_return() {

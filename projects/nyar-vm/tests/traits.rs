@@ -1,6 +1,6 @@
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, ImplInfo, NyarcModule};
 use nyar_vm::bytecode::opcode::Opcode;
-use nyar_vm::vm::interpreter::NyarVM;
+use nyar_vm::vm::core::NyarVM;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]

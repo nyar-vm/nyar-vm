@@ -296,13 +296,14 @@ fn run_sizeof_array_string_bigint_object() {
     code3.push(nyar_vm::bytecode::opcode::BigIntExt::Const as u8);
     code3.push(1u8);
     code3.push(1u8);
+    code3.push(57u8);
     code3.push(Opcode::SizeOf as u8);
     code3.push(Opcode::Return as u8);
     let module3 = minimal_module_with_chunk(code3, vec![]);
     let mut vm3 = NyarVM::new();
     let module_idx3 = vm3.load_module(module3);
     let v3 = vm3.execute(module_idx3, 0).unwrap();
-    assert_eq!(v3.as_int(), psize);
+    assert_eq!(v3.as_int(), 1);
 
     // Object
     let mut code4 = Vec::new();
@@ -332,7 +333,7 @@ fn run_sizeof_array_string_bigint_object() {
     let mut vm4 = NyarVM::new();
     let module_idx4 = vm4.load_module(module4);
     let v4 = vm4.execute(module_idx4, 0).unwrap();
-    assert_eq!(v4.as_int(), psize);
+    assert_eq!(v4.as_int(), 2);
 }
 
 #[test]

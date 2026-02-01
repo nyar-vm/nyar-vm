@@ -143,6 +143,9 @@ impl NyarVM {
             } else if arr_val.is_tuple() {
                 let tuple = unsafe { arr_val.as_tuple_mut() };
                 if idx < tuple.items.len() {
+                    if tuple.items[idx].tag() != val.tag() {
+                        return Err(VmError::RuntimeError("Tuple element type mismatch".to_string()));
+                    }
                     tuple.items[idx] = val;
                     val.write_barrier(gc);
                     self.push(arr_val)?;
@@ -360,7 +363,7 @@ impl NyarVM {
         } else if val.is_object() {
             unsafe { val.as_object().fields.len() }
         } else if val.is_bigint() {
-            unsafe { val.as_bigint().to_bytes_le().1.len() }
+            unsafe { val.as_bigint().0.to_bytes_le().1.len() }
         } else {
             return Err(VmError::InvalidOpcode);
         };
