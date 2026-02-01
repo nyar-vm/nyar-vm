@@ -1,6 +1,14 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
-use crate::vm::NyarError;
+use nyar_types::NyarError;
+
+pub trait UnaryOp {
+    fn execute(&self, vm: &mut NyarVM) -> Result<(), NyarError>;
+}
+
+pub trait BinaryOp {
+    fn execute(&self, vm: &mut NyarVM) -> Result<(), NyarError>;
+}
 
 impl NyarVM {
     #[inline(always)]
@@ -17,10 +25,10 @@ impl NyarVM {
             .iter()
             .find(|im| im.class_idx == t_idx && im.trait_idx == i_idx)
             .ok_or_else(|| {
-                self.error(nyar_types::VmErrorKind::RuntimeError(format!(
-                    "Impl not found for class {} and trait {}",
-                    t_idx, i_idx
-                )))
+                self.error(nyar_types::VmErrorKind::ImplNotFound {
+                    class: t_idx,
+                    trait_id: i_idx,
+                })
             })?;
 
         let methods = impl_info.methods.clone();
@@ -35,27 +43,32 @@ impl NyarVM {
         // Pop a witness table from the stack, get method at idx, push it.
         let witness_val = self.pop()?;
         let witness = unsafe { witness_val.as_witness_table() };
-        let chunk_idx = witness.methods.get(_idx as usize).ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds))?;
-        
+        let chunk_idx = witness
+            .methods
+            .get(_idx as usize)
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(_idx as usize)))?;
+
         // Push the method as a closure or some callable value
         let closure = Value::closure(witness.module_idx, *chunk_idx, vec![], &self.gc);
         self.push(closure)?;
-        
+
         Ok(None)
     }
 
     #[inline(always)]
     pub fn execute_open_existential(&mut self) -> Result<Option<usize>, NyarError> {
         let trait_val = self.pop()?;
-        let trait_obj = trait_val.try_as_trait_object().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode))?;
-        
+        let trait_obj = trait_val
+            .try_as_trait_object()
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x19)))?; // Opcode for OPEN_EXISTENTIAL
+
         let data = trait_obj.data;
         let witness = trait_obj.witness;
-        
+
         // Pushing to stack (root) does not require write barriers
         self.push(data)?;
         self.push(witness)?;
-        
+
         Ok(None)
     }
 
@@ -63,10 +76,10 @@ impl NyarVM {
     pub fn execute_close_existential(&mut self) -> Result<Option<usize>, NyarError> {
         let witness = self.pop()?;
         let data = self.pop()?;
-        
+
         let trait_obj = Value::trait_object(data, witness, &self.gc);
         self.push(trait_obj)?;
-        
+
         Ok(None)
     }
 }

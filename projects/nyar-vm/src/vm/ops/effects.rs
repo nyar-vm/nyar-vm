@@ -1,6 +1,6 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Frame};
-use crate::vm::VmError;
+use crate::vm::NyarError;
 use crate::bytecode::format::Constant;
 use crate::vm::effects::perform_effect_internal;
 use nyar_types::{QualifiedName, EffectInfo, SourceLocation};
@@ -12,11 +12,11 @@ impl NyarVM {
         idx: u16,
         argc: u8,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         let name = match self.modules[module_idx].constants.get(idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
             Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(VmError::IndexOutOfBounds),
+            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
         };
 
         let mut args = Vec::with_capacity(argc as usize);
@@ -25,7 +25,7 @@ impl NyarVM {
         }
         args.reverse();
 
-        let current_frame = self.frames.last().ok_or(VmError::RuntimeError("No frame".to_string()))?;
+        let current_frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
         let effect_info = EffectInfo {
             name: name.clone(),
             location: SourceLocation {
@@ -106,7 +106,7 @@ impl NyarVM {
         &mut self,
         idx: u16,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         // idx is the chunk index for the handler
         let frame_depth = self.frames.len();
         self.handler_stack.push(crate::vm::effects::HandlerFrame {
@@ -118,17 +118,17 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_resume_with(&mut self) -> Result<Option<usize>, VmError> {
+    pub fn execute_resume_with(&mut self) -> Result<Option<usize>, NyarError> {
         // Pop the value to resume with and the continuation
         let val = self.pop()?;
         let cont_val = self.pop()?;
         self.execute_resume(cont_val, val)
     }
 
-    pub fn execute_resume(&mut self, cont_val: Value, val: Value) -> Result<Option<usize>, VmError> {
+    pub fn execute_resume(&mut self, cont_val: Value, val: Value) -> Result<Option<usize>, NyarError> {
         let cont = cont_val
             .try_as_continuation()
-            .ok_or(VmError::RuntimeError("Resume requires a continuation".to_string()))?;
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidContinuation))?;
 
         // Restore frames and stack from the continuation.
         self.frames = cont.frames.clone();
@@ -145,13 +145,12 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_yield(&mut self) -> Result<Option<usize>, VmError> {
-        Err(VmError::YieldAsync)
+    pub fn execute_yield(&mut self) -> Result<Option<usize>, NyarError> {
+        Err(self.error(nyar_types::VmErrorKind::YieldAsync))
     }
 
-    #[inline(always)]
-    pub fn execute_capture_cont(&mut self) -> Result<Option<usize>, VmError> {
-        let frame = self.frames.last().ok_or(VmError::RuntimeError("No frame".to_string()))?;
+    pub fn execute_capture_cont(&mut self) -> Result<Option<usize>, NyarError> {
+        let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
         let cont = Value::continuation(
             frame.ip,
             self.stack[..self.sp].to_vec(),
@@ -163,23 +162,20 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_match_effect(&mut self, idx: u16, module_idx: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_match_effect(&mut self, idx: u16, module_idx: usize) -> Result<Option<usize>, NyarError> {
         // The effect object is on the stack, pushed by the VM during perform dispatch
         // OR it's in locals[0] of the handler frame if we are using the new logic.
         // Let's check the stack first, as it's more direct for the MatchEffect opcode.
         let val = self.peek_at(0)?;
         
         let target_name = match self.modules[module_idx].constants.get(idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn,
-            Some(Constant::String(s)) => {
-                // Fallback for legacy bytecode
-                &QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
-            }
-            _ => return Err(VmError::IndexOutOfBounds),
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
         };
 
         if let Some(effect) = val.try_as_effect() {
-            if &effect.info.name == target_name {
+            if effect.info.name == target_name {
                 // Match! Pop the effect, push arguments and then true
                 self.pop()?;
                 for arg in &effect.args {
@@ -198,7 +194,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_await(&mut self) -> Result<Option<usize>, VmError> {
+    pub fn execute_await(&mut self) -> Result<Option<usize>, NyarError> {
         let val = self.pop()?;
         if let Some(future) = val.try_as_future() {
             match future.status {
@@ -207,12 +203,12 @@ impl NyarVM {
                     Ok(None)
                 }
                 crate::vm::value::FutureStatus::Failed => {
-                    Err(VmError::RuntimeError(format!("Future failed: {}", future.result)))
+                    Err(self.error(nyar_types::VmErrorKind::FutureFailed(future.result.to_string())))
                 }
                 crate::vm::value::FutureStatus::Pending => {
                     // Push the future back and yield
                     self.push(val)?;
-                    Err(VmError::YieldAsync)
+                    Err(self.error(nyar_types::VmErrorKind::YieldAsync))
                 }
             }
         } else {
@@ -223,7 +219,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_block_on(&mut self) -> Result<Option<usize>, VmError> {
+    pub fn execute_block_on(&mut self) -> Result<Option<usize>, NyarError> {
         // Pop the future to block on.
         let future_val = self.pop()?;
 
@@ -252,25 +248,30 @@ impl NyarVM {
                 crate::vm::value::FutureStatus::Failed => {
                     let future = unsafe { self.stack[self.sp - 1].as_future() };
                     let res = future.result;
-                    return Err(VmError::RuntimeError(format!("Future failed: {}", res)));
+                    return Err(self.error(nyar_types::VmErrorKind::FutureFailed(res.to_string())));
                 }
                 crate::vm::value::FutureStatus::Pending => {
-                    // Drive the VM by one step.
+                    // Step the VM
                     match self.execute_step() {
-                        Ok(Some(())) => continue,
+                        Ok(Some(_)) => {
+                            // Instruction executed
+                            continue;
+                        }
                         Ok(None) => {
-                            // VM has no more instructions to execute in the current frames,
-                            // but the future is still pending. This might be a deadlock
-                            // or waiting for external I/O.
-                            std::thread::yield_now();
-                            continue;
+                            // VM halted
+                            break;
                         }
-                        Err(VmError::YieldAsync) => {
-                            // The task yielded.
-                            std::thread::yield_now();
-                            continue;
+                        Err(e) => {
+                            // Check if it's a yield
+                            match *e.kind {
+                                nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync) => {
+                                    // The task yielded.
+                                    std::thread::yield_now();
+                                    continue;
+                                }
+                                _ => return Err(e),
+                            }
                         }
-                        Err(e) => return Err(e),
                     }
                 }
             }

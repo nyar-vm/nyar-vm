@@ -1,16 +1,16 @@
 use crate::bytecode::format::Constant;
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
-use crate::vm::VmError;
+use crate::vm::NyarError;
 use nyar_types::QualifiedName;
 
 impl NyarVM {
     #[inline(always)]
-    pub fn execute_push(&mut self, idx: u16, module_idx: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_push(&mut self, idx: u16, module_idx: usize) -> Result<Option<usize>, NyarError> {
         let c = self.modules[module_idx]
             .constants
             .get(idx as usize)
-            .ok_or(VmError::IndexOutOfBounds)?;
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))?;
         match c {
             Constant::Int(i) => self.push(Value::int(i.clone())),
             Constant::Float(x) => self.push(Value::float(x.clone())),
@@ -23,23 +23,23 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_pop_stack(&mut self) -> Result<Option<usize>, VmError> {
+    pub fn execute_pop_stack(&mut self) -> Result<Option<usize>, NyarError> {
         let _ = self.pop()?;
         Ok(None)
     }
 
     #[inline(always)]
-    pub fn execute_dup(&mut self, d: u16) -> Result<Option<usize>, VmError> {
+    pub fn execute_dup(&mut self, d: u16) -> Result<Option<usize>, NyarError> {
         let v = self.peek_at(d as usize)?;
         self.push(v)?;
         Ok(None)
     }
 
     #[inline(always)]
-    pub fn execute_swap(&mut self, d: u16) -> Result<Option<usize>, VmError> {
+    pub fn execute_swap(&mut self, d: u16) -> Result<Option<usize>, NyarError> {
         let sp = self.sp;
         if sp == 0 {
-            return Err(VmError::StackUnderflow);
+            return Err(self.error(nyar_types::VmErrorKind::StackUnderflow));
         }
         let eff = if (d as usize) >= sp {
             sp - 1
@@ -51,7 +51,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_load_local(&mut self, idx: u16) -> Result<Option<usize>, VmError> {
+    pub fn execute_load_local(&mut self, idx: u16) -> Result<Option<usize>, NyarError> {
         let f = self.frames.last().unwrap();
         if (idx as usize) < f.locals.len() {
             if let Some(up) = f.upvalues.get(idx as usize).and_then(|x| x.as_ref()) {
@@ -62,12 +62,12 @@ impl NyarVM {
             }
             Ok(None)
         } else {
-            Err(VmError::StackUnderflow)
+            Err(self.error(nyar_types::VmErrorKind::StackUnderflow))
         }
     }
 
     #[inline(always)]
-    pub fn execute_store_local(&mut self, idx: u16) -> Result<Option<usize>, VmError> {
+    pub fn execute_store_local(&mut self, idx: u16) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
         let gc = &self.gc;
         let f = self.frames.last_mut().unwrap();
@@ -85,12 +85,12 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_load_global(&mut self, name_idx: u16, module_idx: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_load_global(&mut self, name_idx: u16, module_idx: usize) -> Result<Option<usize>, NyarError> {
         let module = &self.modules[module_idx];
         let name = match module.constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
             Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(VmError::InvalidOpcode),
+            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0))), // Placeholder opcode
         };
         if let Some(v) = self.builtins.get(&name) {
             self.push(*v)?;
@@ -99,7 +99,7 @@ impl NyarVM {
             self.push(Value::null())?;
             Ok(None)
         } else {
-            Err(VmError::RuntimeError(format!("Global not found: {}", name)))
+            Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))
         }
     }
 

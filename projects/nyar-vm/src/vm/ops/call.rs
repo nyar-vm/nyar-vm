@@ -1,9 +1,7 @@
 use crate::bytecode::format::Constant;
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Frame};
-use crate::vm::VmError;
-
-use nyar_types::QualifiedName;
+use nyar_types::{NyarError, QualifiedName};
 
 impl NyarVM {
     #[inline(always)]
@@ -12,7 +10,7 @@ impl NyarVM {
         chunk_idx: u16,
         argc: u16,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         let instrs = self.get_chunk_instructions(module_idx, chunk_idx as usize)?;
         let locals_count = self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
 
@@ -42,7 +40,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_call_closure(&mut self, argc: u16) -> Result<Option<usize>, VmError> {
+    pub fn execute_call_closure(&mut self, argc: u16) -> Result<Option<usize>, NyarError> {
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
@@ -58,7 +56,7 @@ impl NyarVM {
                     self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
                 (instrs, locals_count, closure.module_idx, chunk_idx)
             } else {
-                return Err(VmError::InvalidOpcode);
+                return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x13))); // Opcode for CALL_CLOSURE
             };
 
         if args.len() < locals_count {
@@ -86,10 +84,10 @@ impl NyarVM {
         name_idx: u16,
         argc: u16,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            _ => return Err(VmError::IndexOutOfBounds),
+            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(name_idx as usize))),
         };
 
         if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&name) {
@@ -120,7 +118,7 @@ impl NyarVM {
             self.frames.push(new_frame);
             Ok(Some(0))
         } else {
-            Err(VmError::RuntimeError(format!("Symbol not found: {}", name)))
+            Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))
         }
     }
 
@@ -130,7 +128,7 @@ impl NyarVM {
         name_idx: u16,
         argc: u16,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
@@ -140,7 +138,7 @@ impl NyarVM {
         let receiver = self.pop()?;
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            _ => return Err(VmError::InvalidOpcode),
+            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15))), // Opcode for INVOKE_METHOD
         };
 
         if !receiver.is_object() {
@@ -158,7 +156,7 @@ impl NyarVM {
         receiver: Value,
         name: &QualifiedName,
         args: Vec<Value>,
-    ) -> Result<(), VmError> {
+    ) -> Result<(), NyarError> {
         let name_str = name.to_string();
         match name_str.as_str() {
             "println" => {
@@ -194,7 +192,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_tail_call(&mut self, argc: u8) -> Result<Option<usize>, VmError> {
+    pub fn execute_tail_call(&mut self, argc: u8) -> Result<Option<usize>, NyarError> {
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
@@ -210,7 +208,7 @@ impl NyarVM {
                     self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
                 (instrs, locals_count, closure.module_idx, chunk_idx)
             } else {
-                return Err(VmError::InvalidOpcode);
+                return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x16))); // Opcode for TAIL_CALL
             };
 
         if args.len() < locals_count {
@@ -236,7 +234,7 @@ impl NyarVM {
         idx: u16,
         argc: u8,
         _module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
@@ -244,12 +242,12 @@ impl NyarVM {
         args.reverse();
 
         let trait_val = self.pop()?;
-        let trait_obj = trait_val.try_as_trait_object().ok_or(VmError::InvalidOpcode)?;
+        let trait_obj = trait_val.try_as_trait_object().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x17)))?; // Opcode for CALL_VIRTUAL
         
         let witness_val = trait_obj.witness;
         let witness = unsafe { witness_val.as_witness_table() };
         
-        let chunk_idx = witness.methods.get(idx as usize).ok_or(VmError::IndexOutOfBounds)?;
+        let chunk_idx = witness.methods.get(idx as usize).ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))?;
         let target_module_idx = witness.module_idx;
 
         // The first argument to a trait method is usually the data (self)
@@ -285,7 +283,7 @@ impl NyarVM {
         _idx: u16,
         argc: u8,
         _module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         // Dynamic call logic: receiver is on stack, method name is on stack
         // Pop method name, pop receiver, find method, call it.
         let method_name = self.pop()?;
@@ -302,7 +300,7 @@ impl NyarVM {
             let name = QualifiedName::from(name_str);
             self.invoke_primitive_method(receiver, &name, args)?;
         } else {
-            return Err(VmError::InvalidOpcode);
+            return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x18))); // Opcode for CALL_DYNAMIC
         }
         
         Ok(None)
@@ -314,11 +312,11 @@ impl NyarVM {
         idx: u16,
         argc: u8,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         let name_qn = match self.modules[module_idx].constants.get(idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
             Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(VmError::IndexOutOfBounds),
+            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
         };
         let name = name_qn.to_string();
 
@@ -333,12 +331,12 @@ impl NyarVM {
             // Validate signature if present
             if let Some(sig) = func.signature() {
                 if sig.params.len() != args.len() {
-                    return Err(VmError::RuntimeError(format!(
+                    return Err(self.error(nyar_types::VmErrorKind::Runtime(format!(
                         "FFI function {} expects {} arguments, got {}",
                         name,
                         sig.params.len(),
                         args.len()
-                    )));
+                    ))));
                 }
                 for (i, (arg, ty)) in args.iter().zip(sig.params.iter()).enumerate() {
                     let matches = match ty {
@@ -352,15 +350,15 @@ impl NyarVM {
                         crate::vm::ffi::FFIType::Any => true,
                     };
                     if !matches {
-                        return Err(VmError::RuntimeError(format!(
-                            "FFI function {} argument {} type mismatch (expected {:?}, got {:?})",
-                            name, i, ty, arg.tag()
-                        )));
+                        return Err(self.error(nyar_types::VmErrorKind::TypeMismatch {
+                            expected: format!("{:?}", ty),
+                            actual: format!("{:?}", arg.tag()),
+                        }));
                     }
                 }
             }
 
-            let result = func.call(args)?;
+            let result = func.call(args).map_err(|e| self.error(nyar_types::VmErrorKind::Runtime(e.to_string())))?;
             self.push(result)?;
         } else {
             // If not found in FFI, maybe it's a builtin?
@@ -368,9 +366,9 @@ impl NyarVM {
                 // If it's a closure/function, we should probably call it, 
                 // but FFICall usually implies direct native call.
                 // For now, return error if not a native function.
-                return Err(VmError::RuntimeError(format!("FFI function not found: {}", name)));
+                return Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name_qn)));
             }
-            return Err(VmError::RuntimeError(format!("FFI function not found: {}", name)));
+            return Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name_qn)));
         }
 
         Ok(None)

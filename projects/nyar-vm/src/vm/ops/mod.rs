@@ -15,11 +15,11 @@ pub mod traits;
 use crate::bytecode::instruction::Instruction;
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
-use crate::vm::VmError;
+use crate::vm::NyarError;
 use nyar_types::QualifiedName;
 
 impl NyarVM {
-    pub fn execute(&mut self, module_idx: usize, chunk_idx: usize) -> Result<Value, VmError> {
+    pub fn execute(&mut self, module_idx: usize, chunk_idx: usize) -> Result<Value, NyarError> {
         if let Some(jit) = self.jit.clone() {
             if let Some(res) = jit.try_execute(self, module_idx, chunk_idx) {
                 return res;
@@ -44,7 +44,7 @@ impl NyarVM {
         self.run_loop()
     }
 
-    pub fn execute_symbol(&mut self, name: &QualifiedName, args: Vec<Value>) -> Result<Value, VmError> {
+    pub fn execute_symbol(&mut self, name: &QualifiedName, args: Vec<Value>) -> Result<Value, NyarError> {
         if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
             if let Some(jit) = self.jit.clone() {
                 if let Some(res) = jit.try_execute(self, m_idx, chunk_idx as usize) {
@@ -73,7 +73,7 @@ impl NyarVM {
             self.frames.push(frame);
             self.run_loop()
         } else {
-            Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!("Symbol not found: {}", name))))
+            Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name.clone())))
         }
     }
 
@@ -81,15 +81,15 @@ impl NyarVM {
         &mut self,
         module_idx: usize,
         chunk_idx: usize,
-    ) -> Result<std::sync::Arc<Vec<Instruction>>, VmError> {
+    ) -> Result<std::sync::Arc<Vec<Instruction>>, NyarError> {
         let module = self.modules.get_mut(module_idx).ok_or_else(|| {
-            self.error(nyar_types::VmErrorKind::RuntimeError(format!("Module index out of bounds: {}", module_idx)))
+            self.error(nyar_types::VmErrorKind::ModuleNotFound(module_idx))
         })?;
         let chunk = module.chunks.get_mut(chunk_idx).ok_or_else(|| {
-            self.error(nyar_types::VmErrorKind::RuntimeError(format!(
-                "Chunk index out of bounds: {} in module {}",
-                chunk_idx, module_idx
-            )))
+            self.error(nyar_types::VmErrorKind::ChunkNotFound {
+                module: module_idx,
+                chunk: chunk_idx,
+            })
         })?;
 
         if let Some(ref instrs) = chunk.decoded {
@@ -195,7 +195,7 @@ impl NyarVM {
         }
     }
 
-    pub fn execute_step(&mut self) -> Result<Option<()>, VmError> {
+    pub fn execute_step(&mut self) -> Result<Option<()>, NyarError> {
         let (cur_ip, module_idx, chunk_idx) = {
             let f = match self.frames.last() {
                 Some(f) => f,
@@ -267,7 +267,7 @@ impl NyarVM {
         ins: Instruction,
         cur_ip: usize,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         match ins {
             Instruction::Nop => Ok(None),
             // I32 operations
