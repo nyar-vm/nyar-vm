@@ -42,6 +42,7 @@ impl NyarVM {
         if (idx as usize) < obj.fields.len() {
             obj.fields[idx as usize] = val;
             val.write_barrier(gc);
+            self.push(obj_val)?;
             Ok(None)
         } else {
             Err(VmError::IndexOutOfBounds)
@@ -108,13 +109,14 @@ impl NyarVM {
         let val = self.pop()?;
         let key_val = self.pop()?;
         let arr_val = self.pop()?;
-        let gc = &self.gc;
 
+        let gc = &self.gc;
         if arr_val.is_dyn_object() {
             let key = key_val.try_as_str().ok_or(VmError::InvalidOpcode)?;
             let obj = unsafe { arr_val.as_dyn_object_mut() };
             obj.entries.insert(key.to_string(), val);
             val.write_barrier(gc);
+            self.push(arr_val)?;
             Ok(None)
         } else {
             let idx = key_val.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
@@ -123,6 +125,7 @@ impl NyarVM {
                 if idx < arr.items.len() {
                     arr.items[idx] = val;
                     val.write_barrier(gc);
+                    self.push(arr_val)?;
                     Ok(None)
                 } else {
                     Err(VmError::IndexOutOfBounds)
@@ -132,6 +135,17 @@ impl NyarVM {
                 if idx < list.items.len() {
                     list.items[idx] = val;
                     val.write_barrier(gc);
+                    self.push(arr_val)?;
+                    Ok(None)
+                } else {
+                    Err(VmError::IndexOutOfBounds)
+                }
+            } else if arr_val.is_tuple() {
+                let tuple = unsafe { arr_val.as_tuple_mut() };
+                if idx < tuple.items.len() {
+                    tuple.items[idx] = val;
+                    val.write_barrier(gc);
+                    self.push(arr_val)?;
                     Ok(None)
                 } else {
                     Err(VmError::IndexOutOfBounds)
@@ -182,6 +196,17 @@ impl NyarVM {
             let obj = unsafe { obj_val.as_dyn_object() };
             self.push(Value::bool(obj.entries.contains_key(key_str)))?;
             Ok(None)
+        } else if obj_val.is_object() {
+            let key_str = key.try_as_str().ok_or(VmError::InvalidOpcode)?;
+            let obj = unsafe { obj_val.as_object() };
+            let frame = self.frames.last().ok_or(VmError::StackUnderflow)?;
+            let class_info = self.modules[frame.module_idx]
+                .classes
+                .get(obj.class_idx as usize)
+                .ok_or(VmError::IndexOutOfBounds)?;
+            let has_field = class_info.fields.iter().any(|f| f == key_str);
+            self.push(Value::bool(has_field))?;
+            Ok(None)
         } else if obj_val.is_array() {
             let idx = key.try_as_int().ok_or(VmError::InvalidOpcode)? as usize;
             let arr = unsafe { obj_val.as_array() };
@@ -210,6 +235,7 @@ impl NyarVM {
             let key_str = key.try_as_str().ok_or(VmError::InvalidOpcode)?;
             let obj = unsafe { obj_val.as_dyn_object_mut() };
             let removed = obj.entries.remove(key_str);
+            self.push(obj_val)?;
             self.push(removed.unwrap_or(Value::null()))?;
             Ok(None)
         } else if obj_val.is_list() {
@@ -217,6 +243,7 @@ impl NyarVM {
             let list = unsafe { obj_val.as_list_mut() };
             if idx < list.items.len() {
                 let removed = list.items.remove(idx);
+                self.push(obj_val)?;
                 self.push(removed)?;
                 Ok(None)
             } else {
@@ -236,11 +263,13 @@ impl NyarVM {
             let list = unsafe { list_val.as_list_mut() };
             list.items.push(val);
             val.write_barrier(gc);
+            self.push(list_val)?;
             Ok(None)
         } else if list_val.is_array() {
             let arr = unsafe { list_val.as_array_mut() };
             arr.items.push(val);
             val.write_barrier(gc);
+            self.push(list_val)?;
             Ok(None)
         } else {
             Err(VmError::InvalidOpcode)
@@ -253,11 +282,13 @@ impl NyarVM {
         if list_val.is_list() {
             let list = unsafe { list_val.as_list_mut() };
             let val = list.items.pop().ok_or(VmError::IndexOutOfBounds)?;
+            self.push(list_val)?;
             self.push(val)?;
             Ok(None)
         } else if list_val.is_array() {
             let arr = unsafe { list_val.as_array_mut() };
             let val = arr.items.pop().ok_or(VmError::IndexOutOfBounds)?;
+            self.push(list_val)?;
             self.push(val)?;
             Ok(None)
         } else {
@@ -274,11 +305,13 @@ impl NyarVM {
             let list = unsafe { list_val.as_list_mut() };
             list.items.insert(0, val);
             val.write_barrier(gc);
+            self.push(list_val)?;
             Ok(None)
         } else if list_val.is_array() {
             let arr = unsafe { list_val.as_array_mut() };
             arr.items.insert(0, val);
             val.write_barrier(gc);
+            self.push(list_val)?;
             Ok(None)
         } else {
             Err(VmError::InvalidOpcode)
@@ -294,6 +327,7 @@ impl NyarVM {
                 return Err(VmError::IndexOutOfBounds);
             }
             let val = list.items.remove(0);
+            self.push(list_val)?;
             self.push(val)?;
             Ok(None)
         } else if list_val.is_array() {
@@ -302,6 +336,7 @@ impl NyarVM {
                 return Err(VmError::IndexOutOfBounds);
             }
             let val = arr.items.remove(0);
+            self.push(list_val)?;
             self.push(val)?;
             Ok(None)
         } else {

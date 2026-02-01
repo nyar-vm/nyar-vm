@@ -169,6 +169,12 @@ fn tuple_set_element_mismatch_should_fail() {
 #[test]
 fn run_has_key_object() {
     let mut code = Vec::new();
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&2i64.to_le_bytes());
     code.push(Opcode::NewObject as u8);
     code.extend_from_slice(&0u16.to_le_bytes());
     code.push(Opcode::StringExt as u8);
@@ -249,6 +255,15 @@ fn run_sizeof_array_string_bigint_object() {
     let psize = std::mem::size_of::<*mut ()>() as i64;
     // Array
     let mut code = Vec::new();
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&1i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&2i64.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&3i64.to_le_bytes());
     code.push(Opcode::NewArray as u8);
     code.extend_from_slice(&3u16.to_le_bytes());
     code.push(Opcode::SizeOf as u8);
@@ -265,7 +280,7 @@ fn run_sizeof_array_string_bigint_object() {
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
     let v = vm.execute(module_idx, 0).unwrap();
-    assert_eq!(v.as_int(), psize);
+    assert_eq!(v.as_int(), 3);
 
     // String
     let mut code2 = Vec::new();
@@ -279,15 +294,14 @@ fn run_sizeof_array_string_bigint_object() {
     let mut vm2 = NyarVM::new();
     let module_idx2 = vm2.load_module(module2);
     let v2 = vm2.execute(module_idx2, 0).unwrap();
-    assert_eq!(v2.as_int(), psize);
+    assert_eq!(v2.as_int(), 3);
 
     // BigInt
     let mut code3 = Vec::new();
-    code3.push(Opcode::I64Ext as u8);
-    code3.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
-    code3.extend_from_slice(&42i64.to_le_bytes());
     code3.push(Opcode::BigIntExt as u8);
-    code3.push(nyar_vm::bytecode::opcode::BigIntExt::FromI64 as u8);
+    code3.push(nyar_vm::bytecode::opcode::BigIntExt::Const as u8);
+    code3.push(1u8);
+    code3.push(1u8);
     code3.push(Opcode::SizeOf as u8);
     code3.push(Opcode::Return as u8);
     let module3 = minimal_module_with_chunk(code3, vec![]);
@@ -298,6 +312,12 @@ fn run_sizeof_array_string_bigint_object() {
 
     // Object
     let mut code4 = Vec::new();
+    code4.push(Opcode::I64Ext as u8);
+    code4.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code4.extend_from_slice(&1i64.to_le_bytes());
+    code4.push(Opcode::I64Ext as u8);
+    code4.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code4.extend_from_slice(&2i64.to_le_bytes());
     code4.push(Opcode::NewObject as u8);
     code4.extend_from_slice(&0u16.to_le_bytes());
     code4.push(Opcode::SizeOf as u8);

@@ -43,11 +43,6 @@ pub fn perform_effect_internal(
                 }
                 return Ok(Some(Value::null()));
             }
-            "throw" => {
-                vm.log("Traceback (most recent call last):");
-                vm.log("UnhandledError");
-                return Err(VmError::UnhandledError);
-            }
             "await" => {
                 return Ok(None);
             }
