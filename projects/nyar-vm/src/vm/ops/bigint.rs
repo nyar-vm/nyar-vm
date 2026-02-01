@@ -16,8 +16,8 @@ impl NyarVM {
     pub fn execute_bigint_add(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x01)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x01)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         let res = BigInt(&l.0 + &r.0);
         self.push(Value::bigint(res, &self.gc))?;
         Ok(None)

@@ -331,14 +331,9 @@ impl NyarVM {
             // Validate signature if present
             if let Some(sig) = func.signature() {
                 if sig.params.len() != args.len() {
-                    return Err(self.error(nyar_types::VmErrorKind::Runtime(format!(
-                        "FFI function {} expects {} arguments, got {}",
-                        name,
-                        sig.params.len(),
-                        args.len()
-                    ))));
+                    return Err(self.error(nyar_types::VmErrorKind::LimitExceeded));
                 }
-                for (i, (arg, ty)) in args.iter().zip(sig.params.iter()).enumerate() {
+                for (arg, ty) in args.iter().zip(sig.params.iter()) {
                     let matches = match ty {
                         crate::vm::ffi::FFIType::Null => arg.is_null(),
                         crate::vm::ffi::FFIType::Int => arg.is_int(),
@@ -352,13 +347,13 @@ impl NyarVM {
                     if !matches {
                         return Err(self.error(nyar_types::VmErrorKind::TypeMismatch {
                             expected: format!("{:?}", ty),
-                            actual: format!("{:?}", arg.tag()),
+                            found: format!("{:?}", arg.tag()),
                         }));
                     }
                 }
             }
 
-            let result = func.call(args).map_err(|e| self.error(nyar_types::VmErrorKind::Runtime(e.to_string())))?;
+            let result = func.call(args)?;
             self.push(result)?;
         } else {
             // If not found in FFI, maybe it's a builtin?

@@ -261,14 +261,14 @@ impl NyarVM {
                         }
                         Err(e) => {
                             // Check if it's a yield
-                            match *e.kind {
-                                nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync) => {
-                                    // The task yielded.
-                                    std::thread::yield_now();
-                                    continue;
-                                }
-                                _ => return Err(e),
+                            match e.kind {
+                            nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync) => {
+                                // The task yielded.
+                                std::thread::yield_now();
+                                continue;
                             }
+                            _ => return Err(e),
+                        }
                         }
                     }
                 }

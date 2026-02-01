@@ -1,9 +1,8 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Upvalue, Value};
-use crate::vm::NyarError;
 use crate::bytecode::format::Constant;
 use crate::vm::value::BigInt;
-use nyar_types::QualifiedName;
+use nyar_types::{NyarError, QualifiedName};
 
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_upvalue_get(upvalue_ptr: *const Option<Upvalue>) -> Value {
@@ -257,7 +256,7 @@ unsafe fn drive_until(vm: &mut NyarVM, target_depth: usize) -> Value {
         match vm.execute_step() {
             Ok(Some(())) => continue,
             Ok(None) => break,
-            Err(VmError::YieldAsync) => {
+            Err(e) if matches!(e.kind, nyar_types::VmErrorKind::YieldAsync) => {
                 std::thread::yield_now();
                 continue;
             }

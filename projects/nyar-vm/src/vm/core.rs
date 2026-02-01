@@ -98,7 +98,6 @@ impl NyarVM {
 
     pub fn pop(&mut self) -> Result<Value, NyarError> {
         if self.sp == 0 {
-            println!("VM: STACK UNDERFLOW!");
             Err(self.error(nyar_types::VmErrorKind::StackUnderflow))
         } else {
             self.sp -= 1;

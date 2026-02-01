@@ -40,7 +40,11 @@ impl NyarVM {
     pub fn execute_i32_div_s(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let (r, _) = (lhs.as_int() as i32).overflowing_div(rhs.as_int() as i32);
+        let b = rhs.as_int() as i32;
+        if b == 0 {
+            return Err(self.error(nyar_types::VmErrorKind::DivisionByZero));
+        }
+        let (r, _) = (lhs.as_int() as i32).overflowing_div(b);
         self.push(Value::int(r as i64))?;
         Ok(None)
     }
@@ -49,7 +53,11 @@ impl NyarVM {
     pub fn execute_i32_div_u(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let (r, _) = (lhs.as_int() as u32).overflowing_div(rhs.as_int() as u32);
+        let b = rhs.as_int() as u32;
+        if b == 0 {
+            return Err(self.error(nyar_types::VmErrorKind::DivisionByZero));
+        }
+        let (r, _) = (lhs.as_int() as u32).overflowing_div(b);
         self.push(Value::int(r as i64))?;
         Ok(None)
     }
@@ -58,7 +66,11 @@ impl NyarVM {
     pub fn execute_i32_rem_s(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let (r, _) = (lhs.as_int() as i32).overflowing_rem(rhs.as_int() as i32);
+        let b = rhs.as_int() as i32;
+        if b == 0 {
+            return Err(self.error(nyar_types::VmErrorKind::DivisionByZero));
+        }
+        let (r, _) = (lhs.as_int() as i32).overflowing_rem(b);
         self.push(Value::int(r as i64))?;
         Ok(None)
     }
@@ -67,7 +79,11 @@ impl NyarVM {
     pub fn execute_i32_rem_u(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let (r, _) = (lhs.as_int() as u32).overflowing_rem(rhs.as_int() as u32);
+        let b = rhs.as_int() as u32;
+        if b == 0 {
+            return Err(self.error(nyar_types::VmErrorKind::DivisionByZero));
+        }
+        let (r, _) = (lhs.as_int() as u32).overflowing_rem(b);
         self.push(Value::int(r as i64))?;
         Ok(None)
     }

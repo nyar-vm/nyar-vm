@@ -147,10 +147,7 @@ impl NyarVM {
                 // 2: OSR Exit (return to interpreter)
                 Ok(None)
             } else {
-                Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!(
-                    "JIT execution failed or requested deopt with code {}",
-                    res_code
-                ))))
+                Err(self.error(nyar_types::VmErrorKind::RuntimeError))
             }
         }
     }
@@ -472,7 +469,7 @@ impl NyarVM {
             Instruction::InvokeMethod(idx, argc) => {
                 self.execute_invoke_method(idx, argc.into(), module_idx)
             }
-            Instruction::Halt => Err(self.error(nyar_types::VmErrorKind::RuntimeError("Halt instruction encountered".to_string()))),
+            Instruction::Halt => Err(self.error(nyar_types::VmErrorKind::Halt)),
         }
     }
     

@@ -1,4 +1,5 @@
 use crate::vm::core::NyarVM;
+use nyar_types::NyarError;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -55,7 +56,7 @@ pub struct VmFuture<'a> {
 }
 
 impl<'a> Future for VmFuture<'a> {
-    type Output = Result<crate::vm::value::Value, crate::vm::VmError>;
+    type Output = Result<crate::vm::value::Value, NyarError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         #[cfg(feature = "tokio")]
@@ -71,7 +72,7 @@ impl<'a> Future for VmFuture<'a> {
 }
 
 impl<'a> VmFuture<'a> {
-    fn poll_internal(&mut self, cx: &mut Context<'_>) -> Poll<Result<crate::vm::value::Value, crate::vm::VmError>> {
+    fn poll_internal(&mut self, cx: &mut Context<'_>) -> Poll<Result<crate::vm::value::Value, NyarError>> {
         // 1. Check if GC requested a stop
         if nyar_gc::runtime::GC_STOP_THE_WORLD.load(std::sync::atomic::Ordering::Acquire) {
             // Cooperative yield for GC
@@ -93,8 +94,8 @@ impl<'a> VmFuture<'a> {
             
             match self.vm.execute_step() {
                 Ok(Some(())) => {}
-                Ok(None) => return Poll::Ready(self.vm.pop()),
-                Err(crate::vm::VmError::YieldAsync) => {
+                Ok(None) => return Poll::Ready(Ok(self.vm.pop().unwrap_or(crate::vm::value::Value::null()))),
+                Err(e) if matches!(e.kind, nyar_types::VmErrorKind::YieldAsync) => {
                     // Instruction requested a yield
                     cx.waker().wake_by_ref();
                     return Poll::Pending;

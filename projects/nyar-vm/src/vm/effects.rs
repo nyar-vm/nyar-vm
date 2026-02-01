@@ -1,6 +1,5 @@
 use crate::vm::value::Value;
-use crate::vm::VmError;
-use nyar_types::EffectInfo;
+use nyar_types::{EffectInfo, NyarError};
 
 #[derive(Clone)]
 pub struct HandlerFrame {
@@ -14,7 +13,7 @@ pub fn perform_effect_internal(
     module_idx: usize,
     effect: EffectInfo,
     args: Vec<Value>,
-) -> Result<Option<Value>, VmError> {
+) -> Result<Option<Value>, NyarError> {
     if effect.name.parts.len() == 1 {
         let name = &effect.name.parts[0];
         match name.as_str() {
@@ -89,5 +88,5 @@ pub fn perform_effect_internal(
     }
     vm.log("Traceback (most recent call last):");
     vm.log(&format!("UnhandledEffect: {} at source {} offset {}", effect.name, effect.location.source_id, effect.location.offset));
-    Err(VmError::UnhandledEffect(effect.name))
+    Err(vm.error(nyar_types::VmErrorKind::UnhandledEffect(effect.name)))
 }

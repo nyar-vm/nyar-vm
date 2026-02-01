@@ -2,7 +2,7 @@ use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::{Chunk, Constant as NyarConstant, ExportInfo, NyarModule};
 use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
-use nyar_types::{QualifiedName, VmError};
+use nyar_types::{NyarError, QualifiedName};
 
 pub struct NyarBackend {
     module: NyarModule,
@@ -15,7 +15,7 @@ impl NyarBackend {
         }
     }
 
-    pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, VmError> {
+    pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, NyarError> {
         let mut code = Vec::new();
         match tree {
             IKunTree::Module(_name, items) => {

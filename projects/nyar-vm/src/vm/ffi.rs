@@ -1,8 +1,8 @@
 use crate::vm::value::Value;
-use crate::vm::VmError;
+use nyar_types::NyarError;
 use std::collections::HashMap;
 
-pub type FFIResult = Result<Value, VmError>;
+pub type FFIResult = Result<Value, NyarError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FFIType {
