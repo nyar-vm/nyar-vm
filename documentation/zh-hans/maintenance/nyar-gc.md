@@ -29,7 +29,7 @@ NyarVM 使用 **NaN-Boxing** 技术将指针嵌入在 64 位浮点数的非有�
 - **TLAB (Thread Local Allocation Buffer)**：每个线程分配独立的 64KB 本地缓冲区。绝大多数分配在 TLAB 内无锁完成，彻底规避了多线程竞争。
 
 ### 3. RAII 确定性终结 (Deterministic Finalization)
-- **资源即时释放**：托管对象被回收时立即执行其 `Finalize:::finalize` 逻辑。这意味着文件句柄、Socket 等非内存资源能被及时关闭，无需像 Java 那样等待不确定的 GC 扫描。
+- **资源即时释放**：托管对象被回收时立即执行其 `Finalize::finalize` 逻辑。这意味着文件句柄、Socket 等非内存资源能被及时关闭，无需像 Java 那样等待不确定的 GC 扫描。
 - **FFI 友好**：Rust 原生代码持有的托管指针始终有效，无需复杂的固定 (Pinning) 机制，极大提升了原生扩展的执行效率。
 
 ### 4. 低延迟增量清理

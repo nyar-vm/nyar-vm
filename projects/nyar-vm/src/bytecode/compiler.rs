@@ -44,7 +44,7 @@ impl NyarBackend {
                         hotness: std::sync::atomic::AtomicU32::new(0),
                     });
                     self.module.exports.push(ExportInfo {
-                        symbol: QualifiedName::new(name.split("::").map(|s| s.to_string()).collect()),
+                        symbol: QualifiedName::from(name.as_str()),
                         chunk_idx,
                     });
                 }
@@ -57,7 +57,7 @@ impl NyarBackend {
             }
             IKunTree::Symbol(s) => {
                 code.push(Opcode::LoadGlobal as u8);
-                let idx = self.add_constant(NyarConstant::String(s.clone()));
+                let idx = self.add_constant(NyarConstant::QualifiedName(QualifiedName::from(s.as_str())));
                 code.extend_from_slice(&(idx as u16).to_le_bytes());
             }
             IKunTree::Return(val) => {
@@ -122,7 +122,7 @@ impl NyarBackend {
                                     hotness: std::sync::atomic::AtomicU32::new(0),
                                 });
                                 self.module.exports.push(ExportInfo {
-                                    symbol: QualifiedName::new(name.split("::").map(|s| s.to_string()).collect()),
+                                    symbol: QualifiedName::from(name.as_str()),
                                     chunk_idx,
                                 });
                             }

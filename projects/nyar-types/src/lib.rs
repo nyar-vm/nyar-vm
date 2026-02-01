@@ -17,10 +17,39 @@ impl QualifiedName {
     pub fn new(parts: Vec<String>) -> Self {
         Self { parts }
     }
+    pub fn push(&mut self, part: String) {
+        self.parts.push(part);
+    }
+    pub fn is_empty(&self) -> bool {
+        self.parts.is_empty()
+    }
+    pub fn last(&self) -> Option<&String> {
+        self.parts.last()
+    }
+}
+
+impl FromIterator<String> for QualifiedName {
+    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
+        Self::new(iter.into_iter().collect())
+    }
+}
+
+impl From<&str> for QualifiedName {
+    fn from(s: &str) -> Self {
+        s.split("::").map(|s| s.to_string()).collect()
+    }
+}
+
+impl From<String> for QualifiedName {
+    fn from(s: String) -> Self {
+        s.as_str().into()
+    }
 }
 
 impl Trace for QualifiedName {
-    fn trace(&self, _ctx: &mut MarkContext) {}
+    fn trace(&self, _ctx: &mut MarkContext) {
+        // Strings are not GC-managed by nyar-gc, but this satisfies the Trace trait
+    }
 }
 
 impl std::fmt::Display for QualifiedName {
@@ -29,10 +58,16 @@ impl std::fmt::Display for QualifiedName {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct SourceLocation {
     pub source_id: u32,
     pub offset: u32,
+}
+
+impl SourceLocation {
+    pub fn new(source_id: u32, offset: u32) -> Self {
+        Self { source_id, offset }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +100,17 @@ pub enum NyarError {
 
 #[derive(Debug, Error)]
 pub enum VmError {
+    #[error("{kind} at {location}")]
+    Runtime {
+        kind: VmErrorKind,
+        location: SourceLocation,
+    },
+    #[error("Yield async")]
+    YieldAsync,
+}
+
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum VmErrorKind {
     #[error("Invalid opcode")]
     InvalidOpcode,
     #[error("Stack underflow")]
@@ -79,8 +125,20 @@ pub enum VmError {
     RuntimeError(String),
     #[error("Division by zero")]
     DivisionByZero,
-    #[error("Yield async")]
-    YieldAsync,
+    #[error("Type mismatch: expected {expected}, got {actual}")]
+    TypeMismatch { expected: String, actual: String },
+}
+
+impl VmError {
+    pub fn new(kind: VmErrorKind, location: SourceLocation) -> Self {
+        Self::Runtime { kind, location }
+    }
+}
+
+impl std::fmt::Display for SourceLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "source:{}:{}", self.source_id, self.offset)
+    }
 }
 
 #[derive(Debug, Error)]

@@ -852,6 +852,7 @@ pub struct Frame {
     pub closure: Value,
     pub module_idx: usize,
     pub chunk_idx: Option<usize>,
+    pub location: nyar_types::SourceLocation,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

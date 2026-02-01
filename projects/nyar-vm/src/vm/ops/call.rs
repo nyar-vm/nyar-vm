@@ -34,6 +34,7 @@ impl NyarVM {
             closure: Value::null(),
             module_idx,
             chunk_idx: Some(chunk_idx as usize),
+            location: Default::default(),
         };
 
         self.frames.push(new_frame);
@@ -72,6 +73,7 @@ impl NyarVM {
             closure: callee,
             module_idx: c_module_idx,
             chunk_idx: Some(c_chunk_idx),
+            location: Default::default(),
         };
 
         self.frames.push(new_frame);
@@ -87,9 +89,6 @@ impl NyarVM {
     ) -> Result<Option<usize>, VmError> {
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => {
-                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
-            }
             _ => return Err(VmError::IndexOutOfBounds),
         };
 
@@ -115,6 +114,7 @@ impl NyarVM {
                 closure: Value::null(),
                 module_idx: m_idx,
                 chunk_idx: Some(chunk_idx as usize),
+                location: Default::default(),
             };
 
             self.frames.push(new_frame);
@@ -140,9 +140,6 @@ impl NyarVM {
         let receiver = self.pop()?;
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => {
-                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
-            }
             _ => return Err(VmError::InvalidOpcode),
         };
 
@@ -275,6 +272,7 @@ impl NyarVM {
             closure: Value::null(),
             module_idx: target_module_idx,
             chunk_idx: Some(*chunk_idx as usize),
+            location: Default::default(),
         };
 
         self.frames.push(new_frame);

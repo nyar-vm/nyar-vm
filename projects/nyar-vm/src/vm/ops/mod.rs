@@ -37,6 +37,7 @@ impl NyarVM {
             closure: Value::null(),
             module_idx,
             chunk_idx: Some(chunk_idx),
+            location: Default::default(),
         };
 
         self.frames.push(frame);
@@ -66,12 +67,13 @@ impl NyarVM {
                 closure: Value::null(),
                 module_idx: m_idx,
                 chunk_idx: Some(chunk_idx as usize),
+                location: Default::default(),
             };
 
             self.frames.push(frame);
             self.run_loop()
         } else {
-            Err(VmError::RuntimeError(format!("Symbol not found: {}", name)))
+            Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!("Symbol not found: {}", name))))
         }
     }
 
@@ -81,13 +83,13 @@ impl NyarVM {
         chunk_idx: usize,
     ) -> Result<std::sync::Arc<Vec<Instruction>>, VmError> {
         let module = self.modules.get_mut(module_idx).ok_or_else(|| {
-            VmError::RuntimeError(format!("Module index out of bounds: {}", module_idx))
+            self.error(nyar_types::VmErrorKind::RuntimeError(format!("Module index out of bounds: {}", module_idx)))
         })?;
         let chunk = module.chunks.get_mut(chunk_idx).ok_or_else(|| {
-            VmError::RuntimeError(format!(
+            self.error(nyar_types::VmErrorKind::RuntimeError(format!(
                 "Chunk index out of bounds: {} in module {}",
                 chunk_idx, module_idx
-            ))
+            )))
         })?;
 
         if let Some(ref instrs) = chunk.decoded {

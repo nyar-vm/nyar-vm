@@ -99,16 +99,21 @@ impl NyarVM {
     pub fn pop(&mut self) -> Result<Value, VmError> {
         if self.sp == 0 {
             println!("VM: STACK UNDERFLOW!");
-            Err(VmError::StackUnderflow)
+            Err(self.error(nyar_types::VmErrorKind::StackUnderflow))
         } else {
             self.sp -= 1;
             Ok(self.stack[self.sp])
         }
     }
 
+    pub fn error(&self, kind: nyar_types::VmErrorKind) -> VmError {
+        let location = self.frames.last().map(|f| f.location).unwrap_or_default();
+        VmError::new(kind, location)
+    }
+
     pub fn peek_at(&self, depth: usize) -> Result<Value, VmError> {
         if depth >= self.sp {
-            Err(VmError::StackUnderflow)
+            Err(self.error(nyar_types::VmErrorKind::StackUnderflow))
         } else {
             Ok(self.stack[self.sp - 1 - depth])
         }
@@ -116,7 +121,7 @@ impl NyarVM {
 
     pub fn swap_with(&mut self, depth: usize) -> Result<(), VmError> {
         if depth >= self.sp {
-            Err(VmError::StackUnderflow)
+            Err(self.error(nyar_types::VmErrorKind::StackUnderflow))
         } else {
             let top = self.sp - 1;
             let idx = self.sp - 1 - depth;
@@ -141,16 +146,10 @@ impl NyarVM {
     pub fn get_traceback_summary(&self) -> String {
         let mut res = String::new();
         for (i, f) in self.frames.iter().enumerate().rev().take(10) {
-            let info = match f.chunk_idx {
-                Some(ci) => format!(
-                    "  frame {}: module={}, chunk={}, ip={}\n",
-                    i, f.module_idx, ci, f.ip
-                ),
-                None => format!(
-                    "  frame {}: module={}, chunk=<entry>, ip={}\n",
-                    i, f.module_idx, f.ip
-                ),
-            };
+            let info = format!(
+                "  frame {}: {}, ip={}\n",
+                i, f.location, f.ip
+            );
             res.push_str(&info);
         }
         if self.frames.len() > 10 {
@@ -179,26 +178,13 @@ impl NyarVM {
             0
         };
         for (i, f) in self.frames.iter().enumerate().skip(start) {
-            let info = match f.chunk_idx {
-                Some(ci) => format!(
-                    "frame {}: module={}, chunk={}, ip={}",
-                    i, f.module_idx, ci, f.ip
-                ),
-                None => format!(
-                    "frame {}: module={}, chunk=<entry>, ip={}",
-                    i, f.module_idx, f.ip
-                ),
-            };
+            let info = format!(
+                "frame {}: {}, ip={}",
+                i, f.location, f.ip
+            );
             self.print_line(&info);
         }
-        match err {
-            VmError::UnhandledEffect(name) => {
-                self.print_line(&format!("UnhandledEffect: {}", name))
-            }
-            VmError::UnhandledError => self.print_line("UnhandledError"),
-            VmError::RuntimeError(msg) => self.print_line(&format!("RuntimeError: {}", msg)),
-            _ => self.print_line("Error"),
-        }
+        self.print_line(&format!("{}", err));
     }
 
     pub fn load_module(&mut self, module: NyarcModule) -> usize {
