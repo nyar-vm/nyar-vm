@@ -1,9 +1,9 @@
 use crate::vm::core::NyarVM;
-use crate::vm::VmError;
+use crate::vm::NyarError;
 
 impl NyarVM {
     #[inline(always)]
-    pub fn execute_jump(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_jump(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, NyarError> {
         let target = (cur_ip as isize + off as isize) as usize;
         if off < 0 {
             if self.handle_backedge(target)? {
@@ -14,7 +14,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_jump_if_false(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_jump_if_false(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
         if !v.is_truthy() {
             let target = (cur_ip as isize + off as isize) as usize;
@@ -30,7 +30,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_jump_if_null(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_jump_if_null(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
         if v.is_null() {
             let target = (cur_ip as isize + off as isize) as usize;
@@ -46,7 +46,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_return(&mut self) -> Result<Option<usize>, VmError> {
+    pub fn execute_return(&mut self) -> Result<Option<usize>, NyarError> {
         let val = self.pop()?;
         self.frames.pop();
         while let Some(hf) = self.handler_stack.last() {
@@ -60,7 +60,7 @@ impl NyarVM {
         Ok(None)
     }
 
-    fn handle_backedge(&mut self, target: usize) -> Result<bool, VmError> {
+    fn handle_backedge(&mut self, target: usize) -> Result<bool, NyarError> {
         if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
             let m_idx = self.frames.last().unwrap().module_idx;
 

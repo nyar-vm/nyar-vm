@@ -107,8 +107,27 @@ impl NyarVM {
     }
 
     pub fn error(&self, kind: nyar_types::VmErrorKind) -> NyarError {
+        let code = match &kind {
+            nyar_types::VmErrorKind::StackUnderflow => 0x1001,
+            nyar_types::VmErrorKind::IndexOutOfBounds(_) => 0x1002,
+            nyar_types::VmErrorKind::ModuleNotFound(_) => 0x1003,
+            nyar_types::VmErrorKind::ChunkNotFound { .. } => 0x1004,
+            nyar_types::VmErrorKind::SymbolNotFound(_) => 0x1005,
+            nyar_types::VmErrorKind::NoActiveFrame => 0x1006,
+            nyar_types::VmErrorKind::LimitExceeded => 0x1007,
+            nyar_types::VmErrorKind::Halt => 0x1008,
+            nyar_types::VmErrorKind::ImplNotFound { .. } => 0x1009,
+            nyar_types::VmErrorKind::UnhandledEffect(_) => 0x100A,
+            nyar_types::VmErrorKind::TypeMismatch { .. } => 0x100B,
+            nyar_types::VmErrorKind::YieldAsync => 0x100C,
+            nyar_types::VmErrorKind::InvalidOpcode(_) => 0x100D,
+            nyar_types::VmErrorKind::DivisionByZero => 0x100E,
+            nyar_types::VmErrorKind::InvalidContinuation => 0x100F,
+            nyar_types::VmErrorKind::FutureFailed => 0x1010,
+            nyar_types::VmErrorKind::RuntimeError => 0x1011,
+        };
         let location = self.frames.last().map(|f| f.location).unwrap_or_default();
-        NyarError::new(nyar_types::NyarErrorKind::Vm(kind), location)
+        NyarError::new(code, nyar_types::NyarErrorKind::Vm(kind), location)
     }
 
     pub fn peek_at(&self, depth: usize) -> Result<Value, NyarError> {

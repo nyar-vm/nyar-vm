@@ -203,7 +203,7 @@ impl NyarVM {
                     Ok(None)
                 }
                 crate::vm::value::FutureStatus::Failed => {
-                    Err(self.error(nyar_types::VmErrorKind::FutureFailed(future.result.to_string())))
+                    Err(self.error(nyar_types::VmErrorKind::FutureFailed))
                 }
                 crate::vm::value::FutureStatus::Pending => {
                     // Push the future back and yield
@@ -246,9 +246,7 @@ impl NyarVM {
                     return Ok(None);
                 }
                 crate::vm::value::FutureStatus::Failed => {
-                    let future = unsafe { self.stack[self.sp - 1].as_future() };
-                    let res = future.result;
-                    return Err(self.error(nyar_types::VmErrorKind::FutureFailed(res.to_string())));
+                    return Err(self.error(nyar_types::VmErrorKind::FutureFailed));
                 }
                 crate::vm::value::FutureStatus::Pending => {
                     // Step the VM

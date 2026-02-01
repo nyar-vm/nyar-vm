@@ -104,16 +104,14 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_store_global(&mut self, name_idx: u16, module_idx: usize) -> Result<Option<usize>, VmError> {
+    pub fn execute_store_global(&mut self, name_idx: u16, module_idx: usize) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
         let gc = &self.gc;
         let module = &self.modules[module_idx];
         let name = match module.constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => {
-                QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
-            }
-            _ => return Err(VmError::InvalidOpcode),
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x13))), // Opcode for STORE_GLOBAL
         };
         self.builtins.insert(name, v);
         v.write_barrier(gc);
