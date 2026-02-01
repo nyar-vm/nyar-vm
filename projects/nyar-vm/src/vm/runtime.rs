@@ -250,12 +250,32 @@ pub unsafe extern "win64" fn nyar_vm_perform_effect(vm_ptr: *mut NyarVM, idx: u3
     }
 }
 
+#[inline(always)]
+unsafe fn drive_until(vm: &mut NyarVM, target_depth: usize) -> Value {
+    while vm.frames.len() > target_depth {
+        match vm.execute_step() {
+            Ok(Some(())) => continue,
+            Ok(None) => break,
+            Err(VmError::YieldAsync) => {
+                std::thread::yield_now();
+                continue;
+            }
+            Err(e) => {
+                vm.print_traceback(&e);
+                return Value::null();
+            }
+        }
+    }
+    vm.pop().unwrap_or(Value::null())
+}
+
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_ffi_call(vm_ptr: *mut NyarVM, idx: u32, argc: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
     match vm.execute_ffi_call(idx as u16, argc as u8, module_idx) {
-        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Ok(Some(_)) => drive_until(vm, vm.frames.len() - 1),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
         Err(_) => Value::null(),
     }
 }
@@ -264,7 +284,8 @@ pub unsafe extern "win64" fn nyar_vm_ffi_call(vm_ptr: *mut NyarVM, idx: u32, arg
 pub unsafe extern "win64" fn nyar_vm_await(vm_ptr: *mut NyarVM) -> Value {
     let vm = &mut *vm_ptr;
     match vm.execute_await() {
-        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Ok(Some(_)) => drive_until(vm, vm.frames.len() - 1),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
         Err(_) => Value::null(),
     }
 }
@@ -273,7 +294,8 @@ pub unsafe extern "win64" fn nyar_vm_await(vm_ptr: *mut NyarVM) -> Value {
 pub unsafe extern "win64" fn nyar_vm_block_on(vm_ptr: *mut NyarVM) -> Value {
     let vm = &mut *vm_ptr;
     match vm.execute_block_on() {
-        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Ok(Some(_)) => drive_until(vm, vm.frames.len() - 1),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
         Err(_) => Value::null(),
     }
 }
@@ -281,8 +303,12 @@ pub unsafe extern "win64" fn nyar_vm_block_on(vm_ptr: *mut NyarVM) -> Value {
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_call_closure(vm_ptr: *mut NyarVM, argc: u32) -> Value {
     let vm = &mut *vm_ptr;
-    vm.execute_call_closure(argc as u16).unwrap().unwrap_or(0);
-    Value::null()
+    let depth = vm.frames.len();
+    match vm.execute_call_closure(argc as u16) {
+        Ok(Some(_)) => drive_until(vm, depth),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
 }
 
 #[no_mangle]
@@ -349,16 +375,24 @@ pub unsafe extern "win64" fn nyar_vm_load_global(vm_ptr: *mut NyarVM, name_idx: 
 pub unsafe extern "win64" fn nyar_vm_call_symbol(vm_ptr: *mut NyarVM, name_idx: u32, argc: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    vm.execute_call_symbol(name_idx as u16, argc as u16, module_idx).unwrap().unwrap_or(0);
-    Value::null()
+    let depth = vm.frames.len();
+    match vm.execute_call_symbol(name_idx as u16, argc as u16, module_idx) {
+        Ok(Some(_)) => drive_until(vm, depth),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_invoke_method(vm_ptr: *mut NyarVM, name_idx: u32, argc: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    vm.execute_invoke_method(name_idx as u16, argc as u16, module_idx).unwrap().unwrap_or(0);
-    Value::null()
+    let depth = vm.frames.len();
+    match vm.execute_invoke_method(name_idx as u16, argc as u16, module_idx) {
+        Ok(Some(_)) => drive_until(vm, depth),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
 }
 
 #[no_mangle]
@@ -381,24 +415,36 @@ pub unsafe extern "win64" fn nyar_vm_store_global(vm_ptr: *mut NyarVM, name_idx:
 pub unsafe extern "win64" fn nyar_vm_call(vm_ptr: *mut NyarVM, chunk_idx: u32, argc: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    vm.execute_call(chunk_idx as u16, argc as u16, module_idx).unwrap();
-    Value::null()
+    let depth = vm.frames.len();
+    match vm.execute_call(chunk_idx as u16, argc as u16, module_idx) {
+        Ok(Some(_)) => drive_until(vm, depth),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_call_virtual(vm_ptr: *mut NyarVM, name_idx: u32, argc: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    vm.execute_invoke_method(name_idx as u16, argc as u16, module_idx).unwrap().unwrap_or(0);
-    Value::null()
+    let depth = vm.frames.len();
+    match vm.execute_call_virtual(name_idx as u16, argc as u8, module_idx) {
+        Ok(Some(_)) => drive_until(vm, depth),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_call_dynamic(vm_ptr: *mut NyarVM, name_idx: u32, argc: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    vm.execute_invoke_method(name_idx as u16, argc as u16, module_idx).unwrap().unwrap_or(0);
-    Value::null()
+    let depth = vm.frames.len();
+    match vm.execute_call_dynamic(name_idx as u16, argc as u8, module_idx) {
+        Ok(Some(_)) => drive_until(vm, depth),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
 }
 
 #[no_mangle]

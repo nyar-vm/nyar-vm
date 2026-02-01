@@ -6,10 +6,13 @@ pub type FFIResult = Result<Value, VmError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FFIType {
+    Null,
     Int,
     Float,
     Bool,
     String,
+    List,
+    Object,
     Any,
 }
 
@@ -103,6 +106,27 @@ impl FFIFunction for NativeGetTime {
             .unwrap_or_default()
             .as_secs();
         Ok(Value::int(now as i64))
+    }
+}
+
+pub struct NativeSleep;
+impl FFIFunction for NativeSleep {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Int],
+            ret: FFIType::Null,
+        })
+    }
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let ms = args[0].as_int() as u64;
+        let start = std::time::Instant::now();
+        
+        // This is a simplified async yield simulation.
+        // In a real VM, we might register a timer and yield.
+        // For now, we just sleep synchronously to simulate work,
+        // but we could also return VmError::YieldAsync if we had a timer system.
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+        Ok(Value::null())
     }
 }
 

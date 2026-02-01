@@ -182,28 +182,55 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_block_on(&mut self) -> Result<Option<usize>, VmError> {
-        // block_on(future)
-        // In a real implementation, this would likely be a Value::Code or Value::Closure
-        // that we just called before this instruction, or it's a dedicated future object.
-        
-        // For now, we assume the "future" is already the current top frame or 
-        // something the VM is already executing. 
-        // execute_block_on will drive the VM until the frame depth returns to 
-        // what it was before the call that produced the future.
-        
+        // Pop the future to block on.
+        let future_val = self.pop()?;
+
+        if !future_val.is_future() {
+            // Not a future, just push it back and continue.
+            self.push(future_val)?;
+            return Ok(None);
+        }
+
+        // Push the future back to the stack so it's rooted during VM execution.
+        self.push(future_val)?;
+
         loop {
-            match self.run_loop() {
-                Ok(val) => {
-                    // Future completed
-                    self.push(val)?;
+            // Re-acquire future status. We use unsafe to get a reference to the GC data.
+            // Since future_val is on the stack, it's safe from GC.
+            let status = unsafe { self.stack[self.sp - 1].as_future().status };
+
+            match status {
+                crate::vm::value::FutureStatus::Ready => {
+                    let future = unsafe { self.stack[self.sp - 1].as_future() };
+                    let res = future.result;
+                    self.pop()?; // pop the future
+                    self.push(res)?; // push the result
                     return Ok(None);
                 }
-                Err(VmError::YieldAsync) => {
-                    // Task yielded, wait and retry
-                    std::thread::yield_now();
-                    continue;
+                crate::vm::value::FutureStatus::Failed => {
+                    let future = unsafe { self.stack[self.sp - 1].as_future() };
+                    let res = future.result;
+                    return Err(VmError::RuntimeError(format!("Future failed: {}", res)));
                 }
-                Err(e) => return Err(e),
+                crate::vm::value::FutureStatus::Pending => {
+                    // Drive the VM by one step.
+                    match self.execute_step() {
+                        Ok(Some(())) => continue,
+                        Ok(None) => {
+                            // VM has no more instructions to execute in the current frames,
+                            // but the future is still pending. This might be a deadlock
+                            // or waiting for external I/O.
+                            std::thread::yield_now();
+                            continue;
+                        }
+                        Err(VmError::YieldAsync) => {
+                            // The task yielded.
+                            std::thread::yield_now();
+                            continue;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
             }
         }
     }

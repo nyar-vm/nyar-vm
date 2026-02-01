@@ -17,6 +17,34 @@ impl AsyncRuntime {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Blocks the current thread until the given future completes.
+    /// This is a simple executor that doesn't require an external async runtime.
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        let mut future = Box::pin(future);
+        let waker = self.create_waker();
+        let mut cx = Context::from_waker(&waker);
+        loop {
+            match future.as_mut().poll(&mut cx) {
+                Poll::Ready(res) => return res,
+                Poll::Pending => {
+                    std::thread::yield_now();
+                }
+            }
+        }
+    }
+
+    fn create_waker(&self) -> std::task::Waker {
+        use std::task::{RawWaker, RawWakerVTable, Waker};
+
+        unsafe fn noop(_: *const ()) {}
+        unsafe fn clone(p: *const ()) -> RawWaker {
+            RawWaker::new(p, &VTABLE)
+        }
+
+        static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, noop, noop, noop);
+        unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+    }
 }
 
 /// A wrapper for VM execution in an async context, integrating with nyar-gc's cooperative yielding.

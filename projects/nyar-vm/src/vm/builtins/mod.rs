@@ -8,6 +8,7 @@ impl NyarVM {
         self.register_java_builtins();
         self.ffi.register("native_add".to_string(), Box::new(crate::vm::ffi::NativeAdd));
         self.ffi.register("native_get_time".to_string(), Box::new(crate::vm::ffi::NativeGetTime));
+        self.ffi.register("native_sleep".to_string(), Box::new(crate::vm::ffi::NativeSleep));
     }
 
     fn register_java_builtins(&mut self) {

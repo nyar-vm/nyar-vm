@@ -28,14 +28,15 @@ fn test_chunk_lines_encoding() {
 #[test]
 fn perform_throw_unhandled() {
     let mut code = Vec::new();
-    code.push(Opcode::Push as u8);
-    code.extend_from_slice(&0u16.to_le_bytes());
+    code.push(Opcode::I64Ext as u8);
+    code.push(nyar_vm::bytecode::opcode::I64Ext::Const as u8);
+    code.extend_from_slice(&7i64.to_le_bytes());
     code.push(Opcode::Perform as u8);
     code.extend_from_slice(&0u16.to_le_bytes());
     code.push(1u8);
     code.push(Opcode::Return as u8);
     let module = NyarModule {
-        constants: vec![Constant::Int(7)],
+        constants: vec![Constant::QualifiedName(QualifiedName::new(vec!["throw".to_string()]))],
         effects: vec![QualifiedName::new(vec!["throw".to_string()])],
         chunks: vec![nyar_vm::bytecode::format::Chunk {
             max_stack: 8,
@@ -197,7 +198,7 @@ fn run_has_key_object() {
             ..Default::default()
         }],
         classes: vec![nyar_vm::bytecode::format::ClassInfo {
-            name: "C".to_string(),
+            name: QualifiedName::new(vec!["C".to_string()]),
             fields: vec!["a".to_string(), "b".to_string()],
         }],
         traits: vec![],
@@ -227,11 +228,11 @@ fn run_match_variant() {
         }],
         classes: vec![
             nyar_vm::bytecode::format::ClassInfo {
-                name: "V".to_string(),
+                name: QualifiedName::new(vec!["V".to_string()]),
                 fields: vec![],
             },
             nyar_vm::bytecode::format::ClassInfo {
-                name: "W".to_string(),
+                name: QualifiedName::new(vec!["W".to_string()]),
                 fields: vec![],
             },
         ],
@@ -309,7 +310,7 @@ fn run_sizeof_array_string_bigint_object() {
             ..Default::default()
         }],
         classes: vec![nyar_vm::bytecode::format::ClassInfo {
-            name: "O".to_string(),
+            name: QualifiedName::new(vec!["O".to_string()]),
             fields: vec!["x".to_string(), "y".to_string()],
         }],
         ..Default::default()
@@ -436,7 +437,7 @@ fn run_bootstrap_nyarc_module() {
     // Scan for FFICall names and pushed file paths
     for (i, ins) in instrs.iter().enumerate() {
         match ins {
-            nyar_vm::bytecode::decoder::Instruction::Push(ci) => {
+            nyar_vm::bytecode::instruction::Instruction::Push(ci) => {
                 if let Some(c) = module.constants.get(*ci as usize) {
                     if let nyar_vm::bytecode::format::Constant::String(s) = c {
                         if s.ends_with(".vk") || s.contains("vcc bootstrap started") {
@@ -445,18 +446,19 @@ fn run_bootstrap_nyarc_module() {
                     }
                 }
             }
-            nyar_vm::bytecode::decoder::Instruction::FFICall(desc, argc) => {
+            nyar_vm::bytecode::instruction::Instruction::FFICall(desc, argc) => {
                 let name = module
                     .constants
                     .get(*desc as usize)
                     .and_then(|c| match c {
-                        nyar_vm::bytecode::format::Constant::String(s) => Some(s.as_str()),
+                        nyar_vm::bytecode::format::Constant::String(s) => Some(s.clone()),
+                        nyar_vm::bytecode::format::Constant::QualifiedName(qn) => Some(qn.to_string()),
                         _ => None,
                     })
-                    .unwrap_or("<non-string>");
+                    .unwrap_or("<non-string>".to_string());
                 println!("  ffical@{:04}: {} argc={}", i, name, argc);
             }
-            nyar_vm::bytecode::decoder::Instruction::InvokeMethod(mid, argc) => {
+            nyar_vm::bytecode::instruction::Instruction::InvokeMethod(mid, argc) => {
                 println!("  invoke@{:04}: mid={} argc={}", i, mid, argc);
             }
             _ => {}

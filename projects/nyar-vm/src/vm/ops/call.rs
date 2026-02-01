@@ -346,16 +346,19 @@ impl NyarVM {
                 }
                 for (i, (arg, ty)) in args.iter().zip(sig.params.iter()).enumerate() {
                     let matches = match ty {
+                        crate::vm::ffi::FFIType::Null => arg.is_null(),
                         crate::vm::ffi::FFIType::Int => arg.is_int(),
                         crate::vm::ffi::FFIType::Float => arg.is_float(),
                         crate::vm::ffi::FFIType::Bool => arg.is_bool(),
                         crate::vm::ffi::FFIType::String => arg.is_string(),
+                        crate::vm::ffi::FFIType::List => arg.is_list(),
+                        crate::vm::ffi::FFIType::Object => arg.is_object(),
                         crate::vm::ffi::FFIType::Any => true,
                     };
                     if !matches {
                         return Err(VmError::RuntimeError(format!(
-                            "FFI function {} argument {} type mismatch",
-                            name, i
+                            "FFI function {} argument {} type mismatch (expected {:?}, got {:?})",
+                            name, i, ty, arg.tag()
                         )));
                     }
                 }
