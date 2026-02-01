@@ -1,13 +1,13 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Frame};
-use crate::vm::VmError;
+use crate::vm::NyarError;
 
 impl NyarVM {
     #[inline(always)]
-    pub fn execute_quote(&mut self, idx: u32) -> Result<Option<usize>, VmError> {
+    pub fn execute_quote(&mut self, idx: u32) -> Result<Option<usize>, NyarError> {
         // Quote converts a chunk of code into a Value::Code.
         // idx is the chunk index in the current module.
-        let frame = self.frames.last().ok_or(VmError::RuntimeError("No frame".to_string()))?;
+        let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
         let module_idx = frame.module_idx;
         
         let code = Value::code(module_idx, idx as usize, &self.gc);
@@ -16,7 +16,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_splice(&mut self) -> Result<Option<usize>, VmError> {
+    pub fn execute_splice(&mut self) -> Result<Option<usize>, NyarError> {
         // Splice takes a value and returns it. In a more advanced implementation,
         // this might involve code generation or AST manipulation.
         // For now, it just ensures the value on stack is treated as part of the current execution.
@@ -26,7 +26,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_eval(&mut self, argc: u8) -> Result<Option<usize>, VmError> {
+    pub fn execute_eval(&mut self, argc: u8) -> Result<Option<usize>, NyarError> {
         // Eval takes a Value (code/AST) and executes it with optional arguments.
         let val = self.pop()?;
         if val.tag() == crate::vm::value::ValueTag::Code {
@@ -46,11 +46,7 @@ impl NyarVM {
             
             // Pop argc arguments from stack and put into locals
             if argc as usize > locals_count {
-                return Err(VmError::RuntimeError(format!(
-                    "Eval: too many arguments ({} provided, {} locals available)",
-                    argc,
-                    locals_count
-                )));
+                return Err(self.error(nyar_types::VmErrorKind::LimitExceeded));
             }
 
             let mut args = Vec::with_capacity(argc as usize);
@@ -71,12 +67,13 @@ impl NyarVM {
                 closure: Value::null(),
                 module_idx,
                 chunk_idx: Some(chunk_idx),
+                location: Default::default(),
             };
             
             self.frames.push(new_frame);
             Ok(Some(0))
         } else {
-            Err(VmError::RuntimeError("Eval requires a Code object".to_string()))
+            Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Code".to_string(), found: format!("{:?}", val.tag()) }))
         }
     }
 
@@ -86,7 +83,7 @@ impl NyarVM {
         idx: u16,
         argc: u8,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         // Expand a macro: call chunk at idx with argc arguments.
         // In some systems, macros are executed in a separate phase, but here
         // they can be executed at runtime.

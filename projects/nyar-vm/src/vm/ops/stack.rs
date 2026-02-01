@@ -90,7 +90,7 @@ impl NyarVM {
         let name = match module.constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
             Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0))), // Placeholder opcode
+            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x07))),
         };
         if let Some(v) = self.builtins.get(&name) {
             self.push(*v)?;
@@ -111,7 +111,7 @@ impl NyarVM {
         let name = match module.constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
             Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x13))), // Opcode for STORE_GLOBAL
+            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x08))),
         };
         self.builtins.insert(name, v);
         v.write_barrier(gc);

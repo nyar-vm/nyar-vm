@@ -1,6 +1,6 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Upvalue, Value};
-use crate::vm::VmError;
+use crate::vm::NyarError;
 
 impl NyarVM {
     #[inline(always)]
@@ -9,7 +9,7 @@ impl NyarVM {
         idx: u16,
         upvalues: Vec<crate::bytecode::instruction::UpvalueRef>,
         module_idx: usize,
-    ) -> Result<Option<usize>, VmError> {
+    ) -> Result<Option<usize>, NyarError> {
         let mut captured = Vec::with_capacity(upvalues.len());
         for up in upvalues {
             let upvalue = if up.is_local {
@@ -27,7 +27,7 @@ impl NyarVM {
                 }
             } else {
                 let f = self.frames.last().unwrap();
-                let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
+                let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15)))?;
                 closure.upvalues[up.index as usize].clone()
             };
             captured.push(upvalue);
@@ -38,34 +38,34 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_load_upvalue(&mut self, idx: u16) -> Result<Option<usize>, VmError> {
+    pub fn execute_load_upvalue(&mut self, idx: u16) -> Result<Option<usize>, NyarError> {
         let f = self.frames.last().unwrap();
-        let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
+        let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x09)))?;
         if (idx as usize) < closure.upvalues.len() {
             self.push(closure.upvalues[idx as usize].get())?;
             Ok(None)
         } else {
-            Err(VmError::IndexOutOfBounds)
+            Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))
         }
     }
 
     #[inline(always)]
-    pub fn execute_store_upvalue(&mut self, idx: u16) -> Result<Option<usize>, VmError> {
+    pub fn execute_store_upvalue(&mut self, idx: u16) -> Result<Option<usize>, NyarError> {
         let val = self.pop()?;
         let gc = &self.gc;
         let f = self.frames.last().unwrap();
-        let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
+        let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x0A)))?;
         if (idx as usize) < closure.upvalues.len() {
             closure.upvalues[idx as usize].set(val);
             val.write_barrier(gc);
             Ok(None)
         } else {
-            Err(VmError::IndexOutOfBounds)
+            Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))
         }
     }
 
     #[inline(always)]
-    pub fn execute_close_upvalues(&mut self) -> Result<Option<usize>, VmError> {
+    pub fn execute_close_upvalues(&mut self) -> Result<Option<usize>, NyarError> {
         // In our current implementation using Arc<AtomicU64>,
         // "closing" an upvalue means it's no longer tracked in the current frame's
         // open upvalues list. The actual value is already in the Upvalue's AtomicU64.

@@ -60,7 +60,7 @@ impl NyarVM {
         let trait_val = self.pop()?;
         let trait_obj = trait_val
             .try_as_trait_object()
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x19)))?; // Opcode for OPEN_EXISTENTIAL
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x62)))?;
 
         let data = trait_obj.data;
         let witness = trait_obj.witness;

@@ -107,7 +107,7 @@ impl NyarVM {
         Ok(instrs)
     }
 
-    pub fn execute_jit_at(&mut self, entry_ptr: *const u8) -> Result<Option<Value>, VmError> {
+    pub fn execute_jit_at(&mut self, entry_ptr: *const u8) -> Result<Option<Value>, NyarError> {
         type JitEntry = unsafe extern "win64" fn(
             stack_ptr: *mut Value,
             sp: *mut usize,
@@ -122,7 +122,7 @@ impl NyarVM {
         let frame = self
             .frames
             .last_mut()
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::RuntimeError("No active frame".to_string())))?;
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
 
         unsafe {
             let res_code = entry(
@@ -155,7 +155,7 @@ impl NyarVM {
         }
     }
 
-    pub fn run_loop(&mut self) -> Result<Value, VmError> {
+    pub fn run_loop(&mut self) -> Result<Value, NyarError> {
         let mut loop_count = 0u64;
         
         // Use StackRootGuard to register VM as a root
@@ -175,9 +175,7 @@ impl NyarVM {
                 }
                 
                 if loop_count > 10_000_000 {
-                    let err = self.error(nyar_types::VmErrorKind::RuntimeError(
-                        "Maximum instruction limit exceeded (potential infinite loop)".to_string(),
-                    ));
+                    let err = self.error(nyar_types::VmErrorKind::LimitExceeded);
                     self.print_traceback(&err);
                     return Err(err);
                 }
