@@ -1,6 +1,4 @@
-use crate::bytecode::instruction::Instruction;
 use crate::vm::core::NyarVM;
-use crate::vm::value::Value;
 use crate::vm::VmError;
 
 impl NyarVM {
@@ -8,7 +6,9 @@ impl NyarVM {
     pub fn execute_jump(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, VmError> {
         let target = (cur_ip as isize + off as isize) as usize;
         if off < 0 {
-            self.handle_backedge(target)?;
+            if self.handle_backedge(target)? {
+                return Ok(None);
+            }
         }
         Ok(Some(target))
     }
@@ -19,7 +19,9 @@ impl NyarVM {
         if !v.is_truthy() {
             let target = (cur_ip as isize + off as isize) as usize;
             if off < 0 {
-                self.handle_backedge(target)?;
+                if self.handle_backedge(target)? {
+                    return Ok(None);
+                }
             }
             Ok(Some(target))
         } else {
@@ -33,7 +35,9 @@ impl NyarVM {
         if v.is_null() {
             let target = (cur_ip as isize + off as isize) as usize;
             if off < 0 {
-                self.handle_backedge(target)?;
+                if self.handle_backedge(target)? {
+                    return Ok(None);
+                }
             }
             Ok(Some(target))
         } else {
@@ -56,7 +60,7 @@ impl NyarVM {
         Ok(None)
     }
 
-    fn handle_backedge(&mut self, target: usize) -> Result<(), VmError> {
+    fn handle_backedge(&mut self, target: usize) -> Result<bool, VmError> {
         if let Some(chunk_idx) = self.frames.last().unwrap().chunk_idx {
             let m_idx = self.frames.last().unwrap().module_idx;
 
@@ -82,13 +86,11 @@ impl NyarVM {
                             println!("OSR triggered for chunk {} at target {}", chunk_idx, target);
                             match self.execute_jit_at(entry) {
                                 Ok(Some(val)) => {
-                                    // This is tricky, JIT finished the whole function.
-                                    // We might need a way to exit run_loop.
-                                    // For now, let's just push and signal.
+                                    self.frames.pop();
                                     self.push(val)?;
-                                    return Ok(());
+                                    return Ok(true);
                                 }
-                                Ok(None) => return Ok(()),
+                                Ok(None) => return Ok(false),
                                 Err(e) => return Err(e),
                             }
                         }
@@ -96,6 +98,6 @@ impl NyarVM {
                 }
             }
         }
-        Ok(())
+        Ok(false)
     }
 }

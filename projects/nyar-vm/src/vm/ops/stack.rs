@@ -1,4 +1,3 @@
-use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::Constant;
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
@@ -51,8 +50,12 @@ impl NyarVM {
     pub fn execute_load_local(&mut self, idx: u16) -> Result<Option<usize>, VmError> {
         let f = self.frames.last().unwrap();
         if (idx as usize) < f.locals.len() {
-            let v = f.locals[idx as usize];
-            self.push(v)?;
+            if let Some(up) = f.upvalues.get(idx as usize).and_then(|x| x.as_ref()) {
+                self.push(up.get())?;
+            } else {
+                let v = f.locals[idx as usize];
+                self.push(v)?;
+            }
             Ok(None)
         } else {
             Err(VmError::StackUnderflow)
@@ -66,8 +69,13 @@ impl NyarVM {
         let f = self.frames.last_mut().unwrap();
         if (idx as usize) >= f.locals.len() {
             f.locals.resize((idx as usize) + 1, Value::null());
+            f.upvalues.resize((idx as usize) + 1, None);
         }
-        f.locals[idx as usize] = v;
+        if let Some(up) = f.upvalues[idx as usize].as_ref() {
+            up.set(v);
+        } else {
+            f.locals[idx as usize] = v;
+        }
         v.write_barrier(gc);
         Ok(None)
     }

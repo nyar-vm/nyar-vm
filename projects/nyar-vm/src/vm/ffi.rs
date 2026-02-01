@@ -4,8 +4,26 @@ use std::collections::HashMap;
 
 pub type FFIResult = Result<Value, VmError>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FFIType {
+    Int,
+    Float,
+    Bool,
+    String,
+    Any,
+}
+
+#[derive(Debug, Clone)]
+pub struct FFISignature {
+    pub params: Vec<FFIType>,
+    pub ret: FFIType,
+}
+
 pub trait FFIFunction: Send + Sync {
     fn call(&self, args: Vec<Value>) -> FFIResult;
+    fn signature(&self) -> Option<FFISignature> {
+        None
+    }
 }
 
 pub struct FFIRegistry {
@@ -55,3 +73,19 @@ impl FFIRegistry {
         self.functions.get(name).map(|f| f.as_ref())
     }
 }
+
+pub struct NativeAdd;
+impl FFIFunction for NativeAdd {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Int, FFIType::Int],
+            ret: FFIType::Int,
+        })
+    }
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_int();
+        let b = args[1].as_int();
+        Ok(Value::int(a + b))
+    }
+}
+

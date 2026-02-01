@@ -1,5 +1,5 @@
-use crate::bytecode::opcode::*;
 
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpvalueRef {
     pub is_local: bool,

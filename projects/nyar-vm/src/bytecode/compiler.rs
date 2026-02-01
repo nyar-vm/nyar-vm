@@ -1,6 +1,6 @@
 use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::{Chunk, Constant as NyarConstant, ExportInfo, NyarModule};
-use crate::bytecode::opcode::{Opcode, StringExt};
+use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
 use nyar_types::VmError;
 
@@ -24,7 +24,7 @@ impl NyarBackend {
                 }
             }
             IKunTree::Export(name, body) => {
-                if let IKunTree::Lambda(params, body) = &**body {
+                if let IKunTree::Lambda(_params, body) = &**body {
                     let body_code = self.lower_tree(body)?;
                     let mut final_code = body_code;
                     // Ensure Return at the end

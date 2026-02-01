@@ -33,6 +33,7 @@ impl std::fmt::Display for CliError {
             CliError::Vm(VmError::UnhandledError) => write!(f, "vm error: unhandled error"),
             CliError::Vm(VmError::RuntimeError(msg)) => write!(f, "vm error: {}", msg),
             CliError::Vm(VmError::DivisionByZero) => write!(f, "vm error: division by zero"),
+            CliError::Vm(VmError::YieldAsync) => write!(f, "vm error: async yield"),
             CliError::Aot(WasmAotError::EmptyModule) => write!(f, "aot error: empty module"),
             CliError::Aot(WasmAotError::Decode(msg)) => write!(f, "aot error: decode: {}", msg),
             CliError::Aot(WasmAotError::UnsupportedOpcode(op)) => {

@@ -1,4 +1,3 @@
-use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::NyarcModule;
 use crate::vm::effects::HandlerFrame;
 use crate::vm::ffi::FFIRegistry;

@@ -5,6 +5,7 @@ impl NyarVM {
     pub fn register_builtins(&mut self) {
         // Builtins can be registered here
         self.register_java_builtins();
+        self.ffi.register("native_add".to_string(), Box::new(crate::vm::ffi::NativeAdd));
     }
 
     fn register_java_builtins(&mut self) {

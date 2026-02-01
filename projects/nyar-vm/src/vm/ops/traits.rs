@@ -50,6 +50,7 @@ impl NyarVM {
         let data = trait_obj.data;
         let witness = trait_obj.witness;
         
+        // Pushing to stack (root) does not require write barriers
         self.push(data)?;
         self.push(witness)?;
         

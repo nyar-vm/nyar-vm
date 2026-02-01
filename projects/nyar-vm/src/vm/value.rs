@@ -2,6 +2,7 @@ use crate::bytecode::instruction::Instruction;
 use num_bigint::BigInt as NativeBigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
 use nyar_gc::{GcBox, GcHeader, MarkContext, NyarGc, Trace};
+use nyar_types::QualifiedName;
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::ptr::NonNull;
@@ -36,6 +37,13 @@ impl Display for Value {
             ValueTag::Array => write!(f, "[...]"),
             ValueTag::Object => write!(f, "{{...}}"),
             ValueTag::Closure => write!(f, "<closure>"),
+            ValueTag::QualifiedName => {
+                if let Some(qn) = self.try_as_qualified_name() {
+                    write!(f, "{}", qn)
+                } else {
+                    write!(f, "<invalid_qualified_name>")
+                }
+            }
             ValueTag::DynObject => write!(f, "<dyn_object>"),
             ValueTag::WitnessTable => write!(f, "<witness_table>"),
             _ => write!(f, "<value>"),
@@ -74,6 +82,7 @@ impl Trace for Value {
             | ValueTag::Continuation
             | ValueTag::Function
             | ValueTag::TraitObject
+            | ValueTag::QualifiedName
             | ValueTag::Effect => unsafe {
                 let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
                 GcHeader::mark(header_ptr, ctx);
@@ -93,7 +102,7 @@ impl Trace for TraitObject {
 impl Trace for Closure {
     fn trace(&self, ctx: &mut MarkContext) {
         for upvalue in &self.upvalues {
-            upvalue.0.trace(ctx);
+            upvalue.get().trace(ctx);
         }
     }
 }
@@ -211,6 +220,7 @@ pub enum ValueTag {
     Float = 15,
     Function = 16,
     TraitObject = 17,
+    QualifiedName = 18,
 }
 
 #[repr(transparent)]
@@ -239,10 +249,12 @@ impl Value {
             | ValueTag::Continuation
             | ValueTag::Function
             | ValueTag::TraitObject
+            | ValueTag::QualifiedName
             | ValueTag::Effect => unsafe {
                 let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
                 gc.write_barrier_ptr(header_ptr);
             },
+            ValueTag::Code => {} // Code objects are usually immutable/static but can be traced
             _ => {}
         }
     }
@@ -274,6 +286,7 @@ impl Value {
             15 => ValueTag::Float,
             16 => ValueTag::Function,
             17 => ValueTag::TraitObject,
+            18 => ValueTag::QualifiedName,
             _ => panic!("Invalid tag value: {} (raw={:016x})", tag_val, self.0),
         }
     }
@@ -520,12 +533,23 @@ impl Value {
         let g = gc.alloc(Effect { type_idx, args });
         Self::encode(ValueTag::Effect, g.as_ptr() as u64)
     }
+    pub fn qualified_name(name: QualifiedName, gc: &NyarGc) -> Self {
+        let g = gc.alloc(name);
+        Self::encode(ValueTag::QualifiedName, g.as_ptr() as u64)
+    }
     pub fn witness_table(module_idx: usize, methods: Vec<u16>, gc: &NyarGc) -> Self {
         let g = gc.alloc(WitnessTable {
             module_idx,
             methods,
         });
         Self::encode(ValueTag::WitnessTable, g.as_ptr() as u64)
+    }
+    pub fn function(module_idx: usize, chunk_idx: usize, gc: &NyarGc) -> Self {
+        let g = gc.alloc(Code {
+            module_idx,
+            chunk_idx,
+        });
+        Self::encode(ValueTag::Function, g.as_ptr() as u64)
     }
     pub fn code(module_idx: usize, chunk_idx: usize, gc: &NyarGc) -> Self {
         let g = gc.alloc(Code {
@@ -577,6 +601,14 @@ impl Value {
     pub fn try_as_str(&self) -> Option<&str> {
         if self.is_string() {
             Some(unsafe { self.as_string().as_str() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_qualified_name(&self) -> Option<&QualifiedName> {
+        if self.tag() == ValueTag::QualifiedName {
+            let ptr = self.payload() as *const GcBox<QualifiedName>;
+            Some(unsafe { &(*ptr).data })
         } else {
             None
         }
@@ -738,7 +770,19 @@ pub struct TraitObject {
 }
 
 #[derive(Clone)]
-pub struct Upvalue(pub Value);
+pub struct Upvalue(pub std::sync::Arc<std::sync::atomic::AtomicU64>);
+
+impl Upvalue {
+    pub fn new(val: Value) -> Self {
+        Self(std::sync::Arc::new(std::sync::atomic::AtomicU64::new(val.0)))
+    }
+    pub fn get(&self) -> Value {
+        Value(self.0.load(std::sync::atomic::Ordering::Relaxed))
+    }
+    pub fn set(&self, val: Value) {
+        self.0.store(val.0, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 
 #[derive(Clone)]
 pub struct Closure {
@@ -765,6 +809,7 @@ pub struct Frame {
     pub instrs: std::sync::Arc<Vec<Instruction>>,
     pub ip: usize,
     pub locals: Vec<Value>,
+    pub upvalues: Vec<Option<Upvalue>>,
     pub closure: Value,
     pub module_idx: usize,
     pub chunk_idx: Option<usize>,

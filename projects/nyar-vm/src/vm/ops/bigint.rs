@@ -1,4 +1,3 @@
-use crate::bytecode::instruction::Instruction;
 use crate::vm::core::NyarVM;
 use crate::vm::value::{BigInt, Value};
 use crate::vm::VmError;

@@ -4,6 +4,90 @@ use crate::bytecode::format::Constant;
 use crate::vm::value::BigInt;
 
 #[no_mangle]
+pub unsafe extern "win64" fn nyar_upvalue_get(upvalue_ptr: *const Option<Upvalue>) -> Value {
+    if let Some(up) = &*upvalue_ptr {
+        up.get()
+    } else {
+        Value::null()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_upvalue_set(upvalue_ptr: *mut Option<Upvalue>, val: Value) {
+    if let Some(up) = &*upvalue_ptr {
+        up.set(val);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_load_local(vm_ptr: *mut NyarVM, idx: u32) -> Value {
+    let vm = &mut *vm_ptr;
+    let f = vm.frames.last().unwrap();
+    if (idx as usize) < f.locals.len() {
+        if let Some(up) = f.upvalues.get(idx as usize).and_then(|x| x.as_ref()) {
+            up.get()
+        } else {
+            f.locals[idx as usize]
+        }
+    } else {
+        Value::null()
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_store_local(vm_ptr: *mut NyarVM, idx: u32, val: Value) {
+    let vm = &mut *vm_ptr;
+    let gc = &vm.gc;
+    let f = vm.frames.last_mut().unwrap();
+    if (idx as usize) >= f.locals.len() {
+        f.locals.resize((idx as usize) + 1, Value::null());
+        f.upvalues.resize((idx as usize) + 1, None);
+    }
+    if let Some(up) = f.upvalues[idx as usize].as_ref() {
+        up.set(val);
+    } else {
+        f.locals[idx as usize] = val;
+    }
+    val.write_barrier(gc);
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_make_closure(
+    vm_ptr: *mut NyarVM,
+    module_idx: u32,
+    func_idx: u32,
+    upvalues_ptr: *const crate::bytecode::instruction::UpvalueRef,
+    upvalues_count: u32,
+) -> Value {
+    let vm = &mut *vm_ptr;
+    let upvalues = std::slice::from_raw_parts(upvalues_ptr, upvalues_count as usize).to_vec();
+    
+    let mut captured = Vec::with_capacity(upvalues.len());
+    for up in upvalues {
+        let upvalue = if up.is_local {
+            let f = vm.frames.last_mut().unwrap();
+            let index = up.index as usize;
+            if let Some(existing) = f.upvalues.get(index).and_then(|x| x.as_ref()) {
+                existing.clone()
+            } else {
+                let new_up = Upvalue::new(f.locals[index]);
+                if index >= f.upvalues.len() {
+                    f.upvalues.resize(index + 1, None);
+                }
+                f.upvalues[index] = Some(new_up.clone());
+                new_up
+            }
+        } else {
+            let f = vm.frames.last().unwrap();
+            let closure = f.closure.as_closure();
+            closure.upvalues[up.index as usize].clone()
+        };
+        captured.push(upvalue);
+    }
+    Value::closure(module_idx as usize, func_idx as u16, captured, &vm.gc)
+}
+
+#[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_get_field(_vm_ptr: *mut NyarVM, obj_val: Value, idx: u32) -> Value {
     let obj = obj_val.as_object();
     obj.fields.get(idx as usize).cloned().unwrap_or(Value::null())
@@ -156,17 +240,41 @@ pub unsafe extern "win64" fn nyar_vm_cast_to(_vm_ptr: *mut NyarVM, val: Value, _
 }
 
 #[no_mangle]
-pub unsafe extern "win64" fn nyar_vm_make_closure(vm_ptr: *mut NyarVM, func_idx: u32, capture_count: u32) -> Value {
+pub unsafe extern "win64" fn nyar_vm_perform_effect(vm_ptr: *mut NyarVM, idx: u32, argc: u32) -> Value {
     let vm = &mut *vm_ptr;
-    let mut captures = Vec::with_capacity(capture_count as usize);
-    for _ in 0..capture_count {
-        captures.push(Upvalue(vm.pop().unwrap()));
-    }
-    captures.reverse();
     let module_idx = vm.frames.last().unwrap().module_idx;
-    let closure = Value::closure(module_idx, func_idx as u16, captures, &vm.gc);
-    vm.push(closure).unwrap();
-    closure
+    match vm.execute_perform(idx as u16, argc as u8, module_idx) {
+        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_ffi_call(vm_ptr: *mut NyarVM, idx: u32, argc: u32) -> Value {
+    let vm = &mut *vm_ptr;
+    let module_idx = vm.frames.last().unwrap().module_idx;
+    match vm.execute_ffi_call(idx as u16, argc as u8, module_idx) {
+        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_await(vm_ptr: *mut NyarVM) -> Value {
+    let vm = &mut *vm_ptr;
+    match vm.execute_await() {
+        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_block_on(vm_ptr: *mut NyarVM) -> Value {
+    let vm = &mut *vm_ptr;
+    match vm.execute_block_on() {
+        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
 }
 
 #[no_mangle]
@@ -179,17 +287,23 @@ pub unsafe extern "win64" fn nyar_vm_call_closure(vm_ptr: *mut NyarVM, argc: u32
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_load_upvalue(_vm_ptr: *mut NyarVM, closure_val: Value, idx: u32) -> Value {
     let closure = closure_val.as_closure();
-    closure.upvalues.get(idx as usize).cloned().map(|u| u.0).unwrap_or(Value::null())
+    closure.upvalues.get(idx as usize).map(|u| u.get()).unwrap_or(Value::null())
 }
 
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_store_upvalue(vm_ptr: *mut NyarVM, closure_val: Value, idx: u32, val: Value) {
     let vm = &mut *vm_ptr;
-    let closure = closure_val.as_closure_mut();
+    let closure = closure_val.as_closure();
     if (idx as usize) < closure.upvalues.len() {
-        closure.upvalues[idx as usize].0 = val;
+        closure.upvalues[idx as usize].set(val);
         val.write_barrier(&vm.gc);
     }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_close_upvalues(vm_ptr: *mut NyarVM) {
+    let vm = &mut *vm_ptr;
+    vm.execute_close_upvalues().unwrap();
 }
 
 #[no_mangle]
@@ -223,8 +337,9 @@ pub unsafe extern "win64" fn nyar_vm_load_global(vm_ptr: *mut NyarVM, name_idx: 
         let val = *v;
         vm.push(val).unwrap();
         val
-    } else if let Some(&(_m_idx, _c_idx)) = vm.symbol_table.get(name) {
-        let val = Value::null();
+    } else if let Some(&(m_idx, c_idx)) = vm.symbol_table.get(name) {
+        // If it's a symbol, we return a function value representing it
+        let val = Value::function(m_idx as usize, c_idx as usize, &vm.gc);
         vm.push(val).unwrap();
         val
     } else {

@@ -1,7 +1,6 @@
-use crate::bytecode::instruction::Instruction;
 use crate::bytecode::format::Constant;
-use crate::vm::core::{Frame, NyarVM};
-use crate::vm::value::Value;
+use crate::vm::core::NyarVM;
+use crate::vm::value::{Value, Frame};
 use crate::vm::VmError;
 
 impl NyarVM {
@@ -29,6 +28,7 @@ impl NyarVM {
             instrs,
             ip: 0,
             locals: args,
+            upvalues: vec![None; locals_count],
             closure: Value::null(),
             module_idx,
             chunk_idx: Some(chunk_idx as usize),
@@ -66,6 +66,7 @@ impl NyarVM {
             instrs,
             ip: 0,
             locals: args,
+            upvalues: vec![None; locals_count],
             closure: callee,
             module_idx: c_module_idx,
             chunk_idx: Some(c_chunk_idx),
@@ -105,6 +106,7 @@ impl NyarVM {
                 instrs,
                 ip: 0,
                 locals: args,
+                upvalues: vec![None; locals_count],
                 closure: Value::null(),
                 module_idx: m_idx,
                 chunk_idx: Some(chunk_idx as usize),
@@ -260,6 +262,7 @@ impl NyarVM {
             instrs,
             ip: 0,
             locals: final_args,
+            upvalues: vec![None; locals_count],
             closure: Value::null(),
             module_idx: target_module_idx,
             chunk_idx: Some(*chunk_idx as usize),
@@ -298,16 +301,65 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_ffi_call(&mut self, idx: u16, argc: u8) -> Result<Option<usize>, VmError> {
+    pub fn execute_ffi_call(
+        &mut self,
+        idx: u16,
+        argc: u8,
+        module_idx: usize,
+    ) -> Result<Option<usize>, VmError> {
+        let name = match self.modules[module_idx].constants.get(idx as usize) {
+            Some(Constant::String(s)) => s.clone(),
+            _ => return Err(VmError::IndexOutOfBounds),
+        };
+
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
 
-        // FFICall logic...
-        // For now, push null
-        self.push(Value::null())?;
+        // Check in FFI registry
+        if let Some(func) = self.ffi.get(&name) {
+            // Validate signature if present
+            if let Some(sig) = func.signature() {
+                if sig.params.len() != args.len() {
+                    return Err(VmError::RuntimeError(format!(
+                        "FFI function {} expects {} arguments, got {}",
+                        name,
+                        sig.params.len(),
+                        args.len()
+                    )));
+                }
+                for (i, (arg, ty)) in args.iter().zip(sig.params.iter()).enumerate() {
+                    let matches = match ty {
+                        crate::vm::ffi::FFIType::Int => arg.is_int(),
+                        crate::vm::ffi::FFIType::Float => arg.is_float(),
+                        crate::vm::ffi::FFIType::Bool => arg.is_bool(),
+                        crate::vm::ffi::FFIType::String => arg.is_string(),
+                        crate::vm::ffi::FFIType::Any => true,
+                    };
+                    if !matches {
+                        return Err(VmError::RuntimeError(format!(
+                            "FFI function {} argument {} type mismatch",
+                            name, i
+                        )));
+                    }
+                }
+            }
+
+            let result = func.call(args)?;
+            self.push(result)?;
+        } else {
+            // If not found in FFI, maybe it's a builtin?
+            if let Some(val) = self.builtins.get(&name).cloned() {
+                // If it's a closure/function, we should probably call it, 
+                // but FFICall usually implies direct native call.
+                // For now, return error if not a native function.
+                return Err(VmError::RuntimeError(format!("FFI function not found: {}", name)));
+            }
+            return Err(VmError::RuntimeError(format!("FFI function not found: {}", name)));
+        }
+
         Ok(None)
     }
 }

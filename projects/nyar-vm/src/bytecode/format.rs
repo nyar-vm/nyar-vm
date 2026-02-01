@@ -1,4 +1,6 @@
+use crate::vm::VmError;
 use byteorder::{LittleEndian, ReadBytesExt};
+use nyar_types::QualifiedName;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,6 +11,7 @@ pub enum Constant {
     Int(i64),
     Float(f64),
     String(String),
+    QualifiedName(QualifiedName),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -236,6 +239,22 @@ impl NyarcModule {
                         .map_err(|_| FormatError::Truncated)?;
                     let s = String::from_utf8_lossy(&buf).into_owned();
                     constants.push(Constant::String(s));
+                }
+                3 => {
+                    let count = cur
+                        .read_u32::<LittleEndian>()
+                        .map_err(|_| FormatError::Truncated)? as usize;
+                    let mut parts = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        let l = cur
+                            .read_u32::<LittleEndian>()
+                            .map_err(|_| FormatError::Truncated)? as usize;
+                        let mut buf = vec![0u8; l];
+                        cur.read_exact(&mut buf)
+                            .map_err(|_| FormatError::Truncated)?;
+                        parts.push(String::from_utf8_lossy(&buf).into_owned());
+                    }
+                    constants.push(Constant::QualifiedName(QualifiedName::new(parts)));
                 }
                 _ => return Err(FormatError::Truncated),
             }

@@ -27,10 +27,12 @@ impl NyarVM {
         println!("VM: Executing module {}, chunk {}", module_idx, chunk_idx);
         let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
 
-        let frame = crate::vm::core::Frame {
+        let locals_count = 32;
+        let frame = crate::vm::value::Frame {
             instrs,
             ip: 0,
-            locals: vec![Value::null(); 32],
+            locals: vec![Value::null(); locals_count],
+            upvalues: vec![None; locals_count],
             closure: Value::null(),
             module_idx,
             chunk_idx: Some(chunk_idx),
@@ -50,14 +52,16 @@ impl NyarVM {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
 
             let mut locals = args;
-            if locals.len() < 32 {
-                locals.resize(32, Value::null());
+            let locals_count = 32;
+            if locals.len() < locals_count {
+                locals.resize(locals_count, Value::null());
             }
 
-            let frame = crate::vm::core::Frame {
+            let frame = crate::vm::value::Frame {
                 instrs,
                 ip: 0,
                 locals,
+                upvalues: vec![None; locals_count],
                 closure: Value::null(),
                 module_idx: m_idx,
                 chunk_idx: Some(chunk_idx as usize),
@@ -105,6 +109,7 @@ impl NyarVM {
             stack_ptr: *mut Value,
             sp: *mut usize,
             locals_ptr: *mut Value,
+            upvalues_ptr: *mut Option<crate::vm::value::Upvalue>,
             ip_ptr: *mut usize,
             closure: Value,
             vm_ptr: *mut NyarVM,
@@ -121,6 +126,7 @@ impl NyarVM {
                 self.stack.as_mut_ptr(),
                 &mut self.sp as *mut usize,
                 frame.locals.as_mut_ptr(),
+                frame.upvalues.as_mut_ptr(),
                 &mut frame.ip as *mut usize,
                 frame.closure,
                 self as *mut NyarVM,
@@ -419,27 +425,13 @@ impl NyarVM {
                 self.execute_call_virtual(idx, argc.into(), module_idx)
             }
             Instruction::TailCall(argc) => self.execute_tail_call(argc.into()),
-            Instruction::FFICall(idx, argc) => self.execute_ffi_call(idx, argc.into()),
+            Instruction::FFICall(idx, argc) => self.execute_ffi_call(idx, argc.into(), module_idx),
             Instruction::InvokeMethod(idx, argc) => {
                 self.execute_invoke_method(idx, argc.into(), module_idx)
             }
             Instruction::Halt => Err(VmError::RuntimeError("Halt instruction encountered".to_string())),
-            _ => Err(VmError::InvalidOpcode),
         }
     }
     
-    pub fn print_traceback(&self, error: &VmError) {
-        eprintln!("Runtime Error: {:?}", error);
-        for (i, frame) in self.frames.iter().enumerate().rev() {
-            let module_idx = frame.module_idx;
-            eprintln!(
-                "  [{}] Module: {}, Chunk: {:?}, IP: {}",
-                i,
-                module_idx,
-                frame.chunk_idx,
-                frame.ip
-            );
-        }
-    }
 }
 

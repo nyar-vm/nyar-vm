@@ -1,4 +1,3 @@
-use crate::bytecode::instruction::Instruction;
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Upvalue, Value};
 use crate::vm::VmError;
@@ -8,20 +7,30 @@ impl NyarVM {
     pub fn execute_make_closure(
         &mut self,
         idx: u16,
-        upvalues: Vec<crate::bytecode::instruction::UpvalueInfo>,
+        upvalues: Vec<crate::bytecode::instruction::UpvalueRef>,
         module_idx: usize,
     ) -> Result<Option<usize>, VmError> {
         let mut captured = Vec::with_capacity(upvalues.len());
         for up in upvalues {
-            let val = if up.is_local {
-                let f = self.frames.last().unwrap();
-                f.locals[up.index as usize]
+            let upvalue = if up.is_local {
+                let f = self.frames.last_mut().unwrap();
+                let index = up.index as usize;
+                if let Some(existing) = f.upvalues.get(index).and_then(|x| x.as_ref()) {
+                    existing.clone()
+                } else {
+                    let new_up = Upvalue::new(f.locals[index]);
+                    if index >= f.upvalues.len() {
+                        f.upvalues.resize(index + 1, None);
+                    }
+                    f.upvalues[index] = Some(new_up.clone());
+                    new_up
+                }
             } else {
                 let f = self.frames.last().unwrap();
                 let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
-                closure.upvalues[up.index as usize].0
+                closure.upvalues[up.index as usize].clone()
             };
-            captured.push(Upvalue(val));
+            captured.push(upvalue);
         }
         let v = Value::closure(module_idx, idx, captured, &self.gc);
         self.push(v)?;
@@ -33,7 +42,7 @@ impl NyarVM {
         let f = self.frames.last().unwrap();
         let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
         if (idx as usize) < closure.upvalues.len() {
-            self.push(closure.upvalues[idx as usize].0)?;
+            self.push(closure.upvalues[idx as usize].get())?;
             Ok(None)
         } else {
             Err(VmError::IndexOutOfBounds)
@@ -45,12 +54,9 @@ impl NyarVM {
         let val = self.pop()?;
         let gc = &self.gc;
         let f = self.frames.last().unwrap();
-        let closure = f
-            .closure
-            .try_as_closure_mut()
-            .ok_or(VmError::InvalidOpcode)?;
+        let closure = f.closure.try_as_closure().ok_or(VmError::InvalidOpcode)?;
         if (idx as usize) < closure.upvalues.len() {
-            closure.upvalues[idx as usize].0 = val;
+            closure.upvalues[idx as usize].set(val);
             val.write_barrier(gc);
             Ok(None)
         } else {
@@ -60,12 +66,14 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_close_upvalues(&mut self) -> Result<Option<usize>, VmError> {
-        // In a more complex VM, this would "close" upvalues by moving them
-        // from the stack to the heap. Since our Upvalues already hold Value
-        // (which are either primitives or GC pointers), they are effectively
-        // always "closed" or handled by GC.
-        // For now, this is a no-op as the frame-based local management 
-        // handles the lifecycle.
+        // In our current implementation using Arc<AtomicU64>,
+        // "closing" an upvalue means it's no longer tracked in the current frame's
+        // open upvalues list. The actual value is already in the Upvalue's AtomicU64.
+        // When the frame is popped, these upvalues will be naturally closed.
+        // However, if the instruction is meant to close upvalues within a scope
+        // (e.g. at the end of a block), we clear the open upvalues list.
+        let f = self.frames.last_mut().unwrap();
+        f.upvalues.clear();
         Ok(None)
     }
 }

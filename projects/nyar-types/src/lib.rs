@@ -1,10 +1,45 @@
 pub use chomsky_extract::IKunTree;
+use nyar_gc::{MarkContext, Trace};
 use oak_core::Language;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod errors;
 
 pub use crate::errors::cli_error::CliError;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct QualifiedName {
+    pub parts: Vec<String>,
+}
+
+impl QualifiedName {
+    pub fn new(parts: Vec<String>) -> Self {
+        Self { parts }
+    }
+}
+
+impl Trace for QualifiedName {
+    fn trace(&self, _ctx: &mut MarkContext) {}
+}
+
+impl std::fmt::Display for QualifiedName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.parts.join("::"))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceLocation {
+    pub source_id: u32,
+    pub offset: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectInfo {
+    pub name: QualifiedName,
+    pub location: SourceLocation,
+}
 
 #[derive(Debug, Error)]
 pub enum NyarError {
@@ -37,13 +72,15 @@ pub enum VmError {
     #[error("Index out of bounds")]
     IndexOutOfBounds,
     #[error("Unhandled effect: {0}")]
-    UnhandledEffect(String),
+    UnhandledEffect(QualifiedName),
     #[error("Unhandled error")]
     UnhandledError,
     #[error("Runtime error: {0}")]
     RuntimeError(String),
     #[error("Division by zero")]
     DivisionByZero,
+    #[error("Yield async")]
+    YieldAsync,
 }
 
 #[derive(Debug, Error)]

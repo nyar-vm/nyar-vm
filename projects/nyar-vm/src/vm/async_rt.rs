@@ -87,6 +87,11 @@ impl<'a> VmFuture<'a> {
                         return Poll::Ready(self.vm.pop());
                     }
                 }
+                Err(crate::vm::VmError::YieldAsync) => {
+                    // Instruction requested a yield
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
                 Err(e) => return Poll::Ready(Err(e)),
             }
         }

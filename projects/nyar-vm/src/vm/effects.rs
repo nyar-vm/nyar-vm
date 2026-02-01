@@ -1,5 +1,6 @@
 use crate::vm::value::Value;
 use crate::vm::VmError;
+use nyar_types::{EffectInfo, QualifiedName};
 
 #[derive(Clone)]
 pub struct HandlerFrame {
@@ -10,25 +11,34 @@ pub struct HandlerFrame {
 pub fn perform_effect_internal(
     vm: &mut crate::vm::core::NyarVM,
     module_idx: usize,
-    name: String,
+    effect: EffectInfo,
     args: Vec<Value>,
 ) -> Result<Option<Value>, VmError> {
-    if name == "LoggerEvent" {
-        if let Some(v) = args.last() {
-            let msg = match v.tag() {
-                crate::vm::value::ValueTag::Int => format!("{}", v.as_int()),
-                crate::vm::value::ValueTag::Float => format!("{}", v.as_float()),
-                crate::vm::value::ValueTag::Bool => format!("{}", v.as_bool()),
-                crate::vm::value::ValueTag::Null => "null".to_string(),
-                crate::vm::value::ValueTag::String => v
-                    .try_as_str()
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "<invalid string>".to_string()),
-                _ => "<unsupported>".to_string(),
-            };
-            vm.log(&msg);
+    let name = effect.name.to_string();
+    if name == "LoggerEvent" || name == "print" {
+        for arg in &args {
+            vm.log(&format!("{}", arg));
         }
         return Ok(None);
+    }
+    if name == "exit" {
+        let code = args.get(0).map(|v| v.as_int()).unwrap_or(0) as i32;
+        std::process::exit(code);
+    }
+    if name == "now" {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
+        return Ok(Some(Value::float(now)));
+    }
+    if name == "get_env" {
+        if let Some(key) = args.get(0).and_then(|v| v.try_as_str()) {
+            if let Ok(val) = std::env::var(key) {
+                return Ok(Some(Value::string(val, &vm.gc)));
+            }
+        }
+        return Ok(Some(Value::null()));
     }
     if name == "throw" {
         vm.log("Traceback (most recent call last):");
@@ -57,8 +67,9 @@ pub fn perform_effect_internal(
         };
         return Ok(Some(res));
     }
-    if name.contains("Token::") {
-        let variant_name = name.split("::").last().unwrap_or("");
+    // Handle Token variants using QualifiedName
+    if effect.name.parts.len() >= 2 && effect.name.parts[effect.name.parts.len() - 2] == "Token" {
+        let variant_name = effect.name.parts.last().map(|s| s.as_str()).unwrap_or("");
         // Find Token class
         let class_idx = vm.modules[module_idx]
             .classes
@@ -74,6 +85,6 @@ pub fn perform_effect_internal(
         }
     }
     vm.log("Traceback (most recent call last):");
-    vm.log(&format!("UnhandledEffect: {}", name));
-    Err(VmError::UnhandledEffect(name))
+    vm.log(&format!("UnhandledEffect: {} at source {} offset {}", effect.name, effect.location.source_id, effect.location.offset));
+    Err(VmError::UnhandledEffect(effect.name))
 }

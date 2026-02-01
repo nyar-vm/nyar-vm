@@ -1,3 +1,4 @@
+use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Frame};
 use crate::vm::VmError;
 
@@ -30,7 +31,7 @@ impl NyarVM {
         let val = self.pop()?;
         if val.tag() == crate::vm::value::ValueTag::Code {
             let code = unsafe {
-                let ptr = val.payload() as *const crate::vm::value::GcBox<crate::vm::value::Code>;
+                let ptr = val.payload() as *const nyar_gc::GcBox<crate::vm::value::Code>;
                 &(*ptr).data
             };
             
@@ -40,9 +41,18 @@ impl NyarVM {
             let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
             let chunk = &self.modules[module_idx].chunks[chunk_idx];
             
-            let mut locals = vec![Value::null(); chunk.locals as usize];
+            let locals_count = chunk.locals as usize;
+            let mut locals = vec![Value::null(); locals_count];
             
             // Pop argc arguments from stack and put into locals
+            if argc as usize > locals_count {
+                return Err(VmError::RuntimeError(format!(
+                    "Eval: too many arguments ({} provided, {} locals available)",
+                    argc,
+                    locals_count
+                )));
+            }
+
             let mut args = Vec::with_capacity(argc as usize);
             for _ in 0..argc {
                 args.push(self.pop()?);
@@ -50,15 +60,14 @@ impl NyarVM {
             args.reverse();
             
             for (i, arg) in args.into_iter().enumerate() {
-                if i < locals.len() {
-                    locals[i] = arg;
-                }
+                locals[i] = arg;
             }
             
             let new_frame = Frame {
                 instrs,
                 ip: 0,
                 locals,
+                upvalues: vec![None; locals_count],
                 closure: Value::null(),
                 module_idx,
                 chunk_idx: Some(chunk_idx),
