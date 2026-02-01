@@ -2,7 +2,7 @@ use crate::bytecode::format::NyarcModule;
 use crate::vm::effects::HandlerFrame;
 use crate::vm::ffi::FFIRegistry;
 use crate::vm::value::{Value, Frame};
-use crate::vm::VmError;
+use crate::vm::NyarError;
 use nyar_gc::{MarkContext, NyarGc, Trace};
 
 
@@ -15,14 +15,14 @@ pub trait JitProvider: Send + Sync {
         vm: &mut NyarVM,
         module_idx: usize,
         chunk_idx: usize,
-    ) -> Option<Result<Value, VmError>>;
+    ) -> Option<Result<Value, NyarError>>;
     fn osr(
         &self,
         vm: &NyarVM,
         module_idx: usize,
         chunk_idx: usize,
         target: u32,
-    ) -> Result<*const u8, VmError>;
+    ) -> Result<*const u8, NyarError>;
 }
 
 pub struct NyarVM {
@@ -79,7 +79,7 @@ impl NyarVM {
         vm
     }
 
-    pub fn push(&mut self, v: Value) -> Result<(), VmError> {
+    pub fn push(&mut self, v: Value) -> Result<(), NyarError> {
         if self.sp >= self.stack.len() {
             self.stack.push(v)
         } else {
@@ -96,7 +96,7 @@ impl NyarVM {
         Ok(())
     }
 
-    pub fn pop(&mut self) -> Result<Value, VmError> {
+    pub fn pop(&mut self) -> Result<Value, NyarError> {
         if self.sp == 0 {
             println!("VM: STACK UNDERFLOW!");
             Err(self.error(nyar_types::VmErrorKind::StackUnderflow))
@@ -106,12 +106,12 @@ impl NyarVM {
         }
     }
 
-    pub fn error(&self, kind: nyar_types::VmErrorKind) -> VmError {
+    pub fn error(&self, kind: nyar_types::VmErrorKind) -> NyarError {
         let location = self.frames.last().map(|f| f.location).unwrap_or_default();
-        VmError::new(kind, location)
+        NyarError::new(nyar_types::NyarErrorKind::Vm(kind), location)
     }
 
-    pub fn peek_at(&self, depth: usize) -> Result<Value, VmError> {
+    pub fn peek_at(&self, depth: usize) -> Result<Value, NyarError> {
         if depth >= self.sp {
             Err(self.error(nyar_types::VmErrorKind::StackUnderflow))
         } else {
@@ -119,7 +119,7 @@ impl NyarVM {
         }
     }
 
-    pub fn swap_with(&mut self, depth: usize) -> Result<(), VmError> {
+    pub fn swap_with(&mut self, depth: usize) -> Result<(), NyarError> {
         if depth >= self.sp {
             Err(self.error(nyar_types::VmErrorKind::StackUnderflow))
         } else {
@@ -182,7 +182,7 @@ impl NyarVM {
         }
     }
 
-    pub fn print_traceback(&self, err: &VmError) {
+    pub fn print_traceback(&self, err: &NyarError) {
         self.print_line("Traceback (most recent call last):");
         let start = if self.frames.len() > 20 {
             self.print_line(&format!("... ({} frames omitted)", self.frames.len() - 20));

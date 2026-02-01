@@ -12,4 +12,4 @@ pub mod runtime;
 
 pub use self::core::NyarVM;
 
-pub use nyar_types::VmError;
+pub use nyar_types::NyarError;

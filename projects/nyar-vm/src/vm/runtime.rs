@@ -1,6 +1,6 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Upvalue, Value};
-use crate::vm::VmError;
+use crate::vm::NyarError;
 use crate::bytecode::format::Constant;
 use crate::vm::value::BigInt;
 use nyar_types::QualifiedName;
