@@ -1,6 +1,6 @@
 use crate::vm::value::Value;
 use crate::vm::VmError;
-use nyar_types::{EffectInfo, QualifiedName};
+use nyar_types::EffectInfo;
 
 #[derive(Clone)]
 pub struct HandlerFrame {

@@ -368,7 +368,7 @@ impl NyarVM {
             self.push(result)?;
         } else {
             // If not found in FFI, maybe it's a builtin?
-            if let Some(val) = self.builtins.get(&name_qn).cloned() {
+            if let Some(_val) = self.builtins.get(&name_qn).cloned() {
                 // If it's a closure/function, we should probably call it, 
                 // but FFICall usually implies direct native call.
                 // For now, return error if not a native function.

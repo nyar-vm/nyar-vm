@@ -1,7 +1,7 @@
-use crate::vm::VmError;
 use byteorder::{LittleEndian, ReadBytesExt};
 use nyar_types::QualifiedName;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 use std::io::{Cursor, Read};
 use std::time::{SystemTime, UNIX_EPOCH};
 

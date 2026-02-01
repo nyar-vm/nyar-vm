@@ -6,7 +6,7 @@ use crate::vm::VmError;
 use nyar_gc::{MarkContext, NyarGc, Trace};
 
 
-use nyar_types::{EffectInfo, QualifiedName, SourceLocation};
+use nyar_types::QualifiedName;
 
 
 pub trait JitProvider: Send + Sync {

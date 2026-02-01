@@ -192,14 +192,6 @@ impl Trace for Tuple {
     }
 }
 
-impl Trace for Effect {
-    fn trace(&self, ctx: &mut MarkContext) {
-        for arg in &self.args {
-            arg.trace(ctx);
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FutureStatus {
     Pending,

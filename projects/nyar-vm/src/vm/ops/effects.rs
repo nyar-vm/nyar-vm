@@ -101,22 +101,28 @@ impl NyarVM {
         // Pop the value to resume with and the continuation
         let val = self.pop()?;
         let cont_val = self.pop()?;
+        self.execute_resume(cont_val, val)
+    }
 
+    pub fn execute_resume(&mut self, cont_val: Value, val: Value) -> Result<Option<usize>, VmError> {
         let cont = cont_val
             .try_as_continuation()
             .ok_or(VmError::RuntimeError("Resume requires a continuation".to_string()))?;
 
         // Restore frames and stack from the continuation.
-        // The stack and frames are roots, so no write barrier is required here.
         self.frames = cont.frames.clone();
         self.stack = cont.stack_slice.clone();
         self.sp = self.stack.len();
 
         // Push the resumed value as the result of the 'perform' instruction.
-        // Again, pushing to the stack (a root) does not require a write barrier.
         self.push(val)?;
 
         Ok(Some(cont.ip))
+    }
+
+    #[inline(always)]
+    pub fn execute_yield(&mut self) -> Result<Option<usize>, VmError> {
+        Err(VmError::YieldAsync)
     }
 
     #[inline(always)]
