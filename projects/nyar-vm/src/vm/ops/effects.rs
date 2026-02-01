@@ -44,8 +44,9 @@ impl NyarVM {
             self.frames.truncate(handler.frame_depth);
             
             // Push handler frame
-            let instrs = self.get_chunk_instructions(module_idx, handler.catch_chunk)?;
-            let chunk = &self.modules[module_idx].chunks[handler.catch_chunk];
+            let handler_module_idx = handler.module_idx;
+            let instrs = self.get_chunk_instructions(handler_module_idx, handler.catch_chunk)?;
+            let chunk = &self.modules[handler_module_idx].chunks[handler.catch_chunk];
             let locals_count = chunk.locals as usize;
             let locals = vec![Value::null(); locals_count];
             
@@ -55,15 +56,14 @@ impl NyarVM {
                 locals,
                 upvalues: vec![None; locals_count],
                 closure: Value::null(),
-                module_idx,
+                module_idx: handler_module_idx,
                 chunk_idx: Some(handler.catch_chunk),
             };
             self.frames.push(new_frame);
             
-            // Push arguments and continuation to handler
-            self.push(Value::qualified_name(name, &self.gc))?;
-            let args_val = Value::array(args, &self.gc);
-            self.push(args_val)?;
+            // Push effect object and continuation to handler
+            let effect_obj = Value::effect(effect_info, args, &self.gc);
+            self.push(effect_obj)?;
             self.push(cont)?;
             
             return Ok(Some(0));
@@ -84,11 +84,12 @@ impl NyarVM {
     pub fn execute_with_handler(
         &mut self,
         idx: u16,
-        _module_idx: usize,
+        module_idx: usize,
     ) -> Result<Option<usize>, VmError> {
         // idx is the chunk index for the handler
         let frame_depth = self.frames.len();
         self.handler_stack.push(crate::vm::effects::HandlerFrame {
+            module_idx,
             catch_chunk: idx as usize,
             frame_depth,
         });
@@ -132,11 +133,20 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_match_effect(&mut self, idx: u16) -> Result<Option<usize>, VmError> {
-        // Pop an effect object and check if it matches the type_idx
+    pub fn execute_match_effect(&mut self, idx: u16, module_idx: usize) -> Result<Option<usize>, VmError> {
+        // Pop an effect object and check if it matches the name at constants[idx]
         let val = self.pop()?;
+        let target_name = match self.modules[module_idx].constants.get(idx as usize) {
+            Some(Constant::QualifiedName(qn)) => qn,
+            Some(Constant::String(s)) => {
+                // Fallback for legacy bytecode
+                &QualifiedName::new(s.split("::").map(|s| s.to_string()).collect())
+            }
+            _ => return Err(VmError::IndexOutOfBounds),
+        };
+
         if let Some(effect) = val.try_as_effect() {
-            if effect.type_idx == idx {
+            if &effect.info.name == target_name {
                 // Match! Push arguments and then true
                 for arg in &effect.args {
                     self.push(*arg)?;

@@ -562,8 +562,8 @@ impl Value {
         let g = gc.alloc(Tuple { items });
         Self::encode(ValueTag::Tuple, g.as_ptr() as u64)
     }
-    pub fn effect(type_idx: u16, args: Vec<Value>, gc: &NyarGc) -> Self {
-        let g = gc.alloc(Effect { type_idx, args });
+    pub fn effect(info: nyar_types::EffectInfo, args: Vec<Value>, gc: &NyarGc) -> Self {
+        let g = gc.alloc(Effect { info, args });
         Self::encode(ValueTag::Effect, g.as_ptr() as u64)
     }
     pub fn qualified_name(name: QualifiedName, gc: &NyarGc) -> Self {
@@ -894,8 +894,17 @@ pub struct Tuple {
 
 #[derive(Clone)]
 pub struct Effect {
-    pub type_idx: u16,
+    pub info: nyar_types::EffectInfo,
     pub args: Vec<Value>,
+}
+
+impl Trace for Effect {
+    fn trace(&self, ctx: &mut MarkContext) {
+        self.info.name.trace(ctx);
+        for arg in &self.args {
+            arg.trace(ctx);
+        }
+    }
 }
 
 #[derive(Clone)]

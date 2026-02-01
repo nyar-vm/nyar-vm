@@ -346,6 +346,46 @@ pub unsafe extern "win64" fn nyar_vm_capture_ref(vm_ptr: *mut NyarVM, idx: u32, 
 }
 
 #[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_eval(vm_ptr: *mut NyarVM, argc: u32) -> Value {
+    let vm = &mut *vm_ptr;
+    let depth = vm.frames.len();
+    match vm.execute_eval(argc as u8) {
+        Ok(Some(_)) => drive_until(vm, depth),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_capture_cont(vm_ptr: *mut NyarVM) -> Value {
+    let vm = &mut *vm_ptr;
+    match vm.execute_capture_cont() {
+        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_yield(vm_ptr: *mut NyarVM) -> Value {
+    let vm = &mut *vm_ptr;
+    match vm.execute_yield() {
+        Ok(_) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "win64" fn nyar_vm_resume(vm_ptr: *mut NyarVM, cont: Value, val: Value) -> Value {
+    let vm = &mut *vm_ptr;
+    let depth = vm.frames.len();
+    match vm.execute_resume(cont, val) {
+        Ok(Some(_)) => drive_until(vm, depth),
+        Ok(None) => vm.pop().unwrap_or(Value::null()),
+        Err(_) => Value::null(),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "win64" fn nyar_vm_load_global(vm_ptr: *mut NyarVM, name_idx: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;

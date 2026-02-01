@@ -419,7 +419,7 @@ impl NyarVM {
             Instruction::CaptureCont => self.execute_capture_cont(),
             Instruction::Await => self.execute_await(),
             Instruction::BlockOn => self.execute_block_on(),
-            Instruction::MatchEffect(idx) => self.execute_match_effect(idx),
+            Instruction::MatchEffect(idx) => self.execute_match_effect(idx, module_idx),
             // Trait operations
             Instruction::GetWitnessTable(t_idx, i_idx) => {
                 self.execute_get_witness_table(t_idx, i_idx, module_idx)
