@@ -27,7 +27,7 @@ impl NyarVM {
                 }
             } else {
                 let f = self.frames.last().unwrap();
-                let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15)))?;
+                let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Closure".to_string(), found: format!("{:?}", f.closure.tag()) }))?;
                 closure.upvalues[up.index as usize].clone()
             };
             captured.push(upvalue);
@@ -40,7 +40,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_load_upvalue(&mut self, idx: u16) -> Result<Option<usize>, NyarError> {
         let f = self.frames.last().unwrap();
-        let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x09)))?;
+        let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Closure".to_string(), found: format!("{:?}", f.closure.tag()) }))?;
         if (idx as usize) < closure.upvalues.len() {
             self.push(closure.upvalues[idx as usize].get())?;
             Ok(None)
@@ -54,7 +54,7 @@ impl NyarVM {
         let val = self.pop()?;
         let gc = &self.gc;
         let f = self.frames.last().unwrap();
-        let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x0A)))?;
+        let closure = f.closure.try_as_closure().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Closure".to_string(), found: format!("{:?}", f.closure.tag()) }))?;
         if (idx as usize) < closure.upvalues.len() {
             closure.upvalues[idx as usize].set(val);
             val.write_barrier(gc);

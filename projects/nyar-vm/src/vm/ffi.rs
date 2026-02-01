@@ -8,7 +8,8 @@ pub type FFIResult = Result<Value, NyarError>;
 pub enum FFIType {
     Null,
     Int,
-    Float,
+    F32,
+    F64,
     Bool,
     String,
     List,

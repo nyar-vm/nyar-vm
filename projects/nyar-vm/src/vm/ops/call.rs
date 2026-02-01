@@ -170,9 +170,10 @@ impl NyarVM {
                     let rhs = args[0];
                     if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
                         self.push(Value::int(l + r))?;
-                    } else if let (Some(l), Some(r)) = (receiver.try_as_float(), rhs.try_as_float())
-                    {
-                        self.push(Value::float(l + r))?;
+                    } else if receiver.is_f32() && rhs.is_f32() {
+                        self.push(Value::f32(receiver.as_f32() + rhs.as_f32()))?;
+                    } else if receiver.is_f64() && rhs.is_f64() {
+                        self.push(Value::float(receiver.as_f64() + rhs.as_f64()))?;
                     } else if let (Some(l), Some(r)) = (receiver.try_as_str(), rhs.try_as_str()) {
                         let mut s = l.to_string();
                         s.push_str(r);
@@ -337,7 +338,8 @@ impl NyarVM {
                     let matches = match ty {
                         crate::vm::ffi::FFIType::Null => arg.is_null(),
                         crate::vm::ffi::FFIType::Int => arg.is_int(),
-                        crate::vm::ffi::FFIType::Float => arg.is_float(),
+                        crate::vm::ffi::FFIType::F32 => arg.is_f32(),
+                        crate::vm::ffi::FFIType::F64 => arg.is_f64(),
                         crate::vm::ffi::FFIType::Bool => arg.is_bool(),
                         crate::vm::ffi::FFIType::String => arg.is_string(),
                         crate::vm::ffi::FFIType::List => arg.is_list(),

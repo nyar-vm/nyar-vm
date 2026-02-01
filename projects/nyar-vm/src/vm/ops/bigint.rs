@@ -27,8 +27,8 @@ impl NyarVM {
     pub fn execute_bigint_sub(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x02)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x02)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         let res = BigInt(&l.0 - &r.0);
         self.push(Value::bigint(res, &self.gc))?;
         Ok(None)
@@ -38,8 +38,8 @@ impl NyarVM {
     pub fn execute_bigint_mul(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x03)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x03)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         let res = BigInt(&l.0 * &r.0);
         self.push(Value::bigint(res, &self.gc))?;
         Ok(None)
@@ -49,8 +49,8 @@ impl NyarVM {
     pub fn execute_bigint_div(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x04)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x04)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         if r.0 == NativeBigInt::from(0) {
             return Err(self.error(nyar_types::VmErrorKind::DivisionByZero));
         }
@@ -63,8 +63,8 @@ impl NyarVM {
     pub fn execute_bigint_mod(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x05)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x05)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         if r.0 == NativeBigInt::from(0) {
             return Err(self.error(nyar_types::VmErrorKind::DivisionByZero));
         }
@@ -76,7 +76,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_bigint_neg(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
-        let bi = v.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x08)))?;
+        let bi = v.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", v.tag()) }))?;
         let res = BigInt(-&bi.0);
         self.push(Value::bigint(res, &self.gc))?;
         Ok(None)
@@ -86,8 +86,8 @@ impl NyarVM {
     pub fn execute_bigint_eq(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x10)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x10)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l.0 == r.0))?;
         Ok(None)
     }
@@ -96,8 +96,8 @@ impl NyarVM {
     pub fn execute_bigint_ne(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x11)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x11)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l.0 != r.0))?;
         Ok(None)
     }
@@ -106,8 +106,8 @@ impl NyarVM {
     pub fn execute_bigint_lt(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x12)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x12)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l.0 < r.0))?;
         Ok(None)
     }
@@ -116,8 +116,8 @@ impl NyarVM {
     pub fn execute_bigint_le(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x13)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x13)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l.0 <= r.0))?;
         Ok(None)
     }
@@ -126,8 +126,8 @@ impl NyarVM {
     pub fn execute_bigint_gt(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l.0 > r.0))?;
         Ok(None)
     }
@@ -136,8 +136,8 @@ impl NyarVM {
     pub fn execute_bigint_ge(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15)))?;
-        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15)))?;
+        let l = lhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l.0 >= r.0))?;
         Ok(None)
     }
@@ -145,7 +145,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_bigint_to_i64(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
-        let b = v.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x20)))?;
+        let b = v.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", v.tag()) }))?;
         let i = b.to_i64();
         self.push(Value::int(i))?;
         Ok(None)
@@ -154,7 +154,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_bigint_from_i64(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
-        let i = v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x21)))?;
+        let i = v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", v.tag()) }))?;
         self.push(Value::bigint_from_i64(i, &self.gc))?;
         Ok(None)
     }
@@ -162,7 +162,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_bigint_to_string(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
-        let b = v.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x30)))?;
+        let b = v.try_as_bigint().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "BigInt".to_string(), found: format!("{:?}", v.tag()) }))?;
         let s = b.0.to_string();
         self.push(Value::string(s, &self.gc))?;
         Ok(None)

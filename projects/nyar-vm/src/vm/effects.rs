@@ -52,8 +52,11 @@ pub fn perform_effect_internal(
                     (crate::vm::value::ValueTag::Int, crate::vm::value::ValueTag::Int) => {
                         Value::int(a.as_int() + b.as_int())
                     }
-                    (crate::vm::value::ValueTag::Float, crate::vm::value::ValueTag::Float) => {
-                        Value::float(a.as_float() + b.as_float())
+                    (crate::vm::value::ValueTag::F32, crate::vm::value::ValueTag::F32) => {
+                        Value::f32(a.as_f32() + b.as_f32())
+                    }
+                    (crate::vm::value::ValueTag::F64, crate::vm::value::ValueTag::F64) => {
+                        Value::float(a.as_f64() + b.as_f64())
                     }
                     (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => {
                         let mut s = a.try_as_str().unwrap_or("").to_string();

@@ -228,11 +228,12 @@ pub enum ValueTag {
     Effect = 12,
     Code = 13,
     WitnessTable = 14,
-    Float = 15,
+    F64 = 15,
     Function = 16,
     TraitObject = 17,
     QualifiedName = 18,
     Future = 19,
+    F32 = 20,
 }
 
 #[repr(transparent)]
@@ -273,7 +274,7 @@ impl Value {
 
     pub fn tag(&self) -> ValueTag {
         if self.is_float() {
-            return ValueTag::Float;
+            return ValueTag::F64;
         }
         let mut tag_val = ((self.0 & 0x0007_8000_0000_0000) >> TAG_SHIFT) as u8;
         if (self.0 & 0x8000_0000_0000_0000) != 0 {
@@ -295,11 +296,12 @@ impl Value {
             12 => ValueTag::Effect,
             13 => ValueTag::Code,
             14 => ValueTag::WitnessTable,
-            15 => ValueTag::Float,
+            15 => ValueTag::F64,
             16 => ValueTag::Function,
             17 => ValueTag::TraitObject,
             18 => ValueTag::QualifiedName,
             19 => ValueTag::Future,
+            20 => ValueTag::F32,
             _ => panic!("Invalid tag value: {} (raw={:016x})", tag_val, self.0),
         }
     }
@@ -428,8 +430,20 @@ impl Value {
         }
     }
 
+    pub fn f32(v: f32) -> Self {
+        Self::encode(ValueTag::F32, v.to_bits() as u64)
+    }
+
     pub fn is_int(&self) -> bool {
         !self.is_float() && self.tag() == ValueTag::Int
+    }
+
+    pub fn is_f32(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::F32
+    }
+
+    pub fn is_f64(&self) -> bool {
+        self.is_float() || self.tag() == ValueTag::F64
     }
 
     pub fn is_bool(&self) -> bool {
@@ -497,8 +511,12 @@ impl Value {
     }
 
     pub fn is_truthy(&self) -> bool {
-        if self.is_float() {
-            let f = self.as_float();
+        if self.is_f64() {
+            let f = self.as_f64();
+            return !f.is_nan() && f != 0.0;
+        }
+        if self.is_f32() {
+            let f = self.as_f32();
             return !f.is_nan() && f != 0.0;
         }
         match self.tag() {
@@ -621,6 +639,16 @@ impl Value {
         self.payload() as i64
     }
     pub fn as_float(&self) -> f64 {
+        if self.is_f32() {
+            self.as_f32() as f64
+        } else {
+            self.as_f64()
+        }
+    }
+    pub fn as_f32(&self) -> f32 {
+        f32::from_bits(self.payload() as u32)
+    }
+    pub fn as_f64(&self) -> f64 {
         f64::from_bits(self.0)
     }
     pub fn as_bool(&self) -> bool {
@@ -682,8 +710,24 @@ impl Value {
         }
     }
     pub fn try_as_float(&self) -> Option<f64> {
-        if self.is_float() {
-            Some(self.as_float())
+        if self.is_f64() {
+            Some(self.as_f64())
+        } else if self.is_f32() {
+            Some(self.as_f32() as f64)
+        } else {
+            None
+        }
+    }
+    pub fn try_as_f32(&self) -> Option<f32> {
+        if self.is_f32() {
+            Some(self.as_f32())
+        } else {
+            None
+        }
+    }
+    pub fn try_as_f64(&self) -> Option<f64> {
+        if self.is_f64() {
+            Some(self.as_f64())
         } else {
             None
         }

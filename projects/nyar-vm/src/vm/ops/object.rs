@@ -67,13 +67,13 @@ impl NyarVM {
         let arr_val = self.pop()?;
 
         if arr_val.is_dyn_object() {
-            let key = key_val.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1B)))?; // Opcode for GET_ELEMENT
+            let key = key_val.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", key_val.tag()) }))?; // Opcode for GET_ELEMENT
             let obj = unsafe { arr_val.as_dyn_object() };
             let val = obj.entries.get(key).cloned().unwrap_or(Value::null());
             self.push(val)?;
             Ok(None)
         } else {
-            let idx = key_val.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1B)))? as usize;
+            let idx = key_val.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", key_val.tag()) }))? as usize;
             if arr_val.is_array() {
                 let arr = unsafe { arr_val.as_array() };
                 if idx < arr.items.len() {
@@ -99,7 +99,7 @@ impl NyarVM {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
                 }
             } else {
-                Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1B)))
+                Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Array/List/Tuple/DynObject".to_string(), found: format!("{:?}", arr_val.tag()) }))
             }
         }
     }
@@ -112,14 +112,14 @@ impl NyarVM {
 
         let gc = &self.gc;
         if arr_val.is_dyn_object() {
-            let key = key_val.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1C)))?; // Opcode for SET_ELEMENT
+            let key = key_val.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", key_val.tag()) }))?; // Opcode for SET_ELEMENT
             let obj = unsafe { arr_val.as_dyn_object_mut() };
             obj.entries.insert(key.to_string(), val);
             val.write_barrier(gc);
             self.push(arr_val)?;
             Ok(None)
         } else {
-            let idx = key_val.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1C)))? as usize;
+            let idx = key_val.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", key_val.tag()) }))? as usize;
             if arr_val.is_array() {
                 let arr = unsafe { arr_val.as_array_mut() };
                 if idx < arr.items.len() {
@@ -157,7 +157,7 @@ impl NyarVM {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
                 }
             } else {
-                Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1C)))
+                Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Array/List/Tuple/DynObject".to_string(), found: format!("{:?}", arr_val.tag()) }))
             }
         }
     }
@@ -198,12 +198,12 @@ impl NyarVM {
         let key = self.pop()?;
         let obj_val = self.pop()?;
         if obj_val.is_dyn_object() {
-            let key_str = key.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1D)))?; // Opcode for HAS_KEY
+            let key_str = key.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", key.tag()) }))?; // Opcode for HAS_KEY
             let obj = unsafe { obj_val.as_dyn_object() };
             self.push(Value::bool(obj.entries.contains_key(key_str)))?;
             Ok(None)
         } else if obj_val.is_object() {
-            let key_str = key.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1D)))?;
+            let key_str = key.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", key.tag()) }))?;
             let obj = unsafe { obj_val.as_object() };
             let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
             let class_info = self.modules[frame.module_idx]
@@ -214,22 +214,22 @@ impl NyarVM {
             self.push(Value::bool(has_field))?;
             Ok(None)
         } else if obj_val.is_array() {
-            let idx = key.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1D)))? as usize;
+            let idx = key.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", key.tag()) }))? as usize;
             let arr = unsafe { obj_val.as_array() };
             self.push(Value::bool(idx < arr.items.len()))?;
             Ok(None)
         } else if obj_val.is_list() {
-            let idx = key.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1D)))? as usize;
+            let idx = key.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", key.tag()) }))? as usize;
             let list = unsafe { obj_val.as_list() };
             self.push(Value::bool(idx < list.items.len()))?;
             Ok(None)
         } else if obj_val.is_tuple() {
-            let idx = key.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1D)))? as usize;
+            let idx = key.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", key.tag()) }))? as usize;
             let tuple = unsafe { obj_val.as_tuple() };
             self.push(Value::bool(idx < tuple.items.len()))?;
             Ok(None)
         } else {
-            Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1D)))
+            Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Collection".to_string(), found: format!("{:?}", obj_val.tag()) }))
         }
     }
 
@@ -238,14 +238,14 @@ impl NyarVM {
         let key = self.pop()?;
         let obj_val = self.pop()?;
         if obj_val.is_dyn_object() {
-            let key_str = key.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1E)))?; // Opcode for REMOVE_KEY
+            let key_str = key.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", key.tag()) }))?; // Opcode for REMOVE_KEY
             let obj = unsafe { obj_val.as_dyn_object_mut() };
             let removed = obj.entries.remove(key_str);
             self.push(obj_val)?;
             self.push(removed.unwrap_or(Value::null()))?;
             Ok(None)
         } else if obj_val.is_list() {
-            let idx = key.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1E)))? as usize;
+            let idx = key.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", key.tag()) }))? as usize;
             let list = unsafe { obj_val.as_list_mut() };
             if idx < list.items.len() {
                 let removed = list.items.remove(idx);
@@ -256,7 +256,7 @@ impl NyarVM {
                 Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
             }
         } else {
-            Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1E)))
+            Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "List/DynObject".to_string(), found: format!("{:?}", obj_val.tag()) }))
         }
     }
 
@@ -278,7 +278,7 @@ impl NyarVM {
             self.push(list_val)?;
             Ok(None)
         } else {
-            Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x1F))) // Opcode for PUSH_ELEMENT_RIGHT
+            Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "List/Array".to_string(), found: format!("{:?}", list_val.tag()) })) // Opcode for PUSH_ELEMENT_RIGHT
         }
     }
 
@@ -298,7 +298,7 @@ impl NyarVM {
             self.push(val)?;
             Ok(None)
         } else {
-            Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x20))) // Opcode for POP_ELEMENT_RIGHT
+            Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "List/Array".to_string(), found: format!("{:?}", list_val.tag()) })) // Opcode for POP_ELEMENT_RIGHT
         }
     }
 
@@ -320,7 +320,7 @@ impl NyarVM {
             self.push(list_val)?;
             Ok(None)
         } else {
-            Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x21))) // Opcode for PUSH_ELEMENT_LEFT
+            Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "List/Array".to_string(), found: format!("{:?}", list_val.tag()) })) // Opcode for PUSH_ELEMENT_LEFT
         }
     }
 
@@ -346,7 +346,7 @@ impl NyarVM {
             self.push(val)?;
             Ok(None)
         } else {
-            Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x22))) // Opcode for POP_ELEMENT_LEFT
+            Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "List/Array".to_string(), found: format!("{:?}", list_val.tag()) })) // Opcode for POP_ELEMENT_LEFT
         }
     }
 
@@ -368,7 +368,7 @@ impl NyarVM {
         } else if val.is_bigint() {
             unsafe { val.as_bigint().0.to_bytes_le().1.len() }
         } else {
-            return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x23))); // Opcode for SIZE_OF
+            return Err(self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Collection/String/BigInt".to_string(), found: format!("{:?}", val.tag()) })); // Opcode for SIZE_OF
         };
         self.push(Value::int(size as i64))?;
         Ok(None)

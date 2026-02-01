@@ -13,8 +13,8 @@ impl NyarVM {
     pub fn execute_string_concat(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x01)))?;
-        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x01)))?;
+        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         let result = format!("{}{}", l, r);
         self.push(Value::string(result, &self.gc))?;
         Ok(None)
@@ -23,7 +23,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_string_len_bytes(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
-        let n = v.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x02)))?.len() as i64;
+        let n = v.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", v.tag()) }))?.len() as i64;
         self.push(Value::int(n))?;
         Ok(None)
     }
@@ -31,7 +31,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_string_len_chars(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
-        let n = v.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x20)))?.chars().count() as i64;
+        let n = v.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", v.tag()) }))?.chars().count() as i64;
         self.push(Value::int(n))?;
         Ok(None)
     }
@@ -40,8 +40,8 @@ impl NyarVM {
     pub fn execute_string_eq(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x10)))?;
-        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x10)))?;
+        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l == r))?;
         Ok(None)
     }
@@ -50,8 +50,8 @@ impl NyarVM {
     pub fn execute_string_ne(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x11)))?;
-        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x11)))?;
+        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l != r))?;
         Ok(None)
     }
@@ -60,8 +60,8 @@ impl NyarVM {
     pub fn execute_string_lt(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x12)))?;
-        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x12)))?;
+        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l < r))?;
         Ok(None)
     }
@@ -70,8 +70,8 @@ impl NyarVM {
     pub fn execute_string_le(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x13)))?;
-        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x13)))?;
+        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l <= r))?;
         Ok(None)
     }
@@ -80,8 +80,8 @@ impl NyarVM {
     pub fn execute_string_gt(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14)))?;
-        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14)))?;
+        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l > r))?;
         Ok(None)
     }
@@ -90,8 +90,8 @@ impl NyarVM {
     pub fn execute_string_ge(&mut self) -> Result<Option<usize>, NyarError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15)))?;
-        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15)))?;
+        let l = lhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", lhs.tag()) }))?;
+        let r = rhs.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", rhs.tag()) }))?;
         self.push(Value::bool(l >= r))?;
         Ok(None)
     }
@@ -101,9 +101,9 @@ impl NyarVM {
         let len_v = self.pop()?;
         let start_v = self.pop()?;
         let s_v = self.pop()?;
-        let s = s_v.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x03)))?;
-        let start = start_v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x03)))? as usize;
-        let len = len_v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x03)))? as usize;
+        let s = s_v.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", s_v.tag()) }))?;
+        let start = start_v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", start_v.tag()) }))? as usize;
+        let len = len_v.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", len_v.tag()) }))? as usize;
         let end = start.saturating_add(len);
         let end = end.min(s.len());
         let sub = if start <= end { s[start..end].to_string() } else { String::new() };
