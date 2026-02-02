@@ -192,8 +192,8 @@ impl MiniPythonFrontend {
                 // 特殊处理 print
                 if let IKunTree::Symbol(ref name) = func_node {
                     if name == "print" {
-                    return crate::runtime::NyarBuiltin::Println.emit(args_nodes);
-                }
+                        return nyar_vm::runtime::NyarBuiltin::Println.emit(args_nodes);
+                    }
                 }
 
                 IKunTree::Apply(Box::new(func_node), args_nodes)

@@ -1,6 +1,6 @@
-# Mini Kotlin
+# Rusty Kotlin
 
-Mini Kotlin 展示了 Kotlin 语言的现代特性如何通过 Nyar VM 的异步与 Effect 系统实现。
+Rusty Kotlin 展示了 Kotlin 语言的现代特性如何通过 Nyar VM 的异步与 Effect 系统实现。
 
 ## 核心特性
 
@@ -11,7 +11,7 @@ Mini Kotlin 展示了 Kotlin 语言的现代特性如何通过 Nyar VM 的异步
 
 ## 编译与 Lowering 流程
 
-Mini Kotlin 利用了 Nyar VM 的高级指令集特性：
+Rusty Kotlin 利用了 Nyar VM 的高级指令集特性：
 
 1. **解析**: 使用 `oak-kotlin` 生成 AST。
 2. **Lowering 转换**:
@@ -33,6 +33,6 @@ Mini Kotlin 利用了 Nyar VM 的高级指令集特性：
    - 提供 `List`, `Map` 等集合类型的内建实现。
    - 映射 `Int`, `String` 等到 Nyar VM 原生类型。
 - **互操作性**: 
-   - 支持调用 Mini Java 定义的类。
+   - 支持调用 Rusty Java 定义的类。
    - 通过 `external` 关键字支持外部函数链接。
 - **Effect 实现**: 协程调度器作为 VM 的内建插件（Plugin）实现。

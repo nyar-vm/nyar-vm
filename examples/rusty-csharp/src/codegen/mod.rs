@@ -123,6 +123,23 @@ impl NyarTranslator {
                 for arg in &call.arguments {
                     arg_ids.push(self.translate_expr(arg, builder)?);
                 }
+
+                // Handle standard builtins
+                if let Some(target) = &call.target {
+                    if let Expression::Identifier(target_name) = &**target {
+                        if target_name == "System.Console" && call.name == "WriteLine" {
+                            return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, loc));
+                        }
+                    } else if let Expression::FieldAccess(fa) = &**target {
+                        // Handle System.Console as FieldAccess if needed
+                        if let Expression::Identifier(t) = &*fa.target {
+                            if t == "System" && fa.name == "Console" && call.name == "WriteLine" {
+                                return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, loc));
+                            }
+                        }
+                    }
+                }
+
                 let name_id = builder.symbol(&call.name, loc);
                 let args_id = builder.seq(arg_ids, loc);
 

@@ -216,9 +216,9 @@ impl NativeBackend {
             }
             IKunTree::Apply(func, args) => {
                 if let IKunTree::Symbol(name) = &**func {
-                    if let Some(builtin) = nyar_types::NyarBuiltin::from_cross_lang_call("native", name) {
+                    if let Some(builtin) = crate::runtime::NyarBuiltin::from_name(name) {
                         match builtin {
-                            nyar_types::NyarBuiltin::Println => {
+                            crate::runtime::NyarBuiltin::Println => {
                                 if let Some(IKunTree::StringConstant(s)) = args.first() {
                                     self.emit_write_line(s, builder, data)?;
                                 }
@@ -355,19 +355,27 @@ impl NativeBackend {
             }
             IKunTree::CrossLangCall(lang, func, args) => {
                 if lang == "nyar" {
-                    match func.as_str() {
-                        "println" => {
-                            if let Some(IKunTree::StringConstant(s)) = args.first() {
-                                self.emit_write_line(s, builder, data)?;
+                    if let Some(builtin) = crate::runtime::NyarBuiltin::from_name(func) {
+                        match builtin {
+                            crate::runtime::NyarBuiltin::Println => {
+                                if let Some(IKunTree::StringConstant(s)) = args.first() {
+                                    self.emit_write(s, true, builder, data)?;
+                                }
                             }
+                            crate::runtime::NyarBuiltin::Print => {
+                                if let Some(IKunTree::StringConstant(s)) = args.first() {
+                                    self.emit_write(s, false, builder, data)?;
+                                }
+                            }
+                            crate::runtime::NyarBuiltin::Exit => {
+                                if let Some(IKunTree::Constant(code)) = args.first() {
+                                    self.emit_exit(*code as i32, builder)?;
+                                } else {
+                                    self.emit_exit(0, builder)?;
+                                }
+                            }
+                            _ => {}
                         }
-                        "print" => {
-                            // TODO: Implement Print for AOT
-                        }
-                        "exit" => {
-                            // TODO: Implement Exit for AOT
-                        }
-                        _ => {}
                     }
                 } else if lang == "native" || lang == "csharp" {
                     self.emit_printf(args, builder, data, context)?;

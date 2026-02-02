@@ -1,6 +1,6 @@
-# Mini Python
+# Rusty Python
 
-Mini Python 展示了如何将具有复杂动态特性的 Python 映射到 Nyar VM 架构。
+Rusty Python 展示了如何将具有复杂动态特性的 Python 映射到 Nyar VM 架构。
 
 ## 核心特性
 
@@ -11,7 +11,7 @@ Mini Python 展示了如何将具有复杂动态特性的 Python 映射到 Nyar 
 
 ## 编译与 Lowering 流程
 
-Mini Python 提供两条独特的编译路径：
+Rusty Python 提供两条独特的编译路径：
 
 1. **Nyar 原生路径**:
    - **解析**: 使用 `oak-python` 生成 UIR。

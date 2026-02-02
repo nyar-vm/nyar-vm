@@ -1,6 +1,6 @@
-# Mini TypeScript
+# Rusty TypeScript
 
-Mini TypeScript 展示了如何在 Nyar VM 中处理带有复杂静态类型系统的动态语言。
+Rusty TypeScript 展示了如何在 Nyar VM 中处理带有复杂静态类型系统的动态语言。
 
 ## 核心特性
 
@@ -11,7 +11,7 @@ Mini TypeScript 展示了如何在 Nyar VM 中处理带有复杂静态类型系�
 
 ## 编译与 Lowering 流程
 
-Mini TypeScript 的编译侧重于类型检查后的代码简化：
+Rusty TypeScript 的编译侧重于类型检查后的代码简化：
 
 1. **解析**: 使用 `oak-typescript` 生成 AST。
 2. **类型检查**: 在 `type_system` 模块中进行符号分析与类型推导。

@@ -399,12 +399,12 @@ impl MiniCFrontend {
                             }
 
                             if is_call {
-                                let func = self.convert_tree_to_uir(
-                                    builder,
-                                    filtered_children[0].clone(),
-                                    source,
-                                    source_id,
-                                );
+                                let func_text = if let RedTree::Leaf(l) = &filtered_children[0] {
+                                    self.get_text(l.span, source)
+                                } else {
+                                    ""
+                                };
+
                                 let mut args = vec![];
                                 for i in 2..filtered_children.len() {
                                     let child = &filtered_children[i];
@@ -425,6 +425,17 @@ impl MiniCFrontend {
                                         source_id,
                                     ));
                                 }
+
+                                if func_text == "printf" {
+                                    return builder.cross_lang_call("nyar", "std::io::println", args, loc);
+                                }
+
+                                let func = self.convert_tree_to_uir(
+                                    builder,
+                                    filtered_children[0].clone(),
+                                    source,
+                                    source_id,
+                                );
                                 return builder.call(func, args, loc);
                             }
                         }

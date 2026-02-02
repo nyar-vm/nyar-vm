@@ -172,7 +172,7 @@ impl RustyGoFrontend {
                     for arg in args {
                         arguments.push(self.lower_expression(arg)?);
                     }
-                    Ok(crate::runtime::NyarBuiltin::Println.emit(arguments))
+                    Ok(nyar_vm::runtime::NyarBuiltin::Println.emit(arguments))
                 } else {
                     let f = self.lower_expression(func)?;
                     let mut arguments = vec![];

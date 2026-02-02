@@ -1,6 +1,6 @@
-# Mini Java
+# Rusty Java
 
-Mini Java 专注于展示 Java 虚拟机（JVM）风格的面向对象模型在 Nyar VM 中的实现。
+Rusty Java 专注于展示 Java 虚拟机（JVM）风格的面向对象模型在 Nyar VM 中的实现。
 
 ## 核心特性
 
@@ -11,7 +11,7 @@ Mini Java 专注于展示 Java 虚拟机（JVM）风格的面向对象模型在 
 
 ## 编译与 Lowering 流程
 
-Mini Java 采用结构化的 AST 到 UIR 转换策略：
+Rusty Java 采用结构化的 AST 到 UIR 转换策略：
 
 1. **解析**: 使用 `oak-java` 将 `.java` 源码解析为高阶 AST。
 2. **UIR 转换 (Lowering)**:

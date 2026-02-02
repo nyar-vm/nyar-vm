@@ -1,4 +1,4 @@
-# Mini Lua
+# Rusty Lua
 
 这是一个类 Lua 语言的编译器前端实现，旨在验证 Nyar VM 对动态语言语法的支持。
 
@@ -11,7 +11,7 @@
 
 ## 编译与 Lowering 流程
 
-Mini Lua 采用双层 IR 转换策略以实现深度优化：
+Rusty Lua 采用双层 IR 转换策略以实现深度优化：
 
 1. **解析**: 使用 `oak-lua` 将源码解析为 UIR。
 2. **Gaia IR 生成 (Lowering)**:

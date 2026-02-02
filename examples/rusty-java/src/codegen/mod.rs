@@ -129,6 +129,18 @@ impl NyarTranslator {
                 for arg in &call.arguments {
                     arg_ids.push(self.translate_expr(arg, builder)?);
                 }
+
+                // Handle System.out.println
+                if let Some(target) = &call.target {
+                    if let Expression::FieldAccess(fa) = &**target {
+                        if let Expression::Identifier(t) = &*fa.target {
+                            if t == "System" && fa.name == "out" && call.name == "println" {
+                                return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, Loc::default()));
+                            }
+                        }
+                    }
+                }
+
                 let name_id = builder.symbol(&call.name, Loc::default());
                 let args_id = builder.seq(arg_ids, Loc::default());
                 if let Some(target) = &call.target {
