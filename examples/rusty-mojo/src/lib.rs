@@ -22,7 +22,7 @@ impl MiniMojoFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
-            language: PlaceholderLanguage::new("Mojo"),
+            language: MojoLanguage::default(),
         }
     }
 }

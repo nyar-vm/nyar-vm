@@ -162,6 +162,16 @@ impl NativeBackend {
         data: &mut Vec<u8>,
         context: &mut AotContext,
     ) -> ChomskyResult<()> {
+        eprintln!("DEBUG: emit_tree kind: {}", match tree {
+            IKunTree::Module(_, _) => "Module",
+            IKunTree::Seq(_) => "Seq",
+            IKunTree::Constant(_) => "Constant",
+            IKunTree::StringConstant(_) => "StringConstant",
+            IKunTree::Symbol(s) => s,
+            IKunTree::Extension(n, _) => n,
+            IKunTree::Apply(_, _) => "Apply",
+            _ => "Other",
+        });
         match tree {
             IKunTree::Module(_, items) => {
                 for item in items {
@@ -290,13 +300,31 @@ impl NativeBackend {
                         }
                     }
                     "call" => {
-                        // ... existing call handling ...
+                        // eprintln!("DEBUG: Extension call args: {:?}", args);
                         let is_write_line = if args.len() >= 3 {
-                            if let (IKunTree::Symbol(target_name), IKunTree::Symbol(method_name)) = (&args[0], &args[1]) {
-                                target_name == "System.Console" && method_name == "WriteLine"
+                            let method_name = if let IKunTree::Symbol(name) = &args[1] {
+                                name.as_str()
                             } else {
-                                false
-                            }
+                                ""
+                            };
+                            
+                            let target_is_console = match &args[0] {
+                                IKunTree::Symbol(name) => name == "System.Console",
+                                IKunTree::Extension(ext_name, ext_args) if ext_name == "field" => {
+                                    if ext_args.len() == 2 {
+                                        if let (IKunTree::Symbol(t), IKunTree::Symbol(n)) = (&ext_args[0], &ext_args[1]) {
+                                            t == "System" && n == "Console"
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    }
+                                }
+                                _ => false,
+                            };
+                            
+                            target_is_console && method_name == "WriteLine"
                         } else if args.len() >= 2 {
                             if let IKunTree::Symbol(method_name) = &args[0] {
                                 method_name == "System.Console.WriteLine"
@@ -342,6 +370,10 @@ impl NativeBackend {
         builder: &mut ProgramBuilder,
         data: &mut Vec<u8>,
     ) -> ChomskyResult<()> {
+        let mut full_s = s.to_string();
+        full_s.push_str("\r\n");
+        let s = full_s;
+
         let string_offset = data.len();
         data.extend_from_slice(s.as_bytes());
         data.push(0);

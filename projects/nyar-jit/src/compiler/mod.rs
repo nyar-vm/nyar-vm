@@ -426,6 +426,7 @@ impl NyarJit {
                         NyarConstant::Int(v) => IKun::Constant(*v),
                         NyarConstant::Float(v) => IKun::FloatConstant(v.to_bits()),
                         NyarConstant::String(s) => IKun::StringConstant(s.clone()),
+                        NyarConstant::QualifiedName(qn) => IKun::Symbol(qn.parts.join("::")),
                     };
                     let id = intents.len();
                     intents.push(intent);
@@ -909,21 +910,20 @@ impl NyarJit {
                     }
                 }
                 Instruction::BigIntConst { sign, bytes } => {
-                    let id = intents.len();
+                    let mut bytes_ids = Vec::new();
+                    for &b in bytes.iter() {
+                        let cid = intents.len();
+                        intents.push(IKun::Constant(b as i64));
+                        bytes_ids.push(cid);
+                    }
                     let bytes_id = intents.len();
                     intents.push(IKun::Extension(
                         "bigint_bytes".to_string(),
-                        bytes
-                            .iter()
-                            .map(|&b| {
-                                let cid = intents.len();
-                                intents.push(IKun::Constant(b as i64));
-                                cid
-                            })
-                            .collect(),
+                        bytes_ids,
                     ));
                     let sign_id = intents.len();
                     intents.push(IKun::Constant(sign as i64));
+                    let id = intents.len();
                     intents.push(IKun::Extension(
                         "bigint_const".to_string(),
                         vec![sign_id, bytes_id],
@@ -1006,7 +1006,7 @@ impl NyarJit {
                 Instruction::MatchVariant(idx) => {
                     if let Some(val) = stack.pop() {
                         let const_id = intents.len();
-                        intents.push(IKun::Constant(*idx as i64));
+                        intents.push(IKun::Constant(idx as i64));
                         let id = intents.len();
                         intents.push(IKun::Extension(
                             "match_variant".to_string(),

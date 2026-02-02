@@ -19,6 +19,12 @@ members = [
     "examples/rusty-dart",
     "examples/rusty-mojo",
     "examples/rusty-julia",
+    "examples/rusty-cobol",
+    "examples/rusty-tcl",
+    "examples/rusty-scheme",
+    "examples/rusty-prolog",
+    "examples/rusty-nim",
+    "examples/rusty-nix",
 ]
 default-members = [
     "projects/nyar-types",
