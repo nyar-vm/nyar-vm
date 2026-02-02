@@ -22,3 +22,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "rusty-go"
 path = "src/main.rs"
+
+[[bin]]
+name = "debug-tokens"
+path = "src/debug_tokens.rs"

@@ -162,16 +162,6 @@ impl NativeBackend {
         data: &mut Vec<u8>,
         context: &mut AotContext,
     ) -> ChomskyResult<()> {
-        eprintln!("DEBUG: emit_tree kind: {}", match tree {
-            IKunTree::Module(_, _) => "Module",
-            IKunTree::Seq(_) => "Seq",
-            IKunTree::Constant(_) => "Constant",
-            IKunTree::StringConstant(_) => "StringConstant",
-            IKunTree::Symbol(s) => s,
-            IKunTree::Extension(n, _) => n,
-            IKunTree::Apply(_, _) => "Apply",
-            _ => "Other",
-        });
         match tree {
             IKunTree::Module(_, items) => {
                 for item in items {
@@ -342,6 +332,16 @@ impl NativeBackend {
                                     self.emit_write_line(s, builder, data)?;
                                 }
                             }
+                        }
+                    }
+                    "class" => {
+                        if let Some(members) = args.get(1) {
+                            self.emit_tree(members, builder, data, context)?;
+                        }
+                    }
+                    "method" => {
+                        if let Some(body) = args.get(2) {
+                            self.emit_tree(body, builder, data, context)?;
                         }
                     }
                     _ => {}
