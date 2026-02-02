@@ -120,6 +120,10 @@ impl NyarError {
     pub fn Parse(msg: String) -> Self {
         Self::new(0x2002, NyarErrorKind::Format(FormatErrorKind::Text(msg)), SourceLocation::default())
     }
+    #[allow(non_snake_case)]
+    pub fn RuntimeError(msg: String) -> Self {
+        Self::new(0x3000, NyarErrorKind::Vm(VmErrorKind::RuntimeError(msg)), SourceLocation::default())
+    }
 }
 
 impl std::fmt::Display for NyarError {

@@ -116,7 +116,7 @@ impl NyarVM {
             let obj = unsafe { arr_val.as_dyn_object_mut() };
             obj.entries.insert(key.to_string(), val);
             val.write_barrier(gc);
-            self.push(arr_val);
+            self.push(arr_val)?;
             Ok(None)
         } else {
             let idx = key_val.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", key_val.tag()) }))? as usize;
@@ -125,7 +125,7 @@ impl NyarVM {
                 if idx < arr.items.len() {
                     arr.items[idx] = val;
                     val.write_barrier(gc);
-                    self.push(arr_val);
+                    self.push(arr_val)?;
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
@@ -135,7 +135,7 @@ impl NyarVM {
                 if idx < list.items.len() {
                     list.items[idx] = val;
                     val.write_barrier(gc);
-                    self.push(arr_val);
+                    self.push(arr_val)?;
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
@@ -151,7 +151,7 @@ impl NyarVM {
                     }
                     tuple.items[idx] = val;
                     val.write_barrier(gc);
-                    self.push(arr_val);
+                    self.push(arr_val)?;
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))

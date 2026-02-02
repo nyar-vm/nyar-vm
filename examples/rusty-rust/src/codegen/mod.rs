@@ -48,9 +48,7 @@ impl GaiaTranslator {
     /// 转换为 IKunTree
     pub fn translate_to_tree(&self, _ast: &RustRoot) -> Result<IKunTree, NyarError> {
         // TODO: 实现真正的从 RustRoot 到 IKunTree 的转换
-        let mut tree = IKunTree::default();
-        tree.name = "mini-rust-program".to_string();
-        Ok(tree)
+        Ok(IKunTree::Module("mini-rust-program".to_string(), Vec::new()))
     }
 
     /// 推断表达式类型

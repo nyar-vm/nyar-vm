@@ -23,7 +23,7 @@ impl MiniLuaFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
-            language: LuaLanguage,
+            language: LuaLanguage {},
         }
     }
 }
@@ -44,8 +44,6 @@ impl NyarFrontend for MiniLuaFrontend {
 
     fn lower(&self, _ast: &LuaRoot) -> Result<IKunTree, NyarError> {
         // TODO: 实现真正的从 LuaRoot 到 IKunTree 的转换
-        let mut tree = IKunTree::default();
-        tree.name = "mini-lua-program".to_string();
-        Ok(tree)
+        Ok(IKunTree::Module("mini-lua-program".to_string(), Vec::new()))
     }
 }

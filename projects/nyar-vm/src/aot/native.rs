@@ -6,6 +6,13 @@ use pe_assembler::helpers::PeBuilder;
 use pe_assembler::types::SubsystemType;
 use x86_64_assembler::builder::ProgramBuilder;
 use x86_64_assembler::instruction::{Instruction, Operand, Register};
+use std::collections::{HashMap, HashSet};
+
+struct AotContext {
+    locals: HashMap<String, i32>,
+    stack_size: i32,
+}
+
 
 pub struct NativeBackend {
     arch: Architecture,
@@ -28,15 +35,36 @@ impl Backend for NativeBackend {
         let mut builder = ProgramBuilder::new(self.arch.clone());
         let mut data_bytes = Vec::new();
 
-        // --- 简单的机器码生成逻辑 ---
-        // 为影子空间和第 5 个参数预留空间 (4 * 8 + 8 = 40)
-        // 进入 entry 时 rsp 是 16n + 8 (由 OS 调用)，减去 40 后是 16 字节对齐的
+        // 1. 收集所有局部变量并计算栈大小
+        let mut locals = HashSet::new();
+        self.collect_locals(tree, &mut locals);
+
+        let mut context = AotContext {
+            locals: HashMap::new(),
+            stack_size: 0,
+        };
+
+        // 为每个变量分配 8 字节空间
+        // 栈布局：[Shadow Space (32)] [Extra (8)] [Locals...]
+        let mut offset = 40;
+        for local in locals {
+            context.locals.insert(local, offset);
+            offset += 8;
+        }
+        // Windows x64 ABI: RSP must be 16-byte aligned before a call.
+        // At entry, RSP = 16n + 8.
+        // We need RSP - stack_size = 16m.
+        // So stack_size must be 16k + 8.
+        context.stack_size = ((offset - 8 + 15) & !15) + 8;
+
+        // 2. 函数序言 (Prologue)
         builder.add_instruction(Instruction::Sub {
             dst: Operand::reg(Register::RSP),
-            src: Operand::imm(40, 32),
+            src: Operand::imm(context.stack_size as i64, 32),
         });
 
-        self.emit_tree(tree, &mut builder, &mut data_bytes)?;
+        // 3. 生成代码
+        self.emit_tree(tree, &mut builder, &mut data_bytes, &mut context)?;
 
         // 4. ExitProcess(rax)
         builder.add_instruction(Instruction::Mov {
@@ -48,10 +76,10 @@ impl Backend for NativeBackend {
             target: Operand::mem(None, None, 0, 2),
         });
 
-        // 恢复栈指针
+        // 5. 函数尾声 (Epilogue)
         builder.add_instruction(Instruction::Add {
             dst: Operand::reg(Register::RSP),
-            src: Operand::imm(40, 32),
+            src: Operand::imm(context.stack_size as i64, 32),
         });
 
         let code = builder.compile_instructions().map_err(|e| {
@@ -59,16 +87,13 @@ impl Backend for NativeBackend {
         })?;
 
         // 使用 PeBuilder 构建 EXE
-        // 注意：导入顺序必须与代码中的调用顺序一致！
-        // 1. GetStdHandle (index 0)
-        // 2. WriteFile (index 1)
-        // 3. ExitProcess (index 2)
         let mut pe = PeBuilder::new()
             .architecture(self.arch.clone())
             .subsystem(SubsystemType::Console)
             .import_function("kernel32.dll", "GetStdHandle") // index 0
             .import_function("kernel32.dll", "WriteFile") // index 1
             .import_function("kernel32.dll", "ExitProcess") // index 2
+            .import_function("msvcrt.dll", "printf") // index 3
             .code(code);
 
         if !data_bytes.is_empty() {
@@ -84,16 +109,62 @@ impl Backend for NativeBackend {
 }
 
 impl NativeBackend {
+    fn collect_locals(&self, tree: &IKunTree, locals: &mut HashSet<String>) {
+        match tree {
+            IKunTree::Module(_, items) => {
+                for item in items {
+                    self.collect_locals(item, locals);
+                }
+            }
+            IKunTree::Seq(items) => {
+                for item in items {
+                    self.collect_locals(item, locals);
+                }
+            }
+            IKunTree::StateUpdate(target, value) => {
+                if let IKunTree::Symbol(name) = &**target {
+                    locals.insert(name.clone());
+                }
+                self.collect_locals(value, locals);
+            }
+            IKunTree::Lambda(params, body) => {
+                for param in params {
+                    locals.insert(param.clone());
+                }
+                self.collect_locals(body, locals);
+            }
+            IKunTree::Apply(func, args) => {
+                self.collect_locals(func, locals);
+                for arg in args {
+                    self.collect_locals(arg, locals);
+                }
+            }
+            IKunTree::Extension(_, args) => {
+                for arg in args {
+                    self.collect_locals(arg, locals);
+                }
+            }
+            IKunTree::Return(val) => {
+                self.collect_locals(val, locals);
+            }
+            IKunTree::Export(_, body) => {
+                self.collect_locals(body, locals);
+            }
+            _ => {}
+        }
+    }
+
     fn emit_tree(
         &self,
         tree: &IKunTree,
         builder: &mut ProgramBuilder,
         data: &mut Vec<u8>,
+        context: &mut AotContext,
     ) -> ChomskyResult<()> {
         match tree {
             IKunTree::Module(_, items) => {
                 for item in items {
-                    self.emit_tree(item, builder, data)?;
+                    self.emit_tree(item, builder, data, context)?;
                 }
             }
             IKunTree::Constant(val) => {
@@ -102,19 +173,45 @@ impl NativeBackend {
                     src: Operand::imm(*val, 64),
                 });
             }
+            IKunTree::StringConstant(s) => {
+                let offset = data.len();
+                data.extend_from_slice(s.as_bytes());
+                data.push(0);
+                builder.add_instruction(Instruction::Lea {
+                    dst: Register::RAX,
+                    displacement: offset as i32,
+                    rip_relative: true,
+                });
+            }
             IKunTree::Symbol(name) => {
-                // TODO: 符号解析
-                eprintln!("TODO: Symbol resolution for {}", name);
+                if let Some(&offset) = context.locals.get(name) {
+                    builder.add_instruction(Instruction::Mov {
+                        dst: Operand::reg(Register::RAX),
+                        src: Operand::mem(Some(Register::RSP), None, 1, offset),
+                    });
+                } else {
+                    eprintln!("Warning: Unresolved symbol {}", name);
+                }
+            }
+            IKunTree::StateUpdate(target, value) => {
+                self.emit_tree(value, builder, data, context)?;
+                if let IKunTree::Symbol(name) = &**target {
+                    if let Some(&offset) = context.locals.get(name) {
+                        builder.add_instruction(Instruction::Mov {
+                            dst: Operand::mem(Some(Register::RSP), None, 1, offset),
+                            src: Operand::reg(Register::RAX),
+                        });
+                    }
+                }
             }
             IKunTree::Export(_, body) => {
-                self.emit_tree(body, builder, data)?;
+                self.emit_tree(body, builder, data, context)?;
             }
             IKunTree::Lambda(_, body) => {
-                self.emit_tree(body, builder, data)?;
+                self.emit_tree(body, builder, data, context)?;
             }
             IKunTree::Return(val) => {
-                self.emit_tree(val, builder, data)?;
-                // 返回值已在 rax 中
+                self.emit_tree(val, builder, data, context)?;
             }
             IKunTree::Apply(func, args) => {
                 if let IKunTree::Symbol(name) = &**func {
@@ -124,53 +221,103 @@ impl NativeBackend {
                         }
                         return Ok(());
                     }
+                    if name == "printf" {
+                        self.emit_printf(args, builder, data, context)?;
+                        return Ok(());
+                    }
                 }
+                // TODO: 真正的函数调用需要处理参数传递（RCX, RDX, R8, R9, Stack）
                 for arg in args {
-                    self.emit_tree(arg, builder, data)?;
-                    // TODO: 处理多个参数，目前只支持无参或单参到 rax/rcx 等
+                    self.emit_tree(arg, builder, data, context)?;
                 }
-                self.emit_tree(func, builder, data)?;
+                self.emit_tree(func, builder, data, context)?;
                 builder.add_instruction(Instruction::Call {
                     target: Operand::reg(Register::RAX),
                 });
             }
             IKunTree::Extension(name, args) => {
-                if name == "return" {
-                    if let Some(val) = args.first() {
-                        self.emit_tree(val, builder, data)?;
+                match name.as_str() {
+                    "return" => {
+                        if let Some(val) = args.first() {
+                            self.emit_tree(val, builder, data, context)?;
+                        }
                     }
-                } else if name == "call" {
-                    // 处理 codegen 产生的 extension("call", [target, name, args])
-                    // 检查是否是 System.Console.WriteLine
-                    let is_write_line = if args.len() >= 3 {
-                        if let (IKunTree::Symbol(target_name), IKunTree::Symbol(method_name)) = (&args[0], &args[1]) {
-                            target_name == "System.Console" && method_name == "WriteLine"
-                        } else {
-                            false
-                        }
-                    } else if args.len() >= 2 {
-                        if let IKunTree::Symbol(method_name) = &args[0] {
-                            method_name == "System.Console.WriteLine"
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
+                    "+" | "-" | "*" | "/" => {
+                        if args.len() == 2 {
+                            self.emit_tree(&args[0], builder, data, context)?;
+                            builder.add_instruction(Instruction::Push {
+                                src: Operand::reg(Register::RAX),
+                            });
+                            self.emit_tree(&args[1], builder, data, context)?;
+                            builder.add_instruction(Instruction::Mov {
+                                dst: Operand::reg(Register::RCX),
+                                src: Operand::reg(Register::RAX),
+                            });
+                            builder.add_instruction(Instruction::Pop {
+                                dst: Operand::reg(Register::RAX),
+                            });
 
-                    if is_write_line {
-                        let args_list = args.last().unwrap();
-                        if let IKunTree::Seq(actual_args) = args_list {
-                            if let Some(IKunTree::StringConstant(s)) = actual_args.first() {
-                                self.emit_write_line(s, builder, data)?;
+                            match name.as_str() {
+                                "+" => {
+                                    builder.add_instruction(Instruction::Add {
+                                        dst: Operand::reg(Register::RAX),
+                                        src: Operand::reg(Register::RCX),
+                                    });
+                                }
+                                "-" => {
+                                    builder.add_instruction(Instruction::Sub {
+                                        dst: Operand::reg(Register::RAX),
+                                        src: Operand::reg(Register::RCX),
+                                    });
+                                }
+                                "*" => {
+                                    builder.add_instruction(Instruction::Mul {
+                                        src: Operand::reg(Register::RCX),
+                                    });
+                                }
+                                "/" => {
+                                    builder.add_instruction(Instruction::Cqo);
+                                    builder.add_instruction(Instruction::Div {
+                                        src: Operand::reg(Register::RCX),
+                                    });
+                                }
+                                _ => unreachable!(),
                             }
                         }
                     }
+                    "call" => {
+                        // ... existing call handling ...
+                        let is_write_line = if args.len() >= 3 {
+                            if let (IKunTree::Symbol(target_name), IKunTree::Symbol(method_name)) = (&args[0], &args[1]) {
+                                target_name == "System.Console" && method_name == "WriteLine"
+                            } else {
+                                false
+                            }
+                        } else if args.len() >= 2 {
+                            if let IKunTree::Symbol(method_name) = &args[0] {
+                                method_name == "System.Console.WriteLine"
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        if is_write_line {
+                            let args_list = args.last().unwrap();
+                            if let IKunTree::Seq(actual_args) = args_list {
+                                if let Some(IKunTree::StringConstant(s)) = actual_args.first() {
+                                    self.emit_write_line(s, builder, data)?;
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             IKunTree::Seq(items) => {
                 for item in items {
-                    self.emit_tree(item, builder, data)?;
+                    self.emit_tree(item, builder, data, context)?;
                 }
             }
             IKunTree::CrossLangCall(lang, func, args) if lang == "native" || lang == "csharp" => {
@@ -242,6 +389,44 @@ impl NativeBackend {
 
         builder.add_instruction(Instruction::Call {
             target: Operand::mem(None, None, 0, 1),
+        });
+
+        Ok(())
+    }
+
+    fn emit_printf(
+        &self,
+        args: &[IKunTree],
+        builder: &mut ProgramBuilder,
+        data: &mut Vec<u8>,
+        context: &mut AotContext,
+    ) -> ChomskyResult<()> {
+        // Windows x64 calling convention for printf (variadic):
+        // RCX, RDX, R8, R9, then stack.
+        // For variadic, float arguments also go to XMM registers (not handled here yet).
+
+        let arg_regs = [Register::RCX, Register::RDX, Register::R8, Register::R9];
+
+        for (i, arg) in args.iter().enumerate() {
+            self.emit_tree(arg, builder, data, context)?;
+            if i < 4 {
+                builder.add_instruction(Instruction::Mov {
+                    dst: Operand::reg(arg_regs[i]),
+                    src: Operand::reg(Register::RAX),
+                });
+            } else {
+                // Push to stack (beyond shadow space)
+                // RSP + 32 + (i-4)*8
+                builder.add_instruction(Instruction::Mov {
+                    dst: Operand::mem(Some(Register::RSP), None, 1, 32 + (i as i32 - 4) * 8),
+                    src: Operand::reg(Register::RAX),
+                });
+            }
+        }
+
+        // Call printf (index 3 in imports)
+        builder.add_instruction(Instruction::Call {
+            target: Operand::mem(None, None, 0, 3),
         });
 
         Ok(())

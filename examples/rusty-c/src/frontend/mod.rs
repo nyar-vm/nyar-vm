@@ -5,12 +5,49 @@ use oak_core::parser::{ParseSession, Parser};
 use oak_core::source::SourceText;
 use oak_core::tree::{RedNode, RedTree};
 use oak_core::{Lexer, LexerCache};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
-pub struct MiniCFrontend;
+pub struct MiniCFrontend {
+    scopes: RefCell<Vec<HashMap<String, String>>>,
+    next_var_id: RefCell<u32>,
+}
 
 impl MiniCFrontend {
     pub fn new() -> Self {
-        Self
+        Self {
+            scopes: RefCell::new(vec![HashMap::new()]),
+            next_var_id: RefCell::new(0),
+        }
+    }
+
+    fn push_scope(&self) {
+        self.scopes.borrow_mut().push(HashMap::new());
+    }
+
+    fn pop_scope(&self) {
+        self.scopes.borrow_mut().pop();
+    }
+
+    fn declare_variable(&self, name: &str) -> String {
+        let mut scopes = self.scopes.borrow_mut();
+        let mut next_id = self.next_var_id.borrow_mut();
+        let mangled_name = format!("{}_{}", name, *next_id);
+        *next_id += 1;
+        if let Some(scope) = scopes.last_mut() {
+            scope.insert(name.to_string(), mangled_name.clone());
+        }
+        mangled_name
+    }
+
+    fn resolve_variable(&self, name: &str) -> String {
+        let scopes = self.scopes.borrow();
+        for scope in scopes.iter().rev() {
+            if let Some(mangled) = scope.get(name) {
+                return mangled.clone();
+            }
+        }
+        name.to_string()
     }
 
     pub fn parse(&self, source: &str) -> Result<(EGraph<IKun, ()>, Id), String> {
@@ -110,6 +147,8 @@ impl MiniCFrontend {
                         let mut params = vec![];
                         let mut found_name = false;
 
+                        self.push_scope();
+
                         for child in node.children() {
                             match child {
                                 RedTree::Node(n) => match n.green.kind {
@@ -120,9 +159,9 @@ impl MiniCFrontend {
                                                 if let CElementType::Token(CTokenType::Identifier) =
                                                     kind
                                                 {
-                                                    params.push(
-                                                        self.get_text(pl.span, source).to_string(),
-                                                    );
+                                                    let original_name = self.get_text(pl.span, source);
+                                                    let mangled_name = self.declare_variable(original_name);
+                                                    params.push(mangled_name);
                                                 }
                                             }
                                         }
@@ -148,7 +187,9 @@ impl MiniCFrontend {
                                 }
                             }
                         }
-                        builder.function(&name, params, body)
+                        let func_id = builder.function(&name, params, body);
+                        self.pop_scope();
+                        func_id
                     }
                     CElementType::ReturnStatement => {
                         let filtered_children: Vec<_> = node
@@ -261,7 +302,8 @@ impl MiniCFrontend {
                                     let kind: CElementType = l.kind.into();
                                     if let CElementType::Token(CTokenType::Identifier) = kind {
                                         if name.is_none() {
-                                            name = Some(self.get_text(l.span, source).to_string());
+                                            let original_name = self.get_text(l.span, source);
+                                            name = Some(self.declare_variable(original_name));
                                         }
                                     } else if let CElementType::Token(CTokenType::Assign) = kind {
                                         found_assign = true;
@@ -309,18 +351,23 @@ impl MiniCFrontend {
                                                 }
                                             }
                                         } else {
-                                            value =
-                                                Some(self.convert_red_to_uir(
-                                                    builder, n, source, source_id,
-                                                ));
+                                            value = Some(self.convert_red_to_uir(
+                                                builder, n, source, source_id,
+                                            ));
                                         }
                                     }
                                 }
                             }
                         }
 
-                        if let (Some(n), Some(v)) = (name, value) {
-                            builder.assign(&n, v, loc)
+                        if let Some(n) = name {
+                            if let Some(v) = value {
+                                builder.assign(&n, v, loc)
+                            } else {
+                                // Default initialization to 0
+                                let zero = builder.constant(0, loc);
+                                builder.assign(&n, zero, loc)
+                            }
                         } else {
                             builder.constant(0, loc)
                         }
@@ -457,13 +504,16 @@ impl MiniCFrontend {
                         builder.constant(0, loc)
                     }
                     CElementType::CompoundStatement => {
+                        self.push_scope();
                         let mut stmts = vec![];
                         for child in node.children() {
                             if let RedTree::Node(n) = child {
                                 stmts.push(self.convert_red_to_uir(builder, n, source, source_id));
                             }
                         }
-                        builder.block(stmts, loc)
+                        let block = builder.block(stmts, loc);
+                        self.pop_scope();
+                        block
                     }
                     CElementType::IfStatement => {
                         let mut nodes = vec![];
@@ -547,7 +597,18 @@ impl MiniCFrontend {
                             builder.constant(0, loc)
                         }
                     }
-                    CElementType::Token(CTokenType::Identifier) => builder.symbol(text, loc),
+                    CElementType::Token(CTokenType::StringLiteral) => {
+                        let content = if text.starts_with('"') && text.ends_with('"') {
+                            &text[1..text.len() - 1]
+                        } else {
+                            text
+                        };
+                        builder.string(content, loc)
+                    }
+                    CElementType::Token(CTokenType::Identifier) => {
+                        let mangled_name = self.resolve_variable(text);
+                        builder.symbol(&mangled_name, loc)
+                    }
                     CElementType::ExpressionStatement => {
                         // In Pratt parser, IntegerLiteral is often wrapped in ExpressionStatement directly
                         // Let's handle it here if it's a leaf

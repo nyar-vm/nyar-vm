@@ -1,7 +1,7 @@
 //! Gaia 指令生成器 (已重构为意图树生成器)
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
-use nyar_vm::NyarError;
+use nyar_types::NyarError;
 use oak_lua::ast::LuaRoot;
 
 /// Gaia 翻译器，将 Lua AST 转换为意图树
@@ -19,15 +19,9 @@ impl GaiaTranslator {
         let mut builder = IntentBuilder::new(&mut egraph);
 
         // TODO: 实现真正的 Lua AST 到 UIR 的转换
-        let loc = chomsky_source::Loc::default();
-        let root_id = builder.extension(
-            "lua_module",
-            vec![builder.string("mini_lua_program", loc)],
-            loc,
-        );
-        builder.set_root(root_id);
-
+        let _loc = chomsky_source::Loc::default();
+        
         // 目前返回一个占位符
-        Ok(IKunTree::Constant(0))
+        Ok(IKunTree::Module("mini-lua-program".to_string(), Vec::new()))
     }
 }

@@ -6,9 +6,10 @@ use chomsky_rules::{AlgebraicSimplification, ConstantFolding};
 use dashmap::DashMap;
 use gaia_jit::JitMemory;
 use nyar_types::VmError;
-use nyar_vm::bytecode::decoder::{Decoder, Instruction};
+use nyar_vm::bytecode::decoder::Decoder;
+use nyar_vm::bytecode::instruction::Instruction;
 use nyar_vm::bytecode::format::Constant as NyarConstant;
-use nyar_vm::vm::interpreter::{JitProvider, NyarVM};
+use nyar_vm::vm::core::{JitProvider, NyarVM};
 use nyar_vm::vm::value::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -367,31 +368,6 @@ impl NyarJit {
                         intents.push(IKun::Extension("jump".to_string(), vec![const_id]));
                     }
                 }
-                Instruction::JumpIfTrue(off) => {
-                    if let Some(cond) = stack.pop() {
-                        let target = (current_pos + off as i64) as u32;
-                        let const_id = intents.len();
-                        intents.push(IKun::Constant(target as i64));
-                        if target < start_offset as u32 {
-                            // jump_if_true target < start => if cond then osr_exit else continue
-                            let next_pos = decoder.position() as u32;
-                            let next_label_id = intents.len();
-                            intents.push(IKun::Constant(next_pos as i64));
-
-                            // if !cond goto next_label
-                            // osr_exit target
-                            // next_label:
-                            intents.push(IKun::Extension("jump_if_false".to_string(), vec![cond, next_label_id]));
-                            intents.push(IKun::Extension("osr_exit".to_string(), vec![const_id]));
-                            intents.push(IKun::Extension(format!("label_{}", next_pos), vec![]));
-                        } else {
-                            intents.push(IKun::Extension(
-                                "jump_if_true".to_string(),
-                                vec![cond, const_id],
-                            ));
-                        }
-                    }
-                }
                 Instruction::JumpIfFalse(off) => {
                     if let Some(cond) = stack.pop() {
                         let target = (current_pos + off as i64) as u32;
@@ -658,14 +634,14 @@ impl NyarJit {
                 | Instruction::CallDynamic(idx, args_count)
                 | Instruction::InvokeMethod(idx, args_count) => {
                     let mut args = Vec::new();
-                    for _ in 0..*args_count {
+                    for _ in 0..args_count {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
                     }
                     args.reverse();
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*idx as i64));
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
                     let op = match instruction {
                         Instruction::Call(_, _) => "call",
@@ -684,7 +660,7 @@ impl NyarJit {
                 Instruction::GetField(idx) => {
                     if let Some(obj) = stack.pop() {
                         let const_id = intents.len();
-                        intents.push(IKun::Constant(*idx as i64));
+                        intents.push(IKun::Constant(idx as i64));
                         let id = intents.len();
                         intents.push(IKun::Extension("get_field".to_string(), vec![obj, const_id]));
                         stack.push(id);
@@ -693,7 +669,7 @@ impl NyarJit {
                 Instruction::SetField(idx) => {
                     if let (Some(val), Some(obj)) = (stack.pop(), stack.pop()) {
                         let const_id = intents.len();
-                        intents.push(IKun::Constant(*idx as i64));
+                        intents.push(IKun::Constant(idx as i64));
                         intents.push(IKun::Extension(
                             "set_field".to_string(),
                             vec![obj, const_id, val],
@@ -702,14 +678,14 @@ impl NyarJit {
                 }
                 Instruction::NewObject(idx) => {
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*idx as i64));
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("new_object".to_string(), vec![const_id]));
                     stack.push(id);
                 }
                 Instruction::NewArray(count) => {
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*count as i64));
+                    intents.push(IKun::Constant(count as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("new_array".to_string(), vec![const_id]));
                     stack.push(id);
@@ -731,14 +707,14 @@ impl NyarJit {
                 }
                 Instruction::CallSymbol(idx, args_count) => {
                     let mut args = Vec::new();
-                    for _ in 0..*args_count {
+                    for _ in 0..args_count {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
                     }
                     args.reverse();
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*idx as i64));
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("call_symbol".to_string(), {
                         let mut v = vec![const_id];
@@ -750,7 +726,7 @@ impl NyarJit {
                 Instruction::CheckCast(idx) | Instruction::Cast(idx) => {
                     if let Some(val) = stack.pop() {
                         let const_id = intents.len();
-                        intents.push(IKun::Constant(*idx as i64));
+                        intents.push(IKun::Constant(idx as i64));
                         let id = intents.len();
                         intents.push(IKun::Extension("cast_to".to_string(), vec![val, const_id]));
                         stack.push(id);
@@ -774,7 +750,7 @@ impl NyarJit {
                         captures.push(cap_id);
                     }
                     let func_const_id = intents.len();
-                    intents.push(IKun::Constant(*idx as i64));
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("make_closure".to_string(), {
                         let mut v = vec![func_const_id];
@@ -783,14 +759,14 @@ impl NyarJit {
                     }));
                     stack.push(id);
                 }
-                Instruction::TailCall => {
+                Instruction::TailCall(_) => {
                     if let Some(val_id) = stack.pop() {
                         intents.push(IKun::Extension("tail_call".to_string(), vec![val_id]));
                     }
                 }
                 Instruction::CallClosure(argc) => {
                     let mut args = Vec::new();
-                    for _ in 0..*argc {
+                    for _ in 0..argc {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
@@ -808,7 +784,7 @@ impl NyarJit {
                 }
                 Instruction::MakeTuple(argc) => {
                     let mut args = Vec::new();
-                    for _ in 0..*argc {
+                    for _ in 0..argc {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
@@ -947,7 +923,7 @@ impl NyarJit {
                             .collect(),
                     ));
                     let sign_id = intents.len();
-                    intents.push(IKun::Constant(*sign as i64));
+                    intents.push(IKun::Constant(sign as i64));
                     intents.push(IKun::Extension(
                         "bigint_const".to_string(),
                         vec![sign_id, bytes_id],
@@ -1048,14 +1024,14 @@ impl NyarJit {
                 }
                 Instruction::Perform(idx, args_count) => {
                     let mut args = Vec::new();
-                    for _ in 0..*args_count {
+                    for _ in 0..args_count {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
                     }
                     args.reverse();
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*idx as i64));
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("perform".to_string(), {
                         let mut v = vec![const_id];
@@ -1066,7 +1042,7 @@ impl NyarJit {
                 }
                 Instruction::WithHandler(idx) => {
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*idx as i64));
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("with_handler".to_string(), vec![const_id]));
                     stack.push(id);
@@ -1103,7 +1079,7 @@ impl NyarJit {
                 Instruction::MatchEffect(idx) => {
                     if let Some(val) = stack.pop() {
                         let const_id = intents.len();
-                        intents.push(IKun::Constant(*idx as i64));
+                        intents.push(IKun::Constant(idx as i64));
                         let id = intents.len();
                         intents.push(IKun::Extension(
                             "match_effect".to_string(),
@@ -1114,9 +1090,9 @@ impl NyarJit {
                 }
                 Instruction::GetWitnessTable(idx1, idx2) => {
                     let c1 = intents.len();
-                    intents.push(IKun::Constant(*idx1 as i64));
+                    intents.push(IKun::Constant(idx1 as i64));
                     let c2 = intents.len();
-                    intents.push(IKun::Constant(*idx2 as i64));
+                    intents.push(IKun::Constant(idx2 as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension(
                         "get_witness_table".to_string(),
@@ -1127,7 +1103,7 @@ impl NyarJit {
                 Instruction::WitnessMethod(idx) => {
                     if let Some(table) = stack.pop() {
                         let const_id = intents.len();
-                        intents.push(IKun::Constant(*idx as i64));
+                        intents.push(IKun::Constant(idx as i64));
                         let id = intents.len();
                         intents.push(IKun::Extension(
                             "witness_method".to_string(),
@@ -1152,7 +1128,7 @@ impl NyarJit {
                 }
                 Instruction::Quote(v) => {
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*v as i64));
+                    intents.push(IKun::Constant(v as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("quote".to_string(), vec![const_id]));
                     stack.push(id);
@@ -1166,7 +1142,7 @@ impl NyarJit {
                 }
                 Instruction::Eval(args_count) => {
                     let mut args = Vec::new();
-                    for _ in 0..*args_count {
+                    for _ in 0..args_count {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
@@ -1178,14 +1154,14 @@ impl NyarJit {
                 }
                 Instruction::ExpandMacro(idx, args_count) => {
                     let mut args = Vec::new();
-                    for _ in 0..*args_count {
+                    for _ in 0..args_count {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
                     }
                     args.reverse();
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*idx as i64));
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("expand_macro".to_string(), {
                         let mut v = vec![const_id];
@@ -1196,14 +1172,14 @@ impl NyarJit {
                 }
                 Instruction::FFICall(idx, args_count) => {
                     let mut args = Vec::new();
-                    for _ in 0..*args_count {
+                    for _ in 0..args_count {
                         if let Some(arg) = stack.pop() {
                             args.push(arg);
                         }
                     }
                     args.reverse();
                     let const_id = intents.len();
-                    intents.push(IKun::Constant(*idx as i64));
+                    intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
                     intents.push(IKun::Extension("ffi_call".to_string(), {
                         let mut v = vec![const_id];

@@ -32,7 +32,15 @@ impl NyarBackend {
                         final_code.push(Opcode::Return as u8);
                     }
 
-                    let chunk_idx = self.module.chunks.len() as u16;
+                    let chunk_idx = self.module.chunks.len();
+                    if chunk_idx >= u16::MAX as usize {
+                        return Err(NyarError::new(
+                            0x1007,
+                            nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::LimitExceeded),
+                            nyar_types::SourceLocation::default(),
+                        ));
+                    }
+                    let chunk_idx = chunk_idx as u16;
                     self.module.chunks.push(Chunk {
                         locals: 32,
                         upvalues: 0,
@@ -138,7 +146,15 @@ impl NyarBackend {
                                 if final_code.last() != Some(&(Opcode::Return as u8)) {
                                     final_code.push(Opcode::Return as u8);
                                 }
-                                let chunk_idx = self.module.chunks.len() as u16;
+                                let chunk_idx = self.module.chunks.len();
+                                if chunk_idx >= u16::MAX as usize {
+                                    return Err(NyarError::new(
+                                        0x1007,
+                                        nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::LimitExceeded),
+                                        nyar_types::SourceLocation::default(),
+                                    ));
+                                }
+                                let chunk_idx = chunk_idx as u16;
                                 self.module.chunks.push(Chunk {
                                     locals: 32,
                                     upvalues: 0,
@@ -170,7 +186,11 @@ impl NyarBackend {
         if let Some(pos) = self.module.constants.iter().position(|x| x == &c) {
             pos as u16
         } else {
-            let idx = self.module.constants.len() as u16;
+            let idx = self.module.constants.len();
+            if idx >= u16::MAX as usize {
+                panic!("Constant pool overflow");
+            }
+            let idx = idx as u16;
             self.module.constants.push(c);
             idx
         }
@@ -181,7 +201,11 @@ impl NyarBackend {
         if let Some(pos) = self.module.classes.iter().position(|x| x.name == qn) {
             pos as u16
         } else {
-            let idx = self.module.classes.len() as u16;
+            let idx = self.module.classes.len();
+            if idx >= u16::MAX as usize {
+                panic!("Class pool overflow");
+            }
+            let idx = idx as u16;
             self.module.classes.push(ClassInfo { name: qn, fields });
             idx
         }

@@ -4,7 +4,7 @@
 
 use nyar_vm::NyarDriver;
 use std::{path::Path, process::exit};
-use virtual_lua::MiniLuaFrontend;
+use mini_lua::MiniLuaFrontend;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

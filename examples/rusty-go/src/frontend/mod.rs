@@ -114,14 +114,25 @@ impl RustyGoFrontend {
                 };
                 Ok(IKunTree::Choice(Box::new(cond), Box::new(then), Box::new(els)))
             }
-            ast::Statement::For { condition, body, .. } => {
+            ast::Statement::For { init, condition, post, body, .. } => {
+                let mut stmts = vec![];
+                if let Some(i) = init {
+                    stmts.push(self.lower_statement(i)?);
+                }
+
                 let cond = if let Some(c) = condition {
                     self.lower_expression(c)?
                 } else {
                     IKunTree::BooleanConstant(true)
                 };
-                let b = self.lower_block(body)?;
-                Ok(IKunTree::Repeat(Box::new(cond), Box::new(b)))
+
+                let mut body_stmts = vec![self.lower_block(body)?];
+                if let Some(p) = post {
+                    body_stmts.push(self.lower_statement(p)?);
+                }
+
+                stmts.push(IKunTree::Repeat(Box::new(cond), Box::new(IKunTree::Seq(body_stmts))));
+                Ok(IKunTree::Seq(stmts))
             }
         }
     }

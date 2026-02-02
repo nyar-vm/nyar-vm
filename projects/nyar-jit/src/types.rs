@@ -41,7 +41,7 @@ pub type JitEntry = unsafe extern "win64" fn(
     locals_ptr: *mut Value,
     ip_ptr: *mut usize,
     closure: Value,
-    vm_ptr: *mut nyar_vm::vm::interpreter::NyarVM,
+    vm_ptr: *mut nyar_vm::vm::core::NyarVM,
 ) -> i32;
 
 /// Metadata for a single deoptimization point.

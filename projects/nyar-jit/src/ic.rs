@@ -37,3 +37,8 @@ pub struct IcEntry {
     /// The entry point of the compiled method.
     pub target: *const u8,
 }
+
+unsafe impl Send for IcEntry {}
+unsafe impl Sync for IcEntry {}
+unsafe impl Send for InlineCache {}
+unsafe impl Sync for InlineCache {}
