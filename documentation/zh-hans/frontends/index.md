@@ -1,16 +1,48 @@
 # 语言前端示例
 
-Nyar VM 提供了多种主流编程语言的简化版本（Mini-languages）作为前端示例，用于展示如何利用 `ProjectChomsky` 编译器框架将不同范式的语言映射到 Nyar IR。
+Nyar VM 旨在建立一个真正的**统一编程语言运行时**。虽然不同编程语言在语法、控制流和对象模型上存在巨大差异，但 Nyar 通过多层抽象将这些差异在运行时进行了语义对齐。
+
+## 统一运行时哲学
+
+Nyar VM 的核心设计目标是“语义降级而非模拟”。我们并不是在一种语言中模拟另一种语言，而是将所有语言的意图降级到同一套高度抽象且灵活的原始操作上：
+
+1.  **控制流统一**：通过 SSA 变换和 CFG 规范化，将复杂的控制流（如异常、协程、生成器）降级为统一的跳转和状态机。
+2.  **对象模型对齐**：运行时原生支持**名义对象**（Java/C#）、**动态对象**（Python/JS）和**特征对象**（Rust/Go），确保不同范式的语言能以最优性能运行。
+3.  **内存管理集成**：所有前端共享同一套高性能的 [Nyar GC](../maintenance/nyar-gc.md)，实现跨语言的对象透明传递。
+
+## 对象模型处理机制
+
+为了处理 C、Python、Java、Rust 等语言迥异的对象模型，Nyar VM 采用了以下机制：
+
+- **静态对象 (ValueTag::Object)**：用于 Java、C# 等静态语言，基于偏移量访问字段。
+- **动态对象 (ValueTag::DynObject)**：用于 Python、Lua 等动态语言，基于哈希表管理属性。
+- **特征对象 (ValueTag::TraitObject)**：用于 Rust、Go 等语言，通过“胖指针”和见证表实现动态分发。
+
+这种“多模型运行时”设计使得 Java 调用的 Python 函数可以透明地操作 `DynObject`，反之亦然。
 
 ## 示例列表
+
+目前 Nyar VM 正在积极适配多种主流语言的前端实现，展示如何利用 `ProjectChomsky` 编译器框架进行映射。
+
+### 核心演示语言
 
 - [Mini C](mini-c.md): 经典的过程序编程语言。
 - [Mini C#](mini-csharp.md): 现代的面向对象语言。
 - [Mini Java](mini-java.md): 企业级面向对象语言。
-- [Rusty Kotlin](rusty-kotlin.md): 简洁的现代多范式语言。
+- [Rusty Kotlin](mini-kotlin.md): 简洁的现代多范式语言。
 - [Mini Lua](mini-lua.md): 嵌入式动态脚本语言。
 - [Mini Python](mini-python.md): 广泛使用的动态语言。
 - [Mini TypeScript](mini-typescript.md): 带类型的 JavaScript 超集。
+
+### 实验性/开发中语言
+
+- [Mini Rust](mini-rust.md): 现代系统编程语言。
+- [Mini Go](mini-go.md): 云原生并发语言。
+- [Mini Ruby](mini-ruby.md): 灵动的面向对象语言。
+- [Mini Swift](mini-swift.md): 安全高效的系统语言。
+- [Mini PHP](mini-php.md): Web 开发脚本语言。
+- [Mini Zig](mini-zig.md): 现代 C 替代者。
+- [其他语言](others.md): 包含 Elixir, Dart, Mojo, Julia, Cobol, Tcl, Scheme, Prolog, Nim, Nix 等。
 
 ## 职责说明
 

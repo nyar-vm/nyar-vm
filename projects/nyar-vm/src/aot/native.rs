@@ -216,15 +216,16 @@ impl NativeBackend {
             }
             IKunTree::Apply(func, args) => {
                 if let IKunTree::Symbol(name) = &**func {
-                    if name == "System.Console.WriteLine" {
-                        if let Some(IKunTree::StringConstant(s)) = args.first() {
-                            self.emit_write_line(s, builder, data)?;
+                    if let Some(builtin) = nyar_types::NyarBuiltin::from_cross_lang_call("native", name) {
+                        match builtin {
+                            nyar_types::NyarBuiltin::Println => {
+                                if let Some(IKunTree::StringConstant(s)) = args.first() {
+                                    self.emit_write_line(s, builder, data)?;
+                                }
+                                return Ok(());
+                            }
+                            _ => {}
                         }
-                        return Ok(());
-                    }
-                    if name == "printf" {
-                        self.emit_printf(args, builder, data, context)?;
-                        return Ok(());
                     }
                 }
                 // TODO: 真正的函数调用需要处理参数传递（RCX, RDX, R8, R9, Stack）
@@ -352,11 +353,24 @@ impl NativeBackend {
                     self.emit_tree(item, builder, data, context)?;
                 }
             }
-            IKunTree::CrossLangCall(lang, func, args) if lang == "native" || lang == "csharp" => {
-                if func == "System.Console.WriteLine" {
-                    if let Some(IKunTree::StringConstant(s)) = args.first() {
-                        self.emit_write_line(s, builder, data)?;
+            IKunTree::CrossLangCall(lang, func, args) => {
+                if lang == "nyar" {
+                    match func.as_str() {
+                        "println" => {
+                            if let Some(IKunTree::StringConstant(s)) = args.first() {
+                                self.emit_write_line(s, builder, data)?;
+                            }
+                        }
+                        "print" => {
+                            // TODO: Implement Print for AOT
+                        }
+                        "exit" => {
+                            // TODO: Implement Exit for AOT
+                        }
+                        _ => {}
                     }
+                } else if lang == "native" || lang == "csharp" {
+                    self.emit_printf(args, builder, data, context)?;
                 }
             }
             _ => {}

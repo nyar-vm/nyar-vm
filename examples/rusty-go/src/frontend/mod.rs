@@ -172,11 +172,7 @@ impl RustyGoFrontend {
                     for arg in args {
                         arguments.push(self.lower_expression(arg)?);
                     }
-                    Ok(IKunTree::CrossLangCall(
-                        "native".to_string(),
-                        "print".to_string(),
-                        arguments,
-                    ))
+                    Ok(crate::runtime::NyarBuiltin::Println.emit(arguments))
                 } else {
                     let f = self.lower_expression(func)?;
                     let mut arguments = vec![];

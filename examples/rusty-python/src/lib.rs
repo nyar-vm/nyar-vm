@@ -192,12 +192,8 @@ impl MiniPythonFrontend {
                 // 特殊处理 print
                 if let IKunTree::Symbol(ref name) = func_node {
                     if name == "print" {
-                        return IKunTree::CrossLangCall(
-                            "native".to_string(),
-                            "System.Console.WriteLine".to_string(),
-                            args_nodes,
-                        );
-                    }
+                    return crate::runtime::NyarBuiltin::Println.emit(args_nodes);
+                }
                 }
 
                 IKunTree::Apply(Box::new(func_node), args_nodes)
