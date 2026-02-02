@@ -45,17 +45,18 @@ impl Backend for NativeBackend {
         };
 
         // 为每个变量分配 8 字节空间
-        // 栈布局：[Shadow Space (32)] [Extra (8)] [Locals...]
-        let mut offset = 40;
+        // 栈布局：[Shadow Space (32)] [Locals...]
+        // Windows x64 ABI 要求在 call 之前栈必须 16 字节对齐。
+        // 进入函数时，由于返回地址压栈，RSP = 16n + 8。
+        // 因此我们分配的 stack_size 必须满足 (RSP - stack_size) % 16 == 0，即 stack_size = 16k + 8。
+        let mut offset = 32; // 至少预留 32 字节影子空间
         for local in locals {
             context.locals.insert(local, offset);
             offset += 8;
         }
-        // Windows x64 ABI: RSP must be 16-byte aligned before a call.
-        // At entry, RSP = 16n + 8.
-        // We need RSP - stack_size = 16m.
-        // So stack_size must be 16k + 8.
-        context.stack_size = ((offset - 8 + 15) & !15) + 8;
+        // 计算对齐后的 stack_size，确保其结尾为 8
+        // 首先向上对齐到 16 的倍数，然后加 8
+        context.stack_size = ((offset + 15) & !15) + 8;
 
         // 2. 函数序言 (Prologue)
         builder.add_instruction(Instruction::Sub {
@@ -281,8 +282,10 @@ impl NativeBackend {
                                         src: Operand::reg(Register::RCX),
                                     });
                                 }
-                                _ => unreachable!(),
-                            }
+                                _ => {
+                                    unreachable!()
+                                }
+                            };
                         }
                     }
                     "call" => {
