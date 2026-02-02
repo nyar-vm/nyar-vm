@@ -54,7 +54,7 @@ impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
         let output = self.builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|_| NyarError::Compile())
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     /// 编译到 Chomsky UIR (IKunTree)

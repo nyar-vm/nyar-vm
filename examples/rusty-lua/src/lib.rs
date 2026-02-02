@@ -39,7 +39,7 @@ impl NyarFrontend for MiniLuaFrontend {
         let output = builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|_| NyarError::Parse())
+            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
     fn lower(&self, _ast: &LuaRoot) -> Result<IKunTree, NyarError> {

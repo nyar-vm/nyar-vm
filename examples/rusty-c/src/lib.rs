@@ -41,7 +41,7 @@ impl NyarFrontend for MiniCFrontend {
         let output = builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|_| NyarError::Compile())
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &CRoot) -> Result<IKunTree, NyarError> {

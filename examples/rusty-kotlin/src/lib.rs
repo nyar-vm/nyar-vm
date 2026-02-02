@@ -49,7 +49,7 @@ impl NyarFrontend for RustyKotlinFrontend {
         }
         output
             .result
-            .map_err(|_| NyarError::Compile())
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &KotlinRoot) -> Result<IKunTree, NyarError> {

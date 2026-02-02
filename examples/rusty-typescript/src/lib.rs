@@ -119,7 +119,7 @@ impl NyarFrontend for MiniTypescriptFrontend {
 
         output
             .result
-            .map_err(|_| NyarError::Compile())
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &TypeScriptRoot) -> Result<IKunTree, NyarError> {
