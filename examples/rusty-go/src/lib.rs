@@ -1,32 +1,32 @@
 #![feature(new_range_api)]
-//! Mini Go 解释器
+//! Rusty Go 解释器
 
 pub mod frontend;
 pub mod optimizer;
 pub mod runtime;
 
-use crate::frontend::MiniGoFrontend as FrontendImpl;
-use crate::optimizer::MiniGoOptimizer;
-use crate::runtime::MiniGoRuntime;
+use crate::frontend::RustyGoFrontend as FrontendImpl;
+use crate::optimizer::RustyGoOptimizer;
+use crate::runtime::RustyGoRuntime;
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_go::{GoBuilder, GoLanguage, GoRoot};
 
-/// Mini Go 前端实现
+/// Rusty Go 前端实现
 #[derive(Default)]
-pub struct MiniGoFrontend {
+pub struct RustyGoFrontend {
     inner: FrontendImpl,
 }
 
-impl MiniGoFrontend {
-    /// 创建一个新的 Mini Go 前端
+impl RustyGoFrontend {
+    /// 创建一个新的 Rusty Go 前端
     pub fn new() -> Self {
         Self {
-            inner: FrontendImpl::new(),
+            inner: FrontendImpl::default(),
         }
     }
 }
 
-impl NyarFrontend for MiniGoFrontend {
+impl NyarFrontend for RustyGoFrontend {
     type Language = GoLanguage;
 
     fn parse(&self, source: &str) -> Result<GoRoot, NyarError> {

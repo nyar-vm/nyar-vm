@@ -165,7 +165,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_new_dyn_object(&mut self) -> Result<Option<usize>, NyarError> {
         let obj = Value::dyn_object(&self.gc);
-        self.push(obj)?;
+        self.push(obj);
         Ok(None)
     }
 
@@ -177,7 +177,7 @@ impl NyarVM {
         }
         items.reverse();
         let list = Value::list(items, &self.gc);
-        self.push(list)?;
+        self.push(list);
         Ok(None)
     }
 
@@ -189,7 +189,7 @@ impl NyarVM {
         }
         items.reverse();
         let tuple = Value::tuple(items, &self.gc);
-        self.push(tuple)?;
+        self.push(tuple);
         Ok(None)
     }
 

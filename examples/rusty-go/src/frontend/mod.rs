@@ -7,9 +7,9 @@ use oak_core::{Lexer, LexerCache, Parser};
 use oak_go::{ast, GoLanguage, GoLexer, GoParser, GoRoot, GoSyntaxKind};
 
 #[derive(Default)]
-pub struct MiniGoFrontend;
+pub struct RustyGoFrontend;
 
-impl nyar_types::NyarFrontend for MiniGoFrontend {
+impl nyar_types::NyarFrontend for RustyGoFrontend {
     type Language = GoLanguage;
 
     fn parse(&self, source: &str) -> Result<GoRoot, nyar_types::NyarError> {

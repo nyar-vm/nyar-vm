@@ -1,11 +1,11 @@
 use chomsky::optimizer::UniversalOptimizer;
 use chomsky_uir::{EGraph, IKun, Id};
 
-pub struct MiniGoOptimizer {
+pub struct RustyGoOptimizer {
     optimizer: UniversalOptimizer<()>,
 }
 
-impl MiniGoOptimizer {
+impl RustyGoOptimizer {
     pub fn new() -> Self {
         Self {
             optimizer: UniversalOptimizer::new(),

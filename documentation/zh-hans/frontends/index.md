@@ -7,7 +7,7 @@ Nyar VM 提供了多种主流编程语言的简化版本（Mini-languages）作�
 - [Mini C](mini-c.md): 经典的过程序编程语言。
 - [Mini C#](mini-csharp.md): 现代的面向对象语言。
 - [Mini Java](mini-java.md): 企业级面向对象语言。
-- [Mini Kotlin](mini-kotlin.md): 简洁的现代多范式语言。
+- [Rusty Kotlin](rusty-kotlin.md): 简洁的现代多范式语言。
 - [Mini Lua](mini-lua.md): 嵌入式动态脚本语言。
 - [Mini Python](mini-python.md): 广泛使用的动态语言。
 - [Mini TypeScript](mini-typescript.md): 带类型的 JavaScript 超集。

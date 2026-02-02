@@ -117,9 +117,16 @@ impl NativeBackend {
                 // 返回值已在 rax 中
             }
             IKunTree::Apply(func, args) => {
+                if let IKunTree::Symbol(name) = &**func {
+                    if name == "System.Console.WriteLine" {
+                        if let Some(IKunTree::StringConstant(s)) = args.first() {
+                            self.emit_write_line(s, builder, data)?;
+                        }
+                        return Ok(());
+                    }
+                }
                 for arg in args {
                     self.emit_tree(arg, builder, data)?;
-                    // TODO: 处理多个参数，目前只支持无参或单参到 rax/rcx 等
                 }
                 self.emit_tree(func, builder, data)?;
                 builder.add_instruction(Instruction::Call {
@@ -142,15 +149,6 @@ impl NativeBackend {
                 if func == "System.Console.WriteLine" {
                     if let Some(IKunTree::StringConstant(s)) = args.first() {
                         self.emit_write_line(s, builder, data)?;
-                    }
-                }
-            }
-            IKunTree::Apply(func, args) => {
-                if let IKunTree::Symbol(name) = &**func {
-                    if name == "System.Console.WriteLine" {
-                        if let Some(IKunTree::StringConstant(s)) = args.first() {
-                            self.emit_write_line(s, builder, data)?;
-                        }
                     }
                 }
             }

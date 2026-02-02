@@ -39,12 +39,12 @@ impl From<&str> for RuntimeError {
     }
 }
 
-pub struct MiniGoRuntime {
+pub struct RustyGoRuntime {
     _optimizer: UniversalOptimizer<()>,
     vm: NyarVM,
 }
 
-impl MiniGoRuntime {
+impl RustyGoRuntime {
     pub fn new() -> Self {
         Self {
             _optimizer: UniversalOptimizer::new(),
