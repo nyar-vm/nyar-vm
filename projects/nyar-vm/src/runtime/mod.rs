@@ -53,6 +53,20 @@ impl NyarBuiltin {
             args,
         )
     }
+
+    /// Emit bytecode for this builtin
+    pub fn emit_bytecode(
+        &self,
+        code: &mut Vec<u8>,
+        arg_count: u8,
+        add_constant: &mut dyn FnMut(crate::bytecode::format::Constant) -> u16,
+    ) {
+        let name = self.name();
+        let name_idx = add_constant(crate::bytecode::format::Constant::String(name.to_string()));
+        code.extend_from_slice(
+            &crate::bytecode::instruction::Instruction::FFICall(name_idx, arg_count).encode(),
+        );
+    }
 }
 
 impl NyarVM {

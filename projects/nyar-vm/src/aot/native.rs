@@ -64,25 +64,30 @@ impl Backend for NativeBackend {
             src: Operand::imm(context.stack_size as i64, 32),
         });
 
-        // 3. 生成代码
+        // 3. Body
         self.emit_tree(tree, &mut builder, &mut data_bytes, &mut context)?;
 
-        // 4. ExitProcess(0)
-        builder.add_instruction(Instruction::Mov {
-            dst: Operand::reg(Register::ECX),
-            src: Operand::imm(0, 32),
-        });
-        // call ExitProcess (index 2 in imports)
-        builder.add_instruction(Instruction::Call {
-            target: Operand::mem(None, None, 0, 2),
-        });
-
-        // 5. 函数尾声 (Epilogue)
+        // 4. 函数尾声 (Epilogue)
+        // 所有 Return 会跳转到这里
         builder.add_instruction(Instruction::Label("epilogue".to_string()));
         builder.add_instruction(Instruction::Add {
             dst: Operand::reg(Register::RSP),
             src: Operand::imm(context.stack_size as i64, 32),
         });
+
+        // 5. 退出进程 (Terminate)
+        // 使用 rax 作为退出码调用 ExitProcess
+        builder.add_instruction(Instruction::Label("terminate".to_string()));
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::ECX),
+            src: Operand::reg(Register::EAX),
+        });
+        // call ExitProcess (index 2 in imports)
+        builder.add_instruction(Instruction::Call {
+            target: Operand::mem(None, None, 0, 2),
+        });
+        
+        // 理论上不会执行到这里
         builder.add_instruction(Instruction::Ret);
 
         let code = builder.compile_instructions().map_err(|e| {
@@ -220,23 +225,6 @@ impl NativeBackend {
                 });
             }
             IKunTree::Apply(func, args) => {
-                if let IKunTree::Symbol(name) = &**func {
-                    if let Some(builtin) = crate::runtime::NyarBuiltin::from_name(name) {
-                        match builtin {
-                            crate::runtime::NyarBuiltin::Println => {
-                                if let Some(IKunTree::StringConstant(s)) = args.first() {
-                                    self.emit_write(s, true, builder, data)?;
-                                }
-                                return Ok(());
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                // TODO: 真正的函数调用需要处理参数传递（RCX, RDX, R8, R9, Stack）
-                for arg in args {
-                    self.emit_tree(arg, builder, data, context)?;
-                }
                 self.emit_tree(func, builder, data, context)?;
                 builder.add_instruction(Instruction::Call {
                     target: Operand::reg(Register::RAX),
@@ -299,49 +287,17 @@ impl NativeBackend {
                         }
                     }
                     "call" => {
-                        // eprintln!("DEBUG: Extension call args: {:?}", args);
-                        let is_write_line = if args.len() >= 3 {
-                            let method_name = if let IKunTree::Symbol(name) = &args[1] {
-                                name.as_str()
-                            } else {
-                                ""
-                            };
-                            
-                            let target_is_console = match &args[0] {
-                                IKunTree::Symbol(name) => name == "System.Console",
-                                IKunTree::Extension(ext_name, ext_args) if ext_name == "field" => {
-                                    if ext_args.len() == 2 {
-                                        if let (IKunTree::Symbol(t), IKunTree::Symbol(n)) = (&ext_args[0], &ext_args[1]) {
-                                            t == "System" && n == "Console"
-                                        } else {
-                                            false
-                                        }
-                                    } else {
-                                        false
-                                    }
-                                }
-                                _ => false,
-                            };
-                            
-                            target_is_console && method_name == "WriteLine"
-                        } else if args.len() >= 2 {
-                            if let IKunTree::Symbol(method_name) = &args[0] {
-                                method_name == "System.Console.WriteLine"
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-
-                        if is_write_line {
-                            let args_list = args.last().unwrap();
-                            if let IKunTree::Seq(actual_args) = args_list {
-                                if let Some(IKunTree::StringConstant(s)) = actual_args.first() {
-                                    self.emit_write(s, true, builder, data)?;
-                                }
+                        // General call handling
+                        let args_list = args.last().unwrap();
+                        if let IKunTree::Seq(actual_args) = args_list {
+                            for arg in actual_args {
+                                self.emit_tree(arg, builder, data, context)?;
                             }
                         }
+                        self.emit_tree(&args[0], builder, data, context)?;
+                        builder.add_instruction(Instruction::Call {
+                            target: Operand::reg(Register::RAX),
+                        });
                     }
                     "class" => {
                         if let Some(members) = args.get(1) {

@@ -7,7 +7,17 @@
 - **动态类型**: 运行时处理数值、字符串、布尔和 `nil`。
 - **表 (Table)**: Lua 的灵魂，支持关联数组与数组模式的混合存储。
 - **闭包**: 完整的 lexical scoping 支持，支持上值（Upvalues）捕获。
-- **元表 (Metatables)**: 模拟 Lua 的运算符重载与原型继承机制。
+- **元表系统 (Metatables)**: 利用 Nyar VM 的动态拦截（Fallback）机制实现 `__index`, `__newindex` 等逻辑。
+- **闭包捕获**: 原生支持 Upvalue，映射到 Nyar VM 的词法作用域。
+- **轻量级协程**: 映射到 Nyar VM 的 `Continuation` 或轻量级线程。
+- **环境隔离**: 每个模块拥有独立的 `_ENV`，映射到 VM 的模块化命名空间。
+
+## 实现进度
+
+- [x] 基础语法解析
+- [ ] Table 与 Metatable 语义 (动态拦截测试)
+- [ ] Upvalue 捕获支持
+- [ ] 协程（Coroutine）库
 
 ## 编译与 Lowering 流程
 

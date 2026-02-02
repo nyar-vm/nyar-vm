@@ -60,6 +60,8 @@ impl NyarDriver {
         let ast = frontend.parse(&source)?;
         let tree = frontend.lower(&ast)?;
 
+        eprintln!("DEBUG: IKunTree: {:#?}", tree);
+
         let _aot: crate::aot::NyarAot<chomsky_uir::ConstraintAnalysis> =
             crate::aot::NyarAot::new();
         let backend = crate::aot::NativeBackend::new();

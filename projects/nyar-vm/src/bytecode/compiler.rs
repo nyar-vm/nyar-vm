@@ -1,17 +1,17 @@
 use crate::bytecode::instruction::Instruction;
-use crate::bytecode::format::{Chunk, ClassInfo, Constant as NyarConstant, ExportInfo, NyarModule};
+use crate::bytecode::format::{Chunk, ClassInfo, Constant, ExportInfo, NyarcModule};
 use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
 use nyar_types::{NyarError, QualifiedName};
 
 pub struct NyarBackend {
-    module: NyarModule,
+    module: NyarcModule,
 }
 
 impl NyarBackend {
     pub fn new() -> Self {
         Self {
-            module: NyarModule::default(),
+            module: NyarcModule::default(),
         }
     }
 
@@ -65,7 +65,7 @@ impl NyarBackend {
             }
             IKunTree::Symbol(s) => {
                 code.push(Opcode::LoadGlobal as u8);
-                let idx = self.add_constant(NyarConstant::QualifiedName(QualifiedName::from(s.as_str())));
+                let idx = self.add_constant(Constant::QualifiedName(QualifiedName::from(s.as_str())));
                 code.extend_from_slice(&(idx as u16).to_le_bytes());
             }
             IKunTree::Return(val) => {
@@ -78,23 +78,19 @@ impl NyarBackend {
                 }
             }
             IKunTree::CrossLangCall(lang, name, args) => {
-                if lang == "nyar" {
-                    for arg in args {
-                        code.extend(self.lower_tree(arg)?);
-                    }
-                    let name_idx = self.add_constant(NyarConstant::String(name.clone()));
-                    code.extend_from_slice(
-                        &Instruction::FFICall(name_idx, args.len() as u8).encode(),
-                    );
-                } else {
-                    for arg in args {
-                        code.extend(self.lower_tree(arg)?);
-                    }
-                    let name_idx = self.add_constant(NyarConstant::String(name.clone()));
-                    code.extend_from_slice(
-                        &Instruction::FFICall(name_idx, args.len() as u8).encode(),
-                    );
+                for arg in args {
+                    code.extend(self.lower_tree(arg)?);
                 }
+                if lang == "nyar" {
+                    if let Some(builtin) = crate::runtime::NyarBuiltin::from_name(name) {
+                        builtin.emit_bytecode(&mut code, args.len() as u8, &mut |c| {
+                            self.add_constant(c)
+                        });
+                        return Ok(code);
+                    }
+                }
+                let name_idx = self.add_constant(Constant::String(name.clone()));
+                code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
             }
             IKunTree::Extension(name, args) => {
                 println!("Backend: Extension {}, args len {}", name, args.len());
@@ -190,7 +186,7 @@ impl NyarBackend {
         Ok(code)
     }
 
-    fn add_constant(&mut self, c: NyarConstant) -> u16 {
+    fn add_constant(&mut self, c: Constant) -> u16 {
         if let Some(pos) = self.module.constants.iter().position(|x| x == &c) {
             pos as u16
         } else {
@@ -218,7 +214,7 @@ impl NyarBackend {
             idx
         }
     }
-    pub fn finish(self) -> NyarModule {
+    pub fn finish(self) -> NyarcModule {
         self.module
     }
 }

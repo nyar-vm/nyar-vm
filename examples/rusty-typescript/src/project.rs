@@ -1,5 +1,5 @@
 use crate::MiniTypescriptFrontend;
-use nyar_vm::bytecode::format::NyarModule;
+use nyar_vm::bytecode::format::NyarcModule;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -22,7 +22,7 @@ impl ProjectLoader {
     }
 
     /// Loads and compiles a project starting from a directory or a file.
-    pub fn load_project(&mut self, start_path: &Path) -> Result<Vec<NyarModule>, String> {
+    pub fn load_project(&mut self, start_path: &Path) -> Result<Vec<NyarcModule>, String> {
         let mut modules = Vec::new();
         let mut loaded_files = HashMap::new();
 
@@ -48,7 +48,7 @@ impl ProjectLoader {
     fn load_file_recursive(
         &mut self,
         file_path: &Path,
-        modules: &mut Vec<NyarModule>,
+        modules: &mut Vec<NyarcModule>,
         loaded_files: &mut HashMap<PathBuf, usize>,
     ) -> Result<usize, String> {
         let canonical_path = fs::canonicalize(file_path)

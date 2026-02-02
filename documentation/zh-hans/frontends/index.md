@@ -20,6 +20,29 @@ Nyar VM 的核心设计目标是“语义降级而非模拟”。我们并不是
 
 这种“多模型运行时”设计使得 Java 调用的 Python 函数可以透明地操作 `DynObject`，反之亦然。
 
+## 独特特性验证 (Hardcore Feature Validation)
+
+除了跨语言互操作，Nyar VM 还需要证明其指令集能够原生且高效地支持各种语言中最“硬核”的独特机制：
+
+1.  **作用域清理与栈展开 (Zig `defer` / `errdefer`)**：
+    - **挑战**：验证 VM 是否能在 `return` 或异常抛出时，自动、逆序执行已注册的清理块。
+    - **目标**：证明 Nyar VM 对 Scope Guard 和自动资源管理的底层支持。
+2.  **异常截断与恢复 (Go `panic` / `recover`)**：
+    - **挑战**：在 `defer` 块中捕获并中止当前的异常传播。
+    - **目标**：验证 VM 的 `ExceptionHandler` 栈是否足够灵活，支持动态改变控制流。
+3.  **一级延续 (Scheme `call/cc`)**：
+    - **挑战**：捕获当前执行上下文并将其作为可重复调用的对象。
+    - **目标**：压测 Nyar VM `Continuation` 类型的抽象极限，这是支持所有异步/并发模型的基础。
+4.  **动态拦截 (Lua `metatable`)**：
+    - **挑战**：在 `GetElement` 失败时回退到元方法拦截逻辑。
+    - **目标**：验证 VM 的动态分发（Fallback）机制。
+5.  **结构化匹配 (Rust `match` + `enum`)**：
+    - **挑战**：将代数数据类型（ADT）的分支跳转优化为 O(1) 的 `Switch` 操作。
+    - **目标**：验证 VM 对复杂决策树的执行效率。
+6.  **自托管运行 (Zig `comptime`)**：
+    - **挑战**：在编译期启动 VM 实例执行逻辑并回填结果。
+    - **目标**：验证 VM 的轻量化、可重入性以及自托管能力。
+
 ## 示例列表
 
 目前 Nyar VM 正在积极适配多种主流语言的前端实现，展示如何利用 `ProjectChomsky` 编译器框架进行映射。
@@ -39,10 +62,11 @@ Nyar VM 的核心设计目标是“语义降级而非模拟”。我们并不是
 - [Rusty Rust](rusty-rust.md): 现代系统编程语言。
 - [Rusty Go](rusty-go.md): 云原生并发语言。
 - [Rusty Ruby](rusty-ruby.md): 灵动的面向对象语言。
+- [Rusty Scheme](rusty-scheme.md): 一级延续与函数式范式。
 - [Rusty Swift](rusty-swift.md): 安全高效的系统语言。
 - [Rusty PHP](rusty-php.md): Web 开发脚本语言。
 - [Rusty Zig](rusty-zig.md): 现代 C 替代者。
-- [其他语言](others.md): 包含 Elixir, Dart, Mojo, Julia, Cobol, Tcl, Scheme, Prolog, Nim, Nix 等。
+- [其他语言](others.md): 包含 Elixir, Dart, Mojo, Julia, Cobol, Tcl, Prolog, Nim, Nix 等。
 
 ## 职责说明
 

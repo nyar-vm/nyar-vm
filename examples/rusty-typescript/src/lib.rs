@@ -17,7 +17,7 @@ use chomsky_source::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree};
 use nyar_aot::NyarAot;
 use nyar_types::{NyarError, NyarFrontend};
-use nyar_vm::bytecode::format::NyarModule;
+use nyar_vm::bytecode::format::NyarcModule;
 use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
 use std::ops::Range;
@@ -109,7 +109,7 @@ impl MiniTypescriptFrontend {
     }
 
     /// 编译源码为 Nyar 模块
-    pub fn compile_to_nyar(&self, source: &str) -> Result<NyarModule, String> {
+    pub fn compile_to_nyar(&self, source: &str) -> Result<NyarcModule, String> {
         let tree = self.lower_to_tree(source)?;
 
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();

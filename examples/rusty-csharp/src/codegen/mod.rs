@@ -146,6 +146,13 @@ impl NyarTranslator {
                             }
                         }
                     }
+                } else {
+                    // Handle cases where the full name is in call.name (due to parser combining identifiers)
+                    if call.name == "System.Console.WriteLine" {
+                        return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, loc));
+                    } else if call.name == "System.Console.Write" {
+                        return Ok(builder.cross_lang_call("nyar", "std::io::print", arg_ids, loc));
+                    }
                 }
 
                 let name_id = builder.symbol(&call.name, loc);

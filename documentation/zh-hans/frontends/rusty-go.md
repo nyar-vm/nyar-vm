@@ -4,9 +4,10 @@ Rusty Go 专注于展示 Nyar VM 对高并发语义和结构化类型系统（St
 
 ## 核心特性
 
-- **并发模型**: 利用 Nyar VM 的 `Continuation` 和 `Effect` 系统模拟 `goroutine` 和 `channel`。
-- **接口模型**: Go 的非侵入式接口（Duck Typing 风格的接口）映射到 Nyar 的特征系统。
-- **快速启动**: 优化的编译路径，适合短生命周期的工具开发。
+- **并发模型**: `goroutine` 映射到 Nyar VM 的绿色线程或 `Continuation`。
+- **Channel**: 原生同步原语，基于 VM 的原子操作实现。
+- **错误处理 (defer/panic/recover)**: 映射到 VM 的 `ExceptionHandler` 栈与截断机制。
+- **结构化接口**: 利用 `WitnessTable` 实现非侵入式的接口绑定。
 
 ## 编译与 Lowering 流程
 
@@ -21,8 +22,7 @@ Rusty Go 专注于展示 Nyar VM 对高并发语义和结构化类型系统（St
 
 ## 实现进度
 
-- [x] 语法解析
-- [x] 结构体定义
-- [x] 基础接口分发
-- [ ] 完整的 Goroutine 调度器集成
-- [ ] Channel 通讯语义
+- [x] 基础语法解析
+- [ ] 协程与 Channel 支持
+- [ ] defer/panic/recover 语义 (异常截断测试)
+- [ ] 接口（Interface）动态绑定
