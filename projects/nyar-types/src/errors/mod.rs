@@ -113,10 +113,14 @@ impl NyarError {
         }
     }
     #[allow(non_snake_case)]
-       pub fn Compile(msg: String) -> Self {
-            Self::new(0x2001, NyarErrorKind::Aot(AotErrorKind::Message(msg)), SourceLocation::default())
-        }
+    pub fn Compile(msg: String) -> Self {
+        Self::new(0x2001, NyarErrorKind::Aot(AotErrorKind::Message(msg)), SourceLocation::default())
     }
+    #[allow(non_snake_case)]
+    pub fn Parse(msg: String) -> Self {
+        Self::new(0x2002, NyarErrorKind::Format(FormatErrorKind::Text(msg)), SourceLocation::default())
+    }
+}
 
 impl std::fmt::Display for NyarError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

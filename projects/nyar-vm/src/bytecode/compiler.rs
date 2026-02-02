@@ -110,7 +110,13 @@ impl NyarBackend {
                     "new" => {
                         if let IKunTree::StringConstant(class_name) = &args[0] {
                             let qn = QualifiedName::from(class_name.as_str());
-                            let idx = self.module.classes.iter().position(|c| c.name == qn).map(|i| i as u16).unwrap_or(0);
+                            let idx = self.module.classes.iter().position(|c| c.name == qn).map(|i| i as u16).ok_or_else(|| {
+                                NyarError::new(
+                                    0x1002,
+                                    nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::IndexOutOfBounds(0)),
+                                    nyar_types::SourceLocation::default(),
+                                )
+                            })?;
 
                             if let IKunTree::Seq(params) = &args[1] {
                                 for param in params {

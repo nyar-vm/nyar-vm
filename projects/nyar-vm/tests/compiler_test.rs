@@ -68,3 +68,31 @@ fn test_class_compilation() {
     // We can't easily check the fields without more imports, but we can check it's not null.
     assert!(!result.is_null());
 }
+
+#[test]
+fn test_invalid_class_index_does_not_panic() {
+    let mut module = nyar_vm::bytecode::format::NyarModule::default();
+    
+    // Create code with NewObject instruction using index 99 (invalid)
+    let mut code = Vec::new();
+    code.push(Opcode::NewObject as u8);
+    code.extend_from_slice(&99u16.to_le_bytes());
+    code.push(Opcode::Return as u8);
+    
+    module.chunks.push(Chunk {
+        locals: 32,
+        upvalues: 0,
+        max_stack: 64,
+        code,
+        ..Default::default()
+    });
+    
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    
+    // This should not panic, but return an error
+    let result = vm.execute(module_idx, 0);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(matches!(*err.kind, nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::IndexOutOfBounds(99))));
+}

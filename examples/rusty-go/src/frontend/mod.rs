@@ -1,10 +1,9 @@
 use chomsky_source::Loc;
-use chomsky_uir::{EGraph, IKun, IKunTree, Id, IntentBuilder};
+use crate::GoBuilder;
+use chomsky_uir::{IKunTree, IntentBuilder, Id};
 use oak_core::parser::ParseSession;
-use oak_core::source::SourceText;
-use oak_core::tree::{RedNode, RedTree};
-use oak_core::{Lexer, LexerCache, Parser};
-use oak_go::{ast, GoLanguage, GoLexer, GoParser, GoRoot, GoSyntaxKind};
+use oak_core::{SourceText, RedNode, RedTree, Builder};
+use oak_go::{ast, GoLanguage, GoRoot, GoSyntaxKind};
 
 #[derive(Default)]
 pub struct RustyGoFrontend;
@@ -17,8 +16,8 @@ impl nyar_types::NyarFrontend for RustyGoFrontend {
         let builder = GoBuilder::new(&language);
         let source_text = SourceText::new(source.to_string());
         
-        let mut cache = oak_core::NoCache::default();
-        let output = builder.build(&source_text, &[], &mut cache);
+        let mut session = ParseSession::new(1024);
+        let output = builder.build(&source_text, &[], &mut session);
 
         output.result.map_err(|e| nyar_types::NyarError::Compile(format!("Build error: {:?}", e)))
     }

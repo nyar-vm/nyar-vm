@@ -130,7 +130,6 @@ impl NyarFrontend for MiniTypescriptFrontend {
         let root_id = converter.convert_root(ast.clone());
         let extractor = IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
         let tree = extractor.extract(root_id);
-        println!("Extracted IKunTree: {:?}", tree);
         Ok(tree)
     }
 }

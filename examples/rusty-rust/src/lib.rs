@@ -32,7 +32,7 @@ impl NyarFrontend for MiniRustFrontend {
     type Language = RustLanguage;
 
     fn parse(&self, source: &str) -> Result<RustRoot, NyarError> {
-        let builder = RustBuilder::new(self.language);
+        let builder = RustBuilder::new(&self.language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<RustLanguage>::default();
 
