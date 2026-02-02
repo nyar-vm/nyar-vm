@@ -121,10 +121,10 @@ impl NyarVM {
         ) -> i32;
 
         let entry: JitEntry = unsafe { std::mem::transmute(entry_ptr) };
-        let frame = self
-            .frames
-            .last_mut()
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
+        if self.frames.is_empty() {
+            return Err(self.error(nyar_types::VmErrorKind::NoActiveFrame));
+        }
+        let frame = self.frames.last_mut().unwrap();
 
         unsafe {
             let res_code = entry(

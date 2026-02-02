@@ -1,6 +1,36 @@
 use crate::{QualifiedName, SourceLocation};
 
 pub type VmError = NyarError;
+pub type AotError = NyarError;
+
+#[derive(Debug)]
+pub enum FormatError {
+    InvalidHeader,
+    Truncated,
+    Text(String),
+}
+
+impl std::fmt::Display for FormatError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FormatError::InvalidHeader => write!(f, "Invalid header"),
+            FormatError::Truncated => write!(f, "Truncated data"),
+            FormatError::Text(msg) => write!(f, "Format error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for FormatError {}
+
+impl From<FormatError> for NyarError {
+    fn from(e: FormatError) -> Self {
+        match e {
+            FormatError::InvalidHeader => Self::new(0x4001, NyarErrorKind::Format(FormatErrorKind::InvalidHeader), SourceLocation::default()),
+            FormatError::Truncated => Self::new(0x4002, NyarErrorKind::Format(FormatErrorKind::Truncated), SourceLocation::default()),
+            FormatError::Text(msg) => Self::new(0x4003, NyarErrorKind::Format(FormatErrorKind::Text(msg)), SourceLocation::default()),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct NyarError {
@@ -44,6 +74,7 @@ pub enum VmErrorKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AotErrorKind {
     Generic,
+    Message(String),
     EmptyModule,
     UnsupportedOpcode(u8),
     UnsupportedConstant(u16),
@@ -64,6 +95,7 @@ pub enum CliErrorKind {
 pub enum FormatErrorKind {
     InvalidHeader,
     Truncated,
+    Text(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +112,11 @@ impl NyarError {
             location,
         }
     }
-}
+    #[allow(non_snake_case)]
+       pub fn Compile(msg: String) -> Self {
+            Self::new(0x2001, NyarErrorKind::Aot(AotErrorKind::Message(msg)), SourceLocation::default())
+        }
+    }
 
 impl std::fmt::Display for NyarError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -176,6 +212,7 @@ impl AotErrorKind {
     pub fn key(&self) -> &'static str {
         match self {
             AotErrorKind::Generic => "error.aot.generic",
+            AotErrorKind::Message(_) => "error.aot.message",
             AotErrorKind::EmptyModule => "error.aot.empty_module",
             AotErrorKind::UnsupportedOpcode(_) => "error.aot.unsupported_opcode",
             AotErrorKind::UnsupportedConstant(_) => "error.aot.unsupported_constant",
@@ -187,6 +224,7 @@ impl std::fmt::Display for AotErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AotErrorKind::Generic => write!(f, "Generic AOT error"),
+            AotErrorKind::Message(msg) => write!(f, "AOT error: {}", msg),
             AotErrorKind::EmptyModule => write!(f, "Empty module"),
             AotErrorKind::UnsupportedOpcode(op) => write!(f, "Unsupported opcode: 0x{:02X}", op),
             AotErrorKind::UnsupportedConstant(idx) => write!(f, "Unsupported constant index: {}", idx),
@@ -233,6 +271,7 @@ impl FormatErrorKind {
         match self {
             FormatErrorKind::InvalidHeader => "error.format.invalid_header",
             FormatErrorKind::Truncated => "error.format.truncated",
+            FormatErrorKind::Text(_) => "error.format.text",
         }
     }
 }
@@ -242,6 +281,7 @@ impl std::fmt::Display for FormatErrorKind {
         match self {
             FormatErrorKind::InvalidHeader => write!(f, "Invalid header"),
             FormatErrorKind::Truncated => write!(f, "Truncated data"),
+            FormatErrorKind::Text(msg) => write!(f, "Format error: {}", msg),
         }
     }
 }
