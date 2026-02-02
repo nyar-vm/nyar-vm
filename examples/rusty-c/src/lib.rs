@@ -3,10 +3,12 @@
 //!
 //! 基于 Oaks (前端), Chomsky (优化), Gaia (后端) 和 Nyar VM (运行时) 架构实现。
 
+pub mod errors;
 pub mod frontend;
 pub mod optimizer;
 pub mod runtime;
 
+use crate::errors::CError;
 use chomsky_extract::IKunExtractor;
 use chomsky_source::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder};
@@ -39,9 +41,7 @@ impl NyarFrontend for MiniCFrontend {
         let mut session = oak_core::parser::session::ParseSession::<CLanguage>::default();
         let source_text = SourceText::new(source.to_string());
         let output = builder.build(&source_text, &[], &mut session);
-        output
-            .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+        output.result.map_err(|e| NyarError::from(CError::from(e)))
     }
 
     fn lower(&self, ast: &CRoot) -> Result<IKunTree, NyarError> {
