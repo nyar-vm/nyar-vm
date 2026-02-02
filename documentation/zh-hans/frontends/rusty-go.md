@@ -1,6 +1,6 @@
-# Mini Go
+# Rusty Go
 
-Mini Go 专注于展示 Nyar VM 对高并发语义和结构化类型系统（Structural Typing）的支持。
+Rusty Go 专注于展示 Nyar VM 对高并发语义和结构化类型系统（Structural Typing）的支持。
 
 ## 核心特性
 

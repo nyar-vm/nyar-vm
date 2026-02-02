@@ -1,6 +1,6 @@
-# Mini Ruby
+# Rusty Ruby
 
-Mini Ruby 展示了 Nyar VM 对极度动态的对象模型和闭包语义的处理能力。
+Rusty Ruby 展示了 Nyar VM 对极度动态的对象模型和闭包语义的处理能力。
 
 ## 核心特性
 

@@ -1,6 +1,6 @@
-# Mini PHP
+# Rusty PHP
 
-Mini PHP 展示了 Nyar VM 对 Web 脚本语义和混合编程范式的支持。
+Rusty PHP 展示了 Nyar VM 对 Web 脚本语义和混合编程范式的支持。
 
 ## 核心特性
 

@@ -1,6 +1,6 @@
-# Mini Swift
+# Rusty Swift
 
-Mini Swift 展示了如何结合引用计数语义（ARC）与强类型协议系统。
+Rusty Swift 展示了如何结合引用计数语义（ARC）与强类型协议系统。
 
 ## 核心特性
 

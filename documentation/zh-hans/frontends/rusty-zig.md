@@ -1,6 +1,6 @@
-# Mini Zig
+# Rusty Zig
 
-Mini Zig 展示了如何将具有强静态检查和手动内存管理倾向的语言映射到 Nyar VM。
+Rusty Zig 展示了如何将具有强静态检查和手动内存管理倾向的语言映射到 Nyar VM。
 
 ## 核心特性
 
