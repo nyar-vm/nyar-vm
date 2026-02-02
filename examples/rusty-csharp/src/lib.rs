@@ -17,13 +17,14 @@ pub mod visitor;
 #[derive(Default)]
 pub struct MiniCSharpFrontend {
     language: JavaLanguage,
-    builder: JavaBuilder,
 }
 
 impl MiniCSharpFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            language: JavaLanguage::new(),
+        }
     }
 }
 
@@ -34,10 +35,11 @@ impl NyarFrontend for MiniCSharpFrontend {
     fn parse(&self, source: &str) -> Result<JavaRoot, NyarError> {
         let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
         let source_text = SourceText::new(source);
-        let output = self.builder.build(&source_text, &[], &mut session);
+        let builder = JavaBuilder::new(&self.language);
+        let output = builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     /// 编译到 Chomsky UIR (IKunTree)

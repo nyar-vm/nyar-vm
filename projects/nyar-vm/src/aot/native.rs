@@ -38,10 +38,10 @@ impl Backend for NativeBackend {
 
         self.emit_tree(tree, &mut builder, &mut data_bytes)?;
 
-        // 4. ExitProcess(0)
+        // 4. ExitProcess(rax)
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
-            src: Operand::imm(0, 32),
+            src: Operand::reg(Register::EAX),
         });
         // call ExitProcess (index 2 in imports)
         builder.add_instruction(Instruction::Call {
@@ -96,6 +96,16 @@ impl NativeBackend {
                     self.emit_tree(item, builder, data)?;
                 }
             }
+            IKunTree::Constant(val) => {
+                builder.add_instruction(Instruction::Mov {
+                    dst: Operand::reg(Register::RAX),
+                    src: Operand::imm(*val, 64),
+                });
+            }
+            IKunTree::Symbol(name) => {
+                // TODO: 符号解析
+                eprintln!("TODO: Symbol resolution for {}", name);
+            }
             IKunTree::Export(_, body) => {
                 self.emit_tree(body, builder, data)?;
             }
@@ -104,7 +114,24 @@ impl NativeBackend {
             }
             IKunTree::Return(val) => {
                 self.emit_tree(val, builder, data)?;
-                builder.add_instruction(Instruction::Ret);
+                // 返回值已在 rax 中
+            }
+            IKunTree::Apply(func, args) => {
+                for arg in args {
+                    self.emit_tree(arg, builder, data)?;
+                    // TODO: 处理多个参数，目前只支持无参或单参到 rax/rcx 等
+                }
+                self.emit_tree(func, builder, data)?;
+                builder.add_instruction(Instruction::Call {
+                    target: Operand::reg(Register::RAX),
+                });
+            }
+            IKunTree::Extension(name, args) => {
+                if name == "return" {
+                    if let Some(val) = args.first() {
+                        self.emit_tree(val, builder, data)?;
+                    }
+                }
             }
             IKunTree::Seq(items) => {
                 for item in items {

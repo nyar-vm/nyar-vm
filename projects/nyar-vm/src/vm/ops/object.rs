@@ -17,7 +17,7 @@ impl NyarVM {
         }
         fields.reverse();
         let obj = Value::object(class_idx, fields, &self.gc);
-        self.push(obj)?;
+        self.push(obj);
         Ok(None)
     }
 
@@ -26,7 +26,7 @@ impl NyarVM {
         let obj_val = self.pop()?;
         let obj = unsafe { obj_val.as_object() };
         if (idx as usize) < obj.fields.len() {
-            self.push(obj.fields[idx as usize])?;
+            self.push(obj.fields[idx as usize]);
             Ok(None)
         } else {
             Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))
@@ -57,7 +57,7 @@ impl NyarVM {
         }
         items.reverse();
         let arr = Value::array(items, &self.gc);
-        self.push(arr)?;
+        self.push(arr);
         Ok(None)
     }
 
@@ -77,7 +77,7 @@ impl NyarVM {
             if arr_val.is_array() {
                 let arr = unsafe { arr_val.as_array() };
                 if idx < arr.items.len() {
-                    self.push(arr.items[idx])?;
+                    self.push(arr.items[idx]);
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
@@ -85,7 +85,7 @@ impl NyarVM {
             } else if arr_val.is_list() {
                 let list = unsafe { arr_val.as_list() };
                 if idx < list.items.len() {
-                    self.push(list.items[idx])?;
+                    self.push(list.items[idx]);
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))

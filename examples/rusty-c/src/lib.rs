@@ -35,13 +35,13 @@ impl NyarFrontend for MiniCFrontend {
 
     fn parse(&self, source: &str) -> Result<CRoot, NyarError> {
         use oak_core::Builder;
-        let builder = CBuilder::new(self.language);
+        let builder = CBuilder::new(&self.language);
         let mut session = oak_core::parser::session::ParseSession::<CLanguage>::default();
         let source_text = SourceText::new(source.to_string());
         let output = builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &CRoot) -> Result<IKunTree, NyarError> {
@@ -110,6 +110,10 @@ impl<'a> UirConverter<'a> {
         let mut body_ids = Vec::new();
         for item in &func.compound_statement.block_items {
             body_ids.push(self.convert_block_item(item));
+        }
+
+        if name == "main" {
+            return self.builder.block(body_ids, loc);
         }
 
         let lambda = self.builder.function(&name, params, body_ids);
@@ -270,11 +274,6 @@ impl<'a> UirConverter<'a> {
                 _ => self.builder.constant(0, loc),
             },
             ast::ExpressionKind::Identifier(name, _) => self.builder.symbol(name, loc),
-            ast::ExpressionKind::StringLiteral(s, _) => {
-                // String literal as a constant or symbol?
-                // For now, let's treat it as a symbol with special prefix
-                self.builder.symbol(&format!("\"{}\"", s), loc)
-            }
             ast::ExpressionKind::Binary {
                 left,
                 operator,
@@ -301,50 +300,14 @@ impl<'a> UirConverter<'a> {
             } => {
                 let r = self.convert_expression(right);
                 let l = self.convert_expression(left);
-                // For now, assume simple assignment.
-                // C has +=, -= etc but we can handle them later if needed.
                 let op = format!("{:?}", operator).to_lowercase();
                 if op == "assign" {
                     self.builder.assign_to_id(l, r, loc)
                 } else {
-                    // Compound assignment
                     let base_op = op.replace("assign", "");
                     let value = self.builder.binary_op(&base_op, l, r, loc.clone());
                     self.builder.assign_to_id(l, value, loc)
                 }
-            }
-            ast::ExpressionKind::PostfixIncDec {
-                operand,
-                is_increment,
-                ..
-            } => {
-                let arg = self.convert_expression(operand);
-                let op = if *is_increment {
-                    "post_inc"
-                } else {
-                    "post_dec"
-                };
-                self.builder.extension(op, vec![arg], loc)
-            }
-            ast::ExpressionKind::PrefixIncDec {
-                operand,
-                is_increment,
-                ..
-            } => {
-                let arg = self.convert_expression(operand);
-                let op = if *is_increment { "pre_inc" } else { "pre_dec" };
-                self.builder.extension(op, vec![arg], loc)
-            }
-            ast::ExpressionKind::Conditional {
-                condition,
-                then_expr,
-                else_expr,
-                ..
-            } => {
-                let t = self.convert_expression(condition);
-                let c = self.convert_expression(then_expr);
-                let a = self.convert_expression(else_expr);
-                self.builder.branch(t, c, a, loc)
             }
             ast::ExpressionKind::FunctionCall {
                 function,
@@ -357,7 +320,6 @@ impl<'a> UirConverter<'a> {
                     args.push(self.convert_expression(arg));
                 }
 
-                // 特殊处理 printf -> System.Console.WriteLine
                 if let ast::ExpressionKind::Identifier(name, _) = &*function.kind {
                     if name == "printf" {
                         let symbol = self.builder.symbol("System.Console.WriteLine", loc.clone());
@@ -366,22 +328,6 @@ impl<'a> UirConverter<'a> {
                 }
 
                 self.builder.call(func_id, args, loc)
-            }
-            ast::ExpressionKind::ArraySubscript { array, index, .. } => {
-                let arr = self.convert_expression(array);
-                let idx = self.convert_expression(index);
-                self.builder.extension("index", vec![arr, idx], loc)
-            }
-            ast::ExpressionKind::MemberAccess {
-                object,
-                member,
-                is_pointer,
-                ..
-            } => {
-                let obj = self.convert_expression(object);
-                let mem = self.builder.symbol(member, loc.clone());
-                let op = if *is_pointer { "arrow" } else { "dot" };
-                self.builder.extension(op, vec![obj, mem], loc)
             }
             _ => self.builder.constant(0, loc),
         }

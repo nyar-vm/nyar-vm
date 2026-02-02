@@ -13,20 +13,38 @@ pub mod tagless;
 pub mod visitor;
 
 /// Mini Java 前端
-#[derive(Default)]
-pub struct MiniJavaFrontend {
+pub struct MiniJavaFrontend<'a> {
     language: JavaLanguage,
-    builder: JavaBuilder,
+    builder: JavaBuilder<'a>,
 }
 
-impl MiniJavaFrontend {
-    /// 创建新的前端实例
-    pub fn new() -> Self {
-        Self::default()
+impl<'a> Default for MiniJavaFrontend<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl NyarFrontend for MiniJavaFrontend {
+impl<'a> MiniJavaFrontend<'a> {
+    /// 创建新的前端实例
+    pub fn new() -> Self {
+        let language = JavaLanguage::default();
+        // We need a stable reference to language for JavaBuilder.
+        // Since MiniJavaFrontend owns language, we can use unsafe or just leak it for now
+        // if we want to avoid complex lifetime management in a quick fix.
+        // But better is to make it hold a Box and reference that if possible, 
+        // or just accept that the builder will have a lifetime tied to the language.
+        
+        // Actually, JavaBuilder in oak-java seems to take &'config JavaLanguage.
+        // Let's use Box::leak for the language to get a 'static reference for simplicity in this example.
+        let language_ref = Box::leak(Box::new(language));
+        Self {
+            language: JavaLanguage::default(), // This is redundant but kept for struct shape if needed
+            builder: JavaBuilder::new(language_ref),
+        }
+    }
+}
+
+impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
     type Language = JavaLanguage;
 
     /// 解析 Java 源代码
@@ -36,7 +54,7 @@ impl NyarFrontend for MiniJavaFrontend {
         let output = self.builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     /// 编译到 Chomsky UIR (IKunTree)

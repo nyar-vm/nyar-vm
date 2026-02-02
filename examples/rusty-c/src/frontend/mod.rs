@@ -29,7 +29,7 @@ impl MiniCFrontend {
             diagnostics: lex_output.diagnostics,
         });
 
-        let parser = CParser::new(language);
+        let parser = CParser::new(&language);
         let parse_output = parser.parse(&source_text, &[], &mut session);
 
         let green_node = parse_output

@@ -87,7 +87,7 @@ impl<'a> VmFuture<'a> {
         
         // Register VM as root for the duration of this poll
         use nyar_gc::stack::StackRootGuard;
-        let _vm_root = unsafe { StackRootGuard::from_raw(self.vm as *const _) };
+        let _vm_root = unsafe { StackRootGuard::<'static, NyarVM>::from_raw(self.vm as *const NyarVM) };
         
         while loop_count < 1024 {
             loop_count += 1;
