@@ -10,14 +10,14 @@ T-Grammar 通常作為**模板字符串字面量**存在，使用 `quote" "` 或
 
 T-Grammar 使用 `<%` 和 `%>` 作為界定符。
 
-- **表達式插值 `<% expr %>`**：將表達式的結果轉換為字符串並插入。
-- **邏輯控制 `<% statement %>`**：執行 Valkyrie 的控制流語句。
-- **註釋 `<# comment #>`**：模板內部註釋，不會輸出到結果中。
+- 表達式插值 `{ expr }`：將表達式的結果轉換為字串並插入。
+- 邏輯控制 `<% statement %>`：執行 Valkyrie 的控制流語句。
+- 註釋 `<# comment #>`：模板內部註釋，不會輸出到結果中。
 
 ```valkyrie
 let template = quote"
 <% let name = "Valkyrie" %>
-Hello, <% name %>!
+Hello, {name}!
 <# 這是一個註釋，不會出現在生成的代碼中 #>
 "
 ```
@@ -113,5 +113,5 @@ micro generate_struct(name: string, fields: [Field]) -> TokenStream {
 | :--- | :--- | :--- | :--- |
 | **定位** | 文本/代碼生成 | UI 視覺投影 | 對象 DSL 構建 |
 | **界定符** | `<% ... %>` | `<tag> ... </tag>` | `{ ... }` |
-| **插值** | `<% expr %>` | `(expr)` | `${expr}` 或 `expr` |
+| **插值** | `{ expr }` | `(expr)` | `${expr}` 或 `expr` |
 | **邏輯** | `<% for ... %>` | `<for ...>` | `for ... { ... }` |

@@ -10,14 +10,14 @@ T-Grammar usually exists as a **template string literal**, wrapped with the `quo
 
 T-Grammar uses `<%` and `%>` as delimiters.
 
-- **Expression Interpolation `<% expr %>`**: Converts the result of an expression to a string and inserts it.
+- **Expression Interpolation `{ expr }`**: Converts the result of an expression to a string and inserts it.
 - **Logic Control `<% statement %>`**: Executes Valkyrie control flow statements.
 - **Comments `<# comment #>`**: Internal template comments that will not be output to the result.
 
 ```valkyrie
 let template = quote"
 <% let name = "Valkyrie" %>
-Hello, <% name %>!
+Hello, {name}!
 <# This is a comment and will not appear in the generated code #>
 "
 ```
@@ -113,5 +113,5 @@ The generated HTML will be compact:
 | :--- | :--- | :--- | :--- |
 | **Positioning** | Text/Code Generation | UI Visual Projection | Object DSL Construction |
 | **Delimiters** | `<% ... %>` | `<tag> ... </tag>` | `{ ... }` |
-| **Interpolation** | `<% expr %>` | `(expr)` | `${expr}` or `expr` |
+| **Interpolation** | `{ expr }` | `(expr)` | `${expr}` or `expr` |
 | **Logic** | `<% for ... %>` | `<for ...>` | `for ... { ... }` |
