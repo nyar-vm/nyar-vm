@@ -420,7 +420,7 @@ impl NyarVM {
             Instruction::SetElement => self.execute_set_element(),
             Instruction::NewDynObject => self.execute_new_dyn_object(),
             Instruction::NewList(len) => self.execute_new_list(len.into()),
-            Instruction::MakeTuple(len) => self.execute_make_tuple(len.into()),
+            Instruction::MakeTuple(len) => self.execute_new_tuple(len.into()),
             Instruction::HasKey => self.execute_has_key(),
             Instruction::RemoveKey => self.execute_remove_key(),
             Instruction::PushElementRight => self.execute_push_element_right(),

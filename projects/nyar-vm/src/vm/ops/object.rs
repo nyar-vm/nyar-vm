@@ -17,7 +17,7 @@ impl NyarVM {
         }
         fields.reverse();
         let obj = Value::object(class_idx, fields, &self.gc);
-        self.push(obj);
+        self.push(obj)?;
         Ok(None)
     }
 
@@ -26,7 +26,7 @@ impl NyarVM {
         let obj_val = self.pop()?;
         let obj = unsafe { obj_val.as_object() };
         if (idx as usize) < obj.fields.len() {
-            self.push(obj.fields[idx as usize]);
+            self.push(obj.fields[idx as usize])?;
             Ok(None)
         } else {
             Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))
@@ -57,7 +57,7 @@ impl NyarVM {
         }
         items.reverse();
         let arr = Value::array(items, &self.gc);
-        self.push(arr);
+        self.push(arr)?;
         Ok(None)
     }
 
@@ -77,7 +77,7 @@ impl NyarVM {
             if arr_val.is_array() {
                 let arr = unsafe { arr_val.as_array() };
                 if idx < arr.items.len() {
-                    self.push(arr.items[idx]);
+                    self.push(arr.items[idx])?;
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
@@ -85,7 +85,7 @@ impl NyarVM {
             } else if arr_val.is_list() {
                 let list = unsafe { arr_val.as_list() };
                 if idx < list.items.len() {
-                    self.push(list.items[idx]);
+                    self.push(list.items[idx])?;
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
@@ -116,7 +116,7 @@ impl NyarVM {
             let obj = unsafe { arr_val.as_dyn_object_mut() };
             obj.entries.insert(key.to_string(), val);
             val.write_barrier(gc);
-            self.push(arr_val)?;
+            self.push(arr_val);
             Ok(None)
         } else {
             let idx = key_val.try_as_int().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "Int".to_string(), found: format!("{:?}", key_val.tag()) }))? as usize;
@@ -125,7 +125,7 @@ impl NyarVM {
                 if idx < arr.items.len() {
                     arr.items[idx] = val;
                     val.write_barrier(gc);
-                    self.push(arr_val)?;
+                    self.push(arr_val);
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
@@ -135,7 +135,7 @@ impl NyarVM {
                 if idx < list.items.len() {
                     list.items[idx] = val;
                     val.write_barrier(gc);
-                    self.push(arr_val)?;
+                    self.push(arr_val);
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
@@ -151,7 +151,7 @@ impl NyarVM {
                     }
                     tuple.items[idx] = val;
                     val.write_barrier(gc);
-                    self.push(arr_val)?;
+                    self.push(arr_val);
                     Ok(None)
                 } else {
                     Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx)))
@@ -165,7 +165,7 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_new_dyn_object(&mut self) -> Result<Option<usize>, NyarError> {
         let obj = Value::dyn_object(&self.gc);
-        self.push(obj);
+        self.push(obj)?;
         Ok(None)
     }
 
@@ -177,19 +177,19 @@ impl NyarVM {
         }
         items.reverse();
         let list = Value::list(items, &self.gc);
-        self.push(list);
+        self.push(list)?;
         Ok(None)
     }
 
     #[inline(always)]
-    pub fn execute_make_tuple(&mut self, len: u32) -> Result<Option<usize>, NyarError> {
+    pub fn execute_new_tuple(&mut self, len: u32) -> Result<Option<usize>, NyarError> {
         let mut items = Vec::with_capacity(len as usize);
         for _ in 0..len {
             items.push(self.pop()?);
         }
         items.reverse();
         let tuple = Value::tuple(items, &self.gc);
-        self.push(tuple);
+        self.push(tuple)?;
         Ok(None)
     }
 

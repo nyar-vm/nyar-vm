@@ -127,6 +127,7 @@ impl NativeBackend {
                 }
                 for arg in args {
                     self.emit_tree(arg, builder, data)?;
+                    // TODO: 处理多个参数，目前只支持无参或单参到 rax/rcx 等
                 }
                 self.emit_tree(func, builder, data)?;
                 builder.add_instruction(Instruction::Call {

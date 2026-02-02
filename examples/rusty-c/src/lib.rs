@@ -250,7 +250,7 @@ impl<'a> UirConverter<'a> {
                     } else {
                         self.builder.constant(0, loc.clone())
                     };
-                    self.builder.extension("return", vec![val], loc)
+                    self.builder.return_(val, loc)
                 }
                 ast::JumpStatement::Break(span) => {
                     self.builder

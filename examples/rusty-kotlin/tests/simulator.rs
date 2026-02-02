@@ -1,5 +1,5 @@
-use mini_kotlin::tagless::{expr, Neg, SetContext, SoundContext};
-use mini_kotlin::visitor::{sound, Cat, Dog, Fish};
+use rusty_kotlin::tagless::{expr, Neg, SetContext, SoundContext};
+use rusty_kotlin::visitor::{sound, Cat, Dog, Fish};
 
 #[test]
 fn test_visitor() {

@@ -25,8 +25,8 @@ chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }
 oak-core = { path = "../../../oaks/projects/oak-core" }
 oak-typescript = { path = "../../../oaks/examples/oak-typescript", default-features = false }
 nyar-types = { path = "../../projects/nyar-types" }
-nyar-aot = { path = "../../projects/nyar-aot", default-features = false }
-nyar-vm = { path = "../../projects/nyar-vm", default-features = false }
+nyar-aot = { path = "../../projects/nyar-aot" }
+nyar-vm = { path = "../../projects/nyar-vm" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
@@ -36,8 +36,7 @@ wit-bindgen = "0.35.0"
 
 [features]
 default = ["native"]
-native = ["nyar-vm/native", "nyar-aot/native"]
-wasi = ["nyar-aot/wasi"]
+native = ["nyar-vm/native"]
 
 [package.metadata.component]
 package = "nyar:mini-typescript"

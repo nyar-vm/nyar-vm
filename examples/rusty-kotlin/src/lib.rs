@@ -13,19 +13,19 @@ use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::{builder::Builder, source::SourceText};
 use oak_kotlin::{KotlinBuilder, KotlinLanguage, KotlinRoot};
 
-/// Mini Kotlin 前端
-pub struct MiniKotlinFrontend {
+/// Rusty Kotlin 前端
+pub struct RustyKotlinFrontend {
     language: KotlinLanguage,
     builder: KotlinBuilder<'static>,
 }
 
-impl Default for MiniKotlinFrontend {
+impl Default for RustyKotlinFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MiniKotlinFrontend {
+impl RustyKotlinFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         let language = Box::leak(Box::new(KotlinLanguage::default()));
@@ -37,7 +37,7 @@ impl MiniKotlinFrontend {
     }
 }
 
-impl NyarFrontend for MiniKotlinFrontend {
+impl NyarFrontend for RustyKotlinFrontend {
     type Language = KotlinLanguage;
 
     fn parse(&self, source: &str) -> Result<KotlinRoot, NyarError> {
@@ -49,7 +49,7 @@ impl NyarFrontend for MiniKotlinFrontend {
         }
         output
             .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &KotlinRoot) -> Result<IKunTree, NyarError> {

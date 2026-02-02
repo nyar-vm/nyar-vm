@@ -9,3 +9,7 @@ thiserror = "1.0"
 oak-core = { workspace = true }
 chomsky-extract = { workspace = true }
 nyar-gc = { path = "../nyar-gc" }
+
+[features]
+default = ["gc"]
+gc = []

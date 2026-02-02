@@ -64,11 +64,11 @@ impl nyar_types::NyarFrontend for RustyGoFrontend {
             }
         }
 
-        Ok(IKunTree::Module("mini-go-program".to_string(), items))
+        Ok(IKunTree::Module("rusty-go-program".to_string(), items))
     }
 }
 
-impl MiniGoFrontend {
+impl RustyGoFrontend {
     pub fn new() -> Self {
         Self
     }
@@ -160,7 +160,7 @@ impl MiniGoFrontend {
                         }
                     }
                 }
-                builder.module("mini-go", items)
+                builder.module("rusty-go", items)
             }
             _ => {
                 // Placeholder for other elements
