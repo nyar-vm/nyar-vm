@@ -247,7 +247,7 @@ impl NativeBackend {
                         if args.len() == 2 {
                             self.emit_tree(&args[0], builder, data, context)?;
                             builder.add_instruction(Instruction::Push {
-                                src: Operand::reg(Register::RAX),
+                                op: Operand::reg(Register::RAX),
                             });
                             self.emit_tree(&args[1], builder, data, context)?;
                             builder.add_instruction(Instruction::Mov {
@@ -272,20 +272,21 @@ impl NativeBackend {
                                     });
                                 }
                                 "*" => {
-                                    builder.add_instruction(Instruction::Mul {
+                                    builder.add_instruction(Instruction::Imul {
+                                        dst: Register::RAX,
                                         src: Operand::reg(Register::RCX),
                                     });
                                 }
                                 "/" => {
                                     builder.add_instruction(Instruction::Cqo);
-                                    builder.add_instruction(Instruction::Div {
+                                    builder.add_instruction(Instruction::Idiv {
                                         src: Operand::reg(Register::RCX),
                                     });
                                 }
                                 _ => {
                                     unreachable!()
                                 }
-                            };
+                            }
                         }
                     }
                     "call" => {
