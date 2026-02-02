@@ -139,7 +139,12 @@ impl RustyGoFrontend {
 
     fn lower_expression(&self, expr: &ast::Expression) -> Result<IKunTree, nyar_types::NyarError> {
         match expr {
-            ast::Expression::Identifier { name, .. } => Ok(IKunTree::Symbol(name.clone())),
+            ast::Expression::Identifier { name, .. } => {
+                if name.trim().is_empty() {
+                    return Err(nyar_types::NyarError::Compile("Empty identifier".to_string()));
+                }
+                Ok(IKunTree::Symbol(name.clone()))
+            }
             ast::Expression::Literal { value, .. } => {
                 if value.starts_with('"') && value.ends_with('"') {
                     let s = &value[1..value.len() - 1];
@@ -151,6 +156,7 @@ impl RustyGoFrontend {
                 } else if let Ok(n) = value.parse::<i64>() {
                     Ok(IKunTree::Constant(n))
                 } else {
+                    // 默认作为字符串常量，而不是符号
                     Ok(IKunTree::StringConstant(value.clone()))
                 }
             }
