@@ -139,6 +139,20 @@ impl FFIFunction for NativePrint {
         })
     }
     fn call(&self, args: Vec<Value>) -> FFIResult {
+        print!("{}", args[0]);
+        Ok(Value::null())
+    }
+}
+
+pub struct NativePrintln;
+impl FFIFunction for NativePrintln {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Any],
+            ret: FFIType::Null,
+        })
+    }
+    fn call(&self, args: Vec<Value>) -> FFIResult {
         println!("{}", args[0]);
         Ok(Value::null())
     }

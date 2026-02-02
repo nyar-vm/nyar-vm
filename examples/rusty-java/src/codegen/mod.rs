@@ -134,8 +134,12 @@ impl NyarTranslator {
                 if let Some(target) = &call.target {
                     if let Expression::FieldAccess(fa) = &**target {
                         if let Expression::Identifier(t) = &*fa.target {
-                            if t == "System" && fa.name == "out" && call.name == "println" {
-                                return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, Loc::default()));
+                            if t == "System" && fa.name == "out" {
+                                if call.name == "println" {
+                                    return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, Loc::default()));
+                                } else if call.name == "print" {
+                                    return Ok(builder.cross_lang_call("nyar", "std::io::print", arg_ids, Loc::default()));
+                                }
                             }
                         }
                     }

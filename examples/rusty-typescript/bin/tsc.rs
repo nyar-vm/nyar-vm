@@ -40,17 +40,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frontend = MiniTypescriptFrontend::new();
     
     // 调用 AOT 编译逻辑
-    let wasm_bytes = frontend.compile_to_wasm(&source)?;
+    let artifacts = frontend.compile_to_wasm(&source)?;
 
-    let output_path = args.output.unwrap_or_else(|| {
-        let mut path = args.input.clone();
-        path.set_extension("wasm");
-        path
-    });
+    for (name, bytes) in artifacts {
+        let output_path = if name == "main.wasm" && args.output.is_some() {
+            args.output.clone().unwrap()
+        } else {
+            let mut path = args.input.clone();
+            let ext = name.split('.').last().unwrap_or("bin");
+            path.set_extension(ext);
+            path
+        };
 
-    fs::write(&output_path, wasm_bytes)?;
-
-    println!("Successfully compiled to {:?}", output_path);
+        fs::write(&output_path, bytes)?;
+        println!("Successfully compiled to {:?}", output_path);
+    }
 
     Ok(())
 }

@@ -127,14 +127,22 @@ impl NyarTranslator {
                 // Handle standard builtins
                 if let Some(target) = &call.target {
                     if let Expression::Identifier(target_name) = &**target {
-                        if target_name == "System.Console" && call.name == "WriteLine" {
-                            return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, loc));
+                        if target_name == "System.Console" {
+                            if call.name == "WriteLine" {
+                                return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, loc));
+                            } else if call.name == "Write" {
+                                return Ok(builder.cross_lang_call("nyar", "std::io::print", arg_ids, loc));
+                            }
                         }
                     } else if let Expression::FieldAccess(fa) = &**target {
                         // Handle System.Console as FieldAccess if needed
                         if let Expression::Identifier(t) = &*fa.target {
-                            if t == "System" && fa.name == "Console" && call.name == "WriteLine" {
-                                return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, loc));
+                            if t == "System" && fa.name == "Console" {
+                                if call.name == "WriteLine" {
+                                    return Ok(builder.cross_lang_call("nyar", "std::io::println", arg_ids, loc));
+                                } else if call.name == "Write" {
+                                    return Ok(builder.cross_lang_call("nyar", "std::io::print", arg_ids, loc));
+                                }
                             }
                         }
                     }

@@ -176,13 +176,20 @@ fn convert_expr(expr: &oak_ast::Expr, builder: &mut IntentBuilder<ConstraintAnal
         }
         oak_ast::Expr::Call { callee, args, span } => {
             let loc = span_to_loc(span.clone());
-            let func_id = if let Some(name) = extract_name(callee) {
-                builder.symbol(&name, loc)
+            if let Some(name) = extract_name(callee) {
+                let arg_ids: Vec<Id> = args.iter().map(|a| convert_expr(a, builder)).collect();
+                if name == "println" || name == "println!" {
+                    return builder.cross_lang_call("nyar", "std::io::println", arg_ids, loc);
+                } else if name == "print" || name == "print!" {
+                    return builder.cross_lang_call("nyar", "std::io::print", arg_ids, loc);
+                }
+                let func_id = builder.symbol(&name, loc);
+                builder.call(func_id, arg_ids, loc)
             } else {
-                builder.symbol("anonymous_call", loc)
-            };
-            let arg_ids = args.iter().map(|a| convert_expr(a, builder)).collect();
-            builder.call(func_id, arg_ids, loc)
+                let func_id = builder.symbol("anonymous_call", loc);
+                let arg_ids = args.iter().map(|a| convert_expr(a, builder)).collect();
+                builder.call(func_id, arg_ids, loc)
+            }
         }
         oak_ast::Expr::If {
             condition,

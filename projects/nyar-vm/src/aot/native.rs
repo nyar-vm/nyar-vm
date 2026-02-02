@@ -67,10 +67,10 @@ impl Backend for NativeBackend {
         // 3. 生成代码
         self.emit_tree(tree, &mut builder, &mut data_bytes, &mut context)?;
 
-        // 4. ExitProcess(rax)
+        // 4. ExitProcess(0)
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
-            src: Operand::reg(Register::EAX),
+            src: Operand::imm(0, 32),
         });
         // call ExitProcess (index 2 in imports)
         builder.add_instruction(Instruction::Call {
@@ -78,10 +78,12 @@ impl Backend for NativeBackend {
         });
 
         // 5. 函数尾声 (Epilogue)
+        builder.add_instruction(Instruction::Label("epilogue".to_string()));
         builder.add_instruction(Instruction::Add {
             dst: Operand::reg(Register::RSP),
             src: Operand::imm(context.stack_size as i64, 32),
         });
+        builder.add_instruction(Instruction::Ret);
 
         let code = builder.compile_instructions().map_err(|e| {
             chomsky_types::ChomskyError::backend_error(format!("Assembler error: {:?}", e))
@@ -213,6 +215,9 @@ impl NativeBackend {
             }
             IKunTree::Return(val) => {
                 self.emit_tree(val, builder, data, context)?;
+                builder.add_instruction(Instruction::Jmp {
+                    target: Operand::label("epilogue".to_string()),
+                });
             }
             IKunTree::Apply(func, args) => {
                 if let IKunTree::Symbol(name) = &**func {
@@ -220,7 +225,7 @@ impl NativeBackend {
                         match builtin {
                             crate::runtime::NyarBuiltin::Println => {
                                 if let Some(IKunTree::StringConstant(s)) = args.first() {
-                                    self.emit_write_line(s, builder, data)?;
+                                    self.emit_write(s, true, builder, data)?;
                                 }
                                 return Ok(());
                             }
@@ -243,6 +248,9 @@ impl NativeBackend {
                         if let Some(val) = args.first() {
                             self.emit_tree(val, builder, data, context)?;
                         }
+                        builder.add_instruction(Instruction::Jmp {
+                            target: Operand::label("epilogue".to_string()),
+                        });
                     }
                     "+" | "-" | "*" | "/" => {
                         if args.len() == 2 {
@@ -330,7 +338,7 @@ impl NativeBackend {
                             let args_list = args.last().unwrap();
                             if let IKunTree::Seq(actual_args) = args_list {
                                 if let Some(IKunTree::StringConstant(s)) = actual_args.first() {
-                                    self.emit_write_line(s, builder, data)?;
+                                    self.emit_write(s, true, builder, data)?;
                                 }
                             }
                         }
@@ -386,14 +394,17 @@ impl NativeBackend {
         Ok(())
     }
 
-    fn emit_write_line(
+    fn emit_write(
         &self,
         s: &str,
+        newline: bool,
         builder: &mut ProgramBuilder,
         data: &mut Vec<u8>,
     ) -> ChomskyResult<()> {
         let mut full_s = s.to_string();
-        full_s.push_str("\r\n");
+        if newline {
+            full_s.push_str("\r\n");
+        }
         let s = full_s;
 
         let string_offset = data.len();
@@ -449,6 +460,17 @@ impl NativeBackend {
             target: Operand::mem(None, None, 0, 1),
         });
 
+        Ok(())
+    }
+
+    fn emit_exit(&self, code: i32, builder: &mut ProgramBuilder) -> ChomskyResult<()> {
+        builder.add_instruction(Instruction::Mov {
+            dst: Operand::reg(Register::ECX),
+            src: Operand::imm(code as i64, 32),
+        });
+        builder.add_instruction(Instruction::Call {
+            target: Operand::mem(None, None, 0, 2),
+        });
         Ok(())
     }
 

@@ -47,7 +47,16 @@ struct Compiler;
 impl Guest for Compiler {
     fn compile(source: String) -> Result<Vec<u8>, String> {
         let frontend = MiniTypescriptFrontend::new();
-        frontend.compile_to_wasm(&source)
+        let artifacts = frontend.compile_to_wasm(&source)?;
+        
+        // Return main.wasm or the first artifact
+        if let Some(wasm) = artifacts.get("main.wasm") {
+            Ok(wasm.clone())
+        } else if let Some((_, bytes)) = artifacts.iter().next() {
+            Ok(bytes.clone())
+        } else {
+            Err("No output files generated".to_string())
+        }
     }
 }
 
@@ -69,7 +78,7 @@ impl MiniTypescriptFrontend {
     }
 
     /// 编译源码为 WASM (AOT)
-    pub fn compile_to_wasm(&self, source: &str) -> Result<Vec<u8>, String> {
+    pub fn compile_to_wasm(&self, source: &str) -> Result<std::collections::HashMap<String, Vec<u8>>, String> {
         let tree = self.lower_to_tree(source)?;
 
         let mut aot = NyarAot::<ConstraintAnalysis>::new();
@@ -81,7 +90,12 @@ impl MiniTypescriptFrontend {
             .map_err(|e| format!("AOT error: {:?}", e))?;
 
         match artifact {
-            chomsky_extract::BackendArtifact::Binary(bytes) => Ok(bytes),
+            chomsky_extract::BackendArtifact::Binary(bytes) => {
+                let mut files = std::collections::HashMap::new();
+                files.insert("main.wasm".to_string(), bytes);
+                Ok(files)
+            }
+            chomsky_extract::BackendArtifact::Collection(files) => Ok(files),
             _ => Err("Expected binary artifact from AOT compiler".to_string()),
         }
     }
@@ -279,6 +293,48 @@ impl<'a> UirConverter<'a> {
                 self.builder.binary_op(&operator, l, r, Loc::default())
             }
             ast::Expression::CallExpression { func, args } => {
+                let span = func.span();
+                let loc = self.to_loc(span.into());
+
+                // Detect console.log and map to std::io::println
+                if let ast::Expression::MemberExpression {
+                    object,
+                    property,
+                    computed,
+                    ..
+                } = func.as_ref()
+                {
+                    if !*computed {
+                        if let (
+                            ast::Expression::Identifier(obj_name),
+                            ast::Expression::Identifier(prop_name),
+                        ) = (object.as_ref(), property.as_ref())
+                        {
+                            if obj_name == "console" {
+                                let mut arg_ids = Vec::new();
+                                for arg in &args {
+                                    arg_ids.push(self.convert_expression(arg.clone()));
+                                }
+                                if prop_name == "log" || prop_name == "println" {
+                                    return self.builder.cross_lang_call(
+                                        "nyar",
+                                        "std::io::println",
+                                        arg_ids,
+                                        loc,
+                                    );
+                                } else if prop_name == "print" {
+                                    return self.builder.cross_lang_call(
+                                        "nyar",
+                                        "std::io::print",
+                                        arg_ids,
+                                        loc,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
                 let f = self.convert_expression(*func);
                 let mut arg_ids = Vec::new();
                 for arg in args {

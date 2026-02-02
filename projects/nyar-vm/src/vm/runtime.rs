@@ -1,5 +1,7 @@
 use crate::vm::core::NyarVM;
-use crate::vm::value::{Upvalue, Value};
+use crate::vm::value::{BigInt, Upvalue, Value};
+use crate::bytecode::format::Constant;
+use nyar_types::QualifiedName;
 
 #[no_mangle]
 pub unsafe extern "win64" fn nyar_upvalue_get(upvalue_ptr: *const Option<Upvalue>) -> Value {

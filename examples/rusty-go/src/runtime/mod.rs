@@ -161,7 +161,7 @@ impl RustyGoRuntime {
                 code.extend_from_slice(&Instruction::StringConst(s.clone()).encode());
             }
             IKunTree::CrossLangCall(lang, name, args) => {
-                if lang == "native" {
+                if lang == "native" || lang == "nyar" {
                     // Push arguments
                     for arg in args {
                         self.emit_tree(arg, code, module)?;

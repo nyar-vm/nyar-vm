@@ -427,7 +427,7 @@ impl MiniCFrontend {
                                 }
 
                                 if func_text == "printf" {
-                                    return builder.cross_lang_call("nyar", "std::io::println", args, loc);
+                                    return builder.cross_lang_call("nyar", "std::io::print", args, loc);
                                 }
 
                                 let func = self.convert_tree_to_uir(

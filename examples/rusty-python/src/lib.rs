@@ -192,6 +192,8 @@ impl MiniPythonFrontend {
                 // 特殊处理 print
                 if let IKunTree::Symbol(ref name) = func_node {
                     if name == "print" {
+                        // Python's print defaults to newline, but we could handle end="" if we wanted.
+                        // For now, map to println.
                         return nyar_vm::runtime::NyarBuiltin::Println.emit(args_nodes);
                     }
                 }

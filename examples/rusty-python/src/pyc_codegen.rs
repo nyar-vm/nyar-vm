@@ -431,7 +431,7 @@ impl PycTranslator {
                 self.emit(OpCode::MakeFunction, 0);
             }
             IKunTree::CrossLangCall(lang, func, args) => {
-                if lang == "native" && func == "System.Console.WriteLine" {
+                if lang == "nyar" && (func == "std::io::println" || func == "std::io::print") {
                     self.emit(OpCode::PushNull, 0);
                     let idx = self.add_name("print");
                     self.emit(OpCode::LoadName, idx);

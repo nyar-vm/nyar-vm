@@ -64,7 +64,7 @@ impl NyarVM {
         self.ffi.register(NyarBuiltin::GetTime.name().to_string(), Box::new(crate::vm::ffi::NativeGetTime));
         self.ffi.register(NyarBuiltin::Sleep.name().to_string(), Box::new(crate::vm::ffi::NativeSleep));
         self.ffi.register(NyarBuiltin::Print.name().to_string(), Box::new(crate::vm::ffi::NativePrint));
-        self.ffi.register(NyarBuiltin::Println.name().to_string(), Box::new(crate::vm::ffi::NativePrint)); // Use same for now
+        self.ffi.register(NyarBuiltin::Println.name().to_string(), Box::new(crate::vm::ffi::NativePrintln));
         self.ffi.register(NyarBuiltin::Exit.name().to_string(), Box::new(crate::vm::ffi::NativeExit));
     }
 
