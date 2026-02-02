@@ -22,7 +22,7 @@ impl MiniZigFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
-            language: ZigLanguage {},
+            language: ZigLanguage::default(),
         }
     }
 }

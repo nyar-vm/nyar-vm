@@ -22,7 +22,7 @@ impl MiniElixirFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
-            language: ElixirLanguage {},
+            language: ElixirLanguage::default(),
         }
     }
 }

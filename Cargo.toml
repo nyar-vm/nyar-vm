@@ -11,6 +11,14 @@ members = [
     "examples/rusty-csharp",
     "examples/rusty-lua",
     "examples/rusty-rust",
+    "examples/rusty-ruby",
+    "examples/rusty-php",
+    "examples/rusty-swift",
+    "examples/rusty-zig",
+    "examples/rusty-elixir",
+    "examples/rusty-dart",
+    "examples/rusty-mojo",
+    "examples/rusty-julia",
 ]
 default-members = [
     "projects/nyar-types",

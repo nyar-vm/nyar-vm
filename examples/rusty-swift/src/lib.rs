@@ -24,7 +24,7 @@ impl MiniSwiftFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
-            language: SwiftLanguage {},
+            language: SwiftLanguage::default(),
         }
     }
 }
