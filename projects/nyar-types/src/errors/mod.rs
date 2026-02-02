@@ -7,7 +7,6 @@ pub type AotError = NyarError;
 pub enum FormatError {
     InvalidHeader,
     Truncated,
-    Text(String),
 }
 
 impl std::fmt::Display for FormatError {
@@ -21,7 +20,6 @@ impl FormatError {
         match self {
             FormatError::InvalidHeader => "error.format.invalid_header",
             FormatError::Truncated => "error.format.truncated",
-            FormatError::Text(_) => "error.format.text",
         }
     }
 }
@@ -33,7 +31,6 @@ impl From<FormatError> for NyarError {
         match e {
             FormatError::InvalidHeader => Self::new(0x4001, NyarErrorKind::Format(FormatErrorKind::InvalidHeader), SourceLocation::default()),
             FormatError::Truncated => Self::new(0x4002, NyarErrorKind::Format(FormatErrorKind::Truncated), SourceLocation::default()),
-            FormatError::Text(msg) => Self::new(0x4003, NyarErrorKind::Format(FormatErrorKind::Text(msg)), SourceLocation::default()),
         }
     }
 }
@@ -74,13 +71,12 @@ pub enum VmErrorKind {
     DivisionByZero,
     InvalidContinuation,
     FutureFailed,
-    RuntimeError(String),
+    RuntimeError,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AotErrorKind {
     Generic,
-    Message(String),
     EmptyModule,
     UnsupportedOpcode(u8),
     UnsupportedConstant(u16),
@@ -101,7 +97,6 @@ pub enum CliErrorKind {
 pub enum FormatErrorKind {
     InvalidHeader,
     Truncated,
-    Text(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,16 +114,16 @@ impl NyarError {
         }
     }
     #[allow(non_snake_case)]
-    pub fn Compile(msg: String) -> Self {
-        Self::new(0x2001, NyarErrorKind::Aot(AotErrorKind::Message(msg)), SourceLocation::default())
+    pub fn Compile() -> Self {
+        Self::new(0x2001, NyarErrorKind::Aot(AotErrorKind::Generic), SourceLocation::default())
     }
     #[allow(non_snake_case)]
-    pub fn Parse(msg: String) -> Self {
-        Self::new(0x2002, NyarErrorKind::Format(FormatErrorKind::Text(msg)), SourceLocation::default())
+    pub fn Parse() -> Self {
+        Self::new(0x2002, NyarErrorKind::Format(FormatErrorKind::Truncated), SourceLocation::default())
     }
     #[allow(non_snake_case)]
-    pub fn RuntimeError(msg: String) -> Self {
-        Self::new(0x3000, NyarErrorKind::Vm(VmErrorKind::RuntimeError(msg)), SourceLocation::default())
+    pub fn RuntimeError() -> Self {
+        Self::new(0x3000, NyarErrorKind::Vm(VmErrorKind::RuntimeError), SourceLocation::default())
     }
 }
 
@@ -158,12 +153,12 @@ impl std::fmt::Display for NyarErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NyarErrorKind::Io(e) => write!(f, "io: {}", e),
-            NyarErrorKind::Vm(e) => write!(f, "vm: {}", e),
-            NyarErrorKind::Aot(e) => write!(f, "aot: {}", e),
-            NyarErrorKind::Jit(e) => write!(f, "jit: {}", e),
-            NyarErrorKind::Cli(e) => write!(f, "cli: {}", e),
-            NyarErrorKind::Format(e) => write!(f, "format: {}", e),
-            NyarErrorKind::Decode(e) => write!(f, "decode: {}", e),
+            NyarErrorKind::Vm(e) => write!(f, "{}", e),
+            NyarErrorKind::Aot(e) => write!(f, "{}", e),
+            NyarErrorKind::Jit(e) => write!(f, "{}", e),
+            NyarErrorKind::Cli(e) => write!(f, "{}", e),
+            NyarErrorKind::Format(e) => write!(f, "{}", e),
+            NyarErrorKind::Decode(e) => write!(f, "{}", e),
         }
     }
 }
@@ -187,7 +182,7 @@ impl VmErrorKind {
             VmErrorKind::DivisionByZero => "error.vm.division_by_zero",
             VmErrorKind::InvalidContinuation => "error.vm.invalid_continuation",
             VmErrorKind::FutureFailed => "error.vm.future_failed",
-            VmErrorKind::RuntimeError(_) => "error.vm.runtime_error",
+            VmErrorKind::RuntimeError => "error.vm.runtime_error",
         }
     }
 }
@@ -204,7 +199,6 @@ impl std::fmt::Display for VmErrorKind {
             VmErrorKind::UnhandledEffect(name) => write!(f, "({})", name),
             VmErrorKind::TypeMismatch { expected, found } => write!(f, "({} != {})", expected, found),
             VmErrorKind::InvalidOpcode(op) => write!(f, "(0x{:02X})", op),
-            VmErrorKind::RuntimeError(msg) => write!(f, "({})", msg),
             _ => Ok(()),
         }
     }
@@ -214,7 +208,6 @@ impl AotErrorKind {
     pub fn key(&self) -> &'static str {
         match self {
             AotErrorKind::Generic => "error.aot.generic",
-            AotErrorKind::Message(_) => "error.aot.message",
             AotErrorKind::EmptyModule => "error.aot.empty_module",
             AotErrorKind::UnsupportedOpcode(_) => "error.aot.unsupported_opcode",
             AotErrorKind::UnsupportedConstant(_) => "error.aot.unsupported_constant",
@@ -226,7 +219,6 @@ impl std::fmt::Display for AotErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.key())?;
         match self {
-            AotErrorKind::Message(msg) => write!(f, "({})", msg),
             AotErrorKind::UnsupportedOpcode(op) => write!(f, "(0x{:02X})", op),
             AotErrorKind::UnsupportedConstant(idx) => write!(f, "({})", idx),
             _ => Ok(()),
@@ -272,18 +264,13 @@ impl FormatErrorKind {
         match self {
             FormatErrorKind::InvalidHeader => "error.format.invalid_header",
             FormatErrorKind::Truncated => "error.format.truncated",
-            FormatErrorKind::Text(_) => "error.format.text",
         }
     }
 }
 
 impl std::fmt::Display for FormatErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.key())?;
-        match self {
-            FormatErrorKind::Text(msg) => write!(f, "({})", msg),
-            _ => Ok(()),
-        }
+        write!(f, "{}", self.key())
     }
 }
 

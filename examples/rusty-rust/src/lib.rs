@@ -39,7 +39,7 @@ impl NyarFrontend for MiniRustFrontend {
         let output = builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+            .map_err(|_| NyarError::Parse())
     }
 
     fn lower(&self, _ast: &RustRoot) -> Result<IKunTree, NyarError> {

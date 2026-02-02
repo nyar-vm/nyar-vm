@@ -32,13 +32,13 @@ impl NyarFrontend for MiniPythonFrontend {
 
         let green_node = parse_result
             .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+            .map_err(|_| NyarError::Compile())?;
 
         let builder = oak_python::PythonBuilder::new(&config);
         let source_text = oak_core::source::SourceText::new(source.to_string());
         let ast = builder
             .build_root(green_node, &source_text)
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+            .map_err(|_| NyarError::Compile())?;
         Ok(ast)
     }
 

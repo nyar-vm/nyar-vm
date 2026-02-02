@@ -19,7 +19,7 @@ impl nyar_types::NyarFrontend for RustyGoFrontend {
         let mut session = ParseSession::new(1024);
         let output = builder.build(&source_text, &[], &mut session);
 
-        output.result.map_err(|e| nyar_types::NyarError::Compile(format!("Build error: {:?}", e)))
+        output.result.map_err(|_| nyar_types::NyarError::Compile())
     }
 
     fn lower(&self, ast: &GoRoot) -> Result<IKunTree, nyar_types::NyarError> {

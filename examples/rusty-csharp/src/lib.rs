@@ -39,7 +39,7 @@ impl NyarFrontend for MiniCSharpFrontend {
         let output = builder.build(&source_text, &[], &mut session);
         output
             .result
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+            .map_err(|_| NyarError::Compile())
     }
 
     /// 编译到 Chomsky UIR (IKunTree)

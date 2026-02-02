@@ -71,7 +71,7 @@ impl NyarDriver {
         use chomsky_extract::Backend;
         let artifact = backend
             .generate(&tree)
-            .map_err(|e| NyarError::Compile(format!("Backend error: {:?}", e)))?;
+            .map_err(|_| NyarError::Compile())?;
 
         match artifact {
             chomsky_extract::BackendArtifact::Binary(bytes) => {
@@ -79,7 +79,7 @@ impl NyarDriver {
                 println!("AOT: Compiled to native at {:?}", output_path);
                 Ok(())
             }
-            _ => Err(NyarError::Compile("Unexpected artifact type".to_string())),
+            _ => Err(NyarError::Compile()),
         }
     }
 
@@ -97,9 +97,7 @@ impl NyarDriver {
         // TODO: 使用 nyar-aot 进行 WASM 生成
         println!("AOT: Compiling IKunTree to WASM at {:?}", output_path);
 
-        Err(NyarError::Compile(
-            "AOT compilation to WASM backend is not yet fully integrated".to_string(),
-        ))
+        Err(NyarError::Compile())
     }
 
     /// 编译到 JVM .class 文件
@@ -122,13 +120,13 @@ impl NyarDriver {
         let adapter = GaiaJvmAdapter;
         let artifact = adapter
             .generate(&tree)
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+            .map_err(|_| NyarError::Compile())?;
 
         match artifact {
             chomsky::extract::BackendArtifact::Binary(bytes) => {
                 fs::write(output_path, bytes).map_err(NyarError::from)?;
             }
-            _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
+            _ => return Err(NyarError::Compile()),
         }
 
         Ok(())
@@ -142,6 +140,6 @@ impl NyarDriver {
         _source_path: &Path,
         _output_path: &Path,
     ) -> Result<(), NyarError> {
-        Err(NyarError::Compile("JVM feature is not enabled".to_string()))
+        Err(NyarError::Compile())
     }
 }
