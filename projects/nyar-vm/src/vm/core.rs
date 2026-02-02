@@ -123,7 +123,7 @@ impl NyarVM {
             nyar_types::VmErrorKind::DivisionByZero => 0x100E,
             nyar_types::VmErrorKind::InvalidContinuation => 0x100F,
             nyar_types::VmErrorKind::FutureFailed => 0x1010,
-            nyar_types::VmErrorKind::RuntimeError => 0x1011,
+            nyar_types::VmErrorKind::RuntimeError(_) => 0x1011,
         };
         let location = self.frames.last().map(|f| f.location).unwrap_or_default();
         NyarError::new(code, nyar_types::NyarErrorKind::Vm(kind), location)

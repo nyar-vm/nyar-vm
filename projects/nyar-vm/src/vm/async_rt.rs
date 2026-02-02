@@ -95,7 +95,7 @@ impl<'a> VmFuture<'a> {
             match self.vm.execute_step() {
                 Ok(Some(())) => {}
                 Ok(None) => return Poll::Ready(Ok(self.vm.pop().unwrap_or(crate::vm::value::Value::null()))),
-                Err(e) if matches!(e.kind, nyar_types::VmErrorKind::YieldAsync) => {
+                Err(e) if matches!(*e.kind, nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync)) => {
                     // Instruction requested a yield
                     cx.waker().wake_by_ref();
                     return Poll::Pending;

@@ -81,6 +81,7 @@ impl NyarVM {
                 closure: Value::null(),
                 module_idx: handler_module_idx,
                 chunk_idx: Some(handler.catch_chunk),
+                location: Default::default(),
             };
             self.frames.push(new_frame);
             
@@ -257,11 +258,11 @@ impl NyarVM {
                         }
                         Ok(None) => {
                             // VM halted
-                            break;
+                            break Ok(None);
                         }
                         Err(e) => {
                             // Check if it's a yield
-                            match e.kind {
+                            match *e.kind {
                             nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync) => {
                                 // The task yielded.
                                 std::thread::yield_now();

@@ -256,7 +256,7 @@ unsafe fn drive_until(vm: &mut NyarVM, target_depth: usize) -> Value {
         match vm.execute_step() {
             Ok(Some(())) => continue,
             Ok(None) => break,
-            Err(e) if matches!(e.kind, nyar_types::VmErrorKind::YieldAsync) => {
+            Err(e) if matches!(*e.kind, nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync)) => {
                 std::thread::yield_now();
                 continue;
             }

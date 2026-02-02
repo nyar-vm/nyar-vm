@@ -33,7 +33,8 @@ impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static> NyarAot<A> {
             .generate(&tree)
             .map_err(|e| {
                 VmError::new(
-                    nyar_types::VmErrorKind::RuntimeError(format!("Backend error: {:?}", e)),
+                    0x2001,
+                    nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::RuntimeError(format!("Backend error: {:?}", e))),
                     Default::default(),
                 )
             })?;

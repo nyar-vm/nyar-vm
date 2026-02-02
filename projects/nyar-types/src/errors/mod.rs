@@ -1,5 +1,7 @@
 use crate::{QualifiedName, SourceLocation};
 
+pub type VmError = NyarError;
+
 #[derive(Debug)]
 pub struct NyarError {
     pub code: u32,
@@ -36,7 +38,7 @@ pub enum VmErrorKind {
     DivisionByZero,
     InvalidContinuation,
     FutureFailed,
-    RuntimeError,
+    RuntimeError(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,7 +137,7 @@ impl VmErrorKind {
             VmErrorKind::DivisionByZero => "error.vm.division_by_zero",
             VmErrorKind::InvalidContinuation => "error.vm.invalid_continuation",
             VmErrorKind::FutureFailed => "error.vm.future_failed",
-            VmErrorKind::RuntimeError => "error.vm.runtime_error",
+            VmErrorKind::RuntimeError(_) => "error.vm.runtime_error",
         }
     }
 }
@@ -165,7 +167,7 @@ impl std::fmt::Display for VmErrorKind {
             VmErrorKind::DivisionByZero => write!(f, "Division by zero"),
             VmErrorKind::InvalidContinuation => write!(f, "Invalid continuation"),
             VmErrorKind::FutureFailed => write!(f, "Future failed"),
-            VmErrorKind::RuntimeError => write!(f, "Runtime error"),
+            VmErrorKind::RuntimeError(msg) => write!(f, "Runtime error: {}", msg),
         }
     }
 }

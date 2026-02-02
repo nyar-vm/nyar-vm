@@ -3,6 +3,7 @@ use nyar_gc::{MarkContext, Trace};
 use oak_core::Language;
 use serde::{Deserialize, Serialize};
 
+pub mod errors;
 pub use crate::errors::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -82,15 +82,17 @@ impl NyarVM {
         module_idx: usize,
         chunk_idx: usize,
     ) -> Result<std::sync::Arc<Vec<Instruction>>, NyarError> {
-        let module = self.modules.get_mut(module_idx).ok_or_else(|| {
-            self.error(nyar_types::VmErrorKind::ModuleNotFound(module_idx))
-        })?;
-        let chunk = module.chunks.get_mut(chunk_idx).ok_or_else(|| {
-            self.error(nyar_types::VmErrorKind::ChunkNotFound {
+        if module_idx >= self.modules.len() {
+            return Err(self.error(nyar_types::VmErrorKind::ModuleNotFound(module_idx)));
+        }
+        let module = &mut self.modules[module_idx];
+        if chunk_idx >= module.chunks.len() {
+            return Err(self.error(nyar_types::VmErrorKind::ChunkNotFound {
                 module: module_idx,
                 chunk: chunk_idx,
-            })
-        })?;
+            }));
+        }
+        let chunk = &mut module.chunks[chunk_idx];
 
         if let Some(ref instrs) = chunk.decoded {
             return Ok(instrs.clone());
@@ -147,7 +149,7 @@ impl NyarVM {
                 // 2: OSR Exit (return to interpreter)
                 Ok(None)
             } else {
-                Err(self.error(nyar_types::VmErrorKind::RuntimeError))
+                Err(self.error(nyar_types::VmErrorKind::RuntimeError("Generic runtime error".to_string())))
             }
         }
     }
