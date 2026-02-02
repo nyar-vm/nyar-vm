@@ -1,5 +1,5 @@
 use crate::bytecode::instruction::Instruction;
-use crate::bytecode::format::{Chunk, Constant as NyarConstant, ExportInfo, NyarModule};
+use crate::bytecode::format::{Chunk, ClassInfo, Constant as NyarConstant, ExportInfo, NyarModule};
 use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
 use nyar_types::{NyarError, QualifiedName};
@@ -90,12 +90,34 @@ impl NyarBackend {
                         code.push(Opcode::Return as u8);
                     }
                     "class" => {
-                        if let IKunTree::StringConstant(_class_name) = &args[0] {
+                        if let IKunTree::StringConstant(class_name) = &args[0] {
+                            let mut fields = Vec::new();
                             if let IKunTree::Seq(members) = &args[1] {
                                 for member in members {
+                                    if let IKunTree::Extension(ext_name, ext_args) = member {
+                                        if ext_name == "field" {
+                                            if let IKunTree::StringConstant(field_name) = &ext_args[0] {
+                                                fields.push(field_name.clone());
+                                            }
+                                        }
+                                    }
                                     self.lower_tree(member)?;
                                 }
                             }
+                            self.add_class(class_name.clone(), fields);
+                        }
+                    }
+                    "new" => {
+                        if let IKunTree::StringConstant(class_name) = &args[0] {
+                            let qn = QualifiedName::from(class_name.as_str());
+                            let idx = self.module.classes.iter().position(|c| c.name == qn).map(|i| i as u16).unwrap_or(0);
+
+                            if let IKunTree::Seq(params) = &args[1] {
+                                for param in params {
+                                    code.extend(self.lower_tree(param)?);
+                                }
+                            }
+                            code.extend_from_slice(&Instruction::NewObject(idx).encode());
                         }
                     }
                     "method" => {
@@ -144,6 +166,17 @@ impl NyarBackend {
         } else {
             let idx = self.module.constants.len() as u16;
             self.module.constants.push(c);
+            idx
+        }
+    }
+
+    fn add_class(&mut self, name: String, fields: Vec<String>) -> u16 {
+        let qn = QualifiedName::from(name.as_str());
+        if let Some(pos) = self.module.classes.iter().position(|x| x.name == qn) {
+            pos as u16
+        } else {
+            let idx = self.module.classes.len() as u16;
+            self.module.classes.push(ClassInfo { name: qn, fields });
             idx
         }
     }

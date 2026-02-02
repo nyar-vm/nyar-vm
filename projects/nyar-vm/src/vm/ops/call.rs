@@ -258,10 +258,11 @@ impl NyarVM {
         let (instrs, locals_count, c_module_idx, c_chunk_idx) =
             if let Some(closure) = callee.try_as_closure() {
                 let chunk_idx = closure.func;
-                let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
+                let module_idx = closure.module_idx;
+                let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
                 let locals_count =
-                    self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
-                (instrs, locals_count, closure.module_idx, chunk_idx)
+                    self.modules[module_idx].chunks[chunk_idx].locals as usize;
+                (instrs, locals_count, module_idx, chunk_idx)
             } else {
                 return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x16))); // Opcode for TAIL_CALL
             };

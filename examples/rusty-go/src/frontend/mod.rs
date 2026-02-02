@@ -29,20 +29,42 @@ impl nyar_types::NyarFrontend for RustyGoFrontend {
         for decl in &ast.declarations {
             match decl {
                 ast::Declaration::Function(func) => {
+                    let mut params = vec![];
+                    for p in &func.params {
+                        params.push(p.name.clone());
+                    }
                     let body = self.lower_block(&func.body)?;
 
                     // 为 main 函数创建导出
                     if func.name == "main" {
                         items.push(IKunTree::Export(
                             "main".to_string(),
-                            Box::new(IKunTree::Lambda(vec![], Box::new(body))),
+                            Box::new(IKunTree::Lambda(params, Box::new(body))),
                         ));
                     } else {
                         items.push(IKunTree::Export(
                             func.name.clone(),
-                            Box::new(IKunTree::Lambda(vec![], Box::new(body))),
+                            Box::new(IKunTree::Lambda(params, Box::new(body))),
                         ));
                     }
+                }
+                ast::Declaration::Variable(var) => {
+                    let val = if let Some(v) = &var.value {
+                        self.lower_expression(v)?
+                    } else {
+                        IKunTree::Constant(0)
+                    };
+                    items.push(IKunTree::Export(
+                        var.name.clone(),
+                        Box::new(val),
+                    ));
+                }
+                ast::Declaration::Const(c) => {
+                    let val = self.lower_expression(&c.value)?;
+                    items.push(IKunTree::Export(
+                        c.name.clone(),
+                        Box::new(val),
+                    ));
                 }
                 _ => {}
             }
