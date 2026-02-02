@@ -31,13 +31,14 @@ impl NyarFrontend for RustyGoFrontend {
 
     fn parse(&self, source: &str) -> Result<GoRoot, NyarError> {
         use oak_core::Builder;
-        let builder = GoBuilder::new(GoLanguage::default());
+        let config = GoLanguage::default();
+        let builder = GoBuilder::new(&config);
         let source_text = oak_core::source::SourceText::new(source.to_string());
         let mut cache = oak_core::parser::session::ParseSession::<GoLanguage>::default();
         let output = builder.build(&source_text, &[], &mut cache);
         output
             .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &GoRoot) -> Result<IKunTree, NyarError> {

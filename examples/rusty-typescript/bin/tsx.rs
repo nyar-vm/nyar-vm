@@ -1,5 +1,5 @@
 use clap::Parser;
-use mini_typescript::MiniTypescriptFrontend;
+use rusty_typescript::MiniTypescriptFrontend;
 use nyar_vm::NyarDriver;
 use std::path::PathBuf;
 

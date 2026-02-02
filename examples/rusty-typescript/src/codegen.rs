@@ -215,7 +215,7 @@ impl NyarTranslator {
                                                         {
                                                             imports_info.push(ImportInfo {
                                                                 provider: source.clone(),
-                                                                symbol: symbol_name.clone(),
+                                                                symbol: symbol_name.clone().into(),
                                                             });
                                                             break;
                                                         }
@@ -224,7 +224,7 @@ impl NyarTranslator {
                                             } else {
                                                 imports_info.push(ImportInfo {
                                                     provider: source.clone(),
-                                                    symbol: "*".to_string(),
+                                                    symbol: "*".to_string().into(),
                                                 });
                                             }
                                             break;
@@ -253,7 +253,7 @@ impl NyarTranslator {
                                                                 body,
                                                             ));
                                                             exports_info.push(ExportInfo {
-                                                                symbol: name.clone(),
+                                                                symbol: name.clone().into(),
                                                                 chunk_idx: (functions.len()) as u16,
                                                             });
                                                             is_function = true;

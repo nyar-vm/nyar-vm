@@ -72,7 +72,7 @@ impl RustyGoRuntime {
         if let Some(export) = self.vm.modules[module_idx]
             .exports
             .iter()
-            .find(|e| e.symbol == "main")
+            .find(|e| e.symbol == "main".into())
             .or(self.vm.modules[module_idx].exports.first())
         {
             match self.vm.execute(module_idx, export.chunk_idx as usize) {
@@ -103,8 +103,8 @@ impl RustyGoRuntime {
                             let chunk_idx = module.chunks.len() as u16;
                             module.chunks.push(chunk);
                             module.exports.push(ExportInfo {
-                                symbol: name.clone(),
-                                chunk_idx,
+                                symbol: name.clone().into(),
+                                chunk_idx: chunk_idx as u16,
                             });
                         }
                     }

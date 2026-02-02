@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "mini_typescript"
+name = "rusty_typescript"
 path = "src/lib.rs"
 crate-type = ["lib", "cdylib"]
 

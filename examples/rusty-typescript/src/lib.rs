@@ -11,8 +11,8 @@ pub mod project;
 pub mod type_system;
 
 use chomsky_cost;
-use chomsky_emit::{Backend, GaiaEmitter};
-use chomsky_extract::IKunExtractor;
+use chomsky_emit::GaiaEmitter;
+use chomsky_extract::{Backend, IKunExtractor};
 use chomsky_source::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree};
 use nyar_aot::NyarAot;
@@ -119,7 +119,7 @@ impl NyarFrontend for MiniTypescriptFrontend {
 
         output
             .result
-            .map_err(|e| NyarError::Parse(format!("{:?}", e)))
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
     fn lower(&self, ast: &TypeScriptRoot) -> Result<IKunTree, NyarError> {
@@ -158,6 +158,7 @@ impl<'a> UirConverter<'a> {
     }
 
     fn convert_statement(&mut self, stmt: ast::Statement) -> Id {
+        let span = stmt.span();
         match stmt {
             ast::Statement::VariableDeclaration(var) => {
                 let loc = self.to_loc(var.span.into());
@@ -192,7 +193,7 @@ impl<'a> UirConverter<'a> {
                 self.builder.extension("export", vec![inner], loc)
             }
             ast::Statement::ReturnStatement(value) => {
-                let loc = self.to_loc(stmt.span().into());
+                let loc = self.to_loc(span.into());
                 let val = if let Some(expr) = value {
                     self.convert_expression(expr)
                 } else {
@@ -201,7 +202,6 @@ impl<'a> UirConverter<'a> {
                 self.builder.return_(val, loc)
             }
             ast::Statement::ClassDeclaration(class) => {
-                println!("Lowering class: {}", class.name);
                 let loc = self.to_loc(class.span.into());
                 let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
                 if let Some(ext) = class.extends {
@@ -210,7 +210,6 @@ impl<'a> UirConverter<'a> {
                     args.push(self.builder.constant(0, loc.clone())); // No base class
                 }
 
-                println!("Class body size: {}", class.body.len());
                 for member in class.body {
                     match member {
                         ast::ClassMember::Property {
@@ -219,7 +218,6 @@ impl<'a> UirConverter<'a> {
                             initializer,
                             span,
                         } => {
-                            println!("  Property: {}", name);
                             let mloc = self.to_loc(span.into());
                             let init_id = if let Some(expr) = initializer {
                                 self.convert_expression(expr)
