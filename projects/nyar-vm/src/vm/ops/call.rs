@@ -51,10 +51,11 @@ impl NyarVM {
         let (instrs, locals_count, c_module_idx, c_chunk_idx) =
             if let Some(closure) = callee.try_as_closure() {
                 let chunk_idx = closure.func;
-                let instrs = self.get_chunk_instructions(closure.module_idx, chunk_idx)?;
+                let module_idx = closure.module_idx;
+                let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
                 let locals_count =
-                    self.modules[closure.module_idx].chunks[chunk_idx].locals as usize;
-                (instrs, locals_count, closure.module_idx, chunk_idx)
+                    self.modules[module_idx].chunks[chunk_idx].locals as usize;
+                (instrs, locals_count, module_idx, chunk_idx)
             } else {
                 return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x13))); // Opcode for CALL_CLOSURE
             };
@@ -90,7 +91,8 @@ impl NyarVM {
             _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(name_idx as usize))),
         };
 
-        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&name) {
+        let symbol = self.symbol_table.get(&name).copied();
+        if let Some((m_idx, chunk_idx)) = symbol {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
             let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 

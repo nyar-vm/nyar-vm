@@ -14,29 +14,13 @@ impl nyar_types::NyarFrontend for RustyGoFrontend {
 
     fn parse(&self, source: &str) -> Result<GoRoot, nyar_types::NyarError> {
         let language = GoLanguage::default();
-        let lexer = GoLexer::new(&language);
-        let mut session = ParseSession::<GoLanguage>::new(16);
-
+        let builder = GoBuilder::new(&language);
         let source_text = SourceText::new(source.to_string());
-
-        let lex_output = lexer.lex(&source_text, &[], &mut session);
-        let tokens = lex_output
-            .result
-            .map_err(|e| nyar_types::NyarError::Compile(format!("Lex error: {:?}", e)))?;
-        session.set_lex_output(oak_core::LexOutput::<GoLanguage> {
-            result: Ok(tokens),
-            diagnostics: lex_output.diagnostics,
-        });
-
-        let parser = GoParser::new(&language);
-        let parse_output = Parser::<GoLanguage>::parse(&parser, &source_text, &[], &mut session);
-
-        let green_node = parse_output
-            .result
-            .map_err(|e| nyar_types::NyarError::Compile(format!("Parse error: {:?}", e)))?;
         
-        // 临时解决方案：返回一个空的 GoRoot，因为 GoRoot 不支持从 RedNode::from
-        Ok(GoRoot { package: None, imports: vec![], declarations: vec![] })
+        let mut cache = oak_core::NoCache::default();
+        let output = builder.build(&source_text, &[], &mut cache);
+
+        output.result.map_err(|e| nyar_types::NyarError::Compile(format!("Build error: {:?}", e)))
     }
 
     fn lower(&self, ast: &GoRoot) -> Result<IKunTree, nyar_types::NyarError> {
@@ -84,6 +68,13 @@ impl RustyGoFrontend {
     fn lower_statement(&self, stmt: &ast::Statement) -> Result<IKunTree, nyar_types::NyarError> {
         match stmt {
             ast::Statement::Expression(expr) => self.lower_expression(expr),
+            ast::Statement::Assignment { target, value, .. } => {
+                let val = self.lower_expression(value)?;
+                Ok(IKunTree::StateUpdate(
+                    Box::new(IKunTree::Symbol(target.clone())),
+                    Box::new(val),
+                ))
+            }
             ast::Statement::Return { value, .. } => {
                 let val = if let Some(v) = value {
                     self.lower_expression(v)?
@@ -92,12 +83,50 @@ impl RustyGoFrontend {
                 };
                 Ok(IKunTree::Return(Box::new(val)))
             }
-            _ => Ok(IKunTree::Seq(vec![])), // 简化处理其他语句
+            ast::Statement::If { condition, then_block, else_block, .. } => {
+                let cond = self.lower_expression(condition)?;
+                let then = self.lower_block(then_block)?;
+                let els = if let Some(eb) = else_block {
+                    self.lower_block(eb)?
+                } else {
+                    IKunTree::Seq(vec![])
+                };
+                Ok(IKunTree::Choice(Box::new(cond), Box::new(then), Box::new(els)))
+            }
+            ast::Statement::For { condition, body, .. } => {
+                let cond = if let Some(c) = condition {
+                    self.lower_expression(c)?
+                } else {
+                    IKunTree::BooleanConstant(true)
+                };
+                let b = self.lower_block(body)?;
+                Ok(IKunTree::Repeat(Box::new(cond), Box::new(b)))
+            }
         }
     }
 
     fn lower_expression(&self, expr: &ast::Expression) -> Result<IKunTree, nyar_types::NyarError> {
         match expr {
+            ast::Expression::Identifier { name, .. } => Ok(IKunTree::Symbol(name.clone())),
+            ast::Expression::Literal { value, .. } => {
+                if value.starts_with('"') && value.ends_with('"') {
+                    let s = &value[1..value.len() - 1];
+                    Ok(IKunTree::StringConstant(s.to_string()))
+                } else if value == "true" {
+                    Ok(IKunTree::BooleanConstant(true))
+                } else if value == "false" {
+                    Ok(IKunTree::BooleanConstant(false))
+                } else if let Ok(n) = value.parse::<i64>() {
+                    Ok(IKunTree::Constant(n))
+                } else {
+                    Ok(IKunTree::StringConstant(value.clone()))
+                }
+            }
+            ast::Expression::Binary { left, op, right, .. } => {
+                let l = self.lower_expression(left)?;
+                let r = self.lower_expression(right)?;
+                Ok(IKunTree::Extension(op.clone(), vec![l, r]))
+            }
             ast::Expression::Call { func, args, .. } => {
                 let func_name = self.get_expression_name(func);
                 if func_name == "printf" || func_name == "println" {
@@ -111,19 +140,14 @@ impl RustyGoFrontend {
                         arguments,
                     ))
                 } else {
-                    Ok(IKunTree::Seq(vec![]))
+                    let f = self.lower_expression(func)?;
+                    let mut arguments = vec![];
+                    for arg in args {
+                        arguments.push(self.lower_expression(arg)?);
+                    }
+                    Ok(IKunTree::Apply(Box::new(f), arguments))
                 }
             }
-            ast::Expression::Literal { value, .. } => {
-                // 移除引号 if it's a string literal
-                let s = if value.starts_with('"') && value.ends_with('"') {
-                    &value[1..value.len() - 1]
-                } else {
-                    value
-                };
-                Ok(IKunTree::StringConstant(s.to_string()))
-            }
-            _ => Ok(IKunTree::Seq(vec![])),
         }
     }
 

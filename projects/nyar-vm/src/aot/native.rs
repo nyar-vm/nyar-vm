@@ -139,6 +139,33 @@ impl NativeBackend {
                     if let Some(val) = args.first() {
                         self.emit_tree(val, builder, data)?;
                     }
+                } else if name == "call" {
+                    // 处理 codegen 产生的 extension("call", [target, name, args])
+                    // 检查是否是 System.Console.WriteLine
+                    let is_write_line = if args.len() >= 3 {
+                        if let (IKunTree::Symbol(target_name), IKunTree::Symbol(method_name)) = (&args[0], &args[1]) {
+                            target_name == "System.Console" && method_name == "WriteLine"
+                        } else {
+                            false
+                        }
+                    } else if args.len() >= 2 {
+                        if let IKunTree::Symbol(method_name) = &args[0] {
+                            method_name == "System.Console.WriteLine"
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    if is_write_line {
+                        let args_list = args.last().unwrap();
+                        if let IKunTree::Seq(actual_args) = args_list {
+                            if let Some(IKunTree::StringConstant(s)) = actual_args.first() {
+                                self.emit_write_line(s, builder, data)?;
+                            }
+                        }
+                    }
                 }
             }
             IKunTree::Seq(items) => {

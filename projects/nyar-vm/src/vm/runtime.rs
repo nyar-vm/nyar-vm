@@ -156,11 +156,15 @@ pub unsafe extern "win64" fn nyar_vm_set_element(vm_ptr: *mut NyarVM, obj: Value
 pub unsafe extern "win64" fn nyar_vm_new_object(vm_ptr: *mut NyarVM, class_idx: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    let class_info = &vm.modules[module_idx].classes[class_idx as usize];
+    let module = &vm.modules[module_idx];
+    if (class_idx as usize) >= module.classes.len() {
+        return Value::null();
+    }
+    let class_info = &module.classes[class_idx as usize];
     let fields_count = class_info.fields.len();
     let mut fields = Vec::with_capacity(fields_count);
     for _ in 0..fields_count {
-        fields.push(vm.pop().unwrap());
+        fields.push(vm.pop().unwrap_or(Value::null()));
     }
     fields.reverse();
     let obj = Value::object(class_idx as u16, fields, &vm.gc);
