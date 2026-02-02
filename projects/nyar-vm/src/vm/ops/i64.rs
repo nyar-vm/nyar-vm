@@ -189,16 +189,16 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_i64_to_f32_s(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
-        let r = (v.as_int() as i64) as f32 as f64;
-        self.push(Value::float(r))?;
+        let r = (v.as_int() as i64) as f32;
+        self.push(Value::f32(r))?;
         Ok(None)
     }
 
     #[inline(always)]
     pub fn execute_i64_to_f32_u(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
-        let r = (v.as_int() as u64) as f32 as f64;
-        self.push(Value::float(r))?;
+        let r = (v.as_int() as u64) as f32;
+        self.push(Value::f32(r))?;
         Ok(None)
     }
 

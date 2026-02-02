@@ -185,6 +185,58 @@ impl NyarVM {
                     self.push(Value::null())?;
                 }
             }
+            "sub" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        self.push(Value::int(l - r))?;
+                    } else if receiver.is_f32() && rhs.is_f32() {
+                        self.push(Value::f32(receiver.as_f32() - rhs.as_f32()))?;
+                    } else if receiver.is_f64() && rhs.is_f64() {
+                        self.push(Value::float(receiver.as_f64() - rhs.as_f64()))?;
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "mul" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        self.push(Value::int(l * r))?;
+                    } else if receiver.is_f32() && rhs.is_f32() {
+                        self.push(Value::f32(receiver.as_f32() * rhs.as_f32()))?;
+                    } else if receiver.is_f64() && rhs.is_f64() {
+                        self.push(Value::float(receiver.as_f64() * rhs.as_f64()))?;
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "div" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        if r != 0 {
+                            self.push(Value::int(l / r))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
+                    } else if receiver.is_f32() && rhs.is_f32() {
+                        self.push(Value::f32(receiver.as_f32() / rhs.as_f32()))?;
+                    } else if receiver.is_f64() && rhs.is_f64() {
+                        self.push(Value::float(receiver.as_f64() / rhs.as_f64()))?;
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
             _ => {
                 self.push(Value::null())?;
             }
