@@ -26,22 +26,22 @@ Nyar VM 的核心设计目标是“语义降级而非模拟”。我们并不是
 
 ### 核心演示语言
 
-- [Mini C](mini-c.md): 经典的过程序编程语言。
-- [Mini C#](mini-csharp.md): 现代的面向对象语言。
-- [Mini Java](mini-java.md): 企业级面向对象语言。
-- [Rusty Kotlin](mini-kotlin.md): 简洁的现代多范式语言。
-- [Mini Lua](mini-lua.md): 嵌入式动态脚本语言。
-- [Mini Python](mini-python.md): 广泛使用的动态语言。
-- [Mini TypeScript](mini-typescript.md): 带类型的 JavaScript 超集。
+- [Rusty C](rusty-c.md): 经典的过程序编程语言。
+- [Rusty C#](rusty-csharp.md): 现代的面向对象语言。
+- [Rusty Java](rusty-java.md): 企业级面向对象语言。
+- [Rusty Kotlin](rusty-kotlin.md): 简洁的现代多范式语言。
+- [Rusty Lua](rusty-lua.md): 嵌入式动态脚本语言。
+- [Rusty Python](rusty-python.md): 广泛使用的动态语言。
+- [Rusty TypeScript](rusty-typescript.md): 带类型的 JavaScript 超集。
 
 ### 实验性/开发中语言
 
-- [Mini Rust](mini-rust.md): 现代系统编程语言。
-- [Mini Go](mini-go.md): 云原生并发语言。
-- [Mini Ruby](mini-ruby.md): 灵动的面向对象语言。
-- [Mini Swift](mini-swift.md): 安全高效的系统语言。
-- [Mini PHP](mini-php.md): Web 开发脚本语言。
-- [Mini Zig](mini-zig.md): 现代 C 替代者。
+- [Rusty Rust](rusty-rust.md): 现代系统编程语言。
+- [Rusty Go](rusty-go.md): 云原生并发语言。
+- [Rusty Ruby](rusty-ruby.md): 灵动的面向对象语言。
+- [Rusty Swift](rusty-swift.md): 安全高效的系统语言。
+- [Rusty PHP](rusty-php.md): Web 开发脚本语言。
+- [Rusty Zig](rusty-zig.md): 现代 C 替代者。
 - [其他语言](others.md): 包含 Elixir, Dart, Mojo, Julia, Cobol, Tcl, Scheme, Prolog, Nim, Nix 等。
 
 ## 职责说明

@@ -1,6 +1,6 @@
-# Mini Rust
+# Rusty Rust
 
-Mini Rust 展示了如何在 Nyar VM 中实现现代系统级语言的核心语义，特别是其独特的特征系统（Trait System）和所有权模型。
+Rusty Rust 展示了如何在 Nyar VM 中实现现代系统级语言的核心语义，特别是其独特的特征系统（Trait System）和所有权模型。
 
 ## 核心特性
 
