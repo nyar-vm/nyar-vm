@@ -266,7 +266,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
 
                 Some(self.ctx.builder().branch(cond, then_id, else_id, loc))
             }
-            Statement::While { test, body, .. } => {
+            Statement::While { test, body, orelse } => {
                 let cond = self.convert_expression(test);
                 let mut body_items = Vec::new();
                 for s in body {
@@ -275,13 +275,22 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
-                Some(self.ctx.builder().while_loop(cond, body_id, loc))
+                
+                let mut else_items = Vec::new();
+                for s in orelse {
+                    if let Some(node) = self.convert_statement(s) {
+                        else_items.push(node);
+                    }
+                }
+                let else_id = self.ctx.builder().block(else_items, loc.clone());
+                
+                Some(self.ctx.builder().extension("while_else", vec![cond, body_id, else_id], loc))
             }
             Statement::For {
                 target,
                 iter,
                 body,
-                ..
+                orelse,
             } => {
                 let target_node = self.convert_expression(target);
                 let iter_node = self.convert_expression(iter);
@@ -292,13 +301,22 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
-                Some(self.ctx.builder().extension("foreach", vec![target_node, iter_node, body_id], loc))
+                
+                let mut else_items = Vec::new();
+                for s in orelse {
+                    if let Some(node) = self.convert_statement(s) {
+                        else_items.push(node);
+                    }
+                }
+                let else_id = self.ctx.builder().block(else_items, loc.clone());
+                
+                Some(self.ctx.builder().extension("foreach_else", vec![target_node, iter_node, body_id, else_id], loc))
             }
             Statement::AsyncFor {
                 target,
                 iter,
                 body,
-                ..
+                orelse,
             } => {
                 let target_node = self.convert_expression(target);
                 let iter_node = self.convert_expression(iter);
@@ -309,7 +327,16 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
-                Some(self.ctx.builder().extension("async_foreach", vec![target_node, iter_node, body_id], loc))
+                
+                let mut else_items = Vec::new();
+                for s in orelse {
+                    if let Some(node) = self.convert_statement(s) {
+                        else_items.push(node);
+                    }
+                }
+                let else_id = self.ctx.builder().block(else_items, loc.clone());
+                
+                Some(self.ctx.builder().extension("async_foreach_else", vec![target_node, iter_node, body_id, else_id], loc))
             }
             Statement::Pass => Some(self.ctx.builder().constant(0, loc)),
             Statement::Break => Some(self.ctx.builder().extension("break", vec![], loc)),
@@ -654,21 +681,31 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 ops,
                 comparators,
             } => {
-                let left_node = self.convert_expression(left);
-                let right_node = self.convert_expression(&comparators[0]);
-                let op_name = match ops[0] {
-                    oak_python::ast::CompareOperator::Eq => "eq",
-                    oak_python::ast::CompareOperator::NotEq => "noteq",
-                    oak_python::ast::CompareOperator::Lt => "lt",
-                    oak_python::ast::CompareOperator::LtE => "lte",
-                    oak_python::ast::CompareOperator::Gt => "gt",
-                    oak_python::ast::CompareOperator::GtE => "gte",
-                    oak_python::ast::CompareOperator::Is => "is",
-                    oak_python::ast::CompareOperator::IsNot => "isnot",
-                    oak_python::ast::CompareOperator::In => "in",
-                    oak_python::ast::CompareOperator::NotIn => "notin",
-                };
-                self.ctx.builder().binary_op(op_name, left_node, right_node, loc)
+                let mut current_left = self.convert_expression(left);
+                let mut comparisons = Vec::new();
+                for (op, right) in ops.iter().zip(comparators.iter()) {
+                    let right_node = self.convert_expression(right);
+                    let op_name = match op {
+                        oak_python::ast::CompareOperator::Eq => "eq",
+                        oak_python::ast::CompareOperator::NotEq => "noteq",
+                        oak_python::ast::CompareOperator::Lt => "lt",
+                        oak_python::ast::CompareOperator::LtE => "lte",
+                        oak_python::ast::CompareOperator::Gt => "gt",
+                        oak_python::ast::CompareOperator::GtE => "gte",
+                        oak_python::ast::CompareOperator::Is => "is",
+                        oak_python::ast::CompareOperator::IsNot => "isnot",
+                        oak_python::ast::CompareOperator::In => "in",
+                        oak_python::ast::CompareOperator::NotIn => "notin",
+                    };
+                    comparisons.push(self.ctx.builder().binary_op(op_name, current_left, right_node, loc.clone()));
+                    current_left = right_node;
+                }
+
+                if comparisons.len() == 1 {
+                    comparisons.remove(0)
+                } else {
+                    self.ctx.builder().extension("and", comparisons, loc)
+                }
             }
             Expression::Call { func, args, keywords } => {
                 let mut arguments = args.iter().map(|arg| self.convert_expression(arg)).collect::<Vec<_>>();

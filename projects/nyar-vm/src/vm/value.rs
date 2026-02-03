@@ -266,7 +266,8 @@ impl Value {
             | ValueTag::Function
             | ValueTag::TraitObject
             | ValueTag::QualifiedName
-            | ValueTag::Effect => unsafe {
+            | ValueTag::Effect
+            | ValueTag::Bytes => unsafe {
                 let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
                 gc.write_barrier_ptr(header_ptr);
             },
@@ -316,6 +317,24 @@ impl Value {
 
     pub fn pointer_payload(&self) -> *mut u8 {
         self.payload() as *mut u8
+    }
+
+    pub fn as_raw_ptr(&self) -> *mut u8 {
+        if self.is_float() {
+            return std::ptr::null_mut();
+        }
+        match self.tag() {
+            ValueTag::Int => self.as_int() as *mut u8,
+            ValueTag::String => unsafe {
+                let ptr = self.payload() as *const GcBox<String>;
+                (*ptr).data.as_ptr() as *mut u8
+            }
+            ValueTag::Bytes => unsafe {
+                let ptr = self.payload() as *const GcBox<Bytes>;
+                (*ptr).data.data.as_ptr() as *mut u8
+            }
+            _ => std::ptr::null_mut(),
+        }
     }
 
     fn encode(tag: ValueTag, payload: u64) -> Self {

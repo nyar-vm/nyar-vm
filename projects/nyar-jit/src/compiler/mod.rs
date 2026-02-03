@@ -761,8 +761,35 @@ impl NyarJit {
                     stack.push(id);
                 }
                 Instruction::TailCall(idx, argc) => {
-                    if let Some(val_id) = stack.pop() {
-                        intents.push(IKun::Extension("tail_call".to_string(), vec![val_id]));
+                    let mut args = Vec::new();
+                    for _ in 0..argc {
+                        if let Some(arg) = stack.pop() {
+                            args.push(arg);
+                        }
+                    }
+                    args.reverse();
+                    let const_id = intents.len();
+                    intents.push(IKun::Constant(idx as i64));
+                    intents.push(IKun::Extension("tail_call".to_string(), {
+                        let mut v = vec![const_id];
+                        v.extend(args);
+                        v
+                    }));
+                }
+                Instruction::TailCallClosure(argc) => {
+                    let mut args = Vec::new();
+                    for _ in 0..argc {
+                        if let Some(arg) = stack.pop() {
+                            args.push(arg);
+                        }
+                    }
+                    args.reverse();
+                    if let Some(closure_id) = stack.pop() {
+                        intents.push(IKun::Extension("tail_call_closure".to_string(), {
+                            let mut v = vec![closure_id];
+                            v.extend(args);
+                            v
+                        }));
                     }
                 }
                 Instruction::CallClosure(argc) => {

@@ -387,13 +387,14 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let type_params = self.builder.seq(type_param_ids, loc.clone());
 
                 let ty = self.convert_type_annotation(alias.ty, loc.clone());
+                let is_declare = self.builder.bool(alias.is_declare, loc.clone());
                 self.builder.extension(
                     "type_alias",
                     vec![
                         name,
                         type_params,
                         ty,
-                        self.builder.bool(alias.is_declare, loc.clone()),
+                        is_declare,
                     ],
                     loc,
                 )
@@ -1032,13 +1033,13 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 self.builder.extension("keyof", vec![inner_id], loc)
             }
             ast::TypeAnnotation::Conditional {
-                check,
-                extends,
+                check_type,
+                extends_type,
                 true_type,
                 false_type,
             } => {
-                let check_id = self.convert_type_annotation(*check, loc.clone());
-                let extends_id = self.convert_type_annotation(*extends, loc.clone());
+                let check_id = self.convert_type_annotation(*check_type, loc.clone());
+                let extends_id = self.convert_type_annotation(*extends_type, loc.clone());
                 let true_id = self.convert_type_annotation(*true_type, loc.clone());
                 let false_id = self.convert_type_annotation(*false_type, loc.clone());
                 self.builder.extension(

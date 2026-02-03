@@ -4,6 +4,7 @@ use rusty_c::optimizer::RustyCOptimizer;
 use rusty_c::runtime::RustyCRuntime;
 use nyar_types::NyarError;
 use nyar_vm::NyarDriver;
+use oak_core::source::Source;
 use oak_repl::{HandleResult, OakRepl, ReplError, ReplHandler};
 use oak_vfs::{DiskVfs, Vfs};
 

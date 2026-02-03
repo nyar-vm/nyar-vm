@@ -10,6 +10,7 @@ members = [
     "examples/rusty-csharp",
     "examples/rusty-tcl",
     "examples/rusty-swift",
+    "examples/rusty-julia",
 ]
 default-members = [
     "projects/nyar-types",

@@ -1,5 +1,5 @@
-use mini_java::tagless::{expr, Neg, SetContext, SoundContext};
-use mini_java::visitor::{sound, Cat, Dog, Fish};
+use rusty_java::tagless::{expr, Neg, SetContext, SoundContext};
+use rusty_java::visitor::{sound, Cat, Dog, Fish};
 
 #[test]
 fn test_visitor() {

@@ -1,7 +1,8 @@
 use chomsky_uir::{IKun, Id};
-use nyar_types::{IKunTree, NyarContext, NyarError, NyarFrontend};
-use oak_core::SourceText;
-use oak_tcl::{TclBuilder, TclCommand, TclItem, TclLanguage, TclRoot, TclWord};
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use oak_core::{Builder, SourceText};
+use oak_tcl::ast::{TclCommand, TclItem, TclRoot, TclWord};
+use oak_tcl::{TclBuilder, TclLanguage};
 use oak_vfs::Vfs;
 
 pub struct RustyTclFrontend {
@@ -83,7 +84,8 @@ impl NyarFrontend for RustyTclFrontend {
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &TclRoot, ctx: &mut NyarContext<V>) -> Id {
+        println!("DEBUG: lowering TclRoot with {} items", ast.items.len());
         let items: Vec<Id> = ast.items.iter().map(|item| self.lower_item(item, ctx)).collect();
-        ctx.egraph.add(IKun::Seq(items))
+        ctx.egraph.add(IKun::Module("main".to_string(), items))
     }
 }

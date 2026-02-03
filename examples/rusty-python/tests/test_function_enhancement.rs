@@ -16,7 +16,7 @@ def foo(a, b=1, c=2):
     
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    assert!(root_id != chomsky_uir::Id::from(0));
+    assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered function definition with defaults");
 }
 
@@ -35,7 +35,7 @@ def bar(a, *args, **kwargs):
     
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    assert!(root_id != chomsky_uir::Id::from(0));
+    assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered function definition with *args and **kwargs");
 }
 
@@ -53,7 +53,7 @@ foo(1, b=2, c=3)
     
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    assert!(root_id != chomsky_uir::Id::from(0));
+    assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered function call with keywords");
 }
 
@@ -71,6 +71,6 @@ foo(*[1, 2], **{'c': 3})
     
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    assert!(root_id != chomsky_uir::Id::from(0));
+    assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered function call with *args and **kwargs");
 }

@@ -66,3 +66,30 @@ with a() as x, b() as y:
     assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered AST with with-statement");
 }
+
+#[test]
+fn test_backend_lowering() {
+    let source = r#"
+try:
+    assert x > 0
+    with open("test.txt") as f:
+        raise Exception("error")
+except Exception as e:
+    print(e)
+finally:
+    print("done")
+"#;
+    let frontend = RustyPythonFrontend::new();
+    let ast = frontend.parse(source).expect("Failed to parse source");
+    
+    let vfs = oak_vfs::MemoryVfs::new();
+    let ikun = frontend.lower(&ast, &vfs).expect("Failed to lower to IKunTree");
+    
+    use nyar_vm::bytecode::compiler::NyarBackend;
+    let mut backend = NyarBackend::new();
+    let _code = backend.lower_tree(&ikun).expect("Failed to lower to bytecode");
+    let module = backend.finish();
+    
+    assert!(!module.chunks.is_empty());
+    println!("Successfully lowered to Nyar bytecode ({} chunks)", module.chunks.len());
+}

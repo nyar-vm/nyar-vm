@@ -427,8 +427,7 @@ impl NyarVM {
         args.reverse();
 
         // Check in FFI registry
-        let ffi_func = self.ffi.get(&name);
-        if let Some(func) = ffi_func {
+        if let Some(func) = self.ffi.get(&name) {
             // Validate signature if present
             if let Some(sig) = func.signature() {
                 if sig.params.len() != args.len() {
@@ -460,8 +459,7 @@ impl NyarVM {
         } else if name.starts_with("$intrinsic:") {
             // Check if it's an encoded intrinsic call
             if let Ok(id) = name.trim_start_matches("$intrinsic:").parse::<u32>() {
-                let intrinsic_func = self.ffi.get_intrinsic(id);
-                if let Some(func) = intrinsic_func {
+                if let Some(func) = self.ffi.get_intrinsic(id) {
                     let result = func.call(self, args)?;
                     self.push(result)?;
                 } else {

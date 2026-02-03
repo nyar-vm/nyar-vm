@@ -1,5 +1,6 @@
 use crate::vm::core::NyarVM;
 use crate::vm::NyarError;
+use crate::vm::value::Value;
 
 impl NyarVM {
     #[inline(always)]
@@ -63,7 +64,11 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_return(&mut self) -> Result<Option<usize>, NyarError> {
-        let val = self.pop()?;
+        let val = if self.sp > 0 {
+            self.pop()?
+        } else {
+            Value::null()
+        };
         self.frames.pop();
         while let Some(hf) = self.handler_stack.last() {
             if hf.frame_depth > self.frames.len() {

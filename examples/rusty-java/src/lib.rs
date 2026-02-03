@@ -3,7 +3,7 @@
 //!
 //! 提供 Mini Java 的词法分析、语法分析和 Nyar 翻译功能。
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend, NyarContext};
+pub use nyar_types::{IKunTree, NyarError, NyarFrontend, NyarContext};
 use oak_core::{builder::Builder, source::SourceText};
 use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
 use oak_vfs::Vfs;

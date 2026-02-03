@@ -296,29 +296,16 @@ impl FFIFunction for NativeMathRand {
 
 pub struct NativeMemAlloc;
 impl FFIFunction for NativeMemAlloc {
-    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let size = args[0].as_int() as usize;
-        // In a real VM, this would allocate from a pool or GC heap
-        // For now, we simulate with a raw allocation or similar
-        let layout = std::alloc::Layout::from_size_align(size, 8).map_err(|_| NyarError::RuntimeError("Invalid layout".to_string()))?;
-        unsafe {
-            let ptr = std::alloc::alloc(layout);
-            Ok(Value::int(ptr as i64))
-        }
+        Ok(Value::bytes(vec![0u8; size], &vm.gc))
     }
 }
 
 pub struct NativeMemFree;
 impl FFIFunction for NativeMemFree {
-    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let ptr = args[0].as_int() as *mut u8;
-        let size = args.get(1).map(|v| v.as_int() as usize).unwrap_or(0);
-        if !ptr.is_null() && size > 0 {
-            let layout = std::alloc::Layout::from_size_align(size, 8).map_err(|_| NyarError::RuntimeError("Invalid layout".to_string()))?;
-            unsafe {
-                std::alloc::dealloc(ptr, layout);
-            }
-        }
+    fn call(&self, _vm: &mut NyarVM, _args: Vec<Value>) -> FFIResult {
+        // Nyar uses GC for memory management, explicit free is a no-op for managed objects.
         Ok(Value::null())
     }
 }
@@ -326,13 +313,21 @@ impl FFIFunction for NativeMemFree {
 pub struct NativeMemRealloc;
 impl FFIFunction for NativeMemRealloc {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let ptr = args[0].as_int() as *mut u8;
-        let old_size = args[1].as_int() as usize;
+        let val = args[0];
         let new_size = args[2].as_int() as usize;
-        let layout = std::alloc::Layout::from_size_align(old_size, 8).map_err(|_| NyarError::RuntimeError("Invalid layout".to_string()))?;
-        unsafe {
-            let new_ptr = std::alloc::realloc(ptr, layout, new_size);
-            Ok(Value::int(new_ptr as i64))
+        if let Some(bytes) = val.try_as_bytes_mut() {
+            bytes.data.resize(new_size, 0);
+            Ok(val)
+        } else {
+            // Fallback for raw pointers (deprecated)
+            let ptr = args[0].as_int() as *mut u8;
+            let old_size = args[1].as_int() as usize;
+            let layout = std::alloc::Layout::from_size_align(old_size, 8)
+                .map_err(|_| NyarError::RuntimeError("Invalid layout".to_string()))?;
+            unsafe {
+                let new_ptr = std::alloc::realloc(ptr, layout, new_size);
+                Ok(Value::int(new_ptr as i64))
+            }
         }
     }
 }
@@ -340,11 +335,13 @@ impl FFIFunction for NativeMemRealloc {
 pub struct NativeMemSet;
 impl FFIFunction for NativeMemSet {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let ptr = args[0].as_int() as *mut u8;
+        let ptr = args[0].as_raw_ptr();
         let val = args[1].as_int() as u8;
         let count = args[2].as_int() as usize;
-        unsafe {
-            std::ptr::write_bytes(ptr, val, count);
+        if !ptr.is_null() {
+            unsafe {
+                std::ptr::write_bytes(ptr, val, count);
+            }
         }
         Ok(Value::null())
     }
@@ -353,11 +350,13 @@ impl FFIFunction for NativeMemSet {
 pub struct NativeMemCopy;
 impl FFIFunction for NativeMemCopy {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let dest = args[0].as_int() as *mut u8;
-        let src = args[1].as_int() as *const u8;
+        let dest = args[0].as_raw_ptr();
+        let src = args[1].as_raw_ptr();
         let count = args[2].as_int() as usize;
-        unsafe {
-            std::ptr::copy_nonoverlapping(src, dest, count);
+        if !dest.is_null() && !src.is_null() {
+            unsafe {
+                std::ptr::copy_nonoverlapping(src, dest, count);
+            }
         }
         Ok(Value::null())
     }
@@ -366,7 +365,16 @@ impl FFIFunction for NativeMemCopy {
 pub struct NativeStrLen;
 impl FFIFunction for NativeStrLen {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let ptr = args[0].as_int() as *const i8;
+        if let Some(s) = args[0].try_as_str() {
+            return Ok(Value::int(s.len() as i64));
+        }
+        if let Some(b) = args[0].try_as_bytes() {
+            return Ok(Value::int(b.data.len() as i64));
+        }
+        let ptr = args[0].as_raw_ptr() as *const i8;
+        if ptr.is_null() {
+            return Ok(Value::int(0));
+        }
         unsafe {
             let mut len = 0;
             while *ptr.add(len) != 0 {
@@ -380,8 +388,11 @@ impl FFIFunction for NativeStrLen {
 pub struct NativeStrCmp;
 impl FFIFunction for NativeStrCmp {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let s1 = args[0].as_int() as *const i8;
-        let s2 = args[1].as_int() as *const i8;
+        let s1 = args[0].as_raw_ptr() as *const i8;
+        let s2 = args[1].as_raw_ptr() as *const i8;
+        if s1.is_null() || s2.is_null() {
+            return Ok(Value::int(if s1 == s2 { 0 } else { 1 }));
+        }
         unsafe {
             let mut i = 0;
             while *s1.add(i) != 0 && *s1.add(i) == *s2.add(i) {

@@ -50,8 +50,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let frontend = RustyCFrontend::new();
     let driver = NyarDriver::new();
+    let frontend = RustyCFrontend::new();
+    let vfs = driver.default_vfs();
+    let input_uri = input_path.to_str().expect("Invalid input path");
 
     if compile_only {
         let output_path = match output_file {
@@ -62,14 +64,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 p
             }
         };
+        let output_uri = output_path.to_str().expect("Invalid output path");
         println!(
-            "正在编译 Rusty C 文件: {:?} -> {:?}",
-            input_path, output_path
+            "正在编译 Rusty C 文件: {} -> {}",
+            input_uri, output_uri
         );
-        driver.compile_to_native(&frontend, &input_path, &output_path)?;
+        driver.compile_to_native(&frontend, &vfs, input_uri, output_uri)?;
     } else {
-        println!("正在运行 Rusty C 文件: {:?}", input_path);
-        driver.run_source(&frontend, &input_path)?;
+        println!("正在运行 Rusty C 文件: {}", input_uri);
+        driver.run_source(&frontend, &vfs, input_uri)?;
     }
 
     Ok(())

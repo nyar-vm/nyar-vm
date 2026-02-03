@@ -502,10 +502,10 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
             }
             Expression::Assignment { left, op, right } => {
                 let mut val = self.convert_expr(right)?;
-                if op != "=" {
+                if op != "=" && !op.is_empty() {
                     // 处理复合赋值，如 x += y 转换为 x = x + y
                     let left_val = self.convert_expr(left)?;
-                    let base_op = &op[..op.len() - 1];
+                    let base_op = &op[..op.len().saturating_sub(1)];
                     let op_name = match base_op {
                         "+" => "add",
                         "-" => "sub",

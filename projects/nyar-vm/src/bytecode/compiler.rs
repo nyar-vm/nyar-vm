@@ -92,21 +92,20 @@ impl NyarBackend {
                 for item in items {
                     module_code.extend(self.lower_tree(item)?);
                 }
-                if !module_code.is_empty() {
-                    if module_code.last() != Some(&(Opcode::Return as u8)) {
-                        module_code.push(Opcode::Return as u8);
-                    }
-                    self.module.chunks.push(Chunk {
-                        locals: 32,
-                        upvalues: 0,
-                        max_stack: 64,
-                        code: module_code,
-                        handlers: vec![],
-                        lines: vec![],
-                        decoded: None,
-                        hotness: std::sync::atomic::AtomicU32::new(0),
-                    });
+                println!("DEBUG: Module code generated: {:02X?}", module_code);
+                if module_code.last() != Some(&(Opcode::Return as u8)) {
+                    module_code.push(Opcode::Return as u8);
                 }
+                self.module.chunks.push(Chunk {
+                    locals: 32,
+                    upvalues: 0,
+                    max_stack: 64,
+                    code: module_code,
+                    handlers: vec![],
+                    lines: vec![],
+                    decoded: None,
+                    hotness: std::sync::atomic::AtomicU32::new(0),
+                });
             }
             IKunTree::Export(name, body) => {
                 if let IKunTree::Lambda(_params, body) = &**body {
@@ -253,7 +252,8 @@ impl NyarBackend {
                     "class" => {
                         if let IKunTree::StringConstant(class_name) = &args[0] {
                             let mut fields = Vec::new();
-                            if let IKunTree::Seq(members) = &args[1] {
+                            let members_idx = args.len() - 1;
+                            if let IKunTree::Seq(members) = &args[members_idx] {
                                 for member in members {
                                     if let IKunTree::Extension(ext_name, ext_args) = member {
                                         if ext_name == "field" {
@@ -514,6 +514,205 @@ impl NyarBackend {
                         let instr = Instruction::JumpIfTrue(off).encode();
                         code[placeholder..placeholder + instr.len()].copy_from_slice(&instr);
                     }
+                    "raise" => {
+                        // [exc, cause]
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        let name_idx =
+                            self.add_constant(Constant::String("python:raise".to_string()));
+                        code.extend_from_slice(&Instruction::Perform(name_idx, 2).encode());
+                    }
+                    "assert" => {
+                        // [test, msg]
+                        code.extend(self.lower_tree(&args[0])?);
+                        let placeholder = code.len();
+                        code.extend_from_slice(&Instruction::JumpIfTrue(0).encode());
+                        code.extend(self.lower_tree(&args[1])?);
+                        let name_idx = self
+                            .add_constant(Constant::String("python:AssertionError".to_string()));
+                        code.extend_from_slice(&Instruction::Perform(name_idx, 1).encode());
+                        let end_pos = code.len();
+                        let off = (end_pos as isize - placeholder as isize) as i16;
+                        let instr = Instruction::JumpIfTrue(off).encode();
+                        code[placeholder..placeholder + instr.len()].copy_from_slice(&instr);
+                    }
+                    "try" => {
+                        // [body, handlers, orelse, finalbody]
+                        let body = &args[0];
+                        let handlers = &args[1];
+                        let orelse = &args[2];
+                        let finalbody = &args[3];
+
+                        // 1. If there's a finalbody, wrap everything in a finally-like handler
+                        let has_finally = !matches!(&finalbody, IKunTree::Seq(items) if items.is_empty()) && !matches!(&finalbody, IKunTree::Extension(name, _) if name == "none");
+                        
+                        if has_finally {
+                            let mut finally_handler_code = Vec::new();
+                            // Finally handler catches everything, runs finalbody, then re-performs
+                            // Handler receives: [effect_obj, args_list, continuation]
+                            
+                            // Load effect_obj and args_list to re-perform later
+                            finally_handler_code.extend_from_slice(&Instruction::LoadLocal(0).encode());
+                            finally_handler_code.extend_from_slice(&Instruction::LoadLocal(1).encode());
+                            
+                            // Run finalbody
+                            finally_handler_code.extend(self.lower_tree(finalbody)?);
+                            
+                            // Re-perform
+                            // We need an instruction that can perform with dynamic name and args list
+                            // Nyar VM might need a dynamic perform. For now, let's assume it's python:raise
+                            let re_perform_idx = self.add_constant(Constant::String("python:raise".to_string()));
+                            finally_handler_code.extend_from_slice(&Instruction::Perform(re_perform_idx, 2).encode());
+                            finally_handler_code.push(Opcode::Return as u8);
+
+                            let finally_chunk_idx = self.module.chunks.len() as u16;
+                            self.module.chunks.push(Chunk {
+                                locals: 3,
+                                upvalues: 0,
+                                max_stack: 64,
+                                code: finally_handler_code,
+                                handlers: vec![],
+                                lines: vec![],
+                                decoded: None,
+                                hotness: std::sync::atomic::AtomicU32::new(0),
+                            });
+                            code.extend_from_slice(&Instruction::WithHandler(finally_chunk_idx).encode());
+                        }
+
+                        // 2. Wrap body in except handler
+                        let mut except_handler_code = Vec::new();
+                        let raise_name_idx = self.add_constant(Constant::String("python:raise".to_string()));
+                        except_handler_code.extend_from_slice(&Instruction::MatchEffect(raise_name_idx).encode());
+                        
+                        let next_handler_placeholder = except_handler_code.len();
+                        except_handler_code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+
+                        // Match! [exc, cause] are on stack
+                        except_handler_code.extend(self.lower_tree(handlers)?);
+                        
+                        // If no except matched, re-perform
+                        let re_perform_idx = self.add_constant(Constant::String("python:raise".to_string()));
+                        except_handler_code.extend_from_slice(&Instruction::Perform(re_perform_idx, 2).encode());
+
+                        let handler_end = except_handler_code.len();
+                        let off = (handler_end as isize - next_handler_placeholder as isize) as i16;
+                        let instr = Instruction::JumpIfFalse(off).encode();
+                        except_handler_code[next_handler_placeholder..next_handler_placeholder + instr.len()].copy_from_slice(&instr);
+                        except_handler_code.push(Opcode::Return as u8);
+
+                        let except_chunk_idx = self.module.chunks.len() as u16;
+                        self.module.chunks.push(Chunk {
+                            locals: 3,
+                            upvalues: 0,
+                            max_stack: 64,
+                            code: except_handler_code,
+                            handlers: vec![],
+                            lines: vec![],
+                            decoded: None,
+                            hotness: std::sync::atomic::AtomicU32::new(0),
+                        });
+
+                        code.extend_from_slice(&Instruction::WithHandler(except_chunk_idx).encode());
+                        code.extend(self.lower_tree(body)?);
+                        code.extend(self.lower_tree(orelse)?);
+                        
+                        // End of WithHandler(except)
+                        code.push(Opcode::Pop as u8); // Pop the handler if finished normally? 
+                        // Actually WithHandler might need an explicit end or it ends with the scope.
+                        
+                        if has_finally {
+                            code.extend(self.lower_tree(finalbody)?);
+                        }
+                    }
+                    "except" => {
+                        // [type, name, body]
+                        // Currently on stack: [exc, cause]
+                        
+                        // 1. Check type if provided
+                        let has_type = !matches!(&args[0], IKunTree::Extension(name, _) if name == "none");
+                        let mut jump_placeholder = None;
+                        
+                        if has_type {
+                            code.extend_from_slice(&Instruction::Dup(1).encode()); // Dup exc
+                            code.extend(self.lower_tree(&args[0])?); // type
+                            code.extend_from_slice(&Instruction::InstanceOf(0).encode());
+                            
+                            let placeholder = code.len();
+                            code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                            jump_placeholder = Some(placeholder);
+                        }
+                        
+                        // 2. Assign name if present
+                        if let IKunTree::Symbol(name) = &args[1] {
+                             let name_idx = self.add_constant(Constant::String(name.clone()));
+                             code.extend_from_slice(&Instruction::Dup(1).encode()); // Dup exc
+                             code.extend_from_slice(&Instruction::StoreGlobal(name_idx).encode());
+                        }
+                        
+                        // 3. Execute body
+                        code.extend(self.lower_tree(&args[2])?);
+                        
+                        // 4. Return from handler (handled!)
+                        code.push(Opcode::Return as u8);
+
+                        if let Some(placeholder) = jump_placeholder {
+                            let end_pos = code.len();
+                            let off = (end_pos as isize - placeholder as isize) as i16;
+                            let instr = Instruction::JumpIfFalse(off).encode();
+                            code[placeholder..placeholder + instr.len()].copy_from_slice(&instr);
+                        }
+                    }
+                    "with" => {
+                        // [items, body]
+                        if let IKunTree::Seq(items) = &args[0] {
+                            for (i, item) in items.iter().enumerate() {
+                                if let IKunTree::Extension(name, item_args) = item {
+                                    if name == "with_item" {
+                                        // [ctx_expr, var_node]
+                                        code.extend(self.lower_tree(&item_args[0])?);
+                                        // Store context object in a temporary global/local for __exit__
+                                        let temp_name = format!("$with_ctx_{}", i);
+                                        let temp_idx = self.add_constant(Constant::String(temp_name));
+                                        code.extend_from_slice(&Instruction::Dup(0).encode());
+                                        code.extend_from_slice(&Instruction::StoreGlobal(temp_idx).encode());
+                                        
+                                        // Call __enter__
+                                        let enter_idx = self.add_constant(Constant::String("__enter__".to_string()));
+                                        code.extend_from_slice(&Instruction::InvokeMethod(enter_idx, 0).encode());
+                                        
+                                        if let IKunTree::Symbol(var_name) = &item_args[1] {
+                                            let var_idx = self.add_constant(Constant::String(var_name.clone()));
+                                            code.extend_from_slice(&Instruction::StoreGlobal(var_idx).encode());
+                                        } else {
+                                            code.extend_from_slice(&Instruction::Pop.encode());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Wrap body in a finally-like block to call __exit__
+                        let mut exit_code = Vec::new();
+                        if let IKunTree::Seq(items) = &args[0] {
+                            for (i, _) in items.iter().enumerate().rev() {
+                                let temp_name = format!("$with_ctx_{}", i);
+                                let temp_idx = self.add_constant(Constant::String(temp_name));
+                                exit_code.extend_from_slice(&Instruction::LoadGlobal(temp_idx).encode());
+                                let exit_idx = self.add_constant(Constant::String("__exit__".to_string()));
+                                // Call __exit__(None, None, None)
+                                exit_code.extend_from_slice(&Instruction::Push(self.add_constant(Constant::String("None".to_string()))).encode());
+                                exit_code.extend_from_slice(&Instruction::Push(self.add_constant(Constant::String("None".to_string()))).encode());
+                                exit_code.extend_from_slice(&Instruction::Push(self.add_constant(Constant::String("None".to_string()))).encode());
+                                exit_code.extend_from_slice(&Instruction::InvokeMethod(exit_idx, 3).encode());
+                                exit_code.extend_from_slice(&Instruction::Pop.encode());
+                            }
+                        }
+
+                        // For simplicity, we don't handle exceptions in 'with' perfectly yet,
+                        // but we run exit_code after body.
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend(exit_code);
+                    }
                     "choice" => {
                         // condition ? then : else
                         // args[0] = cond, args[1] = then, args[2] = else
@@ -644,11 +843,11 @@ impl NyarBackend {
                 }
                 if let IKunTree::Symbol(name) = &**callee {
                     let idx = self.add_constant(Constant::String(name.clone()));
-                    code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+                    code.extend_from_slice(&Instruction::TailCall(idx, args.len() as u8).encode());
                 } else {
                     code.extend(self.lower_tree(callee)?);
+                    code.extend_from_slice(&Instruction::TailCallClosure(args.len() as u8).encode());
                 }
-                code.extend_from_slice(&Instruction::TailCall(args.len() as u8).encode());
                 Ok(Some(code))
             }
             _ => Ok(None),
