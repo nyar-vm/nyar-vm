@@ -98,6 +98,38 @@ impl NyarBackend {
                     code.extend(self.lower_tree(item)?);
                 }
             }
+            IKunTree::Choice(cond, then_branch, else_branch) => {
+                // 1. Evaluate condition
+                code.extend(self.lower_tree(cond)?);
+                
+                // 2. Placeholder for JumpIfFalse to else_branch
+                let jump_false_placeholder = code.len();
+                code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                
+                // 3. Evaluate then_branch
+                let then_code = self.lower_tree(then_branch)?;
+                code.extend(then_code);
+                
+                // 4. Placeholder for Jump to end
+                let jump_end_placeholder = code.len();
+                code.extend_from_slice(&Instruction::Jump(0).encode());
+                
+                // 5. Fill JumpIfFalse target
+                let else_start = code.len();
+                let else_offset = (else_start as isize - jump_false_placeholder as isize) as i16;
+                let jump_false_instr = Instruction::JumpIfFalse(else_offset).encode();
+                code[jump_false_placeholder..jump_false_placeholder + jump_false_instr.len()].copy_from_slice(&jump_false_instr);
+                
+                // 6. Evaluate else_branch
+                let else_code = self.lower_tree(else_branch)?;
+                code.extend(else_code);
+                
+                // 7. Fill Jump target
+                let end_pos = code.len();
+                let end_offset = (end_pos as isize - jump_end_placeholder as isize) as i16;
+                let jump_end_instr = Instruction::Jump(end_offset).encode();
+                code[jump_end_placeholder..jump_end_placeholder + jump_end_instr.len()].copy_from_slice(&jump_end_instr);
+            }
             IKunTree::CrossLangCall {
                 language: lang,
                 module_path: group,
@@ -129,6 +161,13 @@ impl NyarBackend {
                         ("ops", "bit_not") | ("", "bit_not") => 17,
                         ("ops", "bit_shl") | ("", "bit_shl") => 18,
                         ("ops", "bit_shr") | ("", "bit_shr") => 19,
+                        ("mem", "free") => 20,
+                        ("mem", "realloc") => 21,
+                        ("mem", "set") => 22,
+                        ("mem", "copy") => 23,
+                        ("str", "len") => 24,
+                        ("str", "cmp") => 25,
+                        ("math", "rand") => 26,
                         _ => 0,
                     };
                     if id > 0 {
@@ -373,14 +412,42 @@ impl NyarBackend {
                         code.extend_from_slice(&Instruction::I64GeS.encode());
                     }
                     "and" => {
+                        // short-circuit: a && b
+                        // eval a
                         code.extend(self.lower_tree(&args[0])?);
+                        // dup
+                        code.extend_from_slice(&Instruction::Dup(0).encode());
+                        // jump if false to end
+                        let jump_placeholder = code.len();
+                        code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                        // pop (a)
+                        code.extend_from_slice(&Instruction::Pop.encode());
+                        // eval b
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64And.encode());
+                        // label end:
+                        let end_pos = code.len();
+                        let offset = (end_pos as isize - jump_placeholder as isize) as i16;
+                        let jump_instr = Instruction::JumpIfFalse(offset).encode();
+                        code[jump_placeholder..jump_placeholder + jump_instr.len()].copy_from_slice(&jump_instr);
                     }
                     "or" => {
+                        // short-circuit: a || b
+                        // eval a
                         code.extend(self.lower_tree(&args[0])?);
+                        // dup
+                        code.extend_from_slice(&Instruction::Dup(0).encode());
+                        // jump if true to end
+                        let jump_placeholder = code.len();
+                        code.extend_from_slice(&Instruction::JumpIfTrue(0).encode());
+                        // pop (a)
+                        code.extend_from_slice(&Instruction::Pop.encode());
+                        // eval b
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Or.encode());
+                        // label end:
+                        let end_pos = code.len();
+                        let offset = (end_pos as isize - jump_placeholder as isize) as i16;
+                        let jump_instr = Instruction::JumpIfTrue(offset).encode();
+                        code[jump_placeholder..jump_placeholder + jump_instr.len()].copy_from_slice(&jump_instr);
                     }
                     "bit_and" => {
                         code.extend(self.lower_tree(&args[0])?);

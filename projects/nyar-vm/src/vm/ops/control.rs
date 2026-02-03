@@ -30,6 +30,22 @@ impl NyarVM {
     }
 
     #[inline(always)]
+    pub fn execute_jump_if_true(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, NyarError> {
+        let v = self.pop()?;
+        if v.is_truthy() {
+            let target = (cur_ip as isize + off as isize) as usize;
+            if off < 0 {
+                if self.handle_backedge(target)? {
+                    return Ok(None);
+                }
+            }
+            Ok(Some(target))
+        } else {
+            Ok(Some(cur_ip + 1))
+        }
+    }
+
+    #[inline(always)]
     pub fn execute_jump_if_null(&mut self, off: i16, cur_ip: usize) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
         if v.is_null() {

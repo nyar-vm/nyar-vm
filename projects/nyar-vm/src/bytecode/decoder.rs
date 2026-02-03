@@ -267,6 +267,9 @@ impl<'a> Decoder<'a> {
             Opcode::JumpIfFalse => {
                 Instruction::JumpIfFalse(self.read_i16().ok_or(DecodeError::Truncated)?)
             }
+            Opcode::JumpIfTrue => {
+                Instruction::JumpIfTrue(self.read_i16().ok_or(DecodeError::Truncated)?)
+            }
             Opcode::JumpIfNull => {
                 Instruction::JumpIfNull(self.read_i16().ok_or(DecodeError::Truncated)?)
             }

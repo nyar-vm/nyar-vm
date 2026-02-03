@@ -45,6 +45,20 @@ pub enum NyarBuiltin {
     BitShl = 18,
     /// Bitwise Right Shift
     BitShr = 19,
+    /// Memory free
+    MemFree = 20,
+    /// Memory realloc
+    MemRealloc = 21,
+    /// Memory set
+    MemSet = 22,
+    /// Memory copy
+    MemCopy = 23,
+    /// String length
+    StrLen = 24,
+    /// String compare
+    StrCmp = 25,
+    /// Random number
+    MathRand = 26,
 }
 
 impl NyarVM {
@@ -65,6 +79,20 @@ impl NyarVM {
         self.ffi.register_intrinsic(NyarBuiltin::BitNot as u32, Box::new(crate::vm::ffi::NativeBitNot));
         self.ffi.register_intrinsic(NyarBuiltin::BitShl as u32, Box::new(crate::vm::ffi::NativeBitShl));
         self.ffi.register_intrinsic(NyarBuiltin::BitShr as u32, Box::new(crate::vm::ffi::NativeBitShr));
+        self.ffi.register_intrinsic(NyarBuiltin::Panic as u32, Box::new(crate::vm::ffi::NativePanic));
+        self.ffi.register_intrinsic(NyarBuiltin::MathSin as u32, Box::new(crate::vm::ffi::NativeMathSin));
+        self.ffi.register_intrinsic(NyarBuiltin::MathCos as u32, Box::new(crate::vm::ffi::NativeMathCos));
+        self.ffi.register_intrinsic(NyarBuiltin::MathTan as u32, Box::new(crate::vm::ffi::NativeMathTan));
+        self.ffi.register_intrinsic(NyarBuiltin::MathSqrt as u32, Box::new(crate::vm::ffi::NativeMathSqrt));
+        self.ffi.register_intrinsic(NyarBuiltin::MathAbs as u32, Box::new(crate::vm::ffi::NativeMathAbs));
+        self.ffi.register_intrinsic(NyarBuiltin::MathRand as u32, Box::new(crate::vm::ffi::NativeMathRand));
+        self.ffi.register_intrinsic(NyarBuiltin::MemAlloc as u32, Box::new(crate::vm::ffi::NativeMemAlloc));
+        self.ffi.register_intrinsic(NyarBuiltin::MemFree as u32, Box::new(crate::vm::ffi::NativeMemFree));
+        self.ffi.register_intrinsic(NyarBuiltin::MemRealloc as u32, Box::new(crate::vm::ffi::NativeMemRealloc));
+        self.ffi.register_intrinsic(NyarBuiltin::MemSet as u32, Box::new(crate::vm::ffi::NativeMemSet));
+        self.ffi.register_intrinsic(NyarBuiltin::MemCopy as u32, Box::new(crate::vm::ffi::NativeMemCopy));
+        self.ffi.register_intrinsic(NyarBuiltin::StrLen as u32, Box::new(crate::vm::ffi::NativeStrLen));
+        self.ffi.register_intrinsic(NyarBuiltin::StrCmp as u32, Box::new(crate::vm::ffi::NativeStrCmp));
     }
 
     fn register_java_builtins(&mut self) {

@@ -108,16 +108,24 @@ impl NyarTranslator {
         match item {
             Item::Namespace(ns) => Ok(Some(self.translate_namespace(ns, ctx)?)),
             Item::Using(using) => {
-                // TODO: 将 Using 指令映射到 Nyar 的导入系统
                 let loc = Loc::unknown();
                 let path_id = ctx.builder.symbol(&using.path, loc);
-                Ok(Some(ctx.builder.extension("import", vec![path_id], loc)))
+                let mut args = vec![path_id];
+                if let Some(alias) = &using.alias {
+                    args.push(ctx.builder.symbol(alias, loc));
+                }
+                if using.is_static {
+                    Ok(Some(ctx.builder.extension("import_static", args, loc)))
+                } else {
+                    Ok(Some(ctx.builder.extension("import", args, loc)))
+                }
             }
             Item::Class(class) => Ok(Some(self.translate_class(class, ctx)?)),
             Item::Interface(interface) => Ok(Some(self.translate_interface(interface, ctx)?)),
             Item::Struct(struct_decl) => Ok(Some(self.translate_struct(struct_decl, ctx)?)),
             Item::Enum(enum_decl) => Ok(Some(self.translate_enum(enum_decl, ctx)?)),
             Item::Record(record_decl) => Ok(Some(self.translate_record(record_decl, ctx)?)),
+            Item::Delegate(delegate) => Ok(Some(self.translate_delegate(delegate, ctx)?)),
         }
     }
 
@@ -127,6 +135,10 @@ impl NyarTranslator {
         ctx: &mut TranslatorContext,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut items = Vec::new();
+        // 处理特性的翻译（可选，取决于 Nyar 是否支持模块特性）
+        for attr in &ns.attributes {
+            // items.push(self.translate_attribute(attr, ctx)?);
+        }
         for item in &ns.items {
             if let Some(id) = self.translate_item(item, ctx)? {
                 items.push(id);
@@ -141,6 +153,12 @@ impl NyarTranslator {
         ctx: &mut TranslatorContext,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut members = Vec::new();
+        
+        // 处理特性的翻译
+        for attr in &class.attributes {
+            members.push(self.translate_attribute(attr, ctx)?);
+        }
+
         for member in &class.members {
             match member {
                 Member::Method(method) => {
@@ -163,11 +181,71 @@ impl NyarTranslator {
                 }
             }
         }
+        
+        let loc = Loc::unknown();
+        let mut class_id = ctx.builder.module(&class.name, members);
+
         // 处理泛型参数
         if !class.type_parameters.is_empty() {
-            // TODO: 在 Nyar 中支持泛型类
+            let mut type_params = Vec::new();
+            for tp in &class.type_parameters {
+                type_params.push(self.translate_type_parameter(tp, ctx)?);
+            }
+            // 在 Nyar 中，我们可以通过 extension 来标记这是一个泛型模块
+            class_id = ctx.builder.extension("generic_class", vec![class_id], loc);
         }
-        Ok(ctx.builder.module(&class.name, members))
+
+        // 处理修饰符
+        for modifier in &class.modifiers {
+            match modifier.as_str() {
+                "static" => class_id = ctx.builder.extension("static", vec![class_id], loc),
+                "abstract" => class_id = ctx.builder.extension("abstract", vec![class_id], loc),
+                "sealed" => class_id = ctx.builder.extension("sealed", vec![class_id], loc),
+                "public" | "private" | "protected" | "internal" => {
+                    class_id = ctx.builder.extension("visibility", vec![ctx.builder.symbol(modifier, loc), class_id], loc);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(class_id)
+    }
+
+    fn translate_attribute(
+        &self,
+        attr: &Attribute,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
+        let mut args = Vec::new();
+        for arg in &attr.arguments {
+            args.push(self.translate_expr(arg, ctx)?);
+        }
+        let attr_id = ctx.builder.symbol(&attr.name, loc);
+        Ok(ctx.builder.extension("attribute", vec![attr_id], loc))
+    }
+
+    fn translate_type_parameter(
+        &self,
+        tp: &TypeParameter,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
+        Ok(ctx.builder.symbol(&tp.name, loc))
+    }
+
+    fn translate_delegate(
+        &self,
+        delegate: &DelegateDeclaration,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
+        let mut params = Vec::new();
+        for p in &delegate.parameters {
+            params.push(p.name.clone());
+        }
+        let lambda = ctx.builder.lambda(params, ctx.builder.constant(0, loc), loc);
+        Ok(ctx.builder.export(&delegate.name, lambda, loc))
     }
 
     fn translate_interface(
@@ -238,8 +316,21 @@ impl NyarTranslator {
         ctx: &mut TranslatorContext,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
-        let name_id = ctx.builder.symbol(&field.name, loc);
-        Ok(ctx.builder.export(&field.name, name_id, loc))
+        let mut field_id = ctx.builder.symbol(&field.name, loc);
+
+        // 处理修饰符
+        for modifier in &field.modifiers {
+            match modifier.as_str() {
+                "static" => field_id = ctx.builder.extension("static", vec![field_id], loc),
+                "readonly" => field_id = ctx.builder.extension("readonly", vec![field_id], loc),
+                "public" | "private" | "protected" | "internal" => {
+                    field_id = ctx.builder.extension("visibility", vec![ctx.builder.symbol(modifier, loc), field_id], loc);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(ctx.builder.export(&field.name, field_id, loc))
     }
 
     fn translate_property(
@@ -321,6 +412,13 @@ impl NyarTranslator {
         ctx: &mut TranslatorContext,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
+        let mut stmts = Vec::new();
+
+        // 处理特性的翻译
+        for attr in &method.attributes {
+            stmts.push(self.translate_attribute(attr, ctx)?);
+        }
+
         let body_id = if let Some(body) = &method.body {
             self.translate_block(body, ctx)?
         } else {
@@ -331,12 +429,30 @@ impl NyarTranslator {
         for param in &method.parameters {
             params.push(param.name.clone());
         }
-        
+
         let mut lambda = ctx.builder.lambda(params, body_id, loc);
-        if method.is_async {
-            lambda = ctx.builder.extension("async", vec![lambda], loc);
+
+        // 处理泛型参数
+        if !method.type_parameters.is_empty() {
+            let mut type_params = Vec::new();
+            for tp in &method.type_parameters {
+                type_params.push(self.translate_type_parameter(tp, ctx)?);
+            }
+            lambda = ctx.builder.extension("generic_method", vec![lambda], loc);
         }
-        
+
+        // 处理修饰符
+        for modifier in &method.modifiers {
+            match modifier.as_str() {
+                "async" => lambda = ctx.builder.extension("async", vec![lambda], loc),
+                "static" => lambda = ctx.builder.extension("static", vec![lambda], loc),
+                "public" | "private" | "protected" | "internal" => {
+                    lambda = ctx.builder.extension("visibility", vec![ctx.builder.symbol(modifier, loc), lambda], loc);
+                }
+                _ => {}
+            }
+        }
+
         Ok(ctx.builder.export(&method.name, lambda, loc))
     }
 
@@ -512,6 +628,79 @@ impl NyarTranslator {
                 let expr_id = self.translate_expr(expr, ctx)?;
                 Ok(ctx.builder.extension("await", vec![expr_id], loc))
             }
+            Expression::Query(query) => self.translate_query(query, ctx),
+            _ => Ok(ctx.builder.constant(0, loc)),
         }
+    }
+
+    fn translate_query(
+        &self,
+        query: &QueryExpression,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
+        // LINQ 翻译通常将其转换为方法链调用
+        // 例如: from x in source where x > 0 select x
+        // 翻译为: source.Where(x => x > 0).Select(x => x)
+
+        let mut current_id = self.translate_expr(&query.from_clause.expression, ctx)?;
+        let _var_name = &query.from_clause.identifier;
+
+        // 处理查询主体
+        for clause in &query.body.clauses {
+            match clause {
+                QueryClause::Where(expr) => {
+                    let lambda_id = ctx.builder.lambda(
+                        vec![query.from_clause.identifier.clone()],
+                        self.translate_expr(expr, ctx)?,
+                        loc,
+                    );
+                    current_id = ctx.builder.call(
+                        ctx.builder.get_member(current_id, "Where", loc),
+                        vec![lambda_id],
+                        loc,
+                    );
+                }
+                QueryClause::Select(expr) => {
+                    let lambda_id = ctx.builder.lambda(
+                        vec![query.from_clause.identifier.clone()],
+                        self.translate_expr(expr, ctx)?,
+                        loc,
+                    );
+                    current_id = ctx.builder.call(
+                        ctx.builder.get_member(current_id, "Select", loc),
+                        vec![lambda_id],
+                        loc,
+                    );
+                }
+                _ => {
+                    // TODO: 其他 LINQ 子句
+                }
+            }
+        }
+
+        // 处理最终的 select 或 group
+        match &query.body.select_or_group {
+            SelectOrGroupClause::Select(expr) => {
+                let lambda_id = ctx.builder.lambda(
+                    vec![query.from_clause.identifier.clone()],
+                    self.translate_expr(expr, ctx)?,
+                    loc,
+                );
+                current_id = ctx.builder.call(
+                    ctx.builder.get_member(current_id, "Select", loc),
+                    vec![lambda_id],
+                    loc,
+                );
+            }
+            SelectOrGroupClause::Group {
+                expression: _,
+                by_expression: _,
+            } => {
+                // TODO: GroupBy
+            }
+        }
+
+        Ok(current_id)
     }
 }

@@ -28,6 +28,82 @@ pub enum ScriptType {
     Mapped(MappedType),
 }
 
+impl ScriptType {
+    /// Check if a type is assignable to another
+    pub fn is_assignable_to(&self, other: &ScriptType) -> bool {
+        if self == other {
+            return true;
+        }
+
+        match (self, other) {
+            // Any can be assigned to anything, and anything can be assigned to Any
+            (ScriptType::Atom(AtomType::Any), _) => true,
+            (_, ScriptType::Atom(AtomType::Any)) => true,
+
+            // Unknown can only be assigned to Any or Unknown
+            (ScriptType::Atom(AtomType::Unknown), ScriptType::Atom(AtomType::Any)) => true,
+            (ScriptType::Atom(AtomType::Unknown), ScriptType::Atom(AtomType::Unknown)) => true,
+            (ScriptType::Atom(AtomType::Unknown), _) => false,
+
+            // Never can be assigned to anything
+            (ScriptType::Atom(AtomType::Never), _) => true,
+
+            // Basic atom types
+            (ScriptType::Atom(a), ScriptType::Atom(b)) => a == b,
+
+            // Literal types can be assigned to their base types
+            (ScriptType::Literal(LiteralType::String(_)), ScriptType::Atom(AtomType::String)) => true,
+            (ScriptType::Literal(LiteralType::Number(_)), ScriptType::Atom(AtomType::Number)) => true,
+            (ScriptType::Literal(LiteralType::Boolean(_)), ScriptType::Atom(AtomType::Boolean)) => true,
+            (ScriptType::Literal(LiteralType::BigInt(_)), ScriptType::Atom(AtomType::BigInt)) => true,
+
+            // Array covariance (simplified)
+            (ScriptType::Array(inner_a), ScriptType::Array(inner_b)) => inner_a.is_assignable_to(inner_b),
+
+            // Union types: T can be assigned to A | B if T is assignable to A or T is assignable to B
+            (t, ScriptType::Union(variants)) => variants.iter().any(|v| t.is_assignable_to(v)),
+            // A | B can be assigned to T if both A and B are assignable to T
+            (ScriptType::Union(variants), t) => variants.iter().all(|v| v.is_assignable_to(t)),
+
+            // Intersection types: T can be assigned to A & B if T is assignable to A and T is assignable to B
+            (t, ScriptType::Intersection(variants)) => variants.iter().all(|v| t.is_assignable_to(v)),
+            // A & B can be assigned to T if A is assignable to T or B is assignable to T
+            (ScriptType::Intersection(variants), t) => variants.iter().any(|v| v.is_assignable_to(t)),
+
+            // Null safety
+            (ScriptType::Atom(AtomType::Null), _) => {
+                // In strict null checks, this would be false unless the target is also Null or Any
+                // For now, let's assume strict null checks are NOT always on for simplicity, 
+                // or handle it via Union types like T | null
+                false
+            }
+            (ScriptType::Atom(AtomType::Undefined), _) => false,
+
+            // Object types (structural typing)
+            (ScriptType::Object(obj_a), ScriptType::Object(obj_b)) => {
+                for prop_b in &obj_b.properties {
+                    let found = obj_a.properties.iter().find(|p| p.name == prop_b.name);
+                    match found {
+                        Some(prop_a) => {
+                            if !prop_a.ty.is_assignable_to(&prop_b.ty) {
+                                return false;
+                            }
+                        }
+                        None => {
+                            if !prop_b.optional {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
+            }
+
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AtomType {
     Any,
@@ -134,6 +210,31 @@ pub struct TypeRegistry {
     pub interfaces: HashMap<String, InterfaceDefinition>,
     pub aliases: HashMap<String, AliasDefinition>,
     pub enums: HashMap<String, EnumDefinition>,
+}
+
+impl TypeRegistry {
+    pub fn new() -> Self {
+        let mut registry = Self::default();
+        registry.register_builtins();
+        registry
+    }
+
+    fn register_builtins(&mut self) {
+        // Register built-in utility types as aliases or special markers
+        // In a real implementation, these would be handled by the type checker
+        // as they are often generic and mapped types.
+        
+        // Example: type Partial<T> = { [P in keyof T]?: T[P] };
+        // Here we just ensure the registry is aware of them if needed.
+    }
+
+    pub fn get_type(&self, name: &str) -> Option<ScriptType> {
+        if let Some(alias) = self.aliases.get(name) {
+            return Some(alias.ty.clone());
+        }
+        // Basic resolution...
+        None
+    }
 }
 
 #[derive(Debug, Clone)]

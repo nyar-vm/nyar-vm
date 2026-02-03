@@ -669,13 +669,19 @@ impl RustyCRuntime {
                         ("math", "abs") | ("", "abs") => 11,
                         ("math", "cos") | ("", "cos") => 12,
                         ("math", "tan") | ("", "tan") => 13,
-                        ("mem", "free") => 14,
-                        ("mem", "realloc") => 15,
-                        ("mem", "set") => 16,
-                        ("mem", "copy") => 17,
-                        ("str", "len") => 18,
-                        ("str", "cmp") => 19,
-                        ("math", "rand") => 20,
+                        ("ops", "bit_and") | ("", "bit_and") => 14,
+                        ("ops", "bit_or") | ("", "bit_or") => 15,
+                        ("ops", "bit_xor") | ("", "bit_xor") => 16,
+                        ("ops", "bit_not") | ("", "bit_not") => 17,
+                        ("ops", "bit_shl") | ("", "bit_shl") => 18,
+                        ("ops", "bit_shr") | ("", "bit_shr") => 19,
+                        ("mem", "free") => 20,
+                        ("mem", "realloc") => 21,
+                        ("mem", "set") => 22,
+                        ("mem", "copy") => 23,
+                        ("str", "len") => 24,
+                        ("str", "cmp") => 25,
+                        ("math", "rand") => 26,
                         _ => 0,
                     };
                     if id > 0 {
@@ -686,8 +692,15 @@ impl RustyCRuntime {
                 } else {
                     format!("{}:{}:{}", language, module_path, function_name)
                 };
-                let name_idx = module.constants.len() as u16;
-                module.constants.push(Constant::String(name));
+                
+                let name_constant = Constant::String(name);
+                let name_idx = if let Some(idx) = module.constants.iter().position(|c| c == &name_constant) {
+                    idx as u16
+                } else {
+                    let idx = module.constants.len() as u16;
+                    module.constants.push(name_constant);
+                    idx
+                };
                 insts.push(Instruction::FFICall(name_idx, arguments.len() as u8));
             }
             _ => {}

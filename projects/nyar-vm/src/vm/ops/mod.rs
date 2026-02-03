@@ -416,6 +416,7 @@ impl NyarVM {
             // Control operations
             Instruction::Jump(off) => self.execute_jump(off, cur_ip),
             Instruction::JumpIfFalse(off) => self.execute_jump_if_false(off, cur_ip),
+            Instruction::JumpIfTrue(off) => self.execute_jump_if_true(off, cur_ip),
             Instruction::JumpIfNull(off) => self.execute_jump_if_null(off, cur_ip),
             Instruction::Return => self.execute_return(),
             // Closure operations

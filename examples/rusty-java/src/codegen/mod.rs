@@ -268,12 +268,12 @@ impl JavaUirConverter<'_> {
                 } else {
                     self.builder.seq(vec![], self.loc())
                 };
-                Ok(self.builder.extension("if", vec![cond_id, then_id, else_id], self.loc()))
+                Ok(self.builder.branch(cond_id, then_id, else_id, self.loc()))
             }
             Statement::While { condition, body } => {
                 let cond_id = self.convert_expr(condition)?;
                 let body_id = self.convert_stmt(body)?;
-                Ok(self.builder.extension("while", vec![cond_id, body_id], self.loc()))
+                Ok(self.builder.while_loop(cond_id, body_id, self.loc()))
             }
             Statement::DoWhile { condition, body } => {
                 let cond_id = self.convert_expr(condition)?;
@@ -512,7 +512,8 @@ impl JavaUirConverter<'_> {
                     if call.name == "println" {
                         return Ok(self.builder.cross_lang_call(
                             "nyar",
-                            "std::io::println",
+                            "std::io",
+                            "println",
                             arg_ids,
                             self.loc(),
                         ));

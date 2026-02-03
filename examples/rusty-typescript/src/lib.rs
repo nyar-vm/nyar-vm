@@ -258,13 +258,21 @@ impl<'a> UirConverter<'a> {
                 self.builder.return_(val, loc)
             }
             ast::Statement::ClassDeclaration(class) => {
-                if class.is_declare {
-                    return self.builder.constant(0, self.to_loc(class.span.into()));
-                }
                 let loc = self.to_loc(class.span.into());
                 let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
-                if let Some(ast::TypeAnnotation::Identifier(ext)) = class.extends {
-                    args.push(self.builder.symbol(&ext, loc.clone()));
+
+                // Type parameters
+                args.push(self.builder.seq(
+                    class
+                        .type_params
+                        .into_iter()
+                        .map(|tp| self.convert_type_parameter(tp, loc.clone()))
+                        .collect(),
+                    loc.clone(),
+                ));
+
+                if let Some(ext) = class.extends {
+                    args.push(self.convert_type_annotation(ext, loc.clone()));
                 } else {
                     args.push(self.builder.constant(0, loc.clone())); // No base class
                 }
@@ -273,160 +281,83 @@ impl<'a> UirConverter<'a> {
                 args.push(self.builder.bool(class.is_abstract, loc.clone()));
                 let implements_ids: Vec<_> = class
                     .implements
-                    .iter()
-                    .map(|imp| {
-                        if let ast::TypeAnnotation::Identifier(name) = imp {
-                            self.builder.symbol(name, loc.clone())
-                        } else {
-                            self.builder.constant(0, loc.clone())
-                        }
-                    })
+                    .into_iter()
+                    .map(|imp| self.convert_type_annotation(imp, loc.clone()))
                     .collect();
                 args.push(self.builder.seq(implements_ids, loc.clone()));
 
                 for member in class.body {
-                    match member {
-                        ast::ClassMember::Property {
-                            name,
-                            ty,
-                            initializer,
-                            span,
-                            visibility,
-                            is_static,
-                            is_readonly,
-                            is_abstract,
-                            is_optional: _,
-                            decorators: _,
-                        } => {
-                            let mloc = self.to_loc(span.into());
-                            let init_id = if let Some(expr) = initializer {
-                                self.convert_expression(expr)
-                            } else {
-                                self.builder.constant(0, mloc.clone())
-                            };
-                            let ty_id = match ty {
-                                Some(ast::TypeAnnotation::Identifier(name)) => self.builder.symbol(&name, mloc.clone()),
-                                Some(ast::TypeAnnotation::Predefined(name)) => self.builder.symbol(&name, mloc.clone()),
-                                _ => self.builder.symbol("any", mloc.clone()),
-                            };
-                            let field_name = self.builder.symbol(&name, mloc.clone());
-                            let vis_str = match visibility {
-                                Some(ast::Visibility::Public) | None => "public",
-                                Some(ast::Visibility::Private) => "private",
-                                Some(ast::Visibility::Protected) => "protected",
-                            };
-                            let vis_id = self.builder.string(vis_str, mloc.clone());
-
-                            args.push(self.builder.extension(
-                                "gc.field",
-                                vec![
-                                    field_name,
-                                    ty_id,
-                                    init_id,
-                                    vis_id,
-                                    self.builder.bool(is_static, mloc.clone()),
-                                    self.builder.bool(is_readonly, mloc.clone()),
-                                    self.builder.bool(is_abstract, mloc.clone()),
-                                ],
-                                mloc,
-                            ));
-                        }
-                        ast::ClassMember::Method {
-                            name,
-                            params,
-                            body,
-                            span,
-                            visibility,
-                            is_static,
-                            is_abstract,
-                            is_getter,
-                            is_setter,
-                            decorators: _,
-                            type_params: _,
-                            return_type: _,
-                            is_optional: _,
-                        } => {
-                            let mloc = self.to_loc(span.into());
-                            let mut body_ids = Vec::new();
-                            for s in body {
-                                body_ids.push(self.convert_statement(s));
-                            }
-                            let param_names: Vec<String> = params.into_iter().map(|p| p.name).collect();
-                            let lambda = self.builder.function(&name, param_names, body_ids);
-                            let method_name = self.builder.symbol(&name, mloc.clone());
-                            let vis_str = match visibility {
-                                Some(ast::Visibility::Public) | None => "public",
-                                Some(ast::Visibility::Private) => "private",
-                                Some(ast::Visibility::Protected) => "protected",
-                            };
-                            let vis_id = self.builder.string(vis_str, mloc.clone());
-
-                            args.push(self.builder.extension(
-                                "gc.method",
-                                vec![
-                                    method_name,
-                                    lambda,
-                                    vis_id,
-                                    self.builder.bool(is_static, mloc.clone()),
-                                    self.builder.bool(is_abstract, mloc.clone()),
-                                    self.builder.bool(is_getter, mloc.clone()),
-                                    self.builder.bool(is_setter, mloc.clone()),
-                                ],
-                                mloc,
-                            ));
-                        }
-                    }
+                    args.push(self.convert_class_member(member, loc.clone()));
                 }
+                args.push(self.builder.bool(class.is_declare, loc.clone()));
                 self.builder.extension("gc.struct", args, loc)
             }
             ast::Statement::Namespace(ns) => {
-                if ns.is_declare {
-                    return self.builder.constant(0, self.to_loc(ns.span.into()));
-                }
                 let loc = self.to_loc(ns.span.into());
                 let mut items = Vec::new();
                 for s in ns.body {
                     items.push(self.convert_statement(s));
                 }
-                self.builder.module(&ns.name, items)
+                let mut args = vec![self.builder.string(&ns.name, loc.clone())];
+                args.push(self.builder.seq(items, loc.clone()));
+                args.push(self.builder.bool(ns.is_declare, loc.clone()));
+                self.builder.extension("module", args, loc)
             }
             ast::Statement::Interface(interface) => {
-                if interface.is_declare {
-                    return self.builder.constant(0, self.to_loc(interface.span.into()));
-                }
                 let loc = self.to_loc(interface.span.into());
                 let mut args = vec![self.builder.symbol(&interface.name, loc.clone())];
+
+                // Type parameters
+                args.push(self.builder.seq(
+                    interface
+                        .type_params
+                        .into_iter()
+                        .map(|tp| self.convert_type_parameter(tp, loc.clone()))
+                        .collect(),
+                    loc.clone(),
+                ));
+
                 let extends_ids: Vec<_> = interface
                     .extends
-                    .iter()
-                    .map(|ext| {
-                        if let ast::TypeAnnotation::Identifier(name) = ext {
-                            self.builder.symbol(name, loc.clone())
-                        } else {
-                            self.builder.constant(0, loc.clone())
-                        }
-                    })
+                    .into_iter()
+                    .map(|ext| self.convert_type_annotation(ext, loc.clone()))
                     .collect();
                 args.push(self.builder.seq(extends_ids, loc.clone()));
+
+                for member in interface.body {
+                    args.push(self.convert_class_member(member, loc.clone()));
+                }
+                args.push(self.builder.bool(interface.is_declare, loc.clone()));
                 self.builder.extension("interface", args, loc)
             }
             ast::Statement::TypeAlias(alias) => {
                 let loc = self.to_loc(alias.span.into());
                 let name = self.builder.symbol(&alias.name, loc.clone());
-                let ty_str = match &alias.ty {
-                    ast::TypeAnnotation::Identifier(n) => n.clone(),
-                    ast::TypeAnnotation::Predefined(n) => n.clone(),
-                    _ => "any".to_string(),
-                };
-                let ty = self.builder.symbol(&ty_str, loc.clone());
-                self.builder.extension("type_alias", vec![name, ty], loc)
+
+                // Type parameters
+                let type_params = self.builder.seq(
+                    alias
+                        .type_params
+                        .into_iter()
+                        .map(|tp| self.convert_type_parameter(tp, loc.clone()))
+                        .collect(),
+                    loc.clone(),
+                );
+
+                let ty = self.convert_type_annotation(alias.ty, loc.clone());
+                self.builder.extension("type_alias", vec![name, type_params, ty, self.builder.bool(alias.is_declare, loc.clone())], loc)
             }
             ast::Statement::Enum(enum_decl) => {
                 let loc = self.to_loc(enum_decl.span.into());
                 let mut args = vec![self.builder.symbol(&enum_decl.name, loc.clone())];
                 for member in enum_decl.members {
-                    args.push(self.builder.symbol(&member.name, loc.clone()));
+                    let mut m_args = vec![self.builder.symbol(&member.name, loc.clone())];
+                    if let Some(init) = member.initializer {
+                        m_args.push(self.convert_expression(init));
+                    }
+                    args.push(self.builder.extension("enum_member", m_args, loc.clone()));
                 }
+                args.push(self.builder.bool(enum_decl.is_declare, loc.clone()));
                 self.builder.extension("enum", args, loc)
             }
             ast::Statement::IfStatement(stmt) => {
@@ -496,24 +427,14 @@ impl<'a> UirConverter<'a> {
             }
             ast::Statement::ForInStatement(stmt) => {
                 let loc = self.to_loc(stmt.span.into());
-                let left = match *stmt.left {
-                    ast::Statement::VariableDeclaration(decl) => {
-                        self.builder.symbol(&decl.name, loc.clone())
-                    }
-                    _ => self.builder.constant(0, loc.clone()),
-                };
+                let left = self.convert_statement(*stmt.left);
                 let right = self.convert_expression(stmt.right);
                 let body = self.convert_statement(*stmt.body);
                 self.builder.extension("for_in", vec![left, right, body], loc)
             }
             ast::Statement::ForOfStatement(stmt) => {
                 let loc = self.to_loc(stmt.span.into());
-                let left = match *stmt.left {
-                    ast::Statement::VariableDeclaration(decl) => {
-                        self.builder.symbol(&decl.name, loc.clone())
-                    }
-                    _ => self.builder.constant(0, loc.clone()),
-                };
+                let left = self.convert_statement(*stmt.left);
                 let right = self.convert_expression(stmt.right);
                 let body = self.convert_statement(*stmt.body);
                 self.builder.extension("for_of", vec![left, right, body], loc)
@@ -570,18 +491,19 @@ impl<'a> UirConverter<'a> {
 
                 self.builder.extension("try", args, loc)
             }
-            _ => self.builder.constant(0, Loc::default()),
         }
     }
 
     fn convert_expression(&mut self, expr: ast::Expression) -> Id {
         match expr {
             ast::Expression::Identifier(name) => self.builder.symbol(&name, Loc::default()),
-            ast::Expression::NumericLiteral(val) => {
-                self.builder.constant(val as i64, Loc::default())
-            }
+            ast::Expression::NumericLiteral(val) => self.builder.constant(val as i64, Loc::default()),
             ast::Expression::StringLiteral(val) => self.builder.string(&val, Loc::default()),
             ast::Expression::BooleanLiteral(val) => self.builder.bool(val, Loc::default()),
+            ast::Expression::NullLiteral => self.builder.constant(0, Loc::default()),
+            ast::Expression::BigIntLiteral(val) => self.builder.extension("bigint", vec![self.builder.string(&val, Loc::default())], Loc::default()),
+            ast::Expression::RegexLiteral(val) => self.builder.extension("regex", vec![self.builder.string(&val, Loc::default())], Loc::default()),
+            ast::Expression::TemplateString(val) => self.builder.extension("template", vec![self.builder.string(&val, Loc::default())], Loc::default()),
             ast::Expression::BinaryExpression {
                 left,
                 operator,
@@ -651,16 +573,16 @@ impl<'a> UirConverter<'a> {
                 object,
                 property,
                 computed,
-                ..
+                optional,
             } => {
                 let obj = self.convert_expression(*object);
                 let prop = self.convert_expression(*property);
+                let mut args = vec![obj, prop];
+                args.push(self.builder.bool(optional, Loc::default()));
                 if computed {
-                    self.builder
-                        .extension("index", vec![obj, prop], Loc::default())
+                    self.builder.extension("index", args, Loc::default())
                 } else {
-                    self.builder
-                        .extension("gc.get_field", vec![obj, prop], Loc::default())
+                    self.builder.extension("gc.get_field", args, Loc::default())
                 }
             }
             ast::Expression::ConditionalExpression {
@@ -714,6 +636,14 @@ impl<'a> UirConverter<'a> {
                     self.builder.assign_to_id(target, value, Loc::default())
                 }
             }
+            ast::Expression::AsExpression {
+                expression,
+                type_annotation,
+            } => {
+                let expr = self.convert_expression(*expression);
+                let ty = self.convert_type_annotation(type_annotation, Loc::default());
+                self.builder.extension("as", vec![expr, ty], Loc::default())
+            }
             ast::Expression::ImportExpression {
                 module_specifier,
                 span,
@@ -723,21 +653,44 @@ impl<'a> UirConverter<'a> {
                 self.builder.extension("import", vec![spec], loc)
             }
             ast::Expression::ArrowFunction {
+                type_params,
                 params,
+                return_type,
                 body,
                 async_,
-                ..
             } => {
                 let body_id = self.convert_statement(*body);
-                let param_names: Vec<String> = params.into_iter().map(|p| p.name).collect();
+                let mut args = vec![
+                    self.builder.seq(
+                        type_params
+                            .into_iter()
+                            .map(|tp| self.convert_type_parameter(tp, Loc::default()))
+                            .collect(),
+                        Loc::default(),
+                    ),
+                    self.builder.seq(
+                        params
+                            .into_iter()
+                            .map(|p| {
+                                let mut p_args = vec![self.builder.symbol(&p.name, Loc::default())];
+                                if let Some(ty) = p.ty {
+                                    p_args.push(self.convert_type_annotation(ty, Loc::default()));
+                                }
+                                p_args.push(self.builder.bool(p.optional, Loc::default()));
+                                self.builder.extension("param", p_args, Loc::default())
+                            })
+                            .collect(),
+                        Loc::default(),
+                    ),
+                    body_id,
+                ];
+                if let Some(ret) = return_type {
+                    args.push(self.convert_type_annotation(ret, Loc::default()));
+                }
                 if async_ {
-                    let mut args = vec![body_id];
-                    for param in param_names {
-                        args.push(self.builder.symbol(&param, Loc::default()));
-                    }
                     self.builder.extension("async_lambda", args, Loc::default())
                 } else {
-                    self.builder.lambda(param_names, body_id, Loc::default())
+                    self.builder.extension("lambda", args, Loc::default())
                 }
             }
             ast::Expression::ObjectLiteral { properties } => {
@@ -785,6 +738,180 @@ impl<'a> UirConverter<'a> {
                 self.builder.extension("yield", args, Loc::default())
             }
             _ => self.builder.constant(0, Loc::default()),
+        }
+    }
+
+    fn convert_type_annotation(&mut self, ty: ast::TypeAnnotation, loc: Loc) -> Id {
+        match ty {
+            ast::TypeAnnotation::Identifier(name) => self.builder.symbol(&name, loc),
+            ast::TypeAnnotation::Predefined(name) => self.builder.symbol(&name, loc),
+            ast::TypeAnnotation::Literal(lit) => {
+                let lit_id = match lit {
+                    ast::LiteralType::String(s) => self.builder.string(&s, loc.clone()),
+                    ast::LiteralType::Number(n) => self.builder.constant(n as i64, loc.clone()),
+                    ast::LiteralType::Boolean(b) => self.builder.bool(b, loc.clone()),
+                    ast::LiteralType::BigInt(s) => {
+                        self.builder.extension("bigint", vec![self.builder.string(&s, loc.clone())], loc.clone())
+                    }
+                };
+                self.builder.extension("literal_type", vec![lit_id], loc)
+            }
+            ast::TypeAnnotation::Array(inner) => {
+                let inner_id = self.convert_type_annotation(*inner, loc.clone());
+                self.builder.extension("array_type", vec![inner_id], loc)
+            }
+            ast::TypeAnnotation::Tuple(elements) => {
+                let elem_ids = elements.into_iter().map(|e| self.convert_type_annotation(e, loc.clone())).collect();
+                let seq = self.builder.seq(elem_ids, loc.clone());
+                self.builder.extension("tuple_type", vec![seq], loc)
+            }
+            ast::TypeAnnotation::Union(types) => {
+                let type_ids = types.into_iter().map(|t| self.convert_type_annotation(t, loc.clone())).collect();
+                let seq = self.builder.seq(type_ids, loc.clone());
+                self.builder.extension("union_type", vec![seq], loc)
+            }
+            ast::TypeAnnotation::Intersection(types) => {
+                let type_ids = types.into_iter().map(|t| self.convert_type_annotation(t, loc.clone())).collect();
+                let seq = self.builder.seq(type_ids, loc.clone());
+                self.builder.extension("intersection_type", vec![seq], loc)
+            }
+            ast::TypeAnnotation::Reference { name, args } => {
+                let name_id = self.builder.symbol(&name, loc.clone());
+                let arg_ids = args.into_iter().map(|a| self.convert_type_annotation(a, loc.clone())).collect();
+                let seq = self.builder.seq(arg_ids, loc.clone());
+                self.builder.extension("type_ref", vec![name_id, seq], loc)
+            }
+            ast::TypeAnnotation::Function { params: _, args, return_type } => {
+                let param_ids = args
+                    .into_iter()
+                    .map(|p| {
+                        let mut p_args = vec![self.builder.symbol(&p.name, loc.clone())];
+                        if let Some(ty) = p.ty {
+                            p_args.push(self.convert_type_annotation(ty, loc.clone()));
+                        }
+                        p_args.push(self.builder.bool(p.optional, loc.clone()));
+                        self.builder.extension("param", p_args, loc.clone())
+                    })
+                    .collect();
+                let params_seq = self.builder.seq(param_ids, loc.clone());
+                let ret_id = self.convert_type_annotation(*return_type, loc.clone());
+                self.builder.extension("function_type", vec![params_seq, ret_id], loc)
+            }
+            ast::TypeAnnotation::Object(members) => {
+                let member_ids = members.into_iter().map(|m| self.convert_class_member(m, loc.clone())).collect();
+                let seq = self.builder.seq(member_ids, loc.clone());
+                self.builder.extension("object_type", vec![seq], loc)
+            }
+            ast::TypeAnnotation::Query(name) => {
+                let name_id = self.builder.symbol(&name, loc.clone());
+                self.builder.extension("typeof", vec![name_id], loc)
+            }
+            ast::TypeAnnotation::KeyOf(inner) => {
+                let inner_id = self.convert_type_annotation(*inner, loc.clone());
+                self.builder.extension("keyof", vec![inner_id], loc)
+            }
+        }
+    }
+
+    fn convert_type_parameter(&mut self, tp: ast::TypeParameter, loc: Loc) -> Id {
+        let mut args = vec![self.builder.symbol(&tp.name, loc.clone())];
+        if let Some(constraint) = tp.constraint {
+            args.push(self.convert_type_annotation(constraint, loc.clone()));
+        } else {
+            args.push(self.builder.constant(0, loc.clone()));
+        }
+        if let Some(default) = tp.default {
+            args.push(self.convert_type_annotation(default, loc.clone()));
+        } else {
+            args.push(self.builder.constant(0, loc.clone()));
+        }
+        self.builder.extension("type_param", args, loc)
+    }
+
+    fn convert_class_member(&mut self, member: ast::ClassMember, loc: Loc) -> Id {
+        match member {
+            ast::ClassMember::Property {
+                decorators: _,
+                name,
+                ty,
+                initializer,
+                visibility,
+                is_static,
+                is_readonly,
+                is_abstract,
+                is_optional,
+                span: _,
+            } => {
+                let mut args = vec![self.builder.symbol(&name, loc.clone())];
+                if let Some(ty) = ty {
+                    args.push(self.convert_type_annotation(ty, loc.clone()));
+                } else {
+                    args.push(self.builder.constant(0, loc.clone()));
+                }
+                if let Some(val) = initializer {
+                    args.push(self.convert_expression(val));
+                } else {
+                    args.push(self.builder.constant(0, loc.clone()));
+                }
+                args.push(self.builder.bool(is_static, loc.clone()));
+                args.push(self.builder.bool(is_readonly, loc.clone()));
+                args.push(self.builder.bool(is_abstract, loc.clone()));
+                args.push(self.builder.string(&format!("{:?}", visibility), loc.clone()));
+                args.push(self.builder.bool(is_optional, loc.clone()));
+                self.builder.extension("property", args, loc)
+            }
+            ast::ClassMember::Method {
+                decorators: _,
+                name,
+                type_params,
+                params,
+                return_type,
+                body,
+                visibility,
+                is_static,
+                is_abstract,
+                is_getter,
+                is_setter,
+                is_optional,
+                span: _,
+            } => {
+                let mut args = vec![self.builder.symbol(&name, loc.clone())];
+                args.push(self.builder.seq(
+                    type_params
+                        .into_iter()
+                        .map(|tp| self.convert_type_parameter(tp, loc.clone()))
+                        .collect(),
+                    loc.clone(),
+                ));
+                args.push(self.builder.seq(
+                    params
+                        .into_iter()
+                        .map(|p| {
+                            let mut p_args = vec![self.builder.symbol(&p.name, loc.clone())];
+                            if let Some(ty) = p.ty {
+                                p_args.push(self.convert_type_annotation(ty, loc.clone()));
+                            }
+                            p_args.push(self.builder.bool(p.optional, loc.clone()));
+                            self.builder.extension("param", p_args, loc.clone())
+                        })
+                        .collect(),
+                    loc.clone(),
+                ));
+                if let Some(ret) = return_type {
+                    args.push(self.convert_type_annotation(ret, loc.clone()));
+                } else {
+                    args.push(self.builder.constant(0, loc.clone()));
+                }
+                let body_ids = body.into_iter().map(|s| self.convert_statement(s)).collect();
+                args.push(self.builder.block(body_ids, loc.clone()));
+                args.push(self.builder.bool(is_static, loc.clone()));
+                args.push(self.builder.bool(is_abstract, loc.clone()));
+                args.push(self.builder.bool(is_getter, loc.clone()));
+                args.push(self.builder.bool(is_setter, loc.clone()));
+                args.push(self.builder.string(&format!("{:?}", visibility), loc.clone()));
+                args.push(self.builder.bool(is_optional, loc.clone()));
+                self.builder.extension("method", args, loc)
+            }
         }
     }
 }

@@ -235,4 +235,159 @@ impl FFIFunction for NativeBitShr {
     }
 }
 
+pub struct NativePanic;
+impl FFIFunction for NativePanic {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let msg = args.get(0).map(|v| v.to_string()).unwrap_or_else(|| "panic".to_string());
+        panic!("{}", msg);
+    }
+}
+
+pub struct NativeMathSin;
+impl FFIFunction for NativeMathSin {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_float();
+        Ok(Value::float(a.sin()))
+    }
+}
+
+pub struct NativeMathCos;
+impl FFIFunction for NativeMathCos {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_float();
+        Ok(Value::float(a.cos()))
+    }
+}
+
+pub struct NativeMathTan;
+impl FFIFunction for NativeMathTan {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_float();
+        Ok(Value::float(a.tan()))
+    }
+}
+
+pub struct NativeMathSqrt;
+impl FFIFunction for NativeMathSqrt {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_float();
+        Ok(Value::float(a.sqrt()))
+    }
+}
+
+pub struct NativeMathAbs;
+impl FFIFunction for NativeMathAbs {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_float();
+        Ok(Value::float(a.abs()))
+    }
+}
+
+pub struct NativeMathRand;
+impl FFIFunction for NativeMathRand {
+    fn call(&self, _args: Vec<Value>) -> FFIResult {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        Ok(Value::int(rng.gen::<i64>()))
+    }
+}
+
+pub struct NativeMemAlloc;
+impl FFIFunction for NativeMemAlloc {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let size = args[0].as_int() as usize;
+        // In a real VM, this would allocate from a pool or GC heap
+        // For now, we simulate with a raw allocation or similar
+        let layout = std::alloc::Layout::from_size_align(size, 8).map_err(|_| NyarError::RuntimeError("Invalid layout".to_string()))?;
+        unsafe {
+            let ptr = std::alloc::alloc(layout);
+            Ok(Value::int(ptr as i64))
+        }
+    }
+}
+
+pub struct NativeMemFree;
+impl FFIFunction for NativeMemFree {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let ptr = args[0].as_int() as *mut u8;
+        let size = args.get(1).map(|v| v.as_int() as usize).unwrap_or(0);
+        if !ptr.is_null() && size > 0 {
+            let layout = std::alloc::Layout::from_size_align(size, 8).map_err(|_| NyarError::RuntimeError("Invalid layout".to_string()))?;
+            unsafe {
+                std::alloc::dealloc(ptr, layout);
+            }
+        }
+        Ok(Value::null())
+    }
+}
+
+pub struct NativeMemRealloc;
+impl FFIFunction for NativeMemRealloc {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let ptr = args[0].as_int() as *mut u8;
+        let old_size = args[1].as_int() as usize;
+        let new_size = args[2].as_int() as usize;
+        let layout = std::alloc::Layout::from_size_align(old_size, 8).map_err(|_| NyarError::RuntimeError("Invalid layout".to_string()))?;
+        unsafe {
+            let new_ptr = std::alloc::realloc(ptr, layout, new_size);
+            Ok(Value::int(new_ptr as i64))
+        }
+    }
+}
+
+pub struct NativeMemSet;
+impl FFIFunction for NativeMemSet {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let ptr = args[0].as_int() as *mut u8;
+        let val = args[1].as_int() as u8;
+        let count = args[2].as_int() as usize;
+        unsafe {
+            std::ptr::write_bytes(ptr, val, count);
+        }
+        Ok(Value::null())
+    }
+}
+
+pub struct NativeMemCopy;
+impl FFIFunction for NativeMemCopy {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let dest = args[0].as_int() as *mut u8;
+        let src = args[1].as_int() as *const u8;
+        let count = args[2].as_int() as usize;
+        unsafe {
+            std::ptr::copy_nonoverlapping(src, dest, count);
+        }
+        Ok(Value::null())
+    }
+}
+
+pub struct NativeStrLen;
+impl FFIFunction for NativeStrLen {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let ptr = args[0].as_int() as *const i8;
+        unsafe {
+            let mut len = 0;
+            while *ptr.add(len) != 0 {
+                len += 1;
+            }
+            Ok(Value::int(len as i64))
+        }
+    }
+}
+
+pub struct NativeStrCmp;
+impl FFIFunction for NativeStrCmp {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let s1 = args[0].as_int() as *const i8;
+        let s2 = args[1].as_int() as *const i8;
+        unsafe {
+            let mut i = 0;
+            while *s1.add(i) != 0 && *s1.add(i) == *s2.add(i) {
+                i += 1;
+            }
+            Ok(Value::int((*s1.add(i) - *s2.add(i)) as i64))
+        }
+    }
+}
+
 

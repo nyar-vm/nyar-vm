@@ -562,9 +562,69 @@ impl GaiaTranslator {
                         ));
                     }
                     "list_comp" | "set_comp" | "dict_comp" | "generator_exp" => {
-                        // FIXME: implement comprehensions
+                        let is_dict = name == "dict_comp";
+                        let method = match name.as_str() {
+                            "list_comp" => "list",
+                            "set_comp" => "set",
+                            "dict_comp" => "dict",
+                            "generator_exp" => "generator",
+                            _ => unreachable!(),
+                        };
+                        let append_method = match name.as_str() {
+                            "list_comp" => "append",
+                            "set_comp" => "add",
+                            "dict_comp" => "__setitem__",
+                            "generator_exp" => "yield",
+                            _ => unreachable!(),
+                        };
+
+                        // 1. Create the container
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: method.to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+
+                        // 2. Store in a temporary local
+                        let result_index = self.local_index;
+                        self.local_types.push(GaiaType::Object);
+                        self.local_index += 1;
                         self.current_instructions.push(GaiaInstruction::Core(
-                            CoreInstruction::PushConstant(GaiaConstant::Null),
+                            CoreInstruction::StoreLocal(result_index, GaiaType::Object),
+                        ));
+
+                        // 3. Generate loops
+                        if is_dict {
+                            let key = &args[0];
+                            let value = &args[1];
+                            let generators = &args[2..];
+                            self.generate_nested_dict_generator(
+                                generators,
+                                key,
+                                value,
+                                result_index,
+                                append_method,
+                            )?;
+                        } else {
+                            let elt = &args[0];
+                            let generators = &args[1..];
+                            self.generate_nested_generator(
+                                generators,
+                                elt,
+                                result_index,
+                                append_method,
+                            )?;
+                        }
+
+                        // 4. Load the result back
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::LoadLocal(result_index, GaiaType::Object),
                         ));
                     }
                     "slice" => {
@@ -858,23 +918,208 @@ impl GaiaTranslator {
                 for arg in arguments {
                     self.generate_tree_node(arg, false)?;
                 }
-                if language == "nyar"
-                    && module_path == "std::io"
-                    && function_name == "println"
-                {
-                    self.current_instructions.push(GaiaInstruction::Managed(
-                        ManagedInstruction::CallStatic {
-                            target: "nyar.std.io".to_string(),
-                            method: "println".to_string(),
-                            signature: GaiaSignature {
-                                params: vec![GaiaType::Object; arguments.len()],
-                                return_type: GaiaType::Object,
-                            },
+                let target = format!("{}.{}", language, module_path.replace("::", "."));
+                self.current_instructions.push(GaiaInstruction::Managed(
+                    ManagedInstruction::CallStatic {
+                        target,
+                        method: function_name.clone(),
+                        signature: GaiaSignature {
+                            params: vec![GaiaType::Object; arguments.len()],
+                            return_type: GaiaType::Object,
                         },
-                    ));
-                }
+                    },
+                ));
             }
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// 生成嵌套生成器循环
+    fn generate_nested_generator(
+        &mut self,
+        generators: &[IKunTree],
+        elt: &IKunTree,
+        result_index: u32,
+        append_method: &str,
+    ) -> Result<(), GaiaError> {
+        if generators.is_empty() {
+            // 最内层：评估元素并添加到容器
+            self.current_instructions.push(GaiaInstruction::Core(
+                CoreInstruction::LoadLocal(result_index, GaiaType::Object),
+            ));
+            self.generate_tree_node(elt, false)?;
+            self.current_instructions.push(GaiaInstruction::Managed(
+                ManagedInstruction::CallMethod {
+                    target: "Object".to_string(),
+                    method: append_method.to_string(),
+                    signature: GaiaSignature {
+                        params: vec![GaiaType::Object],
+                        return_type: GaiaType::Void,
+                    },
+                    is_virtual: true,
+                },
+            ));
+            return Ok(());
+        }
+
+        self.generate_comprehension_loop(generators, elt, None, result_index, append_method)
+    }
+
+    /// 生成嵌套字典生成器循环
+    fn generate_nested_dict_generator(
+        &mut self,
+        generators: &[IKunTree],
+        key: &IKunTree,
+        value: &IKunTree,
+        result_index: u32,
+        append_method: &str,
+    ) -> Result<(), GaiaError> {
+        if generators.is_empty() {
+            // 最内层：评估键值对并添加到字典
+            self.current_instructions.push(GaiaInstruction::Core(
+                CoreInstruction::LoadLocal(result_index, GaiaType::Object),
+            ));
+            self.generate_tree_node(key, false)?;
+            self.generate_tree_node(value, false)?;
+            self.current_instructions.push(GaiaInstruction::Managed(
+                ManagedInstruction::CallMethod {
+                    target: "Object".to_string(),
+                    method: append_method.to_string(),
+                    signature: GaiaSignature {
+                        params: vec![GaiaType::Object, GaiaType::Object],
+                        return_type: GaiaType::Void,
+                    },
+                    is_virtual: true,
+                },
+            ));
+            return Ok(());
+        }
+
+        self.generate_comprehension_loop(generators, key, Some(value), result_index, append_method)
+    }
+
+    /// 生成单个推导式循环
+    fn generate_comprehension_loop(
+        &mut self,
+        generators: &[IKunTree],
+        elt: &IKunTree,
+        elt_value: Option<&IKunTree>,
+        result_index: u32,
+        append_method: &str,
+    ) -> Result<(), GaiaError> {
+        let gen = &generators[0];
+        if let IKunTree::Extension(name, gen_args) = gen {
+            if name == "comprehension" {
+                let target = &gen_args[0];
+                let iter = &gen_args[1];
+                let ifs = &gen_args[2];
+
+                let test_label = self.new_label("comp_test");
+                let body_label = self.new_label("comp_body");
+                let end_label = self.new_label("comp_end");
+
+                // 获取迭代器
+                self.generate_tree_node(iter, false)?;
+                self.current_instructions.push(GaiaInstruction::Managed(
+                    ManagedInstruction::CallMethod {
+                        target: "Builtins".to_string(),
+                        method: "iter".to_string(),
+                        signature: GaiaSignature {
+                            params: vec![GaiaType::Object],
+                            return_type: GaiaType::Object,
+                        },
+                        is_virtual: false,
+                    },
+                ));
+
+                let iter_index = self.local_index;
+                self.local_types.push(GaiaType::Object);
+                self.local_index += 1;
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::StoreLocal(iter_index, GaiaType::Object),
+                ));
+
+                self.finish_block(GaiaTerminator::Jump(test_label.clone()));
+                self.start_block(test_label.clone());
+
+                // 获取下一个值
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::LoadLocal(iter_index, GaiaType::Object),
+                ));
+                self.current_instructions.push(GaiaInstruction::Managed(
+                    ManagedInstruction::CallMethod {
+                        target: "Builtins".to_string(),
+                        method: "next".to_string(),
+                        signature: GaiaSignature {
+                            params: vec![GaiaType::Object],
+                            return_type: GaiaType::Object,
+                        },
+                        is_virtual: false,
+                    },
+                ));
+
+                // 检查是否结束
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::Dup,
+                ));
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::PushConstant(GaiaConstant::Null),
+                ));
+                self.current_instructions.push(GaiaInstruction::Core(
+                    CoreInstruction::Cmp(CmpCondition::Ne, GaiaType::Object),
+                ));
+
+                self.finish_block(GaiaTerminator::Branch {
+                    true_label: body_label.clone(),
+                    false_label: end_label.clone(),
+                });
+
+                self.start_block(body_label);
+
+                // 赋值给目标
+                if let IKunTree::Symbol(name) = target {
+                    let target_index = if let Some(&idx) = self.locals.get(name) {
+                        idx
+                    } else {
+                        let idx = self.local_index;
+                        self.locals.insert(name.clone(), idx);
+                        self.local_types.push(GaiaType::Object);
+                        self.local_index += 1;
+                        idx
+                    };
+                    self.current_instructions.push(GaiaInstruction::Core(
+                        CoreInstruction::StoreLocal(target_index, GaiaType::Object),
+                    ));
+                } else {
+                    self.current_instructions.push(GaiaInstruction::Core(CoreInstruction::Pop));
+                }
+
+                // 处理条件过滤 (ifs)
+                let mut current_body_label = self.current_label.clone();
+                if let IKunTree::Seq(if_list) = ifs {
+                    for if_cond in if_list {
+                        let if_true_label = self.new_label("comp_if_true");
+                        self.generate_tree_node(if_cond, false)?;
+                        self.finish_block(GaiaTerminator::Branch {
+                            true_label: if_true_label.clone(),
+                            false_label: test_label.clone(),
+                        });
+                        self.start_block(if_true_label);
+                        current_body_label = self.current_label.clone();
+                    }
+                }
+
+                // 递归处理下一层
+                if let Some(val) = elt_value {
+                    self.generate_nested_dict_generator(&generators[1..], elt, val, result_index, append_method)?;
+                } else {
+                    self.generate_nested_generator(&generators[1..], elt, result_index, append_method)?;
+                }
+
+                self.finish_block(GaiaTerminator::Jump(test_label));
+                self.start_block(end_label);
+            }
         }
         Ok(())
     }
