@@ -285,8 +285,12 @@ impl<'a> Decoder<'a> {
                 }
                 Instruction::MakeClosure(func_idx, upvalues)
             }
-            Opcode::TailCall => {
-                Instruction::TailCall(self.read_u8().ok_or(DecodeError::Truncated)?)
+            Opcode::TailCall => Instruction::TailCall(
+                self.read_u16().ok_or(DecodeError::Truncated)?,
+                self.read_u8().ok_or(DecodeError::Truncated)?,
+            ),
+            Opcode::TailCallClosure => {
+                Instruction::TailCallClosure(self.read_u8().ok_or(DecodeError::Truncated)?)
             }
             Opcode::Call => Instruction::Call(
                 self.read_u16().ok_or(DecodeError::Truncated)?,

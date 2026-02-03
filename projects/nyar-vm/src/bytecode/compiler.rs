@@ -505,28 +505,12 @@ impl NyarBackend {
         if !self.module.classes.iter().any(|c| c.name == qn) {
             self.module.classes.push(ClassInfo {
                 name: qn,
-                fields: fields.into_iter().map(QualifiedName::from).collect(),
+                fields,
             });
         }
     }
-}
 
-impl Backend<IKunTree> for NyarBackend {
-    type Error = NyarError;
-
-    fn lower(&mut self, tree: &IKunTree) -> Result<BackendArtifact, Self::Error> {
-        self.lower_tree(tree)?;
-        let mut binary = Vec::new();
-        self.module.encode(&mut binary).map_err(|e| {
-            NyarError::new(
-                0x1001,
-                nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::Internal(e.to_string())),
-                nyar_types::SourceLocation::default(),
-            )
-        })?;
-        Ok(BackendArtifact {
-            binary,
-            source_map: vec![],
-        })
+    pub fn finish(self) -> NyarcModule {
+        self.module
     }
 }

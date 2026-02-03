@@ -28,6 +28,7 @@ pub enum Opcode {
     CallSymbol = 0x25,
     FFICall = 0xF0,
     TailCall = 0x14,
+    TailCallClosure = 0x16,
 
     GetField = 0x30,
     SetField = 0x31,

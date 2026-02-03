@@ -16,32 +16,24 @@ pub mod visitor;
 
 /// Mini Java 前端
 pub struct MiniJavaFrontend<'a> {
-    language: JavaLanguage,
+    _language: &'a JavaLanguage,
     builder: JavaBuilder<'a>,
 }
 
 impl<'a> Default for MiniJavaFrontend<'a> {
     fn default() -> Self {
-        Self::new()
+        // Use a leaked language for simplicity in this example to satisfy lifetimes
+        let language = Box::leak(Box::new(JavaLanguage::default()));
+        Self::new(language)
     }
 }
 
 impl<'a> MiniJavaFrontend<'a> {
     /// 创建新的前端实例
-    pub fn new() -> Self {
-        let language = JavaLanguage::default();
-        // We need a stable reference to language for JavaBuilder.
-        // Since MiniJavaFrontend owns language, we can use unsafe or just leak it for now
-        // if we want to avoid complex lifetime management in a quick fix.
-        // But better is to make it hold a Box and reference that if possible, 
-        // or just accept that the builder will have a lifetime tied to the language.
-        
-        // Actually, JavaBuilder in oak-java seems to take &'config JavaLanguage.
-        // Let's use Box::leak for the language to get a 'static reference for simplicity in this example.
-        let language_ref = Box::leak(Box::new(language));
+    pub fn new(language: &'a JavaLanguage) -> Self {
         Self {
-            language: JavaLanguage::default(), // This is redundant but kept for struct shape if needed
-            builder: JavaBuilder::new(language_ref),
+            _language: language,
+            builder: JavaBuilder::new(language),
         }
     }
 }
@@ -61,14 +53,9 @@ impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
 
     /// 统一的接入接口，支持 EGraph 优化流
     fn lower_unified<V: Vfs>(&self, ast: &JavaRoot, ctx: &mut NyarContext<V>) -> Id {
-        let mut converter = codegen::JavaUirConverter::new(ctx.egraph, ctx.source_id);
-        converter.convert_root(ast).unwrap_or(None).unwrap_or_else(|| {
+        let mut converter = codegen::JavaUirConverter::new(ctx);
+        converter.convert_root(ast).unwrap_or_else(|_| {
             ctx.builder().constant(0, ctx.loc(0, 0))
         })
-    }
-
-    /// 编译到 Chomsky UIR (IKunTree)
-    fn lower<V: Vfs>(&self, ast: &JavaRoot, vfs: &V) -> Result<IKunTree, NyarError> {
-        codegen::JavaUirConverter::convert_to_tree(ast, 1)
     }
 }

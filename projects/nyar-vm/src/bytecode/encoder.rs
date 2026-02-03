@@ -70,8 +70,13 @@ impl Instruction {
                     buf.push(uv.index);
                 }
             }
-            Instruction::TailCall(args) => {
+            Instruction::TailCall(idx, args) => {
                 buf.push(Opcode::TailCall as u8);
+                buf.extend_from_slice(&idx.to_le_bytes());
+                buf.push(*args);
+            }
+            Instruction::TailCallClosure(args) => {
+                buf.push(Opcode::TailCallClosure as u8);
                 buf.push(*args);
             }
             Instruction::Call(idx, args) => {

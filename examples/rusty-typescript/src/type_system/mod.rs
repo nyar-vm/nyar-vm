@@ -36,6 +36,20 @@ pub enum TemplateElement {
     Type(Box<ScriptType>),
 }
 
+impl ObjectType {
+    pub fn get_property_type(&self, name: &str) -> Option<ScriptType> {
+        if let Some(prop) = self.properties.iter().find(|p| p.name == name) {
+            return Some(prop.ty.clone());
+        }
+        for idx in &self.index_signatures {
+            if idx.key_type == AtomType::String {
+                return Some(idx.value_type.clone());
+            }
+        }
+        None
+    }
+}
+
 impl ScriptType {
     /// Resolve the type to its concrete representation, expanding aliases and applying operators
     pub fn resolve(&self, registry: &TypeRegistry) -> ScriptType {
@@ -119,8 +133,55 @@ impl ScriptType {
                     });
                     ScriptType::Object(obj)
                 }
+                TypeOperator::KeyOf(inner) => {
+                    let resolved = inner.resolve(registry);
+                    if let ScriptType::Object(obj) = resolved {
+                        let variants = obj
+                            .properties
+                            .iter()
+                            .map(|p| ScriptType::Literal(LiteralType::String(p.name.clone())))
+                            .collect();
+                        ScriptType::Union(variants)
+                    } else {
+                        // In TS, keyof any is string | number | symbol
+                        ScriptType::Union(vec![
+                            ScriptType::Atom(AtomType::String),
+                            ScriptType::Atom(AtomType::Number),
+                            ScriptType::Atom(AtomType::Symbol),
+                        ])
+                    }
+                }
                 _ => self.clone(),
             },
+            ScriptType::Mapped(mapped) => {
+                let key_type = mapped.key_type.resolve(registry);
+                if let ScriptType::Union(variants) = key_type {
+                    let mut props = Vec::new();
+                    for v in variants {
+                        if let ScriptType::Literal(LiteralType::String(name)) = v {
+                            props.push(Property {
+                                name,
+                                ty: *mapped.value_type.clone(),
+                                optional: mapped.optional.unwrap_or(false),
+                                readonly: mapped.readonly.unwrap_or(false),
+                            });
+                        }
+                    }
+                    ScriptType::Object(ObjectType {
+                        properties: props,
+                        index_signatures: Vec::new(),
+                    })
+                } else {
+                    self.clone()
+                }
+            }
+            ScriptType::Conditional(cond) => {
+                if cond.check_type.is_assignable_to(&cond.extends_type, registry) {
+                    cond.true_type.resolve(registry)
+                } else {
+                    cond.false_type.resolve(registry)
+                }
+            }
             _ => self.clone(),
         }
     }
@@ -221,6 +282,7 @@ impl ScriptType {
 
             // Object types (structural typing)
             (ScriptType::Object(obj_a), ScriptType::Object(obj_b)) => {
+                // Check all properties in B are present and compatible in A
                 for prop_b in &obj_b.properties {
                     let found = obj_a.properties.iter().find(|p| p.name == prop_b.name);
                     match found {
@@ -230,16 +292,60 @@ impl ScriptType {
                             }
                         }
                         None => {
-                            if !prop_b.optional {
+                            // If not found in properties, check index signatures
+                            let mut compatible_index = false;
+                            for idx in &obj_a.index_signatures {
+                                 // For now assume key name matches if it's a string index
+                                 if idx.key_type == AtomType::String {
+                                     if obj_a.get_property_type(&prop_b.name).map_or(false, |ty| ty.is_assignable_to(&prop_b.ty, registry)) {
+                                         compatible_index = true;
+                                         break;
+                                     }
+                                 }
+                             }
+                            if !compatible_index && !prop_b.optional {
                                 return false;
                             }
                         }
                     }
                 }
+                
+                // Check index signatures in B are compatible with index signatures in A
+                for idx_b in &obj_b.index_signatures {
+                    let mut compatible = false;
+                    for idx_a in &obj_a.index_signatures {
+                        if idx_a.key_type == idx_b.key_type && idx_a.value_type.is_assignable_to(&idx_b.value_type, registry) {
+                            compatible = true;
+                            break;
+                        }
+                    }
+                    if !compatible {
+                        return false;
+                    }
+                }
+                
                 true
             }
 
+            // Template literal types (simplified)
+            (ScriptType::Literal(LiteralType::String(s)), ScriptType::TemplateLiteral(_)) => {
+                // In a real implementation, we would check if the string matches the template
+                // For now, assume string literals are assignable to template literals if they might match
+                true
+            }
+            (ScriptType::TemplateLiteral(_), ScriptType::Atom(AtomType::String)) => true,
+
             _ => false,
+        }
+    }
+
+    /// Helper to get the type of a property, including from index signatures
+    pub fn get_property_type(&self, name: &str, registry: &TypeRegistry) -> Option<ScriptType> {
+        let resolved = self.resolve(registry);
+        if let ScriptType::Object(obj) = resolved {
+            obj.get_property_type(name)
+        } else {
+            None
         }
     }
 }

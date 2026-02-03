@@ -160,32 +160,40 @@ impl NyarDriver {
         F: NyarFrontend,
         V: WritableVfs,
     {
-        use chomsky::adapters::GaiaJvmAdapter;
-        use chomsky_extract::Backend;
+        #[cfg(feature = "jvm")]
+        {
+            use chomsky::adapters::GaiaJvmAdapter;
+            use chomsky_extract::Backend;
 
-        let source = vfs
-            .get_source(source_uri)
-            .ok_or_else(|| NyarError::Compile(format!("Source not found: {}", source_uri)))?;
-        let content = source.get_text_from(0);
-        let ast = frontend.parse(&content)?;
-        let tree = frontend.lower(&ast, vfs)?;
+            let source = vfs
+                .get_source(source_uri)
+                .ok_or_else(|| NyarError::Compile(format!("Source not found: {}", source_uri)))?;
+            let content = source.get_text_from(0);
+            let ast = frontend.parse(&content)?;
+            let tree = frontend.lower(&ast, vfs)?;
 
-        println!("JVM: Compiling IKunTree to JVM at {}", output_uri);
+            println!("JVM: Compiling IKunTree to JVM at {}", output_uri);
 
-        let adapter = GaiaJvmAdapter;
-        let artifact = adapter
-            .generate(&tree)
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+            let adapter = GaiaJvmAdapter;
+            let artifact = adapter
+                .generate(&tree)
+                .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
 
-        match artifact {
-            chomsky_extract::BackendArtifact::Binary(bytes) => {
-                let content = String::from_utf8_lossy(&bytes).to_string();
-                vfs.write_file(output_uri, content.into());
+            match artifact {
+                chomsky_extract::BackendArtifact::Binary(bytes) => {
+                    let content = String::from_utf8_lossy(&bytes).to_string();
+                    vfs.write_file(output_uri, content.into());
+                }
+                _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
             }
-            _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
-        }
 
-        Ok(())
+            Ok(())
+        }
+        #[cfg(not(feature = "jvm"))]
+        {
+            let _ = (frontend, vfs, source_uri, output_uri);
+            Err(NyarError::Compile("JVM backend is not enabled".to_string()))
+        }
     }
 
     /// 编译到 CLR 程序集

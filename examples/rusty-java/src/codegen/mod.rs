@@ -1,19 +1,19 @@
 //! Java 到 Nyar UIR 的转换器
 
 use chomsky_types::Loc;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder, Id};
+use chomsky_uir::{Analysis, EGraph, IKun, IKunTree, IntentBuilder, Id};
 use nyar_types::{NyarError, NyarContext};
 use oak_java::ast::*;
 use oak_vfs::Vfs;
 
 /// Java 到 UIR 的转换器
-pub struct JavaUirConverter<'a, 'b, V: Vfs> {
-    ctx: &'a mut NyarContext<'b, V, ConstraintAnalysis>,
+pub struct JavaUirConverter<'a, 'b, V: Vfs, A: Analysis<IKun> = ()> {
+    ctx: &'a mut NyarContext<'b, V, A>,
 }
 
-impl<'a, 'b, V: Vfs> JavaUirConverter<'a, 'b, V> {
+impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
     /// 创建新的转换器
-    pub fn new(ctx: &'a mut NyarContext<'b, V, ConstraintAnalysis>) -> Self {
+    pub fn new(ctx: &'a mut NyarContext<'b, V, A>) -> Self {
         Self { ctx }
     }
 
@@ -22,14 +22,14 @@ impl<'a, 'b, V: Vfs> JavaUirConverter<'a, 'b, V> {
         Loc::new(self.ctx.source_id, 0, 0)
     }
 
-    fn builder(&mut self) -> IntentBuilder<'_, ConstraintAnalysis> {
+    fn builder(&mut self) -> IntentBuilder<'_, A> {
         self.ctx.builder()
     }
 }
 
-impl<'a, 'b, V: Vfs> JavaUirConverter<'a, 'b, V> {
+impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
     /// 将 Java AST 转换为 UIR 树
-    pub fn convert_to_id(ast: &JavaRoot, ctx: &'a mut NyarContext<'b, V, ConstraintAnalysis>) -> Id {
+    pub fn convert_to_id(ast: &JavaRoot, ctx: &'a mut NyarContext<'b, V, A>) -> Id {
         let mut converter = JavaUirConverter::new(ctx);
         converter.convert_root(ast).unwrap_or_else(|_| converter.ctx.builder().constant(0, Loc::new(0, 0, 0)))
     }

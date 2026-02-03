@@ -247,7 +247,7 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_tail_call(&mut self, argc: u8) -> Result<Option<usize>, NyarError> {
+    pub fn execute_tail_call_closure(&mut self, argc: u8) -> Result<Option<usize>, NyarError> {
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
@@ -264,7 +264,7 @@ impl NyarVM {
                     self.modules[module_idx].chunks[chunk_idx].locals as usize;
                 (instrs, locals_count, module_idx, chunk_idx)
             } else {
-                return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x16))); // Opcode for TAIL_CALL
+                return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x16))); // Opcode for TAIL_CALL_CLOSURE
             };
 
         if args.len() < locals_count {
@@ -280,7 +280,54 @@ impl NyarVM {
             frame.module_idx = c_module_idx;
             frame.chunk_idx = Some(c_chunk_idx);
         }
-        
+
+        Ok(Some(0))
+    }
+
+    #[inline(always)]
+    pub fn execute_tail_call(&mut self, idx: u16, argc: u8, module_idx: usize) -> Result<Option<usize>, NyarError> {
+        let constant = &self.modules[module_idx].constants[idx as usize];
+        let symbol_name = match constant {
+            Constant::String(s) => s,
+            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14))),
+        };
+
+        let symbol = self.resolve_symbol(symbol_name)?;
+        let callee = match symbol {
+            Value::Closure(_) => symbol,
+            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14))),
+        };
+
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
+        let (instrs, locals_count, c_module_idx, c_chunk_idx) = if let Some(closure) = callee.try_as_closure() {
+            let chunk_idx = closure.func;
+            let module_idx = closure.module_idx;
+            let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
+            let locals_count = self.modules[module_idx].chunks[chunk_idx].locals as usize;
+            (instrs, locals_count, module_idx, chunk_idx)
+        } else {
+            unreachable!()
+        };
+
+        if args.len() < locals_count {
+            args.resize(locals_count, Value::null());
+        }
+
+        // Reuse the current frame
+        if let Some(frame) = self.frames.last_mut() {
+            frame.instrs = instrs;
+            frame.ip = 0;
+            frame.locals = args;
+            frame.closure = callee;
+            frame.module_idx = c_module_idx;
+            frame.chunk_idx = Some(c_chunk_idx);
+        }
+
         Ok(Some(0))
     }
 
