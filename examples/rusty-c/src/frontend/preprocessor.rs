@@ -484,7 +484,7 @@ impl Preprocessor {
         Err(format!("Could not find included file: {}", file_name))
     }
 
-    fn expand_macros_in_line(&self, line: &str) -> String {
+    fn expand_macros_in_line(&mut self, line: &str) -> String {
         let mut result = String::new();
         let mut chars = line.chars().peekable();
 
@@ -544,11 +544,11 @@ impl Preprocessor {
                     _ => {}
                 }
 
-                if let Some(def) = self.macros.get(&name) {
+                if let Some(def) = self.macros.get(&name).cloned() {
                     self.expanding_macros.push(name.clone());
                     match def {
                         MacroDef::Simple(value) => {
-                            let expanded = self.expand_macros_in_line(value);
+                            let expanded = self.expand_macros_in_line(&value);
                             result.push_str(&expanded);
                         }
                         MacroDef::Function { params, has_varargs, body } => {
@@ -579,7 +579,7 @@ impl Preprocessor {
                                 let mut expanded_body = body.clone();
                                 
                                 // Handle __VA_ARGS__ and __VA_OPT__
-                                if *has_varargs {
+                                if has_varargs {
                                     let va_args = if args.len() >= params.len() {
                                         args[params.len()..].join(", ")
                                     } else {
@@ -604,9 +604,12 @@ impl Preprocessor {
                                             }
                                             
                                             if let Some(abs_opt_end) = opt_end {
-                                                let content = &expanded_body[abs_paren_start + 1..abs_opt_end];
-                                                let replacement = if !va_args.is_empty() { content } else { "" };
-                                                expanded_body.replace_range(opt_start..abs_opt_end + 1, replacement);
+                                                let replacement = if !va_args.is_empty() {
+                                                    expanded_body[abs_paren_start + 1..abs_opt_end].to_string()
+                                                } else {
+                                                    String::new()
+                                                };
+                                                expanded_body.replace_range(opt_start..abs_opt_end + 1, &replacement);
                                             } else {
                                                 break;
                                             }

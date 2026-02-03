@@ -188,7 +188,8 @@ impl<'a> UirConverter<'a> {
                 for s in func.body {
                     body_ids.push(self.convert_statement(s));
                 }
-                let lambda = self.builder.function(&func.name, func.params, body_ids);
+                let param_names: Vec<String> = func.params.into_iter().map(|p| p.name).collect();
+                let lambda = self.builder.function(&func.name, param_names, body_ids);
                 self.builder.assign(&func.name, lambda, loc)
             }
             ast::Statement::ExpressionStatement(expr) => self.convert_expression(expr),
@@ -293,13 +294,15 @@ impl<'a> UirConverter<'a> {
                             is_abstract,
                             is_getter,
                             is_setter,
+                            ..
                         } => {
                             let mloc = self.to_loc(span.into());
                             let mut body_ids = Vec::new();
                             for s in body {
                                 body_ids.push(self.convert_statement(s));
                             }
-                            let lambda = self.builder.function(&name, params, body_ids);
+                            let param_names: Vec<String> = params.into_iter().map(|p| p.name).collect();
+                            let lambda = self.builder.function(&name, param_names, body_ids);
                             let method_name = self.builder.symbol(&name, mloc.clone());
                             let vis_str = match visibility {
                                 Some(ast::Visibility::Public) | None => "public",
