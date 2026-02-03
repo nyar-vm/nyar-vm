@@ -1,10 +1,11 @@
 
 use oak_go::{GoLanguage, GoLexer};
-use oak_core::{SourceText, Lexer, ParseSession, Source};
+use oak_core::{Lexer, ParseSession};
+use oak_vfs::{DiskVfs, Vfs};
 
 fn main() {
-    let source = std::fs::read_to_string("tests/basic.go").unwrap();
-    let source_text = SourceText::new(source);
+    let vfs = DiskVfs::new();
+    let source_text = vfs.get_source("tests/basic.go").unwrap();
     let language = GoLanguage::default();
     let lexer = GoLexer::new(&language);
     let mut session = ParseSession::<GoLanguage>::default();
