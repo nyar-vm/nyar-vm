@@ -5,7 +5,6 @@ members = [
     "examples/rusty-typescript",
     "examples/rusty-go",
     "examples/rusty-c",
-    "examples/rusty-python",
     "examples/rusty-kotlin",
     "examples/rusty-java",
     "examples/rusty-csharp",
@@ -25,6 +24,7 @@ members = [
     "examples/rusty-prolog",
     "examples/rusty-nim",
     "examples/rusty-nix",
+    "examples/rusty-python",
 ]
 default-members = [
     "projects/nyar-types",

@@ -42,8 +42,8 @@ impl NyarFrontend for RustyLuaFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &LuaRoot) -> Result<IKunTree, NyarError> {
-        // TODO: 实现真正的从 LuaRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-lua-program".to_string(), Vec::new()))
+    fn lower(&self, ast: &LuaRoot) -> Result<IKunTree, NyarError> {
+        let translator = codegen::GaiaTranslator::new();
+        translator.translate_to_tree(ast)
     }
 }

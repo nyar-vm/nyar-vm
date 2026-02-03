@@ -353,7 +353,7 @@ impl NativeBackend {
                         }
                         ("std", "panic") | ("", "panic") => {
                             if let Some(IKunTree::StringConstant(s)) = args.first() {
-                                self.emit_write(&format!("Panic: {}", s), true, builder, data)?;
+                                self.emit_write(s, true, builder, data)?;
                             }
                             self.emit_exit(1, builder)?;
                         }

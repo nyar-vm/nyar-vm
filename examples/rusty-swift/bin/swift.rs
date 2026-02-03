@@ -1,5 +1,5 @@
 use std::{path::Path, process::exit};
-use mini_swift::MiniSwiftFrontend;
+use rusty_swift::RustySwiftFrontend;
 use nyar_vm::NyarDriver;
 
 fn main() {
@@ -10,7 +10,7 @@ fn main() {
     }
 
     let input_file = Path::new(&args[1]);
-    let frontend = MiniSwiftFrontend::new();
+    let frontend = RustySwiftFrontend::new();
     let driver = NyarDriver::new();
     
     if let Err(e) = driver.run_source(&frontend, input_file) {

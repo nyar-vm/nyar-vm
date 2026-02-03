@@ -2,6 +2,7 @@
 //!
 //! 这个库提供了 Rusty Python 语言的词法分析、语法分析和 Gaia 翻译功能。
 
+use oak_vfs::Vfs;
 use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
 use chomsky_uir::Id;
@@ -43,18 +44,18 @@ impl NyarFrontend for RustyPythonFrontend {
         Ok(ast)
     }
 
-    fn lower_unified(&self, ast: &PythonRoot, ctx: &mut NyarContext) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &PythonRoot, ctx: &mut NyarContext<V>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
 }
 
-struct UirConverter<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
-    ctx: &'a mut NyarContext<'b, A>,
+struct UirConverter<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+    ctx: &'a mut NyarContext<'b, V, A>,
 }
 
-impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A> {
-    fn new(ctx: &'a mut NyarContext<'b, A>) -> Self {
+impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, V, A> {
+    fn new(ctx: &'a mut NyarContext<'b, V, A>) -> Self {
         Self { ctx }
     }
 
@@ -380,7 +381,7 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
             Statement::Import { names } => {
                 let mut last = None;
                 for name in names {
-                    let module_name = self.ctx.builder().constant(name.name.clone(), loc.clone());
+                    let module_name = self.ctx.builder().string(&name.name, loc.clone());
                     let module_val = self.ctx.builder().extension("import", vec![module_name], loc.clone());
                     let target_name = name.asname.as_ref().unwrap_or(&name.name);
                     let target_id = self.ctx.scopes.declare_variable(target_name);
@@ -391,9 +392,9 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
             Statement::ImportFrom { module, names } => {
                 let mut last = None;
                 let module_str = module.clone().unwrap_or_default();
-                let module_name = self.ctx.builder().constant(module_str, loc.clone());
+                let module_name = self.ctx.builder().string(&module_str, loc.clone());
                 for name in names {
-                    let member_name = self.ctx.builder().constant(name.name.clone(), loc.clone());
+                    let member_name = self.ctx.builder().string(&name.name, loc.clone());
                     let val = self.ctx.builder().extension("import_from", vec![module_name, member_name], loc.clone());
                     let target_name = name.asname.as_ref().unwrap_or(&name.name);
                     let target_id = self.ctx.scopes.declare_variable(target_name);
@@ -405,13 +406,13 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 for name in names {
                     self.ctx.scopes.declare_global(name);
                 }
-                Some(self.ctx.builder().constant(0, loc))
+                Some(self.ctx.builder().extension("none", vec![], loc))
             }
             Statement::Nonlocal { names } => {
                 for name in names {
                     self.ctx.scopes.declare_nonlocal(name);
                 }
-                Some(self.ctx.builder().constant(0, loc))
+                Some(self.ctx.builder().extension("none", vec![], loc))
             }
             Statement::ClassDef { decorators, name, bases, body } => {
                 let base_nodes = bases.iter().map(|b| self.convert_expression(b)).collect::<Vec<_>>();
@@ -445,11 +446,15 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
         match expr {
             Expression::Literal(lit) => match lit {
                 Literal::Integer(i) => self.ctx.builder().constant(*i, loc),
-                Literal::Float(f) => self.ctx.builder().constant(f.to_bits() as i64, loc), // FIXME: use float
-                Literal::String(_s) => self.ctx.builder().extension("string", vec![], loc),
-                Literal::Bytes(_) => self.ctx.builder().extension("bytes", vec![], loc),
-                Literal::Boolean(b) => self.ctx.builder().constant(if *b { 1 } else { 0 }, loc),
-                Literal::None => self.ctx.builder().constant(0, loc),
+                Literal::Float(f) => self.ctx.builder().float(*f, loc),
+                Literal::String(s) => self.ctx.builder().string(s, loc),
+                Literal::Bytes(b) => {
+                    let s = String::from_utf8_lossy(b).to_string();
+                    let s_node = self.ctx.builder().string(&s, loc.clone());
+                    self.ctx.builder().extension("bytes", vec![s_node], loc)
+                }
+                Literal::Boolean(b) => self.ctx.builder().bool(*b, loc),
+                Literal::None => self.ctx.builder().extension("none", vec![], loc),
             },
             Expression::Name(name) => {
                 let resolved = self.ctx.scopes.resolve_variable(name);
@@ -554,9 +559,18 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 self.ctx.builder().extension("generator_exp", nodes, loc)
             }
             Expression::Slice { lower, upper, step } => {
-                let lower_node = lower.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
-                let upper_node = upper.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
-                let step_node = step.as_ref().map(|e| self.convert_expression(e)).unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let lower_node = lower
+                    .as_ref()
+                    .map(|e| self.convert_expression(e))
+                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let upper_node = upper
+                    .as_ref()
+                    .map(|e| self.convert_expression(e))
+                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
+                let step_node = step
+                    .as_ref()
+                    .map(|e| self.convert_expression(e))
+                    .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
                 self.ctx.builder().extension("slice", vec![lower_node, upper_node, step_node], loc)
             }
             Expression::JoinedStr { values } => {
@@ -581,18 +595,27 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                     oak_python::ast::CompareOperator::LtE => "lte",
                     oak_python::ast::CompareOperator::Gt => "gt",
                     oak_python::ast::CompareOperator::GtE => "gte",
-                    _ => "unknown",
+                    oak_python::ast::CompareOperator::Is => "is",
+                    oak_python::ast::CompareOperator::IsNot => "isnot",
+                    oak_python::ast::CompareOperator::In => "in",
+                    oak_python::ast::CompareOperator::NotIn => "notin",
                 };
                 self.ctx.builder().binary_op(op_name, left_node, right_node, loc)
             }
-            Expression::Call { func, args, .. } => {
-                let mut arguments = Vec::new();
-                for arg in args {
-                    arguments.push(self.convert_expression(arg));
+            Expression::Call { func, args, keywords } => {
+                let mut arguments = args.iter().map(|arg| self.convert_expression(arg)).collect::<Vec<_>>();
+                for kw in keywords {
+                    let val = self.convert_expression(&kw.value);
+                    let arg = if let Some(arg) = &kw.arg {
+                        self.ctx.builder().string(arg, loc.clone())
+                    } else {
+                        self.ctx.builder().extension("none", vec![], loc.clone())
+                    };
+                    arguments.push(self.ctx.builder().extension("keyword_arg", vec![arg, val], loc.clone()));
                 }
 
                 if let Expression::Name(name) = &**func {
-                    if let Some(intrinsic) = self.ctx.map_intrinsic(name, arguments.clone(), loc.clone()) {
+                    if let Some(intrinsic) = self.ctx.map_intrinsic(name, &arguments, loc.clone()) {
                         return intrinsic;
                     }
                 }
@@ -641,9 +664,9 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 self.ctx.builder().extension("if_exp", vec![cond, then_node, else_node], loc)
             }
             Expression::Starred { value, is_double } => {
-                let val_node = self.convert_expression(value);
-                let op = if *is_double { "double_starred" } else { "starred" };
-                self.ctx.builder().extension(op, vec![val_node], loc)
+                let node = self.convert_expression(value);
+                let name = if *is_double { "starred_double" } else { "starred" };
+                self.ctx.builder().extension(name, vec![node], loc)
             }
         }
     }
@@ -652,10 +675,16 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
         let loc = Loc::default();
         let target_node = self.convert_expression(&gen.target);
         let iter_node = self.convert_expression(&gen.iter);
-        let ifs_nodes: Vec<Id> = gen.ifs.iter().map(|i| self.convert_expression(i)).collect();
-        let ifs_block = self.ctx.builder().block(ifs_nodes, loc.clone());
-        let async_node = self.ctx.builder().constant(if gen.is_async { 1 } else { 0 }, loc.clone());
-        self.ctx.builder().extension("comprehension", vec![target_node, iter_node, ifs_block, async_node], loc)
+        let mut ifs = Vec::new();
+        for if_expr in &gen.ifs {
+            ifs.push(self.convert_expression(if_expr));
+        }
+        let ifs_id = self.ctx.builder().block(ifs, loc.clone());
+        let mut nodes = vec![target_node, iter_node, ifs_id];
+        if gen.is_async {
+            nodes.push(self.ctx.builder().constant(1, loc.clone()));
+        }
+        self.ctx.builder().extension("comprehension", nodes, loc)
     }
 
     fn convert_pattern(&mut self, pattern: &oak_python::ast::Pattern) -> Id {
@@ -696,7 +725,7 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                     nodes.push(self.convert_pattern(p));
                 }
                 for (k, p) in keywords.iter().zip(keyword_patterns.iter()) {
-                    let k_node = self.ctx.builder().constant(k.clone(), loc.clone());
+                    let k_node = self.ctx.builder().symbol(k, loc.clone());
                     let p_node = self.convert_pattern(p);
                     nodes.push(self.ctx.builder().extension("pattern_class_keyword", vec![k_node, p_node], loc.clone()));
                 }

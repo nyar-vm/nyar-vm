@@ -1,7 +1,9 @@
 pub mod preprocessor;
 
 use crate::errors::CError;
-use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use oak_vfs::Vfs;
+use chomsky_uir::Id;
 use oak_c::{ast, CBuilder, CLanguage, CRoot};
 use oak_core::source::SourceText;
 use std::collections::HashMap;
@@ -54,21 +56,21 @@ impl NyarFrontend for RustyCFrontend {
         output.result.map_err(|e| NyarError::from(CError::from(e)))
     }
 
-    fn lower_unified(&self, ast: &CRoot, ctx: &mut NyarContext) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &CRoot, ctx: &mut NyarContext<V>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
 }
 
-struct UirConverter<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
-    ctx: &'a mut NyarContext<'b, A>,
+struct UirConverter<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+    ctx: &'a mut NyarContext<'b, V, A>,
     typedefs: HashMap<String, Vec<ast::DeclarationSpecifier>>,
     structs: HashMap<String, Vec<ast::StructDeclaration>>,
     enums: HashMap<String, Vec<ast::Enumerator>>,
 }
 
-impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A> {
-    fn new(ctx: &'a mut NyarContext<'b, A>) -> Self {
+impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, V, A> {
+    fn new(ctx: &'a mut NyarContext<'b, V, A>) -> Self {
         Self {
             ctx,
             typedefs: HashMap::new(),

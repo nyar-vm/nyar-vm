@@ -23,6 +23,7 @@ chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
 chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }
 oak-core = { path = "../../../oaks/projects/oak-core" }
 oak-java = { path = "../../../oaks/examples/oak-java" }
+oak-csharp = { path = "../../../oaks/examples/oak-csharp" }
 nyar-types = { path = "../../projects/nyar-types" }
 nyar-vm = { path = "../../projects/nyar-vm" }
 serde = { version = "1.0", features = ["derive"] }

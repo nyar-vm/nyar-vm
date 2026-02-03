@@ -250,6 +250,7 @@ impl<'a> UirConverter<'a> {
                             is_static,
                             is_readonly,
                             is_abstract,
+                            ..
                         } => {
                             let mloc = self.to_loc(span.into());
                             let init_id = if let Some(expr) = initializer {
@@ -351,13 +352,18 @@ impl<'a> UirConverter<'a> {
                         }
                     })
                     .collect();
-                args.push(self.builder.seq(extends_ids));
+                args.push(self.builder.seq(extends_ids, loc.clone()));
                 self.builder.extension("interface", args, loc)
             }
             ast::Statement::TypeAlias(alias) => {
                 let loc = self.to_loc(alias.span.into());
                 let name = self.builder.symbol(&alias.name, loc.clone());
-                let ty = self.builder.symbol(&alias.ty, loc.clone());
+                let ty_str = match &alias.ty {
+                    ast::TypeAnnotation::Identifier(n) => n.clone(),
+                    ast::TypeAnnotation::Predefined(n) => n.clone(),
+                    _ => "any".to_string(),
+                };
+                let ty = self.builder.symbol(&ty_str, loc.clone());
                 self.builder.extension("type_alias", vec![name, ty], loc)
             }
             ast::Statement::Enum(enum_decl) => {
@@ -435,14 +441,32 @@ impl<'a> UirConverter<'a> {
             }
             ast::Statement::ForInStatement(stmt) => {
                 let loc = self.to_loc(stmt.span.into());
-                let left = self.builder.symbol(&stmt.left, loc.clone());
+                let left = match *stmt.left {
+                    ast::Statement::VariableDeclaration(decl) => {
+                        if let Some(first) = decl.declarations.first() {
+                            self.builder.symbol(&first.id, loc.clone())
+                        } else {
+                            self.builder.constant(0, loc.clone())
+                        }
+                    }
+                    _ => self.builder.constant(0, loc.clone()),
+                };
                 let right = self.convert_expression(stmt.right);
                 let body = self.convert_statement(*stmt.body);
                 self.builder.extension("for_in", vec![left, right, body], loc)
             }
             ast::Statement::ForOfStatement(stmt) => {
                 let loc = self.to_loc(stmt.span.into());
-                let left = self.builder.symbol(&stmt.left, loc.clone());
+                let left = match *stmt.left {
+                    ast::Statement::VariableDeclaration(decl) => {
+                        if let Some(first) = decl.declarations.first() {
+                            self.builder.symbol(&first.id, loc.clone())
+                        } else {
+                            self.builder.constant(0, loc.clone())
+                        }
+                    }
+                    _ => self.builder.constant(0, loc.clone()),
+                };
                 let right = self.convert_expression(stmt.right);
                 let body = self.convert_statement(*stmt.body);
                 self.builder.extension("for_of", vec![left, right, body], loc)
@@ -546,14 +570,16 @@ impl<'a> UirConverter<'a> {
                                 if prop_name == "log" || prop_name == "println" {
                                     return self.builder.cross_lang_call(
                                         "nyar",
-                                        "std::io::println",
+                                        "std::io",
+                                        "println",
                                         arg_ids,
                                         loc,
                                     );
                                 } else if prop_name == "print" {
                                     return self.builder.cross_lang_call(
                                         "nyar",
-                                        "std::io::print",
+                                        "std::io",
+                                        "print",
                                         arg_ids,
                                         loc,
                                     );

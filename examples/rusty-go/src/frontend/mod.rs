@@ -2,6 +2,7 @@ use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
 use oak_core::source::SourceText;
 use oak_core::parser::session::ParseSession;
+use oak_vfs::Vfs;
 use chomsky_uir::Id;
 use chomsky_types::Loc;
 use std::ops::Range;
@@ -33,18 +34,18 @@ impl NyarFrontend for RustyGoFrontend {
         output.result.map_err(|e| NyarError::Compile(format!("Build error: {:?}", e)))
     }
 
-    fn lower_unified(&self, ast: &GoRoot, ctx: &mut NyarContext) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &GoRoot, ctx: &mut NyarContext<V>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
 }
 
-struct UirConverter<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
-    ctx: &'a mut NyarContext<'b, A>,
+struct UirConverter<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+    ctx: &'a mut NyarContext<'b, V, A>,
 }
 
-impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A> {
-    fn new(ctx: &'a mut NyarContext<'b, A>) -> Self {
+impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, V, A> {
+    fn new(ctx: &'a mut NyarContext<'b, V, A>) -> Self {
         Self { ctx }
     }
 
@@ -227,14 +228,17 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 self.ctx.builder().symbol(&resolved, loc)
             }
             ast::Expression::Literal { value, .. } => {
-                if value.starts_with('"') && value.ends_with('"') {
-                    self.ctx.builder().extension("string", vec![], loc) // Simplified string
+                if (value.starts_with('"') && value.ends_with('"')) || (value.starts_with('`') && value.ends_with('`')) {
+                    let content = &value[1..value.len() - 1];
+                    self.ctx.builder().string(content, loc)
                 } else if value == "true" {
                     self.ctx.builder().constant(1, loc)
                 } else if value == "false" {
                     self.ctx.builder().constant(0, loc)
                 } else if let Ok(n) = value.parse::<i64>() {
                     self.ctx.builder().constant(n, loc)
+                } else if let Ok(f) = value.parse::<f64>() {
+                    self.ctx.builder().float(f, loc)
                 } else {
                     self.ctx.builder().constant(0, loc)
                 }

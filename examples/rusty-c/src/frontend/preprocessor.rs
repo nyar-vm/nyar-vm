@@ -313,7 +313,7 @@ impl Preprocessor {
         result
     }
 
-    fn evaluate_condition(&self, expr: &str) -> bool {
+    fn evaluate_condition(&mut self, expr: &str) -> bool {
         let expanded = self.expand_macros_in_line(expr);
         // Replace remaining identifiers (not defined in macros) with 0, as per C standard
         let mut cleaned_expr = String::new();
@@ -333,6 +333,32 @@ impl Preprocessor {
                 if name == "defined" || name == "__has_include" {
                     // Skip built-in operators and their arguments during cleaning
                     cleaned_expr.push_str(&name);
+                    // Copy arguments of defined/has_include as is
+                    while let Some(&nc) = chars.peek() {
+                        if nc.is_whitespace() {
+                            cleaned_expr.push(chars.next().unwrap());
+                        } else if nc == '(' {
+                            let mut depth = 0;
+                            while let Some(ac) = chars.next() {
+                                cleaned_expr.push(ac);
+                                if ac == '(' { depth += 1; }
+                                else if ac == ')' {
+                                    depth -= 1;
+                                    if depth == 0 { break; }
+                                }
+                            }
+                        } else {
+                            // Non-parenthesized defined
+                            while let Some(&ac) = chars.peek() {
+                                if ac.is_alphanumeric() || ac == '_' {
+                                    cleaned_expr.push(chars.next().unwrap());
+                                } else {
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
                 } else if name == "true" {
                     cleaned_expr.push('1');
                 } else if name == "false" {
@@ -345,96 +371,262 @@ impl Preprocessor {
             }
         }
 
-        // Simple parser for arithmetic and logic
-        self.eval_logic_or(&cleaned_expr).unwrap_or(0) != 0
+        let tokens = self.tokenize_expr(&cleaned_expr);
+        let mut pos = 0;
+        self.parse_logical_or(&tokens, &mut pos).unwrap_or(0) != 0
     }
 
-    fn eval_logic_or(&self, expr: &str) -> Option<i64> {
-        let parts: Vec<&str> = expr.split("||").collect();
-        let mut val = self.eval_logic_and(parts[0])?;
-        for part in &parts[1..] {
-            if val != 0 { return Some(1); }
-            val = if self.eval_logic_and(part)? != 0 { 1 } else { 0 };
+    fn tokenize_expr(&self, expr: &str) -> Vec<String> {
+        let mut tokens = Vec::new();
+        let mut chars = expr.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c.is_whitespace() { continue; }
+            if c.is_digit(10) {
+                let mut num = String::new();
+                num.push(c);
+                while let Some(&nc) = chars.peek() {
+                    if nc.is_digit(10) || nc == 'x' || nc == 'X' || (nc >= 'a' && nc <= 'f') || (nc >= 'A' && nc <= 'F') || nc == 'L' || nc == 'U' {
+                        num.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(num);
+            } else if c.is_alphabetic() || c == '_' {
+                let mut name = String::new();
+                name.push(c);
+                while let Some(&nc) = chars.peek() {
+                    if nc.is_alphanumeric() || nc == '_' {
+                        name.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(name);
+            } else {
+                let mut op = String::new();
+                op.push(c);
+                if let Some(&nc) = chars.peek() {
+                    let mut combined = op.clone();
+                    combined.push(nc);
+                    match combined.as_str() {
+                        "==" | "!=" | "<=" | ">=" | "&&" | "||" | "<<" | ">>" => {
+                            tokens.push(combined);
+                            chars.next();
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+                tokens.push(op);
+            }
+        }
+        tokens
+    }
+
+    fn parse_logical_or(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_logical_and(tokens, pos)?;
+        while *pos < tokens.len() && tokens[*pos] == "||" {
+            *pos += 1;
+            let rhs = self.parse_logical_and(tokens, pos)?;
+            val = if val != 0 || rhs != 0 { 1 } else { 0 };
         }
         Some(val)
     }
 
-    fn eval_logic_and(&self, expr: &str) -> Option<i64> {
-        let parts: Vec<&str> = expr.split("&&").collect();
-        let mut val = self.eval_relational(parts[0])?;
-        for part in &parts[1..] {
-            if val == 0 { return Some(0); }
-            val = if self.eval_relational(part)? != 0 { 1 } else { 0 };
+    fn parse_logical_and(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_bitwise_or(tokens, pos)?;
+        while *pos < tokens.len() && tokens[*pos] == "&&" {
+            *pos += 1;
+            let rhs = self.parse_bitwise_or(tokens, pos)?;
+            val = if val != 0 && rhs != 0 { 1 } else { 0 };
         }
         Some(val)
     }
 
-    fn eval_relational(&self, expr: &str) -> Option<i64> {
-        if expr.contains("==") {
-            let parts: Vec<&str> = expr.split("==").collect();
-            return Some(if self.eval_arithmetic(parts[0])? == self.eval_arithmetic(parts[1])? { 1 } else { 0 });
+    fn parse_bitwise_or(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_bitwise_xor(tokens, pos)?;
+        while *pos < tokens.len() && tokens[*pos] == "|" {
+            *pos += 1;
+            let rhs = self.parse_bitwise_xor(tokens, pos)?;
+            val |= rhs;
         }
-        if expr.contains("!=") {
-            let parts: Vec<&str> = expr.split("!=").collect();
-            return Some(if self.eval_arithmetic(parts[0])? != self.eval_arithmetic(parts[1])? { 1 } else { 0 });
-        }
-        // Simplified: just return arithmetic result if no relational ops
-        self.eval_arithmetic(expr)
+        Some(val)
     }
 
-    fn eval_arithmetic(&self, expr: &str) -> Option<i64> {
-        let trimmed = expr.trim();
-        if trimmed.starts_with("defined") {
-            let rest = trimmed[7..].trim();
-            let name = if rest.starts_with('(') && rest.ends_with(')') {
-                &rest[1..rest.len()-1]
-            } else {
-                rest
+    fn parse_bitwise_xor(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_bitwise_and(tokens, pos)?;
+        while *pos < tokens.len() && tokens[*pos] == "^" {
+            *pos += 1;
+            let rhs = self.parse_bitwise_and(tokens, pos)?;
+            val ^= rhs;
+        }
+        Some(val)
+    }
+
+    fn parse_bitwise_and(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_equality(tokens, pos)?;
+        while *pos < tokens.len() && tokens[*pos] == "&" {
+            *pos += 1;
+            let rhs = self.parse_equality(tokens, pos)?;
+            val &= rhs;
+        }
+        Some(val)
+    }
+
+    fn parse_equality(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_relational(tokens, pos)?;
+        while *pos < tokens.len() && (tokens[*pos] == "==" || tokens[*pos] == "!=") {
+            let op = tokens[*pos].clone();
+            *pos += 1;
+            let rhs = self.parse_relational(tokens, pos)?;
+            val = if (op == "==" && val == rhs) || (op == "!=" && val != rhs) { 1 } else { 0 };
+        }
+        Some(val)
+    }
+
+    fn parse_relational(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_shift(tokens, pos)?;
+        while *pos < tokens.len() && (tokens[*pos] == "<" || tokens[*pos] == ">" || tokens[*pos] == "<=" || tokens[*pos] == ">=") {
+            let op = tokens[*pos].clone();
+            *pos += 1;
+            let rhs = self.parse_shift(tokens, pos)?;
+            val = match op.as_str() {
+                "<" => if val < rhs { 1 } else { 0 },
+                ">" => if val > rhs { 1 } else { 0 },
+                "<=" => if val <= rhs { 1 } else { 0 },
+                ">=" => if val >= rhs { 1 } else { 0 },
+                _ => 0,
             };
-            return Some(if self.macros.contains_key(name.trim()) { 1 } else { 0 });
         }
-        if trimmed.starts_with("__has_include") {
-            let rest = trimmed[13..].trim();
-            let spec = if rest.starts_with('(') && rest.ends_with(')') {
-                &rest[1..rest.len()-1]
+        Some(val)
+    }
+
+    fn parse_shift(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_additive(tokens, pos)?;
+        while *pos < tokens.len() && (tokens[*pos] == "<<" || tokens[*pos] == ">>") {
+            let op = tokens[*pos].clone();
+            *pos += 1;
+            let rhs = self.parse_additive(tokens, pos)?;
+            val = if op == "<<" { val << rhs } else { val >> rhs };
+        }
+        Some(val)
+    }
+
+    fn parse_additive(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_multiplicative(tokens, pos)?;
+        while *pos < tokens.len() && (tokens[*pos] == "+" || tokens[*pos] == "-") {
+            let op = tokens[*pos].clone();
+            *pos += 1;
+            let rhs = self.parse_multiplicative(tokens, pos)?;
+            val = if op == "+" { val + rhs } else { val - rhs };
+        }
+        Some(val)
+    }
+
+    fn parse_multiplicative(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        let mut val = self.parse_unary(tokens, pos)?;
+        while *pos < tokens.len() && (tokens[*pos] == "*" || tokens[*pos] == "/" || tokens[*pos] == "%") {
+            let op = tokens[*pos].clone();
+            *pos += 1;
+            let rhs = self.parse_unary(tokens, pos)?;
+            if op == "/" || op == "%" {
+                if rhs == 0 { return None; }
+                val = if op == "/" { val / rhs } else { val % rhs };
             } else {
-                rest
-            }.trim();
-            
-            let (file_name, search_current) = if spec.starts_with('"') && spec.ends_with('"') {
-                (&spec[1..spec.len()-1], true)
-            } else if spec.starts_with('<') && spec.ends_with('>') {
-                (&spec[1..spec.len()-1], false)
-            } else {
-                return Some(0);
-            };
-            
-            return Some(if self.include_exists(file_name, search_current) { 1 } else { 0 });
+                val *= rhs;
+            }
         }
-        if trimmed.starts_with('!') {
-            return Some(if self.eval_arithmetic(&trimmed[1..])? == 0 { 1 } else { 0 });
+        Some(val)
+    }
+
+    fn parse_unary(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        if *pos >= tokens.len() { return None; }
+        let op = &tokens[*pos];
+        if op == "!" {
+            *pos += 1;
+            return Some(if self.parse_unary(tokens, pos)? == 0 { 1 } else { 0 });
         }
-        trimmed.parse::<i64>().ok().or_else(|| {
-            // Support for arithmetic operators with basic precedence
-            if trimmed.contains('+') {
-                let parts: Vec<&str> = trimmed.splitn(2, '+').collect();
-                return Some(self.eval_arithmetic(parts[0])? + self.eval_arithmetic(parts[1])?);
+        if op == "~" {
+            *pos += 1;
+            return Some(!self.parse_unary(tokens, pos)?);
+        }
+        if op == "+" {
+            *pos += 1;
+            return self.parse_unary(tokens, pos);
+        }
+        if op == "-" {
+            *pos += 1;
+            return Some(-self.parse_unary(tokens, pos)?);
+        }
+        if op == "defined" {
+            *pos += 1;
+            if *pos < tokens.len() && tokens[*pos] == "(" {
+                *pos += 1;
+                let name = &tokens[*pos];
+                *pos += 1;
+                if *pos < tokens.len() && tokens[*pos] == ")" {
+                    *pos += 1;
+                }
+                return Some(if self.macros.contains_key(name) { 1 } else { 0 });
+            } else if *pos < tokens.len() {
+                let name = &tokens[*pos];
+                *pos += 1;
+                return Some(if self.macros.contains_key(name) { 1 } else { 0 });
             }
-            if trimmed.contains('-') {
-                let parts: Vec<&str> = trimmed.splitn(2, '-').collect();
-                return Some(self.eval_arithmetic(parts[0])? - self.eval_arithmetic(parts[1])?);
+        }
+        if op == "__has_include" {
+            *pos += 1;
+            if *pos < tokens.len() && tokens[*pos] == "(" {
+                *pos += 1;
+                let mut spec = String::new();
+                // Reconstruct spec from tokens until ')'
+                while *pos < tokens.len() && tokens[*pos] != ")" {
+                    spec.push_str(&tokens[*pos]);
+                    *pos += 1;
+                }
+                if *pos < tokens.len() && tokens[*pos] == ")" {
+                    *pos += 1;
+                }
+                
+                let (file_name, search_current) = if spec.starts_with('"') && spec.ends_with('"') {
+                    (&spec[1..spec.len()-1], true)
+                } else if spec.starts_with('<') && spec.ends_with('>') {
+                    (&spec[1..spec.len()-1], false)
+                } else {
+                    return Some(0);
+                };
+                return Some(if self.include_exists(file_name, search_current) { 1 } else { 0 });
             }
-            if trimmed.contains('*') {
-                let parts: Vec<&str> = trimmed.splitn(2, '*').collect();
-                return Some(self.eval_arithmetic(parts[0])? * self.eval_arithmetic(parts[1])?);
+        }
+        self.parse_primary(tokens, pos)
+    }
+
+    fn parse_primary(&mut self, tokens: &[String], pos: &mut usize) -> Option<i64> {
+        if *pos >= tokens.len() { return None; }
+        let token = &tokens[*pos];
+        if token == "(" {
+            *pos += 1;
+            let val = self.parse_logical_or(tokens, pos)?;
+            if *pos < tokens.len() && tokens[*pos] == ")" {
+                *pos += 1;
             }
-            if trimmed.contains('/') {
-                let parts: Vec<&str> = trimmed.splitn(2, '/').collect();
-                let b = self.eval_arithmetic(parts[1])?;
-                return if b != 0 { Some(self.eval_arithmetic(parts[0])? / b) } else { None };
-            }
-            None
-        })
+            return Some(val);
+        }
+        
+        // Try parsing as integer (handles hex, octal, suffixes)
+        let val = if token.starts_with("0x") || token.starts_with("0X") {
+            i64::from_str_radix(&token[2..].trim_end_matches(|c| c == 'L' || c == 'U' || c == 'l' || c == 'u'), 16).ok()
+        } else if token.starts_with('0') && token.len() > 1 && token.chars().nth(1).unwrap().is_digit(8) {
+            i64::from_str_radix(&token[1..].trim_end_matches(|c| c == 'L' || c == 'U' || c == 'l' || c == 'u'), 8).ok()
+        } else {
+            token.trim_end_matches(|c| c == 'L' || c == 'U' || c == 'l' || c == 'u').parse::<i64>().ok()
+        };
+
+        if val.is_some() {
+            *pos += 1;
+        }
+        val
     }
 
     fn include_exists(&self, file_name: &str, search_current: bool) -> bool {

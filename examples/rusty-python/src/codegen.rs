@@ -394,7 +394,7 @@ impl GaiaTranslator {
                         let label = self.new_label("unreachable");
                         self.start_block(label);
                     }
-                    "add" | "sub" | "mul" | "div" => {
+                    "add" | "sub" | "mul" | "div" | "mod" | "lshift" | "rshift" | "bitor" | "bitxor" | "bitand" => {
                         self.generate_tree_node(&args[0], false)?;
                         self.generate_tree_node(&args[1], false)?;
                         let instr = match name.as_str() {
@@ -402,21 +402,248 @@ impl GaiaTranslator {
                             "sub" => CoreInstruction::Sub(GaiaType::Object),
                             "mul" => CoreInstruction::Mul(GaiaType::Object),
                             "div" => CoreInstruction::Div(GaiaType::Object),
+                            "mod" => CoreInstruction::Rem(GaiaType::Object),
+                            "lshift" => CoreInstruction::Shl(GaiaType::Object),
+                            "rshift" => CoreInstruction::Shr(GaiaType::Object),
+                            "bitor" => CoreInstruction::Or(GaiaType::Object),
+                            "bitxor" => CoreInstruction::Xor(GaiaType::Object),
+                            "bitand" => CoreInstruction::And(GaiaType::Object),
                             _ => unreachable!(),
                         };
                         self.current_instructions.push(GaiaInstruction::Core(instr));
                     }
-                    "eq" | "lt" | "gt" => {
+                    "floordiv" | "pow" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.generate_tree_node(&args[1], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: name.clone(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; 2],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "eq" | "noteq" | "lt" | "lte" | "gt" | "gte" => {
                         self.generate_tree_node(&args[0], false)?;
                         self.generate_tree_node(&args[1], false)?;
                         let cond = match name.as_str() {
                             "eq" => CmpCondition::Eq,
+                            "noteq" => CmpCondition::Ne,
                             "lt" => CmpCondition::Lt,
+                            "lte" => CmpCondition::Le,
                             "gt" => CmpCondition::Gt,
+                            "gte" => CmpCondition::Ge,
                             _ => unreachable!(),
                         };
                         self.current_instructions.push(GaiaInstruction::Core(
                             CoreInstruction::Cmp(cond, GaiaType::Object),
+                        ));
+                    }
+                    "is" | "isnot" | "in" | "notin" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.generate_tree_node(&args[1], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: name.clone(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; 2],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "invert" | "not" | "uadd" | "usub" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        let instr = match name.as_str() {
+                            "invert" => CoreInstruction::Not(GaiaType::Object),
+                            "not" => CoreInstruction::Not(GaiaType::Object),
+                            "uadd" => return Ok(()), // no-op
+                            "usub" => CoreInstruction::Neg(GaiaType::Object),
+                            _ => unreachable!(),
+                        };
+                        self.current_instructions.push(GaiaInstruction::Core(instr));
+                    }
+                    "and" | "or" => {
+                        let end_label = self.new_label("logical_end");
+                        let is_and = name == "and";
+
+                        for (i, arg) in args.iter().enumerate() {
+                            self.generate_tree_node(arg, false)?;
+
+                            if i < args.len() - 1 {
+                                self.current_instructions.push(GaiaInstruction::Core(
+                                    CoreInstruction::Dup,
+                                ));
+                                let next_label = self.new_label("logical_next");
+
+                                if is_and {
+                                    self.finish_block(GaiaTerminator::Branch {
+                                        true_label: next_label.clone(),
+                                        false_label: end_label.clone(),
+                                    });
+                                } else {
+                                    self.finish_block(GaiaTerminator::Branch {
+                                        true_label: end_label.clone(),
+                                        false_label: next_label.clone(),
+                                    });
+                                }
+
+                                self.start_block(next_label);
+                                self.current_instructions.push(GaiaInstruction::Core(
+                                    CoreInstruction::Pop,
+                                ));
+                            }
+                        }
+
+                        self.finish_block(GaiaTerminator::Jump(end_label.clone()));
+                        self.start_block(end_label);
+                    }
+                    "list" | "tuple" | "set" => {
+                        for arg in args {
+                            self.generate_tree_node(arg, false)?;
+                        }
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: name.clone(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; args.len()],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "dict" => {
+                        for arg in args {
+                            self.generate_tree_node(arg, false)?;
+                        }
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "dict".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; args.len()],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "dict_item" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.generate_tree_node(&args[1], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "dict_item".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; 2],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "list_comp" | "set_comp" | "dict_comp" | "generator_exp" => {
+                        // FIXME: implement comprehensions
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::PushConstant(GaiaConstant::Null),
+                        ));
+                    }
+                    "slice" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.generate_tree_node(&args[1], false)?;
+                        self.generate_tree_node(&args[2], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "slice".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; 3],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "subscript" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.generate_tree_node(&args[1], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Object".to_string(),
+                                method: "__getitem__".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; 1],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: true,
+                            },
+                        ));
+                    }
+                    "bytes" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "bytes".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "fstring" => {
+                        for arg in args {
+                            self.generate_tree_node(arg, false)?;
+                        }
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "fstring".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; args.len()],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "formatted_value" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "format".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "starred" | "starred_double" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: name.clone(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
                         ));
                     }
                     "get_field" => {

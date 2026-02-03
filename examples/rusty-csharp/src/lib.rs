@@ -5,7 +5,7 @@
 
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::{builder::Builder, source::SourceText};
-use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
+use oak_csharp::{CSharpBuilder, CSharpLanguage, ast::CSharpRoot};
 
 pub mod codegen;
 pub mod errors;
@@ -16,26 +16,26 @@ pub mod visitor;
 /// Rusty CSharp 前端
 #[derive(Default)]
 pub struct RustyCSharpFrontend {
-    language: JavaLanguage,
+    language: CSharpLanguage,
 }
 
 impl RustyCSharpFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
-            language: JavaLanguage::new(),
+            language: CSharpLanguage::new(),
         }
     }
 }
 
 impl NyarFrontend for RustyCSharpFrontend {
-    type Language = JavaLanguage;
+    type Language = CSharpLanguage;
 
     /// 解析 CSharp 源代码
-    fn parse(&self, source: &str) -> Result<JavaRoot, NyarError> {
-        let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
+    fn parse(&self, source: &str) -> Result<CSharpRoot, NyarError> {
+        let mut session = oak_core::parser::ParseSession::<CSharpLanguage>::default();
         let source_text = SourceText::new(source);
-        let builder = JavaBuilder::new(&self.language);
+        let builder = CSharpBuilder::new(&self.language);
         let output = builder.build(&source_text, &[], &mut session);
         output
             .result
@@ -43,7 +43,7 @@ impl NyarFrontend for RustyCSharpFrontend {
     }
 
     /// 编译到 Chomsky UIR (IKunTree)
-    fn lower(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
+    fn lower(&self, ast: &CSharpRoot) -> Result<IKunTree, NyarError> {
         let translator = crate::codegen::NyarTranslator::new();
         translator.translate_to_tree(ast)
     }

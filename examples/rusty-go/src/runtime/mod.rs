@@ -160,26 +160,128 @@ impl RustyGoRuntime {
             IKunTree::StringConstant(s) => {
                 code.extend_from_slice(&Instruction::StringConst(s.clone()).encode());
             }
-            IKunTree::CrossLangCall(lang, name, args) => {
-                if lang == "native" || lang == "nyar" {
+            IKunTree::Symbol(name) => {
+                // FIXME: 简单起见，假设所有变量都是本地变量，且需要一个名字到索引的映射
+                // 目前 Nyar VM 支持 LoadGlobal/LoadLocal，这里先用符号名
+                let name_idx = module.constants.len() as u16;
+                module.constants.push(Constant::String(name.clone()));
+                code.extend_from_slice(&Instruction::LoadGlobal(name_idx).encode());
+            }
+            IKunTree::StateUpdate(target, value) => {
+                self.emit_tree(value, code, module)?;
+                if let IKunTree::Symbol(name) = &**target {
+                    let name_idx = module.constants.len() as u16;
+                    module.constants.push(Constant::String(name.clone()));
+                    code.extend_from_slice(&Instruction::StoreGlobal(name_idx).encode());
+                } else {
+                    return Err(RuntimeError::Other("Assignment target must be a symbol".to_string()));
+                }
+            }
+            IKunTree::Choice(condition, then_body, else_body) => {
+                self.emit_tree(condition, code, module)?;
+                
+                // Placeholder for JumpIfFalse offset
+                let jump_if_false_pos = code.len();
+                code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                
+                self.emit_tree(then_body, code, module)?;
+                
+                // Placeholder for Jump offset (to skip else)
+                let jump_pos = code.len();
+                code.extend_from_slice(&Instruction::Jump(0).encode());
+                
+                // Patch JumpIfFalse
+                let else_start = code.len();
+                let diff_to_else = (else_start - jump_if_false_pos) as i16;
+                let patched_jump_if_false = Instruction::JumpIfFalse(diff_to_else).encode();
+                for (i, byte) in patched_jump_if_false.iter().enumerate() {
+                    code[jump_if_false_pos + i] = *byte;
+                }
+                
+                self.emit_tree(else_body, code, module)?;
+                
+                // Patch Jump
+                let end_pos = code.len();
+                let diff_to_end = (end_pos - jump_pos) as i16;
+                let patched_jump = Instruction::Jump(diff_to_end).encode();
+                for (i, byte) in patched_jump.iter().enumerate() {
+                    code[jump_pos + i] = *byte;
+                }
+            }
+            IKunTree::CrossLangCall { language, module_path, function_name, arguments } => {
+                if language == "native" || language == "nyar" {
                     // Push arguments
-                    for arg in args {
+                    for arg in arguments {
                         self.emit_tree(arg, code, module)?;
                     }
                     // FFICall expects (constant_idx_of_name, argc)
                     let name_idx = module.constants.len() as u16;
-                    module.constants.push(Constant::String(name.clone()));
+                    let full_name = format!("{}::{}", module_path, function_name);
+                    module.constants.push(Constant::String(full_name));
                     code.extend_from_slice(
-                        &Instruction::FFICall(name_idx, args.len() as u8).encode(),
+                        &Instruction::FFICall(name_idx, arguments.len() as u8).encode(),
                     );
                 }
             }
             IKunTree::Extension(name, args) => {
-                if name == "return" {
-                    if let Some(val) = args.first() {
-                        self.emit_tree(val, code, module)?;
+                match name.as_str() {
+                    "+" | "-" | "*" | "/" | "==" | "!=" | "<" | "<=" | ">" | ">=" => {
+                        if args.len() == 2 {
+                            self.emit_tree(&args[0], code, module)?;
+                            self.emit_tree(&args[1], code, module)?;
+                            match name.as_str() {
+                                "+" => code.extend_from_slice(&Instruction::I64Add.encode()),
+                                "-" => code.extend_from_slice(&Instruction::I64Sub.encode()),
+                                "*" => code.extend_from_slice(&Instruction::I64Mul.encode()),
+                                "/" => code.extend_from_slice(&Instruction::I64DivS.encode()),
+                                "==" => code.extend_from_slice(&Instruction::I64Eq.encode()),
+                                "!=" => code.extend_from_slice(&Instruction::I64Ne.encode()),
+                                "<" => code.extend_from_slice(&Instruction::I64LtS.encode()),
+                                "<=" => code.extend_from_slice(&Instruction::I64LeS.encode()),
+                                ">" => code.extend_from_slice(&Instruction::I64GtS.encode()),
+                                ">=" => code.extend_from_slice(&Instruction::I64GeS.encode()),
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            return Err(RuntimeError::Other(format!("Binary op {} requires 2 arguments", name)));
+                        }
                     }
-                    code.extend_from_slice(&Instruction::Return.encode());
+                    "return" => {
+                        if let Some(val) = args.first() {
+                            self.emit_tree(val, code, module)?;
+                        }
+                        code.extend_from_slice(&Instruction::Return.encode());
+                    }
+                    "for" => {
+                        // args: [init, cond, post, body]
+                        if args.len() == 4 {
+                            self.emit_tree(&args[0], code, module)?; // init
+                            let loop_start = code.len();
+                            self.emit_tree(&args[1], code, module)?; // cond
+                            
+                            let exit_jump_pos = code.len();
+                            code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                            
+                            self.emit_tree(&args[3], code, module)?; // body
+                            self.emit_tree(&args[2], code, module)?; // post
+                            
+                            let back_jump_diff = (loop_start as isize - code.len() as isize) as i16;
+                            code.extend_from_slice(&Instruction::Jump(back_jump_diff).encode());
+                            
+                            // Patch exit jump
+                            let exit_pos = code.len();
+                            let exit_diff = (exit_pos - exit_jump_pos) as i16;
+                            let patched_exit = Instruction::JumpIfFalse(exit_diff).encode();
+                            for (i, byte) in patched_exit.iter().enumerate() {
+                                code[exit_jump_pos + i] = *byte;
+                            }
+                        }
+                    }
+                    "string" => {
+                        // TODO: 完整的字符串字面量支持
+                        code.extend_from_slice(&Instruction::StringConst("".to_string()).encode());
+                    }
+                    _ => {}
                 }
             }
             _ => {

@@ -109,7 +109,7 @@ impl RustyCRuntime {
                 for item in items {
                     if let IKunTree::Export(name, body) = item {
                         if let IKunTree::Lambda(params, body) = &**body {
-                            let chunk = self.translate_function(params, body)?;
+                            let chunk = self.translate_function(params, body, &mut module)?;
                             let chunk_idx = module.chunks.len() as u16;
                             module.chunks.push(chunk);
                             module.exports.push(ExportInfo {
@@ -125,7 +125,7 @@ impl RustyCRuntime {
                     if let IKunTree::StateUpdate(target, body) = item {
                         if let IKunTree::Symbol(name) = &**target {
                             if let IKunTree::Lambda(params, body) = &**body {
-                                let chunk = self.translate_function(params, body)?;
+                                let chunk = self.translate_function(params, body, &mut module)?;
                                 let chunk_idx = module.chunks.len() as u16;
                                 module.chunks.push(chunk);
                                 module.exports.push(ExportInfo {
@@ -138,7 +138,7 @@ impl RustyCRuntime {
                 }
             }
             _ => {
-                let chunk = self.translate_function(&vec![], tree)?;
+                let chunk = self.translate_function(&vec![], tree, &mut module)?;
                 module.chunks.push(chunk);
                 module.exports.push(ExportInfo {
                     symbol: "main".to_string().into(),
@@ -154,6 +154,7 @@ impl RustyCRuntime {
         &self,
         params: &[String],
         body: &IKunTree,
+        module: &mut NyarcModule,
     ) -> Result<Chunk, RuntimeError> {
         let mut instructions = vec![];
         let mut symbols = HashMap::new();
@@ -175,6 +176,7 @@ impl RustyCRuntime {
             &mut labels,
             &mut pending_gotos,
             None,
+            module,
         )?;
 
         // Patch pending gotos
@@ -219,6 +221,7 @@ impl RustyCRuntime {
         labels: &mut HashMap<String, usize>,
         pending_gotos: &mut Vec<(String, usize)>,
         mut switch_info: Option<&mut SwitchInfo>,
+        module: &mut NyarcModule,
     ) -> Result<(), RuntimeError> {
         match tree {
             IKunTree::Constant(v) => {
@@ -240,7 +243,8 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
                 self.translate_expr(&args[1], insts, symbols, 
                     break_indices.as_mut().map(|b| &mut **b),
@@ -248,7 +252,8 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
                 match op.as_str() {
                     "+" => insts.push(Instruction::I32Add),
@@ -271,7 +276,8 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
 
                 let jump_if_false_idx = insts.len();
@@ -283,7 +289,8 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
 
                 let jump_idx = insts.len();
@@ -299,7 +306,8 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
 
                 let else_start = jump_idx + 1;
@@ -309,76 +317,89 @@ impl RustyCRuntime {
                 insts[jump_if_false_idx] = Instruction::JumpIfFalse(then_len as i16 + 3);
                 insts[jump_idx] = Instruction::Jump(else_len as i16);
             }
-            IKunTree::Repeat(cond, body) | IKunTree::Extension(name, args) if (name == "while" && args.len() == 2) => {
-                let (cond_tree, body_tree) = if let IKunTree::Repeat(c, b) = tree {
-                    (&**c, &**b)
-                } else if let IKunTree::Extension(_, args) = tree {
-                    (&args[0], &args[1])
-                } else {
-                    unreachable!()
-                };
+            IKunTree::Extension(name, args) if name == "while" && args.len() == 2 => {
+                let cond = &args[0];
+                let body = &args[1];
 
                 let start_pos = self.calculate_code_size(insts);
-                let mut current_break_indices = Vec::new();
+                self.translate_expr(cond, insts, symbols, 
+                    break_indices.as_mut().map(|b| &mut **b),
+                    continue_indices.as_mut().map(|c| &mut **c),
+                    continue_pos,
+                    labels,
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
+                )?;
 
-                self.translate_expr(cond_tree, insts, symbols, None, None, None, labels, pending_gotos, None)?;
                 let jump_if_false_idx = insts.len();
                 insts.push(Instruction::JumpIfFalse(0));
 
-                self.translate_expr(body_tree, insts, symbols, Some(&mut current_break_indices), None, Some(start_pos), labels, pending_gotos, None)?;
+                let mut current_break_indices = Vec::new();
+                let mut current_continue_indices = Vec::new();
+                
+                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), Some(start_pos), labels, pending_gotos, switch_info.as_mut().map(|s| &mut **s), module)?;
+                
+                let current_pos = self.calculate_code_size(insts);
+                insts.push(Instruction::Jump((start_pos as i16 - current_pos as i16 - 3)));
 
-                let body_end_pos = self.calculate_code_size(insts);
-                let jump_back_offset = -((body_end_pos - start_pos) as i16 + 3);
-                insts.push(Instruction::Jump(jump_back_offset));
-
-                let final_pos = self.calculate_code_size(insts);
-                let jump_forward_offset = (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx + 1])) as i16;
-                insts[jump_if_false_idx] = Instruction::JumpIfFalse(jump_forward_offset);
+                let end_pos = self.calculate_code_size(insts);
+                let loop_len = end_pos - self.calculate_code_size(&insts[..jump_if_false_idx + 1]);
+                insts[jump_if_false_idx] = Instruction::JumpIfFalse(loop_len as i16);
 
                 // Patch breaks
                 for idx in current_break_indices {
                     let break_pos = self.calculate_code_size(&insts[..idx + 1]);
-                    insts[idx] = Instruction::Jump((final_pos - break_pos) as i16);
+                    insts[idx] = Instruction::Jump((end_pos - break_pos) as i16);
+                }
+                // Patch continues
+                for idx in current_continue_indices {
+                    let cont_pos = self.calculate_code_size(&insts[..idx + 1]);
+                    insts[idx] = Instruction::Jump((start_pos as i16 - cont_pos as i16));
                 }
             }
-            IKunTree::Extension(name, args) if name == "do_while" && args.len() == 2 => {
+            IKunTree::Extension(name, args) if name == "do-while" && args.len() == 2 => {
+                let body = &args[0];
+                let cond = &args[1];
+
                 let start_pos = self.calculate_code_size(insts);
                 let mut current_break_indices = Vec::new();
                 let mut current_continue_indices = Vec::new();
 
-                // body
-                self.translate_expr(&args[0], insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), None, labels, pending_gotos, None)?;
+                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), None, labels, pending_gotos, switch_info.as_mut().map(|s| &mut **s), module)?;
 
-                let continue_pos = self.calculate_code_size(insts);
-                // Patch continues
-                for idx in current_continue_indices {
-                    let c_pos = self.calculate_code_size(&insts[..idx + 1]);
-                    insts[idx] = Instruction::Jump((continue_pos - c_pos) as i16);
-                }
+                let continue_pos_val = self.calculate_code_size(insts);
+                self.translate_expr(cond, insts, symbols, 
+                    break_indices.as_mut().map(|b| &mut **b),
+                    continue_indices.as_mut().map(|c| &mut **c),
+                    continue_pos,
+                    labels,
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
+                )?;
 
-                // condition
-                self.translate_expr(&args[1], insts, symbols, None, None, None, labels, pending_gotos, None)?;
+                let current_pos = self.calculate_code_size(insts);
+                // If cond is true, jump back to start
+                insts.push(Instruction::I32Not);
+                insts.push(Instruction::JumpIfFalse((start_pos as i16 - current_pos as i16 - 4))); // 4 bytes for Not + JumpIfFalse
 
-                let jump_if_false_idx = insts.len();
-                insts.push(Instruction::JumpIfFalse(0));
-
-                let jump_back_offset = -((self.calculate_code_size(insts) - start_pos) as i16 + 3);
-                insts.push(Instruction::Jump(jump_back_offset));
-
-                let final_pos = self.calculate_code_size(insts);
-                insts[jump_if_false_idx] = Instruction::JumpIfFalse(3); // Jump over the Jump back
-
+                let end_pos = self.calculate_code_size(insts);
                 // Patch breaks
                 for idx in current_break_indices {
                     let break_pos = self.calculate_code_size(&insts[..idx + 1]);
-                    insts[idx] = Instruction::Jump((final_pos - break_pos) as i16);
+                    insts[idx] = Instruction::Jump((end_pos - break_pos) as i16);
+                }
+                // Patch continues
+                for idx in current_continue_indices {
+                    let cont_pos = self.calculate_code_size(&insts[..idx + 1]);
+                    insts[idx] = Instruction::Jump((continue_pos_val as i16 - cont_pos as i16));
                 }
             }
             IKunTree::Extension(name, args) if name == "for" && args.len() == 4 => {
-                // for(init; cond; update; body)
                 let init = &args[0];
                 let cond = &args[1];
-                let update = &args[2];
+                let step = &args[2];
                 let body = &args[3];
 
                 self.translate_expr(init, insts, symbols, 
@@ -387,39 +408,56 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
 
-                let start_pos = self.calculate_code_size(insts);
-                let mut current_break_indices = Vec::new();
-                let mut current_continue_indices = Vec::new();
+                let cond_pos = self.calculate_code_size(insts);
+                self.translate_expr(cond, insts, symbols, 
+                    break_indices.as_mut().map(|b| &mut **b),
+                    continue_indices.as_mut().map(|c| &mut **c),
+                    continue_pos,
+                    labels,
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
+                )?;
 
-                self.translate_expr(cond, insts, symbols, None, None, None, labels, pending_gotos, None)?;
                 let jump_if_false_idx = insts.len();
                 insts.push(Instruction::JumpIfFalse(0));
 
-                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), None, labels, pending_gotos, None)?;
+                let mut current_break_indices = Vec::new();
+                let mut current_continue_indices = Vec::new();
 
-                let continue_pos = self.calculate_code_size(insts);
-                // Patch continues
-                for idx in current_continue_indices {
-                    let c_pos = self.calculate_code_size(&insts[..idx + 1]);
-                    insts[idx] = Instruction::Jump((continue_pos - c_pos) as i16);
-                }
+                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), None, labels, pending_gotos, switch_info.as_mut().map(|s| &mut **s), module)?;
 
-                self.translate_expr(update, insts, symbols, None, None, None, labels, pending_gotos, None)?;
+                let step_pos = self.calculate_code_size(insts);
+                self.translate_expr(step, insts, symbols, 
+                    break_indices.as_mut().map(|b| &mut **b),
+                    continue_indices.as_mut().map(|c| &mut **c),
+                    continue_pos,
+                    labels,
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
+                )?;
 
-                let jump_back_offset = -((self.calculate_code_size(insts) - start_pos) as i16 + 3);
-                insts.push(Instruction::Jump(jump_back_offset));
+                let current_pos = self.calculate_code_size(insts);
+                insts.push(Instruction::Jump((cond_pos as i16 - current_pos as i16 - 3)));
 
-                let final_pos = self.calculate_code_size(insts);
-                let jump_forward_offset = (final_pos - self.calculate_code_size(&insts[..jump_if_false_idx + 1])) as i16;
-                insts[jump_if_false_idx] = Instruction::JumpIfFalse(jump_forward_offset);
+                let end_pos = self.calculate_code_size(insts);
+                let loop_len = end_pos - self.calculate_code_size(&insts[..jump_if_false_idx + 1]);
+                insts[jump_if_false_idx] = Instruction::JumpIfFalse(loop_len as i16);
 
                 // Patch breaks
                 for idx in current_break_indices {
                     let break_pos = self.calculate_code_size(&insts[..idx + 1]);
-                    insts[idx] = Instruction::Jump((final_pos - break_pos) as i16);
+                    insts[idx] = Instruction::Jump((end_pos - break_pos) as i16);
+                }
+                // Patch continues
+                for idx in current_continue_indices {
+                    let cont_pos = self.calculate_code_size(&insts[..idx + 1]);
+                    insts[idx] = Instruction::Jump((step_pos as i16 - cont_pos as i16));
                 }
             }
             IKunTree::Extension(name, args) if name == "switch" && args.len() == 2 => {
@@ -537,27 +575,18 @@ impl RustyCRuntime {
                     insts.push(Instruction::Jump(0));
                 }
             }
-            IKunTree::Seq(stmts) => {
+            IKunTree::Seq(stmts) | IKunTree::List(stmts) => {
                 for stmt in stmts {
-                    self.translate_expr(stmt, insts, symbols, 
+                    self.translate_expr(
+                        stmt,
+                        insts,
+                        symbols,
                         break_indices.as_mut().map(|b| &mut **b),
                         continue_indices.as_mut().map(|c| &mut **c),
                         continue_pos,
                         labels,
                         pending_gotos,
-                        switch_info.as_mut().map(|s| &mut **s)
-                    )?;
-                }
-            }
-            IKunTree::List(stmts) => {
-                for stmt in stmts {
-                    self.translate_expr(stmt, insts, symbols, 
-                        break_indices.as_mut().map(|b| &mut **b),
-                        continue_indices.as_mut().map(|c| &mut **c),
-                        continue_pos,
-                        labels,
-                        pending_gotos,
-                        switch_info.as_mut().map(|s| &mut **s)
+                        switch_info.as_mut().map(|s| &mut **s),
                     )?;
                 }
             }

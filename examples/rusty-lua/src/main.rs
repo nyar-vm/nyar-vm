@@ -4,7 +4,7 @@
 
 use nyar_vm::NyarDriver;
 use std::{path::Path, process::exit};
-use mini_lua::MiniLuaFrontend;
+use rusty_lua::RustyLuaFrontend;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -14,7 +14,7 @@ fn main() {
     }
 
     let input_file = Path::new(&args[1]);
-    let frontend = MiniLuaFrontend::new();
+    let frontend = RustyLuaFrontend::new();
     let driver = NyarDriver::new();
 
     if let Err(e) = driver.run_source(&frontend, input_file) {

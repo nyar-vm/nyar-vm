@@ -94,17 +94,17 @@ impl NyarBackend {
                 }
             }
             IKunTree::CrossLangCall {
-                language,
-                module_path,
-                function_name,
-                arguments,
+                language: lang,
+                module_path: group,
+                function_name: func,
+                arguments: args,
             } => {
-                for arg in arguments {
+                for arg in args {
                     code.extend(self.lower_tree(arg)?);
                 }
-                let name = if language == "nyar" {
+                let name = if lang == "nyar" {
                     // Try to map to intrinsic ID
-                    let id = match (module_path.as_str(), function_name.as_str()) {
+                    let id = match (group.as_str(), func.as_str()) {
                         ("io", "print") | ("", "print") => 1,
                         ("io", "println") | ("", "println") => 2,
                         ("std", "exit") | ("", "exit") => 3,
@@ -123,14 +123,14 @@ impl NyarBackend {
                     if id > 0 {
                         format!("$intrinsic:{}", id)
                     } else {
-                        format!("{}:{}:{}", language, module_path, function_name)
+                        format!("{}:{}:{}", lang, group, func)
                     }
                 } else {
-                    format!("{}:{}:{}", language, module_path, function_name)
+                    format!("{}:{}:{}", lang, group, func)
                 };
                 let name_idx = self.add_constant(Constant::String(name));
                 code.extend_from_slice(
-                    &Instruction::FFICall(name_idx, arguments.len() as u8).encode(),
+                    &Instruction::FFICall(name_idx, args.len() as u8).encode(),
                 );
             }
             IKunTree::Extension(name, args) => {
@@ -257,6 +257,131 @@ impl NyarBackend {
                                 code.extend_from_slice(&Instruction::GetField(name_idx).encode());
                             }
                         }
+                    }
+                    "assign" => {
+                        if args.len() == 2 {
+                            // [name, value]
+                            code.extend(self.lower_tree(&args[1])?);
+                            if let IKunTree::Symbol(name) = &args[0] {
+                                let idx = self.add_constant(Constant::QualifiedName(QualifiedName::from(name.as_str())));
+                                code.push(Opcode::StoreGlobal as u8);
+                                code.extend_from_slice(&(idx as u16).to_le_bytes());
+                            }
+                        }
+                    }
+                    "add" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Add.encode());
+                    }
+                    "sub" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Sub.encode());
+                    }
+                    "mul" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Mul.encode());
+                    }
+                    "div" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64DivS.encode());
+                    }
+                    "rem" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64RemS.encode());
+                    }
+                    "eq" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Eq.encode());
+                    }
+                    "ne" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Ne.encode());
+                    }
+                    "lt" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64LtS.encode());
+                    }
+                    "le" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64LeS.encode());
+                    }
+                    "gt" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64GtS.encode());
+                    }
+                    "ge" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64GeS.encode());
+                    }
+                    "and" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64And.encode());
+                    }
+                    "or" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Or.encode());
+                    }
+                    "bit_and" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64And.encode());
+                    }
+                    "bit_or" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Or.encode());
+                    }
+                    "bit_xor" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Xor.encode());
+                    }
+                    "shl" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Shl.encode());
+                    }
+                    "shr" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64ShrS.encode());
+                    }
+                    "ushr" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64ShrU.encode());
+                    }
+                    "neg" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend_from_slice(&Instruction::I64Neg.encode());
+                    }
+                    "not" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend_from_slice(&Instruction::I64Not.encode());
+                    }
+                    "bit_not" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend_from_slice(&Instruction::I64Not.encode());
+                    }
+                    "break" => {
+                        // For now just halt or nop, or implement proper jump
+                        code.push(Opcode::Halt as u8);
+                    }
+                    "continue" => {
+                        code.push(Opcode::Nop as u8);
                     }
                     _ => {
                         // Handle other extensions or fallback

@@ -50,6 +50,9 @@ impl<'a> JavaUirConverter<'a> {
                 Item::Class(class) => {
                     items.push(self.convert_class(class)?);
                 }
+                Item::Interface(interface) => {
+                    items.push(self.convert_interface(interface)?);
+                }
                 _ => {}
             }
         }
@@ -70,17 +73,110 @@ impl<'a> JavaUirConverter<'a> {
                 Member::Field(field) => {
                     members.push(self.convert_field(field)?);
                 }
+                Member::Constructor(ctor) => {
+                    members.push(self.convert_constructor(ctor)?);
+                }
             }
         }
         let name_id = self.builder.string(&class.name, self.loc());
         let members_id = self.builder.seq(members, self.loc());
-        Ok(self.builder.extension("class", vec![name_id, members_id], self.loc()))
+
+        let mut modifiers = Vec::new();
+        for m in &class.modifiers {
+            modifiers.push(self.builder.string(m, self.loc()));
+        }
+        let modifiers_id = self.builder.seq(modifiers, self.loc());
+
+        let extends_id = if let Some(ext) = &class.extends {
+            self.builder.string(ext, self.loc())
+        } else {
+            self.builder.constant(0, self.loc()) // Use 0 or null as placeholder
+        };
+
+        let mut implements = Vec::new();
+        for i in &class.implements {
+            implements.push(self.builder.string(i, self.loc()));
+        }
+        let implements_id = self.builder.seq(implements, self.loc());
+
+        Ok(self.builder.extension(
+            "class",
+            vec![name_id, modifiers_id, extends_id, implements_id, members_id],
+            self.loc(),
+        ))
+    }
+
+    fn convert_interface(&mut self, interface: &InterfaceDeclaration) -> Result<Id, NyarError> {
+        let mut members = Vec::new();
+        for member in &interface.members {
+            match member {
+                Member::Method(method) => {
+                    members.push(self.convert_method(method)?);
+                }
+                Member::Field(field) => {
+                    members.push(self.convert_field(field)?);
+                }
+                Member::Constructor(ctor) => {
+                    members.push(self.convert_constructor(ctor)?);
+                }
+            }
+        }
+        let name_id = self.builder.string(&interface.name, self.loc());
+        let members_id = self.builder.seq(members, self.loc());
+
+        let mut modifiers = Vec::new();
+        for m in &interface.modifiers {
+            modifiers.push(self.builder.string(m, self.loc()));
+        }
+        let modifiers_id = self.builder.seq(modifiers, self.loc());
+
+        let mut extends = Vec::new();
+        for e in &interface.extends {
+            extends.push(self.builder.string(e, self.loc()));
+        }
+        let extends_id = self.builder.seq(extends, self.loc());
+
+        Ok(self.builder.extension(
+            "interface",
+            vec![name_id, modifiers_id, extends_id, members_id],
+            self.loc(),
+        ))
     }
 
     fn convert_field(&mut self, field: &FieldDeclaration) -> Result<Id, NyarError> {
         let name_id = self.builder.string(&field.name, self.loc());
         let type_id = self.builder.string(&field.r#type, self.loc());
-        Ok(self.builder.extension("field", vec![name_id, type_id], self.loc()))
+
+        let mut modifiers = Vec::new();
+        for m in &field.modifiers {
+            modifiers.push(self.builder.string(m, self.loc()));
+        }
+        let modifiers_id = self.builder.seq(modifiers, self.loc());
+
+        Ok(self.builder.extension("field", vec![name_id, type_id, modifiers_id], self.loc()))
+    }
+
+    fn convert_constructor(&mut self, ctor: &ConstructorDeclaration) -> Result<Id, NyarError> {
+        let body_id = self.convert_block(&ctor.body)?;
+        let name_id = self.builder.string(&ctor.name, self.loc());
+
+        let mut param_ids = Vec::new();
+        for param in &ctor.parameters {
+            param_ids.push(self.convert_parameter(param)?);
+        }
+        let params_id = self.builder.seq(param_ids, self.loc());
+
+        let mut modifiers = Vec::new();
+        for m in &ctor.modifiers {
+            modifiers.push(self.builder.string(m, self.loc()));
+        }
+        let modifiers_id = self.builder.seq(modifiers, self.loc());
+
+        Ok(self.builder.extension(
+            "constructor",
+            vec![name_id, modifiers_id, params_id, body_id],
+            self.loc(),
+        ))
     }
 
     fn convert_method(&mut self, method: &MethodDeclaration) -> Result<Id, NyarError> {
@@ -94,10 +190,16 @@ impl<'a> JavaUirConverter<'a> {
         }
         let params_id = self.builder.seq(param_ids, self.loc());
 
-        // 规范化 method 扩展：[name, params, return_type, body]
+        let mut modifiers = Vec::new();
+        for m in &method.modifiers {
+            modifiers.push(self.builder.string(m, self.loc()));
+        }
+        let modifiers_id = self.builder.seq(modifiers, self.loc());
+
+        // 规范化 method 扩展：[name, modifiers, params, return_type, body]
         Ok(self.builder.extension(
             "method",
-            vec![name_id, params_id, ret_id, body_id],
+            vec![name_id, modifiers_id, params_id, ret_id, body_id],
             self.loc(),
         ))
     }
@@ -121,64 +223,93 @@ impl<'a> JavaUirConverter<'a> {
             Statement::Expression(expr) => self.convert_expr(expr),
             Statement::Return(Some(expr)) => {
                 let val = self.convert_expr(expr)?;
-                Ok(self.builder.return_(val, self.loc()))
+                Ok(self.builder.extension("return", vec![val], self.loc()))
             }
-            Statement::Return(None) => Ok(self.builder.return_(self.builder.constant(0, self.loc()), self.loc())),
+            Statement::Return(None) => Ok(self.builder.extension("return", vec![], self.loc())),
             Statement::Block(stmts) => self.convert_block(stmts),
-            Statement::If { condition, then_branch, else_branch } => {
-                let cond = self.convert_expr(condition)?;
-                let then_id = self.convert_stmt(then_branch)?;
-                let else_id = if let Some(else_branch) = else_branch {
-                    self.convert_stmt(else_branch)?
-                } else {
-                    self.builder.seq(vec![], self.loc())
-                };
-                Ok(self.builder.branch(cond, then_id, else_id, self.loc()))
-            }
-            Statement::While { condition, body } => {
-                let cond = self.convert_expr(condition)?;
-                let body_id = self.convert_stmt(body)?;
-                Ok(self.builder.while_loop(cond, body_id, self.loc()))
-            }
-            Statement::DoWhile { condition, body } => {
-                let cond = self.convert_expr(condition)?;
-                let body_id = self.convert_stmt(body)?;
-                // Do-while is body followed by while loop
-                let loop_id = self.builder.while_loop(cond, body_id, self.loc());
-                Ok(self.builder.seq(vec![body_id, loop_id], self.loc()))
-            }
-            Statement::For { init, condition, update, body } => {
-                let mut stmts = Vec::new();
-                if let Some(init) = init {
-                    stmts.push(self.convert_stmt(init)?);
-                }
-
-                let cond = if let Some(condition) = condition {
-                    self.convert_expr(condition)?
-                } else {
-                    self.builder.bool(true, self.loc())
-                };
-
-                let mut body_stmts = vec![self.convert_stmt(body)?];
-                if let Some(update) = update {
-                    body_stmts.push(self.convert_expr(update)?);
-                }
-                let body_id = self.builder.seq(body_stmts, self.loc());
-
-                stmts.push(self.builder.while_loop(cond, body_id, self.loc()));
-                Ok(self.builder.seq(stmts, self.loc()))
-            }
-            Statement::Break => Ok(self.builder.extension("break", vec![], self.loc())),
-            Statement::Continue => Ok(self.builder.extension("continue", vec![], self.loc())),
-            Statement::LocalVariable { name, initializer, .. } => {
-                let val = if let Some(init) = initializer {
+            Statement::LocalVariable {
+                r#type,
+                name,
+                initializer,
+            } => {
+                let name_id = self.builder.string(name, self.loc());
+                let type_id = self.builder.string(r#type, self.loc());
+                let init_id = if let Some(init) = initializer {
                     self.convert_expr(init)?
                 } else {
                     self.builder.constant(0, self.loc())
                 };
-                Ok(self.builder.assign(name, val, self.loc()))
+                Ok(self.builder.extension(
+                    "local_variable",
+                    vec![name_id, type_id, init_id],
+                    self.loc(),
+                ))
             }
-            Statement::Switch { selector, cases, default } => {
+            Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond_id = self.convert_expr(condition)?;
+                let then_id = self.convert_stmt(then_branch)?;
+                let else_id = if let Some(eb) = else_branch {
+                    self.convert_stmt(eb)?
+                } else {
+                    self.builder.seq(vec![], self.loc())
+                };
+                Ok(self.builder.extension("if", vec![cond_id, then_id, else_id], self.loc()))
+            }
+            Statement::While { condition, body } => {
+                let cond_id = self.convert_expr(condition)?;
+                let body_id = self.convert_stmt(body)?;
+                Ok(self.builder.extension("while", vec![cond_id, body_id], self.loc()))
+            }
+            Statement::DoWhile { condition, body } => {
+                let cond_id = self.convert_expr(condition)?;
+                let body_id = self.convert_stmt(body)?;
+                Ok(self.builder.extension("do_while", vec![cond_id, body_id], self.loc()))
+            }
+            Statement::For {
+                init,
+                condition,
+                update,
+                body,
+            } => {
+                let init_id = if let Some(i) = init {
+                    self.convert_stmt(i)?
+                } else {
+                    self.builder.seq(vec![], self.loc())
+                };
+                let cond_id = if let Some(c) = condition {
+                    self.convert_expr(c)?
+                } else {
+                    self.builder.bool(true, self.loc())
+                };
+                let update_id = if let Some(u) = update {
+                    self.convert_expr(u)?
+                } else {
+                    self.builder.seq(vec![], self.loc())
+                };
+                let body_id = self.convert_stmt(body)?;
+                Ok(self.builder.extension("for", vec![init_id, cond_id, update_id, body_id], self.loc()))
+            }
+            Statement::ForEach {
+                item_type,
+                item_name,
+                iterable,
+                body,
+            } => {
+                let type_id = self.builder.string(item_type, self.loc());
+                let name_id = self.builder.string(item_name, self.loc());
+                let iterable_id = self.convert_expr(iterable)?;
+                let body_id = self.convert_stmt(body)?;
+                Ok(self.builder.extension("foreach", vec![type_id, name_id, iterable_id, body_id], self.loc()))
+            }
+            Statement::Switch {
+                selector,
+                cases,
+                default,
+            } => {
                 let selector_id = self.convert_expr(selector)?;
                 let mut case_ids = Vec::new();
                 for case in cases {
@@ -186,14 +317,36 @@ impl<'a> JavaUirConverter<'a> {
                     let body_id = self.convert_block(&case.body)?;
                     case_ids.push(self.builder.extension("case", vec![label_id, body_id], self.loc()));
                 }
-                if let Some(default_body) = default {
-                    let body_id = self.convert_block(default_body)?;
-                    case_ids.push(self.builder.extension("default", vec![body_id], self.loc()));
-                }
                 let cases_id = self.builder.seq(case_ids, self.loc());
-                Ok(self.builder.extension("switch", vec![selector_id, cases_id], self.loc()))
+                let default_id = if let Some(d) = default {
+                    self.convert_block(d)?
+                } else {
+                    self.builder.seq(vec![], self.loc())
+                };
+                Ok(self.builder.extension("switch", vec![selector_id, cases_id, default_id], self.loc()))
             }
-            _ => Ok(self.builder.seq(vec![], self.loc())),
+            Statement::Break => Ok(self.builder.extension("break", vec![], self.loc())),
+            Statement::Continue => Ok(self.builder.extension("continue", vec![], self.loc())),
+            Statement::Try(try_stmt) => {
+                let block_id = self.convert_block(&try_stmt.block)?;
+                let mut catch_ids = Vec::new();
+                for catch in &try_stmt.catches {
+                    let param_id = self.convert_parameter(&catch.parameter)?;
+                    let catch_body_id = self.convert_block(&catch.block)?;
+                    catch_ids.push(self.builder.extension("catch", vec![param_id, catch_body_id], self.loc()));
+                }
+                let catches_id = self.builder.seq(catch_ids, self.loc());
+                let finally_id = if let Some(f) = &try_stmt.finally {
+                    self.convert_block(f)?
+                } else {
+                    self.builder.seq(vec![], self.loc())
+                };
+                Ok(self.builder.extension("try", vec![block_id, catches_id, finally_id], self.loc()))
+            }
+            Statement::Throw(expr) => {
+                let expr_id = self.convert_expr(expr)?;
+                Ok(self.builder.extension("throw", vec![expr_id], self.loc()))
+            }
         }
     }
 
@@ -224,6 +377,7 @@ impl<'a> JavaUirConverter<'a> {
                     "-" => "sub",
                     "*" => "mul",
                     "/" => "div",
+                    "%" => "rem",
                     "==" => "eq",
                     "!=" => "ne",
                     "<" => "lt",
@@ -232,18 +386,93 @@ impl<'a> JavaUirConverter<'a> {
                     ">=" => "ge",
                     "&&" => "and",
                     "||" => "or",
+                    "&" => "bit_and",
+                    "|" => "bit_or",
+                    "^" => "bit_xor",
+                    "<<" => "shl",
+                    ">>" => "shr",
+                    ">>>" => "ushr",
                     _ => op,
                 };
                 Ok(self.builder.extension(op_name, vec![left_id, right_id], self.loc()))
             }
-            Expression::Assignment { left, right } => {
-                let val = self.convert_expr(right)?;
+            Expression::Unary { op, expression } => {
+                let expr_id = self.convert_expr(expression)?;
+                let op_name = match op.as_str() {
+                    "-" => "neg",
+                    "!" => "not",
+                    "~" => "bit_not",
+                    _ => op,
+                };
+                Ok(self.builder.extension(op_name, vec![expr_id], self.loc()))
+            }
+            Expression::Assignment { left, op, right } => {
+                let mut val = self.convert_expr(right)?;
+                if op != "=" {
+                    // 处理复合赋值，如 x += y 转换为 x = x + y
+                    let left_val = self.convert_expr(left)?;
+                    let base_op = &op[..op.len() - 1];
+                    let op_name = match base_op {
+                        "+" => "add",
+                        "-" => "sub",
+                        "*" => "mul",
+                        "/" => "div",
+                        "%" => "rem",
+                        "&" => "bit_and",
+                        "|" => "bit_or",
+                        "^" => "bit_xor",
+                        "<<" => "shl",
+                        ">>" => "shr",
+                        ">>>" => "ushr",
+                        _ => base_op,
+                    };
+                    val = self.builder.extension(op_name, vec![left_val, val], self.loc());
+                }
+
                 match &**left {
                     Expression::Identifier(name) => Ok(self.builder.assign(name, val, self.loc())),
                     _ => {
                         let target = self.convert_expr(left)?;
                         Ok(self.builder.assign_to_id(target, val, self.loc()))
                     }
+                }
+            }
+            Expression::Update { expression, op, is_prefix } => {
+                let name = if let Expression::Identifier(name) = &**expression {
+                    name.clone()
+                } else {
+                    return Err(NyarError::Compile("Increment/decrement only supported for identifiers".to_string()));
+                };
+
+                let op_name = match op.as_str() {
+                    "++" => "add",
+                    "--" => "sub",
+                    _ => return Err(NyarError::Compile(format!("Unknown update operator: {}", op))),
+                };
+
+                let one = self.builder.constant(1, self.loc());
+                let current_val = self.builder.symbol(&name, self.loc());
+                let new_val = self.builder.extension(op_name, vec![current_val, one], self.loc());
+                let assign = self.builder.assign(&name, new_val, self.loc());
+
+                if *is_prefix {
+                    // ++x: (x = x + 1, x)
+                    Ok(self.builder.seq(vec![assign, self.builder.symbol(&name, self.loc())], self.loc()))
+                } else {
+                    // x++: (old = x, x = x + 1, old)
+                    // Note: This is a bit complex in UIR without temp vars.
+                    // For now, let's just do the assignment and return the new value for simplicity,
+                    // or implement it properly if UIR supports let-bindings.
+                    // Since we are in a compiler, we can probably use a temporary variable if needed.
+                    // But wait, UIR's `seq` returns the value of the last expression.
+                    
+                    // A better way for x++:
+                    // we need to return the old value.
+                    // Let's assume we can use a temporary variable name that won't conflict.
+                    let temp_name = format!("_tmp_{}", name);
+                    let save_old = self.builder.assign(&temp_name, current_val, self.loc());
+                    let return_old = self.builder.symbol(&temp_name, self.loc());
+                    Ok(self.builder.seq(vec![save_old, assign, return_old], self.loc()))
                 }
             }
             Expression::MethodCall(call) => {
@@ -298,6 +527,27 @@ impl<'a> JavaUirConverter<'a> {
                 } else {
                     Ok(self.builder.extension("call", vec![name_id, args_id], self.loc()))
                 }
+            }
+            Expression::New(new_expr) => {
+                let type_id = self.builder.string(&new_expr.r#type, self.loc());
+                let mut arg_ids = Vec::new();
+                for arg in &new_expr.arguments {
+                    arg_ids.push(self.convert_expr(arg)?);
+                }
+                let args_id = self.builder.seq(arg_ids, self.loc());
+                Ok(self.builder.extension("new", vec![type_id, args_id], self.loc()))
+            }
+            Expression::This => Ok(self.builder.symbol("this", self.loc())),
+            Expression::Super => Ok(self.builder.symbol("super", self.loc())),
+            Expression::ArrayAccess(access) => {
+                let target = self.convert_expr(&access.target)?;
+                let index = self.convert_expr(&access.index)?;
+                Ok(self.builder.extension("get_element", vec![target, index], self.loc()))
+            }
+            Expression::ArrayCreation(creation) => {
+                let type_id = self.builder.string(&creation.r#type, self.loc());
+                let size_id = self.convert_expr(&creation.size)?;
+                Ok(self.builder.extension("new_array", vec![type_id, size_id], self.loc()))
             }
         }
     }
