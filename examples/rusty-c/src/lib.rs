@@ -9,13 +9,11 @@ pub mod optimizer;
 pub mod runtime;
 
 use crate::errors::CError;
-use chomsky_extract::IKunExtractor;
-use chomsky_source::Loc;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder};
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{IKunTree, NyarContext, NyarError, NyarFrontend, NyarUnifiedFrontend};
 use oak_c::{ast, CBuilder, CLanguage, CRoot};
 use oak_core::source::SourceText;
 use std::ops::Range;
+use chomsky_uir::{Id, Loc};
 
 /// Rusty C 前端实现
 #[derive(Default)]
@@ -45,31 +43,28 @@ impl NyarFrontend for RustyCFrontend {
     }
 
     fn lower(&self, ast: &CRoot) -> Result<IKunTree, NyarError> {
-        println!("DEBUG: AST external_declarations len: {}", ast.translation_unit.external_declarations.len());
-        let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
-        let mut builder = IntentBuilder::new(&mut egraph);
-        let mut converter = UirConverter::new(&mut builder, 1);
-
-        let root_id = converter.convert_root(ast);
-
-        let extractor = IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
-        let tree = extractor.extract(root_id);
-        Ok(tree)
+        self.lower_to_tree(ast)
     }
 }
 
-struct UirConverter<'a> {
-    builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>,
-    source_id: u32,
+impl NyarUnifiedFrontend for RustyCFrontend {
+    fn lower_unified(&self, ast: &CRoot, ctx: &mut NyarContext) -> Id {
+        let mut converter = UirConverter::new(ctx);
+        converter.convert_root(ast)
+    }
 }
 
-impl<'a> UirConverter<'a> {
-    fn new(builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>, source_id: u32) -> Self {
-        Self { builder, source_id }
+struct UirConverter<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+    ctx: &'a mut NyarContext<'b, A>,
+}
+
+impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A> {
+    fn new(ctx: &'a mut NyarContext<'b, A>) -> Self {
+        Self { ctx }
     }
 
     fn to_loc(&self, range: Range<usize>) -> Loc {
-        Loc::new(self.source_id, range.start as u32, range.end as u32)
+        self.ctx.loc(range.start as u32, range.end as u32)
     }
 
     fn convert_root(&mut self, root: &CRoot) -> Id {
@@ -77,7 +72,7 @@ impl<'a> UirConverter<'a> {
         for decl in &root.translation_unit.external_declarations {
             items.push(self.convert_external_declaration(decl));
         }
-        self.builder.module("main", items)
+        self.ctx.builder().module("main", items)
     }
 
     fn convert_external_declaration(&mut self, decl: &ast::ExternalDeclaration) -> Id {
@@ -102,41 +97,45 @@ impl<'a> UirConverter<'a> {
             if let Some(list) = parameter_type_list {
                 for param in &list.parameter_list {
                     if let Some(decl) = &param.declarator {
-                        params.push(self.get_declarator_name(decl));
+                        let original_name = self.get_declarator_name(decl);
+                        params.push(self.ctx.scopes.declare_variable(&original_name));
                     }
                 }
             }
         }
 
         let mut body_ids = Vec::new();
+        self.ctx.scopes.push_scope();
         for item in &func.compound_statement.block_items {
             body_ids.push(self.convert_block_item(item));
         }
+        self.ctx.scopes.pop_scope();
 
         if name == "main" {
-            return self.builder.block(body_ids, loc);
+            return self.ctx.builder().block(body_ids, loc);
         }
 
-        let lambda = self.builder.function(&name, params, body_ids);
-        self.builder.assign(&name, lambda, loc)
+        let lambda = self.ctx.builder().function(&name, params, body_ids);
+        self.ctx.builder().assign(&name, lambda, loc)
     }
 
     fn convert_declaration(&mut self, decl: &ast::Declaration) -> Id {
         let loc = self.to_loc(decl.span.clone().into());
         let mut ids = Vec::new();
         for init in &decl.init_declarators {
-            let name = self.get_declarator_name(&init.declarator);
+            let original_name = self.get_declarator_name(&init.declarator);
+            let name = self.ctx.scopes.declare_variable(&original_name);
             let value = if let Some(init_val) = &init.initializer {
                 self.convert_initializer(init_val)
             } else {
-                self.builder.constant(0, loc.clone())
+                self.ctx.builder().constant(0, loc.clone())
             };
-            ids.push(self.builder.assign(&name, value, loc.clone()));
+            ids.push(self.ctx.builder().assign(&name, value, loc.clone()));
         }
         if ids.len() == 1 {
             ids[0]
         } else {
-            self.builder.block(ids, loc)
+            self.ctx.builder().block(ids, loc)
         }
     }
 
@@ -152,16 +151,18 @@ impl<'a> UirConverter<'a> {
         match stmt {
             ast::Statement::Compound(comp) => {
                 let mut ids = Vec::new();
+                self.ctx.scopes.push_scope();
                 for item in &comp.block_items {
                     ids.push(self.convert_block_item(item));
                 }
-                self.builder.block(ids, loc)
+                self.ctx.scopes.pop_scope();
+                self.ctx.builder().block(ids, loc)
             }
             ast::Statement::Expression(expr_stmt) => {
                 if let Some(expr) = &expr_stmt.expression {
                     self.convert_expression(expr)
                 } else {
-                    self.builder
+                    self.ctx.builder()
                         .constant(0, self.to_loc(expr_stmt.span.clone().into()))
                 }
             }
@@ -177,15 +178,14 @@ impl<'a> UirConverter<'a> {
                     let else_id = if let Some(e) = else_statement {
                         self.convert_statement(e)
                     } else {
-                        self.builder.constant(0, loc.clone())
+                        self.ctx.builder().constant(0, loc.clone())
                     };
-                    self.builder.extension(
-                        "if",
-                        vec![cond, then_id, else_id],
+                    self.ctx.builder().branch(
+                        cond, then_id, else_id,
                         self.to_loc(span.clone().into()),
                     )
                 }
-                _ => self.builder.constant(0, loc),
+                _ => self.ctx.builder().constant(0, loc),
             },
             ast::Statement::Iteration(iter) => match iter {
                 ast::IterationStatement::While {
@@ -195,9 +195,8 @@ impl<'a> UirConverter<'a> {
                 } => {
                     let cond = self.convert_expression(condition);
                     let body = self.convert_statement(statement);
-                    self.builder.extension(
-                        "while",
-                        vec![cond, body],
+                    self.ctx.builder().while_loop(
+                        cond, body,
                         self.to_loc(span.clone().into()),
                     )
                 }
@@ -208,7 +207,7 @@ impl<'a> UirConverter<'a> {
                 } => {
                     let body = self.convert_statement(statement);
                     let cond = self.convert_expression(condition);
-                    self.builder.extension(
+                    self.ctx.builder().extension(
                         "do_while",
                         vec![body, cond],
                         self.to_loc(span.clone().into()),
@@ -224,20 +223,20 @@ impl<'a> UirConverter<'a> {
                     let i = if let Some(e) = init {
                         self.convert_expression(e)
                     } else {
-                        self.builder.constant(0, loc.clone())
+                        self.ctx.builder().constant(0, loc.clone())
                     };
                     let c = if let Some(e) = condition {
                         self.convert_expression(e)
                     } else {
-                        self.builder.constant(1, loc.clone())
+                        self.ctx.builder().constant(1, loc.clone())
                     };
                     let u = if let Some(e) = update {
                         self.convert_expression(e)
                     } else {
-                        self.builder.constant(0, loc.clone())
+                        self.ctx.builder().constant(0, loc.clone())
                     };
                     let b = self.convert_statement(statement);
-                    self.builder.extension(
+                    self.ctx.builder().extension(
                         "for",
                         vec![i, c, u, b],
                         self.to_loc(span.clone().into()),
@@ -249,21 +248,21 @@ impl<'a> UirConverter<'a> {
                     let val = if let Some(e) = expression {
                         self.convert_expression(e)
                     } else {
-                        self.builder.constant(0, loc.clone())
+                        self.ctx.builder().constant(0, loc.clone())
                     };
-                    self.builder.return_(val, loc)
+                    self.ctx.builder().return_(val, loc)
                 }
                 ast::JumpStatement::Break(span) => {
-                    self.builder
+                    self.ctx.builder()
                         .extension("break", vec![], self.to_loc(span.clone().into()))
                 }
                 ast::JumpStatement::Continue(span) => {
-                    self.builder
+                    self.ctx.builder()
                         .extension("continue", vec![], self.to_loc(span.clone().into()))
                 }
-                _ => self.builder.constant(0, loc),
+                _ => self.ctx.builder().constant(0, loc),
             },
-            _ => self.builder.constant(0, loc),
+            _ => self.ctx.builder().constant(0, loc),
         }
     }
 
@@ -271,10 +270,13 @@ impl<'a> UirConverter<'a> {
         let loc = self.to_loc(expr.span.clone().into());
         match &*expr.kind {
             ast::ExpressionKind::Constant(c, _) => match c {
-                ast::Constant::Integer(val, _) => self.builder.constant(*val, loc),
-                _ => self.builder.constant(0, loc),
+                ast::Constant::Integer(val, _) => self.ctx.builder().constant(*val, loc),
+                _ => self.ctx.builder().constant(0, loc),
             },
-            ast::ExpressionKind::Identifier(name, _) => self.builder.symbol(name, loc),
+            ast::ExpressionKind::Identifier(name, _) => {
+                let resolved = self.ctx.scopes.resolve_variable(name);
+                self.ctx.builder().symbol(&resolved, loc)
+            }
             ast::ExpressionKind::Binary {
                 left,
                 operator,
@@ -284,14 +286,14 @@ impl<'a> UirConverter<'a> {
                 let l = self.convert_expression(left);
                 let r = self.convert_expression(right);
                 let op = format!("{:?}", operator).to_lowercase();
-                self.builder.binary_op(&op, l, r, loc)
+                self.ctx.builder().binary_op(&op, l, r, loc)
             }
             ast::ExpressionKind::Unary {
                 operator, operand, ..
             } => {
                 let arg = self.convert_expression(operand);
                 let op = format!("{:?}", operator).to_lowercase();
-                self.builder.extension(&op, vec![arg], loc)
+                self.ctx.builder().extension(&op, vec![arg], loc)
             }
             ast::ExpressionKind::Assignment {
                 left,
@@ -303,11 +305,11 @@ impl<'a> UirConverter<'a> {
                 let l = self.convert_expression(left);
                 let op = format!("{:?}", operator).to_lowercase();
                 if op == "assign" {
-                    self.builder.assign_to_id(l, r, loc)
+                    self.ctx.builder().assign_to_id(l, r, loc)
                 } else {
                     let base_op = op.replace("assign", "");
-                    let value = self.builder.binary_op(&base_op, l, r, loc.clone());
-                    self.builder.assign_to_id(l, value, loc)
+                    let value = self.ctx.builder().binary_op(&base_op, l, r, loc.clone());
+                    self.ctx.builder().assign_to_id(l, value, loc)
                 }
             }
             ast::ExpressionKind::FunctionCall {
@@ -315,22 +317,21 @@ impl<'a> UirConverter<'a> {
                 arguments,
                 ..
             } => {
-                let func_id = self.convert_expression(function);
                 let mut args = Vec::new();
                 for arg in arguments {
                     args.push(self.convert_expression(arg));
                 }
 
                 if let ast::ExpressionKind::Identifier(name, _) = &*function.kind {
-                    if name == "printf" {
-                        let symbol = self.builder.symbol("System.Console.WriteLine", loc.clone());
-                        return self.builder.call(symbol, args, loc);
+                    if let Some(intrinsic) = self.ctx.map_intrinsic(name, args.clone(), loc.clone()) {
+                        return intrinsic;
                     }
                 }
 
-                self.builder.call(func_id, args, loc)
+                let func_id = self.convert_expression(function);
+                self.ctx.builder().call(func_id, args, loc)
             }
-            _ => self.builder.constant(0, loc),
+            _ => self.ctx.builder().constant(0, loc),
         }
     }
 
@@ -343,7 +344,7 @@ impl<'a> UirConverter<'a> {
                 for item in list {
                     ids.push(self.convert_initializer(item));
                 }
-                self.builder.extension("array", ids, loc)
+                self.ctx.builder().extension("array", ids, loc)
             }
         }
     }

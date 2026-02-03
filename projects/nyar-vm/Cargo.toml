@@ -7,7 +7,7 @@ edition = "2021"
 nyar-gc = { path = "../nyar-gc", features = ["tokio"] }
 nyar-types = { path = "../nyar-types" }
 nyar-aot = { path = "../nyar-aot", default-features = false }
-chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false, features = ["jvm"] }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false, features = ["jvm", "wasi", "clr", "pe", "x86"] }
 chomsky-uir = { workspace = true }
 chomsky-source = { workspace = true }
 chomsky-cost = { workspace = true }
@@ -21,16 +21,14 @@ num-bigint = { workspace = true }
 num-traits = { workspace = true }
 thiserror = "1.0"
 indexmap = "2.2"
-pe-assembler = { workspace = true, optional = true }
-gaia-assembler = { workspace = true, optional = true }
+pe-assembler = { workspace = true }
+gaia-assembler = { workspace = true }
 gaia-types = { workspace = true }
-x86_64-assembler = { workspace = true, optional = true }
+x86_64-assembler = { workspace = true }
 clap = { workspace = true, optional = true }
 tokio = { version = "1.0", features = ["full"], optional = true }
 
 [features]
-default = ["native", "clap", "jvm"]
-native = ["nyar-aot/native", "dep:pe-assembler", "dep:gaia-assembler", "dep:x86_64-assembler"]
-jvm = ["chomsky/jvm"]
+default = ["clap"]
 clap = ["dep:clap"]
 tokio = ["dep:tokio", "nyar-gc/tokio"]

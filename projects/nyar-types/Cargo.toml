@@ -8,6 +8,9 @@ serde = { workspace = true }
 thiserror = "1.0"
 oak-core = { workspace = true }
 chomsky-extract = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-source = { workspace = true }
+chomsky-cost = { workspace = true }
 nyar-gc = { path = "../nyar-gc" }
 
 [features]

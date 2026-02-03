@@ -4,6 +4,7 @@
 
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
 use chomsky_types::ChomskyResult;
+use chomsky_uir::{EGraph, Id};
 use gaia_assembler::{
     instruction::{CmpCondition, CoreInstruction, GaiaInstruction, ManagedInstruction},
     program::{GaiaBlock, GaiaConstant, GaiaFunction, GaiaModule, GaiaTerminator},
