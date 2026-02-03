@@ -267,6 +267,18 @@ impl GaiaTranslator {
                             methods.push(method);
                             continue;
                         }
+                    } else if let IKunTree::Extension(name, args) = &**value {
+                        if name == "python_function" {
+                            // args = [name_str, lambda, defaults, vararg, kwarg]
+                            if let IKunTree::Lambda(params, body) = &args[1] {
+                                if let IKunTree::Symbol(method_name) = &**target {
+                                    let method =
+                                        self.generate_function_from_tree(method_name, params, body)?;
+                                    methods.push(method);
+                                    continue;
+                                }
+                            }
+                        }
                     }
                     if let IKunTree::Symbol(name) = &**target {
                         fields.push(gaia_assembler::program::GaiaField {
@@ -281,6 +293,7 @@ impl GaiaTranslator {
         }
 
         self.current_class = None;
+        self.defined_classes.insert(name.clone());
 
         Ok(gaia_assembler::program::GaiaClass {
             name,
@@ -857,31 +870,10 @@ impl GaiaTranslator {
                     }
                 }
 
-                for arg in args {
-                    self.generate_tree_node(arg, false)?;
-                }
                 if let IKunTree::Symbol(name) = &**func {
                     if self.defined_classes.contains(name) {
                         // 类实例化: p = Person(args)
-                        // 1. 创建对象
-                        self.current_instructions.push(GaiaInstruction::Core(
-                            CoreInstruction::New(name.clone()),
-                        ));
-                        // 2. 复制对象引用以便调用 __init__
-                        self.current_instructions.push(GaiaInstruction::Core(
-                            CoreInstruction::Dup,
-                        ));
-                        // 3. 将参数移动到对象引用之后 (Gaia 调用约定)
-                        // 注意：这里可能需要调整栈顺序，或者简单地假设 __init__ 接受 self + args
-                        // 在 Gaia 中，CallMethod 通常期望 [obj, arg1, arg2, ...]
-                        // 现在的栈是 [..., obj, obj, arg1, arg2, ...]
-                        // 我们需要把第二个 obj 移到 args 后面，或者在 push args 之前 push obj
-                        
-                        // 重新实现实例化逻辑以匹配栈顺序
-                        self.current_instructions.pop(); // 移除刚才 push 的两个
-                        self.current_instructions.pop();
-                        
-                        // 1. 创建对象并保留在栈底作为返回值
+                        // 1. 创建对象并保留一份在栈底作为返回值
                         self.current_instructions.push(GaiaInstruction::Core(
                             CoreInstruction::New(name.clone()),
                         ));
@@ -906,7 +898,13 @@ impl GaiaTranslator {
                         ));
                         return Ok(());
                     }
+                }
 
+                // 普通函数或闭包调用
+                for arg in args {
+                    self.generate_tree_node(arg, false)?;
+                }
+                if let IKunTree::Symbol(name) = &**func {
                     self.current_instructions.push(GaiaInstruction::Managed(
                         ManagedInstruction::CallStatic {
                             target: "global".to_string(),
@@ -915,6 +913,19 @@ impl GaiaTranslator {
                                 params: vec![GaiaType::Object; args.len()],
                                 return_type: GaiaType::Object,
                             },
+                        },
+                    ));
+                } else {
+                    self.generate_tree_node(func, false)?;
+                    self.current_instructions.push(GaiaInstruction::Managed(
+                        ManagedInstruction::CallMethod {
+                            target: "Closure".to_string(),
+                            method: "call".to_string(),
+                            signature: GaiaSignature {
+                                params: vec![GaiaType::Object; args.len()],
+                                return_type: GaiaType::Object,
+                            },
+                            is_virtual: true,
                         },
                     ));
                 }

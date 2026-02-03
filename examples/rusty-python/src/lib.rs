@@ -150,9 +150,9 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
-                self.ctx.scopes.pop_scope();
-
+                
                 let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
+                self.ctx.scopes.pop_scope();
                 let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
@@ -512,6 +512,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             }
             Statement::ClassDef { decorators, name, bases, body } => {
                 let base_nodes = bases.iter().map(|b| self.convert_expression(b)).collect::<Vec<_>>();
+                self.ctx.scopes.push_scope();
                 let mut body_items = Vec::new();
                 for s in body {
                     if let Some(node) = self.convert_statement(s) {
@@ -519,6 +520,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
+                self.ctx.scopes.pop_scope();
                 let bases_id = self.ctx.builder().extension("bases", base_nodes, loc.clone());
                 let class_node_vec = vec![self.ctx.builder().symbol(name, loc.clone()), bases_id, body_id];
                 let mut class_node = self.ctx.builder().extension("class_def", class_node_vec, loc.clone());

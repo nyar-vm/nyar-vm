@@ -7,27 +7,50 @@ use nyar_types::{NyarError, QualifiedName};
 
 pub struct NyarBackend {
     module: NyarcModule,
+    locals: Vec<String>,
 }
 
 impl NyarBackend {
     pub fn new() -> Self {
         Self {
             module: NyarcModule::default(),
+            locals: Vec::new(),
         }
+    }
+
+    fn add_local(&mut self, name: String) -> u8 {
+        if let Some(idx) = self.locals.iter().position(|l| l == &name) {
+            return idx as u8;
+        }
+        let idx = self.locals.len() as u8;
+        self.locals.push(name);
+        idx
+    }
+
+    fn find_local(&self, name: &str) -> Option<u8> {
+        self.locals.iter().position(|l| l == name).map(|i| i as u8)
     }
 
     pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, NyarError> {
         let mut code = Vec::new();
         match tree {
             IKunTree::Symbol(name) => {
-                let idx = self.add_constant(Constant::String(name.clone()));
-                code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+                if let Some(idx) = self.find_local(name) {
+                    code.extend_from_slice(&Instruction::LoadLocal(idx).encode());
+                } else {
+                    let idx = self.add_constant(Constant::String(name.clone()));
+                    code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+                }
             }
             IKunTree::StateUpdate(target, value) => {
                 if let IKunTree::Symbol(name) = &**target {
                     code.extend(self.lower_tree(value)?);
-                    let idx = self.add_constant(Constant::String(name.clone()));
-                    code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                    if let Some(idx) = self.find_local(name) {
+                        code.extend_from_slice(&Instruction::StoreLocal(idx).encode());
+                    } else {
+                        let idx = self.add_constant(Constant::String(name.clone()));
+                        code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                    }
                 }
             }
             IKunTree::Apply(callee, args) => {
@@ -222,6 +245,7 @@ impl NyarBackend {
                         _ => 0,
                     };
                     if id > 0 {
+                        println!("DEBUG: Mapping {}:{}:{} to intrinsic:{}", lang, group, func, id);
                         format!("$intrinsic:{}", id)
                     } else {
                         format!("{}:{}:{}", lang, group, func)
@@ -229,7 +253,8 @@ impl NyarBackend {
                 } else {
                     format!("{}:{}:{}", lang, group, func)
                 };
-                let name_idx = self.add_constant(Constant::String(name));
+                let name_idx = self.add_constant(Constant::String(name.clone()));
+                println!("DEBUG: Added FFICall constant: {} at index {}", name, name_idx);
                 code.extend_from_slice(
                     &Instruction::FFICall(name_idx, args.len() as u8).encode(),
                 );
@@ -237,6 +262,32 @@ impl NyarBackend {
             IKunTree::Extension(name, args) => {
                 println!("Backend: Extension {}, args len {}", name, args.len());
                 match name.as_str() {
+                    "local_variable" => {
+                        // [name, type, init]
+                        if let IKunTree::StringConstant(name) = &args[0] {
+                            if let Some(init) = args.get(2) {
+                                code.extend(self.lower_tree(init)?);
+                            } else {
+                                code.extend_from_slice(&Instruction::I64Const(0).encode());
+                            }
+                            let local_idx = self.add_local(name.clone());
+                            code.extend_from_slice(&Instruction::StoreLocal(local_idx).encode());
+                        }
+                    }
+                    "assign" => {
+                        if args.len() == 2 {
+                            // [name, value]
+                            code.extend(self.lower_tree(&args[1])?);
+                            if let IKunTree::Symbol(name) = &args[0] {
+                                if let Some(idx) = self.find_local(name) {
+                                    code.extend_from_slice(&Instruction::StoreLocal(idx).encode());
+                                } else {
+                                    let idx = self.add_constant(Constant::String(name.clone()));
+                                    code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                                }
+                            }
+                        }
+                    }
                     "return" => {
                         if let Some(val) = args.first() {
                             if let Some(code_tail) = self.lower_tail_call(val)? {
@@ -294,6 +345,25 @@ impl NyarBackend {
                             if let (IKunTree::StringConstant(name), body) =
                                 (&args[name_idx], &args[body_idx])
                             {
+                                let prev_locals = self.locals.clone();
+                                self.locals.clear();
+                                // Add parameters to locals if present
+                                if args.len() >= 4 {
+                                    if let IKunTree::Seq(params) = &args[2] {
+                                        for param in params {
+                                            if let IKunTree::Extension(ext_name, ext_args) = param {
+                                                if ext_name == "parameter" {
+                                                    if let IKunTree::StringConstant(pname) =
+                                                        &ext_args[0]
+                                                    {
+                                                        self.add_local(pname.clone());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 let body_code = self.lower_tree(body)?;
                                 let mut final_code = body_code;
                                 if final_code.last() != Some(&(Opcode::Return as u8)) {
@@ -303,13 +373,16 @@ impl NyarBackend {
                                 if chunk_idx >= u16::MAX as usize {
                                     return Err(NyarError::new(
                                         0x1007,
-                                        nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::LimitExceeded),
+                                        nyar_types::NyarErrorKind::Vm(
+                                            nyar_types::VmErrorKind::LimitExceeded,
+                                        ),
                                         nyar_types::SourceLocation::default(),
                                     ));
                                 }
                                 let chunk_idx = chunk_idx as u16;
+                                let num_locals = self.locals.len() as u16;
                                 self.module.chunks.push(Chunk {
-                                    locals: 32,
+                                    locals: num_locals.max(32),
                                     upvalues: 0,
                                     max_stack: 64,
                                     code: final_code,
@@ -322,6 +395,7 @@ impl NyarBackend {
                                     symbol: QualifiedName::from(name.as_str()),
                                     chunk_idx,
                                 });
+                                self.locals = prev_locals;
                             }
                         }
                     }
@@ -329,6 +403,15 @@ impl NyarBackend {
                         if args.len() >= 2 {
                             // [params, body]
                             let body = &args[1];
+                            let prev_locals = self.locals.clone();
+                            self.locals.clear();
+                            if let IKunTree::Seq(params) = &args[0] {
+                                for param in params {
+                                    if let IKunTree::Symbol(pname) = param {
+                                        self.add_local(pname.clone());
+                                    }
+                                }
+                            }
                             let body_code = self.lower_tree(body)?;
                             let mut final_code = body_code;
                             if final_code.last() != Some(&(Opcode::Return as u8)) {
@@ -338,13 +421,16 @@ impl NyarBackend {
                             if chunk_idx >= u16::MAX as usize {
                                 return Err(NyarError::new(
                                     0x1007,
-                                    nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::LimitExceeded),
+                                    nyar_types::NyarErrorKind::Vm(
+                                        nyar_types::VmErrorKind::LimitExceeded,
+                                    ),
                                     nyar_types::SourceLocation::default(),
                                 ));
                             }
                             let chunk_idx = chunk_idx as u16;
+                            let num_locals = self.locals.len() as u16;
                             self.module.chunks.push(Chunk {
-                                locals: 32,
+                                locals: num_locals.max(32),
                                 upvalues: 0,
                                 max_stack: 64,
                                 code: final_code,
@@ -353,7 +439,10 @@ impl NyarBackend {
                                 decoded: None,
                                 hotness: std::sync::atomic::AtomicU32::new(0),
                             });
-                            code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
+                            code.extend_from_slice(
+                                &Instruction::MakeClosure(chunk_idx, vec![]).encode(),
+                            );
+                            self.locals = prev_locals;
                         }
                     }
                     "call" => {

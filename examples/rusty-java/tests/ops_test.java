@@ -14,12 +14,17 @@ public class OpsTest {
         System.out.println(a != b);  // true
         System.out.println(a > b);   // true
         System.out.println(a < b);   // false
+        System.out.println(a >= b);  // true
+        System.out.println(a <= b);  // false
 
         // Bitwise
         System.out.println(a & b);   // 2 (1010 & 0011 = 0010)
         System.out.println(a | b);   // 11 (1010 | 0011 = 1011)
         System.out.println(a ^ b);   // 9 (1010 ^ 0011 = 1001)
         System.out.println(~a);      // -11
+        System.out.println(a << 1);  // 20
+        System.out.println(a >> 1);  // 5
+        System.out.println(a >>> 1); // 5
 
         // Logical
         boolean t = true;

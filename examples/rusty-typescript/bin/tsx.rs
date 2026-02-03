@@ -1,5 +1,6 @@
 use clap::Parser;
-use rusty_typescript::MiniTypescriptFrontend;
+use oak_vfs::DiskVfs;
+use rusty_typescript::RustyTypescriptFrontend;
 use nyar_vm::NyarDriver;
 use std::path::PathBuf;
 
@@ -31,11 +32,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let frontend = MiniTypescriptFrontend::new();
+    let frontend = RustyTypescriptFrontend::new();
     let driver = NyarDriver::new();
+    let vfs = DiskVfs::new();
 
     println!("tsx: Executing {:?}", input_path);
-    driver.run_source(&frontend, &input_path)?;
+    let uri = input_path.to_string_lossy();
+    driver.run_source(&frontend, &vfs, &uri)?;
 
     Ok(())
 }

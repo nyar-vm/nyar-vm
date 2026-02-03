@@ -89,3 +89,34 @@ call(1, 2, keyword=3, **kwargs)
     verify_lowering(source);
     println!("Successfully lowered AST with miscellaneous expressions");
 }
+
+#[test]
+fn test_compare_and_orelse_lowering() {
+    let source = r#"
+# Multiple comparisons
+if 1 < x <= 10 > y:
+    pass
+
+# While with else
+while condition:
+    do_something()
+else:
+    do_else()
+
+# For with else
+for i in range(5):
+    if i == 3:
+        break
+else:
+    print("Loop finished normally")
+
+# Async for with else
+async def test():
+    async for item in stream:
+        process(item)
+    else:
+        finish()
+"#;
+    verify_lowering(source);
+    println!("Successfully lowered AST with multiple comparisons and orelse clauses");
+}

@@ -519,6 +519,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
             ast::Statement::TryStatement(stmt) => {
                 let loc = self.to_loc(stmt.span.clone().into());
                 let block = self.convert_statement(ast::Statement::BlockStatement(ast::BlockStatement {
+                    decorators: Vec::new(),
+                    is_declare: false,
                     statements: stmt.block,
                     span: stmt.span.clone(),
                 }));
@@ -529,6 +531,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     let param_name = handler.param.unwrap_or_else(|| "error".to_string());
                     let param = self.builder.symbol(&param_name, handler_loc.clone());
                     let body = self.convert_statement(ast::Statement::BlockStatement(ast::BlockStatement {
+                        decorators: Vec::new(),
+                        is_declare: false,
                         statements: handler.body,
                         span: handler.span.clone(),
                     }));
@@ -538,6 +542,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 if let Some(finalizer) = stmt.finalizer {
                     let finalizer_loc = self.to_loc(stmt.span.clone().into()); // Use stmt span for finalizer if not available
                     let body = self.convert_statement(ast::Statement::BlockStatement(ast::BlockStatement {
+                        decorators: Vec::new(),
+                        is_declare: false,
                         statements: finalizer,
                         span: stmt.span.clone(),
                     }));

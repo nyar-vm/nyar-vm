@@ -1,4 +1,5 @@
 use clap::Parser;
+use oak_core::source::Source;
 use oak_vfs::{DiskVfs, Vfs, WritableVfs};
 use rusty_typescript::project::ProjectLoader;
 use std::path::PathBuf;
@@ -64,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 path.to_string_lossy().to_string()
             };
 
-            vfs.write_file(&output_uri, bytes.into());
+            vfs.write_file(&output_uri, String::from_utf8_lossy(&bytes).to_string().into());
             println!("Successfully compiled to {}", output_uri);
         }
     }
