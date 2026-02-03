@@ -178,29 +178,61 @@ impl<'a> UirConverter<'a> {
         let span = stmt.span();
         match stmt {
             ast::Statement::VariableDeclaration(var) => {
-                if var.is_declare {
-                    return self.builder.constant(0, self.to_loc(var.span.into()));
-                }
                 let loc = self.to_loc(var.span.into());
                 let value = if let Some(expr) = var.value {
                     self.convert_expression(expr)
                 } else {
                     self.builder.constant(0, loc.clone())
                 };
-                self.builder.assign(&var.name, value, loc)
+                let ty = var.ty.map(|t| self.convert_type_annotation(t, loc.clone()));
+                let mut args = vec![self.builder.symbol(&var.name, loc.clone()), value];
+                if let Some(ty_id) = ty {
+                    args.push(ty_id);
+                }
+                args.push(self.builder.bool(var.is_declare, loc.clone()));
+                self.builder.extension("assign", args, loc)
             }
             ast::Statement::FunctionDeclaration(func) => {
-                if func.is_declare {
-                    return self.builder.constant(0, self.to_loc(func.span.into()));
-                }
                 let loc = self.to_loc(func.span.clone().into());
                 let mut body_ids = Vec::new();
                 for s in func.body {
                     body_ids.push(self.convert_statement(s));
                 }
-                let param_names: Vec<String> = func.params.into_iter().map(|p| p.name).collect();
-                let lambda = self.builder.function(&func.name, param_names, body_ids);
-                self.builder.assign(&func.name, lambda, loc)
+                let mut lambda_args = vec![
+                    self.builder.string(&func.name, loc.clone()),
+                    self.builder.seq(
+                        func.type_params
+                            .into_iter()
+                            .map(|tp| self.convert_type_parameter(tp, loc.clone()))
+                            .collect(),
+                        loc.clone(),
+                    ),
+                    self.builder.seq(
+                        func.params
+                            .into_iter()
+                            .map(|p| {
+                                let p_loc = loc.clone();
+                                let mut p_args = vec![self.builder.symbol(&p.name, p_loc.clone())];
+                                if let Some(ty) = p.ty {
+                                    p_args.push(self.convert_type_annotation(ty, p_loc.clone()));
+                                }
+                                p_args.push(self.builder.bool(p.optional, p_loc.clone()));
+                                self.builder.extension("param", p_args, p_loc)
+                            })
+                            .collect(),
+                        loc.clone(),
+                    ),
+                    self.builder.block(body_ids, loc.clone()),
+                ];
+
+                if let Some(ret) = func.return_type {
+                    lambda_args.push(self.convert_type_annotation(ret, loc.clone()));
+                }
+
+                let lambda = self.builder.extension("function", lambda_args, loc.clone());
+                let mut assign_args = vec![self.builder.symbol(&func.name, loc.clone()), lambda];
+                assign_args.push(self.builder.bool(func.is_declare, loc.clone()));
+                self.builder.extension("assign", assign_args, loc)
             }
             ast::Statement::ExpressionStatement(expr) => self.convert_expression(expr),
             ast::Statement::ImportDeclaration(import) => {
@@ -466,11 +498,7 @@ impl<'a> UirConverter<'a> {
                 let loc = self.to_loc(stmt.span.into());
                 let left = match *stmt.left {
                     ast::Statement::VariableDeclaration(decl) => {
-                        if let Some(first) = decl.declarations.first() {
-                            self.builder.symbol(&first.id, loc.clone())
-                        } else {
-                            self.builder.constant(0, loc.clone())
-                        }
+                        self.builder.symbol(&decl.name, loc.clone())
                     }
                     _ => self.builder.constant(0, loc.clone()),
                 };
@@ -482,11 +510,7 @@ impl<'a> UirConverter<'a> {
                 let loc = self.to_loc(stmt.span.into());
                 let left = match *stmt.left {
                     ast::Statement::VariableDeclaration(decl) => {
-                        if let Some(first) = decl.declarations.first() {
-                            self.builder.symbol(&first.id, loc.clone())
-                        } else {
-                            self.builder.constant(0, loc.clone())
-                        }
+                        self.builder.symbol(&decl.name, loc.clone())
                     }
                     _ => self.builder.constant(0, loc.clone()),
                 };

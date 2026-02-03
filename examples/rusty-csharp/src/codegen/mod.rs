@@ -107,14 +107,17 @@ impl NyarTranslator {
     ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
         match item {
             Item::Namespace(ns) => Ok(Some(self.translate_namespace(ns, ctx)?)),
-            Item::Using(_using) => {
-                // TODO: 处理 Using 指令，将其映射到符号表的导入
-                Ok(None)
+            Item::Using(using) => {
+                // TODO: 将 Using 指令映射到 Nyar 的导入系统
+                let loc = Loc::unknown();
+                let path_id = ctx.builder.symbol(&using.path, loc);
+                Ok(Some(ctx.builder.extension("import", vec![path_id], loc)))
             }
             Item::Class(class) => Ok(Some(self.translate_class(class, ctx)?)),
             Item::Interface(interface) => Ok(Some(self.translate_interface(interface, ctx)?)),
             Item::Struct(struct_decl) => Ok(Some(self.translate_struct(struct_decl, ctx)?)),
             Item::Enum(enum_decl) => Ok(Some(self.translate_enum(enum_decl, ctx)?)),
+            Item::Record(record_decl) => Ok(Some(self.translate_record(record_decl, ctx)?)),
         }
     }
 
@@ -150,13 +153,19 @@ impl NyarTranslator {
                     members.push(self.translate_method(ctor, ctx)?);
                 }
                 Member::Property(prop) => {
-                    // TODO: 处理属性
-                    let loc = Loc::unknown();
-                    let name_id = ctx.builder.symbol(&prop.name, loc);
-                    members.push(ctx.builder.export(&prop.name, name_id, loc));
+                    members.push(self.translate_property(prop, ctx)?);
                 }
-                _ => {}
+                Member::Indexer(indexer) => {
+                    members.push(self.translate_indexer(indexer, ctx)?);
+                }
+                Member::Event(event) => {
+                    members.push(self.translate_event(event, ctx)?);
+                }
             }
+        }
+        // 处理泛型参数
+        if !class.type_parameters.is_empty() {
+            // TODO: 在 Nyar 中支持泛型类
         }
         Ok(ctx.builder.module(&class.name, members))
     }
@@ -175,7 +184,7 @@ impl NyarTranslator {
         Ok(ctx.builder.module(&interface.name, members))
     }
 
-    fn translate_struct(
+    pub fn translate_struct(
         &self,
         struct_decl: &StructDeclaration,
         ctx: &mut TranslatorContext,
@@ -192,6 +201,24 @@ impl NyarTranslator {
         Ok(ctx.builder.module(&struct_decl.name, members))
     }
 
+    pub fn translate_record(
+        &self,
+        record_decl: &RecordDeclaration,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let mut members = Vec::new();
+        for member in &record_decl.members {
+            match member {
+                Member::Method(method) => members.push(self.translate_method(method, ctx)?),
+                Member::Field(field) => members.push(self.translate_field(field, ctx)?),
+                Member::Constructor(ctor) => members.push(self.translate_method(ctor, ctx)?),
+                Member::Property(prop) => members.push(self.translate_property(prop, ctx)?),
+                _ => {}
+            }
+        }
+        Ok(ctx.builder.module(&record_decl.name, members))
+    }
+
     fn translate_enum(
         &self,
         enum_decl: &EnumDeclaration,
@@ -200,7 +227,6 @@ impl NyarTranslator {
         let mut variants = Vec::new();
         let loc = Loc::unknown();
         for variant in &enum_decl.members {
-            // 目前简单将枚举项处理为常量符号
             variants.push(ctx.builder.export(variant, ctx.builder.constant(0, loc), loc));
         }
         Ok(ctx.builder.module(&enum_decl.name, variants))
@@ -213,8 +239,80 @@ impl NyarTranslator {
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         let name_id = ctx.builder.symbol(&field.name, loc);
-        // 目前简单处理为导出符号
         Ok(ctx.builder.export(&field.name, name_id, loc))
+    }
+
+    fn translate_property(
+        &self,
+        prop: &PropertyDeclaration,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
+        let mut accessors = Vec::new();
+        if let Some(get) = &prop.get_accessor {
+            let body_id = if let Some(body) = &get.body {
+                self.translate_block(body, ctx)?
+            } else {
+                ctx.builder.seq(vec![], loc)
+            };
+            let get_id = ctx.builder.lambda(vec![], body_id, loc);
+            accessors.push(ctx.builder.export(&format!("get_{}", prop.name), get_id, loc));
+        }
+        if let Some(set) = &prop.set_accessor {
+            let body_id = if let Some(body) = &set.body {
+                self.translate_block(body, ctx)?
+            } else {
+                ctx.builder.seq(vec![], loc)
+            };
+            let set_id = ctx.builder.lambda(vec!["value".to_string()], body_id, loc);
+            accessors.push(ctx.builder.export(&format!("set_{}", prop.name), set_id, loc));
+        }
+        Ok(ctx.builder.module(&prop.name, accessors))
+    }
+
+    fn translate_indexer(
+        &self,
+        indexer: &IndexerDeclaration,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
+        let mut accessors = Vec::new();
+        let mut params = Vec::new();
+        for p in &indexer.parameters {
+            params.push(p.name.clone());
+        }
+
+        if let Some(get) = &indexer.get_accessor {
+            let body_id = if let Some(body) = &get.body {
+                self.translate_block(body, ctx)?
+            } else {
+                ctx.builder.seq(vec![], loc)
+            };
+            let get_id = ctx.builder.lambda(params.clone(), body_id, loc);
+            accessors.push(ctx.builder.export("get_Item", get_id, loc));
+        }
+        if let Some(set) = &indexer.set_accessor {
+            let body_id = if let Some(body) = &set.body {
+                self.translate_block(body, ctx)?
+            } else {
+                ctx.builder.seq(vec![], loc)
+            };
+            let mut set_params = params.clone();
+            set_params.push("value".to_string());
+            let set_id = ctx.builder.lambda(set_params, body_id, loc);
+            accessors.push(ctx.builder.export("set_Item", set_id, loc));
+        }
+        Ok(ctx.builder.module("Indexer", accessors))
+    }
+
+    fn translate_event(
+        &self,
+        event: &EventDeclaration,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::unknown();
+        let name_id = ctx.builder.symbol(&event.name, loc);
+        Ok(ctx.builder.export(&event.name, name_id, loc))
     }
 
     fn translate_method(
@@ -229,12 +327,16 @@ impl NyarTranslator {
             ctx.builder.seq(vec![], loc)
         };
 
-        // 处理方法参数
         let mut params = Vec::new();
         for param in &method.parameters {
             params.push(param.name.clone());
         }
-        let lambda = ctx.builder.lambda(params, body_id, loc);
+        
+        let mut lambda = ctx.builder.lambda(params, body_id, loc);
+        if method.is_async {
+            lambda = ctx.builder.extension("async", vec![lambda], loc);
+        }
+        
         Ok(ctx.builder.export(&method.name, lambda, loc))
     }
 
@@ -258,15 +360,15 @@ impl NyarTranslator {
         let loc = Loc::unknown();
         match stmt {
             Statement::Expression(expr) => self.translate_expr(expr, ctx),
-            Statement::Return(Some(expr)) => {
-                let val = self.translate_expr(expr, ctx)?;
-                Ok(ctx.builder.return_(val, loc))
+            Statement::Return(expr) => {
+                let expr_id = if let Some(e) = expr {
+                    self.translate_expr(e, ctx)?
+                } else {
+                    ctx.builder.constant(0, loc)
+                };
+                Ok(ctx.builder.extension("return", vec![expr_id], loc))
             }
-            Statement::Return(None) => {
-                let void = ctx.builder.constant(0, loc); // Placeholder for void
-                Ok(ctx.builder.return_(void, loc))
-            },
-            Statement::Block(inner) => self.translate_block(inner, ctx),
+            Statement::Block(stmts) => self.translate_block(stmts, ctx),
             Statement::If {
                 condition,
                 then_branch,
@@ -292,57 +394,50 @@ impl NyarTranslator {
                 update,
                 body,
             } => {
-                let init_id = if let Some(init_stmt) = init {
-                    self.translate_stmt(init_stmt, ctx)?
+                let mut stmts = Vec::new();
+                if let Some(i) = init {
+                    stmts.push(self.translate_stmt(i, ctx)?);
+                }
+                let cond_id = if let Some(c) = condition {
+                    self.translate_expr(c, ctx)?
                 } else {
-                    ctx.builder.seq(vec![], loc)
+                    ctx.builder.constant(1, loc) // true
                 };
-                
-                let cond_id = if let Some(cond_expr) = condition {
-                    self.translate_expr(cond_expr, ctx)?
-                } else {
-                    ctx.builder.bool(true, loc)
-                };
-
-                let update_id = if let Some(update_expr) = update {
-                    self.translate_expr(update_expr, ctx)?
-                } else {
-                    ctx.builder.seq(vec![], loc)
-                };
-
                 let body_id = self.translate_stmt(body, ctx)?;
-                
-                // for (init; cond; update) body -> { init; while(cond) { body; update; } }
-                let loop_body = ctx.builder.seq(vec![body_id, update_id], loc);
-                let loop_stmt = ctx.builder.extension("while", vec![cond_id, loop_body], loc);
-                
-                Ok(ctx.builder.seq(vec![init_id, loop_stmt], loc))
+                let update_id = if let Some(u) = update {
+                    self.translate_expr(u, ctx)?
+                } else {
+                    ctx.builder.seq(vec![], loc)
+                };
+                let loop_id = ctx.builder.extension("for", vec![cond_id, body_id, update_id], loc);
+                stmts.push(loop_id);
+                Ok(ctx.builder.seq(stmts, loc))
             }
             Statement::Foreach {
-                item_type,
+                item_type: _,
                 item_name,
                 iterable,
                 body,
             } => {
-                let iterable_id = self.translate_expr(iterable, ctx)?;
+                let iter_id = self.translate_expr(iterable, ctx)?;
+                let item_id = ctx.builder.symbol(item_name, loc);
                 let body_id = self.translate_stmt(body, ctx)?;
-                let type_id = ctx.builder.string(item_type, loc);
-                let name_id = ctx.builder.string(item_name, loc);
-                
-                Ok(ctx.builder.extension("foreach", vec![type_id, name_id, iterable_id, body_id], loc))
+                Ok(ctx.builder.extension("foreach", vec![iter_id, item_id, body_id], loc))
+            }
+            Statement::LocalVariable {
+                r#type: _,
+                name,
+                initializer,
+            } => {
+                let init_id = if let Some(init) = initializer {
+                    self.translate_expr(init, ctx)?
+                } else {
+                    ctx.builder.constant(0, loc)
+                };
+                Ok(ctx.builder.export(name, init_id, loc))
             }
             Statement::Break => Ok(ctx.builder.extension("break", vec![], loc)),
             Statement::Continue => Ok(ctx.builder.extension("continue", vec![], loc)),
-            Statement::LocalVariable { r#type, name, initializer } => {
-                 let name_id = ctx.builder.string(name, loc);
-                 let type_id = ctx.builder.string(r#type, loc);
-                 let init_id = if let Some(init) = initializer {
-                     self.translate_expr(init, ctx)?
-                 } else {
-                     ctx.builder.constant(0, loc)
-                 };
-                 Ok(ctx.builder.extension("local_variable", vec![name_id, type_id, init_id], loc))
-            }
         }
     }
 
@@ -353,98 +448,70 @@ impl NyarTranslator {
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         match expr {
-            Expression::Literal(Literal::Integer(v)) => Ok(ctx.builder.constant(*v, loc)),
-            Expression::Literal(Literal::String(s)) => Ok(ctx.builder.string(s, loc)),
-            Expression::Literal(Literal::Boolean(b)) => Ok(ctx.builder.bool(*b, loc)),
-            Expression::Literal(Literal::Null) => Ok(ctx.builder.constant(0, loc)),
-            Expression::Identifier(s) => {
-                // 检查是否是内置函数全称
-                if let Some(builtin) = ctx.resolve_builtin(s, "", vec![], loc) {
-                    return Ok(builtin);
-                }
-                Ok(ctx.builder.symbol(s, loc))
-            }
+            Expression::Literal(lit) => match lit {
+                Literal::Integer(n) => Ok(ctx.builder.constant(*n, loc)),
+                Literal::String(s) => Ok(ctx.builder.constant(s.clone(), loc)),
+                Literal::Boolean(b) => Ok(ctx.builder.constant(*b, loc)),
+                Literal::Null => Ok(ctx.builder.constant(0, loc)),
+            },
+            Expression::Identifier(id) => Ok(ctx.builder.symbol(id, loc)),
             Expression::MethodCall(call) => {
-                let mut arg_ids = Vec::new();
+                let mut args = Vec::new();
                 for arg in &call.arguments {
-                    arg_ids.push(self.translate_expr(arg, ctx)?);
+                    args.push(self.translate_expr(arg, ctx)?);
                 }
-
-                // 处理内置函数
                 if let Some(target) = &call.target {
-                    let target_name = self.expr_to_string(target);
-                    if let Some(builtin) = ctx.resolve_builtin(&target_name, &call.name, arg_ids.clone(), loc) {
-                        return Ok(builtin);
+                    if let Expression::Identifier(target_name) = target.as_ref() {
+                        if let Some(builtin) = ctx.resolve_builtin(target_name, &call.name, args.clone(), loc) {
+                            return Ok(builtin);
+                        }
                     }
-                } else {
-                    if let Some(builtin) = ctx.resolve_builtin("", &call.name, arg_ids.clone(), loc) {
-                        return Ok(builtin);
-                    }
-                }
-
-                let name_id = ctx.builder.symbol(&call.name, loc);
-                if let Some(target) = &call.target {
                     let target_id = self.translate_expr(target, ctx)?;
-                    let args_id = ctx.builder.seq(arg_ids, loc);
-                    Ok(ctx.builder.extension("call", vec![target_id, name_id, args_id], loc))
+                    Ok(ctx.builder.call(target_id, args, loc))
                 } else {
-                    Ok(ctx.builder.call(name_id, arg_ids, loc))
+                    let name_id = ctx.builder.symbol(&call.name, loc);
+                    Ok(ctx.builder.call(name_id, args, loc))
                 }
             }
             Expression::MemberAccess(access) => {
                 let target_id = self.translate_expr(&access.target, ctx)?;
-                let name_id = ctx.builder.symbol(&access.name, loc);
-                Ok(ctx.builder.extension("field", vec![target_id, name_id], loc))
+                Ok(ctx.builder.get_member(target_id, &access.name, loc))
             }
+            Expression::ElementAccess(access) => {
+                let target_id = self.translate_expr(&access.target, ctx)?;
+                let mut args = Vec::new();
+                for arg in &access.arguments {
+                    args.push(self.translate_expr(arg, ctx)?);
+                }
+                Ok(ctx.builder.call(target_id, args, loc))
+            }
+            Expression::New(new_expr) => {
+                let mut args = Vec::new();
+                for arg in &new_expr.arguments {
+                    args.push(self.translate_expr(arg, ctx)?);
+                }
+                Ok(ctx.builder.cross_lang_call("nyar", &format!("new::{}", new_expr.r#type), args, loc))
+            }
+            Expression::This => Ok(ctx.builder.symbol("this", loc)),
+            Expression::Base => Ok(ctx.builder.symbol("base", loc)),
             Expression::Binary { left, op, right } => {
                 let left_id = self.translate_expr(left, ctx)?;
                 let right_id = self.translate_expr(right, ctx)?;
-                let op_name = match op.as_str() {
-                    "+" => "add",
-                    "-" => "sub",
-                    "*" => "mul",
-                    "/" => "div",
-                    "%" => "rem",
-                    "==" => "eq",
-                    "!=" => "ne",
-                    "<" => "lt",
-                    "<=" => "le",
-                    ">" => "gt",
-                    ">=" => "ge",
-                    "&&" => "and",
-                    "||" => "or",
-                    _ => op,
-                };
-                Ok(ctx.builder.extension(op_name, vec![left_id, right_id], loc))
+                Ok(ctx.builder.binary(op, left_id, right_id, loc))
             }
             Expression::Unary { op, expression } => {
                 let expr_id = self.translate_expr(expression, ctx)?;
-                let op_name = match op.as_str() {
-                    "-" => "neg",
-                    "!" => "not",
-                    "~" => "bit_not",
-                    _ => op,
-                };
-                Ok(ctx.builder.extension(op_name, vec![expr_id], loc))
+                Ok(ctx.builder.unary(op, expr_id, loc))
             }
             Expression::Assignment { left, op, right } => {
                 let left_id = self.translate_expr(left, ctx)?;
                 let right_id = self.translate_expr(right, ctx)?;
-                Ok(ctx.builder.extension("assign", vec![left_id, right_id], loc))
+                Ok(ctx.builder.binary(op, left_id, right_id, loc))
             }
             Expression::Await(expr) => {
                 let expr_id = self.translate_expr(expr, ctx)?;
                 Ok(ctx.builder.extension("await", vec![expr_id], loc))
             }
-            _ => Ok(ctx.builder.constant(0, loc)),
-        }
-    }
-
-    fn expr_to_string(&self, expr: &Expression) -> String {
-        match expr {
-            Expression::Identifier(s) => s.clone(),
-            Expression::MemberAccess(access) => format!("{}.{}", self.expr_to_string(&access.target), access.name),
-            _ => String::new(),
         }
     }
 }

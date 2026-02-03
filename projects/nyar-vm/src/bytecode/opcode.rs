@@ -13,9 +13,10 @@ pub enum Opcode {
     LoadUpvalue = 0x09,
     StoreUpvalue = 0x0A,
     CloseUpvalues = 0x0B,
-    Jump = 0x10,
-    JumpIfFalse = 0x11,
-    JumpIfNull = 0x12,
+    Jump = 0x0C,
+    JumpIfFalse = 0x0D,
+    JumpIfTrue = 0x0E,
+    JumpIfNull = 0x0F,
     Return = 0x13,
     MakeClosure = 0x15,
 

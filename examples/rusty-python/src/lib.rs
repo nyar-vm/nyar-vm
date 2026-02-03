@@ -668,7 +668,17 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             }
             Expression::Call { func, args, keywords } => {
                 let mut arguments = args.iter().map(|arg| self.convert_expression(arg)).collect::<Vec<_>>();
+                let mut has_complex = false;
+
+                for arg in args {
+                    if matches!(arg, Expression::Starred { .. }) {
+                        has_complex = true;
+                        break;
+                    }
+                }
+
                 for kw in keywords {
+                    has_complex = true;
                     let val = self.convert_expression(&kw.value);
                     let arg = if let Some(arg) = &kw.arg {
                         self.ctx.builder().string(arg, loc.clone())
@@ -679,13 +689,18 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 }
 
                 if let Expression::Name(name) = &**func {
-                    if let Some(intrinsic) = self.ctx.map_intrinsic(name, &arguments, loc.clone()) {
-                        return intrinsic;
-                    }
+                    // if let Some(intrinsic) = self.ctx.map_intrinsic(name, &arguments, loc.clone()) {
+                    //     return intrinsic;
+                    // }
                 }
 
                 let f = self.convert_expression(func);
-                self.ctx.builder().call(f, arguments, loc)
+                if has_complex {
+                    let args_seq = self.ctx.builder().seq(arguments, loc.clone());
+                    self.ctx.builder().extension("python_call", vec![f, args_seq], loc)
+                } else {
+                    self.ctx.builder().call(f, arguments, loc)
+                }
             }
             Expression::Attribute { value, attr } => {
                 let value_node = self.convert_expression(value);

@@ -688,6 +688,72 @@ impl GaiaTranslator {
                             },
                         ));
                     }
+                    "python_call" => {
+                        self.generate_tree_node(&args[0], false)?; // func
+                        self.generate_tree_node(&args[1], false)?; // args_seq
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "python_call".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; 2],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "python_function" => {
+                        let name = if let IKunTree::StringConstant(s) = &args[0] {
+                            s.clone()
+                        } else {
+                            "lambda".to_string()
+                        };
+                        let lam = &args[1];
+                        let defaults = &args[2];
+                        let vararg = &args[3];
+                        let kwarg = &args[4];
+
+                        // Push name
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::PushConstant(GaiaConstant::String(name.clone())),
+                        ));
+                        // Generate lambda
+                        self.generate_tree_node(lam, false)?;
+                        // Generate defaults
+                        self.generate_tree_node(defaults, false)?;
+                        // Generate vararg
+                        self.generate_tree_node(vararg, false)?;
+                        // Generate kwarg
+                        self.generate_tree_node(kwarg, false)?;
+
+                        // Call Builtins.make_function(name, lam, defaults, vararg, kwarg)
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "make_function".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; 5],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "async" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "make_async".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
                     "none" => {
                         self.current_instructions.push(GaiaInstruction::Core(
                             CoreInstruction::PushConstant(GaiaConstant::Null),

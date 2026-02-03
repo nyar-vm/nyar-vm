@@ -52,6 +52,10 @@ impl Instruction {
                 buf.push(Opcode::JumpIfFalse as u8);
                 buf.extend_from_slice(&v.to_le_bytes());
             }
+            Instruction::JumpIfTrue(v) => {
+                buf.push(Opcode::JumpIfTrue as u8);
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
             Instruction::JumpIfNull(v) => {
                 buf.push(Opcode::JumpIfNull as u8);
                 buf.extend_from_slice(&v.to_le_bytes());

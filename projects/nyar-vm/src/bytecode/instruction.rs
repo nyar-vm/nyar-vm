@@ -22,6 +22,7 @@ pub enum Instruction {
     CloseUpvalues,
     Jump(i16),
     JumpIfFalse(i16),
+    JumpIfTrue(i16),
     JumpIfNull(i16),
     Return,
     MakeClosure(u16, Vec<UpvalueRef>),

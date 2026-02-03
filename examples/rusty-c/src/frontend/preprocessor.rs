@@ -1195,5 +1195,17 @@ mod tests {
         let result = pp.process(source, dir.path()).unwrap();
         assert!(result.contains("int x = 42;"));
     }
+
+    #[test]
+    fn test_embed() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.bin");
+        fs::write(&file_path, vec![1, 2, 3]).unwrap();
+
+        let mut pp = Preprocessor::new();
+        let source = format!("#embed \"{}\" prefix(pre ) suffix( post)", file_path.to_str().unwrap());
+        let result = pp.process(&source, Path::new(".")).unwrap();
+        assert_eq!(result, "pre 1, 2, 3 post\n");
+    }
 }
 
