@@ -31,6 +31,8 @@ pub struct GaiaTranslator {
     current_label: String,
     /// 已完成的块
     blocks: Vec<GaiaBlock>,
+    /// 已定义的类名
+    defined_classes: std::collections::HashSet<String>,
 }
 
 impl Backend for GaiaTranslator {
@@ -62,6 +64,7 @@ impl GaiaTranslator {
             current_instructions: Vec::new(),
             current_label: "entry".to_string(),
             blocks: Vec::new(),
+            defined_classes: std::collections::HashSet::new(),
         }
     }
 
@@ -128,6 +131,9 @@ impl GaiaTranslator {
             }
             if let IKunTree::Extension(name, args) = item {
                 if name == "class_def" {
+                    if let IKunTree::Symbol(class_name) = &args[0] {
+                        self.defined_classes.insert(class_name.clone());
+                    }
                     class_defs.push(args);
                     continue;
                 }
@@ -413,14 +419,101 @@ impl GaiaTranslator {
                             CoreInstruction::Cmp(cond, GaiaType::Object),
                         ));
                     }
+                    "get_field" => {
+                        self.generate_tree_node(&args[0], false)?;
+                        if let IKunTree::Symbol(field_name) = &args[1] {
+                            self.current_instructions.push(GaiaInstruction::Core(
+                                CoreInstruction::LoadField("Object".to_string(), field_name.clone()),
+                            ));
+                        }
+                    }
+                    "set_field" => {
+                        self.generate_tree_node(&args[0], false)?; // object
+                        self.generate_tree_node(&args[2], false)?; // value
+                        if let IKunTree::Symbol(field_name) = &args[1] {
+                            self.current_instructions.push(GaiaInstruction::Core(
+                                CoreInstruction::StoreField("Object".to_string(), field_name.clone()),
+                            ));
+                        }
+                    }
                     _ => {}
                 }
             }
             IKunTree::Apply(func, args) => {
+                if let IKunTree::Extension(ext_name, ext_args) = &**func {
+                    if ext_name == "get_field" {
+                        // 方法调用: obj.method(args)
+                        self.generate_tree_node(&ext_args[0], false)?; // push obj
+                        for arg in args {
+                            self.generate_tree_node(arg, false)?;
+                        }
+                        if let IKunTree::Symbol(method_name) = &ext_args[1] {
+                            self.current_instructions.push(GaiaInstruction::Managed(
+                                ManagedInstruction::CallMethod {
+                                    target: "Object".to_string(),
+                                    method: method_name.clone(),
+                                    signature: GaiaSignature {
+                                        params: vec![GaiaType::Object; args.len()],
+                                        return_type: GaiaType::Object,
+                                    },
+                                    is_virtual: true,
+                                },
+                            ));
+                        }
+                        return Ok(());
+                    }
+                }
+
                 for arg in args {
                     self.generate_tree_node(arg, false)?;
                 }
                 if let IKunTree::Symbol(name) = &**func {
+                    if self.defined_classes.contains(name) {
+                        // 类实例化: p = Person(args)
+                        // 1. 创建对象
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::New(name.clone()),
+                        ));
+                        // 2. 复制对象引用以便调用 __init__
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::Dup,
+                        ));
+                        // 3. 将参数移动到对象引用之后 (Gaia 调用约定)
+                        // 注意：这里可能需要调整栈顺序，或者简单地假设 __init__ 接受 self + args
+                        // 在 Gaia 中，CallMethod 通常期望 [obj, arg1, arg2, ...]
+                        // 现在的栈是 [..., obj, obj, arg1, arg2, ...]
+                        // 我们需要把第二个 obj 移到 args 后面，或者在 push args 之前 push obj
+                        
+                        // 重新实现实例化逻辑以匹配栈顺序
+                        self.current_instructions.pop(); // 移除刚才 push 的两个
+                        self.current_instructions.pop();
+                        
+                        // 1. 创建对象并保留在栈底作为返回值
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::New(name.clone()),
+                        ));
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::Dup,
+                        ));
+                        // 2. 准备参数
+                        for arg in args {
+                            self.generate_tree_node(arg, false)?;
+                        }
+                        // 3. 调用 __init__
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: name.clone(),
+                                method: "__init__".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; args.len()],
+                                    return_type: GaiaType::Void,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                        return Ok(());
+                    }
+
                     self.current_instructions.push(GaiaInstruction::Managed(
                         ManagedInstruction::CallStatic {
                             target: "global".to_string(),

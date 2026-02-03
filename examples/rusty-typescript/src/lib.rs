@@ -217,7 +217,7 @@ impl<'a> UirConverter<'a> {
             ast::Statement::ClassDeclaration(class) => {
                 let loc = self.to_loc(class.span.into());
                 let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
-                if let Some(ext) = class.extends {
+                if let Some(ast::TypeAnnotation::Identifier(ext)) = class.extends {
                     args.push(self.builder.symbol(&ext, loc.clone()));
                 } else {
                     args.push(self.builder.constant(0, loc.clone())); // No base class
@@ -228,7 +228,13 @@ impl<'a> UirConverter<'a> {
                 let implements_ids: Vec<_> = class
                     .implements
                     .iter()
-                    .map(|imp| self.builder.symbol(imp, loc.clone()))
+                    .map(|imp| {
+                        if let ast::TypeAnnotation::Identifier(name) = imp {
+                            self.builder.symbol(name, loc.clone())
+                        } else {
+                            self.builder.constant(0, loc.clone())
+                        }
+                    })
                     .collect();
                 args.push(self.builder.seq(implements_ids));
 
@@ -250,16 +256,16 @@ impl<'a> UirConverter<'a> {
                             } else {
                                 self.builder.constant(0, mloc.clone())
                             };
-                            let ty_id = if let Some(t) = ty {
-                                self.builder.symbol(&t, mloc.clone())
-                            } else {
-                                self.builder.symbol("any", mloc.clone())
+                            let ty_id = match ty {
+                                Some(ast::TypeAnnotation::Identifier(name)) => self.builder.symbol(&name, mloc.clone()),
+                                Some(ast::TypeAnnotation::Predefined(name)) => self.builder.symbol(&name, mloc.clone()),
+                                _ => self.builder.symbol("any", mloc.clone()),
                             };
                             let field_name = self.builder.symbol(&name, mloc.clone());
                             let vis_str = match visibility {
-                                ast::Visibility::Public => "public",
-                                ast::Visibility::Private => "private",
-                                ast::Visibility::Protected => "protected",
+                                Some(ast::Visibility::Public) | None => "public",
+                                Some(ast::Visibility::Private) => "private",
+                                Some(ast::Visibility::Protected) => "protected",
                             };
                             let vis_id = self.builder.string(vis_str, mloc.clone());
 
@@ -296,9 +302,9 @@ impl<'a> UirConverter<'a> {
                             let lambda = self.builder.function(&name, params, body_ids);
                             let method_name = self.builder.symbol(&name, mloc.clone());
                             let vis_str = match visibility {
-                                ast::Visibility::Public => "public",
-                                ast::Visibility::Private => "private",
-                                ast::Visibility::Protected => "protected",
+                                Some(ast::Visibility::Public) | None => "public",
+                                Some(ast::Visibility::Private) => "private",
+                                Some(ast::Visibility::Protected) => "protected",
                             };
                             let vis_id = self.builder.string(vis_str, mloc.clone());
 
@@ -320,13 +326,44 @@ impl<'a> UirConverter<'a> {
                 }
                 self.builder.extension("gc.struct", args, loc)
             }
-            ast::Statement::NamespaceDeclaration(ns) => {
+            ast::Statement::Namespace(ns) => {
                 let loc = self.to_loc(ns.span.into());
                 let mut items = Vec::new();
                 for s in ns.body {
                     items.push(self.convert_statement(s));
                 }
                 self.builder.module(&ns.name, items)
+            }
+            ast::Statement::Interface(interface) => {
+                let loc = self.to_loc(interface.span.into());
+                let mut args = vec![self.builder.symbol(&interface.name, loc.clone())];
+                let extends_ids: Vec<_> = interface
+                    .extends
+                    .iter()
+                    .map(|ext| {
+                        if let ast::TypeAnnotation::Identifier(name) = ext {
+                            self.builder.symbol(name, loc.clone())
+                        } else {
+                            self.builder.constant(0, loc.clone())
+                        }
+                    })
+                    .collect();
+                args.push(self.builder.seq(extends_ids));
+                self.builder.extension("interface", args, loc)
+            }
+            ast::Statement::TypeAlias(alias) => {
+                let loc = self.to_loc(alias.span.into());
+                let name = self.builder.symbol(&alias.name, loc.clone());
+                let ty = self.builder.symbol(&alias.ty, loc.clone());
+                self.builder.extension("type_alias", vec![name, ty], loc)
+            }
+            ast::Statement::Enum(enum_decl) => {
+                let loc = self.to_loc(enum_decl.span.into());
+                let mut args = vec![self.builder.symbol(&enum_decl.name, loc.clone())];
+                for member in enum_decl.members {
+                    args.push(self.builder.symbol(&member.name, loc.clone()));
+                }
+                self.builder.extension("enum", args, loc)
             }
             ast::Statement::IfStatement(stmt) => {
                 let loc = self.to_loc(stmt.span.into());
@@ -430,20 +467,30 @@ impl<'a> UirConverter<'a> {
                 self.builder.extension("switch", args, loc)
             }
             ast::Statement::TryStatement(stmt) => {
-                let loc = self.to_loc(stmt.span.into());
-                let block = self.convert_statement(ast::Statement::BlockStatement(stmt.block));
+                let loc = self.to_loc(stmt.span.clone().into());
+                let block = self.convert_statement(ast::Statement::BlockStatement(ast::BlockStatement {
+                    statements: stmt.block,
+                    span: stmt.span.clone(),
+                }));
                 let mut args = vec![block];
 
                 if let Some(handler) = stmt.handler {
                     let handler_loc = self.to_loc(handler.span.into());
-                    let param = self.builder.symbol(&handler.param, handler_loc.clone());
-                    let body = self.convert_statement(ast::Statement::BlockStatement(handler.body));
+                    let param_name = handler.param.unwrap_or_else(|| "error".to_string());
+                    let param = self.builder.symbol(&param_name, handler_loc.clone());
+                    let body = self.convert_statement(ast::Statement::BlockStatement(ast::BlockStatement {
+                        statements: handler.body,
+                        span: handler.span.clone(),
+                    }));
                     args.push(self.builder.extension("catch", vec![param, body], handler_loc));
                 }
 
                 if let Some(finalizer) = stmt.finalizer {
-                    let finalizer_loc = self.to_loc(finalizer.span.into());
-                    let body = self.convert_statement(ast::Statement::BlockStatement(finalizer));
+                    let finalizer_loc = self.to_loc(stmt.span.clone().into()); // Use stmt span for finalizer if not available
+                    let body = self.convert_statement(ast::Statement::BlockStatement(ast::BlockStatement {
+                        statements: finalizer,
+                        span: stmt.span.clone(),
+                    }));
                     args.push(self.builder.extension("finally", vec![body], finalizer_loc));
                 }
 
@@ -603,24 +650,39 @@ impl<'a> UirConverter<'a> {
                 params,
                 body,
                 async_,
+                ..
             } => {
                 let body_id = self.convert_statement(*body);
+                let param_names: Vec<String> = params.into_iter().map(|p| p.name).collect();
                 if async_ {
                     let mut args = vec![body_id];
-                    for param in params {
+                    for param in param_names {
                         args.push(self.builder.symbol(&param, Loc::default()));
                     }
                     self.builder.extension("async_lambda", args, Loc::default())
                 } else {
-                    self.builder.lambda(params, body_id, Loc::default())
+                    self.builder.lambda(param_names, body_id, Loc::default())
                 }
             }
             ast::Expression::ObjectLiteral { properties } => {
                 let mut args = Vec::new();
                 for prop in properties {
-                    let key = self.builder.symbol(&prop.key, Loc::default());
-                    let value = self.convert_expression(prop.value);
-                    args.push(self.builder.extension("prop", vec![key, value], Loc::default()));
+                    match prop {
+                        ast::ObjectProperty::Property { name, value } => {
+                            let key = self.builder.symbol(&name, Loc::default());
+                            let value = self.convert_expression(value);
+                            args.push(self.builder.extension("prop", vec![key, value], Loc::default()));
+                        }
+                        ast::ObjectProperty::ShorthandProperty(name) => {
+                            let key = self.builder.symbol(&name, Loc::default());
+                            let value = self.builder.symbol(&name, Loc::default());
+                            args.push(self.builder.extension("prop", vec![key, value], Loc::default()));
+                        }
+                        ast::ObjectProperty::SpreadProperty(expr) => {
+                            let inner = self.convert_expression(expr);
+                            args.push(self.builder.extension("spread_prop", vec![inner], Loc::default()));
+                        }
+                    }
                 }
                 self.builder.extension("object", args, Loc::default())
             }

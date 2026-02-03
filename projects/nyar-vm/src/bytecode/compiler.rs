@@ -93,13 +93,18 @@ impl NyarBackend {
                     code.extend(self.lower_tree(item)?);
                 }
             }
-            IKunTree::CrossLangCall(lang, group, func, args) => {
-                for arg in args {
+            IKunTree::CrossLangCall {
+                language,
+                module_path,
+                function_name,
+                arguments,
+            } => {
+                for arg in arguments {
                     code.extend(self.lower_tree(arg)?);
                 }
-                let name = if lang == "nyar" {
+                let name = if language == "nyar" {
                     // Try to map to intrinsic ID
-                    let id = match (group.as_str(), func.as_str()) {
+                    let id = match (module_path.as_str(), function_name.as_str()) {
                         ("io", "print") | ("", "print") => 1,
                         ("io", "println") | ("", "println") => 2,
                         ("std", "exit") | ("", "exit") => 3,
@@ -118,13 +123,15 @@ impl NyarBackend {
                     if id > 0 {
                         format!("$intrinsic:{}", id)
                     } else {
-                        format!("{}:{}:{}", lang, group, func)
+                        format!("{}:{}:{}", language, module_path, function_name)
                     }
                 } else {
-                    format!("{}:{}:{}", lang, group, func)
+                    format!("{}:{}:{}", language, module_path, function_name)
                 };
                 let name_idx = self.add_constant(Constant::String(name));
-                code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
+                code.extend_from_slice(
+                    &Instruction::FFICall(name_idx, arguments.len() as u8).encode(),
+                );
             }
             IKunTree::Extension(name, args) => {
                 println!("Backend: Extension {}, args len {}", name, args.len());

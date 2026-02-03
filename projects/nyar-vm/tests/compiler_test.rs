@@ -70,6 +70,45 @@ fn test_class_compilation() {
 }
 
 #[test]
+fn test_bitwise_compilation() {
+    let mut backend = NyarBackend::new();
+    
+    // Test (10 & 7)
+    let bitwise_and = IKunTree::CrossLangCall(
+        "nyar".to_string(),
+        "ops".to_string(),
+        "bit_and".to_string(),
+        vec![
+            IKunTree::Constant(10),
+            IKunTree::Constant(7),
+        ],
+    );
+    
+    let mut code = backend.lower_tree(&bitwise_and).unwrap();
+    if code.last() != Some(&(Opcode::Return as u8)) {
+        code.push(Opcode::Return as u8);
+    }
+    
+    let mut module = backend.finish();
+    module.chunks.push(Chunk {
+        locals: 32,
+        upvalues: 0,
+        max_stack: 64,
+        code,
+        ..Default::default()
+    });
+    
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
+    
+    // We need to register the intrinsic if the backend uses it
+    // But if we change the backend to use Instructions, we don't need to register it.
+    
+    let result = vm.execute(module_idx, 0).unwrap();
+    assert_eq!(result.as_int(), 10 & 7);
+}
+
+#[test]
 fn test_invalid_class_index_does_not_panic() {
     let mut module = nyar_vm::bytecode::format::NyarModule::default();
     

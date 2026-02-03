@@ -1,6 +1,7 @@
 use crate::bytecode::compiler::NyarBackend;
 use crate::vm::core::NyarVM;
 use nyar_types::{NyarError, NyarFrontend, QualifiedName};
+use oak_core::source::Source;
 use oak_vfs::{Vfs, WritableVfs};
 
 /// Nyar 驱动程序

@@ -6,6 +6,7 @@ use nyar_vm::bytecode::instruction::Instruction;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, NyarcModule};
 use nyar_vm::vm::NyarVM;
 use std::collections::HashMap;
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -43,6 +44,13 @@ impl From<&str> for RuntimeError {
 pub struct RustyCRuntime {
     _optimizer: UniversalOptimizer<()>,
     vm: NyarVM,
+    switch_counter: RefCell<usize>,
+}
+
+struct SwitchInfo {
+    id: usize,
+    cases: Vec<(i32, String)>,
+    default_label: Option<String>,
 }
 
 impl RustyCRuntime {
@@ -50,6 +58,7 @@ impl RustyCRuntime {
         Self {
             _optimizer: UniversalOptimizer::new(),
             vm: NyarVM::new(),
+            switch_counter: RefCell::new(0),
         }
     }
 
@@ -165,6 +174,7 @@ impl RustyCRuntime {
             None,
             &mut labels,
             &mut pending_gotos,
+            None,
         )?;
 
         // Patch pending gotos
@@ -208,6 +218,7 @@ impl RustyCRuntime {
         continue_pos: Option<usize>,
         labels: &mut HashMap<String, usize>,
         pending_gotos: &mut Vec<(String, usize)>,
+        mut switch_info: Option<&mut SwitchInfo>,
     ) -> Result<(), RuntimeError> {
         match tree {
             IKunTree::Constant(v) => {
@@ -228,14 +239,16 @@ impl RustyCRuntime {
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
                 self.translate_expr(&args[1], insts, symbols, 
                     break_indices.as_mut().map(|b| &mut **b),
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
                 match op.as_str() {
                     "+" => insts.push(Instruction::I32Add),
@@ -257,7 +270,8 @@ impl RustyCRuntime {
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
 
                 let jump_if_false_idx = insts.len();
@@ -268,7 +282,8 @@ impl RustyCRuntime {
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
 
                 let jump_idx = insts.len();
@@ -283,7 +298,8 @@ impl RustyCRuntime {
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
 
                 let else_start = jump_idx + 1;
@@ -305,11 +321,11 @@ impl RustyCRuntime {
                 let start_pos = self.calculate_code_size(insts);
                 let mut current_break_indices = Vec::new();
 
-                self.translate_expr(cond_tree, insts, symbols, None, None, None, labels, pending_gotos)?;
+                self.translate_expr(cond_tree, insts, symbols, None, None, None, labels, pending_gotos, None)?;
                 let jump_if_false_idx = insts.len();
                 insts.push(Instruction::JumpIfFalse(0));
 
-                self.translate_expr(body_tree, insts, symbols, Some(&mut current_break_indices), None, Some(start_pos), labels, pending_gotos)?;
+                self.translate_expr(body_tree, insts, symbols, Some(&mut current_break_indices), None, Some(start_pos), labels, pending_gotos, None)?;
 
                 let body_end_pos = self.calculate_code_size(insts);
                 let jump_back_offset = -((body_end_pos - start_pos) as i16 + 3);
@@ -331,7 +347,7 @@ impl RustyCRuntime {
                 let mut current_continue_indices = Vec::new();
 
                 // body
-                self.translate_expr(&args[0], insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), None, labels, pending_gotos)?;
+                self.translate_expr(&args[0], insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), None, labels, pending_gotos, None)?;
 
                 let continue_pos = self.calculate_code_size(insts);
                 // Patch continues
@@ -341,7 +357,7 @@ impl RustyCRuntime {
                 }
 
                 // condition
-                self.translate_expr(&args[1], insts, symbols, None, None, None, labels, pending_gotos)?;
+                self.translate_expr(&args[1], insts, symbols, None, None, None, labels, pending_gotos, None)?;
 
                 let jump_if_false_idx = insts.len();
                 insts.push(Instruction::JumpIfFalse(0));
@@ -370,18 +386,19 @@ impl RustyCRuntime {
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
 
                 let start_pos = self.calculate_code_size(insts);
                 let mut current_break_indices = Vec::new();
                 let mut current_continue_indices = Vec::new();
 
-                self.translate_expr(cond, insts, symbols, None, None, None, labels, pending_gotos)?;
+                self.translate_expr(cond, insts, symbols, None, None, None, labels, pending_gotos, None)?;
                 let jump_if_false_idx = insts.len();
                 insts.push(Instruction::JumpIfFalse(0));
 
-                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), None, labels, pending_gotos)?;
+                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), None, labels, pending_gotos, None)?;
 
                 let continue_pos = self.calculate_code_size(insts);
                 // Patch continues
@@ -390,7 +407,7 @@ impl RustyCRuntime {
                     insts[idx] = Instruction::Jump((continue_pos - c_pos) as i16);
                 }
 
-                self.translate_expr(update, insts, symbols, None, None, None, labels, pending_gotos)?;
+                self.translate_expr(update, insts, symbols, None, None, None, labels, pending_gotos, None)?;
 
                 let jump_back_offset = -((self.calculate_code_size(insts) - start_pos) as i16 + 3);
                 insts.push(Instruction::Jump(jump_back_offset));
@@ -414,98 +431,96 @@ impl RustyCRuntime {
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
 
-                // For switch, we store the condition value in a temporary local if needed,
-                // but here we can just keep it on the stack for comparisons.
-                // However, C switch needs to compare the same value multiple times.
-                // So we'll store it in a local.
                 let cond_idx = symbols.len() as u8;
                 symbols.insert(format!("$switch_cond_{}", cond_idx), cond_idx);
                 insts.push(Instruction::StoreLocal(cond_idx));
 
+                // Dispatch placeholder
+                let dispatch_jump_idx = insts.len();
+                insts.push(Instruction::Jump(0));
+
                 let mut current_break_indices = Vec::new();
+                let mut current_switch_info = SwitchInfo {
+                    id: {
+                        let mut counter = self.switch_counter.borrow_mut();
+                        *counter += 1;
+                        *counter
+                    },
+                    cases: Vec::new(),
+                    default_label: None,
+                };
                 
-                // We'll translate the body, and it will contain 'case' and 'default' extensions.
-                // This is a bit non-standard because 'case' labels should be jumps from the top.
-                // To support fallthrough, we just translate the body as is, but we need
-                // to collect case label positions first.
+                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), continue_indices, continue_pos, labels, pending_gotos, Some(&mut current_switch_info))?;
                 
-                // For simplicity in this implementation, we'll do a two-pass approach for switch:
-                // 1. Scan body for cases and default.
-                // 2. Emit jumps for each case.
-                // 3. Emit body.
-                
-                let mut cases = Vec::new();
-                let mut default_idx = None;
-                
-                fn find_cases(tree: &IKunTree, cases: &mut Vec<(IKunTree, usize)>, default: &mut Option<usize>) {
-                    match tree {
-                        IKunTree::Extension(name, args) if name == "case" => {
-                            cases.push((args[0].clone(), 0)); // 0 is placeholder for body pos
-                        }
-                        IKunTree::Extension(name, _args) if name == "default" => {
-                            *default = Some(0); // placeholder
-                        }
-                        IKunTree::Seq(stmts) => {
-                            for s in stmts { find_cases(s, cases, default); }
-                        }
-                        _ => {}
+                let body_end_idx = insts.len();
+                insts.push(Instruction::Jump(0)); // Jump to end of switch
+
+                let dispatch_start_pos = self.calculate_code_size(insts);
+                let jump_to_dispatch = (dispatch_start_pos - self.calculate_code_size(&insts[..dispatch_jump_idx + 1])) as i16;
+                insts[dispatch_jump_idx] = Instruction::Jump(jump_to_dispatch);
+
+                // Dispatch logic
+                for (val, label_name) in current_switch_info.cases {
+                    if let Some(&target_pos) = labels.get(&label_name) {
+                        insts.push(Instruction::LoadLocal(cond_idx));
+                        insts.push(Instruction::I32Const(val));
+                        insts.push(Instruction::I32Eq);
+                        let jump_pos = self.calculate_code_size(insts);
+                        insts.push(Instruction::JumpIfTrue((target_pos as i16 - jump_pos as i16 - 3)));
                     }
                 }
-                // find_cases(body, &mut cases, &mut default_idx); // This is hard because IKunTree is not easily traversable here
-                
-                // Alternative: Just translate the body and handle case/default as they come.
-                // This doesn't support the "jump table" style but we can use a simpler approach:
-                // When we encounter a case, we check the condition. If it doesn't match, we jump to the next case.
-                // This is also hard because of fallthrough.
-                
-                // Let's use a simpler implementation for now: switch is just a sequence of statements
-                // and 'case' is a label that also does a comparison if we haven't matched yet.
-                // This is still complex. 
-                
-                // Given the constraints, let's just translate the body for now and 
-                // handle break correctly.
-                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), continue_indices, continue_pos, labels, pending_gotos)?;
-                
+
+                if let Some(label_name) = current_switch_info.default_label {
+                    if let Some(&target_pos) = labels.get(&label_name) {
+                        let jump_pos = self.calculate_code_size(insts);
+                        insts.push(Instruction::Jump((target_pos as i16 - jump_pos as i16 - 3)));
+                    }
+                }
+
                 let final_pos = self.calculate_code_size(insts);
+                let jump_to_end = (final_pos - self.calculate_code_size(&insts[..body_end_idx + 1])) as i16;
+                insts[body_end_idx] = Instruction::Jump(jump_to_end);
+
+                // Patch breaks
                 for idx in current_break_indices {
                     let break_pos = self.calculate_code_size(&insts[..idx + 1]);
                     insts[idx] = Instruction::Jump((final_pos - break_pos) as i16);
                 }
             }
             IKunTree::Extension(name, args) if name == "case" && args.len() == 2 => {
-                // For now, case is just a label + its statement. 
-                // Full switch support requires more complex IR transformation.
-                self.translate_expr(&args[1], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos)?;
-            }
-            IKunTree::Extension(name, args) if name == "default" && args.len() == 1 => {
-                self.translate_expr(&args[0], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos)?;
-            }
-            IKunTree::Extension(name, args) if name == "label" && args.len() == 2 => {
-                if let IKunTree::Constant(v) = &args[0] {
-                    // This is not right, label name is usually a string.
-                }
-                if let IKunTree::Symbol(name) = &args[0] {
-                    let current_pos = self.calculate_code_size(insts);
-                    labels.insert(name.clone(), current_pos);
-                } else if let IKunTree::Constant(_) = &args[0] {
-                    // If it's a constant, we might have converted the label name to a constant string
-                }
-                self.translate_expr(&args[1], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos)?;
-            }
-            IKunTree::Extension(name, args) if name == "goto" && args.len() == 1 => {
-                if let IKunTree::Symbol(name) = &args[0] {
-                    if let Some(&target_pos) = labels.get(name) {
-                        let current_pos = self.calculate_code_size(insts);
-                        let offset = target_pos as i16 - (current_pos as i16 + 3);
-                        insts.push(Instruction::Jump(offset));
-                    } else {
-                        pending_gotos.push((name.clone(), insts.len()));
-                        insts.push(Instruction::Jump(0));
+                if let Some(info) = switch_info {
+                    if let IKunTree::Constant(val) = &args[0] {
+                        let label_name = format!("$switch_{}_case_{}", info.id, val);
+                        let pos = self.calculate_code_size(insts);
+                        labels.insert(label_name.clone(), pos);
+                        info.cases.push((*val as i32, label_name));
+                        self.translate_expr(&args[1], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, Some(info))?;
                     }
                 }
+            }
+            IKunTree::Extension(name, args) if name == "default" && args.len() == 1 => {
+                if let Some(info) = switch_info {
+                    let label_name = format!("$switch_{}_default", info.id);
+                    let pos = self.calculate_code_size(insts);
+                    labels.insert(label_name.clone(), pos);
+                    info.default_label = Some(label_name);
+                    self.translate_expr(&args[0], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, Some(info))?;
+                }
+            }
+            IKunTree::Extension(name, args) if name == "label" && args.len() == 2 => {
+                let label_name = format!("label_{:?}", args[0]); 
+                let pos = self.calculate_code_size(insts);
+                labels.insert(label_name, pos);
+                self.translate_expr(&args[1], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, switch_info)?;
+            }
+            IKunTree::Extension(name, args) if name == "goto" && args.len() == 1 => {
+                let label_name = format!("label_{:?}", args[0]);
+                pending_gotos.push((label_name, insts.len()));
+                insts.push(Instruction::Jump(0));
             }
             IKunTree::Extension(name, _args) if name == "break" => {
                 if let Some(indices) = break_indices {
@@ -516,8 +531,7 @@ impl RustyCRuntime {
             IKunTree::Extension(name, _args) if name == "continue" => {
                 if let Some(pos) = continue_pos {
                     let current_pos = self.calculate_code_size(insts);
-                    let offset = -((current_pos - pos) as i16 + 3);
-                    insts.push(Instruction::Jump(offset));
+                    insts.push(Instruction::Jump((pos as i16 - current_pos as i16 - 3)));
                 } else if let Some(indices) = continue_indices {
                     indices.push(insts.len());
                     insts.push(Instruction::Jump(0));
@@ -530,28 +544,22 @@ impl RustyCRuntime {
                         continue_indices.as_mut().map(|c| &mut **c),
                         continue_pos,
                         labels,
-                        pending_gotos
+                        pending_gotos,
+                        switch_info.as_mut().map(|s| &mut **s)
                     )?;
                 }
             }
-            IKunTree::Apply(func, args) => {
-                for arg in args {
-                    self.translate_expr(arg, insts, symbols, 
+            IKunTree::List(stmts) => {
+                for stmt in stmts {
+                    self.translate_expr(stmt, insts, symbols, 
                         break_indices.as_mut().map(|b| &mut **b),
                         continue_indices.as_mut().map(|c| &mut **c),
                         continue_pos,
                         labels,
-                        pending_gotos
+                        pending_gotos,
+                        switch_info.as_mut().map(|s| &mut **s)
                     )?;
                 }
-                self.translate_expr(func, insts, symbols, 
-                    break_indices.as_mut().map(|b| &mut **b),
-                    continue_indices.as_mut().map(|c| &mut **c),
-                    continue_pos,
-                    labels,
-                    pending_gotos
-                )?;
-                insts.push(Instruction::CallClosure(args.len() as u8));
             }
             IKunTree::Return(val) => {
                 self.translate_expr(val, insts, symbols, 
@@ -559,7 +567,8 @@ impl RustyCRuntime {
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
                 insts.push(Instruction::Return);
             }
@@ -569,7 +578,8 @@ impl RustyCRuntime {
                     continue_indices.as_mut().map(|c| &mut **c),
                     continue_pos,
                     labels,
-                    pending_gotos
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s)
                 )?;
                 if let IKunTree::Symbol(name) = &**target {
                     let idx = if let Some(&i) = symbols.get(name) {
@@ -598,6 +608,7 @@ impl RustyCRuntime {
                         continue_pos,
                         labels,
                         pending_gotos,
+                        switch_info.as_mut().map(|s| &mut **s),
                     )?;
                 }
                 let name = if language == "nyar" {
@@ -633,6 +644,6 @@ impl RustyCRuntime {
     }
 
     fn calculate_code_size(&self, insts: &[Instruction]) -> usize {
-        insts.iter().map(|i| i.encode().len()).sum()
+        insts.iter().map(|ins| ins.encode().len()).sum()
     }
 }

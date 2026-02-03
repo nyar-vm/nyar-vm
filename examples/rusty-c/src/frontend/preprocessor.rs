@@ -8,6 +8,7 @@ pub struct Preprocessor {
     included_files: Vec<PathBuf>,
     current_file: PathBuf,
     current_line: usize,
+    expanding_macros: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -25,6 +26,9 @@ impl Preprocessor {
         let mut macros = HashMap::new();
         // Predefined macros
         macros.insert("__RUSTY_C__".to_string(), MacroDef::Simple("1".to_string()));
+        macros.insert("__STDC__".to_string(), MacroDef::Simple("1".to_string()));
+        macros.insert("__STDC_VERSION__".to_string(), MacroDef::Simple("201710L".to_string())); // C17 by default
+        macros.insert("__STDC_HOSTED__".to_string(), MacroDef::Simple("1".to_string()));
         
         Self {
             macros,
@@ -32,6 +36,7 @@ impl Preprocessor {
             included_files: Vec::new(),
             current_file: PathBuf::from("<stdin>"),
             current_line: 0,
+            expanding_macros: Vec::new(),
         }
     }
 
@@ -44,8 +49,9 @@ impl Preprocessor {
     }
 
     pub fn process(&mut self, source: &str, current_dir: &Path) -> Result<String, String> {
+        let stripped_source = self.strip_comments(source);
         let mut output = String::new();
-        let mut lines = source.lines().enumerate();
+        let mut lines = stripped_source.lines().enumerate();
         let mut skip_stack = Vec::new();
 
         while let Some((line_idx, mut line)) = lines.next() {
@@ -87,6 +93,32 @@ impl Preprocessor {
                     let expr = directive_line[2..].trim();
                     let val = self.evaluate_condition(expr);
                     skip_stack.push(!val);
+                    continue;
+                } else if directive_line.starts_with("elifdef") {
+                    if let Some(skip) = skip_stack.pop() {
+                        if skip {
+                            let name = directive_line[7..].trim();
+                            let val = self.macros.contains_key(name);
+                            skip_stack.push(!val);
+                        } else {
+                            skip_stack.push(true);
+                        }
+                    } else {
+                        return Err(format!("Line {}: Unexpected #elifdef", self.current_line));
+                    }
+                    continue;
+                } else if directive_line.starts_with("elifndef") {
+                    if let Some(skip) = skip_stack.pop() {
+                        if skip {
+                            let name = directive_line[8..].trim();
+                            let val = !self.macros.contains_key(name);
+                            skip_stack.push(!val);
+                        } else {
+                            skip_stack.push(true);
+                        }
+                    } else {
+                        return Err(format!("Line {}: Unexpected #elifndef", self.current_line));
+                    }
                     continue;
                 } else if directive_line.starts_with("elif") {
                     if let Some(skip) = skip_stack.pop() {
@@ -171,9 +203,47 @@ impl Preprocessor {
                     } else {
                         return Err(format!("Line {}: Unsupported include format: {}", self.current_line, include_spec));
                     }
+                } else if directive_line.starts_with("embed") {
+                    let embed_spec = directive_line[5..].trim();
+                    let file_name = if embed_spec.starts_with('"') && embed_spec.ends_with('"') {
+                        &embed_spec[1..embed_spec.len() - 1]
+                    } else if embed_spec.starts_with('<') && embed_spec.ends_with('>') {
+                        &embed_spec[1..embed_spec.len() - 1]
+                    } else {
+                        return Err(format!("Line {}: Unsupported embed format: {}", self.current_line, embed_spec));
+                    };
+                    
+                    let full_path = current_dir.join(file_name);
+                    let data = fs::read(&full_path)
+                        .map_err(|e| format!("Failed to read embed file {:?}: {}", full_path, e))?;
+                    
+                    let formatted = data.iter()
+                        .map(|b| b.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    output.push_str(&formatted);
+                    output.push('\n');
                 } else if directive_line.starts_with("error") {
                     let msg = directive_line[5..].trim();
                     return Err(format!("Line {}: #error: {}", self.current_line, msg));
+                } else if directive_line.starts_with("warning") {
+                    let msg = directive_line[7..].trim();
+                    eprintln!("Warning: Line {}: #warning: {}", self.current_line, msg);
+                } else if directive_line.starts_with("line") {
+                    // Simple #line support
+                    let parts: Vec<&str> = directive_line[4..].trim().split_whitespace().collect();
+                    if !parts.is_empty() {
+                        if let Ok(line_num) = parts[0].parse::<usize>() {
+                            self.current_line = line_num - 1; // -1 because it will be incremented
+                            if parts.len() > 1 {
+                                let mut file_name = parts[1].to_string();
+                                if file_name.starts_with('"') && file_name.ends_with('"') {
+                                    file_name = file_name[1..file_name.len()-1].to_string();
+                                }
+                                self.current_file = PathBuf::from(file_name);
+                            }
+                        }
+                    }
                 } else if directive_line == "pragma once" {
                     // Handled in resolve_include
                 }
@@ -198,24 +268,122 @@ impl Preprocessor {
         Ok(output)
     }
 
+    fn strip_comments(&self, source: &str) -> String {
+        let mut result = String::new();
+        let mut chars = source.chars().peekable();
+        let mut in_string = false;
+
+        while let Some(c) = chars.next() {
+            if c == '"' {
+                in_string = !in_string;
+                result.push(c);
+                continue;
+            }
+
+            if !in_string {
+                if c == '/' {
+                    if let Some(&nc) = chars.peek() {
+                        if nc == '/' {
+                            // Line comment
+                            while let Some(&lc) = chars.peek() {
+                                if lc == '\n' { break; }
+                                chars.next();
+                            }
+                            continue;
+                        } else if nc == '*' {
+                            // Block comment
+                            chars.next(); // consume '*'
+                            while let Some(bc) = chars.next() {
+                                if bc == '*' {
+                                    if let Some(&nbc) = chars.peek() {
+                                        if nbc == '/' {
+                                            chars.next(); // consume '/'
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+            }
+            result.push(c);
+        }
+        result
+    }
+
     fn evaluate_condition(&self, expr: &str) -> bool {
+        let expanded = self.expand_macros_in_line(expr);
+        // Replace remaining identifiers (not defined in macros) with 0, as per C standard
+        let mut cleaned_expr = String::new();
+        let mut chars = expanded.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c.is_alphabetic() || c == '_' {
+                let mut name = String::new();
+                name.push(c);
+                while let Some(&nc) = chars.peek() {
+                    if nc.is_alphanumeric() || nc == '_' {
+                        name.push(nc);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if name == "defined" || name == "__has_include" {
+                    // Skip built-in operators and their arguments during cleaning
+                    cleaned_expr.push_str(&name);
+                } else if name == "true" {
+                    cleaned_expr.push('1');
+                } else if name == "false" {
+                    cleaned_expr.push('0');
+                } else {
+                    cleaned_expr.push('0');
+                }
+            } else {
+                cleaned_expr.push(c);
+            }
+        }
+
+        // Simple parser for arithmetic and logic
+        self.eval_logic_or(&cleaned_expr).unwrap_or(0) != 0
+    }
+
+    fn eval_logic_or(&self, expr: &str) -> Option<i64> {
+        let parts: Vec<&str> = expr.split("||").collect();
+        let mut val = self.eval_logic_and(parts[0])?;
+        for part in &parts[1..] {
+            if val != 0 { return Some(1); }
+            val = if self.eval_logic_and(part)? != 0 { 1 } else { 0 };
+        }
+        Some(val)
+    }
+
+    fn eval_logic_and(&self, expr: &str) -> Option<i64> {
+        let parts: Vec<&str> = expr.split("&&").collect();
+        let mut val = self.eval_relational(parts[0])?;
+        for part in &parts[1..] {
+            if val == 0 { return Some(0); }
+            val = if self.eval_relational(part)? != 0 { 1 } else { 0 };
+        }
+        Some(val)
+    }
+
+    fn eval_relational(&self, expr: &str) -> Option<i64> {
+        if expr.contains("==") {
+            let parts: Vec<&str> = expr.split("==").collect();
+            return Some(if self.eval_arithmetic(parts[0])? == self.eval_arithmetic(parts[1])? { 1 } else { 0 });
+        }
+        if expr.contains("!=") {
+            let parts: Vec<&str> = expr.split("!=").collect();
+            return Some(if self.eval_arithmetic(parts[0])? != self.eval_arithmetic(parts[1])? { 1 } else { 0 });
+        }
+        // Simplified: just return arithmetic result if no relational ops
+        self.eval_arithmetic(expr)
+    }
+
+    fn eval_arithmetic(&self, expr: &str) -> Option<i64> {
         let trimmed = expr.trim();
-        if trimmed.is_empty() { return false; }
-
-        // Handle logical OR
-        if trimmed.contains("||") {
-            return trimmed.split("||").any(|part| self.evaluate_condition(part));
-        }
-        // Handle logical AND
-        if trimmed.contains("&&") {
-            return trimmed.split("&&").all(|part| self.evaluate_condition(part));
-        }
-        // Handle logical NOT
-        if trimmed.starts_with('!') {
-            return !self.evaluate_condition(&trimmed[1..]);
-        }
-
-        // Handle defined(NAME) or defined NAME
         if trimmed.starts_with("defined") {
             let rest = trimmed[7..].trim();
             let name = if rest.starts_with('(') && rest.ends_with(')') {
@@ -223,21 +391,65 @@ impl Preprocessor {
             } else {
                 rest
             };
-            return self.macros.contains_key(name.trim());
+            return Some(if self.macros.contains_key(name.trim()) { 1 } else { 0 });
         }
+        if trimmed.starts_with("__has_include") {
+            let rest = trimmed[13..].trim();
+            let spec = if rest.starts_with('(') && rest.ends_with(')') {
+                &rest[1..rest.len()-1]
+            } else {
+                rest
+            }.trim();
+            
+            let (file_name, search_current) = if spec.starts_with('"') && spec.ends_with('"') {
+                (&spec[1..spec.len()-1], true)
+            } else if spec.starts_with('<') && spec.ends_with('>') {
+                (&spec[1..spec.len()-1], false)
+            } else {
+                return Some(0);
+            };
+            
+            return Some(if self.include_exists(file_name, search_current) { 1 } else { 0 });
+        }
+        if trimmed.starts_with('!') {
+            return Some(if self.eval_arithmetic(&trimmed[1..])? == 0 { 1 } else { 0 });
+        }
+        trimmed.parse::<i64>().ok().or_else(|| {
+            // Support for arithmetic operators with basic precedence
+            if trimmed.contains('+') {
+                let parts: Vec<&str> = trimmed.splitn(2, '+').collect();
+                return Some(self.eval_arithmetic(parts[0])? + self.eval_arithmetic(parts[1])?);
+            }
+            if trimmed.contains('-') {
+                let parts: Vec<&str> = trimmed.splitn(2, '-').collect();
+                return Some(self.eval_arithmetic(parts[0])? - self.eval_arithmetic(parts[1])?);
+            }
+            if trimmed.contains('*') {
+                let parts: Vec<&str> = trimmed.splitn(2, '*').collect();
+                return Some(self.eval_arithmetic(parts[0])? * self.eval_arithmetic(parts[1])?);
+            }
+            if trimmed.contains('/') {
+                let parts: Vec<&str> = trimmed.splitn(2, '/').collect();
+                let b = self.eval_arithmetic(parts[1])?;
+                return if b != 0 { Some(self.eval_arithmetic(parts[0])? / b) } else { None };
+            }
+            None
+        })
+    }
 
-        // Try to evaluate as a macro or number
-        let expanded = self.expand_macros_in_line(trimmed);
-        let val = expanded.trim();
-        
-        if val == "0" || val == "false" || val.is_empty() {
-            false
-        } else if val == "1" || val == "true" {
-            true
-        } else {
-            // Check if it's a numeric literal
-            val.parse::<i64>().map(|v| v != 0).unwrap_or(false)
+    fn include_exists(&self, file_name: &str, search_current: bool) -> bool {
+        let mut paths_to_check = Vec::new();
+        if search_current {
+            paths_to_check.push(PathBuf::from(".")); // Simplified
         }
+        paths_to_check.extend(self.include_paths.clone());
+
+        for path in paths_to_check {
+            if path.join(file_name).exists() {
+                return true;
+            }
+        }
+        false
     }
 
     fn resolve_include(&mut self, file_name: &str, current_dir: &Path, search_current: bool) -> Result<String, String> {
@@ -305,39 +517,40 @@ impl Preprocessor {
                     }
                 }
                 
-                if let Some(def) = self.macros.get(&name) {
-                    match def {
-                        MacroDef::Simple(value) => {
-                            result.push_str(value);
-                        }
-                        _ => { /* Handled below */ }
+                if self.expanding_macros.contains(&name) {
+                    // Standard C rule: if a macro is being expanded, don't expand it again
+                    result.push_str(&name);
+                    continue;
+                }
+
+                // Handle special predefined macros
+                match name.as_str() {
+                    "__FILE__" => {
+                        result.push_str(&format!("\"{}\"", self.current_file.to_string_lossy().replace("\\", "\\\\")));
+                        continue;
                     }
-                } else {
-                    // Handle special predefined macros
-                    match name.as_str() {
-                        "__FILE__" => {
-                            result.push_str(&format!("\"{}\"", self.current_file.to_string_lossy().replace("\\", "\\\\")));
-                            continue;
-                        }
-                        "__LINE__" => {
-                            result.push_str(&self.current_line.to_string());
-                            continue;
-                        }
-                        "__DATE__" => {
-                            result.push_str("\"Feb  3 2026\""); // Today's date
-                            continue;
-                        }
-                        "__TIME__" => {
-                            result.push_str("\"12:00:00\""); // Placeholder
-                            continue;
-                        }
-                        _ => {}
+                    "__LINE__" => {
+                        result.push_str(&self.current_line.to_string());
+                        continue;
                     }
+                    "__DATE__" => {
+                        result.push_str("\"Feb  3 2026\""); // Today's date
+                        continue;
+                    }
+                    "__TIME__" => {
+                        result.push_str("\"12:00:00\""); // Placeholder
+                        continue;
+                    }
+                    _ => {}
                 }
 
                 if let Some(def) = self.macros.get(&name) {
+                    self.expanding_macros.push(name.clone());
                     match def {
-                        MacroDef::Simple(_) => { /* Already handled */ }
+                        MacroDef::Simple(value) => {
+                            let expanded = self.expand_macros_in_line(value);
+                            result.push_str(&expanded);
+                        }
                         MacroDef::Function { params, has_varargs, body } => {
                             // Try to parse arguments
                             if let Some(&'(') = chars.peek() {
@@ -365,13 +578,51 @@ impl Preprocessor {
                                 
                                 let mut expanded_body = body.clone();
                                 
-                                // Handle __VA_ARGS__
+                                // Handle __VA_ARGS__ and __VA_OPT__
                                 if *has_varargs {
                                     let va_args = if args.len() >= params.len() {
                                         args[params.len()..].join(", ")
                                     } else {
                                         String::new()
                                     };
+                                    
+                                    // Handle __VA_OPT__(...)
+                                    while let Some(opt_start) = expanded_body.find("__VA_OPT__") {
+                                        if let Some(paren_start) = expanded_body[opt_start..].find('(') {
+                                            let abs_paren_start = opt_start + paren_start;
+                                            let mut depth = 0;
+                                            let mut opt_end = None;
+                                            for (idx, c) in expanded_body[abs_paren_start..].chars().enumerate() {
+                                                if c == '(' { depth += 1; }
+                                                else if c == ')' {
+                                                    depth -= 1;
+                                                    if depth == 0 {
+                                                        opt_end = Some(abs_paren_start + idx);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            if let Some(abs_opt_end) = opt_end {
+                                                let content = &expanded_body[abs_paren_start + 1..abs_opt_end];
+                                                let replacement = if !va_args.is_empty() { content } else { "" };
+                                                expanded_body.replace_range(opt_start..abs_opt_end + 1, replacement);
+                                            } else {
+                                                break;
+                                            }
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    
+                                    // Handle GCC extension ##__VA_ARGS__ (comma elision)
+                                    if va_args.is_empty() {
+                                        expanded_body = expanded_body.replace(", ##__VA_ARGS__", "");
+                                        expanded_body = expanded_body.replace(",##__VA_ARGS__", "");
+                                    } else {
+                                        expanded_body = expanded_body.replace("##__VA_ARGS__", &va_args);
+                                    }
+
                                     expanded_body = expanded_body.replace("__VA_ARGS__", &va_args);
                                 }
 
@@ -421,6 +672,7 @@ impl Preprocessor {
                             }
                         }
                     }
+                    self.expanding_macros.pop();
                 } else {
                     result.push_str(&name);
                 }
@@ -463,6 +715,86 @@ mod tests {
         let result = pp.process(source, Path::new(".")).unwrap();
         assert!(result.contains("int x = 1;"));
         assert!(!result.contains("int x = 0;"));
+    }
+
+    #[test]
+    fn test_recursion_protection() {
+        let mut pp = Preprocessor::new();
+        pp.process("#define A B\n#define B A", Path::new(".")).unwrap();
+        let result = pp.process("A", Path::new(".")).unwrap();
+        // Should not infinite loop, A expands to B, B expands to A, but A is now protected
+        assert_eq!(result, "A\n");
+    }
+
+    #[test]
+    fn test_arithmetic_if() {
+        let mut pp = Preprocessor::new();
+        pp.define("X", "10");
+        pp.define("Y", "20");
+        let source = "#if X + 10 == Y\nint matched = 1;\n#endif";
+        let result = pp.process(source, Path::new(".")).unwrap();
+        assert_eq!(result, "int matched = 1;\n");
+    }
+
+    #[test]
+    fn test_comments() {
+        let mut pp = Preprocessor::new();
+        let source = "// line comment\n/* block\n   comment */\nint x = 1;";
+        let result = pp.process(source, Path::new(".")).unwrap();
+        assert_eq!(result, "\n\nint x = 1;\n");
+    }
+
+    #[test]
+    fn test_line_directive() {
+        let mut pp = Preprocessor::new();
+        let source = "#line 100 \"test.c\"\nint line = __LINE__;";
+        let result = pp.process(source, Path::new(".")).unwrap();
+        assert!(result.contains("int line = 100;"));
+    }
+
+    #[test]
+    fn test_elifdef() {
+        let mut pp = Preprocessor::new();
+        pp.define("A", "1");
+        let source = "#ifdef B\nint x = 0;\n#elifdef A\nint x = 1;\n#endif";
+        let result = pp.process(source, Path::new(".")).unwrap();
+        assert!(result.contains("int x = 1;"));
+    }
+
+    #[test]
+    fn test_has_include() {
+        let mut pp = Preprocessor::new();
+        let source = "#if __has_include(\"stdio.h\")\n#define HAS_STDIO 1\n#endif";
+        // stdio.h doesn't exist in current dir, so it should be false
+        let result = pp.process(source, Path::new(".")).unwrap();
+        assert!(!result.contains("#define HAS_STDIO 1"));
+    }
+
+    #[test]
+    fn test_va_opt() {
+        let mut pp = Preprocessor::new();
+        pp.process("#define LOG(fmt, ...) printf(fmt __VA_OPT__(,) __VA_ARGS__)", Path::new(".")).unwrap();
+        let result1 = pp.process("LOG(\"hello\");", Path::new(".")).unwrap();
+        assert_eq!(result1, "printf(\"hello\");\n");
+        let result2 = pp.process("LOG(\"num: %d\", 42);", Path::new(".")).unwrap();
+        assert_eq!(result2, "printf(\"num: %d\", 42);\n");
+    }
+
+    #[test]
+    fn test_va_args_comma_elision() {
+        let mut pp = Preprocessor::new();
+        pp.process("#define LOG(fmt, ...) printf(fmt, ##__VA_ARGS__)", Path::new(".")).unwrap();
+        let result1 = pp.process("LOG(\"hello\");", Path::new(".")).unwrap();
+        assert_eq!(result1, "printf(\"hello\");\n");
+    }
+
+    #[test]
+    fn test_full_arithmetic() {
+        let mut pp = Preprocessor::new();
+        pp.define("X", "10");
+        let source = "#if X * 2 == 20\nint ok = 1;\n#endif";
+        let result = pp.process(source, Path::new(".")).unwrap();
+        assert!(result.contains("int ok = 1;"));
     }
 
     #[test]

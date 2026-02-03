@@ -322,21 +322,29 @@ impl NativeBackend {
                     self.emit_tree(item, builder, data, context)?;
                 }
             }
-            IKunTree::CrossLangCall(lang, group, func, args) => {
+            IKunTree::CrossLangCall {
+                language: lang,
+                module_path: group,
+                function_name: func,
+                arguments: args,
+            } => {
                 if lang == "nyar" {
                     // Map to intrinsic logic for AOT
                     match (group.as_str(), func.as_str()) {
-                        ("io", "println") | ("", "println") => { // Println
+                        ("io", "println") | ("", "println") => {
+                            // Println
                             if let Some(IKunTree::StringConstant(s)) = args.first() {
                                 self.emit_write(s, true, builder, data)?;
                             }
                         }
-                        ("io", "print") | ("", "print") => { // Print
+                        ("io", "print") | ("", "print") => {
+                            // Print
                             if let Some(IKunTree::StringConstant(s)) = args.first() {
                                 self.emit_write(s, false, builder, data)?;
                             }
                         }
-                        ("std", "exit") | ("", "exit") => { // Exit
+                        ("std", "exit") | ("", "exit") => {
+                            // Exit
                             if let Some(IKunTree::Constant(code)) = args.first() {
                                 self.emit_exit(*code as i32, builder)?;
                             } else {
