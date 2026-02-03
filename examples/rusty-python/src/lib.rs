@@ -5,7 +5,7 @@
 use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
 use chomsky_uir::Id;
-use chomsky_source::Loc;
+use chomsky_types::Loc;
 
 pub mod codegen;
 pub mod pyc_codegen;

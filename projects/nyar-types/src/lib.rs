@@ -104,7 +104,7 @@ pub trait NyarFrontend: Default {
 
 use std::collections::HashMap;
 use chomsky_uir::{EGraph, IKun, Id, IntentBuilder};
-use chomsky_source::Loc;
+use chomsky_types::{Loc, Span};
 
 /// 统一的作用域管理器，负责符号混淆和遮蔽
 #[derive(Debug, Default, Clone)]

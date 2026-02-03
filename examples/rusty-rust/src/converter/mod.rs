@@ -1,6 +1,6 @@
 //! Oak Rust AST 到 Chomsky UIR 的转换器
 
-use chomsky_source::Loc;
+use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, IKun, Id, IntentBuilder};
 use core::range::Range;
 use oak_rust::ast as oak_ast;

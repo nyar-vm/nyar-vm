@@ -9,9 +9,8 @@ nyar-types = { path = "../../projects/nyar-types" }
 nyar-aot = { path = "../../projects/nyar-aot" }
 oak-core = { workspace = true }
 oak-rust = { workspace = true }
-chomsky = { workspace = true }
-chomsky-uir = { workspace = true }
-chomsky-source = { workspace = true }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
 gaia-assembler = { workspace = true }

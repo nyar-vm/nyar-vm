@@ -1,6 +1,6 @@
 //! Java 到 Nyar UIR 的转换器
 
-use chomsky_source::Loc;
+use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder, Id};
 use nyar_types::NyarError;
 use oak_java::ast::*;

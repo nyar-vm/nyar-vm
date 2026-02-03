@@ -17,8 +17,8 @@ name = "tsx"
 path = "bin/tsx.rs"
 
 [dependencies]
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
-chomsky-source = { path = "../../../ProjectChomsky/packages/chomsky-source" }
 chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
 chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
 chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }

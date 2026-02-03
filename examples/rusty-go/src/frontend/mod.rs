@@ -3,7 +3,7 @@ use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
 use oak_core::source::SourceText;
 use oak_core::parser::session::ParseSession;
 use chomsky_uir::Id;
-use chomsky_source::Loc;
+use chomsky_types::Loc;
 use std::ops::Range;
 
 /// Rusty Go 前端实现

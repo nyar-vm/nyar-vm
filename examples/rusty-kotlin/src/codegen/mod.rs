@@ -2,7 +2,7 @@
 
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
-use chomsky_source::Loc;
+use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
 use nyar_types::NyarError;
 use oak_core::Language;

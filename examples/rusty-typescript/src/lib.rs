@@ -13,7 +13,7 @@ pub mod type_system;
 use chomsky_cost;
 use chomsky_emit::GaiaEmitter;
 use chomsky_extract::{Backend, IKunExtractor};
-use chomsky_source::Loc;
+use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree};
 use nyar_aot::NyarAot;
 use nyar_types::{NyarError, NyarFrontend};

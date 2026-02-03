@@ -38,7 +38,6 @@ opt-level = "s"
 
 [workspace.dependencies]
 chomsky = { path = "../ProjectChomsky/packages/chomsky", default-features = false }
-chomsky-source = { path = "../ProjectChomsky/packages/chomsky-source" }
 chomsky-uir = { path = "../ProjectChomsky/packages/chomsky-uir" }
 chomsky-cost = { path = "../ProjectChomsky/packages/chomsky-cost" }
 chomsky-types = { path = "../ProjectChomsky/packages/chomsky-types" }

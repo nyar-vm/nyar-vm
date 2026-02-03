@@ -1,10 +1,9 @@
 use crate::errors::CError;
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
 use oak_c::{ast, CBuilder, CLanguage, CRoot};
 use oak_core::source::SourceText;
 use std::ops::Range;
-use chomsky_uir::Id;
-use chomsky_source::Loc;
+use chomsky_types::Loc;
 
 /// Rusty C 前端实现
 #[derive(Default)]

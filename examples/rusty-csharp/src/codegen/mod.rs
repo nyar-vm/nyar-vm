@@ -1,6 +1,6 @@
 //! CSharp 到 Nyar 字节码的翻译器
 
-use chomsky_source::Loc;
+use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
 use nyar_types::NyarError;
 use oak_java::ast::*;

@@ -19,7 +19,7 @@ impl GaiaTranslator {
         let mut builder = IntentBuilder::new(&mut egraph);
 
         // TODO: 实现真正的 Lua AST 到 UIR 的转换
-        let _loc = chomsky_source::Loc::default();
+        let _loc = chomsky_types::Loc::default();
         
         // 目前返回一个占位符
         Ok(IKunTree::Module("rusty-lua-program".to_string(), Vec::new()))
