@@ -45,6 +45,7 @@ impl NyarFrontend for MiniCFrontend {
     }
 
     fn lower(&self, ast: &CRoot) -> Result<IKunTree, NyarError> {
+        println!("DEBUG: AST external_declarations len: {}", ast.translation_unit.external_declarations.len());
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let mut builder = IntentBuilder::new(&mut egraph);
         let mut converter = UirConverter::new(&mut builder, 1);

@@ -88,6 +88,7 @@ impl Backend for NativeBackend {
         });
 
         // 理论上不会执行到这里，但为了保险起见，还原栈并返回
+        builder.add_instruction(Instruction::Label("exit_cleanup".to_string()));
         builder.add_instruction(Instruction::Add {
             dst: Operand::reg(Register::RSP),
             src: Operand::imm(context.stack_size as i64, 32),

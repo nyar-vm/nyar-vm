@@ -1,6 +1,6 @@
 //! Mini C 解释器
 
-use mini_c::MiniCFrontend;
+use rusty_c::MiniCFrontend;
 use nyar_vm::NyarDriver;
 use std::env;
 use std::path::PathBuf;
