@@ -1,14 +1,20 @@
+pub mod preprocessor;
+
 use crate::errors::CError;
 use nyar_types::{Id, NyarContext, NyarError, NyarFrontend};
 use oak_c::{ast, CBuilder, CLanguage, CRoot};
 use oak_core::source::SourceText;
+use std::collections::HashMap;
 use std::ops::Range;
 use chomsky_types::Loc;
+
+use std::path::PathBuf;
 
 /// Rusty C 前端实现
 #[derive(Default)]
 pub struct RustyCFrontend {
     language: CLanguage,
+    pub include_paths: Vec<PathBuf>,
 }
 
 impl RustyCFrontend {
@@ -16,7 +22,13 @@ impl RustyCFrontend {
     pub fn new() -> Self {
         Self {
             language: CLanguage::default(),
+            include_paths: Vec::new(),
         }
+    }
+
+    /// 添加包含路径
+    pub fn add_include_path(&mut self, path: PathBuf) {
+        self.include_paths.push(path);
     }
 }
 
@@ -24,10 +36,20 @@ impl NyarFrontend for RustyCFrontend {
     type Language = CLanguage;
 
     fn parse(&self, source: &str) -> Result<CRoot, NyarError> {
+        let mut preprocessor = preprocessor::Preprocessor::new();
+        for path in &self.include_paths {
+            preprocessor.add_include_path(path);
+        }
+        
+        // Use current directory as base for includes
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let preprocessed = preprocessor.process(source, &current_dir)
+            .map_err(|e| NyarError::Compile(format!("Preprocessor error: {}", e)))?;
+
         use oak_core::Builder;
         let builder = CBuilder::new(&self.language);
         let mut session = oak_core::parser::session::ParseSession::<CLanguage>::default();
-        let source_text = SourceText::new(source.to_string());
+        let source_text = SourceText::new(preprocessed);
         let output = builder.build(&source_text, &[], &mut session);
         output.result.map_err(|e| NyarError::from(CError::from(e)))
     }
@@ -40,11 +62,19 @@ impl NyarFrontend for RustyCFrontend {
 
 struct UirConverter<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
     ctx: &'a mut NyarContext<'b, A>,
+    typedefs: HashMap<String, Vec<ast::DeclarationSpecifier>>,
+    structs: HashMap<String, Vec<ast::StructDeclaration>>,
+    enums: HashMap<String, Vec<ast::Enumerator>>,
 }
 
 impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A> {
     fn new(ctx: &'a mut NyarContext<'b, A>) -> Self {
-        Self { ctx }
+        Self {
+            ctx,
+            typedefs: HashMap::new(),
+            structs: HashMap::new(),
+            enums: HashMap::new(),
+        }
     }
 
     fn to_loc(&self, range: Range<usize>) -> Loc {
@@ -105,9 +135,55 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
 
     fn convert_declaration(&mut self, decl: &ast::Declaration) -> Id {
         let loc = self.to_loc(decl.span.clone().into());
+
+        // Handle typedef
+        let is_typedef = decl.declaration_specifiers.iter().any(|s| {
+            matches!(
+                s,
+                ast::DeclarationSpecifier::StorageClassSpecifier(ast::StorageClassSpecifier::Typedef { .. })
+            )
+        });
+
+        // Handle struct/union/enum definitions in specifiers
+        for spec in &decl.declaration_specifiers {
+            if let ast::DeclarationSpecifier::TypeSpecifier(ts) = spec {
+                match ts {
+                    ast::TypeSpecifier::StructOrUnion(s) => {
+                        if let Some(name) = &s.identifier {
+                            if let Some(decls) = &s.struct_declarations {
+                                self.structs.insert(name.clone(), decls.clone());
+                            }
+                        }
+                    }
+                    ast::TypeSpecifier::Enum(e) => {
+                        if let Some(name) = &e.identifier {
+                            if let Some(enumerators) = &e.enumerators {
+                                self.enums.insert(name.clone(), enumerators.clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if is_typedef {
+            for init in &decl.init_declarators {
+                let name = self.get_declarator_name(&init.declarator);
+                self.typedefs.insert(name, decl.declaration_specifiers.clone());
+            }
+            return self.ctx.builder().constant(0, loc);
+        }
+
         let mut ids = Vec::new();
         for init in &decl.init_declarators {
             let original_name = self.get_declarator_name(&init.declarator);
+
+            // Skip function prototypes
+            if let ast::DirectDeclarator::Function { .. } = &init.declarator.direct_declarator {
+                continue;
+            }
+
             let name = self.ctx.scopes.declare_variable(&original_name);
             let value = if let Some(init_val) = &init.initializer {
                 self.convert_initializer(init_val)
@@ -116,7 +192,9 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
             };
             ids.push(self.ctx.builder().assign(&name, value, loc.clone()));
         }
-        if ids.len() == 1 {
+        if ids.is_empty() {
+            self.ctx.builder().constant(0, loc)
+        } else if ids.len() == 1 {
             ids[0]
         } else {
             self.ctx.builder().block(ids, loc)
@@ -166,6 +244,16 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                     };
                     let loc = self.to_loc(span.clone().into());
                     self.ctx.builder().branch(cond, then_id, else_id, loc)
+                }
+                ast::SelectionStatement::Switch {
+                    condition,
+                    statement,
+                    span,
+                } => {
+                    let cond = self.convert_expression(condition);
+                    let body = self.convert_statement(statement);
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().extension("switch", vec![cond, body], loc)
                 }
                 _ => self.ctx.builder().constant(0, loc),
             },
@@ -234,6 +322,11 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                     let loc = self.to_loc(span.clone().into());
                     self.ctx.builder().extension("continue", vec![], loc)
                 }
+                ast::JumpStatement::Goto(identifier, span) => {
+                    let loc = self.to_loc(span.clone().into());
+                    let label_name = self.ctx.builder().constant(identifier.clone(), loc.clone());
+                    self.ctx.builder().extension("goto", vec![label_name], loc)
+                }
                 _ => self.ctx.builder().constant(0, loc),
             },
             _ => self.ctx.builder().constant(0, loc),
@@ -245,11 +338,29 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
         match &*expr.kind {
             ast::ExpressionKind::Constant(c, _) => match c {
                 ast::Constant::Integer(val, _) => self.ctx.builder().constant(*val, loc),
-                _ => self.ctx.builder().constant(0, loc),
+                ast::Constant::Float(val, _) => self.ctx.builder().constant(*val, loc),
+                ast::Constant::Character(val, _) => self.ctx.builder().constant(*val as i64, loc),
             },
+            ast::ExpressionKind::StringLiteral(val, _) => self.ctx.builder().constant(val.clone(), loc),
             ast::ExpressionKind::Identifier(name, _) => {
                 let resolved = self.ctx.scopes.resolve_variable(name);
                 self.ctx.builder().symbol(&resolved, loc)
+            }
+            ast::ExpressionKind::ArraySubscript { array, index, .. } => {
+                let a = self.convert_expression(array);
+                let i = self.convert_expression(index);
+                self.ctx.builder().extension("index", vec![a, i], loc)
+            }
+            ast::ExpressionKind::MemberAccess {
+                object,
+                member,
+                is_pointer,
+                ..
+            } => {
+                let obj = self.convert_expression(object);
+                let op = if *is_pointer { "arrow" } else { "dot" };
+                let member_id = self.ctx.builder().constant(member.clone(), loc.clone());
+                self.ctx.builder().extension(op, vec![obj, member_id], loc)
             }
             ast::ExpressionKind::Binary {
                 left,
@@ -259,15 +370,80 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
             } => {
                 let l = self.convert_expression(left);
                 let r = self.convert_expression(right);
-                let op = format!("{:?}", operator).to_lowercase();
-                self.ctx.builder().binary_op(&op, l, r, loc)
+                let op = match operator {
+                    ast::BinaryOperator::Add { .. } => "add",
+                    ast::BinaryOperator::Subtract { .. } => "sub",
+                    ast::BinaryOperator::Multiply { .. } => "mul",
+                    ast::BinaryOperator::Divide { .. } => "div",
+                    ast::BinaryOperator::Modulo { .. } => "mod",
+                    ast::BinaryOperator::BitwiseAnd { .. } => "bit_and",
+                    ast::BinaryOperator::BitwiseOr { .. } => "bit_or",
+                    ast::BinaryOperator::BitwiseXor { .. } => "bit_xor",
+                    ast::BinaryOperator::ShiftLeft { .. } => "shl",
+                    ast::BinaryOperator::ShiftRight { .. } => "shr",
+                    ast::BinaryOperator::Equal { .. } => "eq",
+                    ast::BinaryOperator::NotEqual { .. } => "ne",
+                    ast::BinaryOperator::LessThan { .. } => "lt",
+                    ast::BinaryOperator::LessThanEqual { .. } => "le",
+                    ast::BinaryOperator::GreaterThan { .. } => "gt",
+                    ast::BinaryOperator::GreaterThanEqual { .. } => "ge",
+                    ast::BinaryOperator::LogicalAnd { .. } => "and",
+                    ast::BinaryOperator::LogicalOr { .. } => "or",
+                };
+                self.ctx.builder().binary_op(op, l, r, loc)
             }
             ast::ExpressionKind::Unary {
                 operator, operand, ..
             } => {
                 let arg = self.convert_expression(operand);
-                let op = format!("{:?}", operator).to_lowercase();
-                self.ctx.builder().extension(&op, vec![arg], loc)
+                let op = match operator {
+                    ast::UnaryOperator::AddressOf { .. } => "address_of",
+                    ast::UnaryOperator::Dereference { .. } => "deref",
+                    ast::UnaryOperator::Plus { .. } => "pos",
+                    ast::UnaryOperator::Minus { .. } => "neg",
+                    ast::UnaryOperator::BitwiseNot { .. } => "bit_not",
+                    ast::UnaryOperator::LogicalNot { .. } => "not",
+                    ast::UnaryOperator::Sizeof { .. } => "sizeof",
+                };
+                self.ctx.builder().extension(op, vec![arg], loc)
+            }
+            ast::ExpressionKind::PostfixIncDec {
+                operand,
+                is_increment,
+                ..
+            } => {
+                let arg = self.convert_expression(operand);
+                let op = if *is_increment { "post_inc" } else { "post_dec" };
+                self.ctx.builder().extension(op, vec![arg], loc)
+            }
+            ast::ExpressionKind::PrefixIncDec {
+                operand,
+                is_increment,
+                ..
+            } => {
+                let arg = self.convert_expression(operand);
+                let op = if *is_increment { "pre_inc" } else { "pre_dec" };
+                self.ctx.builder().extension(op, vec![arg], loc)
+            }
+            ast::ExpressionKind::Cast {
+                type_name,
+                expression,
+                ..
+            } => {
+                let val = self.convert_expression(expression);
+                // TODO: Handle type_name
+                self.ctx.builder().extension("cast", vec![val], loc)
+            }
+            ast::ExpressionKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                let cond = self.convert_expression(condition);
+                let t = self.convert_expression(then_expr);
+                let e = self.convert_expression(else_expr);
+                self.ctx.builder().branch(cond, t, e, loc)
             }
             ast::ExpressionKind::Assignment {
                 left,
@@ -277,14 +453,33 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
             } => {
                 let r = self.convert_expression(right);
                 let l = self.convert_expression(left);
-                let op = format!("{:?}", operator).to_lowercase();
-                if op == "assign" {
-                    self.ctx.builder().assign_to_id(l, r, loc)
-                } else {
-                    let base_op = op.replace("assign", "");
-                    let value = self.ctx.builder().binary_op(&base_op, l, r, loc.clone());
-                    self.ctx.builder().assign_to_id(l, value, loc)
+                match operator {
+                    ast::AssignmentOperator::Assign { .. } => self.ctx.builder().assign_to_id(l, r, loc),
+                    _ => {
+                        let op = match operator {
+                            ast::AssignmentOperator::AssignAdd { .. } => "add",
+                            ast::AssignmentOperator::AssignSubtract { .. } => "sub",
+                            ast::AssignmentOperator::AssignMultiply { .. } => "mul",
+                            ast::AssignmentOperator::AssignDivide { .. } => "div",
+                            ast::AssignmentOperator::AssignModulo { .. } => "mod",
+                            ast::AssignmentOperator::AssignBitwiseAnd { .. } => "bit_and",
+                            ast::AssignmentOperator::AssignBitwiseOr { .. } => "bit_or",
+                            ast::AssignmentOperator::AssignBitwiseXor { .. } => "bit_xor",
+                            ast::AssignmentOperator::AssignShiftLeft { .. } => "shl",
+                            ast::AssignmentOperator::AssignShiftRight { .. } => "shr",
+                            ast::AssignmentOperator::Assign { .. } => unreachable!(),
+                        };
+                        let value = self.ctx.builder().binary_op(op, l, r, loc.clone());
+                        self.ctx.builder().assign_to_id(l, value, loc)
+                    }
                 }
+            }
+            ast::ExpressionKind::Comma { expressions, .. } => {
+                let mut ids = Vec::new();
+                for expr in expressions {
+                    ids.push(self.convert_expression(expr));
+                }
+                self.ctx.builder().block(ids, loc)
             }
             ast::ExpressionKind::FunctionCall {
                 function,
@@ -298,11 +493,62 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
 
                 if let ast::ExpressionKind::Identifier(name, _) = &*function.kind {
                     match name.as_str() {
-                        "printf" | "print" => {
+                        "printf" | "print" | "puts" => {
                             return self.ctx.builder().cross_lang_call("nyar", "io", "print", args, loc);
+                        }
+                        "println" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "io", "println", args, loc);
                         }
                         "exit" => {
                             return self.ctx.builder().cross_lang_call("nyar", "std", "exit", args, loc);
+                        }
+                        "panic" | "abort" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "std", "panic", args, loc);
+                        }
+                        "malloc" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "mem", "alloc", args, loc);
+                        }
+                        "free" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "mem", "free", args, loc);
+                        }
+                        "realloc" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "mem", "realloc", args, loc);
+                        }
+                        "memset" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "mem", "set", args, loc);
+                        }
+                        "memcpy" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "mem", "copy", args, loc);
+                        }
+                        "strlen" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "str", "len", args, loc);
+                        }
+                        "strcmp" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "str", "cmp", args, loc);
+                        }
+                        "sin" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "math", "sin", args, loc);
+                        }
+                        "cos" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "math", "cos", args, loc);
+                        }
+                        "tan" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "math", "tan", args, loc);
+                        }
+                        "sqrt" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "math", "sqrt", args, loc);
+                        }
+                        "abs" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "math", "abs", args, loc);
+                        }
+                        "rand" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "math", "rand", args, loc);
+                        }
+                        "time" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "time", "now", args, loc);
+                        }
+                        "sleep" => {
+                            return self.ctx.builder().cross_lang_call("nyar", "time", "sleep", args, loc);
                         }
                         _ => {}
                     }

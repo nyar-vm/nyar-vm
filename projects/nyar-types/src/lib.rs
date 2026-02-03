@@ -142,12 +142,53 @@ impl ScopeManager {
 
     /// 声明一个变量并返回混淆后的名称
     pub fn declare_variable(&mut self, name: &str) -> String {
+        // If it's already declared in current scope as global or nonlocal, use that mangled name
+        if let Some(scope) = self.scopes.last() {
+            if let Some(mangled) = scope.get(name) {
+                return mangled.clone();
+            }
+        }
+
         let mangled = format!("{}_{}", name, self.next_id);
         self.next_id += 1;
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name.to_string(), mangled.clone());
         }
         mangled
+    }
+
+    /// 声明一个全局变量引用
+    pub fn declare_global(&mut self, name: &str) {
+        let mangled = if let Some(m) = self.scopes[0].get(name) {
+            m.clone()
+        } else {
+            let m = format!("{}_{}", name, self.next_id);
+            self.next_id += 1;
+            self.scopes[0].insert(name.to_string(), m.clone());
+            m
+        };
+
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name.to_string(), mangled);
+        }
+    }
+
+    /// 声明一个非局部变量引用
+    pub fn declare_nonlocal(&mut self, name: &str) {
+        let mut mangled = None;
+        // Search in outer scopes, but not the global scope (index 0)
+        for i in (1..self.scopes.len() - 1).rev() {
+            if let Some(m) = self.scopes[i].get(name) {
+                mangled = Some(m.clone());
+                break;
+            }
+        }
+
+        if let Some(m) = mangled {
+            if let Some(scope) = self.scopes.last_mut() {
+                scope.insert(name.to_string(), m);
+            }
+        }
     }
 
     /// 解析变量名称，返回混淆后的名称或原始名称

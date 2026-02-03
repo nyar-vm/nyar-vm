@@ -231,6 +231,34 @@ impl Instruction {
                 buf.push(Opcode::I32Ext as u8);
                 buf.push(I32Ext::RemU as u8);
             }
+            Instruction::I32And => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::And as u8);
+            }
+            Instruction::I32Or => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Or as u8);
+            }
+            Instruction::I32Xor => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Xor as u8);
+            }
+            Instruction::I32Shl => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Shl as u8);
+            }
+            Instruction::I32ShrS => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::ShrS as u8);
+            }
+            Instruction::I32ShrU => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::ShrU as u8);
+            }
+            Instruction::I32Not => {
+                buf.push(Opcode::I32Ext as u8);
+                buf.push(I32Ext::Not as u8);
+            }
             Instruction::I32Neg => {
                 buf.push(Opcode::I32Ext as u8);
                 buf.push(I32Ext::Neg as u8);
@@ -359,6 +387,34 @@ impl Instruction {
             Instruction::I64RemU => {
                 buf.push(Opcode::I64Ext as u8);
                 buf.push(I64Ext::RemU as u8);
+            }
+            Instruction::I64And => {
+                buf.push(Opcode::I64Ext as u8);
+                buf.push(I64Ext::And as u8);
+            }
+            Instruction::I64Or => {
+                buf.push(Opcode::I64Ext as u8);
+                buf.push(I64Ext::Or as u8);
+            }
+            Instruction::I64Xor => {
+                buf.push(Opcode::I64Ext as u8);
+                buf.push(I64Ext::Xor as u8);
+            }
+            Instruction::I64Shl => {
+                buf.push(Opcode::I64Ext as u8);
+                buf.push(I64Ext::Shl as u8);
+            }
+            Instruction::I64ShrS => {
+                buf.push(Opcode::I64Ext as u8);
+                buf.push(I64Ext::ShrS as u8);
+            }
+            Instruction::I64ShrU => {
+                buf.push(Opcode::I64Ext as u8);
+                buf.push(I64Ext::ShrU as u8);
+            }
+            Instruction::I64Not => {
+                buf.push(Opcode::I64Ext as u8);
+                buf.push(I64Ext::Not as u8);
             }
             Instruction::I64Neg => {
                 buf.push(Opcode::I64Ext as u8);

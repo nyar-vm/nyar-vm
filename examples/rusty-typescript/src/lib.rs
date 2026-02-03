@@ -223,6 +223,15 @@ impl<'a> UirConverter<'a> {
                     args.push(self.builder.constant(0, loc.clone())); // No base class
                 }
 
+                // Add abstract and implements
+                args.push(self.builder.bool(class.is_abstract, loc.clone()));
+                let implements_ids: Vec<_> = class
+                    .implements
+                    .iter()
+                    .map(|imp| self.builder.symbol(imp, loc.clone()))
+                    .collect();
+                args.push(self.builder.seq(implements_ids));
+
                 for member in class.body {
                     match member {
                         ast::ClassMember::Property {
@@ -230,6 +239,10 @@ impl<'a> UirConverter<'a> {
                             ty,
                             initializer,
                             span,
+                            visibility,
+                            is_static,
+                            is_readonly,
+                            is_abstract,
                         } => {
                             let mloc = self.to_loc(span.into());
                             let init_id = if let Some(expr) = initializer {
@@ -243,9 +256,24 @@ impl<'a> UirConverter<'a> {
                                 self.builder.symbol("any", mloc.clone())
                             };
                             let field_name = self.builder.symbol(&name, mloc.clone());
+                            let vis_str = match visibility {
+                                ast::Visibility::Public => "public",
+                                ast::Visibility::Private => "private",
+                                ast::Visibility::Protected => "protected",
+                            };
+                            let vis_id = self.builder.string(vis_str, mloc.clone());
+
                             args.push(self.builder.extension(
                                 "gc.field",
-                                vec![field_name, ty_id, init_id],
+                                vec![
+                                    field_name,
+                                    ty_id,
+                                    init_id,
+                                    vis_id,
+                                    self.builder.bool(is_static, mloc.clone()),
+                                    self.builder.bool(is_readonly, mloc.clone()),
+                                    self.builder.bool(is_abstract, mloc.clone()),
+                                ],
                                 mloc,
                             ));
                         }
@@ -254,6 +282,11 @@ impl<'a> UirConverter<'a> {
                             params,
                             body,
                             span,
+                            visibility,
+                            is_static,
+                            is_abstract,
+                            is_getter,
+                            is_setter,
                         } => {
                             let mloc = self.to_loc(span.into());
                             let mut body_ids = Vec::new();
@@ -262,9 +295,24 @@ impl<'a> UirConverter<'a> {
                             }
                             let lambda = self.builder.function(&name, params, body_ids);
                             let method_name = self.builder.symbol(&name, mloc.clone());
+                            let vis_str = match visibility {
+                                ast::Visibility::Public => "public",
+                                ast::Visibility::Private => "private",
+                                ast::Visibility::Protected => "protected",
+                            };
+                            let vis_id = self.builder.string(vis_str, mloc.clone());
+
                             args.push(self.builder.extension(
                                 "gc.method",
-                                vec![method_name, lambda],
+                                vec![
+                                    method_name,
+                                    lambda,
+                                    vis_id,
+                                    self.builder.bool(is_static, mloc.clone()),
+                                    self.builder.bool(is_abstract, mloc.clone()),
+                                    self.builder.bool(is_getter, mloc.clone()),
+                                    self.builder.bool(is_setter, mloc.clone()),
+                                ],
                                 mloc,
                             ));
                         }
@@ -272,6 +320,136 @@ impl<'a> UirConverter<'a> {
                 }
                 self.builder.extension("gc.struct", args, loc)
             }
+            ast::Statement::NamespaceDeclaration(ns) => {
+                let loc = self.to_loc(ns.span.into());
+                let mut items = Vec::new();
+                for s in ns.body {
+                    items.push(self.convert_statement(s));
+                }
+                self.builder.module(&ns.name, items)
+            }
+            ast::Statement::IfStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let cond = self.convert_expression(stmt.test);
+                let then_branch = self.convert_statement(*stmt.consequent);
+                let else_branch = if let Some(alt) = stmt.alternate {
+                    self.convert_statement(*alt)
+                } else {
+                    self.builder.constant(0, loc.clone())
+                };
+                self.builder.branch(cond, then_branch, else_branch, loc)
+            }
+            ast::Statement::WhileStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let cond = self.convert_expression(stmt.test);
+                let body = self.convert_statement(*stmt.body);
+                self.builder.while_loop(cond, body, loc)
+            }
+            ast::Statement::BlockStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let mut stmts = Vec::new();
+                for s in stmt.statements {
+                    stmts.push(self.convert_statement(s));
+                }
+                self.builder.block(stmts, loc)
+            }
+            ast::Statement::BreakStatement => {
+                let loc = self.to_loc(span.into());
+                self.builder.extension("break", vec![], loc)
+            }
+            ast::Statement::ContinueStatement => {
+                let loc = self.to_loc(span.into());
+                self.builder.extension("continue", vec![], loc)
+            }
+            ast::Statement::ThrowStatement(expr) => {
+                let loc = self.to_loc(span.into());
+                let val = self.convert_expression(expr);
+                self.builder.extension("throw", vec![val], loc)
+            }
+            ast::Statement::DoWhileStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let cond = self.convert_expression(stmt.test);
+                let body = self.convert_statement(*stmt.body);
+                self.builder.extension("do_while", vec![cond, body], loc)
+            }
+            ast::Statement::ForStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let init = if let Some(init) = stmt.init {
+                    self.convert_statement(init)
+                } else {
+                    self.builder.constant(0, loc.clone())
+                };
+                let test = if let Some(test) = stmt.test {
+                    self.convert_expression(test)
+                } else {
+                    self.builder.bool(true, loc.clone())
+                };
+                let update = if let Some(update) = stmt.update {
+                    self.convert_expression(update)
+                } else {
+                    self.builder.constant(0, loc.clone())
+                };
+                let body = self.convert_statement(*stmt.body);
+                self.builder
+                    .extension("for", vec![init, test, update, body], loc)
+            }
+            ast::Statement::ForInStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let left = self.builder.symbol(&stmt.left, loc.clone());
+                let right = self.convert_expression(stmt.right);
+                let body = self.convert_statement(*stmt.body);
+                self.builder.extension("for_in", vec![left, right, body], loc)
+            }
+            ast::Statement::ForOfStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let left = self.builder.symbol(&stmt.left, loc.clone());
+                let right = self.convert_expression(stmt.right);
+                let body = self.convert_statement(*stmt.body);
+                self.builder.extension("for_of", vec![left, right, body], loc)
+            }
+            ast::Statement::SwitchStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let discriminant = self.convert_expression(stmt.discriminant);
+                let mut cases = Vec::new();
+                for case in stmt.cases {
+                    let case_loc = self.to_loc(case.span.into());
+                    let test = if let Some(test) = case.test {
+                        self.convert_expression(test)
+                    } else {
+                        self.builder.symbol("default", case_loc.clone())
+                    };
+                    let mut body = Vec::new();
+                    for s in case.consequent {
+                        body.push(self.convert_statement(s));
+                    }
+                    let body_id = self.builder.block(body, case_loc.clone());
+                    cases.push(self.builder.extension("case", vec![test, body_id], case_loc));
+                }
+                let mut args = vec![discriminant];
+                args.extend(cases);
+                self.builder.extension("switch", args, loc)
+            }
+            ast::Statement::TryStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let block = self.convert_statement(ast::Statement::BlockStatement(stmt.block));
+                let mut args = vec![block];
+
+                if let Some(handler) = stmt.handler {
+                    let handler_loc = self.to_loc(handler.span.into());
+                    let param = self.builder.symbol(&handler.param, handler_loc.clone());
+                    let body = self.convert_statement(ast::Statement::BlockStatement(handler.body));
+                    args.push(self.builder.extension("catch", vec![param, body], handler_loc));
+                }
+
+                if let Some(finalizer) = stmt.finalizer {
+                    let finalizer_loc = self.to_loc(finalizer.span.into());
+                    let body = self.convert_statement(ast::Statement::BlockStatement(finalizer));
+                    args.push(self.builder.extension("finally", vec![body], finalizer_loc));
+                }
+
+                self.builder.extension("try", args, loc)
+            }
+            _ => self.builder.constant(0, Loc::default()),
         }
     }
 
@@ -412,6 +590,61 @@ impl<'a> UirConverter<'a> {
                     let target = self.convert_expression(*left);
                     self.builder.assign_to_id(target, value, Loc::default())
                 }
+            }
+            ast::Expression::ImportExpression {
+                module_specifier,
+                span,
+            } => {
+                let loc = self.to_loc(span.into());
+                let spec = self.convert_expression(*module_specifier);
+                self.builder.extension("import", vec![spec], loc)
+            }
+            ast::Expression::ArrowFunction {
+                params,
+                body,
+                async_,
+            } => {
+                let body_id = self.convert_statement(*body);
+                if async_ {
+                    let mut args = vec![body_id];
+                    for param in params {
+                        args.push(self.builder.symbol(&param, Loc::default()));
+                    }
+                    self.builder.extension("async_lambda", args, Loc::default())
+                } else {
+                    self.builder.lambda(params, body_id, Loc::default())
+                }
+            }
+            ast::Expression::ObjectLiteral { properties } => {
+                let mut args = Vec::new();
+                for prop in properties {
+                    let key = self.builder.symbol(&prop.key, Loc::default());
+                    let value = self.convert_expression(prop.value);
+                    args.push(self.builder.extension("prop", vec![key, value], Loc::default()));
+                }
+                self.builder.extension("object", args, Loc::default())
+            }
+            ast::Expression::ArrayLiteral { elements } => {
+                let mut args = Vec::new();
+                for elem in elements {
+                    args.push(self.convert_expression(elem));
+                }
+                self.builder.extension("array", args, Loc::default())
+            }
+            ast::Expression::SpreadElement(expr) => {
+                let inner = self.convert_expression(*expr);
+                self.builder.extension("spread", vec![inner], Loc::default())
+            }
+            ast::Expression::AwaitExpression(expr) => {
+                let inner = self.convert_expression(*expr);
+                self.builder.extension("await", vec![inner], Loc::default())
+            }
+            ast::Expression::YieldExpression(expr) => {
+                let mut args = Vec::new();
+                if let Some(e) = expr {
+                    args.push(self.convert_expression(*e));
+                }
+                self.builder.extension("yield", args, Loc::default())
             }
             _ => self.builder.constant(0, Loc::default()),
         }

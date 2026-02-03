@@ -112,9 +112,10 @@ impl GaiaTranslator {
             _ => ("mini_python_program", std::slice::from_ref(tree)),
         };
 
-        // 2. 分离函数定义和主语句
+        // 2. 分离函数、类定义和主语句
         let mut main_stmts = Vec::new();
         let mut function_defs = Vec::new();
+        let mut class_defs = Vec::new();
 
         for item in items {
             if let IKunTree::StateUpdate(target, value) = item {
@@ -123,6 +124,12 @@ impl GaiaTranslator {
                         function_defs.push((name.clone(), params.clone(), body));
                         continue;
                     }
+                }
+            }
+            if let IKunTree::Extension(name, args) = item {
+                if name == "class_def" {
+                    class_defs.push(args);
+                    continue;
                 }
             }
             main_stmts.push(item);
@@ -140,11 +147,18 @@ impl GaiaTranslator {
             functions.push(function);
         }
 
+        // 5. 生成类
+        let mut classes = Vec::new();
+        for args in class_defs {
+            let class = self.generate_class_from_tree(args)?;
+            classes.push(class);
+        }
+
         Ok(GaiaModule {
             name: module_name.to_string(),
             functions,
             structs: Vec::new(),
-            classes: Vec::new(),
+            classes,
             constants: self.string_constants.clone(),
             globals: Vec::new(),
             imports: Vec::new(),
@@ -195,6 +209,63 @@ impl GaiaTranslator {
             },
             blocks: std::mem::take(&mut self.blocks),
             is_external: false,
+        })
+    }
+
+    fn generate_class_from_tree(
+        &mut self,
+        args: &[IKunTree],
+    ) -> Result<gaia_assembler::program::GaiaClass, GaiaError> {
+        let name = if let IKunTree::Symbol(name) = &args[0] {
+            name.clone()
+        } else {
+            return Err(GaiaError::syntax_error(
+                "Class name must be a symbol",
+                SourceLocation::default(),
+            ));
+        };
+
+        let mut parent = None;
+        if let IKunTree::Extension(ext_name, bases) = &args[1] {
+            if ext_name == "bases" && !bases.is_empty() {
+                if let IKunTree::Symbol(base_name) = &bases[0] {
+                    parent = Some(base_name.clone());
+                }
+            }
+        }
+
+        let mut methods = Vec::new();
+        let mut fields = Vec::new();
+
+        if let IKunTree::Seq(body_items) = &args[2] {
+            for item in body_items {
+                if let IKunTree::StateUpdate(target, value) = item {
+                    if let IKunTree::Lambda(params, body) = &**value {
+                        if let IKunTree::Symbol(name) = &**target {
+                            let method = self.generate_function_from_tree(name, params, body)?;
+                            methods.push(method);
+                            continue;
+                        }
+                    }
+                    if let IKunTree::Symbol(name) = &**target {
+                        fields.push(gaia_assembler::program::GaiaField {
+                            name: name.clone(),
+                            ty: GaiaType::Object,
+                            is_static: true,
+                            visibility: gaia_assembler::program::Visibility::Public,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(gaia_assembler::program::GaiaClass {
+            name,
+            parent,
+            interfaces: Vec::new(),
+            fields,
+            methods,
+            attributes: Vec::new(),
         })
     }
 

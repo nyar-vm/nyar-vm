@@ -89,6 +89,68 @@ impl NyarVM {
     }
 
     #[inline(always)]
+    pub fn execute_i64_and(&mut self) -> Result<Option<usize>, NyarError> {
+        let rhs = self.pop()?;
+        let lhs = self.pop()?;
+        let r = (lhs.as_int() as i64) & (rhs.as_int() as i64);
+        self.push(Value::int(r))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i64_or(&mut self) -> Result<Option<usize>, NyarError> {
+        let rhs = self.pop()?;
+        let lhs = self.pop()?;
+        let r = (lhs.as_int() as i64) | (rhs.as_int() as i64);
+        self.push(Value::int(r))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i64_xor(&mut self) -> Result<Option<usize>, NyarError> {
+        let rhs = self.pop()?;
+        let lhs = self.pop()?;
+        let r = (lhs.as_int() as i64) ^ (rhs.as_int() as i64);
+        self.push(Value::int(r))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i64_shl(&mut self) -> Result<Option<usize>, NyarError> {
+        let rhs = self.pop()?;
+        let lhs = self.pop()?;
+        let r = (lhs.as_int() as i64).wrapping_shl(rhs.as_int() as u32);
+        self.push(Value::int(r))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i64_shr_s(&mut self) -> Result<Option<usize>, NyarError> {
+        let rhs = self.pop()?;
+        let lhs = self.pop()?;
+        let r = (lhs.as_int() as i64).wrapping_shr(rhs.as_int() as u32);
+        self.push(Value::int(r))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i64_shr_u(&mut self) -> Result<Option<usize>, NyarError> {
+        let rhs = self.pop()?;
+        let lhs = self.pop()?;
+        let r = (lhs.as_int() as u64).wrapping_shr(rhs.as_int() as u32);
+        self.push(Value::int(r as i64))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_i64_not(&mut self) -> Result<Option<usize>, NyarError> {
+        let v = self.pop()?;
+        let r = !(v.as_int() as i64);
+        self.push(Value::int(r))?;
+        Ok(None)
+    }
+
+    #[inline(always)]
     pub fn execute_i64_neg(&mut self) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
         let r = -(v.as_int() as i64);
