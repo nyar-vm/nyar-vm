@@ -104,8 +104,15 @@ impl<'a, 'b, V: oak_vfs::Vfs> UirConverter<'a, 'b, V> {
                 self.ctx.builder().extension(op, vec![lhs, rhs], loc)
             }
             JuliaExpression::Call { callee, arguments } => {
-                let callee_id = self.convert_expression(callee);
                 let args = arguments.iter().map(|arg| self.convert_expression(arg)).collect();
+                if let JuliaExpression::Identifier(name) = &**callee {
+                    match name.as_str() {
+                        "println" => return self.ctx.builder().cross_lang_call("nyar", "io", "println", args, loc),
+                        "print" => return self.ctx.builder().cross_lang_call("nyar", "io", "print", args, loc),
+                        _ => {}
+                    }
+                }
+                let callee_id = self.convert_expression(callee);
                 self.ctx.builder().call(callee_id, args, loc)
             }
         }

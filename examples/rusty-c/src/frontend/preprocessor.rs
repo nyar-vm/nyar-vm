@@ -794,7 +794,7 @@ impl Preprocessor {
                 }
                 // Support common C23 attributes
                 return Some(match attr_name.as_str() {
-                    "nodiscard" | "maybe_unused" | "deprecated" | "fallthrough" | "noreturn" | "unsequenced" | "reproducible" => 202311L,
+                    "nodiscard" | "maybe_unused" | "deprecated" | "fallthrough" | "noreturn" | "unsequenced" | "reproducible" => 202311,
                     _ => 0,
                 });
             }

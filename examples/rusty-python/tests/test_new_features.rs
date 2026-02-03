@@ -33,6 +33,6 @@ res = test_nonlocal()
     
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    assert!(root_id != chomsky_uir::Id::from(0));
+    assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered AST with import, global and nonlocal");
 }

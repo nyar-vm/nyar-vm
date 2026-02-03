@@ -9,7 +9,8 @@ nyar-vm = { workspace = true }
 oak-core = { workspace = true }
 oak-java = { path = "../../../oaks/examples/oak-java" }
 chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-uir = { workspace = true }
+chomsky-types = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
 tempfile = "3.3"

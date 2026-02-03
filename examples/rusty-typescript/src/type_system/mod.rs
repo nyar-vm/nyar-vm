@@ -26,6 +26,14 @@ pub enum ScriptType {
     Conditional(ConditionalType),
     /// Mapped type: { [K in keyof T]: U }
     Mapped(MappedType),
+    /// Template literal type: `head${T}tail`
+    TemplateLiteral(Vec<TemplateElement>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateElement {
+    String(String),
+    Type(Box<ScriptType>),
 }
 
 impl ScriptType {

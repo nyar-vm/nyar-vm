@@ -3,6 +3,11 @@ resolver = "2"
 members = [
     "projects/*",
     "examples/rusty-typescript",
+    "examples/rusty-python",
+    "examples/rusty-java",
+    "examples/rusty-c",
+    "examples/rusty-go",
+    "examples/rusty-csharp",
 ]
 default-members = [
     "projects/nyar-types",

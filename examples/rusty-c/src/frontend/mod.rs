@@ -248,11 +248,11 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     self.ctx.builder().branch(cond, then_id, else_id, loc)
                 }
                 ast::SelectionStatement::Switch {
-                    condition,
+                    expression,
                     statement,
                     span,
                 } => {
-                    let cond = self.convert_expression(condition);
+                    let cond = self.convert_expression(expression);
                     let body = self.convert_statement(statement);
                     let loc = self.to_loc(span.clone().into());
                     self.ctx.builder().extension("switch", vec![cond, body], loc)

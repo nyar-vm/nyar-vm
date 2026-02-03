@@ -22,7 +22,7 @@ finally:
     
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    assert!(root_id != chomsky_uir::Id::from(0));
+    assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered AST with try-except-finally-raise");
 }
 
@@ -41,7 +41,7 @@ assert y == 10
     
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    assert!(root_id != chomsky_uir::Id::from(0));
+    assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered AST with assert");
 }
 
@@ -63,6 +63,6 @@ with a() as x, b() as y:
     
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    assert!(root_id != chomsky_uir::Id::from(0));
+    assert!(root_id != chomsky_uir::Id::from(0usize));
     println!("Successfully lowered AST with with-statement");
 }

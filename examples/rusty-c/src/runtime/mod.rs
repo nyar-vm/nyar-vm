@@ -5,6 +5,7 @@ use chomsky_uir::{EGraph, IKun, IKunTree, Id};
 use nyar_vm::bytecode::instruction::Instruction;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, NyarcModule};
 use nyar_vm::vm::NyarVM;
+use nyar_vm::runtime::NyarBuiltin;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::error::Error;
@@ -656,32 +657,32 @@ impl RustyCRuntime {
                 let name = if language == "nyar" {
                     // Try to map to intrinsic ID
                     let id = match (module_path.as_str(), function_name.as_str()) {
-                        ("io", "print") | ("", "print") => 1,
-                        ("io", "println") | ("", "println") => 2,
-                        ("std", "exit") | ("", "exit") => 3,
-                        ("time", "now") | ("", "get_time") => 4,
-                        ("time", "sleep") | ("", "sleep") => 5,
-                        ("ops", "add") | ("", "native_add") => 6,
-                        ("std", "panic") | ("", "panic") => 7,
-                        ("math", "sin") | ("", "sin") => 8,
-                        ("math", "sqrt") | ("", "sqrt") => 9,
-                        ("mem", "alloc") | ("", "alloc") => 10,
-                        ("math", "abs") | ("", "abs") => 11,
-                        ("math", "cos") | ("", "cos") => 12,
-                        ("math", "tan") | ("", "tan") => 13,
-                        ("ops", "bit_and") | ("", "bit_and") => 14,
-                        ("ops", "bit_or") | ("", "bit_or") => 15,
-                        ("ops", "bit_xor") | ("", "bit_xor") => 16,
-                        ("ops", "bit_not") | ("", "bit_not") => 17,
-                        ("ops", "bit_shl") | ("", "bit_shl") => 18,
-                        ("ops", "bit_shr") | ("", "bit_shr") => 19,
-                        ("mem", "free") => 20,
-                        ("mem", "realloc") => 21,
-                        ("mem", "set") => 22,
-                        ("mem", "copy") => 23,
-                        ("str", "len") => 24,
-                        ("str", "cmp") => 25,
-                        ("math", "rand") => 26,
+                        ("io", "print") | ("", "print") => NyarBuiltin::Print as u32,
+                        ("io", "println") | ("", "println") => NyarBuiltin::Println as u32,
+                        ("std", "exit") | ("", "exit") => NyarBuiltin::Exit as u32,
+                        ("time", "now") | ("", "get_time") => NyarBuiltin::GetTime as u32,
+                        ("time", "sleep") | ("", "sleep") => NyarBuiltin::Sleep as u32,
+                        ("ops", "add") | ("", "native_add") => NyarBuiltin::NativeAdd as u32,
+                        ("std", "panic") | ("", "panic") => NyarBuiltin::Panic as u32,
+                        ("math", "sin") | ("", "sin") => NyarBuiltin::MathSin as u32,
+                        ("math", "sqrt") | ("", "sqrt") => NyarBuiltin::MathSqrt as u32,
+                        ("mem", "alloc") | ("", "alloc") => NyarBuiltin::MemAlloc as u32,
+                        ("math", "abs") | ("", "abs") => NyarBuiltin::MathAbs as u32,
+                        ("math", "cos") | ("", "cos") => NyarBuiltin::MathCos as u32,
+                        ("math", "tan") | ("", "tan") => NyarBuiltin::MathTan as u32,
+                        ("ops", "bit_and") | ("", "bit_and") => NyarBuiltin::BitAnd as u32,
+                        ("ops", "bit_or") | ("", "bit_or") => NyarBuiltin::BitOr as u32,
+                        ("ops", "bit_xor") | ("", "bit_xor") => NyarBuiltin::BitXor as u32,
+                        ("ops", "bit_not") | ("", "bit_not") => NyarBuiltin::BitNot as u32,
+                        ("ops", "bit_shl") | ("", "bit_shl") => NyarBuiltin::BitShl as u32,
+                        ("ops", "bit_shr") | ("", "bit_shr") => NyarBuiltin::BitShr as u32,
+                        ("mem", "free") => NyarBuiltin::MemFree as u32,
+                        ("mem", "realloc") => NyarBuiltin::MemRealloc as u32,
+                        ("mem", "set") => NyarBuiltin::MemSet as u32,
+                        ("mem", "copy") => NyarBuiltin::MemCopy as u32,
+                        ("str", "len") => NyarBuiltin::StrLen as u32,
+                        ("str", "cmp") => NyarBuiltin::StrCmp as u32,
+                        ("math", "rand") => NyarBuiltin::MathRand as u32,
                         _ => 0,
                     };
                     if id > 0 {

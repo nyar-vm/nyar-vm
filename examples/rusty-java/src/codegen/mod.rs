@@ -574,6 +574,17 @@ impl JavaUirConverter<'_> {
                 let dims_id = self.builder.seq(dim_ids, self.loc());
                 Ok(self.builder.extension("array_new", vec![type_id, dims_id], self.loc()))
             }
+            Expression::Ternary { condition, then_branch, else_branch } => {
+                let cond_id = self.convert_expr(condition)?;
+                let then_id = self.convert_expr(then_branch)?;
+                let else_id = self.convert_expr(else_branch)?;
+                Ok(self.builder.branch(cond_id, then_id, else_id, self.loc()))
+            }
+            Expression::Cast { target_type, expression } => {
+                let expr_id = self.convert_expr(expression)?;
+                let type_id = self.builder.string(target_type, self.loc());
+                Ok(self.builder.extension("cast", vec![expr_id, type_id], self.loc()))
+            }
         }
     }
 }

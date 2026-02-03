@@ -34,8 +34,13 @@ impl NyarBackend {
                 for arg in args {
                     code.extend(self.lower_tree(arg)?);
                 }
-                code.extend(self.lower_tree(callee)?);
-                code.extend_from_slice(&Instruction::Call(args.len() as u8).encode());
+                if let IKunTree::Symbol(name) = &**callee {
+                    let idx = self.add_constant(Constant::String(name.clone()));
+                    code.extend_from_slice(&Instruction::Call(idx, args.len() as u8).encode());
+                } else {
+                    code.extend(self.lower_tree(callee)?);
+                    code.extend_from_slice(&Instruction::CallClosure(args.len() as u8).encode());
+                }
             }
             IKunTree::Lambda(params, body) => {
                 let body_code = self.lower_tree(body)?;
@@ -62,7 +67,7 @@ impl NyarBackend {
                     decoded: None,
                     hotness: std::sync::atomic::AtomicU32::new(0),
                 });
-                code.extend_from_slice(&Instruction::LoadChunk(chunk_idx).encode());
+                code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
             }
             IKunTree::Seq(items) => {
                 for item in items {
@@ -70,20 +75,20 @@ impl NyarBackend {
                 }
             }
             IKunTree::Constant(v) => {
-                let idx = self.add_constant(Constant::Integer(*v));
-                code.extend_from_slice(&Instruction::LoadConstant(idx).encode());
+                let idx = self.add_constant(Constant::Int(*v));
+                code.extend_from_slice(&Instruction::Push(idx).encode());
             }
             IKunTree::FloatConstant(v) => {
                 let idx = self.add_constant(Constant::Float(f64::from_bits(*v)));
-                code.extend_from_slice(&Instruction::LoadConstant(idx).encode());
+                code.extend_from_slice(&Instruction::Push(idx).encode());
             }
             IKunTree::BooleanConstant(v) => {
-                let idx = self.add_constant(Constant::Boolean(*v));
-                code.extend_from_slice(&Instruction::LoadConstant(idx).encode());
+                let idx = self.add_constant(Constant::Int(if *v { 1 } else { 0 }));
+                code.extend_from_slice(&Instruction::Push(idx).encode());
             }
             IKunTree::StringConstant(v) => {
                 let idx = self.add_constant(Constant::String(v.clone()));
-                code.extend_from_slice(&Instruction::LoadConstant(idx).encode());
+                code.extend_from_slice(&Instruction::Push(idx).encode());
             }
             IKunTree::Module(_name, items) => {
                 let mut module_code = Vec::new();
