@@ -1,49 +1,53 @@
 public class OpsTest {
     public static void main(String[] args) {
-        // Arithmetic
         int a = 10;
-        int b = 3;
-        System.out.println(a + b); // 13
-        System.out.println(a - b); // 7
-        System.out.println(a * b); // 30
-        System.out.println(a / b); // 3
-        System.out.println(a % b); // 1
-
-        // Comparison
-        System.out.println(a == 10); // true
-        System.out.println(a != b);  // true
-        System.out.println(a > b);   // true
-        System.out.println(a < b);   // false
-        System.out.println(a >= b);  // true
-        System.out.println(a <= b);  // false
-
-        // Bitwise
-        System.out.println(a & b);   // 2 (1010 & 0011 = 0010)
-        System.out.println(a | b);   // 11 (1010 | 0011 = 1011)
-        System.out.println(a ^ b);   // 9 (1010 ^ 0011 = 1001)
-        System.out.println(~a);      // -11
-        System.out.println(a << 1);  // 20
-        System.out.println(a >> 1);  // 5
-        System.out.println(a >>> 1); // 5
-
-        // Logical
-        boolean t = true;
-        boolean f = false;
-        System.out.println(t && f); // false
-        System.out.println(t || f); // true
-        System.out.println(!t);     // false
-
-        // Compound Assignment
-        int c = 5;
-        c += 10;
-        System.out.println(c); // 15
-        c *= 2;
-        System.out.println(c); // 30
-
-        // Increment/Decrement
-        int d = 10;
-        System.out.println(++d); // 11
-        System.out.println(d++); // 11
-        System.out.println(d);   // 12
+        int b = 20;
+        int c = a + b;
+        int d = a - b;
+        int e = a * b;
+        int f = b / a;
+        int g = b % a;
+        
+        boolean b1 = a == b;
+        boolean b2 = a != b;
+        boolean b3 = a < b;
+        boolean b4 = a <= b;
+        boolean b5 = a > b;
+        boolean b6 = a >= b;
+        
+        boolean b7 = b1 && b2;
+        boolean b8 = b1 || b2;
+        boolean b9 = !b1;
+        
+        int h = a & b;
+        int i = a | b;
+        int j = a ^ b;
+        int k = ~a;
+        
+        int l = a << 2;
+        int m = a >> 1;
+        int n = a >>> 1;
+        
+        a += 5;
+        a -= 5;
+        a *= 2;
+        a /= 2;
+        a %= 3;
+        a &= 15;
+        a |= 0;
+        a ^= 0;
+        a <<= 1;
+        a >>= 1;
+        a >>>= 1;
+        
+        int p = ++a;
+        int q = a++;
+        int r = --a;
+        int s = a--;
+        
+        String str = "hello";
+        boolean b10 = str instanceof String;
+        
+        int max = (a > b) ? a : b;
     }
 }

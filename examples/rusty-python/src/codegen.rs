@@ -341,10 +341,23 @@ impl GaiaTranslator {
                     self.current_instructions.push(GaiaInstruction::Core(
                         CoreInstruction::LoadLocal(local_index, GaiaType::Object),
                     ));
+                } else if self.defined_classes.contains(name) {
+                    // It's a class name, treat it as a constructor or static reference
+                    self.current_instructions.push(GaiaInstruction::Core(
+                        CoreInstruction::PushConstant(GaiaConstant::String(name.clone())),
+                    ));
                 } else {
-                    return Err(GaiaError::syntax_error(
-                        format!("Undefined variable: {}", name),
-                        SourceLocation::default(),
+                    // Treat as a global/builtin symbol
+                    // If it's a known builtin or global, Gaia might handle it
+                    // But if it's "self" and not in locals, something is wrong
+                    if name == "self" {
+                        return Err(GaiaError::syntax_error(
+                            format!("Variable 'self' is used but not defined in this scope. Current locals: {:?}", self.locals.keys().collect::<Vec<_>>()),
+                            SourceLocation::default(),
+                        ));
+                    }
+                    self.current_instructions.push(GaiaInstruction::Core(
+                        CoreInstruction::PushConstant(GaiaConstant::String(name.clone())),
                     ));
                 }
             }

@@ -124,6 +124,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 ..
             } => {
                 self.ctx.scopes.push_scope();
+                eprintln!("DEBUG: Pushed scope for function {}", name);
                 let mut params = Vec::new();
                 let mut defaults = Vec::new();
                 let mut vararg = None;
@@ -131,7 +132,8 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
 
                 for p in parameters {
                     let mangled = self.ctx.scopes.declare_variable(&p.name);
-                    params.push(mangled);
+                    eprintln!("DEBUG: Declared variable {} -> {} in function {}", p.name, mangled, name);
+                    params.push(mangled.clone());
                     if let Some(default) = &p.default {
                         defaults.push(self.convert_expression(default));
                     }
@@ -142,6 +144,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                         kwarg = Some(self.ctx.builder().string(&p.name, loc.clone()));
                     }
                 }
+                eprintln!("DEBUG: Function {} mangled parameters: {:?}", name, params);
 
                 let mut body_items = Vec::new();
                 for s in body {
@@ -153,6 +156,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 
                 let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
                 self.ctx.scopes.pop_scope();
+                eprintln!("DEBUG: Popped scope for function {}", name);
                 let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
@@ -552,6 +556,9 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             },
             Expression::Name(name) => {
                 let resolved = self.ctx.scopes.resolve_variable(name);
+                if name == "self" {
+                    eprintln!("DEBUG: Resolving 'self' -> '{}'", resolved);
+                }
                 self.ctx.builder().symbol(&resolved, loc)
             }
             Expression::BinaryOp {

@@ -40,7 +40,8 @@ impl NyarDriver {
         if vm.execute_symbol(&main_name, vec![]).is_ok() {
             Ok(())
         } else {
-            vm.execute(module_idx, 0)
+            let chunk_idx = vm.get_module(module_idx).chunks.len().saturating_sub(1);
+            vm.execute(module_idx, chunk_idx)
                 .map(|_| ())
                 .map_err(NyarError::from)
         }
@@ -59,7 +60,8 @@ impl NyarDriver {
         let module = backend.finish();
         let mut vm = NyarVM::new();
         let module_idx = vm.load_module(module);
-        vm.execute(module_idx, 0)
+        let chunk_idx = vm.get_module(module_idx).chunks.len().saturating_sub(1);
+        vm.execute(module_idx, chunk_idx)
             .map(|_| ())
             .map_err(NyarError::from)
     }

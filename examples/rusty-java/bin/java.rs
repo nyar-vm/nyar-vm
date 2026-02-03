@@ -12,7 +12,7 @@ fn main() {
 
     let input_file = &args[1];
     let frontend = MiniJavaFrontend::default();
-    let mut driver = NyarDriver::new();
+    let driver = NyarDriver::new();
     let vfs = DiskVfs::new();
 
     if let Err(e) = driver.run_source(&frontend, &vfs, input_file) {

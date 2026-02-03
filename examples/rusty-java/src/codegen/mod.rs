@@ -1,7 +1,7 @@
 //! Java 到 Nyar UIR 的转换器
 
 use chomsky_types::Loc;
-use chomsky_uir::{Analysis, EGraph, IKun, IKunTree, IntentBuilder, Id};
+use chomsky_uir::{Analysis, IKun, IntentBuilder, Id};
 use nyar_types::{NyarError, NyarContext};
 use oak_java::ast::*;
 use oak_vfs::Vfs;
@@ -484,6 +484,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                     "<<" => "shl",
                     ">>" => "shr",
                     ">>>" => "ushr",
+                    "instanceof" => "instanceof",
                     _ => op,
                 };
                 let loc = self.loc();

@@ -248,7 +248,7 @@ impl FFIFunction for NativePanic {
 pub struct NativeMathSin;
 impl FFIFunction for NativeMathSin {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let a = args[0].as_float();
+        let a = args[0].to_f64();
         Ok(Value::float(a.sin()))
     }
 }
@@ -256,7 +256,7 @@ impl FFIFunction for NativeMathSin {
 pub struct NativeMathCos;
 impl FFIFunction for NativeMathCos {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let a = args[0].as_float();
+        let a = args[0].to_f64();
         Ok(Value::float(a.cos()))
     }
 }
@@ -264,7 +264,7 @@ impl FFIFunction for NativeMathCos {
 pub struct NativeMathTan;
 impl FFIFunction for NativeMathTan {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let a = args[0].as_float();
+        let a = args[0].to_f64();
         Ok(Value::float(a.tan()))
     }
 }
@@ -272,7 +272,7 @@ impl FFIFunction for NativeMathTan {
 pub struct NativeMathSqrt;
 impl FFIFunction for NativeMathSqrt {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let a = args[0].as_float();
+        let a = args[0].to_f64();
         Ok(Value::float(a.sqrt()))
     }
 }
@@ -280,7 +280,7 @@ impl FFIFunction for NativeMathSqrt {
 pub struct NativeMathAbs;
 impl FFIFunction for NativeMathAbs {
     fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        let a = args[0].as_float();
+        let a = args[0].to_f64();
         Ok(Value::float(a.abs()))
     }
 }

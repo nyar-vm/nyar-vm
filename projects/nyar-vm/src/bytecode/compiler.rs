@@ -20,15 +20,19 @@ impl NyarBackend {
 
     fn add_local(&mut self, name: String) -> u8 {
         if let Some(idx) = self.locals.iter().position(|l| l == &name) {
+            println!("DEBUG: Local {} already exists at index {}", name, idx);
             return idx as u8;
         }
         let idx = self.locals.len() as u8;
+        println!("DEBUG: Adding local {} at index {}", name, idx);
         self.locals.push(name);
         idx
     }
 
     fn find_local(&self, name: &str) -> Option<u8> {
-        self.locals.iter().position(|l| l == name).map(|i| i as u8)
+        let res = self.locals.iter().position(|l| l == name).map(|i| i as u8);
+        println!("DEBUG: Finding local {}: {:?}", name, res);
+        res
     }
 
     pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, NyarError> {
@@ -110,7 +114,8 @@ impl NyarBackend {
             IKunTree::StringConstant(v) => {
                 code.extend_from_slice(&Instruction::StringConst(v.clone()).encode());
             }
-            IKunTree::Module(_name, items) => {
+            IKunTree::Module(name, items) => {
+                println!("DEBUG: Lowering Module {}: {:#?}", name, items);
                 let mut module_code = Vec::new();
                 for item in items {
                     module_code.extend(self.lower_tree(item)?);
@@ -264,6 +269,7 @@ impl NyarBackend {
                 match name.as_str() {
                     "local_variable" => {
                         // [name, type, init]
+                        println!("DEBUG: local_variable args: {:?}", args);
                         if let IKunTree::StringConstant(name) = &args[0] {
                             if let Some(init) = args.get(2) {
                                 code.extend(self.lower_tree(init)?);
@@ -353,6 +359,7 @@ impl NyarBackend {
                                         for param in params {
                                             if let IKunTree::Extension(ext_name, ext_args) = param {
                                                 if ext_name == "parameter" {
+                                                    println!("DEBUG: parameter args: {:?}", ext_args);
                                                     if let IKunTree::StringConstant(pname) =
                                                         &ext_args[0]
                                                     {
@@ -483,16 +490,6 @@ impl NyarBackend {
                             if let IKunTree::Symbol(name) = &args[1] {
                                 let name_idx = self.add_constant(Constant::String(name.clone()));
                                 code.extend_from_slice(&Instruction::GetField(name_idx).encode());
-                            }
-                        }
-                    }
-                    "assign" => {
-                        if args.len() == 2 {
-                            // [name, value]
-                            code.extend(self.lower_tree(&args[1])?);
-                            if let IKunTree::Symbol(name) = &args[0] {
-                                let idx = self.add_constant(Constant::String(name.clone()));
-                                code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
                             }
                         }
                     }

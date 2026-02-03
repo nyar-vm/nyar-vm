@@ -161,6 +161,10 @@ impl NyarVM {
         self.print_line(msg);
     }
 
+    pub fn get_module(&self, idx: usize) -> &NyarcModule {
+        &self.modules[idx]
+    }
+
     pub fn get_traceback_summary(&self) -> String {
         let mut res = String::new();
         for (i, f) in self.frames.iter().enumerate().rev().take(10) {

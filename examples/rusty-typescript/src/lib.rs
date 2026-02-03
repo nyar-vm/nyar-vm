@@ -556,53 +556,50 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
     }
 
     fn convert_expression(&mut self, expr: ast::Expression) -> Id {
-        match expr {
-            ast::Expression::Identifier(name) => self.builder.symbol(&name, Loc::default()),
-            ast::Expression::NumericLiteral(val) => self.builder.constant(val as i64, Loc::default()),
-            ast::Expression::StringLiteral(val) => self.builder.string(&val, Loc::default()),
-            ast::Expression::BooleanLiteral(val) => self.builder.bool(val, Loc::default()),
-            ast::Expression::NullLiteral => self.builder.constant(0, Loc::default()),
-            ast::Expression::BigIntLiteral(val) => {
-                let val_str = val.clone();
-                let s = self.builder.string(&val_str, Loc::default());
-                self.builder.extension("bigint", vec![s], Loc::default())
+        let loc = self.to_loc(expr.span.clone());
+        match *expr.kind {
+            ast::ExpressionKind::Identifier(name) => self.builder.symbol(&name, loc),
+            ast::ExpressionKind::NumericLiteral(val) => self.builder.constant(val as i64, loc),
+            ast::ExpressionKind::StringLiteral(val) => self.builder.string(&val, loc),
+            ast::ExpressionKind::BooleanLiteral(val) => self.builder.bool(val, loc),
+            ast::ExpressionKind::NullLiteral => self.builder.constant(0, loc),
+            ast::ExpressionKind::BigIntLiteral(val) => {
+                let s = self.builder.string(&val, loc.clone());
+                self.builder.extension("bigint", vec![s], loc)
             }
-            ast::Expression::RegexLiteral(val) => {
-                let val_str = val.clone();
-                let s = self.builder.string(&val_str, Loc::default());
-                self.builder.extension("regex", vec![s], Loc::default())
+            ast::ExpressionKind::RegexLiteral(val) => {
+                let s = self.builder.string(&val, loc.clone());
+                self.builder.extension("regex", vec![s], loc)
             }
-            ast::Expression::TemplateString(val) => {
-                let val_str = val.clone();
-                let s = self.builder.string(&val_str, Loc::default());
-                self.builder.extension("template", vec![s], Loc::default())
+            ast::ExpressionKind::TemplateString(val) => {
+                let s = self.builder.string(&val, loc.clone());
+                self.builder.extension("template", vec![s], loc)
             }
-            ast::Expression::BinaryExpression {
+            ast::ExpressionKind::BinaryExpression {
                 left,
                 operator,
                 right,
             } => {
                 let l = self.convert_expression(*left);
                 let r = self.convert_expression(*right);
-                self.builder.binary_op(&operator, l, r, Loc::default())
+                self.builder.binary_op(&operator, l, r, loc)
             }
-            ast::Expression::CallExpression { func, args } => {
-                let span = func.span();
-                let loc = self.to_loc(span.into());
+            ast::ExpressionKind::CallExpression { func, args } => {
+                let func_loc = self.to_loc(func.span.clone());
 
                 // Detect console.log and map to std::io::println
-                if let ast::Expression::MemberExpression {
+                if let ast::ExpressionKind::MemberExpression {
                     object,
                     property,
                     computed,
                     ..
-                } = func.as_ref()
+                } = &*func.kind
                 {
                     if !*computed {
                         if let (
-                            ast::Expression::Identifier(obj_name),
-                            ast::Expression::Identifier(prop_name),
-                        ) = (object.as_ref(), property.as_ref())
+                            ast::ExpressionKind::Identifier(obj_name),
+                            ast::ExpressionKind::Identifier(prop_name),
+                        ) = (&*object.kind, &*property.kind)
                         {
                             if obj_name == "console" {
                                 let mut arg_ids = Vec::new();
@@ -615,7 +612,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                                         "std::io",
                                         "println",
                                         arg_ids,
-                                        loc,
+                                        func_loc,
                                     );
                                 } else if prop_name == "print" {
                                     return self.builder.cross_lang_call(
@@ -623,7 +620,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                                         "std::io",
                                         "print",
                                         arg_ids,
-                                        loc,
+                                        func_loc,
                                     );
                                 }
                             }
@@ -636,13 +633,13 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 for arg in args {
                     arg_ids.push(self.convert_expression(arg));
                 }
-                self.builder.call(f, arg_ids, Loc::default())
+                self.builder.call(f, arg_ids, loc)
             }
-            ast::Expression::UnaryExpression { operator, argument } => {
+            ast::ExpressionKind::UnaryExpression { operator, argument } => {
                 let arg = self.convert_expression(*argument);
-                self.builder.extension(&operator, vec![arg], Loc::default())
+                self.builder.extension(&operator, vec![arg], loc)
             }
-            ast::Expression::MemberExpression {
+            ast::ExpressionKind::MemberExpression {
                 object,
                 property,
                 computed,
@@ -651,14 +648,14 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let obj = self.convert_expression(*object);
                 let prop = self.convert_expression(*property);
                 let mut args = vec![obj, prop];
-                args.push(self.builder.bool(optional, Loc::default()));
+                args.push(self.builder.bool(optional, loc.clone()));
                 if computed {
-                    self.builder.extension("index", args, Loc::default())
+                    self.builder.extension("index", args, loc)
                 } else {
-                    self.builder.extension("gc.get_field", args, Loc::default())
+                    self.builder.extension("gc.get_field", args, loc)
                 }
             }
-            ast::Expression::ConditionalExpression {
+            ast::ExpressionKind::ConditionalExpression {
                 test,
                 consequent,
                 alternate,
@@ -666,66 +663,64 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let t = self.convert_expression(*test);
                 let c = self.convert_expression(*consequent);
                 let a = self.convert_expression(*alternate);
-                self.builder.branch(t, c, a, Loc::default())
+                self.builder.branch(t, c, a, loc)
             }
-            ast::Expression::NewExpression { func, args } => {
+            ast::ExpressionKind::NewExpression { func, args } => {
                 let f = self.convert_expression(*func);
                 let mut arg_ids = vec![f];
                 for arg in args {
                     arg_ids.push(self.convert_expression(arg));
                 }
-                self.builder.extension("gc.new", arg_ids, Loc::default())
+                self.builder.extension("gc.new", arg_ids, loc)
             }
-            ast::Expression::AssignmentExpression {
+            ast::ExpressionKind::AssignmentExpression {
                 left,
                 operator,
                 right,
             } => {
                 let r = self.convert_expression(*right);
                 if operator == "=" {
-                    match *left {
-                        ast::Expression::MemberExpression {
+                    match &*left.kind {
+                        ast::ExpressionKind::MemberExpression {
                             object, property, ..
                         } => {
-                            let obj = self.convert_expression(*object);
-                            let prop = self.convert_expression(*property);
+                            let obj = self.convert_expression(*object.clone());
+                            let prop = self.convert_expression(*property.clone());
                             self.builder.extension(
                                 "gc.set_field",
                                 vec![obj, prop, r],
-                                Loc::default(),
+                                loc,
                             )
                         }
                         _ => {
                             let l = self.convert_expression(*left);
-                            self.builder.assign_to_id(l, r, Loc::default())
+                            self.builder.assign_to_id(l, r, loc)
                         }
                     }
                 } else {
                     let l = self.convert_expression(*left.clone());
                     // Compound assignment like +=
                     let op = operator.trim_end_matches('=');
-                    let value = self.builder.binary_op(op, l, r, Loc::default());
+                    let value = self.builder.binary_op(op, l, r, loc.clone());
                     let target = self.convert_expression(*left);
-                    self.builder.assign_to_id(target, value, Loc::default())
+                    self.builder.assign_to_id(target, value, loc)
                 }
             }
-            ast::Expression::AsExpression {
+            ast::ExpressionKind::AsExpression {
                 expression,
                 type_annotation,
             } => {
                 let expr = self.convert_expression(*expression);
-                let ty = self.convert_type_annotation(type_annotation, Loc::default());
-                self.builder.extension("as", vec![expr, ty], Loc::default())
+                let ty = self.convert_type_annotation(type_annotation, loc.clone());
+                self.builder.extension("as", vec![expr, ty], loc)
             }
-            ast::Expression::ImportExpression {
+            ast::ExpressionKind::ImportExpression {
                 module_specifier,
-                span,
             } => {
-                let loc = self.to_loc(span.into());
                 let spec = self.convert_expression(*module_specifier);
                 self.builder.extension("import", vec![spec], loc)
             }
-            ast::Expression::ArrowFunction {
+            ast::ExpressionKind::ArrowFunction {
                 type_params,
                 params,
                 return_type,
@@ -735,78 +730,82 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let body_id = self.convert_statement(*body);
                 let mut type_param_ids = Vec::new();
                 for tp in type_params {
-                    type_param_ids.push(self.convert_type_parameter(tp, Loc::default()));
+                    type_param_ids.push(self.convert_type_parameter(tp, loc.clone()));
                 }
-                let type_params_seq = self.builder.seq(type_param_ids, Loc::default());
+                let type_params_seq = self.builder.seq(type_param_ids, loc.clone());
 
                 let mut param_ids = Vec::new();
                 for p in params {
-                    let mut p_args = vec![self.builder.symbol(&p.name, Loc::default())];
+                    let p_loc = self.to_loc(p.span.into());
+                    let mut p_args = vec![self.builder.symbol(&p.name, p_loc.clone())];
                     if let Some(ty) = p.ty {
-                        p_args.push(self.convert_type_annotation(ty, Loc::default()));
+                        p_args.push(self.convert_type_annotation(ty, p_loc.clone()));
                     }
-                    p_args.push(self.builder.bool(p.optional, Loc::default()));
-                    param_ids.push(self.builder.extension("param", p_args, Loc::default()));
+                    p_args.push(self.builder.bool(p.optional, p_loc.clone()));
+                    param_ids.push(self.builder.extension("param", p_args, p_loc));
                 }
-                let params_seq = self.builder.seq(param_ids, Loc::default());
+                let params_seq = self.builder.seq(param_ids, loc.clone());
 
                 let mut args = vec![type_params_seq, params_seq, body_id];
                 if let Some(ret) = return_type {
-                    args.push(self.convert_type_annotation(ret, Loc::default()));
+                    args.push(self.convert_type_annotation(ret, loc.clone()));
                 }
                 if async_ {
-                    self.builder.extension("async_lambda", args, Loc::default())
+                    self.builder.extension("async_lambda", args, loc)
                 } else {
-                    self.builder.extension("lambda", args, Loc::default())
+                    self.builder.extension("lambda", args, loc)
                 }
             }
-            ast::Expression::ObjectLiteral { properties } => {
+            ast::ExpressionKind::ObjectLiteral { properties } => {
                 let mut args = Vec::new();
                 for prop in properties {
                     match prop {
-                        ast::ObjectProperty::Property { name, value } => {
-                            let key = self.builder.symbol(&name, Loc::default());
+                        ast::ObjectProperty::Property { name, value, shorthand, span } => {
+                            let p_loc = self.to_loc(span);
+                            let key = self.builder.symbol(&name, p_loc.clone());
                             let value = self.convert_expression(value);
-                            args.push(self.builder.extension("prop", vec![key, value], Loc::default()));
+                            args.push(self.builder.extension("prop", vec![key, value, self.builder.bool(shorthand, p_loc.clone())], p_loc));
                         }
-                        ast::ObjectProperty::ShorthandProperty(name) => {
-                            let key = self.builder.symbol(&name, Loc::default());
-                            let value = self.builder.symbol(&name, Loc::default());
-                            args.push(self.builder.extension("prop", vec![key, value], Loc::default()));
-                        }
-                        ast::ObjectProperty::SpreadProperty(expr) => {
+                        ast::ObjectProperty::Spread(expr) => {
+                            let p_loc = self.to_loc(expr.span.clone());
                             let inner = self.convert_expression(expr);
-                            args.push(self.builder.extension("spread_prop", vec![inner], Loc::default()));
+                            args.push(self.builder.extension("spread_prop", vec![inner], p_loc));
                         }
                     }
                 }
-                self.builder.extension("object", args, Loc::default())
+                self.builder.extension("object", args, loc)
             }
-            ast::Expression::ArrayLiteral { elements } => {
+            ast::ExpressionKind::ArrayLiteral { elements } => {
                 let mut args = Vec::new();
                 for elem in elements {
                     args.push(self.convert_expression(elem));
                 }
-                self.builder.extension("array", args, Loc::default())
+                self.builder.extension("array", args, loc)
             }
-            ast::Expression::SpreadElement(expr) => {
+            ast::ExpressionKind::SpreadElement(expr) => {
                 let inner = self.convert_expression(*expr);
-                self.builder.extension("spread", vec![inner], Loc::default())
+                self.builder.extension("spread", vec![inner], loc)
             }
-            ast::Expression::AwaitExpression(expr) => {
+            ast::ExpressionKind::AwaitExpression(expr) => {
                 let inner = self.convert_expression(*expr);
-                self.builder.extension("await", vec![inner], Loc::default())
+                self.builder.extension("await", vec![inner], loc)
             }
-            ast::Expression::YieldExpression(expr) => {
+            ast::ExpressionKind::YieldExpression(expr) => {
                 let mut args = Vec::new();
                 if let Some(e) = expr {
                     args.push(self.convert_expression(*e));
                 }
-                self.builder.extension("yield", args, Loc::default())
+                self.builder.extension("yield", args, loc)
             }
-            ast::Expression::JsxElement(elem) => {
-                let loc = self.to_loc(elem.opening_element.span.into());
-                let mut args = vec![self.convert_jsx_tag_name(elem.opening_element.name, loc.clone())];
+            ast::ExpressionKind::JsxElement(elem) => {
+                self.convert_jsx_element(*elem, loc)
+            }
+            ast::ExpressionKind::JsxFragment(fragment) => {
+                self.convert_jsx_fragment(*fragment, loc)
+            }
+            ast::ExpressionKind::JsxSelfClosingElement(element) => {
+                self.convert_jsx_self_closing_element(*element, loc)
+            }
 
                 let mut attr_ids = Vec::new();
                 for attr_or_spread in elem.opening_element.attributes {
