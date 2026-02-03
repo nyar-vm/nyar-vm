@@ -76,7 +76,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let val = if let Some(v) = value {
                     self.convert_expression(v)
                 } else {
-                    self.ctx.builder().nil(loc.clone())
+                    self.ctx.builder().extension("nil", vec![], loc.clone())
                 };
                 let name_id = self.ctx.scopes.declare_variable(name);
                 Some(self.ctx.builder().assign(&name_id, val, loc))
@@ -86,9 +86,9 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let val = if let Some(v) = expr {
                     self.convert_expression(v)
                 } else {
-                    self.ctx.builder().nil(loc.clone())
+                    self.ctx.builder().extension("nil", vec![], loc.clone())
                 };
-                Some(self.ctx.builder().ret(val, loc))
+                Some(self.ctx.builder().return_(val, loc))
             }
             Statement::If { test, body, orelse } => {
                 let cond = self.convert_expression(test);
@@ -99,13 +99,16 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             Statement::While { test, body } => {
                 let cond = self.convert_expression(test);
                 let loop_body = self.convert_statements(body);
-                Some(self.ctx.builder().loop_while(cond, loop_body, loc))
+                Some(self.ctx.builder().while_loop(cond, loop_body, loc))
             }
             Statement::FunctionDef { name, body, .. } => {
-                let func_body = self.convert_statements(body);
-                let func = self.ctx.builder().function(name, vec![], func_body, loc.clone());
-                self.ctx.scopes.declare_variable(name);
-                Some(self.ctx.builder().assign_to_id(self.ctx.builder().symbol(name, loc.clone()), func, loc))
+                let mut func_body = Vec::new();
+                for stmt in body {
+                    if let Some(id) = self.convert_statement(stmt) {
+                        func_body.push(id);
+                    }
+                }
+                Some(self.ctx.builder().function(name, vec![], func_body))
             }
             Statement::Block(stmts) => Some(self.convert_statements(stmts)),
         }
@@ -126,17 +129,14 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
         let loc = Loc::default();
         match expr {
             Expression::Literal(lit) => match lit {
-                Literal::Number(n) => self.ctx.builder().int(n.parse().unwrap_or(0), loc),
+                Literal::Number(n) => self.ctx.builder().constant(n.parse().unwrap_or(0), loc),
                 Literal::String(s) => self.ctx.builder().string(s, loc),
-                Literal::Boolean(b) => self.ctx.builder().boolean(*b, loc),
-                Literal::Nil => self.ctx.builder().nil(loc),
+                Literal::Boolean(b) => self.ctx.builder().bool(*b, loc),
+                Literal::Nil => self.ctx.builder().extension("nil", vec![], loc),
             },
             Expression::Identifier(name) => {
-                if let Some(var) = self.ctx.scopes.resolve_variable(name) {
-                    self.ctx.builder().load(&var, loc)
-                } else {
-                    self.ctx.builder().symbol(name, loc)
-                }
+                let var = self.ctx.scopes.resolve_variable(name);
+                self.ctx.builder().symbol(&var, loc)
             }
             Expression::Binary { left, operator, right } => {
                 let l = self.convert_expression(left);

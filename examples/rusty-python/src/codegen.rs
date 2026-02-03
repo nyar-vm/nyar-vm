@@ -753,17 +753,25 @@ impl GaiaTranslator {
                     ));
                 }
             }
-            IKunTree::CrossLangCall(lang, name, args) => {
-                for arg in args {
+            IKunTree::CrossLangCall {
+                language,
+                module_path,
+                function_name,
+                arguments,
+            } => {
+                for arg in arguments {
                     self.generate_tree_node(arg, false)?;
                 }
-                if lang == "nyar" && name == "std::io::println" {
+                if language == "nyar"
+                    && module_path == "std::io"
+                    && function_name == "println"
+                {
                     self.current_instructions.push(GaiaInstruction::Managed(
                         ManagedInstruction::CallStatic {
                             target: "nyar.std.io".to_string(),
                             method: "println".to_string(),
                             signature: GaiaSignature {
-                                params: vec![GaiaType::Object; args.len()],
+                                params: vec![GaiaType::Object; arguments.len()],
                                 return_type: GaiaType::Object,
                             },
                         },

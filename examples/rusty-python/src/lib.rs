@@ -2,7 +2,7 @@
 //!
 //! 这个库提供了 Rusty Python 语言的词法分析、语法分析和 Gaia 翻译功能。
 
-use oak_vfs::Vfs;
+use oak_core::{Parser, Vfs};
 use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
 use chomsky_uir::Id;

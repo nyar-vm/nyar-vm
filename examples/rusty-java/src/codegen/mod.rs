@@ -508,7 +508,8 @@ impl<'a> JavaUirConverter<'a> {
                     } else if call.name == "print" {
                         return Ok(self.builder.cross_lang_call(
                             "nyar",
-                            "std::io::print",
+                            "std::io",
+                            "print",
                             arg_ids,
                             self.loc(),
                         ));
@@ -545,9 +546,13 @@ impl<'a> JavaUirConverter<'a> {
                 Ok(self.builder.extension("get_element", vec![target, index], self.loc()))
             }
             Expression::ArrayCreation(creation) => {
-                let type_id = self.builder.string(&creation.r#type, self.loc());
-                let size_id = self.convert_expr(&creation.size)?;
-                Ok(self.builder.extension("new_array", vec![type_id, size_id], self.loc()))
+                let type_id = self.builder.string(&creation.element_type, self.loc());
+                let mut dim_ids = Vec::new();
+                for dim in &creation.dimensions {
+                    dim_ids.push(self.convert_expr(dim)?);
+                }
+                let dims_id = self.builder.seq(dim_ids, self.loc());
+                Ok(self.builder.extension("new_array", vec![type_id, dims_id], self.loc()))
             }
         }
     }

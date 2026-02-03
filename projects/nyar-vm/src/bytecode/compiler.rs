@@ -85,8 +85,12 @@ impl NyarBackend {
                 code.extend_from_slice(&(idx as u16).to_le_bytes());
             }
             IKunTree::Return(val) => {
-                code.extend(self.lower_tree(val)?);
-                code.push(Opcode::Return as u8);
+                if let Some(code_tail) = self.lower_tail_call(val)? {
+                    code.extend(code_tail);
+                } else {
+                    code.extend(self.lower_tree(val)?);
+                    code.push(Opcode::Return as u8);
+                }
             }
             IKunTree::Seq(items) => {
                 for item in items {
@@ -138,9 +142,15 @@ impl NyarBackend {
                 match name.as_str() {
                     "return" => {
                         if let Some(val) = args.first() {
-                            code.extend(self.lower_tree(val)?);
+                            if let Some(code_tail) = self.lower_tail_call(val)? {
+                                code.extend(code_tail);
+                            } else {
+                                code.extend(self.lower_tree(val)?);
+                                code.push(Opcode::Return as u8);
+                            }
+                        } else {
+                            code.push(Opcode::Return as u8);
                         }
-                        code.push(Opcode::Return as u8);
                     }
                     "class" => {
                         if let IKunTree::StringConstant(class_name) = &args[0] {
@@ -180,9 +190,9 @@ impl NyarBackend {
                         }
                     }
                     "method" => {
-                        if args.len() >= 4 {
+                        if args.len() >= 3 {
                             let name_idx = 0;
-                            let body_idx = 3; // [name, params, return_type, body]
+                            let body_idx = args.len() - 1; // Last arg is body
                             if let (IKunTree::StringConstant(name), body) =
                                 (&args[name_idx], &args[body_idx])
                             {
@@ -215,6 +225,37 @@ impl NyarBackend {
                                     chunk_idx,
                                 });
                             }
+                        }
+                    }
+                    "lambda" => {
+                        if args.len() >= 2 {
+                            // [params, body]
+                            let body = &args[1];
+                            let body_code = self.lower_tree(body)?;
+                            let mut final_code = body_code;
+                            if final_code.last() != Some(&(Opcode::Return as u8)) {
+                                final_code.push(Opcode::Return as u8);
+                            }
+                            let chunk_idx = self.module.chunks.len();
+                            if chunk_idx >= u16::MAX as usize {
+                                return Err(NyarError::new(
+                                    0x1007,
+                                    nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::LimitExceeded),
+                                    nyar_types::SourceLocation::default(),
+                                ));
+                            }
+                            let chunk_idx = chunk_idx as u16;
+                            self.module.chunks.push(Chunk {
+                                locals: 32,
+                                upvalues: 0,
+                                max_stack: 64,
+                                code: final_code,
+                                handlers: vec![],
+                                lines: vec![],
+                                decoded: None,
+                                hotness: std::sync::atomic::AtomicU32::new(0),
+                            });
+                            code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
                         }
                     }
                     "call" => {
@@ -423,6 +464,67 @@ impl NyarBackend {
     }
     pub fn finish(self) -> NyarcModule {
         self.module
+    }
+
+    fn lower_tail_call(&mut self, tree: &IKunTree) -> Result<Option<Vec<u8>>, NyarError> {
+        let mut code = Vec::new();
+        match tree {
+            IKunTree::Extension(name, args) if name == "call" => {
+                if args.len() == 3 {
+                    // [target, name, args]
+                    code.extend(self.lower_tree(&args[0])?); // callee
+                    if let IKunTree::Symbol(name) = &args[1] {
+                        let name_idx = self.add_constant(Constant::String(name.clone()));
+                        code.push(Opcode::LoadGlobal as u8);
+                        code.extend_from_slice(&(name_idx as u16).to_le_bytes());
+                    }
+                    if let IKunTree::Seq(call_args) = &args[2] {
+                        for arg in call_args {
+                            code.extend(self.lower_tree(arg)?);
+                        }
+                        // Currently we don't have InvokeMethodTail, so we just use regular call for methods
+                        // Or we could implement it. But let's stick to simple tail calls for now.
+                        return Ok(None);
+                    }
+                } else if args.len() == 2 {
+                    // [name, args]
+                    if let IKunTree::Symbol(name) = &args[0] {
+                        let name_idx = self.add_constant(Constant::String(name.clone()));
+                        // To do a tail call, we first need to load the closure
+                        code.push(Opcode::LoadGlobal as u8);
+                        code.extend_from_slice(&(name_idx as u16).to_le_bytes());
+
+                        if let IKunTree::Seq(call_args) = &args[1] {
+                            for arg in call_args {
+                                code.extend(self.lower_tree(arg)?);
+                            }
+                            code.extend_from_slice(&Instruction::TailCall(call_args.len() as u8).encode());
+                            return Ok(Some(code));
+                        }
+                    }
+                }
+            }
+            IKunTree::CrossLangCall {
+                language,
+                module_path,
+                function_name,
+                arguments,
+            } if language == "nyar" => {
+                // Similar logic for nyar cross-lang calls
+                let name = format!("{}:{}:{}", language, module_path, function_name);
+                let name_idx = self.add_constant(Constant::String(name));
+                code.push(Opcode::LoadGlobal as u8);
+                code.extend_from_slice(&(name_idx as u16).to_le_bytes());
+
+                for arg in arguments {
+                    code.extend(self.lower_tree(arg)?);
+                }
+                code.extend_from_slice(&Instruction::TailCall(arguments.len() as u8).encode());
+                return Ok(Some(code));
+            }
+            _ => {}
+        }
+        Ok(None)
     }
 }
 

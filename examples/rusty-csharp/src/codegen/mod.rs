@@ -3,7 +3,7 @@
 use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
 use nyar_types::NyarError;
-use oak_java::ast::*;
+use oak_csharp::ast::*;
 
 /// CSharp 翻译器上下文
 ///
@@ -69,14 +69,14 @@ impl NyarTranslator {
 
     pub fn translate_to_graph(
         &self,
-        ast: &JavaRoot,
+        ast: &CSharpRoot,
         egraph: &mut EGraph<IKun, ConstraintAnalysis>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut ctx = TranslatorContext::new(egraph);
         self.translate_root(ast, &mut ctx)
     }
 
-    pub fn translate_to_tree(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
+    pub fn translate_to_tree(&self, ast: &CSharpRoot) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let root_id = self.translate_to_graph(ast, &mut egraph)?;
 
@@ -88,21 +88,48 @@ impl NyarTranslator {
 
     fn translate_root(
         &self,
-        root: &JavaRoot,
+        root: &CSharpRoot,
         ctx: &mut TranslatorContext,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut items = Vec::new();
         for item in &root.items {
-            match item {
-                Item::Class(class) => items.push(self.translate_class(class, ctx)?),
-                Item::Interface(interface) => items.push(self.translate_interface(interface, ctx)?),
-                Item::Struct(struct_decl) => items.push(self.translate_struct(struct_decl, ctx)?),
-                Item::Enum(enum_decl) => items.push(self.translate_enum(enum_decl, ctx)?),
-                Item::Record(record) => items.push(self.translate_record(record, ctx)?),
-                _ => {}
+            if let Some(id) = self.translate_item(item, ctx)? {
+                items.push(id);
             }
         }
         Ok(ctx.builder.module("root", items))
+    }
+
+    fn translate_item(
+        &self,
+        item: &Item,
+        ctx: &mut TranslatorContext,
+    ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
+        match item {
+            Item::Namespace(ns) => Ok(Some(self.translate_namespace(ns, ctx)?)),
+            Item::Using(_using) => {
+                // TODO: 处理 Using 指令，将其映射到符号表的导入
+                Ok(None)
+            }
+            Item::Class(class) => Ok(Some(self.translate_class(class, ctx)?)),
+            Item::Interface(interface) => Ok(Some(self.translate_interface(interface, ctx)?)),
+            Item::Struct(struct_decl) => Ok(Some(self.translate_struct(struct_decl, ctx)?)),
+            Item::Enum(enum_decl) => Ok(Some(self.translate_enum(enum_decl, ctx)?)),
+        }
+    }
+
+    fn translate_namespace(
+        &self,
+        ns: &NamespaceDeclaration,
+        ctx: &mut TranslatorContext,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let mut items = Vec::new();
+        for item in &ns.items {
+            if let Some(id) = self.translate_item(item, ctx)? {
+                items.push(id);
+            }
+        }
+        Ok(ctx.builder.module(&ns.name, items))
     }
 
     fn translate_class(
@@ -122,6 +149,13 @@ impl NyarTranslator {
                 Member::Constructor(ctor) => {
                     members.push(self.translate_method(ctor, ctx)?);
                 }
+                Member::Property(prop) => {
+                    // TODO: 处理属性
+                    let loc = Loc::unknown();
+                    let name_id = ctx.builder.symbol(&prop.name, loc);
+                    members.push(ctx.builder.export(&prop.name, name_id, loc));
+                }
+                _ => {}
             }
         }
         Ok(ctx.builder.module(&class.name, members))
@@ -152,6 +186,7 @@ impl NyarTranslator {
                 Member::Method(method) => members.push(self.translate_method(method, ctx)?),
                 Member::Field(field) => members.push(self.translate_field(field, ctx)?),
                 Member::Constructor(ctor) => members.push(self.translate_method(ctor, ctx)?),
+                _ => {}
             }
         }
         Ok(ctx.builder.module(&struct_decl.name, members))
@@ -164,33 +199,11 @@ impl NyarTranslator {
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut variants = Vec::new();
         let loc = Loc::unknown();
-        for variant in &enum_decl.variants {
+        for variant in &enum_decl.members {
             // 目前简单将枚举项处理为常量符号
             variants.push(ctx.builder.export(variant, ctx.builder.constant(0, loc), loc));
         }
         Ok(ctx.builder.module(&enum_decl.name, variants))
-    }
-
-    fn translate_record(
-        &self,
-        record: &RecordDeclaration,
-        ctx: &mut TranslatorContext,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
-        let mut members = Vec::new();
-        // 处理主构造函数参数为字段
-        for param in &record.parameters {
-            let loc = Loc::unknown();
-            let field_id = ctx.builder.symbol(&param.name, loc);
-            members.push(ctx.builder.export(&param.name, field_id, loc));
-        }
-        for member in &record.members {
-            match member {
-                Member::Method(method) => members.push(self.translate_method(method, ctx)?),
-                Member::Field(field) => members.push(self.translate_field(field, ctx)?),
-                Member::Constructor(ctor) => members.push(self.translate_method(ctor, ctx)?),
-            }
-        }
-        Ok(ctx.builder.module(&record.name, members))
     }
 
     fn translate_field(
@@ -210,7 +223,11 @@ impl NyarTranslator {
         ctx: &mut TranslatorContext,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
-        let body_id = self.translate_block(&method.body, ctx)?;
+        let body_id = if let Some(body) = &method.body {
+            self.translate_block(body, ctx)?
+        } else {
+            ctx.builder.seq(vec![], loc)
+        };
 
         // 处理方法参数
         let mut params = Vec::new();
@@ -269,11 +286,6 @@ impl NyarTranslator {
                 let body_id = self.translate_stmt(body, ctx)?;
                 Ok(ctx.builder.extension("while", vec![cond_id, body_id], loc))
             }
-            Statement::DoWhile { condition, body } => {
-                let cond_id = self.translate_expr(condition, ctx)?;
-                let body_id = self.translate_stmt(body, ctx)?;
-                Ok(ctx.builder.extension("do_while", vec![cond_id, body_id], loc))
-            }
             Statement::For {
                 init,
                 condition,
@@ -306,7 +318,7 @@ impl NyarTranslator {
                 
                 Ok(ctx.builder.seq(vec![init_id, loop_stmt], loc))
             }
-            Statement::ForEach {
+            Statement::Foreach {
                 item_type,
                 item_name,
                 iterable,
@@ -319,61 +331,8 @@ impl NyarTranslator {
                 
                 Ok(ctx.builder.extension("foreach", vec![type_id, name_id, iterable_id, body_id], loc))
             }
-            Statement::Switch {
-                selector,
-                cases,
-                default,
-            } => {
-                let selector_id = self.translate_expr(selector, ctx)?;
-                let mut case_ids = Vec::new();
-                for case in cases {
-                    let label_id = self.translate_expr(&case.label, ctx)?;
-                    let mut stmts = Vec::new();
-                    for s in &case.body {
-                        stmts.push(self.translate_stmt(s, ctx)?);
-                    }
-                    let body_id = ctx.builder.seq(stmts, loc);
-                    case_ids.push(ctx.builder.extension("case", vec![label_id, body_id], loc));
-                }
-                
-                let default_id = if let Some(stmts) = default {
-                    let mut def_stmts = Vec::new();
-                    for s in stmts {
-                        def_stmts.push(self.translate_stmt(s, ctx)?);
-                    }
-                    ctx.builder.seq(def_stmts, loc)
-                } else {
-                    ctx.builder.seq(vec![], loc)
-                };
-                
-                let cases_seq = ctx.builder.seq(case_ids, loc);
-                Ok(ctx.builder.extension("switch", vec![selector_id, cases_seq, default_id], loc))
-            }
             Statement::Break => Ok(ctx.builder.extension("break", vec![], loc)),
             Statement::Continue => Ok(ctx.builder.extension("continue", vec![], loc)),
-            Statement::Try(try_stmt) => {
-                let try_block = self.translate_block(&try_stmt.block, ctx)?;
-                let mut catches = Vec::new();
-                for catch in &try_stmt.catches {
-                    let param_name = ctx.builder.string(&catch.parameter.name, loc);
-                    let param_type = ctx.builder.string(&catch.parameter.r#type, loc);
-                    let block = self.translate_block(&catch.block, ctx)?;
-                    catches.push(ctx.builder.extension("catch", vec![param_type, param_name, block], loc));
-                }
-                let catches_seq = ctx.builder.seq(catches, loc);
-                
-                let finally_block = if let Some(stmts) = &try_stmt.finally {
-                     self.translate_block(stmts, ctx)?
-                } else {
-                    ctx.builder.seq(vec![], loc)
-                };
-                
-                Ok(ctx.builder.extension("try", vec![try_block, catches_seq, finally_block], loc))
-            }
-            Statement::Throw(expr) => {
-                let expr_id = self.translate_expr(expr, ctx)?;
-                Ok(ctx.builder.extension("throw", vec![expr_id], loc))
-            }
             Statement::LocalVariable { r#type, name, initializer } => {
                  let name_id = ctx.builder.string(name, loc);
                  let type_id = ctx.builder.string(r#type, loc);
@@ -397,6 +356,7 @@ impl NyarTranslator {
             Expression::Literal(Literal::Integer(v)) => Ok(ctx.builder.constant(*v, loc)),
             Expression::Literal(Literal::String(s)) => Ok(ctx.builder.string(s, loc)),
             Expression::Literal(Literal::Boolean(b)) => Ok(ctx.builder.bool(*b, loc)),
+            Expression::Literal(Literal::Null) => Ok(ctx.builder.constant(0, loc)),
             Expression::Identifier(s) => {
                 // 检查是否是内置函数全称
                 if let Some(builtin) = ctx.resolve_builtin(s, "", vec![], loc) {
@@ -431,7 +391,7 @@ impl NyarTranslator {
                     Ok(ctx.builder.call(name_id, arg_ids, loc))
                 }
             }
-            Expression::FieldAccess(access) => {
+            Expression::MemberAccess(access) => {
                 let target_id = self.translate_expr(&access.target, ctx)?;
                 let name_id = ctx.builder.symbol(&access.name, loc);
                 Ok(ctx.builder.extension("field", vec![target_id, name_id], loc))
@@ -462,97 +422,29 @@ impl NyarTranslator {
                 let op_name = match op.as_str() {
                     "-" => "neg",
                     "!" => "not",
+                    "~" => "bit_not",
                     _ => op,
                 };
                 Ok(ctx.builder.extension(op_name, vec![expr_id], loc))
             }
             Expression::Assignment { left, op, right } => {
-                let mut val = self.translate_expr(right, ctx)?;
-                if op != "=" {
-                    let left_val = self.translate_expr(left, ctx)?;
-                    let base_op = &op[..op.len() - 1];
-                    let op_name = match base_op {
-                        "+" => "add",
-                        "-" => "sub",
-                        "*" => "mul",
-                        "/" => "div",
-                        "%" => "rem",
-                        _ => base_op,
-                    };
-                    val = ctx.builder.extension(op_name, vec![left_val, val], loc);
-                }
-
-                match &**left {
-                    Expression::Identifier(name) => Ok(ctx.builder.assign(name, val, loc)),
-                    _ => {
-                        let target = self.translate_expr(left, ctx)?;
-                        Ok(ctx.builder.assign_to_id(target, val, loc))
-                    }
-                }
+                let left_id = self.translate_expr(left, ctx)?;
+                let right_id = self.translate_expr(right, ctx)?;
+                Ok(ctx.builder.extension("assign", vec![left_id, right_id], loc))
             }
-            Expression::Update { expression, op, is_prefix } => {
-                let name = if let Expression::Identifier(name) = &**expression {
-                    name.clone()
-                } else {
-                    return Err(NyarError::Compile("Increment/decrement only supported for identifiers".to_string()));
-                };
-
-                let op_name = match op.as_str() {
-                    "++" => "add",
-                    "--" => "sub",
-                    _ => return Err(NyarError::Compile(format!("Unknown update operator: {}", op))),
-                };
-
-                let one = ctx.builder.constant(1, loc);
-                let current_val = ctx.builder.symbol(&name, loc);
-                let new_val = ctx.builder.extension(op_name, vec![current_val, one], loc);
-                let assign = ctx.builder.assign(&name, new_val, loc);
-
-                if *is_prefix {
-                    Ok(ctx.builder.seq(vec![assign, ctx.builder.symbol(&name, loc)], loc))
-                } else {
-                    let temp_name = format!("_tmp_{}", name);
-                    let save_old = ctx.builder.assign(&temp_name, current_val, loc);
-                    let return_old = ctx.builder.symbol(&temp_name, loc);
-                    Ok(ctx.builder.seq(vec![save_old, assign, return_old], loc))
-                }
+            Expression::Await(expr) => {
+                let expr_id = self.translate_expr(expr, ctx)?;
+                Ok(ctx.builder.extension("await", vec![expr_id], loc))
             }
-            Expression::New(new_expr) => {
-                let type_id = ctx.builder.string(&new_expr.r#type, loc);
-                let mut arg_ids = Vec::new();
-                for arg in &new_expr.arguments {
-                    arg_ids.push(self.translate_expr(arg, ctx)?);
-                }
-                let args_id = ctx.builder.seq(arg_ids, loc);
-                Ok(ctx.builder.extension("new", vec![type_id, args_id], loc))
-            }
-            Expression::ArrayCreation(ac) => {
-                let type_id = ctx.builder.string(&ac.element_type, loc);
-                let mut dim_ids = Vec::new();
-                for dim in &ac.dimensions {
-                    dim_ids.push(self.translate_expr(dim, ctx)?);
-                }
-                let dims_id = ctx.builder.seq(dim_ids, loc);
-                Ok(ctx.builder.extension("new_array", vec![type_id, dims_id], loc))
-            }
-            Expression::ArrayAccess(aa) => {
-                let target_id = self.translate_expr(&aa.target, ctx)?;
-                let index_id = self.translate_expr(&aa.index, ctx)?;
-                Ok(ctx.builder.extension("array_access", vec![target_id, index_id], loc))
-            }
-            Expression::This => Ok(ctx.builder.symbol("this", loc)),
-            Expression::Super => Ok(ctx.builder.symbol("super", loc)),
+            _ => Ok(ctx.builder.constant(0, loc)),
         }
     }
 
     fn expr_to_string(&self, expr: &Expression) -> String {
         match expr {
             Expression::Identifier(s) => s.clone(),
-            Expression::FieldAccess(fa) => {
-                let target = self.expr_to_string(&fa.target);
-                format!("{}.{}", target, fa.name)
-            }
-            _ => "".to_string(),
+            Expression::MemberAccess(access) => format!("{}.{}", self.expr_to_string(&access.target), access.name),
+            _ => String::new(),
         }
     }
 }

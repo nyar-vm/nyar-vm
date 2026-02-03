@@ -470,7 +470,8 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
 
                 let cond_idx = symbols.len() as u8;
@@ -492,7 +493,7 @@ impl RustyCRuntime {
                     default_label: None,
                 };
                 
-                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), continue_indices, continue_pos, labels, pending_gotos, Some(&mut current_switch_info))?;
+                self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), continue_indices, continue_pos, labels, pending_gotos, Some(&mut current_switch_info), module)?;
                 
                 let body_end_idx = insts.len();
                 insts.push(Instruction::Jump(0)); // Jump to end of switch
@@ -507,8 +508,16 @@ impl RustyCRuntime {
                         insts.push(Instruction::LoadLocal(cond_idx));
                         insts.push(Instruction::I32Const(val));
                         insts.push(Instruction::I32Eq);
-                        let jump_pos = self.calculate_code_size(insts);
-                        insts.push(Instruction::JumpIfTrue((target_pos as i16 - jump_pos as i16 - 3)));
+                        
+                        let jump_to_next_case_idx = insts.len();
+                        insts.push(Instruction::JumpIfFalse(0)); // If not equal, skip the jump to target
+                        
+                        let current_pos = self.calculate_code_size(insts);
+                        insts.push(Instruction::Jump((target_pos as i16 - current_pos as i16 - 3)));
+                        
+                        let next_case_pos = self.calculate_code_size(insts);
+                        let skip_len = next_case_pos - self.calculate_code_size(&insts[..jump_to_next_case_idx + 1]);
+                        insts[jump_to_next_case_idx] = Instruction::JumpIfFalse(skip_len as i16);
                     }
                 }
 
@@ -536,7 +545,7 @@ impl RustyCRuntime {
                         let pos = self.calculate_code_size(insts);
                         labels.insert(label_name.clone(), pos);
                         info.cases.push((*val as i32, label_name));
-                        self.translate_expr(&args[1], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, Some(info))?;
+                        self.translate_expr(&args[1], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, Some(info), module)?;
                     }
                 }
             }
@@ -546,14 +555,14 @@ impl RustyCRuntime {
                     let pos = self.calculate_code_size(insts);
                     labels.insert(label_name.clone(), pos);
                     info.default_label = Some(label_name);
-                    self.translate_expr(&args[0], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, Some(info))?;
+                    self.translate_expr(&args[0], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, Some(info), module)?;
                 }
             }
             IKunTree::Extension(name, args) if name == "label" && args.len() == 2 => {
                 let label_name = format!("label_{:?}", args[0]); 
                 let pos = self.calculate_code_size(insts);
                 labels.insert(label_name, pos);
-                self.translate_expr(&args[1], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, switch_info)?;
+                self.translate_expr(&args[1], insts, symbols, break_indices, continue_indices, continue_pos, labels, pending_gotos, switch_info, module)?;
             }
             IKunTree::Extension(name, args) if name == "goto" && args.len() == 1 => {
                 let label_name = format!("label_{:?}", args[0]);
@@ -575,7 +584,7 @@ impl RustyCRuntime {
                     insts.push(Instruction::Jump(0));
                 }
             }
-            IKunTree::Seq(stmts) | IKunTree::List(stmts) => {
+            IKunTree::Seq(stmts) => {
                 for stmt in stmts {
                     self.translate_expr(
                         stmt,
@@ -587,6 +596,7 @@ impl RustyCRuntime {
                         labels,
                         pending_gotos,
                         switch_info.as_mut().map(|s| &mut **s),
+                        module,
                     )?;
                 }
             }
@@ -597,7 +607,8 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
                 insts.push(Instruction::Return);
             }
@@ -608,7 +619,8 @@ impl RustyCRuntime {
                     continue_pos,
                     labels,
                     pending_gotos,
-                    switch_info.as_mut().map(|s| &mut **s)
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
                 )?;
                 if let IKunTree::Symbol(name) = &**target {
                     let idx = if let Some(&i) = symbols.get(name) {
@@ -638,6 +650,7 @@ impl RustyCRuntime {
                         labels,
                         pending_gotos,
                         switch_info.as_mut().map(|s| &mut **s),
+                        module,
                     )?;
                 }
                 let name = if language == "nyar" {
@@ -665,7 +678,16 @@ impl RustyCRuntime {
                 } else {
                     format!("{}:{}:{}", language, module_path, function_name)
                 };
-                insts.push(Instruction::Extension(name, arguments.len() as u8));
+                
+                let constant = Constant::String(name);
+                let const_idx = if let Some(idx) = module.constants.iter().position(|c| c == &constant) {
+                    idx as u16
+                } else {
+                    let idx = module.constants.len() as u16;
+                    module.constants.push(constant);
+                    idx
+                };
+                insts.push(Instruction::FFICall(const_idx, arguments.len() as u8));
             }
             _ => {}
         }

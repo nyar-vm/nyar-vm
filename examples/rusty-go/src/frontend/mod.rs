@@ -3,7 +3,7 @@ use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
 use oak_core::source::SourceText;
 use oak_core::parser::session::ParseSession;
 use oak_vfs::Vfs;
-use chomsky_uir::Id;
+use chomsky_uir::{Id, IKun, Analysis};
 use chomsky_types::Loc;
 use std::ops::Range;
 
@@ -40,11 +40,11 @@ impl NyarFrontend for RustyGoFrontend {
     }
 }
 
-struct UirConverter<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+struct UirConverter<'a, 'b, V: Vfs, A: Analysis<IKun>> {
     ctx: &'a mut NyarContext<'b, V, A>,
 }
 
-impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, V, A> {
+impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
     fn new(ctx: &'a mut NyarContext<'b, V, A>) -> Self {
         Self { ctx }
     }

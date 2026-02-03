@@ -1,5 +1,6 @@
 use crate::RustyTypescriptFrontend;
 use nyar_vm::bytecode::format::NyarcModule;
+use oak_core::{ParseSession, Source, SourceText};
 use oak_vfs::Vfs;
 use serde::Deserialize;
 use std::collections::HashMap;

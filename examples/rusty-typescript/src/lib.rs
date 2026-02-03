@@ -66,8 +66,11 @@ export!(Compiler);
 impl RustyTypescriptFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
+        let mut language = TypeScriptLanguage::standard();
+        language.decorators = true;
+        language.jsx = true;
         Self {
-            language: TypeScriptLanguage::standard(),
+            language,
             source_id: 1, // 默认 source_id
         }
     }
@@ -104,7 +107,8 @@ impl RustyTypescriptFrontend {
         let ast = self
             .parse(source)
             .map_err(|e| format!("Parse error: {:?}", e))?;
-        self.lower(&ast)
+        let vfs = oak_vfs::MemoryVfs::new();
+        self.lower(&ast, &vfs)
             .map_err(|e| format!("Lowering error: {:?}", e))
     }
 
@@ -136,7 +140,7 @@ impl NyarFrontend for RustyTypescriptFrontend {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower(&self, ast: &TypeScriptRoot) -> Result<IKunTree, NyarError> {
+    fn lower<V: oak_vfs::Vfs>(&self, ast: &TypeScriptRoot, _vfs: &V) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let mut builder = IntentBuilder::new(&mut egraph);
         let mut converter = UirConverter::new(&mut builder, self.source_id);
@@ -174,6 +178,9 @@ impl<'a> UirConverter<'a> {
         let span = stmt.span();
         match stmt {
             ast::Statement::VariableDeclaration(var) => {
+                if var.is_declare {
+                    return self.builder.constant(0, self.to_loc(var.span.into()));
+                }
                 let loc = self.to_loc(var.span.into());
                 let value = if let Some(expr) = var.value {
                     self.convert_expression(expr)
@@ -237,7 +244,7 @@ impl<'a> UirConverter<'a> {
                         }
                     })
                     .collect();
-                args.push(self.builder.seq(implements_ids));
+                args.push(self.builder.seq(implements_ids, loc.clone()));
 
                 for member in class.body {
                     match member {
@@ -250,7 +257,8 @@ impl<'a> UirConverter<'a> {
                             is_static,
                             is_readonly,
                             is_abstract,
-                            ..
+                            is_optional,
+                            decorators: _,
                         } => {
                             let mloc = self.to_loc(span.into());
                             let init_id = if let Some(expr) = initializer {
@@ -420,8 +428,8 @@ impl<'a> UirConverter<'a> {
             }
             ast::Statement::ForStatement(stmt) => {
                 let loc = self.to_loc(stmt.span.into());
-                let init = if let Some(init) = stmt.init {
-                    self.convert_statement(init)
+                let init = if let Some(init) = stmt.initializer {
+                    self.convert_statement(*init)
                 } else {
                     self.builder.constant(0, loc.clone())
                 };
@@ -430,7 +438,7 @@ impl<'a> UirConverter<'a> {
                 } else {
                     self.builder.bool(true, loc.clone())
                 };
-                let update = if let Some(update) = stmt.update {
+                let update = if let Some(update) = stmt.incrementor {
                     self.convert_expression(update)
                 } else {
                     self.builder.constant(0, loc.clone())
@@ -443,11 +451,7 @@ impl<'a> UirConverter<'a> {
                 let loc = self.to_loc(stmt.span.into());
                 let left = match *stmt.left {
                     ast::Statement::VariableDeclaration(decl) => {
-                        if let Some(first) = decl.declarations.first() {
-                            self.builder.symbol(&first.id, loc.clone())
-                        } else {
-                            self.builder.constant(0, loc.clone())
-                        }
+                        self.builder.symbol(&decl.name, loc.clone())
                     }
                     _ => self.builder.constant(0, loc.clone()),
                 };
@@ -459,11 +463,7 @@ impl<'a> UirConverter<'a> {
                 let loc = self.to_loc(stmt.span.into());
                 let left = match *stmt.left {
                     ast::Statement::VariableDeclaration(decl) => {
-                        if let Some(first) = decl.declarations.first() {
-                            self.builder.symbol(&first.id, loc.clone())
-                        } else {
-                            self.builder.constant(0, loc.clone())
-                        }
+                        self.builder.symbol(&decl.name, loc.clone())
                     }
                     _ => self.builder.constant(0, loc.clone()),
                 };
