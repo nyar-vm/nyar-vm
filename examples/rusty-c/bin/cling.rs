@@ -5,7 +5,7 @@ use rusty_c::runtime::RustyCRuntime;
 use nyar_types::NyarError;
 use nyar_vm::NyarDriver;
 use oak_repl::{HandleResult, OakRepl, ReplError, ReplHandler};
-use std::fs;
+use oak_vfs::{DiskVfs, Vfs};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -50,6 +50,7 @@ impl From<&str> for ClingError {
 struct CReplHandler {
     frontend: RustyCFrontend,
     driver: NyarDriver,
+    vfs: DiskVfs,
 }
 
 impl CReplHandler {
@@ -57,11 +58,12 @@ impl CReplHandler {
         Self {
             frontend: RustyCFrontend::new(),
             driver: NyarDriver::new(),
+            vfs: DiskVfs::new(),
         }
     }
 
     fn run_code_internal(&self, source: &str) -> Result<(), ClingError> {
-        self.driver.run_code(&self.frontend, source)?;
+        self.driver.run_code(&self.frontend, &self.vfs, source)?;
         Ok(())
     }
 }
@@ -125,7 +127,9 @@ fn main() -> Result<(), ClingError> {
     let handler = CReplHandler::new();
 
     if let Some(input_file) = args.input {
-        let source = fs::read_to_string(input_file)?;
+        let source_text = handler.vfs.get_source(&input_file)
+            .ok_or_else(|| ClingError::Other(format!("File not found: {}", input_file)))?;
+        let source = source_text.get_text_from(0);
         handler.run_code_internal(&source)?;
     } else {
         println!("Mini C REPL (Simulating Cling)");

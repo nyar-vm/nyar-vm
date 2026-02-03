@@ -27,6 +27,7 @@ oak-typescript = { path = "../../../oaks/examples/oak-typescript", default-featu
 nyar-types = { path = "../../projects/nyar-types" }
 nyar-aot = { path = "../../projects/nyar-aot" }
 nyar-vm = { path = "../../projects/nyar-vm" }
+oak-vfs = { path = "../../../oaks/projects/oak-vfs" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"

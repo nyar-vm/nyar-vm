@@ -35,10 +35,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "正在将 Rusty Go 文件 {:?} 编译为原生程序: {:?}",
             args.input, output
         );
-        driver.compile_to_native(&frontend, &args.input, &output)?;
+        let vfs = driver.default_vfs();
+        let source_uri = args.input.to_string_lossy();
+        let output_uri = output.to_string_lossy();
+        driver.compile_to_native(&frontend, &vfs, &source_uri, &output_uri)?;
     } else {
         println!("正在运行 Rusty Go 文件: {:?}", args.input);
-        driver.run_source(&frontend, &args.input)?;
+        let vfs = driver.default_vfs();
+        let uri = args.input.to_string_lossy();
+        driver.run_source(&frontend, &vfs, &uri)?;
     }
 
     Ok(())

@@ -7,5 +7,6 @@ edition = "2021"
 clap = { workspace = true }
 nyar-vm = { path = "../nyar-vm" }
 nyar-types = { path = "../nyar-types" }
+oak-vfs = { path = "../../../oaks/projects/oak-vfs" }
 serde = { workspace = true }
 serde_json = { workspace = true }

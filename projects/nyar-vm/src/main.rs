@@ -1,18 +1,17 @@
 use nyar_vm::NyarDriver;
 use std::env;
-use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let program_name = PathBuf::from(&args[0])
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+    let program_name = if let Some(last_slash) = args[0].rfind(|c| c == '/' || c == '\\') {
+        &args[0][last_slash + 1..]
+    } else {
+        &args[0]
+    };
 
     let _driver = NyarDriver::new();
 
-    match program_name.as_str() {
+    match program_name {
         // Frontends are currently disabled as they are not in the workspace
         _ => {
             if args.len() < 2 {
@@ -38,9 +37,8 @@ fn _run_driver<F: nyar_types::NyarFrontend>(
         println!("Usage: {} <input_file>", args[0]);
         return Ok(());
     }
-    let input_path = PathBuf::from(&args[1]);
     let vfs = driver.default_vfs();
-    let uri = input_path.to_string_lossy().to_string();
-    driver.run_source(frontend, &vfs, &uri)?;
+    let uri = &args[1];
+    driver.run_source(frontend, &vfs, uri)?;
     Ok(())
 }

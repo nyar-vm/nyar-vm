@@ -22,6 +22,10 @@ impl<V: Vfs> ProjectLoader<V> {
         }
     }
 
+    pub fn frontend(&self) -> &RustyTypescriptFrontend {
+        &self.frontend
+    }
+
     /// Loads and compiles a project starting from a directory or a file.
     pub fn load_project(&mut self, start_uri: &str) -> Result<Vec<NyarcModule>, String> {
         let mut modules = Vec::new();
