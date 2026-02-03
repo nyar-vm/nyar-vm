@@ -21,6 +21,7 @@ gen_exp = (x for x in range(3))
     let tree = frontend.lower(&ast, &vfs).expect("Failed to lower AST to UIR");
     
     let tree_str = format!("{:?}", tree);
+    println!("IKunTree: {}", tree_str);
     assert!(tree_str.contains("dict"));
     assert!(tree_str.contains("dict_item"));
     assert!(tree_str.contains("dict_unpack"));

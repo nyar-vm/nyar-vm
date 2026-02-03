@@ -142,8 +142,9 @@ impl NyarFrontend for RustyTypescriptFrontend {
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &TypeScriptRoot, ctx: &mut NyarContext<V>) -> Id {
+        let source_id = ctx.source_id;
         let mut builder = ctx.builder();
-        let mut converter = UirConverter::new(&mut builder, ctx.source_id);
+        let mut converter = UirConverter::new(&mut builder, source_id);
         converter.convert_root(ast.clone())
     }
 
@@ -796,59 +797,118 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 }
                 self.builder.extension("yield", args, Loc::default())
             }
-            ast::Expression::JsxElement {
-                opening_element,
-                children,
-                closing_element: _,
-            } => {
-                let loc = self.to_loc(opening_element.span.into());
-                let mut args = vec![self.builder.string(&opening_element.name, loc.clone())];
-                
+            ast::Expression::JsxElement(elem) => {
+                let loc = self.to_loc(elem.opening_element.span.into());
+                let mut args = vec![self.convert_jsx_tag_name(elem.opening_element.name, loc.clone())];
+
                 let mut attr_ids = Vec::new();
-                for attr in opening_element.attributes {
-                    let attr_loc = self.to_loc(attr.span.into());
-                    let name = self.builder.string(&attr.name, attr_loc.clone());
-                    let value = if let Some(val) = attr.value {
-                        self.convert_expression(val)
-                    } else {
-                        self.builder.bool(true, attr_loc.clone())
-                    };
-                    attr_ids.push(self.builder.extension("jsx_attr", vec![name, value], attr_loc));
+                for attr_or_spread in elem.opening_element.attributes {
+                    match attr_or_spread {
+                        ast::JsxAttributeOrSpread::Attribute(attr) => {
+                            let attr_loc = self.to_loc(attr.span.into());
+                            let name = self.builder.string(&attr.name, attr_loc.clone());
+                            let value = if let Some(val) = attr.value {
+                                self.convert_jsx_attribute_value(val)
+                            } else {
+                                self.builder.bool(true, attr_loc.clone())
+                            };
+                            attr_ids.push(self.builder.extension("jsx_attr", vec![name, value], attr_loc));
+                        }
+                        ast::JsxAttributeOrSpread::Spread(expr) => {
+                            let spread_id = self.convert_expression(expr);
+                            attr_ids.push(self.builder.extension("jsx_spread_attr", vec![spread_id], Loc::default()));
+                        }
+                    }
                 }
                 args.push(self.builder.seq(attr_ids, loc.clone()));
-                
+
                 let mut child_ids = Vec::new();
-                for child in children {
+                for child in elem.children {
                     child_ids.push(self.convert_jsx_child(child));
                 }
                 args.push(self.builder.seq(child_ids, loc.clone()));
-                
+
                 self.builder.extension("jsx_element", args, loc)
             }
-            ast::Expression::JsxFragment { children, .. } => {
+            ast::Expression::JsxSelfClosingElement(elem) => {
+                let loc = self.to_loc(elem.span.into());
+                let mut args = vec![self.convert_jsx_tag_name(elem.name, loc.clone())];
+
+                let mut attr_ids = Vec::new();
+                for attr_or_spread in elem.attributes {
+                    match attr_or_spread {
+                        ast::JsxAttributeOrSpread::Attribute(attr) => {
+                            let attr_loc = self.to_loc(attr.span.into());
+                            let name = self.builder.string(&attr.name, attr_loc.clone());
+                            let value = if let Some(val) = attr.value {
+                                self.convert_jsx_attribute_value(val)
+                            } else {
+                                self.builder.bool(true, attr_loc.clone())
+                            };
+                            attr_ids.push(self.builder.extension("jsx_attr", vec![name, value], attr_loc));
+                        }
+                        ast::JsxAttributeOrSpread::Spread(expr) => {
+                            let spread_id = self.convert_expression(expr);
+                            attr_ids.push(self.builder.extension("jsx_spread_attr", vec![spread_id], Loc::default()));
+                        }
+                    }
+                }
+                args.push(self.builder.seq(attr_ids, loc.clone()));
+                args.push(self.builder.seq(vec![], loc.clone())); // No children
+
+                self.builder.extension("jsx_element", args, loc)
+            }
+            ast::Expression::JsxFragment(frag) => {
                 let mut child_ids = Vec::new();
-                for child in children {
+                for child in frag.children {
                     child_ids.push(self.convert_jsx_child(child));
                 }
-                self.builder.extension("jsx_fragment", vec![self.builder.seq(child_ids, Loc::default())], Loc::default())
+                let seq = self.builder.seq(child_ids, Loc::default());
+                self.builder.extension("jsx_fragment", vec![seq], Loc::default())
             }
             _ => self.builder.constant(0, Loc::default()),
         }
     }
 
+    fn convert_jsx_tag_name(&mut self, name: ast::JsxTagName, loc: Loc) -> Id {
+        match name {
+            ast::JsxTagName::Identifier(s) => self.builder.string(&s, loc),
+            ast::JsxTagName::MemberExpression { object, property } => {
+                let obj = self.convert_jsx_tag_name(*object, loc.clone());
+                let prop = self.builder.string(&property, loc.clone());
+                self.builder.extension("jsx_tag_member", vec![obj, prop], loc)
+            }
+        }
+    }
+
+    fn convert_jsx_attribute_value(&mut self, value: ast::JsxAttributeValue) -> Id {
+        match value {
+            ast::JsxAttributeValue::StringLiteral(s) => self.builder.string(&s, Loc::default()),
+            ast::JsxAttributeValue::ExpressionContainer(expr) => {
+                if let Some(e) = expr {
+                    self.convert_expression(e)
+                } else {
+                    self.builder.constant(0, Loc::default())
+                }
+            }
+            ast::JsxAttributeValue::Element(elem) => self.convert_expression(ast::Expression::JsxElement(elem)),
+            ast::JsxAttributeValue::Fragment(frag) => self.convert_expression(ast::Expression::JsxFragment(frag)),
+        }
+    }
+
     fn convert_jsx_child(&mut self, child: ast::JsxChild) -> Id {
         match child {
-            ast::JsxChild::Text(text) => self.builder.string(&text, Loc::default()),
-            ast::JsxChild::Expression(expr) => self.convert_expression(expr),
-            ast::JsxChild::Element(elem) => self.convert_expression(ast::Expression::JsxElement {
-                opening_element: elem.opening_element,
-                children: elem.children,
-                closing_element: elem.closing_element,
-            }),
-            ast::JsxChild::Fragment(frag) => self.convert_expression(ast::Expression::JsxFragment {
-                children: frag.children,
-                span: frag.span,
-            }),
+            ast::JsxChild::JsxText(text) => self.builder.string(&text, Loc::default()),
+            ast::JsxChild::JsxExpressionContainer(expr) => {
+                if let Some(e) = expr {
+                    self.convert_expression(e)
+                } else {
+                    self.builder.constant(0, Loc::default())
+                }
+            }
+            ast::JsxChild::JsxElement(elem) => self.convert_expression(ast::Expression::JsxElement(elem)),
+            ast::JsxChild::JsxSelfClosingElement(elem) => self.convert_expression(ast::Expression::JsxSelfClosingElement(elem)),
+            ast::JsxChild::JsxFragment(frag) => self.convert_expression(ast::Expression::JsxFragment(frag)),
         }
     }
 
@@ -970,6 +1030,70 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
             ast::TypeAnnotation::KeyOf(inner) => {
                 let inner_id = self.convert_type_annotation(*inner, loc.clone());
                 self.builder.extension("keyof", vec![inner_id], loc)
+            }
+            ast::TypeAnnotation::Conditional {
+                check,
+                extends,
+                true_type,
+                false_type,
+            } => {
+                let check_id = self.convert_type_annotation(*check, loc.clone());
+                let extends_id = self.convert_type_annotation(*extends, loc.clone());
+                let true_id = self.convert_type_annotation(*true_type, loc.clone());
+                let false_id = self.convert_type_annotation(*false_type, loc.clone());
+                self.builder.extension(
+                    "conditional_type",
+                    vec![check_id, extends_id, true_id, false_id],
+                    loc,
+                )
+            }
+            ast::TypeAnnotation::Mapped {
+                key_name,
+                key_type,
+                value_type,
+                readonly,
+                optional,
+            } => {
+                let name_id = self.builder.symbol(&key_name, loc.clone());
+                let key_id = self.convert_type_annotation(*key_type, loc.clone());
+                let val_id = self.convert_type_annotation(*value_type, loc.clone());
+                let mut args = vec![name_id, key_id, val_id];
+                args.push(self.builder.constant(
+                    match readonly {
+                        Some(true) => 1,
+                        Some(false) => -1,
+                        None => 0,
+                    },
+                    loc.clone(),
+                ));
+                args.push(self.builder.constant(
+                    match optional {
+                        Some(true) => 1,
+                        Some(false) => -1,
+                        None => 0,
+                    },
+                    loc.clone(),
+                ));
+                self.builder.extension("mapped_type", args, loc)
+            }
+            ast::TypeAnnotation::TemplateLiteral(elements) => {
+                let mut element_ids = Vec::new();
+                for el in elements {
+                    match el {
+                        ast::TemplateElement::String(s) => {
+                            element_ids.push(self.builder.string(&s, loc.clone()));
+                        }
+                        ast::TemplateElement::Type(ty) => {
+                            element_ids.push(self.convert_type_annotation(*ty, loc.clone()));
+                        }
+                    }
+                }
+                let seq = self.builder.seq(element_ids, loc.clone());
+                self.builder.extension("template_literal_type", vec![seq], loc)
+            }
+            ast::TypeAnnotation::Infer(name) => {
+                let name_id = self.builder.symbol(&name, loc.clone());
+                self.builder.extension("infer_type", vec![name_id], loc)
             }
         }
     }

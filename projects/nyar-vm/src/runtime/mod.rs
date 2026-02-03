@@ -61,38 +61,40 @@ pub enum NyarBuiltin {
     MathRand = 26,
 }
 
+use std::sync::Arc;
+
 impl NyarVM {
     pub fn register_builtins(&mut self) {
         // Builtins are registered using their canonical names
         self.register_java_builtins();
 
-        self.ffi.register_intrinsic(NyarBuiltin::NativeAdd as u32, Box::new(crate::vm::ffi::NativeAdd));
-        self.ffi.register_intrinsic(NyarBuiltin::GetTime as u32, Box::new(crate::vm::ffi::NativeGetTime));
-        self.ffi.register_intrinsic(NyarBuiltin::Sleep as u32, Box::new(crate::vm::ffi::NativeSleep));
-        self.ffi.register_intrinsic(NyarBuiltin::Print as u32, Box::new(crate::vm::ffi::NativePrint));
-        self.ffi.register_intrinsic(NyarBuiltin::Println as u32, Box::new(crate::vm::ffi::NativePrintln));
-        self.ffi.register_intrinsic(NyarBuiltin::Exit as u32, Box::new(crate::vm::ffi::NativeExit));
+        self.ffi.register_intrinsic(NyarBuiltin::Print as u32, Arc::new(crate::vm::ffi::NativePrint));
+        self.ffi.register_intrinsic(NyarBuiltin::Println as u32, Arc::new(crate::vm::ffi::NativePrintln));
+        self.ffi.register_intrinsic(NyarBuiltin::Exit as u32, Arc::new(crate::vm::ffi::NativeExit));
+        self.ffi.register_intrinsic(NyarBuiltin::GetTime as u32, Arc::new(crate::vm::ffi::NativeGetTime));
+        self.ffi.register_intrinsic(NyarBuiltin::Sleep as u32, Arc::new(crate::vm::ffi::NativeSleep));
+        self.ffi.register_intrinsic(NyarBuiltin::NativeAdd as u32, Arc::new(crate::vm::ffi::NativeAdd));
         
-        self.ffi.register_intrinsic(NyarBuiltin::BitAnd as u32, Box::new(crate::vm::ffi::NativeBitAnd));
-        self.ffi.register_intrinsic(NyarBuiltin::BitOr as u32, Box::new(crate::vm::ffi::NativeBitOr));
-        self.ffi.register_intrinsic(NyarBuiltin::BitXor as u32, Box::new(crate::vm::ffi::NativeBitXor));
-        self.ffi.register_intrinsic(NyarBuiltin::BitNot as u32, Box::new(crate::vm::ffi::NativeBitNot));
-        self.ffi.register_intrinsic(NyarBuiltin::BitShl as u32, Box::new(crate::vm::ffi::NativeBitShl));
-        self.ffi.register_intrinsic(NyarBuiltin::BitShr as u32, Box::new(crate::vm::ffi::NativeBitShr));
-        self.ffi.register_intrinsic(NyarBuiltin::Panic as u32, Box::new(crate::vm::ffi::NativePanic));
-        self.ffi.register_intrinsic(NyarBuiltin::MathSin as u32, Box::new(crate::vm::ffi::NativeMathSin));
-        self.ffi.register_intrinsic(NyarBuiltin::MathCos as u32, Box::new(crate::vm::ffi::NativeMathCos));
-        self.ffi.register_intrinsic(NyarBuiltin::MathTan as u32, Box::new(crate::vm::ffi::NativeMathTan));
-        self.ffi.register_intrinsic(NyarBuiltin::MathSqrt as u32, Box::new(crate::vm::ffi::NativeMathSqrt));
-        self.ffi.register_intrinsic(NyarBuiltin::MathAbs as u32, Box::new(crate::vm::ffi::NativeMathAbs));
-        self.ffi.register_intrinsic(NyarBuiltin::MathRand as u32, Box::new(crate::vm::ffi::NativeMathRand));
-        self.ffi.register_intrinsic(NyarBuiltin::MemAlloc as u32, Box::new(crate::vm::ffi::NativeMemAlloc));
-        self.ffi.register_intrinsic(NyarBuiltin::MemFree as u32, Box::new(crate::vm::ffi::NativeMemFree));
-        self.ffi.register_intrinsic(NyarBuiltin::MemRealloc as u32, Box::new(crate::vm::ffi::NativeMemRealloc));
-        self.ffi.register_intrinsic(NyarBuiltin::MemSet as u32, Box::new(crate::vm::ffi::NativeMemSet));
-        self.ffi.register_intrinsic(NyarBuiltin::MemCopy as u32, Box::new(crate::vm::ffi::NativeMemCopy));
-        self.ffi.register_intrinsic(NyarBuiltin::StrLen as u32, Box::new(crate::vm::ffi::NativeStrLen));
-        self.ffi.register_intrinsic(NyarBuiltin::StrCmp as u32, Box::new(crate::vm::ffi::NativeStrCmp));
+        self.ffi.register_intrinsic(NyarBuiltin::BitAnd as u32, Arc::new(crate::vm::ffi::NativeBitAnd));
+        self.ffi.register_intrinsic(NyarBuiltin::BitOr as u32, Arc::new(crate::vm::ffi::NativeBitOr));
+        self.ffi.register_intrinsic(NyarBuiltin::BitXor as u32, Arc::new(crate::vm::ffi::NativeBitXor));
+        self.ffi.register_intrinsic(NyarBuiltin::BitNot as u32, Arc::new(crate::vm::ffi::NativeBitNot));
+        self.ffi.register_intrinsic(NyarBuiltin::BitShl as u32, Arc::new(crate::vm::ffi::NativeBitShl));
+        self.ffi.register_intrinsic(NyarBuiltin::BitShr as u32, Arc::new(crate::vm::ffi::NativeBitShr));
+        self.ffi.register_intrinsic(NyarBuiltin::Panic as u32, Arc::new(crate::vm::ffi::NativePanic));
+        self.ffi.register_intrinsic(NyarBuiltin::MathSin as u32, Arc::new(crate::vm::ffi::NativeMathSin));
+        self.ffi.register_intrinsic(NyarBuiltin::MathCos as u32, Arc::new(crate::vm::ffi::NativeMathCos));
+        self.ffi.register_intrinsic(NyarBuiltin::MathTan as u32, Arc::new(crate::vm::ffi::NativeMathTan));
+        self.ffi.register_intrinsic(NyarBuiltin::MathSqrt as u32, Arc::new(crate::vm::ffi::NativeMathSqrt));
+        self.ffi.register_intrinsic(NyarBuiltin::MathAbs as u32, Arc::new(crate::vm::ffi::NativeMathAbs));
+        self.ffi.register_intrinsic(NyarBuiltin::MathRand as u32, Arc::new(crate::vm::ffi::NativeMathRand));
+        self.ffi.register_intrinsic(NyarBuiltin::MemAlloc as u32, Arc::new(crate::vm::ffi::NativeMemAlloc));
+        self.ffi.register_intrinsic(NyarBuiltin::MemFree as u32, Arc::new(crate::vm::ffi::NativeMemFree));
+        self.ffi.register_intrinsic(NyarBuiltin::MemRealloc as u32, Arc::new(crate::vm::ffi::NativeMemRealloc));
+        self.ffi.register_intrinsic(NyarBuiltin::MemSet as u32, Arc::new(crate::vm::ffi::NativeMemSet));
+        self.ffi.register_intrinsic(NyarBuiltin::MemCopy as u32, Arc::new(crate::vm::ffi::NativeMemCopy));
+        self.ffi.register_intrinsic(NyarBuiltin::StrLen as u32, Arc::new(crate::vm::ffi::NativeStrLen));
+        self.ffi.register_intrinsic(NyarBuiltin::StrCmp as u32, Arc::new(crate::vm::ffi::NativeStrCmp));
     }
 
     fn register_java_builtins(&mut self) {

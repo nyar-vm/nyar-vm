@@ -46,6 +46,18 @@ pub trait Trace {
     fn trace(&self, ctx: &mut MarkContext<'_>);
 }
 
+impl Trace for i8 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for u8 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for i16 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for u16 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
 impl Trace for i32 {
     fn trace(&self, _ctx: &mut MarkContext<'_>) {}
 }
@@ -56,6 +68,12 @@ impl Trace for i64 {
     fn trace(&self, _ctx: &mut MarkContext<'_>) {}
 }
 impl Trace for u64 {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for usize {
+    fn trace(&self, _ctx: &mut MarkContext<'_>) {}
+}
+impl Trace for isize {
     fn trace(&self, _ctx: &mut MarkContext<'_>) {}
 }
 impl Trace for f32 {

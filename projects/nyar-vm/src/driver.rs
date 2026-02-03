@@ -1,6 +1,5 @@
 use crate::bytecode::compiler::NyarBackend;
 use crate::vm::core::NyarVM;
-use crate::aot::NyarAot;
 use nyar_types::{NyarError, NyarFrontend, QualifiedName};
 use oak_core::source::Source;
 use oak_vfs::{Vfs, WritableVfs};

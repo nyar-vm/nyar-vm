@@ -33,6 +33,8 @@ pub struct GaiaTranslator {
     blocks: Vec<GaiaBlock>,
     /// 已定义的类名
     defined_classes: std::collections::HashSet<String>,
+    /// 当前类名
+    current_class: Option<String>,
 }
 
 impl Backend for GaiaTranslator {
@@ -65,6 +67,7 @@ impl GaiaTranslator {
             current_label: "entry".to_string(),
             blocks: Vec::new(),
             defined_classes: std::collections::HashSet::new(),
+            current_class: None,
         }
     }
 
@@ -241,6 +244,8 @@ impl GaiaTranslator {
             ));
         };
 
+        self.current_class = Some(name.clone());
+
         let mut parent = None;
         if let IKunTree::Extension(ext_name, bases) = &args[1] {
             if ext_name == "bases" && !bases.is_empty() {
@@ -274,6 +279,8 @@ impl GaiaTranslator {
                 }
             }
         }
+
+        self.current_class = None;
 
         Ok(gaia_assembler::program::GaiaClass {
             name,
@@ -720,8 +727,9 @@ impl GaiaTranslator {
                     "get_field" => {
                         self.generate_tree_node(&args[0], false)?;
                         if let IKunTree::Symbol(field_name) = &args[1] {
+                            let class_name = self.current_class.clone().unwrap_or_else(|| "Object".to_string());
                             self.current_instructions.push(GaiaInstruction::Core(
-                                CoreInstruction::LoadField("Object".to_string(), field_name.clone()),
+                                CoreInstruction::LoadField(class_name, field_name.clone()),
                             ));
                         }
                     }
@@ -729,8 +737,9 @@ impl GaiaTranslator {
                         self.generate_tree_node(&args[0], false)?; // object
                         self.generate_tree_node(&args[2], false)?; // value
                         if let IKunTree::Symbol(field_name) = &args[1] {
+                            let class_name = self.current_class.clone().unwrap_or_else(|| "Object".to_string());
                             self.current_instructions.push(GaiaInstruction::Core(
-                                CoreInstruction::StoreField("Object".to_string(), field_name.clone()),
+                                CoreInstruction::StoreField(class_name, field_name.clone()),
                             ));
                         }
                     }
@@ -818,22 +827,6 @@ impl GaiaTranslator {
                     "none" => {
                         self.current_instructions.push(GaiaInstruction::Core(
                             CoreInstruction::PushConstant(GaiaConstant::Null),
-                        ));
-                    }
-                    "starred" | "starred_double" | "keyword_arg" => {
-                        for arg in args {
-                            self.generate_tree_node(arg, false)?;
-                        }
-                        self.current_instructions.push(GaiaInstruction::Managed(
-                            ManagedInstruction::CallMethod {
-                                target: "Builtins".to_string(),
-                                method: name.clone(),
-                                signature: GaiaSignature {
-                                    params: vec![GaiaType::Object; args.len()],
-                                    return_type: GaiaType::Object,
-                                },
-                                is_virtual: false,
-                            },
                         ));
                     }
                     _ => {}
@@ -1113,7 +1106,6 @@ impl GaiaTranslator {
                 }
 
                 // 处理条件过滤 (ifs)
-                let mut current_body_label = self.current_label.clone();
                 if let IKunTree::Seq(if_list) = ifs {
                     for if_cond in if_list {
                         let if_true_label = self.new_label("comp_if_true");
@@ -1123,7 +1115,6 @@ impl GaiaTranslator {
                             false_label: test_label.clone(),
                         });
                         self.start_block(if_true_label);
-                        current_body_label = self.current_label.clone();
                     }
                 }
 

@@ -1,6 +1,8 @@
+use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use nyar_types::NyarError;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub type FFIResult = Result<Value, NyarError>;
 
@@ -24,20 +26,20 @@ pub struct FFISignature {
 }
 
 pub trait FFIFunction: Send + Sync {
-    fn call(&self, args: Vec<Value>) -> FFIResult;
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult;
     fn signature(&self) -> Option<FFISignature> {
         None
     }
 }
 
 pub struct FFIRegistry {
-    pub functions: HashMap<String, Box<dyn FFIFunction>>,
-    pub intrinsics: HashMap<u32, Box<dyn FFIFunction>>,
-    pub loaders: HashMap<String, Box<dyn ModuleLoader>>,
+    pub functions: HashMap<String, Arc<dyn FFIFunction>>,
+    pub intrinsics: HashMap<u32, Arc<dyn FFIFunction>>,
+    pub loaders: HashMap<String, Arc<dyn ModuleLoader>>,
 }
 
 pub trait ModuleLoader: Send + Sync {
-    fn load(&self, path: &str) -> Result<Vec<(String, Box<dyn FFIFunction>)>, String>;
+    fn load(&self, path: &str) -> Result<Vec<(String, Arc<dyn FFIFunction>)>, NyarError>;
 }
 
 impl Default for FFIRegistry {
@@ -55,13 +57,13 @@ impl FFIRegistry {
         }
     }
 
-    pub fn register_loader(&mut self, name: String, loader: Box<dyn ModuleLoader>) {
-        self.loaders.insert(name, loader);
+    pub fn register_loader(&mut self, name: impl Into<String>, loader: Arc<dyn ModuleLoader>) {
+        self.loaders.insert(name.into(), loader);
     }
 
     pub fn load_module(&mut self, provider: &str, path: &str) -> Result<(), String> {
         if let Some(loader) = self.loaders.get(provider) {
-            let exports = loader.load(path)?;
+            let exports = loader.load(path).map_err(|e| e.to_string())?;
             for (name, func) in exports {
                 self.functions.insert(name, func);
             }
@@ -71,20 +73,20 @@ impl FFIRegistry {
         }
     }
 
-    pub fn register(&mut self, name: String, func: Box<dyn FFIFunction>) {
+    pub fn register(&mut self, name: String, func: Arc<dyn FFIFunction>) {
         self.functions.insert(name, func);
     }
 
-    pub fn register_intrinsic(&mut self, id: u32, func: Box<dyn FFIFunction>) {
+    pub fn register_intrinsic(&mut self, id: u32, func: Arc<dyn FFIFunction>) {
         self.intrinsics.insert(id, func);
     }
 
-    pub fn get(&self, name: &str) -> Option<&dyn FFIFunction> {
-        self.functions.get(name).map(|f| f.as_ref())
+    pub fn get(&self, name: &str) -> Option<Arc<dyn FFIFunction>> {
+        self.functions.get(name).cloned()
     }
 
-    pub fn get_intrinsic(&self, id: u32) -> Option<&dyn FFIFunction> {
-        self.intrinsics.get(&id).map(|f| f.as_ref())
+    pub fn get_intrinsic(&self, id: u32) -> Option<Arc<dyn FFIFunction>> {
+        self.intrinsics.get(&id).cloned()
     }
 }
 
@@ -96,7 +98,7 @@ impl FFIFunction for NativeAdd {
             ret: FFIType::Int,
         })
     }
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_int();
         let b = args[1].as_int();
         Ok(Value::int(a + b))
@@ -111,7 +113,7 @@ impl FFIFunction for NativeGetTime {
             ret: FFIType::Int,
         })
     }
-    fn call(&self, _args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, _args: Vec<Value>) -> FFIResult {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -128,7 +130,7 @@ impl FFIFunction for NativeSleep {
             ret: FFIType::Null,
         })
     }
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let ms = args[0].as_int() as u64;
         
         // This is a simplified async yield simulation.
@@ -148,7 +150,7 @@ impl FFIFunction for NativePrint {
             ret: FFIType::Null,
         })
     }
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         print!("{}", args[0]);
         Ok(Value::null())
     }
@@ -162,7 +164,7 @@ impl FFIFunction for NativePrintln {
             ret: FFIType::Null,
         })
     }
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         println!("{}", args[0]);
         Ok(Value::null())
     }
@@ -176,7 +178,7 @@ impl FFIFunction for NativeExit {
             ret: FFIType::Null,
         })
     }
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let code = args[0].as_int() as i32;
         std::process::exit(code);
     }
@@ -184,7 +186,7 @@ impl FFIFunction for NativeExit {
 
 pub struct NativeBitAnd;
 impl FFIFunction for NativeBitAnd {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_int();
         let b = args[1].as_int();
         Ok(Value::int(a & b))
@@ -193,7 +195,7 @@ impl FFIFunction for NativeBitAnd {
 
 pub struct NativeBitOr;
 impl FFIFunction for NativeBitOr {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_int();
         let b = args[1].as_int();
         Ok(Value::int(a | b))
@@ -202,7 +204,7 @@ impl FFIFunction for NativeBitOr {
 
 pub struct NativeBitXor;
 impl FFIFunction for NativeBitXor {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_int();
         let b = args[1].as_int();
         Ok(Value::int(a ^ b))
@@ -211,7 +213,7 @@ impl FFIFunction for NativeBitXor {
 
 pub struct NativeBitNot;
 impl FFIFunction for NativeBitNot {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_int();
         Ok(Value::int(!a))
     }
@@ -219,7 +221,7 @@ impl FFIFunction for NativeBitNot {
 
 pub struct NativeBitShl;
 impl FFIFunction for NativeBitShl {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_int();
         let b = args[1].as_int();
         Ok(Value::int(a << b))
@@ -228,7 +230,7 @@ impl FFIFunction for NativeBitShl {
 
 pub struct NativeBitShr;
 impl FFIFunction for NativeBitShr {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_int();
         let b = args[1].as_int();
         Ok(Value::int(a >> b))
@@ -237,7 +239,7 @@ impl FFIFunction for NativeBitShr {
 
 pub struct NativePanic;
 impl FFIFunction for NativePanic {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let msg = args.get(0).map(|v| v.to_string()).unwrap_or_else(|| "panic".to_string());
         panic!("{}", msg);
     }
@@ -245,7 +247,7 @@ impl FFIFunction for NativePanic {
 
 pub struct NativeMathSin;
 impl FFIFunction for NativeMathSin {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_float();
         Ok(Value::float(a.sin()))
     }
@@ -253,7 +255,7 @@ impl FFIFunction for NativeMathSin {
 
 pub struct NativeMathCos;
 impl FFIFunction for NativeMathCos {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_float();
         Ok(Value::float(a.cos()))
     }
@@ -261,7 +263,7 @@ impl FFIFunction for NativeMathCos {
 
 pub struct NativeMathTan;
 impl FFIFunction for NativeMathTan {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_float();
         Ok(Value::float(a.tan()))
     }
@@ -269,7 +271,7 @@ impl FFIFunction for NativeMathTan {
 
 pub struct NativeMathSqrt;
 impl FFIFunction for NativeMathSqrt {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_float();
         Ok(Value::float(a.sqrt()))
     }
@@ -277,7 +279,7 @@ impl FFIFunction for NativeMathSqrt {
 
 pub struct NativeMathAbs;
 impl FFIFunction for NativeMathAbs {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let a = args[0].as_float();
         Ok(Value::float(a.abs()))
     }
@@ -285,7 +287,7 @@ impl FFIFunction for NativeMathAbs {
 
 pub struct NativeMathRand;
 impl FFIFunction for NativeMathRand {
-    fn call(&self, _args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, _args: Vec<Value>) -> FFIResult {
         use rand::Rng;
         let mut rng = rand::thread_rng();
         Ok(Value::int(rng.gen::<i64>()))
@@ -294,7 +296,7 @@ impl FFIFunction for NativeMathRand {
 
 pub struct NativeMemAlloc;
 impl FFIFunction for NativeMemAlloc {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let size = args[0].as_int() as usize;
         // In a real VM, this would allocate from a pool or GC heap
         // For now, we simulate with a raw allocation or similar
@@ -308,7 +310,7 @@ impl FFIFunction for NativeMemAlloc {
 
 pub struct NativeMemFree;
 impl FFIFunction for NativeMemFree {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let ptr = args[0].as_int() as *mut u8;
         let size = args.get(1).map(|v| v.as_int() as usize).unwrap_or(0);
         if !ptr.is_null() && size > 0 {
@@ -323,7 +325,7 @@ impl FFIFunction for NativeMemFree {
 
 pub struct NativeMemRealloc;
 impl FFIFunction for NativeMemRealloc {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let ptr = args[0].as_int() as *mut u8;
         let old_size = args[1].as_int() as usize;
         let new_size = args[2].as_int() as usize;
@@ -337,7 +339,7 @@ impl FFIFunction for NativeMemRealloc {
 
 pub struct NativeMemSet;
 impl FFIFunction for NativeMemSet {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let ptr = args[0].as_int() as *mut u8;
         let val = args[1].as_int() as u8;
         let count = args[2].as_int() as usize;
@@ -350,7 +352,7 @@ impl FFIFunction for NativeMemSet {
 
 pub struct NativeMemCopy;
 impl FFIFunction for NativeMemCopy {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let dest = args[0].as_int() as *mut u8;
         let src = args[1].as_int() as *const u8;
         let count = args[2].as_int() as usize;
@@ -363,7 +365,7 @@ impl FFIFunction for NativeMemCopy {
 
 pub struct NativeStrLen;
 impl FFIFunction for NativeStrLen {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let ptr = args[0].as_int() as *const i8;
         unsafe {
             let mut len = 0;
@@ -377,7 +379,7 @@ impl FFIFunction for NativeStrLen {
 
 pub struct NativeStrCmp;
 impl FFIFunction for NativeStrCmp {
-    fn call(&self, args: Vec<Value>) -> FFIResult {
+    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let s1 = args[0].as_int() as *const i8;
         let s2 = args[1].as_int() as *const i8;
         unsafe {

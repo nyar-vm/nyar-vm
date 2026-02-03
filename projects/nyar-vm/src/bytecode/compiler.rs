@@ -407,6 +407,23 @@ impl NyarBackend {
                             }
                         }
                     }
+                    "import" => {
+                        if let IKunTree::StringConstant(name) = &args[0] {
+                            let idx = self.add_constant(Constant::String(name.clone()));
+                            code.extend_from_slice(&Instruction::Call(idx, 0).encode());
+                        }
+                    }
+                    "import_from" => {
+                        if args.len() == 2 {
+                            if let (IKunTree::StringConstant(module), IKunTree::StringConstant(member)) = (&args[0], &args[1]) {
+                                let mod_idx = self.add_constant(Constant::String(module.clone()));
+                                code.extend_from_slice(&Instruction::Call(mod_idx, 0).encode());
+                                let mem_idx = self.add_constant(Constant::String(member.clone()));
+                                code.extend_from_slice(&Instruction::GetField(mem_idx).encode());
+                            }
+                        }
+                    }
+                    "none" => {}
                     "add" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
@@ -431,6 +448,154 @@ impl NyarBackend {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
                         code.extend_from_slice(&Instruction::I64RemS.encode());
+                    }
+                    "bit_and" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64And.encode());
+                    }
+                    "bit_or" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Or.encode());
+                    }
+                    "bit_xor" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Xor.encode());
+                    }
+                    "bit_not" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend_from_slice(&Instruction::I64Not.encode());
+                    }
+                    "bit_shl" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64Shl.encode());
+                    }
+                    "bit_shr" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend(self.lower_tree(&args[1])?);
+                        code.extend_from_slice(&Instruction::I64ShrS.encode());
+                    }
+                    "and" => {
+                        // a && b
+                        // eval a
+                        code.extend(self.lower_tree(&args[0])?);
+                        // dup for jump
+                        code.extend_from_slice(&Instruction::Dup(0).encode());
+                        // if false, jump to end (keep false on stack)
+                        let placeholder = code.len();
+                        code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                        // if true, pop a and eval b
+                        code.extend_from_slice(&Instruction::Pop.encode());
+                        code.extend(self.lower_tree(&args[1])?);
+                        // label end
+                        let end_pos = code.len();
+                        let off = (end_pos as isize - placeholder as isize) as i16;
+                        let instr = Instruction::JumpIfFalse(off).encode();
+                        code[placeholder..placeholder + instr.len()].copy_from_slice(&instr);
+                    }
+                    "or" => {
+                        // a || b
+                        // eval a
+                        code.extend(self.lower_tree(&args[0])?);
+                        // dup for jump
+                        code.extend_from_slice(&Instruction::Dup(0).encode());
+                        // if true, jump to end (keep true on stack)
+                        let placeholder = code.len();
+                        code.extend_from_slice(&Instruction::JumpIfTrue(0).encode());
+                        // if false, pop a and eval b
+                        code.extend_from_slice(&Instruction::Pop.encode());
+                        code.extend(self.lower_tree(&args[1])?);
+                        // label end
+                        let end_pos = code.len();
+                        let off = (end_pos as isize - placeholder as isize) as i16;
+                        let instr = Instruction::JumpIfTrue(off).encode();
+                        code[placeholder..placeholder + instr.len()].copy_from_slice(&instr);
+                    }
+                    "choice" => {
+                        // condition ? then : else
+                        // args[0] = cond, args[1] = then, args[2] = else
+                        code.extend(self.lower_tree(&args[0])?);
+                        
+                        let jump_false_placeholder = code.len();
+                        code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                        
+                        code.extend(self.lower_tree(&args[1])?);
+                        let jump_end_placeholder = code.len();
+                        code.extend_from_slice(&Instruction::Jump(0).encode());
+                        
+                        let else_start = code.len();
+                        let else_offset = (else_start as isize - jump_false_placeholder as isize) as i16;
+                        let jump_false_instr = Instruction::JumpIfFalse(else_offset).encode();
+                        code[jump_false_placeholder..jump_false_placeholder + jump_false_instr.len()].copy_from_slice(&jump_false_instr);
+                        
+                        code.extend(self.lower_tree(&args[2])?);
+                        let end_pos = code.len();
+                        let end_offset = (end_pos as isize - jump_end_placeholder as isize) as i16;
+                        let jump_end_instr = Instruction::Jump(end_offset).encode();
+                        code[jump_end_placeholder..jump_end_placeholder + jump_end_instr.len()].copy_from_slice(&jump_end_instr);
+                    }
+                    "sizeof" => {
+                        code.extend(self.lower_tree(&args[0])?);
+                        code.extend_from_slice(&Instruction::SizeOf.encode());
+                    }
+                    "cast" => {
+                        // (type)expr
+                        // args[0] is target type (symbol or string), args[1] is expr
+                        code.extend(self.lower_tree(&args[1])?);
+                        if let IKunTree::Symbol(type_name) = &args[0] {
+                            let idx = self.add_constant(Constant::String(type_name.clone()));
+                            code.extend_from_slice(&Instruction::Cast(idx).encode());
+                        } else if let IKunTree::StringConstant(type_name) = &args[0] {
+                            let idx = self.add_constant(Constant::String(type_name.clone()));
+                            code.extend_from_slice(&Instruction::Cast(idx).encode());
+                        }
+                    }
+                    "inc_pre" => {
+                        if let IKunTree::Symbol(name) = &args[0] {
+                            let idx = self.add_constant(Constant::String(name.clone()));
+                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+                            code.extend_from_slice(&Instruction::I64Const(1).encode());
+                            code.extend_from_slice(&Instruction::I64Add.encode());
+                            code.extend_from_slice(&Instruction::Dup(0).encode());
+                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                            code.extend_from_slice(&Instruction::Pop.encode());
+                        }
+                    }
+                    "inc_post" => {
+                        if let IKunTree::Symbol(name) = &args[0] {
+                            let idx = self.add_constant(Constant::String(name.clone()));
+                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+                            code.extend_from_slice(&Instruction::Dup(0).encode());
+                            code.extend_from_slice(&Instruction::I64Const(1).encode());
+                            code.extend_from_slice(&Instruction::I64Add.encode());
+                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                            code.extend_from_slice(&Instruction::Pop.encode());
+                        }
+                    }
+                    "dec_pre" => {
+                        if let IKunTree::Symbol(name) = &args[0] {
+                            let idx = self.add_constant(Constant::String(name.clone()));
+                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+                            code.extend_from_slice(&Instruction::I64Const(1).encode());
+                            code.extend_from_slice(&Instruction::I64Sub.encode());
+                            code.extend_from_slice(&Instruction::Dup(0).encode());
+                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                            code.extend_from_slice(&Instruction::Pop.encode());
+                        }
+                    }
+                    "dec_post" => {
+                        if let IKunTree::Symbol(name) = &args[0] {
+                            let idx = self.add_constant(Constant::String(name.clone()));
+                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+                            code.extend_from_slice(&Instruction::Dup(0).encode());
+                            code.extend_from_slice(&Instruction::I64Const(1).encode());
+                            code.extend_from_slice(&Instruction::I64Sub.encode());
+                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                            code.extend_from_slice(&Instruction::Pop.encode());
+                        }
                     }
                     "eq" => {
                         code.extend(self.lower_tree(&args[0])?);
@@ -479,11 +644,11 @@ impl NyarBackend {
                 }
                 if let IKunTree::Symbol(name) = &**callee {
                     let idx = self.add_constant(Constant::String(name.clone()));
-                    code.extend_from_slice(&Instruction::TailCall(idx, args.len() as u8).encode());
+                    code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
                 } else {
                     code.extend(self.lower_tree(callee)?);
-                    code.extend_from_slice(&Instruction::TailCallClosure(args.len() as u8).encode());
                 }
+                code.extend_from_slice(&Instruction::TailCall(args.len() as u8).encode());
                 Ok(Some(code))
             }
             _ => Ok(None),
@@ -512,5 +677,35 @@ impl NyarBackend {
 
     pub fn finish(self) -> NyarcModule {
         self.module
+    }
+}
+
+impl Backend for NyarBackend {
+    fn name(&self) -> &str {
+        "nyar-vm"
+    }
+
+    fn generate(&self, tree: &IKunTree) -> chomsky_types::ChomskyResult<BackendArtifact> {
+        let mut this = NyarBackend::new();
+        let code = this.lower_tree(tree).map_err(|e| {
+            chomsky_types::ChomskyError::backend_error(format!("{:?}", e))
+        })?;
+        if !code.is_empty() {
+            let mut final_code = code;
+            if final_code.last() != Some(&(Opcode::Return as u8)) {
+                final_code.push(Opcode::Return as u8);
+            }
+            this.module.chunks.push(Chunk {
+                locals: 32,
+                upvalues: 0,
+                max_stack: 64,
+                code: final_code,
+                handlers: vec![],
+                lines: vec![],
+                decoded: None,
+                hotness: std::sync::atomic::AtomicU32::new(0),
+            });
+        }
+        Ok(BackendArtifact::Binary(this.module.encode()))
     }
 }

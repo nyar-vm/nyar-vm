@@ -481,8 +481,8 @@ impl NyarVM {
             Instruction::CallVirtual(idx, argc) => {
                 self.execute_call_virtual(idx, argc.into(), module_idx)
             }
-            Instruction::TailCall(_, argc) => self.execute_tail_call(argc.into()),
-            Instruction::TailCallClosure(argc) => self.execute_tail_call(argc.into()),
+            Instruction::TailCall(idx, argc) => self.execute_tail_call(idx, argc, module_idx),
+            Instruction::TailCallClosure(argc) => self.execute_tail_call_closure(argc),
             Instruction::FFICall(idx, argc) => self.execute_ffi_call(idx, argc.into(), module_idx),
             Instruction::InvokeMethod(idx, argc) => {
                 self.execute_invoke_method(idx, argc.into(), module_idx)

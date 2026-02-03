@@ -285,50 +285,47 @@ impl NyarVM {
     }
 
     #[inline(always)]
-    pub fn execute_tail_call(&mut self, idx: u16, argc: u8, module_idx: usize) -> Result<Option<usize>, NyarError> {
-        let constant = &self.modules[module_idx].constants[idx as usize];
-        let symbol_name = match constant {
-            Constant::String(s) => s,
-            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14))),
+    pub fn execute_tail_call(
+        &mut self,
+        idx: u16,
+        argc: u8,
+        module_idx: usize,
+    ) -> Result<Option<usize>, NyarError> {
+        let name = match self.modules[module_idx].constants.get(idx as usize) {
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
         };
 
-        let symbol = self.resolve_symbol(symbol_name)?;
-        let callee = match symbol {
-            Value::Closure(_) => symbol,
-            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14))),
-        };
+        let symbol = self.symbol_table.get(&name).copied();
+        if let Some((m_idx, chunk_idx)) = symbol {
+            let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
+            let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 
-        let mut args = Vec::with_capacity(argc as usize);
-        for _ in 0..argc {
-            args.push(self.pop()?);
-        }
-        args.reverse();
+            let mut args = Vec::with_capacity(argc as usize);
+            for _ in 0..argc {
+                args.push(self.pop()?);
+            }
+            args.reverse();
 
-        let (instrs, locals_count, c_module_idx, c_chunk_idx) = if let Some(closure) = callee.try_as_closure() {
-            let chunk_idx = closure.func;
-            let module_idx = closure.module_idx;
-            let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
-            let locals_count = self.modules[module_idx].chunks[chunk_idx].locals as usize;
-            (instrs, locals_count, module_idx, chunk_idx)
+            if args.len() < locals_count {
+                args.resize(locals_count, Value::null());
+            }
+
+            // Reuse the current frame
+            if let Some(frame) = self.frames.last_mut() {
+                frame.instrs = instrs;
+                frame.ip = 0;
+                frame.locals = args;
+                frame.closure = Value::null();
+                frame.module_idx = m_idx;
+                frame.chunk_idx = Some(chunk_idx as usize);
+            }
+
+            Ok(Some(0))
         } else {
-            unreachable!()
-        };
-
-        if args.len() < locals_count {
-            args.resize(locals_count, Value::null());
+            Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))
         }
-
-        // Reuse the current frame
-        if let Some(frame) = self.frames.last_mut() {
-            frame.instrs = instrs;
-            frame.ip = 0;
-            frame.locals = args;
-            frame.closure = callee;
-            frame.module_idx = c_module_idx;
-            frame.chunk_idx = Some(c_chunk_idx);
-        }
-
-        Ok(Some(0))
     }
 
     #[inline(always)]
@@ -430,7 +427,8 @@ impl NyarVM {
         args.reverse();
 
         // Check in FFI registry
-        if let Some(func) = self.ffi.get(&name) {
+        let ffi_func = self.ffi.get(&name);
+        if let Some(func) = ffi_func {
             // Validate signature if present
             if let Some(sig) = func.signature() {
                 if sig.params.len() != args.len() {
@@ -457,13 +455,14 @@ impl NyarVM {
                 }
             }
 
-            let result = func.call(args)?;
+            let result = func.call(self, args)?;
             self.push(result)?;
         } else if name.starts_with("$intrinsic:") {
             // Check if it's an encoded intrinsic call
             if let Ok(id) = name.trim_start_matches("$intrinsic:").parse::<u32>() {
-                if let Some(func) = self.ffi.get_intrinsic(id) {
-                    let result = func.call(args)?;
+                let intrinsic_func = self.ffi.get_intrinsic(id);
+                if let Some(func) = intrinsic_func {
+                    let result = func.call(self, args)?;
                     self.push(result)?;
                 } else {
                     return Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!(

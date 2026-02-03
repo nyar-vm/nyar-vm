@@ -7,6 +7,7 @@ edition = "2021"
 nyar-types = { workspace = true }
 nyar-vm = { workspace = true }
 oak-core = { workspace = true }
+oak-vfs = { workspace = true }
 oak-java = { path = "../../../oaks/examples/oak-java" }
 chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false, features = ["jvm"] }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }

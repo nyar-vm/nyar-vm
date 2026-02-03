@@ -46,6 +46,7 @@ impl Display for Value {
             }
             ValueTag::DynObject => write!(f, "<dyn_object>"),
             ValueTag::WitnessTable => write!(f, "<witness_table>"),
+            ValueTag::Bytes => write!(f, "<bytes>"),
             _ => write!(f, "<value>"),
         }
     }
@@ -84,7 +85,8 @@ impl Trace for Value {
             | ValueTag::TraitObject
             | ValueTag::QualifiedName
             | ValueTag::Future
-            | ValueTag::Effect => unsafe {
+            | ValueTag::Effect
+            | ValueTag::Bytes => unsafe {
                 let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
                 GcHeader::mark(header_ptr, ctx);
             },
@@ -234,6 +236,7 @@ pub enum ValueTag {
     QualifiedName = 18,
     Future = 19,
     F32 = 20,
+    Bytes = 21,
 }
 
 #[repr(transparent)]
@@ -302,6 +305,7 @@ impl Value {
             18 => ValueTag::QualifiedName,
             19 => ValueTag::Future,
             20 => ValueTag::F32,
+            21 => ValueTag::Bytes,
             _ => panic!("Invalid tag value: {} (raw={:016x})", tag_val, self.0),
         }
     }
@@ -365,6 +369,14 @@ impl Value {
     }
     pub unsafe fn as_tuple_mut<'a>(&self) -> &'a mut Tuple {
         let ptr = self.payload() as *mut GcBox<Tuple>;
+        &mut (*ptr).data
+    }
+    pub unsafe fn as_bytes<'a>(&self) -> &'a Bytes {
+        let ptr = self.payload() as *const GcBox<Bytes>;
+        &(*ptr).data
+    }
+    pub unsafe fn as_bytes_mut<'a>(&self) -> &'a mut Bytes {
+        let ptr = self.payload() as *mut GcBox<Bytes>;
         &mut (*ptr).data
     }
     pub unsafe fn as_array_ptr<'a>(&self) -> &'a Array {
@@ -510,6 +522,10 @@ impl Value {
         !self.is_float() && self.tag() == ValueTag::BigInt
     }
 
+    pub fn is_bytes(&self) -> bool {
+        !self.is_float() && self.tag() == ValueTag::Bytes
+    }
+
     pub fn is_truthy(&self) -> bool {
         if self.is_f64() {
             let f = self.as_f64();
@@ -557,6 +573,10 @@ impl Value {
     pub fn bigint(bi: BigInt, gc: &NyarGc) -> Self {
         let g = gc.alloc(bi);
         Self::encode(ValueTag::BigInt, g.as_ptr() as u64)
+    }
+    pub fn bytes(data: Vec<u8>, gc: &NyarGc) -> Self {
+        let g = gc.alloc(Bytes { data });
+        Self::encode(ValueTag::Bytes, g.as_ptr() as u64)
     }
     pub fn dyn_object(gc: &NyarGc) -> Self {
         let g = gc.alloc(DynObject {
@@ -795,6 +815,20 @@ impl Value {
             None
         }
     }
+    pub fn try_as_bytes(&self) -> Option<&Bytes> {
+        if self.is_bytes() {
+            Some(unsafe { self.as_bytes() })
+        } else {
+            None
+        }
+    }
+    pub fn try_as_bytes_mut(&self) -> Option<&mut Bytes> {
+        if self.is_bytes() {
+            Some(unsafe { self.as_bytes_mut() })
+        } else {
+            None
+        }
+    }
     pub fn try_as_effect(&self) -> Option<&Effect> {
         if self.is_effect() {
             Some(unsafe { self.as_effect() })
@@ -927,6 +961,17 @@ pub struct List {
 #[derive(Clone)]
 pub struct Tuple {
     pub items: Vec<Value>,
+}
+
+#[derive(Clone)]
+pub struct Bytes {
+    pub data: Vec<u8>,
+}
+
+impl Trace for Bytes {
+    fn trace(&self, _ctx: &mut MarkContext) {
+        // Vec<u8> is now traceable (no-op)
+    }
 }
 
 #[derive(Clone)]

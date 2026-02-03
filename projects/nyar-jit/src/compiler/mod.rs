@@ -760,7 +760,7 @@ impl NyarJit {
                     }));
                     stack.push(id);
                 }
-                Instruction::TailCall(_) => {
+                Instruction::TailCall(idx, argc) => {
                     if let Some(val_id) = stack.pop() {
                         intents.push(IKun::Extension("tail_call".to_string(), vec![val_id]));
                     }

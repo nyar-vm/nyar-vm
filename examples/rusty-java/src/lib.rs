@@ -55,7 +55,8 @@ impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
     fn lower_unified<V: Vfs>(&self, ast: &JavaRoot, ctx: &mut NyarContext<V>) -> Id {
         let mut converter = codegen::JavaUirConverter::new(ctx);
         converter.convert_root(ast).unwrap_or_else(|_| {
-            ctx.builder().constant(0, ctx.loc(0, 0))
+            let loc = ctx.loc(0, 0);
+            ctx.builder().constant(0, loc)
         })
     }
 }

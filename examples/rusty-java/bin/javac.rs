@@ -1,6 +1,7 @@
-use mini_java::MiniJavaFrontend;
+use rusty_java::MiniJavaFrontend;
 use nyar_vm::NyarDriver;
-use std::{path::Path, process::exit};
+use oak_vfs::vfs::disk::DiskVfs;
+use std::process::exit;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -9,19 +10,20 @@ fn main() {
         exit(1);
     }
 
-    let input_file = Path::new(&args[1]);
-    let frontend = MiniJavaFrontend::new();
+    let input_file = &args[1];
+    let frontend = MiniJavaFrontend::default();
     let driver = NyarDriver::new();
+    let vfs = DiskVfs::new();
 
     // 编译到 JVM .class
     let output_file = args
         .iter()
         .position(|a| a == "-o")
         .and_then(|i| args.get(i + 1))
-        .map(Path::new)
-        .unwrap_or(Path::new("Hello.class"));
+        .map(|s| s.as_str())
+        .unwrap_or("Hello.class");
 
-    if let Err(e) = driver.compile_to_jvm(&frontend, input_file, output_file) {
+    if let Err(e) = driver.compile_to_jvm(&frontend, &vfs, input_file, output_file) {
         eprintln!("Compilation error: {:?}", e);
         exit(1);
     }

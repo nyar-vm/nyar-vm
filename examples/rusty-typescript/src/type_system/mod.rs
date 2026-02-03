@@ -51,14 +51,177 @@ impl ObjectType {
 }
 
 impl ScriptType {
+    /// Substitute generic type parameters with concrete types
+    pub fn substitute(&self, substitution: &HashMap<String, ScriptType>) -> ScriptType {
+        match self {
+            ScriptType::Reference(ref_ty) => {
+                if let Some(ty) = substitution.get(&ref_ty.name) {
+                    ty.clone()
+                } else {
+                    let mut new_args = Vec::new();
+                    for arg in &ref_ty.args {
+                        new_args.push(arg.substitute(substitution));
+                    }
+                    ScriptType::Reference(TypeReference {
+                        name: ref_ty.name.clone(),
+                        args: new_args,
+                    })
+                }
+            }
+            ScriptType::Array(inner) => ScriptType::Array(Box::new(inner.substitute(substitution))),
+            ScriptType::Tuple(elems) => {
+                let mut new_elems = Vec::new();
+                for e in elems {
+                    new_elems.push(e.substitute(substitution));
+                }
+                ScriptType::Tuple(new_elems)
+            }
+            ScriptType::Object(obj) => {
+                let mut new_props = Vec::new();
+                for p in &obj.properties {
+                    new_props.push(Property {
+                        name: p.name.clone(),
+                        ty: p.ty.substitute(substitution),
+                        optional: p.optional,
+                        readonly: p.readonly,
+                    });
+                }
+                let mut new_indices = Vec::new();
+                for idx in &obj.index_signatures {
+                    new_indices.push(IndexSignature {
+                        key_name: idx.key_name.clone(),
+                        key_type: idx.key_type,
+                        value_type: idx.value_type.substitute(substitution),
+                    });
+                }
+                ScriptType::Object(ObjectType {
+                    properties: new_props,
+                    index_signatures: new_indices,
+                })
+            }
+            ScriptType::Function(func) => {
+                let mut new_params = Vec::new();
+                for p in &func.params {
+                    new_params.push(Parameter {
+                        name: p.name.clone(),
+                        ty: p.ty.substitute(substitution),
+                        optional: p.optional,
+                    });
+                }
+                ScriptType::Function(FunctionType {
+                    params: new_params,
+                    return_type: Box::new(func.return_type.substitute(substitution)),
+                    type_params: func.type_params.clone(),
+                })
+            }
+            ScriptType::Union(variants) => {
+                let mut new_variants = Vec::new();
+                for v in variants {
+                    new_variants.push(v.substitute(substitution));
+                }
+                ScriptType::Union(new_variants)
+            }
+            ScriptType::Intersection(variants) => {
+                let mut new_variants = Vec::new();
+                for v in variants {
+                    new_variants.push(v.substitute(substitution));
+                }
+                ScriptType::Intersection(new_variants)
+            }
+            ScriptType::Operator(op) => match op {
+                TypeOperator::KeyOf(inner) => {
+                    ScriptType::Operator(TypeOperator::KeyOf(Box::new(inner.substitute(substitution))))
+                }
+                TypeOperator::ReadOnly(inner) => {
+                    ScriptType::Operator(TypeOperator::ReadOnly(Box::new(inner.substitute(substitution))))
+                }
+                TypeOperator::Partial(inner) => {
+                    ScriptType::Operator(TypeOperator::Partial(Box::new(inner.substitute(substitution))))
+                }
+                TypeOperator::Required(inner) => {
+                    ScriptType::Operator(TypeOperator::Required(Box::new(inner.substitute(substitution))))
+                }
+                TypeOperator::Pick(inner, keys) => ScriptType::Operator(TypeOperator::Pick(
+                    Box::new(inner.substitute(substitution)),
+                    keys.clone(),
+                )),
+                TypeOperator::Omit(inner, keys) => ScriptType::Operator(TypeOperator::Omit(
+                    Box::new(inner.substitute(substitution)),
+                    keys.clone(),
+                )),
+                TypeOperator::Record(k, v) => ScriptType::Operator(TypeOperator::Record(
+                    Box::new(k.substitute(substitution)),
+                    Box::new(v.substitute(substitution)),
+                )),
+                _ => self.clone(),
+            },
+            ScriptType::Mapped(mapped) => ScriptType::Mapped(MappedType {
+                key_name: mapped.key_name.clone(),
+                key_type: Box::new(mapped.key_type.substitute(substitution)),
+                value_type: Box::new(mapped.value_type.substitute(substitution)),
+                readonly: mapped.readonly,
+                optional: mapped.optional,
+            }),
+            ScriptType::Conditional(cond) => ScriptType::Conditional(ConditionalType {
+                check_type: Box::new(cond.check_type.substitute(substitution)),
+                extends_type: Box::new(cond.extends_type.substitute(substitution)),
+                true_type: Box::new(cond.true_type.substitute(substitution)),
+                false_type: Box::new(cond.false_type.substitute(substitution)),
+            }),
+            _ => self.clone(),
+        }
+    }
+
     /// Resolve the type to its concrete representation, expanding aliases and applying operators
     pub fn resolve(&self, registry: &TypeRegistry) -> ScriptType {
         match self {
             ScriptType::Reference(ref_ty) => {
-                if let Some(mut resolved) = registry.get_type(&ref_ty.name) {
-                    // Handle generics if any
-                    // This is a simplified version; real generics would involve substitution
-                    resolved
+                if let Some(def) = registry.get_type_definition(&ref_ty.name) {
+                    match def {
+                        TypeDefinition::Alias(alias) => {
+                            let mut resolved = alias.ty.clone();
+                            if !alias.type_params.is_empty() {
+                                let mut substitution = HashMap::new();
+                                for (tp, arg) in alias.type_params.iter().zip(ref_ty.args.iter()) {
+                                    substitution.insert(tp.name.clone(), arg.clone());
+                                }
+                                resolved = resolved.substitute(&substitution);
+                            }
+                            resolved.resolve(registry)
+                        }
+                        TypeDefinition::Interface(interface) => {
+                            let mut obj = interface.body.clone();
+                            // Handle interface inheritance
+                            for ext in &interface.extends {
+                                let ext_resolved = ScriptType::Reference(ext.clone()).resolve(registry);
+                                if let ScriptType::Object(ext_obj) = ext_resolved {
+                                    obj.properties.extend(ext_obj.properties);
+                                    obj.index_signatures.extend(ext_obj.index_signatures);
+                                }
+                            }
+                            if !interface.type_params.is_empty() {
+                                let mut substitution = HashMap::new();
+                                for (tp, arg) in interface.type_params.iter().zip(ref_ty.args.iter()) {
+                                    substitution.insert(tp.name.clone(), arg.clone());
+                                }
+                                ScriptType::Object(obj).substitute(&substitution).resolve(registry)
+                            } else {
+                                ScriptType::Object(obj)
+                            }
+                        }
+                        TypeDefinition::Enum(enum_def) => {
+                            let variants = enum_def
+                                .members
+                                .iter()
+                                .filter_map(|m| m.value.as_ref().map(|v| ScriptType::Literal(v.clone())))
+                                .collect::<Vec<_>>();
+                            if variants.is_empty() {
+                                ScriptType::Atom(AtomType::Number)
+                            } else {
+                                ScriptType::Union(variants)
+                            }
+                        }
+                    }
                 } else {
                     self.clone()
                 }
@@ -116,39 +279,63 @@ impl ScriptType {
                     }
                 }
                 TypeOperator::Record(key_type, value_type) => {
-                    // Record<K, V> is basically { [P in K]: V }
-                    // Simplified: return an object with an index signature
-                    let mut obj = ObjectType {
-                        properties: Vec::new(),
-                        index_signatures: Vec::new(),
-                    };
-                    let key_atom = match key_type.resolve(registry) {
-                        ScriptType::Atom(a) => a,
-                        _ => AtomType::String,
-                    };
-                    obj.index_signatures.push(IndexSignature {
-                        key_name: "key".to_string(),
-                        key_type: key_atom,
-                        value_type: *value_type.clone(),
-                    });
-                    ScriptType::Object(obj)
+                    let key_res = key_type.resolve(registry);
+                    let mut props = Vec::new();
+                    if let ScriptType::Union(variants) = key_res {
+                        for v in variants {
+                            if let ScriptType::Literal(LiteralType::String(name)) = v {
+                                props.push(Property {
+                                    name,
+                                    ty: *value_type.clone(),
+                                    optional: false,
+                                    readonly: false,
+                                });
+                            }
+                        }
+                        ScriptType::Object(ObjectType {
+                            properties: props,
+                            index_signatures: Vec::new(),
+                        })
+                    } else {
+                        let mut obj = ObjectType {
+                            properties: Vec::new(),
+                            index_signatures: Vec::new(),
+                        };
+                        let key_atom = match key_type.resolve(registry) {
+                            ScriptType::Atom(a) => a,
+                            _ => AtomType::String,
+                        };
+                        obj.index_signatures.push(IndexSignature {
+                            key_name: "key".to_string(),
+                            key_type: key_atom,
+                            value_type: *value_type.clone(),
+                        });
+                        ScriptType::Object(obj)
+                    }
                 }
                 TypeOperator::KeyOf(inner) => {
                     let resolved = inner.resolve(registry);
-                    if let ScriptType::Object(obj) = resolved {
-                        let variants = obj
-                            .properties
-                            .iter()
-                            .map(|p| ScriptType::Literal(LiteralType::String(p.name.clone())))
-                            .collect();
-                        ScriptType::Union(variants)
-                    } else {
-                        // In TS, keyof any is string | number | symbol
-                        ScriptType::Union(vec![
+                    match resolved {
+                        ScriptType::Object(obj) => {
+                            let variants = obj
+                                .properties
+                                .iter()
+                                .map(|p| ScriptType::Literal(LiteralType::String(p.name.clone())))
+                                .collect();
+                            ScriptType::Union(variants)
+                        }
+                        ScriptType::Array(_) | ScriptType::Tuple(_) => {
+                            ScriptType::Union(vec![
+                                ScriptType::Atom(AtomType::Number),
+                                ScriptType::Literal(LiteralType::String("length".to_string())),
+                                // Add other array methods if needed
+                            ])
+                        }
+                        _ => ScriptType::Union(vec![
                             ScriptType::Atom(AtomType::String),
                             ScriptType::Atom(AtomType::Number),
                             ScriptType::Atom(AtomType::Symbol),
-                        ])
+                        ]),
                     }
                 }
                 _ => self.clone(),
@@ -158,10 +345,17 @@ impl ScriptType {
                 if let ScriptType::Union(variants) = key_type {
                     let mut props = Vec::new();
                     for v in variants {
-                        if let ScriptType::Literal(LiteralType::String(name)) = v {
+                        if let ScriptType::Literal(LiteralType::String(name)) = v.clone() {
+                            // Substitute the key name into the value type if it's a generic reference
+                            // This is a simplified version of T[K]
+                            let value_substitution = {
+                                let mut sub = HashMap::new();
+                                sub.insert(mapped.key_name.clone(), v);
+                                mapped.value_type.substitute(&sub)
+                            };
                             props.push(Property {
                                 name,
-                                ty: *mapped.value_type.clone(),
+                                ty: value_substitution.resolve(registry),
                                 optional: mapped.optional.unwrap_or(false),
                                 readonly: mapped.readonly.unwrap_or(false),
                             });
@@ -451,6 +645,13 @@ pub struct MappedType {
     pub optional: Option<bool>,
 }
 
+#[derive(Debug, Clone)]
+pub enum TypeDefinition {
+    Interface(InterfaceDefinition),
+    Alias(AliasDefinition),
+    Enum(EnumDefinition),
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TypeRegistry {
     pub interfaces: HashMap<String, InterfaceDefinition>,
@@ -486,26 +687,37 @@ impl TypeRegistry {
         self.enums.insert(def.name.clone(), def);
     }
 
-    pub fn get_type(&self, name: &str) -> Option<ScriptType> {
+    pub fn get_type_definition(&self, name: &str) -> Option<TypeDefinition> {
         if let Some(alias) = self.aliases.get(name) {
-            return Some(alias.ty.clone());
+            return Some(TypeDefinition::Alias(alias.clone()));
         }
         if let Some(interface) = self.interfaces.get(name) {
-            return Some(ScriptType::Object(interface.body.clone()));
+            return Some(TypeDefinition::Interface(interface.clone()));
         }
         if let Some(enum_def) = self.enums.get(name) {
-            // Enum is basically a union of its literal values
-            let variants = enum_def
-                .members
-                .iter()
-                .filter_map(|m| m.value.as_ref().map(|v| ScriptType::Literal(v.clone())))
-                .collect::<Vec<_>>();
-            if variants.is_empty() {
-                return Some(ScriptType::Atom(AtomType::Number));
-            }
-            return Some(ScriptType::Union(variants));
+            return Some(TypeDefinition::Enum(enum_def.clone()));
         }
         None
+    }
+
+    pub fn get_type(&self, name: &str) -> Option<ScriptType> {
+        match self.get_type_definition(name) {
+            Some(TypeDefinition::Alias(alias)) => Some(alias.ty.clone()),
+            Some(TypeDefinition::Interface(interface)) => Some(ScriptType::Object(interface.body.clone())),
+            Some(TypeDefinition::Enum(enum_def)) => {
+                let variants = enum_def
+                    .members
+                    .iter()
+                    .filter_map(|m| m.value.as_ref().map(|v| ScriptType::Literal(v.clone())))
+                    .collect::<Vec<_>>();
+                if variants.is_empty() {
+                    Some(ScriptType::Atom(AtomType::Number))
+                } else {
+                    Some(ScriptType::Union(variants))
+                }
+            }
+            None => None,
+        }
     }
 }
 

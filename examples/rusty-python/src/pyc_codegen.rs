@@ -167,7 +167,7 @@ impl PycTranslator {
             }
             IKunTree::CrossLangCall {
                 language,
-                module_path,
+                module_path: _,
                 function_name,
                 arguments,
             } => {
