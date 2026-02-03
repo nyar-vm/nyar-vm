@@ -1,10 +1,7 @@
 use crate::bytecode::compiler::NyarBackend;
 use crate::vm::core::NyarVM;
 use nyar_types::{NyarError, NyarFrontend, QualifiedName};
-use oak_core::source::Source;
 use oak_vfs::{Vfs, WritableVfs};
-use std::fs;
-use std::path::Path;
 
 /// Nyar 驱动程序
 #[derive(Default)]
@@ -108,29 +105,39 @@ impl NyarDriver {
     }
 
     /// AOT 编译到 WASM
-    pub fn compile_to_wasm<F: NyarFrontend>(
+    pub fn compile_to_wasm<F, V>(
         &self,
         frontend: &F,
-        source_path: &Path,
-        output_path: &Path,
-    ) -> Result<(), NyarError> {
-        let vfs = self.default_vfs();
-        let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
-        let ast = frontend.parse(&source)?;
+        vfs: &V,
+        source_uri: &str,
+        output_uri: &str,
+    ) -> Result<(), NyarError>
+    where
+        F: NyarFrontend,
+        V: WritableVfs,
+    {
+        let source = vfs
+            .get_source(source_uri)
+            .ok_or_else(|| NyarError::Compile(format!("Source not found: {}", source_uri)))?;
+        let content = source.get_text_from(0);
+        let ast = frontend.parse(&content)?;
 
-        println!("AOT: Compiling to WASM at {:?}", output_path);
+        println!("AOT: Compiling to WASM at {}", output_uri);
 
-        let artifact = frontend.compile_to_gaia(&ast, &vfs, "wasm32-wasi")?;
+        let artifact = frontend.compile_to_gaia(&ast, vfs, "wasm32-wasi")?;
 
         match artifact {
             chomsky_extract::BackendArtifact::Binary(bytes) => {
-                fs::write(output_path, bytes).map_err(NyarError::from)?;
+                let content = String::from_utf8_lossy(&bytes).to_string();
+                vfs.write_file(output_uri, content.into());
             }
             chomsky_extract::BackendArtifact::Collection(files) => {
                 if let Some(bytes) = files.get("main.wasm") {
-                    fs::write(output_path, bytes).map_err(NyarError::from)?;
+                    let content = String::from_utf8_lossy(bytes).to_string();
+                    vfs.write_file(output_uri, content.into());
                 } else if let Some((_, bytes)) = files.iter().next() {
-                    fs::write(output_path, bytes).map_err(NyarError::from)?;
+                    let content = String::from_utf8_lossy(bytes).to_string();
+                    vfs.write_file(output_uri, content.into());
                 }
             }
             _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
@@ -140,21 +147,28 @@ impl NyarDriver {
     }
 
     /// 编译到 JVM .class 文件
-    pub fn compile_to_jvm<F: NyarFrontend>(
+    pub fn compile_to_jvm<F, V>(
         &self,
         frontend: &F,
-        source_path: &Path,
-        output_path: &Path,
-    ) -> Result<(), NyarError> {
+        vfs: &V,
+        source_uri: &str,
+        output_uri: &str,
+    ) -> Result<(), NyarError>
+    where
+        F: NyarFrontend,
+        V: WritableVfs,
+    {
         use chomsky::adapters::GaiaJvmAdapter;
         use chomsky_extract::Backend;
 
-        let vfs = self.default_vfs();
-        let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
-        let ast = frontend.parse(&source)?;
-        let tree = frontend.lower(&ast, &vfs)?;
+        let source = vfs
+            .get_source(source_uri)
+            .ok_or_else(|| NyarError::Compile(format!("Source not found: {}", source_uri)))?;
+        let content = source.get_text_from(0);
+        let ast = frontend.parse(&content)?;
+        let tree = frontend.lower(&ast, vfs)?;
 
-        println!("JVM: Compiling IKunTree to JVM at {:?}", output_path);
+        println!("JVM: Compiling IKunTree to JVM at {}", output_uri);
 
         let adapter = GaiaJvmAdapter;
         let artifact = adapter
@@ -163,7 +177,8 @@ impl NyarDriver {
 
         match artifact {
             chomsky_extract::BackendArtifact::Binary(bytes) => {
-                fs::write(output_path, bytes).map_err(NyarError::from)?;
+                let content = String::from_utf8_lossy(&bytes).to_string();
+                vfs.write_file(output_uri, content.into());
             }
             _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
         }
@@ -172,19 +187,25 @@ impl NyarDriver {
     }
 
     /// 编译到 CLR 程序集
-    pub fn compile_to_clr<F: NyarFrontend>(
+    pub fn compile_to_clr<F, V>(
         &self,
         frontend: &F,
-        source_path: &Path,
-        output_path: &Path,
-    ) -> Result<(), NyarError> {
-        // TODO: 完善 CLR 适配器并在这里调用
-        let vfs = self.default_vfs();
-        let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
-        let ast = frontend.parse(&source)?;
-        let _tree = frontend.lower(&ast, &vfs)?;
+        vfs: &V,
+        source_uri: &str,
+        _output_uri: &str,
+    ) -> Result<(), NyarError>
+    where
+        F: NyarFrontend,
+        V: Vfs,
+    {
+        let source = vfs
+            .get_source(source_uri)
+            .ok_or_else(|| NyarError::Compile(format!("Source not found: {}", source_uri)))?;
+        let content = source.get_text_from(0);
+        let ast = frontend.parse(&content)?;
+        let _tree = frontend.lower(&ast, vfs)?;
 
-        println!("CLR: Compiling IKunTree to CLR at {:?}", output_path);
+        println!("CLR: Compiling IKunTree to CLR at {}", _output_uri);
         Err(NyarError::Compile("CLR backend is not yet fully integrated".to_string()))
     }
 }

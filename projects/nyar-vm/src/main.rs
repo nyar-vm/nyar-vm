@@ -39,6 +39,8 @@ fn _run_driver<F: nyar_types::NyarFrontend>(
         return Ok(());
     }
     let input_path = PathBuf::from(&args[1]);
-    driver.run_source(frontend, &input_path)?;
+    let vfs = driver.default_vfs();
+    let uri = input_path.to_string_lossy().to_string();
+    driver.run_source(frontend, &vfs, &uri)?;
     Ok(())
 }
