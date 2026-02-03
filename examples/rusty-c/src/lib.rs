@@ -1,5 +1,5 @@
 #![feature(new_range_api)]
-//! Mini C 解释器
+//! Rusty C 解释器
 //!
 //! 基于 Oaks (前端), Chomsky (优化), Gaia (后端) 和 Nyar VM (运行时) 架构实现。
 
@@ -17,14 +17,14 @@ use oak_c::{ast, CBuilder, CLanguage, CRoot};
 use oak_core::source::SourceText;
 use std::ops::Range;
 
-/// Mini C 前端实现
+/// Rusty C 前端实现
 #[derive(Default)]
-pub struct MiniCFrontend {
+pub struct RustyCFrontend {
     language: CLanguage,
 }
 
-impl MiniCFrontend {
-    /// 创建一个新的 Mini C 前端
+impl RustyCFrontend {
+    /// 创建一个新的 Rusty C 前端
     pub fn new() -> Self {
         Self {
             language: CLanguage::default(),
@@ -32,7 +32,7 @@ impl MiniCFrontend {
     }
 }
 
-impl NyarFrontend for MiniCFrontend {
+impl NyarFrontend for RustyCFrontend {
     type Language = CLanguage;
 
     fn parse(&self, source: &str) -> Result<CRoot, NyarError> {

@@ -1,5 +1,5 @@
 use clap::Parser;
-use rusty_typescript::MiniTypescriptFrontend;
+use rusty_typescript::RustyTypescriptFrontend;
 use std::fs;
 use std::path::PathBuf;
 
@@ -8,7 +8,7 @@ use std::path::PathBuf;
     name = "tsc",
     version = "0.1.0",
     author = "Nyar Project",
-    about = "Mini TypeScript AOT Compiler to WASM"
+    about = "Rusty TypeScript AOT Compiler to WASM"
 )]
 struct Args {
     /// The input TypeScript file
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Compiling {:?} to WASM...", args.input);
     }
 
-    let frontend = MiniTypescriptFrontend::new();
+    let frontend = RustyTypescriptFrontend::new();
     
     // 调用 AOT 编译逻辑
     let artifacts = frontend.compile_to_wasm(&source)?;

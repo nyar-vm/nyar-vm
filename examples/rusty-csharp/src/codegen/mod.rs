@@ -114,7 +114,12 @@ impl NyarTranslator {
         match expr {
             Expression::Literal(Literal::Integer(v)) => Ok(builder.constant(*v, loc)),
             Expression::Literal(Literal::String(s)) => Ok(builder.string(s, loc)),
-            Expression::Identifier(s) => Ok(builder.symbol(s, loc)),
+            Expression::Identifier(s) => {
+                if s == "System.Console.WriteLine" {
+                    return Ok(builder.symbol("std::io::println", loc));
+                }
+                Ok(builder.symbol(s, loc))
+            }
             Expression::MethodCall(call) => {
                 let mut arg_ids = Vec::new();
                 for arg in &call.arguments {

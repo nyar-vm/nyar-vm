@@ -39,7 +39,7 @@ default = ["native"]
 native = ["nyar-vm/native"]
 
 [package.metadata.component]
-package = "nyar:mini-typescript"
+package = "nyar:rusty0-typescript"
 target = { path = "wit", world = "compiler" }
 
 [dev-dependencies]

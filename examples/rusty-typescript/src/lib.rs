@@ -1,6 +1,6 @@
-//! Mini TypeScript 语言前端
+//! Rusty TypeScript 语言前端
 //!
-//! 这个库提供了 Mini TypeScript 语言的解析和 Nyar 翻译功能。
+//! 这个库提供了 Rusty TypeScript 语言的解析和 Nyar 翻译功能。
 //! 遵循 Project Chomsky Whitebook 规范。
 
 #![feature(new_range_api)]
@@ -22,13 +22,13 @@ use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
 use std::ops::Range;
 
-/// Mini TypeScript 前端
-pub struct MiniTypescriptFrontend {
+/// Rusty TypeScript 前端
+pub struct RustyTypescriptFrontend {
     language: TypeScriptLanguage,
     source_id: u32,
 }
 
-impl Default for MiniTypescriptFrontend {
+impl Default for RustyTypescriptFrontend {
     fn default() -> Self {
         Self::new()
     }
@@ -46,7 +46,7 @@ struct Compiler;
 #[cfg(target_arch = "wasm32")]
 impl Guest for Compiler {
     fn compile(source: String) -> Result<Vec<u8>, String> {
-        let frontend = MiniTypescriptFrontend::new();
+        let frontend = RustyTypescriptFrontend::new();
         let artifacts = frontend.compile_to_wasm(&source)?;
         
         // Return main.wasm or the first artifact
@@ -63,7 +63,7 @@ impl Guest for Compiler {
 #[cfg(target_arch = "wasm32")]
 export!(Compiler);
 
-impl MiniTypescriptFrontend {
+impl RustyTypescriptFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
@@ -122,7 +122,7 @@ impl MiniTypescriptFrontend {
     }
 }
 
-impl NyarFrontend for MiniTypescriptFrontend {
+impl NyarFrontend for RustyTypescriptFrontend {
     type Language = TypeScriptLanguage;
 
     fn parse(&self, source: &str) -> Result<TypeScriptRoot, NyarError> {

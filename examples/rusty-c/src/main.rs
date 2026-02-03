@@ -1,6 +1,6 @@
-//! Mini C 解释器
+//! Rusty C 解释器
 
-use rusty_c::MiniCFrontend;
+use rusty_c::RustyCFrontend;
 use nyar_vm::NyarDriver;
 use std::env;
 use std::path::PathBuf;
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let frontend = MiniCFrontend::new();
+    let frontend = RustyCFrontend::new();
     let driver = NyarDriver::new();
 
     if compile_only {
@@ -62,12 +62,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         println!(
-            "正在编译 Mini C 文件: {:?} -> {:?}",
+            "正在编译 Rusty C 文件: {:?} -> {:?}",
             input_path, output_path
         );
         driver.compile_to_native(&frontend, &input_path, &output_path)?;
     } else {
-        println!("正在运行 Mini C 文件: {:?}", input_path);
+        println!("正在运行 Rusty C 文件: {:?}", input_path);
         driver.run_source(&frontend, &input_path)?;
     }
 

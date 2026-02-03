@@ -139,7 +139,7 @@ impl RustyCFrontend {
                                 }
                             }
                         }
-                        builder.module("mini-c", items)
+                        builder.module("rusty-c-program", items)
                     }
                     CElementType::FunctionDefinition => {
                         let mut name = "unknown".to_string();

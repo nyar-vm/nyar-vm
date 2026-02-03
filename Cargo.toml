@@ -52,6 +52,7 @@ oak-typescript = { path = "../oaks/examples/oak-typescript" }
 gaia-jit = { path = "../project-gaia/projects/gaia-jit" }
 gaia-types = { path = "../project-gaia/projects/gaia-types" }
 gaia-assembler = { path = "../project-gaia/projects/gaia-assembler" }
+python-assembler = { path = "../project-gaia/examples/pyc-assembler" }
 pe-assembler = { path = "../project-gaia/examples/pe-assembler" }
 x86_64-assembler = { path = "../project-gaia/examples/x86_64-assembler" }
 nyar-vm = { path = "projects/nyar-vm" }
