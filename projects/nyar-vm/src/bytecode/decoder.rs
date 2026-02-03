@@ -62,7 +62,7 @@ impl<'a> Decoder<'a> {
         Some(result)
     }
     fn parse_opcode(op: u8) -> Option<Opcode> {
-        if op <= 0x73 || op == 0xF0 || op == 0xFF || (0xC1..=0xC6).contains(&op) {
+        if (op <= 0x73 && op != 0x26) || op == 0x26 || op == 0xF0 || op == 0xFF || (0xC1..=0xC6).contains(&op) {
             return unsafe { std::mem::transmute(op) };
         }
         None

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 nyar-gc = { path = "../nyar-gc", features = ["tokio"] }
 nyar-types = { path = "../nyar-types" }
+oak-vfs = { workspace = true }
 nyar-aot = { path = "../nyar-aot", default-features = false }
 chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false, features = ["jvm", "wasi", "clr", "pe", "x86"] }
 chomsky-uir = { workspace = true }

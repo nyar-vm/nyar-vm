@@ -86,10 +86,10 @@ pub trait NyarFrontend: Default {
     fn parse(&self, source: &str) -> Result<<Self::Language as Language>::TypedRoot, NyarError>;
 
     /// 统一的接入接口，支持 EGraph 优化流
-    fn lower_unified(&self, ast: &<Self::Language as Language>::TypedRoot, ctx: &mut NyarContext) -> Id;
+    fn lower_unified<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, ctx: &mut NyarContext<V>) -> Id;
 
     /// 默认实现：利用 lower_unified 生成 IKunTree
-    fn lower(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &dyn Vfs<Source = oak_core::source::SourceEntry>) -> Result<IKunTree, NyarError> {
+    fn lower<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &V) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::new();
         let mut ctx = NyarContext::new(&mut egraph, vfs, 1);
         let root_id = self.lower_unified(ast, &mut ctx);
@@ -102,7 +102,7 @@ pub trait NyarFrontend: Default {
     }
 
     /// 利用 Gaia 编译到特定目标
-    fn compile_to_gaia(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &dyn Vfs<Source = oak_core::source::SourceEntry>, target: &str) -> Result<chomsky_extract::BackendArtifact, NyarError> {
+    fn compile_to_gaia<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &V, target: &str) -> Result<chomsky_extract::BackendArtifact, NyarError> {
         let tree = self.lower(ast, vfs)?;
         let emitter = chomsky_emit::GaiaEmitter::new(target).standalone();
         use chomsky_extract::Backend;
@@ -162,108 +162,15 @@ impl ScopeManager {
 }
 
 /// 统一的前端接入上下文
-pub struct NyarContext<'a, A: chomsky_uir::Analysis<IKun> = ()> {
+pub struct NyarContext<'a, V: Vfs, A: chomsky_uir::Analysis<IKun> = ()> {
     pub egraph: &'a mut EGraph<IKun, A>,
     pub scopes: ScopeManager,
     pub source_id: u32,
-    pub vfs: &'a dyn Vfs<Source = oak_core::source::SourceEntry>,
+    pub vfs: &'a V,
 }
 
-/// Nyar 标准内建函数定义
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum NyarBuiltin {
-    /// Print to standard output
-    Print,
-    /// Print to standard output with a newline
-    Println,
-    /// Exit the process with a status code
-    Exit,
-    /// Get the current system time
-    GetTime,
-    /// Sleep for a duration in milliseconds
-    Sleep,
-    /// Add two integers (native implementation)
-    NativeAdd,
-    /// Panic with a message
-    Panic,
-    /// Sine function
-    MathSin,
-    /// Square root function
-    MathSqrt,
-    /// Memory allocation
-    MemAlloc,
-}
-
-impl NyarBuiltin {
-    /// 获取内建函数的名称
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Print => "print",
-            Self::Println => "println",
-            Self::Exit => "exit",
-            Self::GetTime => "get_time",
-            Self::Sleep => "sleep",
-            Self::NativeAdd => "native_add",
-            Self::Panic => "panic",
-            Self::MathSin => "math_sin",
-            Self::MathSqrt => "math_sqrt",
-            Self::MemAlloc => "mem_alloc",
-        }
-    }
-
-    /// 从名称映射到内建函数
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "print" => Some(Self::Print),
-            "println" => Some(Self::Println),
-            "exit" => Some(Self::Exit),
-            "get_time" => Some(Self::GetTime),
-            "sleep" => Some(Self::Sleep),
-            "native_add" => Some(Self::NativeAdd),
-            "panic" => Some(Self::Panic),
-            "math_sin" => Some(Self::MathSin),
-            "math_sqrt" => Some(Self::MathSqrt),
-            "mem_alloc" => Some(Self::MemAlloc),
-            _ => None,
-        }
-    }
-
-    /// 获取内建函数的规范路径
-    pub fn path(&self) -> &'static str {
-        match self {
-            Self::Print => "std::io::print",
-            Self::Println => "std::io::println",
-            Self::Exit => "std::process::exit",
-            Self::GetTime => "std::time::now",
-            Self::Sleep => "std::thread::sleep",
-            Self::NativeAdd => "std::ops::add",
-            Self::Panic => "std::sys::panic",
-            Self::MathSin => "std::math::sin",
-            Self::MathSqrt => "std::math::sqrt",
-            Self::MemAlloc => "std::mem::alloc",
-        }
-    }
-
-    /// 从路径映射到内建函数
-    pub fn from_path(path: &str) -> Option<Self> {
-        match path {
-            "std::io::print" => Some(Self::Print),
-            "std::io::println" => Some(Self::Println),
-            "std::process::exit" => Some(Self::Exit),
-            "std::time::now" => Some(Self::GetTime),
-            "std::thread::sleep" => Some(Self::Sleep),
-            "std::ops::add" => Some(Self::NativeAdd),
-            "std::sys::panic" => Some(Self::Panic),
-            "std::math::sin" => Some(Self::MathSin),
-            "std::math::sqrt" => Some(Self::MathSqrt),
-            "std::mem::alloc" => Some(Self::MemAlloc),
-            _ => None,
-        }
-    }
-}
-
-impl<'a, A: chomsky_uir::Analysis<IKun>> NyarContext<'a, A> {
-    pub fn new(egraph: &'a mut EGraph<IKun, A>, vfs: &'a dyn Vfs<Source = oak_core::source::SourceEntry>, source_id: u32) -> Self {
+impl<'a, V: Vfs, A: chomsky_uir::Analysis<IKun>> NyarContext<'a, V, A> {
+    pub fn new(egraph: &'a mut EGraph<IKun, A>, vfs: &'a V, source_id: u32) -> Self {
         Self {
             egraph,
             scopes: ScopeManager::new(),

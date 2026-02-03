@@ -1,6 +1,8 @@
 use crate::bytecode::compiler::NyarBackend;
 use crate::vm::core::NyarVM;
 use nyar_types::{NyarError, NyarFrontend, QualifiedName};
+use oak_core::source::Source;
+use oak_vfs::{Vfs, WritableVfs};
 use std::fs;
 use std::path::Path;
 
@@ -14,11 +16,23 @@ impl NyarDriver {
         Self
     }
 
+    /// 获取默认的 VFS
+    pub fn default_vfs(&self) -> oak_vfs::DiskVfs {
+        oak_vfs::DiskVfs::new()
+    }
+
     /// 运行源代码文件
-    pub fn run_source<F: NyarFrontend>(&self, frontend: &F, path: &Path) -> Result<(), NyarError> {
-        let source = fs::read_to_string(path).map_err(NyarError::from)?;
-        let ast = frontend.parse(&source)?;
-        let tree = frontend.lower(&ast)?;
+    pub fn run_source<F, V>(&self, frontend: &F, vfs: &V, uri: &str) -> Result<(), NyarError>
+    where
+        F: NyarFrontend,
+        V: Vfs,
+    {
+        let source = vfs
+            .get_source(uri)
+            .ok_or_else(|| NyarError::Compile(format!("Source not found: {}", uri)))?;
+        let content = source.get_text_from(0);
+        let ast = frontend.parse(&content)?;
+        let tree = frontend.lower(&ast, vfs)?;
         let mut backend = NyarBackend::new();
         backend.lower_tree(&tree)?;
         let module = backend.finish();
@@ -35,9 +49,13 @@ impl NyarDriver {
     }
 
     /// 运行源代码字符串
-    pub fn run_code<F: NyarFrontend>(&self, frontend: &F, source: &str) -> Result<(), NyarError> {
+    pub fn run_code<F, V>(&self, frontend: &F, vfs: &V, source: &str) -> Result<(), NyarError>
+    where
+        F: NyarFrontend,
+        V: Vfs,
+    {
         let ast = frontend.parse(source)?;
-        let tree = frontend.lower(&ast)?;
+        let tree = frontend.lower(&ast, vfs)?;
         let mut backend = NyarBackend::new();
         backend.lower_tree(&tree)?;
         let module = backend.finish();
@@ -49,25 +67,29 @@ impl NyarDriver {
     }
 
     /// AOT 编译到原生可执行文件
-    pub fn compile_to_native<F: NyarFrontend>(
+    pub fn compile_to_native<F, V>(
         &self,
         frontend: &F,
-        source_path: &Path,
-        output_path: &Path,
-    ) -> Result<(), NyarError> {
-        let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
-        let ast = frontend.parse(&source)?;
-        let tree = frontend.lower(&ast)?;
+        vfs: &V,
+        source_uri: &str,
+        output_uri: &str,
+    ) -> Result<(), NyarError>
+    where
+        F: NyarFrontend,
+        V: WritableVfs,
+    {
+        let source = vfs
+            .get_source(source_uri)
+            .ok_or_else(|| NyarError::Compile(format!("Source not found: {}", source_uri)))?;
+        let content = source.get_text_from(0);
+        let ast = frontend.parse(&content)?;
+        let tree = frontend.lower(&ast, vfs)?;
 
         eprintln!("DEBUG: IKunTree: {:#?}", tree);
 
         let _aot: crate::aot::NyarAot<chomsky_uir::ConstraintAnalysis> =
             crate::aot::NyarAot::new();
         let backend = crate::aot::NativeBackend::new();
-
-        // 这里的 tree 是 IKunTree，需要转换成 IKun 才能传给 aot.compile
-        // 或者我们直接调用 backend.generate 如果不需要优化的话
-        // 为了简单起见，我们先直接调用 backend.generate
 
         use chomsky_extract::Backend;
         let artifact = backend
@@ -76,8 +98,9 @@ impl NyarDriver {
 
         match artifact {
             chomsky_extract::BackendArtifact::Binary(bytes) => {
-                fs::write(output_path, bytes).map_err(NyarError::from)?;
-                println!("AOT: Compiled to native at {:?}", output_path);
+                let content = String::from_utf8_lossy(&bytes).to_string();
+                vfs.write_file(output_uri, content.into());
+                println!("AOT: Compiled to native at {}", output_uri);
                 Ok(())
             }
             _ => Err(NyarError::Compile("Unexpected artifact type".to_string())),
@@ -91,12 +114,13 @@ impl NyarDriver {
         source_path: &Path,
         output_path: &Path,
     ) -> Result<(), NyarError> {
+        let vfs = self.default_vfs();
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
 
         println!("AOT: Compiling to WASM at {:?}", output_path);
 
-        let artifact = frontend.compile_to_gaia(&ast, "wasm32-wasi")?;
+        let artifact = frontend.compile_to_gaia(&ast, &vfs, "wasm32-wasi")?;
 
         match artifact {
             chomsky_extract::BackendArtifact::Binary(bytes) => {
@@ -125,9 +149,10 @@ impl NyarDriver {
         use chomsky::adapters::GaiaJvmAdapter;
         use chomsky_extract::Backend;
 
+        let vfs = self.default_vfs();
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let tree = frontend.lower(&ast)?;
+        let tree = frontend.lower(&ast, &vfs)?;
 
         println!("JVM: Compiling IKunTree to JVM at {:?}", output_path);
 
@@ -154,9 +179,10 @@ impl NyarDriver {
         output_path: &Path,
     ) -> Result<(), NyarError> {
         // TODO: 完善 CLR 适配器并在这里调用
+        let vfs = self.default_vfs();
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let _tree = frontend.lower(&ast)?;
+        let _tree = frontend.lower(&ast, &vfs)?;
 
         println!("CLR: Compiling IKunTree to CLR at {:?}", output_path);
         Err(NyarError::Compile("CLR backend is not yet fully integrated".to_string()))

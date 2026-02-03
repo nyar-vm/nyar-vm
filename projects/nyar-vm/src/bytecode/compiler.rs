@@ -93,19 +93,21 @@ impl NyarBackend {
                     code.extend(self.lower_tree(item)?);
                 }
             }
-            IKunTree::CrossLangCall(lang, name, args) => {
+            IKunTree::CrossLangCall(_lang, name, args) => {
                 for arg in args {
                     code.extend(self.lower_tree(arg)?);
                 }
-                if lang == "nyar" {
-                    if let Some(builtin) = crate::runtime::NyarBuiltin::from_name(name) {
-                        builtin.emit_bytecode(&mut code, args.len() as u8, &mut |c| {
-                            self.add_constant(c)
-                        });
-                        return Ok(code);
-                    }
-                }
                 let name_idx = self.add_constant(Constant::String(name.clone()));
+                code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
+            }
+            IKunTree::Intrinsic(id, args) => {
+                for arg in args {
+                    code.extend(self.lower_tree(arg)?);
+                }
+                // Use FFICall with a constant that represents the intrinsic ID
+                // We use a special naming convention or just a number in the constant pool
+                let name = format!("$intrinsic:{}", id);
+                let name_idx = self.add_constant(Constant::String(name));
                 code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
             }
             IKunTree::Extension(name, args) => {

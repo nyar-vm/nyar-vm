@@ -253,19 +253,19 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 if let ast::Expression::Identifier { name, .. } = &**func {
                     match name.as_str() {
                         "fmt.Println" | "fmt.Printf" | "println" | "print" => {
-                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::Println as u32, arguments, loc);
+                            return self.ctx.builder().intrinsic(2, arguments, loc);
                         }
                         "os.Exit" => {
-                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::Exit as u32, arguments, loc);
+                            return self.ctx.builder().intrinsic(3, arguments, loc);
                         }
                         "panic" => {
-                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::Panic as u32, arguments, loc);
+                            return self.ctx.builder().intrinsic(7, arguments, loc);
                         }
                         "sin" | "Math.sin" | "math.sin" => {
-                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::MathSin as u32, arguments, loc);
+                            return self.ctx.builder().intrinsic(8, arguments, loc);
                         }
                         "sqrt" | "Math.sqrt" | "math.sqrt" => {
-                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::MathSqrt as u32, arguments, loc);
+                            return self.ctx.builder().intrinsic(9, arguments, loc);
                         }
                         _ => {}
                     }

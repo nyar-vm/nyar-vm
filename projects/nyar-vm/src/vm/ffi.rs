@@ -32,6 +32,7 @@ pub trait FFIFunction: Send + Sync {
 
 pub struct FFIRegistry {
     pub functions: HashMap<String, Box<dyn FFIFunction>>,
+    pub intrinsics: HashMap<u32, Box<dyn FFIFunction>>,
     pub loaders: HashMap<String, Box<dyn ModuleLoader>>,
 }
 
@@ -49,6 +50,7 @@ impl FFIRegistry {
     pub fn new() -> Self {
         Self {
             functions: HashMap::new(),
+            intrinsics: HashMap::new(),
             loaders: HashMap::new(),
         }
     }
@@ -73,8 +75,16 @@ impl FFIRegistry {
         self.functions.insert(name, func);
     }
 
+    pub fn register_intrinsic(&mut self, id: u32, func: Box<dyn FFIFunction>) {
+        self.intrinsics.insert(id, func);
+    }
+
     pub fn get(&self, name: &str) -> Option<&dyn FFIFunction> {
         self.functions.get(name).map(|f| f.as_ref())
+    }
+
+    pub fn get_intrinsic(&self, id: u32) -> Option<&dyn FFIFunction> {
+        self.intrinsics.get(&id).map(|f| f.as_ref())
     }
 }
 

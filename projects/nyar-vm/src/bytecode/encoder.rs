@@ -99,9 +99,9 @@ impl Instruction {
                 buf.extend_from_slice(&idx.to_le_bytes());
                 buf.push(*args);
             }
-            Instruction::GetField(idx) => {
+            Instruction::GetField(v) => {
                 buf.push(Opcode::GetField as u8);
-                buf.extend_from_slice(&idx.to_le_bytes());
+                buf.extend_from_slice(&v.to_le_bytes());
             }
             Instruction::SetField(idx) => {
                 buf.push(Opcode::SetField as u8);

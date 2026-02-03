@@ -229,7 +229,7 @@ impl NativeBackend {
                     target: Operand::label("epilogue".to_string()),
                 });
             }
-            IKunTree::Apply(func, args) => {
+            IKunTree::Apply(func, _) => {
                 self.emit_tree(func, builder, data, context)?;
                 builder.add_instruction(Instruction::Call {
                     target: Operand::reg(Register::RAX),
@@ -322,31 +322,32 @@ impl NativeBackend {
                     self.emit_tree(item, builder, data, context)?;
                 }
             }
-            IKunTree::CrossLangCall(lang, func, args) => {
-                if lang == "nyar" {
-                    if let Some(builtin) = crate::runtime::NyarBuiltin::from_name(func) {
-                        match builtin {
-                            crate::runtime::NyarBuiltin::Println => {
-                                if let Some(IKunTree::StringConstant(s)) = args.first() {
-                                    self.emit_write(s, true, builder, data)?;
-                                }
-                            }
-                            crate::runtime::NyarBuiltin::Print => {
-                                if let Some(IKunTree::StringConstant(s)) = args.first() {
-                                    self.emit_write(s, false, builder, data)?;
-                                }
-                            }
-                            crate::runtime::NyarBuiltin::Exit => {
-                                if let Some(IKunTree::Constant(code)) = args.first() {
-                                    self.emit_exit(*code as i32, builder)?;
-                                } else {
-                                    self.emit_exit(0, builder)?;
-                                }
-                            }
-                            _ => {}
+            IKunTree::Intrinsic(id, args) => {
+                match id {
+                    2 => { // Println
+                        if let Some(IKunTree::StringConstant(s)) = args.first() {
+                            self.emit_write(s, true, builder, data)?;
                         }
                     }
-                } else if lang == "native" || lang == "csharp" {
+                    1 => { // Print
+                        if let Some(IKunTree::StringConstant(s)) = args.first() {
+                            self.emit_write(s, false, builder, data)?;
+                        }
+                    }
+                    3 => { // Exit
+                        if let Some(IKunTree::Constant(code)) = args.first() {
+                            self.emit_exit(*code as i32, builder)?;
+                        } else {
+                            self.emit_exit(0, builder)?;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            IKunTree::CrossLangCall(lang, func, args) => {
+                if lang == "native" || lang == "csharp" {
+                    // Avoid unused variable warning if we don't use func
+                    let _ = func;
                     self.emit_printf(args, builder, data, context)?;
                 }
             }

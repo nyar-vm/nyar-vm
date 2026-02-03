@@ -412,6 +412,21 @@ impl NyarVM {
 
             let result = func.call(args)?;
             self.push(result)?;
+        } else if name.starts_with("$intrinsic:") {
+            // Check if it's an encoded intrinsic call
+            if let Ok(id) = name.trim_start_matches("$intrinsic:").parse::<u32>() {
+                if let Some(func) = self.ffi.get_intrinsic(id) {
+                    let result = func.call(args)?;
+                    self.push(result)?;
+                } else {
+                    return Err(self.error(nyar_types::VmErrorKind::RuntimeError(format!(
+                        "Intrinsic not found: ID={}",
+                        id
+                    ))));
+                }
+            } else {
+                return Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name_qn)));
+            }
         } else {
             // If not found in FFI, maybe it's a builtin?
             if let Some(_val) = self.builtins.get(&name_qn).cloned() {
