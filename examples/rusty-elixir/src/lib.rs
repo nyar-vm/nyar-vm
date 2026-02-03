@@ -1,24 +1,24 @@
-//! Mini Elixir 语言前端
+//! Rusty Elixir 语言前端
 //!
-//! 这个库提供了 Mini Elixir 语言的词法分析、语法分析和 Gaia 翻译功能。
+//! 这个库提供了 Rusty Elixir 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod codegen;
 
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_elixir::{ElixirLanguage, ElixirRoot};
 
-/// Mini Elixir 前端
-pub struct MiniElixirFrontend {
+/// Rusty Elixir 前端
+pub struct RustyElixirFrontend {
     language: ElixirLanguage,
 }
 
-impl Default for MiniElixirFrontend {
+impl Default for RustyElixirFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MiniElixirFrontend {
+impl RustyElixirFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
@@ -27,7 +27,7 @@ impl MiniElixirFrontend {
     }
 }
 
-impl NyarFrontend for MiniElixirFrontend {
+impl NyarFrontend for RustyElixirFrontend {
     type Language = ElixirLanguage;
 
     fn parse(&self, _source: &str) -> Result<ElixirRoot, NyarError> {
@@ -37,6 +37,6 @@ impl NyarFrontend for MiniElixirFrontend {
 
     fn lower(&self, _ast: &ElixirRoot) -> Result<IKunTree, NyarError> {
         // TODO: 实现真正的从 ElixirRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("mini-elixir-program".to_string(), Vec::new()))
+        Ok(IKunTree::Module("rusty-elixir-program".to_string(), Vec::new()))
     }
 }

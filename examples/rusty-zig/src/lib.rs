@@ -1,24 +1,24 @@
-//! Mini Zig 语言前端
+//! Rusty Zig 语言前端
 //!
-//! 这个库提供了 Mini Zig 语言的词法分析、语法分析和 Gaia 翻译功能。
+//! 这个库提供了 Rusty Zig 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod codegen;
 
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_zig::ZigLanguage;
 
-/// Mini Zig 前端
-pub struct MiniZigFrontend {
+/// Rusty Zig 前端
+pub struct RustyZigFrontend {
     language: ZigLanguage,
 }
 
-impl Default for MiniZigFrontend {
+impl Default for RustyZigFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MiniZigFrontend {
+impl RustyZigFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
@@ -27,7 +27,7 @@ impl MiniZigFrontend {
     }
 }
 
-impl NyarFrontend for MiniZigFrontend {
+impl NyarFrontend for RustyZigFrontend {
     type Language = ZigLanguage;
 
     fn parse(&self, _source: &str) -> Result<(), NyarError> {
@@ -37,6 +37,6 @@ impl NyarFrontend for MiniZigFrontend {
 
     fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
         // TODO: 实现真正的从 AST 到 IKunTree 的转换
-        Ok(IKunTree::Module("mini-zig-program".to_string(), Vec::new()))
+        Ok(IKunTree::Module("rusty-zig-program".to_string(), Vec::new()))
     }
 }

@@ -1,5 +1,7 @@
 use clap::Parser;
-use mini_c::MiniCFrontend;
+use rusty_c::frontend::RustyCFrontend;
+use rusty_c::optimizer::RustyCOptimizer;
+use rusty_c::runtime::RustyCRuntime;
 use nyar_types::NyarError;
 use nyar_vm::NyarDriver;
 use oak_repl::{HandleResult, OakRepl, ReplError, ReplHandler};
@@ -10,7 +12,7 @@ use std::fs;
     name = "cling",
     version = "0.1.0",
     author = "Gaia Project",
-    about = "Mini C Interpreter (Simulating Cling)"
+    about = "Rusty C Interpreter (Simulating Cling)"
 )]
 struct Args {
     /// The input C file. If not provided, enters REPL mode.
@@ -46,14 +48,14 @@ impl From<&str> for ClingError {
 }
 
 struct CReplHandler {
-    frontend: MiniCFrontend,
+    frontend: RustyCFrontend,
     driver: NyarDriver,
 }
 
 impl CReplHandler {
     fn new() -> Self {
         Self {
-            frontend: MiniCFrontend::new(),
+            frontend: RustyCFrontend::new(),
             driver: NyarDriver::new(),
         }
     }

@@ -82,7 +82,7 @@ impl MiniTypescriptFrontend {
         let tree = self.lower_to_tree(source)?;
 
         let mut aot = NyarAot::<ConstraintAnalysis>::new();
-        let emitter = GaiaEmitter::new("wasm32-wasi");
+        let emitter = GaiaEmitter::new("wasm32-wasi").standalone();
 
         // 使用 AOT 编译器进行优化和生成
         // 由于 GaiaEmitter 实现了 Backend 接口，可以直接调用 generate

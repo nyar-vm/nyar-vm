@@ -8,12 +8,12 @@ use oak_core::{Lexer, LexerCache};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-pub struct MiniCFrontend {
+pub struct RustyCFrontend {
     scopes: RefCell<Vec<HashMap<String, String>>>,
     next_var_id: RefCell<u32>,
 }
 
-impl MiniCFrontend {
+impl RustyCFrontend {
     pub fn new() -> Self {
         Self {
             scopes: RefCell::new(vec![HashMap::new()]),
