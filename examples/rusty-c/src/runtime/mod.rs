@@ -654,6 +654,7 @@ impl RustyCRuntime {
                     )?;
                 }
                 let name = if language == "nyar" {
+                    // Try to map to intrinsic ID
                     let id = match (module_path.as_str(), function_name.as_str()) {
                         ("io", "print") | ("", "print") => 1,
                         ("io", "println") | ("", "println") => 2,
@@ -668,6 +669,13 @@ impl RustyCRuntime {
                         ("math", "abs") | ("", "abs") => 11,
                         ("math", "cos") | ("", "cos") => 12,
                         ("math", "tan") | ("", "tan") => 13,
+                        ("mem", "free") => 14,
+                        ("mem", "realloc") => 15,
+                        ("mem", "set") => 16,
+                        ("mem", "copy") => 17,
+                        ("str", "len") => 18,
+                        ("str", "cmp") => 19,
+                        ("math", "rand") => 20,
                         _ => 0,
                     };
                     if id > 0 {
@@ -678,16 +686,9 @@ impl RustyCRuntime {
                 } else {
                     format!("{}:{}:{}", language, module_path, function_name)
                 };
-                
-                let constant = Constant::String(name);
-                let const_idx = if let Some(idx) = module.constants.iter().position(|c| c == &constant) {
-                    idx as u16
-                } else {
-                    let idx = module.constants.len() as u16;
-                    module.constants.push(constant);
-                    idx
-                };
-                insts.push(Instruction::FFICall(const_idx, arguments.len() as u8));
+                let name_idx = module.constants.len() as u16;
+                module.constants.push(Constant::String(name));
+                insts.push(Instruction::FFICall(name_idx, arguments.len() as u8));
             }
             _ => {}
         }

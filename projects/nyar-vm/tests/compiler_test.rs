@@ -74,15 +74,15 @@ fn test_bitwise_compilation() {
     let mut backend = NyarBackend::new();
     
     // Test (10 & 7)
-    let bitwise_and = IKunTree::CrossLangCall(
-        "nyar".to_string(),
-        "ops".to_string(),
-        "bit_and".to_string(),
-        vec![
+    let bitwise_and = IKunTree::CrossLangCall {
+        language: "nyar".to_string(),
+        module_path: "ops".to_string(),
+        function_name: "bit_and".to_string(),
+        arguments: vec![
             IKunTree::Constant(10),
             IKunTree::Constant(7),
         ],
-    );
+    };
     
     let mut code = backend.lower_tree(&bitwise_and).unwrap();
     if code.last() != Some(&(Opcode::Return as u8)) {

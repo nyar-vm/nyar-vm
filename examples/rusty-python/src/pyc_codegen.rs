@@ -167,9 +167,9 @@ impl PycTranslator {
             }
             IKunTree::CrossLangCall {
                 language,
+                module_path,
                 function_name,
                 arguments,
-                ..
             } => {
                 if language == "nyar" && function_name == "std::io::println" {
                     // Map back to Python's print

@@ -122,6 +122,12 @@ impl NyarBackend {
                         ("math", "abs") | ("", "abs") => 11,
                         ("math", "cos") | ("", "cos") => 12,
                         ("math", "tan") | ("", "tan") => 13,
+                        ("ops", "bit_and") | ("", "bit_and") => 14,
+                        ("ops", "bit_or") | ("", "bit_or") => 15,
+                        ("ops", "bit_xor") | ("", "bit_xor") => 16,
+                        ("ops", "bit_not") | ("", "bit_not") => 17,
+                        ("ops", "bit_shl") | ("", "bit_shl") => 18,
+                        ("ops", "bit_shr") | ("", "bit_shr") => 19,
                         _ => 0,
                     };
                     if id > 0 {

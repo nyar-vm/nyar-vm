@@ -103,6 +103,11 @@ impl<'a, 'b, V: oak_vfs::Vfs> UirConverter<'a, 'b, V> {
                 let rhs = self.convert_expression(right);
                 self.ctx.builder().extension(op, vec![lhs, rhs], loc)
             }
+            JuliaExpression::Call { callee, arguments } => {
+                let callee_id = self.convert_expression(callee);
+                let args = arguments.iter().map(|arg| self.convert_expression(arg)).collect();
+                self.ctx.builder().call(callee_id, args, loc)
+            }
         }
     }
 }

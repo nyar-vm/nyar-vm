@@ -5,6 +5,7 @@ use std::fs;
 pub struct Preprocessor {
     macros: HashMap<String, MacroDef>,
     include_paths: Vec<PathBuf>,
+    system_include_paths: Vec<PathBuf>,
     included_files: Vec<PathBuf>,
     current_file: PathBuf,
     current_line: usize,
@@ -27,12 +28,25 @@ impl Preprocessor {
         // Predefined macros
         macros.insert("__RUSTY_C__".to_string(), MacroDef::Simple("1".to_string()));
         macros.insert("__STDC__".to_string(), MacroDef::Simple("1".to_string()));
-        macros.insert("__STDC_VERSION__".to_string(), MacroDef::Simple("201710L".to_string())); // C17 by default
+        macros.insert("__STDC_VERSION__".to_string(), MacroDef::Simple("202311L".to_string()));
         macros.insert("__STDC_HOSTED__".to_string(), MacroDef::Simple("1".to_string()));
+
+        // Architecture / OS macros
+        #[cfg(target_arch = "x86_64")]
+        macros.insert("__x86_64__".to_string(), MacroDef::Simple("1".to_string()));
+        #[cfg(target_arch = "aarch64")]
+        macros.insert("__aarch64__".to_string(), MacroDef::Simple("1".to_string()));
+        #[cfg(windows)]
+        macros.insert("_WIN32".to_string(), MacroDef::Simple("1".to_string()));
+        #[cfg(target_os = "linux")]
+        macros.insert("__linux__".to_string(), MacroDef::Simple("1".to_string()));
+        #[cfg(target_os = "macos")]
+        macros.insert("__APPLE__".to_string(), MacroDef::Simple("1".to_string()));
         
         Self {
             macros,
             include_paths: Vec::new(),
+            system_include_paths: Vec::new(),
             included_files: Vec::new(),
             current_file: PathBuf::from("<stdin>"),
             current_line: 0,
@@ -42,6 +56,10 @@ impl Preprocessor {
 
     pub fn add_include_path<P: AsRef<Path>>(&mut self, path: P) {
         self.include_paths.push(path.as_ref().to_path_buf());
+    }
+
+    pub fn add_system_include_path<P: AsRef<Path>>(&mut self, path: P) {
+        self.system_include_paths.push(path.as_ref().to_path_buf());
     }
 
     pub fn define<S: Into<String>, V: Into<String>>(&mut self, name: S, value: V) {
@@ -204,25 +222,132 @@ impl Preprocessor {
                         return Err(format!("Line {}: Unsupported include format: {}", self.current_line, include_spec));
                     }
                 } else if directive_line.starts_with("embed") {
-                    let embed_spec = directive_line[5..].trim();
-                    let file_name = if embed_spec.starts_with('"') && embed_spec.ends_with('"') {
-                        &embed_spec[1..embed_spec.len() - 1]
-                    } else if embed_spec.starts_with('<') && embed_spec.ends_with('>') {
-                        &embed_spec[1..embed_spec.len() - 1]
+                    let rest = directive_line[5..].trim();
+                    let parts: Vec<&str> = rest.split_whitespace().collect();
+                    if parts.is_empty() {
+                        return Err(format!("Line {}: #embed missing file name", self.current_line));
+                    }
+                    let spec = parts[0];
+                    let (file_name, search_current) = if spec.starts_with('"') && spec.ends_with('"') {
+                        (&spec[1..spec.len()-1], true)
+                    } else if spec.starts_with('<') && spec.ends_with('>') {
+                        (&spec[1..spec.len()-1], false)
                     } else {
-                        return Err(format!("Line {}: Unsupported embed format: {}", self.current_line, embed_spec));
+                        return Err(format!("Line {}: Invalid #embed file specification", self.current_line));
                     };
-                    
-                    let full_path = current_dir.join(file_name);
-                    let data = fs::read(&full_path)
-                        .map_err(|e| format!("Failed to read embed file {:?}: {}", full_path, e))?;
-                    
-                    let formatted = data.iter()
-                        .map(|b| b.to_string())
-                        .collect::<Vec<String>>()
-                        .join(", ");
-                    output.push_str(&formatted);
-                    output.push('\n');
+
+                    let mut prefix = String::new();
+                    let mut suffix = String::new();
+                    let mut if_empty = String::new();
+                    let mut limit: Option<usize> = None;
+
+                    // Very basic parsing of embed parameters
+                    let mut i = 1;
+                    while i < parts.len() {
+                        match parts[i] {
+                            "prefix" => {
+                                if i + 1 < parts.len() && parts[i+1].starts_with('(') {
+                                    let mut j = i + 1;
+                                    let mut content = parts[j].to_string();
+                                    while j < parts.len() && !content.ends_with(')') {
+                                        j += 1;
+                                        if j < parts.len() {
+                                            content.push(' ');
+                                            content.push_str(parts[j]);
+                                        }
+                                    }
+                                    prefix = content[1..content.len()-1].to_string();
+                                    i = j + 1;
+                                } else { i += 1; }
+                            }
+                            "suffix" => {
+                                if i + 1 < parts.len() && parts[i+1].starts_with('(') {
+                                    let mut j = i + 1;
+                                    let mut content = parts[j].to_string();
+                                    while j < parts.len() && !content.ends_with(')') {
+                                        j += 1;
+                                        if j < parts.len() {
+                                            content.push(' ');
+                                            content.push_str(parts[j]);
+                                        }
+                                    }
+                                    suffix = content[1..content.len()-1].to_string();
+                                    i = j + 1;
+                                } else { i += 1; }
+                            }
+                            "if_empty" => {
+                                if i + 1 < parts.len() && parts[i+1].starts_with('(') {
+                                    let mut j = i + 1;
+                                    let mut content = parts[j].to_string();
+                                    while j < parts.len() && !content.ends_with(')') {
+                                        j += 1;
+                                        if j < parts.len() {
+                                            content.push(' ');
+                                            content.push_str(parts[j]);
+                                        }
+                                    }
+                                    if_empty = content[1..content.len()-1].to_string();
+                                    i = j + 1;
+                                } else { i += 1; }
+                            }
+                            "limit" => {
+                                if i + 1 < parts.len() && parts[i+1].starts_with('(') {
+                                    let mut j = i + 1;
+                                    let mut content = parts[j].to_string();
+                                    while j < parts.len() && !content.ends_with(')') {
+                                        j += 1;
+                                        if j < parts.len() {
+                                            content.push(' ');
+                                            content.push_str(parts[j]);
+                                        }
+                                    }
+                                    let limit_str = content[1..content.len()-1].to_string();
+                                    limit = limit_str.parse().ok();
+                                    i = j + 1;
+                                } else { i += 1; }
+                            }
+                            _ => { i += 1; }
+                        }
+                    }
+
+                    let mut paths_to_check = Vec::new();
+                    if search_current {
+                        paths_to_check.push(current_dir.to_path_buf());
+                        paths_to_check.extend(self.include_paths.clone());
+                    }
+                    paths_to_check.extend(self.system_include_paths.clone());
+
+                    let mut found = false;
+                    for path in paths_to_check {
+                        let full_path = path.join(file_name);
+                        if full_path.exists() {
+                            let mut bytes = fs::read(&full_path)
+                                .map_err(|e| format!("Failed to read #embed file {:?}: {}", full_path, e))?;
+                            
+                            if let Some(l) = limit {
+                                bytes.truncate(l);
+                            }
+
+                            if bytes.is_empty() {
+                                output.push_str(&if_empty);
+                            } else {
+                                output.push_str(&prefix);
+                                for (idx, b) in bytes.iter().enumerate() {
+                                    if idx > 0 {
+                                        output.push_str(", ");
+                                    }
+                                    output.push_str(&b.to_string());
+                                }
+                                output.push_str(&suffix);
+                            }
+                            output.push('\n');
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        return Err(format!("Line {}: Could not find #embed file: {}", self.current_line, file_name));
+                    }
                 } else if directive_line.starts_with("error") {
                     let msg = directive_line[5..].trim();
                     return Err(format!("Line {}: #error: {}", self.current_line, msg));
@@ -632,9 +757,10 @@ impl Preprocessor {
     fn include_exists(&self, file_name: &str, search_current: bool) -> bool {
         let mut paths_to_check = Vec::new();
         if search_current {
-            paths_to_check.push(PathBuf::from(".")); // Simplified
+            paths_to_check.push(self.current_file.parent().unwrap_or(Path::new(".")).to_path_buf());
+            paths_to_check.extend(self.include_paths.clone());
         }
-        paths_to_check.extend(self.include_paths.clone());
+        paths_to_check.extend(self.system_include_paths.clone());
 
         for path in paths_to_check {
             if path.join(file_name).exists() {
@@ -648,8 +774,9 @@ impl Preprocessor {
         let mut paths_to_check = Vec::new();
         if search_current {
             paths_to_check.push(current_dir.to_path_buf());
+            paths_to_check.extend(self.include_paths.clone());
         }
-        paths_to_check.extend(self.include_paths.clone());
+        paths_to_check.extend(self.system_include_paths.clone());
 
         for path in paths_to_check {
             let full_path = path.join(file_name);
@@ -667,7 +794,13 @@ impl Preprocessor {
                 }
 
                 // Recursively process the included file
+                let prev_file = self.current_file.clone();
+                let prev_line = self.current_line;
+                self.current_file = full_path.clone();
+                self.current_line = 1;
                 let result = self.process(&content, full_path.parent().unwrap_or(Path::new(".")))?;
+                self.current_file = prev_file;
+                self.current_line = prev_line;
                 
                 return Ok(result);
             }

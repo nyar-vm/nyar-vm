@@ -127,6 +127,16 @@ impl GaiaTranslator {
                         function_defs.push((name.clone(), params.clone(), body));
                         continue;
                     }
+                } else if let IKunTree::Extension(name, args) = &**value {
+                    if name == "python_function" {
+                        // args = [name_str, lambda, defaults, vararg, kwarg]
+                        if let IKunTree::StringConstant(func_name) = &args[0] {
+                            if let IKunTree::Lambda(params, body) = &args[1] {
+                                function_defs.push((func_name.clone(), params.clone(), body));
+                                continue;
+                            }
+                        }
+                    }
                 }
             }
             if let IKunTree::Extension(name, args) = item {
@@ -662,6 +672,26 @@ impl GaiaTranslator {
                                 CoreInstruction::StoreField("Object".to_string(), field_name.clone()),
                             ));
                         }
+                    }
+                    "keyword_arg" => {
+                        self.generate_tree_node(&args[0], false)?; // name (usually StringConstant)
+                        self.generate_tree_node(&args[1], false)?; // value
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: "keyword_arg".to_string(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; 2],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
+                    "none" => {
+                        self.current_instructions.push(GaiaInstruction::Core(
+                            CoreInstruction::PushConstant(GaiaConstant::Null),
+                        ));
                     }
                     _ => {}
                 }

@@ -27,6 +27,24 @@ pub enum NyarBuiltin {
     MathSqrt = 9,
     /// Memory allocation
     MemAlloc = 10,
+    /// Absolute value
+    MathAbs = 11,
+    /// Cosine function
+    MathCos = 12,
+    /// Tangent function
+    MathTan = 13,
+    /// Bitwise AND
+    BitAnd = 14,
+    /// Bitwise OR
+    BitOr = 15,
+    /// Bitwise XOR
+    BitXor = 16,
+    /// Bitwise NOT
+    BitNot = 17,
+    /// Bitwise Left Shift
+    BitShl = 18,
+    /// Bitwise Right Shift
+    BitShr = 19,
 }
 
 impl NyarVM {
@@ -40,6 +58,13 @@ impl NyarVM {
         self.ffi.register_intrinsic(NyarBuiltin::Print as u32, Box::new(crate::vm::ffi::NativePrint));
         self.ffi.register_intrinsic(NyarBuiltin::Println as u32, Box::new(crate::vm::ffi::NativePrintln));
         self.ffi.register_intrinsic(NyarBuiltin::Exit as u32, Box::new(crate::vm::ffi::NativeExit));
+        
+        self.ffi.register_intrinsic(NyarBuiltin::BitAnd as u32, Box::new(crate::vm::ffi::NativeBitAnd));
+        self.ffi.register_intrinsic(NyarBuiltin::BitOr as u32, Box::new(crate::vm::ffi::NativeBitOr));
+        self.ffi.register_intrinsic(NyarBuiltin::BitXor as u32, Box::new(crate::vm::ffi::NativeBitXor));
+        self.ffi.register_intrinsic(NyarBuiltin::BitNot as u32, Box::new(crate::vm::ffi::NativeBitNot));
+        self.ffi.register_intrinsic(NyarBuiltin::BitShl as u32, Box::new(crate::vm::ffi::NativeBitShl));
+        self.ffi.register_intrinsic(NyarBuiltin::BitShr as u32, Box::new(crate::vm::ffi::NativeBitShr));
     }
 
     fn register_java_builtins(&mut self) {

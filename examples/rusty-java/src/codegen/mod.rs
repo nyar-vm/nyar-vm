@@ -24,22 +24,25 @@ impl<'a> JavaUirConverter<'a> {
     fn loc(&self) -> Loc {
         Loc::new(self.source_id, 0, 0)
     }
+}
 
+impl JavaUirConverter<'_> {
     /// 将 Java AST 转换为 UIR 树
     pub fn convert_to_tree(ast: &JavaRoot, source_id: u32) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
-        let mut converter = Self::new(&mut egraph, source_id);
-        let root_id = converter.convert_root(ast)?;
+        {
+            let mut converter = JavaUirConverter::new(&mut egraph, source_id);
+            let root_id = converter.convert_root(ast)?;
 
-        if let Some(root_id) = root_id {
-            let extractor = chomsky_extract::IKunExtractor::new(
-                &egraph,
-                chomsky_cost::DEFAULT_COST_MODEL.clone(),
-            );
-            Ok(extractor.extract(root_id))
-        } else {
-            Err(NyarError::Compile("No code generated".to_string()))
+            if let Some(root_id) = root_id {
+                let extractor = chomsky_extract::IKunExtractor::new(
+                    &egraph,
+                    chomsky_cost::DEFAULT_COST_MODEL.clone(),
+                );
+                return Ok(extractor.extract(root_id));
+            }
         }
+        Err(NyarError::Compile("No code generated".to_string()))
     }
 
     /// 转换根节点
@@ -53,7 +56,15 @@ impl<'a> JavaUirConverter<'a> {
                 Item::Interface(interface) => {
                     items.push(self.convert_interface(interface)?);
                 }
-                _ => {}
+                Item::Package(pkg) => {
+                    let name_id = self.builder.string(&pkg.name, self.loc());
+                    items.push(self.builder.extension("package", vec![name_id], self.loc()));
+                }
+                Item::Import(imp) => {
+                    let path_id = self.builder.string(&imp.path, self.loc());
+                    let is_static_id = self.builder.bool(imp.is_static, self.loc());
+                    items.push(self.builder.extension("import", vec![path_id, is_static_id], self.loc()));
+                }
             }
         }
         if items.is_empty() {
@@ -196,16 +207,10 @@ impl<'a> JavaUirConverter<'a> {
         }
         let modifiers_id = self.builder.seq(modifiers, self.loc());
 
-        let mut throws = Vec::new();
-        for t in &method.throws {
-            throws.push(self.builder.string(t, self.loc()));
-        }
-        let throws_id = self.builder.seq(throws, self.loc());
-
-        // 规范化 method 扩展：[name, modifiers, params, return_type, throws, body]
+        // 规范化 method 扩展：[name, modifiers, params, return_type, body]
         Ok(self.builder.extension(
             "method",
-            vec![name_id, modifiers_id, params_id, ret_id, throws_id, body_id],
+            vec![name_id, modifiers_id, params_id, ret_id, body_id],
             self.loc(),
         ))
     }
@@ -558,7 +563,7 @@ impl<'a> JavaUirConverter<'a> {
                     dim_ids.push(self.convert_expr(dim)?);
                 }
                 let dims_id = self.builder.seq(dim_ids, self.loc());
-                Ok(self.builder.extension("new_array", vec![type_id, dims_id], self.loc()))
+                Ok(self.builder.extension("array_new", vec![type_id, dims_id], self.loc()))
             }
         }
     }

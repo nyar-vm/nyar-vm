@@ -182,3 +182,57 @@ impl FFIFunction for NativeExit {
     }
 }
 
+pub struct NativeBitAnd;
+impl FFIFunction for NativeBitAnd {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_int();
+        let b = args[1].as_int();
+        Ok(Value::int(a & b))
+    }
+}
+
+pub struct NativeBitOr;
+impl FFIFunction for NativeBitOr {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_int();
+        let b = args[1].as_int();
+        Ok(Value::int(a | b))
+    }
+}
+
+pub struct NativeBitXor;
+impl FFIFunction for NativeBitXor {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_int();
+        let b = args[1].as_int();
+        Ok(Value::int(a ^ b))
+    }
+}
+
+pub struct NativeBitNot;
+impl FFIFunction for NativeBitNot {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_int();
+        Ok(Value::int(!a))
+    }
+}
+
+pub struct NativeBitShl;
+impl FFIFunction for NativeBitShl {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_int();
+        let b = args[1].as_int();
+        Ok(Value::int(a << b))
+    }
+}
+
+pub struct NativeBitShr;
+impl FFIFunction for NativeBitShr {
+    fn call(&self, args: Vec<Value>) -> FFIResult {
+        let a = args[0].as_int();
+        let b = args[1].as_int();
+        Ok(Value::int(a >> b))
+    }
+}
+
+
