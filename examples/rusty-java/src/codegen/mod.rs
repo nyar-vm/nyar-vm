@@ -492,39 +492,47 @@ impl JavaUirConverter<'_> {
                     arg_ids.push(self.convert_expr(arg)?);
                 }
 
-                // 特殊处理 System.out.println 和 System.out.print
-                let mut is_std_io = false;
+                // 特殊处理标准库方法
                 if let Some(target) = &call.target {
                     match &**target {
-                        Expression::Identifier(s) if s == "System.out" => is_std_io = true,
+                        // System.out.println / print
+                        Expression::Identifier(s) if s == "System.out" => {
+                            if call.name == "println" {
+                                return Ok(self.builder.cross_lang_call("nyar", "std::io", "println", arg_ids, self.loc()));
+                            } else if call.name == "print" {
+                                return Ok(self.builder.cross_lang_call("nyar", "std::io", "print", arg_ids, self.loc()));
+                            }
+                        }
                         Expression::FieldAccess(fa) => {
                             if let Expression::Identifier(t) = &*fa.target {
                                 if t == "System" && fa.name == "out" {
-                                    is_std_io = true;
+                                    if call.name == "println" {
+                                        return Ok(self.builder.cross_lang_call("nyar", "std::io", "println", arg_ids, self.loc()));
+                                    } else if call.name == "print" {
+                                        return Ok(self.builder.cross_lang_call("nyar", "std::io", "print", arg_ids, self.loc()));
+                                    }
                                 }
                             }
                         }
+                        // Math.xxx
+                        Expression::Identifier(s) if s == "Math" => {
+                            match call.name.as_str() {
+                                "sqrt" => return Ok(self.builder.cross_lang_call("nyar", "math", "sqrt", arg_ids, self.loc())),
+                                "abs" => return Ok(self.builder.cross_lang_call("nyar", "math", "abs", arg_ids, self.loc())),
+                                "sin" => return Ok(self.builder.cross_lang_call("nyar", "math", "sin", arg_ids, self.loc())),
+                                "cos" => return Ok(self.builder.cross_lang_call("nyar", "math", "cos", arg_ids, self.loc())),
+                                "tan" => return Ok(self.builder.cross_lang_call("nyar", "math", "tan", arg_ids, self.loc())),
+                                "random" => return Ok(self.builder.cross_lang_call("nyar", "math", "rand", arg_ids, self.loc())),
+                                _ => {}
+                            }
+                        }
+                        // System.currentTimeMillis
+                        Expression::Identifier(s) if s == "System" => {
+                            if call.name == "currentTimeMillis" {
+                                return Ok(self.builder.cross_lang_call("nyar", "time", "now", arg_ids, self.loc()));
+                            }
+                        }
                         _ => {}
-                    }
-                }
-
-                if is_std_io {
-                    if call.name == "println" {
-                        return Ok(self.builder.cross_lang_call(
-                            "nyar",
-                            "std::io",
-                            "println",
-                            arg_ids,
-                            self.loc(),
-                        ));
-                    } else if call.name == "print" {
-                        return Ok(self.builder.cross_lang_call(
-                            "nyar",
-                            "std::io",
-                            "print",
-                            arg_ids,
-                            self.loc(),
-                        ));
                     }
                 }
 

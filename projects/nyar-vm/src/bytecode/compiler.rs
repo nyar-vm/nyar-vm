@@ -19,6 +19,72 @@ impl NyarBackend {
         println!("Backend: lowering tree");
         let mut code = Vec::new();
         match tree {
+            IKunTree::Symbol(name) => {
+                let idx = self.add_constant(Constant::String(name.clone()));
+                code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+            }
+            IKunTree::StateUpdate(target, value) => {
+                if let IKunTree::Symbol(name) = &**target {
+                    code.extend(self.lower_tree(value)?);
+                    let idx = self.add_constant(Constant::String(name.clone()));
+                    code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                }
+            }
+            IKunTree::Apply(callee, args) => {
+                for arg in args {
+                    code.extend(self.lower_tree(arg)?);
+                }
+                code.extend(self.lower_tree(callee)?);
+                code.extend_from_slice(&Instruction::Call(args.len() as u8).encode());
+            }
+            IKunTree::Lambda(params, body) => {
+                let body_code = self.lower_tree(body)?;
+                let mut final_code = body_code;
+                if final_code.last() != Some(&(Opcode::Return as u8)) {
+                    final_code.push(Opcode::Return as u8);
+                }
+                let chunk_idx = self.module.chunks.len();
+                if chunk_idx >= u16::MAX as usize {
+                    return Err(NyarError::new(
+                        0x1007,
+                        nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::LimitExceeded),
+                        nyar_types::SourceLocation::default(),
+                    ));
+                }
+                let chunk_idx = chunk_idx as u16;
+                self.module.chunks.push(Chunk {
+                    locals: 32,
+                    upvalues: 0,
+                    max_stack: 64,
+                    code: final_code,
+                    handlers: vec![],
+                    lines: vec![],
+                    decoded: None,
+                    hotness: std::sync::atomic::AtomicU32::new(0),
+                });
+                code.extend_from_slice(&Instruction::LoadChunk(chunk_idx).encode());
+            }
+            IKunTree::Seq(items) => {
+                for item in items {
+                    code.extend(self.lower_tree(item)?);
+                }
+            }
+            IKunTree::Constant(v) => {
+                let idx = self.add_constant(Constant::Integer(*v));
+                code.extend_from_slice(&Instruction::LoadConstant(idx).encode());
+            }
+            IKunTree::FloatConstant(v) => {
+                let idx = self.add_constant(Constant::Float(f64::from_bits(*v)));
+                code.extend_from_slice(&Instruction::LoadConstant(idx).encode());
+            }
+            IKunTree::BooleanConstant(v) => {
+                let idx = self.add_constant(Constant::Boolean(*v));
+                code.extend_from_slice(&Instruction::LoadConstant(idx).encode());
+            }
+            IKunTree::StringConstant(v) => {
+                let idx = self.add_constant(Constant::String(v.clone()));
+                code.extend_from_slice(&Instruction::LoadConstant(idx).encode());
+            }
             IKunTree::Module(_name, items) => {
                 let mut module_code = Vec::new();
                 for item in items {

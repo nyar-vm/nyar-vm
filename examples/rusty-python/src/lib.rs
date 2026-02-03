@@ -157,10 +157,11 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
+                let name_node = self.ctx.builder().string(name, loc.clone());
                 let mut func_node = self.ctx.builder().extension(
                     "python_function",
                     vec![
-                        self.ctx.builder().string(name, loc.clone()),
+                        name_node,
                         lam,
                         defaults_id,
                         vararg_id,
@@ -217,10 +218,11 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
+                let name_node = self.ctx.builder().string(name, loc.clone());
                 let mut func_node = self.ctx.builder().extension(
                     "python_function",
                     vec![
-                        self.ctx.builder().string(name, loc.clone()),
+                        name_node,
                         lam,
                         defaults_id,
                         vararg_id,
@@ -491,7 +493,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
                 let bases_id = self.ctx.builder().extension("bases", base_nodes, loc.clone());
-                let mut class_node_vec = vec![self.ctx.builder().symbol(name, loc.clone()), bases_id, body_id];
+                let class_node_vec = vec![self.ctx.builder().symbol(name, loc.clone()), bases_id, body_id];
                 let mut class_node = self.ctx.builder().extension("class_def", class_node_vec, loc.clone());
 
                 for dec in decorators.iter().rev() {
@@ -501,7 +503,6 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
 
                 Some(self.ctx.builder().assign(name, class_node, loc))
             }
-            _ => None,
         }
     }
 
@@ -576,12 +577,15 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             Expression::Dict { keys, values } => {
                 let mut nodes = Vec::new();
                 for (k, v) in keys.iter().zip(values.iter()) {
-                    let k_node = k
-                        .as_ref()
-                        .map(|e| self.convert_expression(e))
-                        .unwrap_or_else(|| self.ctx.builder().constant(0, loc.clone()));
-                    let v_node = self.convert_expression(v);
-                    nodes.push(self.ctx.builder().extension("dict_item", vec![k_node, v_node], loc.clone()));
+                    if let Some(key) = k {
+                        let k_node = self.convert_expression(key);
+                        let v_node = self.convert_expression(v);
+                        nodes.push(self.ctx.builder().extension("dict_item", vec![k_node, v_node], loc.clone()));
+                    } else {
+                        // **kwargs expansion
+                        let v_node = self.convert_expression(v);
+                        nodes.push(self.ctx.builder().extension("dict_unpack", vec![v_node], loc.clone()));
+                    }
                 }
                 self.ctx.builder().extension("dict", nodes, loc)
             }
@@ -688,7 +692,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     arguments.push(self.ctx.builder().extension("keyword_arg", vec![arg, val], loc.clone()));
                 }
 
-                if let Expression::Name(name) = &**func {
+                if let Expression::Name(_name) = &**func {
                     // if let Some(intrinsic) = self.ctx.map_intrinsic(name, &arguments, loc.clone()) {
                     //     return intrinsic;
                     // }
@@ -758,10 +762,11 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
+                let name_node = self.ctx.builder().string("lambda", loc.clone());
                 self.ctx.builder().extension(
                     "python_function",
                     vec![
-                        self.ctx.builder().string("lambda", loc.clone()),
+                        name_node,
                         lam,
                         defaults_id,
                         vararg_id,

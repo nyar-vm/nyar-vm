@@ -14,12 +14,13 @@ use chomsky_cost;
 use chomsky_emit::GaiaEmitter;
 use chomsky_extract::{Backend, IKunExtractor};
 use chomsky_types::Loc;
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree};
+use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, Id, IntentBuilder, IKunTree, Analysis};
 use nyar_aot::NyarAot;
-use nyar_types::{NyarError, NyarFrontend};
+use nyar_types::{NyarError, NyarFrontend, NyarContext};
 use nyar_vm::bytecode::format::NyarcModule;
 use oak_core::{ParseSession, SourceText};
 use oak_typescript::{ast, TypeScriptBuilder, TypeScriptLanguage, TypeScriptRoot};
+use oak_vfs::Vfs;
 use std::ops::Range;
 
 /// Rusty TypeScript 前端
@@ -140,7 +141,13 @@ impl NyarFrontend for RustyTypescriptFrontend {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower<V: oak_vfs::Vfs>(&self, ast: &TypeScriptRoot, _vfs: &V) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, ast: &TypeScriptRoot, ctx: &mut NyarContext<V>) -> Id {
+        let mut builder = ctx.builder();
+        let mut converter = UirConverter::new(&mut builder, ctx.source_id);
+        converter.convert_root(ast.clone())
+    }
+
+    fn lower<V: oak_vfs::Vfs>(&self, ast: &TypeScriptRoot, vfs: &V) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
         let mut builder = IntentBuilder::new(&mut egraph);
         let mut converter = UirConverter::new(&mut builder, self.source_id);
@@ -152,13 +159,13 @@ impl NyarFrontend for RustyTypescriptFrontend {
     }
 }
 
-struct UirConverter<'a> {
-    builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>,
+struct UirConverter<'a, A: Analysis<IKun> = ()> {
+    builder: &'a mut IntentBuilder<'a, A>,
     source_id: u32,
 }
 
-impl<'a> UirConverter<'a> {
-    fn new(builder: &'a mut IntentBuilder<'a, ConstraintAnalysis>, source_id: u32) -> Self {
+impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
+    fn new(builder: &'a mut IntentBuilder<'a, A>, source_id: u32) -> Self {
         Self { builder, source_id }
     }
 
@@ -198,30 +205,33 @@ impl<'a> UirConverter<'a> {
                 for s in func.body {
                     body_ids.push(self.convert_statement(s));
                 }
+
+                let type_param_ids = func.type_params
+                    .into_iter()
+                    .map(|tp| self.convert_type_parameter(tp, loc.clone()))
+                    .collect::<Vec<_>>();
+                let type_params_seq = self.builder.seq(type_param_ids, loc.clone());
+
+                let param_ids = func.params
+                    .into_iter()
+                    .map(|p| {
+                        let p_loc = loc.clone();
+                        let mut p_args = vec![self.builder.symbol(&p.name, p_loc.clone())];
+                        if let Some(ty) = p.ty {
+                            p_args.push(self.convert_type_annotation(ty, p_loc.clone()));
+                        } else {
+                            p_args.push(self.builder.constant(0, p_loc.clone()));
+                        }
+                        p_args.push(self.builder.bool(p.optional, p_loc.clone()));
+                        self.builder.extension("param", p_args, p_loc)
+                    })
+                    .collect::<Vec<_>>();
+                let params_seq = self.builder.seq(param_ids, loc.clone());
+
                 let mut lambda_args = vec![
                     self.builder.string(&func.name, loc.clone()),
-                    self.builder.seq(
-                        func.type_params
-                            .into_iter()
-                            .map(|tp| self.convert_type_parameter(tp, loc.clone()))
-                            .collect(),
-                        loc.clone(),
-                    ),
-                    self.builder.seq(
-                        func.params
-                            .into_iter()
-                            .map(|p| {
-                                let p_loc = loc.clone();
-                                let mut p_args = vec![self.builder.symbol(&p.name, p_loc.clone())];
-                                if let Some(ty) = p.ty {
-                                    p_args.push(self.convert_type_annotation(ty, p_loc.clone()));
-                                }
-                                p_args.push(self.builder.bool(p.optional, p_loc.clone()));
-                                self.builder.extension("param", p_args, p_loc)
-                            })
-                            .collect(),
-                        loc.clone(),
-                    ),
+                    type_params_seq,
+                    params_seq,
                     self.builder.block(body_ids, loc.clone()),
                 ];
 
@@ -262,14 +272,11 @@ impl<'a> UirConverter<'a> {
                 let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
 
                 // Type parameters
-                args.push(self.builder.seq(
-                    class
-                        .type_params
-                        .into_iter()
-                        .map(|tp| self.convert_type_parameter(tp, loc.clone()))
-                        .collect(),
-                    loc.clone(),
-                ));
+                let type_param_ids = class.type_params
+                    .into_iter()
+                    .map(|tp| self.convert_type_parameter(tp, loc.clone()))
+                    .collect::<Vec<_>>();
+                args.push(self.builder.seq(type_param_ids, loc.clone()));
 
                 if let Some(ext) = class.extends {
                     args.push(self.convert_type_annotation(ext, loc.clone()));
@@ -501,9 +508,18 @@ impl<'a> UirConverter<'a> {
             ast::Expression::StringLiteral(val) => self.builder.string(&val, Loc::default()),
             ast::Expression::BooleanLiteral(val) => self.builder.bool(val, Loc::default()),
             ast::Expression::NullLiteral => self.builder.constant(0, Loc::default()),
-            ast::Expression::BigIntLiteral(val) => self.builder.extension("bigint", vec![self.builder.string(&val, Loc::default())], Loc::default()),
-            ast::Expression::RegexLiteral(val) => self.builder.extension("regex", vec![self.builder.string(&val, Loc::default())], Loc::default()),
-            ast::Expression::TemplateString(val) => self.builder.extension("template", vec![self.builder.string(&val, Loc::default())], Loc::default()),
+            ast::Expression::BigIntLiteral(val) => {
+                let s = self.builder.string(&val, Loc::default());
+                self.builder.extension("bigint", vec![s], Loc::default())
+            }
+            ast::Expression::RegexLiteral(val) => {
+                let s = self.builder.string(&val, Loc::default());
+                self.builder.extension("regex", vec![s], Loc::default())
+            }
+            ast::Expression::TemplateString(val) => {
+                let s = self.builder.string(&val, Loc::default());
+                self.builder.extension("template", vec![s], Loc::default())
+            }
             ast::Expression::BinaryExpression {
                 left,
                 operator,
@@ -660,30 +676,26 @@ impl<'a> UirConverter<'a> {
                 async_,
             } => {
                 let body_id = self.convert_statement(*body);
-                let mut args = vec![
-                    self.builder.seq(
-                        type_params
-                            .into_iter()
-                            .map(|tp| self.convert_type_parameter(tp, Loc::default()))
-                            .collect(),
-                        Loc::default(),
-                    ),
-                    self.builder.seq(
-                        params
-                            .into_iter()
-                            .map(|p| {
-                                let mut p_args = vec![self.builder.symbol(&p.name, Loc::default())];
-                                if let Some(ty) = p.ty {
-                                    p_args.push(self.convert_type_annotation(ty, Loc::default()));
-                                }
-                                p_args.push(self.builder.bool(p.optional, Loc::default()));
-                                self.builder.extension("param", p_args, Loc::default())
-                            })
-                            .collect(),
-                        Loc::default(),
-                    ),
-                    body_id,
-                ];
+                let type_param_ids: Vec<_> = type_params
+                    .into_iter()
+                    .map(|tp| self.convert_type_parameter(tp, Loc::default()))
+                    .collect();
+                let type_params_seq = self.builder.seq(type_param_ids, Loc::default());
+
+                let param_ids: Vec<_> = params
+                    .into_iter()
+                    .map(|p| {
+                        let mut p_args = vec![self.builder.symbol(&p.name, Loc::default())];
+                        if let Some(ty) = p.ty {
+                            p_args.push(self.convert_type_annotation(ty, Loc::default()));
+                        }
+                        p_args.push(self.builder.bool(p.optional, Loc::default()));
+                        self.builder.extension("param", p_args, Loc::default())
+                    })
+                    .collect();
+                let params_seq = self.builder.seq(param_ids, Loc::default());
+
+                let mut args = vec![type_params_seq, params_seq, body_id];
                 if let Some(ret) = return_type {
                     args.push(self.convert_type_annotation(ret, Loc::default()));
                 }
@@ -876,27 +888,27 @@ impl<'a> UirConverter<'a> {
                 span: _,
             } => {
                 let mut args = vec![self.builder.symbol(&name, loc.clone())];
-                args.push(self.builder.seq(
-                    type_params
-                        .into_iter()
-                        .map(|tp| self.convert_type_parameter(tp, loc.clone()))
-                        .collect(),
-                    loc.clone(),
-                ));
-                args.push(self.builder.seq(
-                    params
-                        .into_iter()
-                        .map(|p| {
-                            let mut p_args = vec![self.builder.symbol(&p.name, loc.clone())];
-                            if let Some(ty) = p.ty {
-                                p_args.push(self.convert_type_annotation(ty, loc.clone()));
-                            }
-                            p_args.push(self.builder.bool(p.optional, loc.clone()));
-                            self.builder.extension("param", p_args, loc.clone())
-                        })
-                        .collect(),
-                    loc.clone(),
-                ));
+                let type_param_ids = type_params
+                    .into_iter()
+                    .map(|tp| self.convert_type_parameter(tp, loc.clone()))
+                    .collect::<Vec<_>>();
+                args.push(self.builder.seq(type_param_ids, loc.clone()));
+
+                let param_ids = params
+                    .into_iter()
+                    .map(|p| {
+                        let p_loc = self.to_loc(p.span.into());
+                        let mut p_args = vec![self.builder.symbol(&p.name, p_loc.clone())];
+                        if let Some(ty) = p.ty {
+                            p_args.push(self.convert_type_annotation(ty, p_loc.clone()));
+                        } else {
+                            p_args.push(self.builder.constant(0, p_loc.clone()));
+                        }
+                        p_args.push(self.builder.bool(p.optional, p_loc.clone()));
+                        self.builder.extension("param", p_args, p_loc)
+                    })
+                    .collect::<Vec<_>>();
+                args.push(self.builder.seq(param_ids, loc.clone()));
                 if let Some(ret) = return_type {
                     args.push(self.convert_type_annotation(ret, loc.clone()));
                 } else {

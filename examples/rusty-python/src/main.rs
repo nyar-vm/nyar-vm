@@ -7,6 +7,7 @@ use nyar_types::NyarFrontend;
 use rusty_python::codegen::GaiaTranslator;
 use rusty_python::pyc_codegen::PycTranslator;
 use rusty_python::RustyPythonFrontend;
+use oak_vfs::DiskVfs;
 use std::{fs, path::Path, process::exit};
 
 fn main() {
@@ -18,6 +19,8 @@ fn main() {
     }
 
     let input_file = Path::new(&args[1]);
+    let input_uri = input_file.to_str().expect("Invalid input file path");
+    let vfs = DiskVfs::new();
     let mut target = "gaia";
     let mut output_path = None;
 
@@ -60,7 +63,7 @@ fn main() {
     let source = fs::read_to_string(input_file).expect("Failed to read input file");
 
     let ast = frontend.parse(&source).expect("Failed to parse source");
-    let tree = frontend.lower(&ast).expect("Failed to lower to IR");
+    let tree = frontend.lower(&ast, &vfs).expect("Failed to lower to IR");
 
     let backend: Box<dyn Backend> = match target {
         "gaia" => Box::new(GaiaTranslator::new()),
@@ -87,7 +90,7 @@ fn main() {
                     // Run with NyarDriver if it's Gaia
                     if target == "gaia" {
                         let driver = nyar_vm::NyarDriver::new();
-                        if let Err(e) = driver.run_source(&frontend, input_file) {
+                        if let Err(e) = driver.run_source(&frontend, &vfs, input_uri) {
                             eprintln!("Runtime error: {:?}", e);
                             exit(1);
                         }

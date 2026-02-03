@@ -124,6 +124,10 @@ impl NyarError {
     pub fn RuntimeError(msg: String) -> Self {
         Self::new(0x3000, NyarErrorKind::Vm(VmErrorKind::RuntimeError(msg)), SourceLocation::default())
     }
+    #[allow(non_snake_case)]
+    pub fn InternalError(msg: String) -> Self {
+        Self::new(0xFFFF, NyarErrorKind::Vm(VmErrorKind::RuntimeError(msg)), SourceLocation::default())
+    }
 }
 
 impl std::fmt::Display for NyarError {

@@ -4,8 +4,9 @@
 
 pub mod codegen;
 
-use nyar_types::{IKunTree, NyarContext, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_vfs::Vfs;
+use oak_core::Builder;
 use oak_core::source::SourceText;
 use oak_swift::ast::{Expression, Literal, Statement, SwiftRoot};
 use oak_swift::{SwiftBuilder, SwiftLanguage};
@@ -101,14 +102,19 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let loop_body = self.convert_statements(body);
                 Some(self.ctx.builder().while_loop(cond, loop_body, loc))
             }
-            Statement::FunctionDef { name, body, .. } => {
+            Statement::FunctionDef { name, parameters, body, .. } => {
+                let mut params = Vec::new();
+                for param in parameters {
+                    let id = self.ctx.scopes.declare_variable(&param.name);
+                    params.push(id);
+                }
                 let mut func_body = Vec::new();
                 for stmt in body {
                     if let Some(id) = self.convert_statement(stmt) {
                         func_body.push(id);
                     }
                 }
-                Some(self.ctx.builder().function(name, vec![], func_body))
+                Some(self.ctx.builder().function(name, params, func_body))
             }
             Statement::Block(stmts) => Some(self.convert_statements(stmts)),
         }
