@@ -89,9 +89,9 @@ pub trait NyarFrontend: Default {
     fn lower_unified(&self, ast: &<Self::Language as Language>::TypedRoot, ctx: &mut NyarContext) -> Id;
 
     /// 默认实现：利用 lower_unified 生成 IKunTree
-    fn lower(&self, ast: &<Self::Language as Language>::TypedRoot) -> Result<IKunTree, NyarError> {
+    fn lower(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &dyn Vfs<Source = oak_core::source::SourceEntry>) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::new();
-        let mut ctx = NyarContext::new(&mut egraph, 1);
+        let mut ctx = NyarContext::new(&mut egraph, vfs, 1);
         let root_id = self.lower_unified(ast, &mut ctx);
 
         // 此处可以插入统一的优化流程
@@ -100,11 +100,20 @@ pub trait NyarFrontend: Default {
         let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
         Ok(extractor.extract(root_id))
     }
+
+    /// 利用 Gaia 编译到特定目标
+    fn compile_to_gaia(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &dyn Vfs<Source = oak_core::source::SourceEntry>, target: &str) -> Result<chomsky_extract::BackendArtifact, NyarError> {
+        let tree = self.lower(ast, vfs)?;
+        let emitter = chomsky_emit::GaiaEmitter::new(target).standalone();
+        use chomsky_extract::Backend;
+        emitter.generate(&tree).map_err(|e| NyarError::Compile(format!("Gaia error: {:?}", e)))
+    }
 }
 
 use std::collections::HashMap;
 use chomsky_uir::{EGraph, IKun, Id, IntentBuilder};
 use chomsky_types::{Loc, Span};
+use oak_vfs::Vfs;
 
 /// 统一的作用域管理器，负责符号混淆和遮蔽
 #[derive(Debug, Default, Clone)]
@@ -157,14 +166,109 @@ pub struct NyarContext<'a, A: chomsky_uir::Analysis<IKun> = ()> {
     pub egraph: &'a mut EGraph<IKun, A>,
     pub scopes: ScopeManager,
     pub source_id: u32,
+    pub vfs: &'a dyn Vfs<Source = oak_core::source::SourceEntry>,
+}
+
+/// Nyar 标准内建函数定义
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NyarBuiltin {
+    /// Print to standard output
+    Print,
+    /// Print to standard output with a newline
+    Println,
+    /// Exit the process with a status code
+    Exit,
+    /// Get the current system time
+    GetTime,
+    /// Sleep for a duration in milliseconds
+    Sleep,
+    /// Add two integers (native implementation)
+    NativeAdd,
+    /// Panic with a message
+    Panic,
+    /// Sine function
+    MathSin,
+    /// Square root function
+    MathSqrt,
+    /// Memory allocation
+    MemAlloc,
+}
+
+impl NyarBuiltin {
+    /// 获取内建函数的名称
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Print => "print",
+            Self::Println => "println",
+            Self::Exit => "exit",
+            Self::GetTime => "get_time",
+            Self::Sleep => "sleep",
+            Self::NativeAdd => "native_add",
+            Self::Panic => "panic",
+            Self::MathSin => "math_sin",
+            Self::MathSqrt => "math_sqrt",
+            Self::MemAlloc => "mem_alloc",
+        }
+    }
+
+    /// 从名称映射到内建函数
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "print" => Some(Self::Print),
+            "println" => Some(Self::Println),
+            "exit" => Some(Self::Exit),
+            "get_time" => Some(Self::GetTime),
+            "sleep" => Some(Self::Sleep),
+            "native_add" => Some(Self::NativeAdd),
+            "panic" => Some(Self::Panic),
+            "math_sin" => Some(Self::MathSin),
+            "math_sqrt" => Some(Self::MathSqrt),
+            "mem_alloc" => Some(Self::MemAlloc),
+            _ => None,
+        }
+    }
+
+    /// 获取内建函数的规范路径
+    pub fn path(&self) -> &'static str {
+        match self {
+            Self::Print => "std::io::print",
+            Self::Println => "std::io::println",
+            Self::Exit => "std::process::exit",
+            Self::GetTime => "std::time::now",
+            Self::Sleep => "std::thread::sleep",
+            Self::NativeAdd => "std::ops::add",
+            Self::Panic => "std::sys::panic",
+            Self::MathSin => "std::math::sin",
+            Self::MathSqrt => "std::math::sqrt",
+            Self::MemAlloc => "std::mem::alloc",
+        }
+    }
+
+    /// 从路径映射到内建函数
+    pub fn from_path(path: &str) -> Option<Self> {
+        match path {
+            "std::io::print" => Some(Self::Print),
+            "std::io::println" => Some(Self::Println),
+            "std::process::exit" => Some(Self::Exit),
+            "std::time::now" => Some(Self::GetTime),
+            "std::thread::sleep" => Some(Self::Sleep),
+            "std::ops::add" => Some(Self::NativeAdd),
+            "std::sys::panic" => Some(Self::Panic),
+            "std::math::sin" => Some(Self::MathSin),
+            "std::math::sqrt" => Some(Self::MathSqrt),
+            "std::mem::alloc" => Some(Self::MemAlloc),
+            _ => None,
+        }
+    }
 }
 
 impl<'a, A: chomsky_uir::Analysis<IKun>> NyarContext<'a, A> {
-    pub fn new(egraph: &'a mut EGraph<IKun, A>, source_id: u32) -> Self {
+    pub fn new(egraph: &'a mut EGraph<IKun, A>, vfs: &'a dyn Vfs<Source = oak_core::source::SourceEntry>, source_id: u32) -> Self {
         Self {
             egraph,
             scopes: ScopeManager::new(),
             source_id,
+            vfs,
         }
     }
 
@@ -174,24 +278,5 @@ impl<'a, A: chomsky_uir::Analysis<IKun>> NyarContext<'a, A> {
 
     pub fn loc(&self, start: u32, end: u32) -> Loc {
         Loc::new(self.source_id, start, end)
-    }
-
-    /// 尝试将函数调用映射到标准 Intrinsics
-    pub fn map_intrinsic(&mut self, name: &str, args: Vec<Id>, loc: Loc) -> Option<Id> {
-        match name {
-            "printf" | "print" | "println" | "System.Console.WriteLine" | "fmt.Printf" => {
-                Some(self.builder().cross_lang_call("nyar", "std::io::print", args, loc))
-            }
-            "exit" | "os.Exit" | "System.Environment.Exit" => {
-                Some(self.builder().cross_lang_call("nyar", "std::sys::exit", args, loc))
-            }
-            "sin" | "Math.Sin" => {
-                Some(self.builder().cross_lang_call("nyar", "std::math::sin", args, loc))
-            }
-            "cos" | "Math.Cos" => {
-                Some(self.builder().cross_lang_call("nyar", "std::math::cos", args, loc))
-            }
-            _ => None,
-        }
     }
 }

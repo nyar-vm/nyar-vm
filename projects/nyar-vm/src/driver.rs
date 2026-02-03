@@ -93,20 +93,21 @@ impl NyarDriver {
     ) -> Result<(), NyarError> {
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let tree = frontend.lower(&ast)?;
 
-        println!("AOT: Compiling IKunTree to WASM at {:?}", output_path);
+        println!("AOT: Compiling to WASM at {:?}", output_path);
 
-        use chomsky::adapters::GaiaWasiAdapter;
-        use chomsky_extract::Backend;
-        let adapter = GaiaWasiAdapter;
-        let artifact = adapter
-            .generate(&tree)
-            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+        let artifact = frontend.compile_to_gaia(&ast, "wasm32-wasi")?;
 
         match artifact {
             chomsky_extract::BackendArtifact::Binary(bytes) => {
                 fs::write(output_path, bytes).map_err(NyarError::from)?;
+            }
+            chomsky_extract::BackendArtifact::Collection(files) => {
+                if let Some(bytes) = files.get("main.wasm") {
+                    fs::write(output_path, bytes).map_err(NyarError::from)?;
+                } else if let Some((_, bytes)) = files.iter().next() {
+                    fs::write(output_path, bytes).map_err(NyarError::from)?;
+                }
             }
             _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
         }

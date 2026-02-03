@@ -65,7 +65,7 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
             ast::Declaration::Function(func) => self.convert_function(func),
             ast::Declaration::Variable(var) => self.convert_variable(var),
             ast::Declaration::Const(c) => self.convert_const(c),
-            _ => self.ctx.builder().constant(0, Loc::default()),
+            ast::Declaration::Type(t) => self.convert_type(t),
         }
     }
 
@@ -81,6 +81,15 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
 
         let lambda = self.ctx.builder().function(&func.name, params, vec![body]);
         self.ctx.builder().assign(&func.name, lambda, loc)
+    }
+
+    fn convert_type(&mut self, t: &ast::TypeDecl) -> Id {
+        let loc = self.to_loc(t.span.clone().into());
+        // 注册类型定义，支持接口和结构体
+        self.ctx.builder().extension("type_decl", vec![
+            self.ctx.builder().symbol(&t.name, loc.clone()),
+            self.ctx.builder().symbol(&t.definition, loc.clone()),
+        ], loc)
     }
 
     fn convert_variable(&mut self, var: &ast::Variable) -> Id {
@@ -123,17 +132,37 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
         let loc = self.to_loc(span);
         match stmt {
             ast::Statement::Expression(expr) => self.convert_expression(expr),
-            ast::Statement::Assignment { target, value, .. } => {
-                let val = self.convert_expression(value);
-                let name = self.ctx.scopes.resolve_variable(target);
-                let target_id = self.ctx.builder().symbol(&name, loc.clone());
-                self.ctx.builder().assign_to_id(target_id, val, loc)
-            }
-            ast::Statement::Return { value, .. } => {
-                let val = if let Some(v) = value {
-                    self.convert_expression(v)
+            ast::Statement::Assignment { targets, values, .. } => {
+                let mut val_ids = Vec::new();
+                for v in values {
+                    val_ids.push(self.convert_expression(v));
+                }
+                
+                let mut target_ids = Vec::new();
+                for t in targets {
+                    let name = self.ctx.scopes.resolve_variable(t);
+                    target_ids.push(self.ctx.builder().symbol(&name, loc.clone()));
+                }
+                
+                if target_ids.len() == 1 && val_ids.len() == 1 {
+                    self.ctx.builder().assign_to_id(target_ids[0], val_ids[0], loc)
                 } else {
+                    let targets_tuple = self.ctx.builder().extension("tuple", target_ids, loc.clone());
+                    let values_tuple = self.ctx.builder().extension("tuple", val_ids, loc.clone());
+                    self.ctx.builder().extension("multi_assign", vec![targets_tuple, values_tuple], loc)
+                }
+            }
+            ast::Statement::Return { values, .. } => {
+                let val = if values.is_empty() {
                     self.ctx.builder().constant(0, loc.clone())
+                } else if values.len() == 1 {
+                    self.convert_expression(&values[0])
+                } else {
+                    let mut ids = Vec::new();
+                    for v in values {
+                        ids.push(self.convert_expression(v));
+                    }
+                    self.ctx.builder().extension("tuple", ids, loc.clone())
                 };
                 self.ctx.builder().return_(val, loc)
             }
@@ -222,8 +251,23 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 }
 
                 if let ast::Expression::Identifier { name, .. } = &**func {
-                    if let Some(intrinsic) = self.ctx.map_intrinsic(name, arguments.clone(), loc.clone()) {
-                        return intrinsic;
+                    match name.as_str() {
+                        "fmt.Println" | "fmt.Printf" | "println" | "print" => {
+                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::Println as u32, arguments, loc);
+                        }
+                        "os.Exit" => {
+                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::Exit as u32, arguments, loc);
+                        }
+                        "panic" => {
+                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::Panic as u32, arguments, loc);
+                        }
+                        "sin" | "Math.sin" | "math.sin" => {
+                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::MathSin as u32, arguments, loc);
+                        }
+                        "sqrt" | "Math.sqrt" | "math.sqrt" => {
+                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::MathSqrt as u32, arguments, loc);
+                        }
+                        _ => {}
                     }
                 }
 

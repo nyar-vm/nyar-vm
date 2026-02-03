@@ -297,8 +297,14 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 }
 
                 if let ast::ExpressionKind::Identifier(name, _) = &*function.kind {
-                    if let Some(intrinsic) = self.ctx.map_intrinsic(name, args.clone(), loc.clone()) {
-                        return intrinsic;
+                    match name.as_str() {
+                        "printf" | "print" => {
+                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::Print as u32, args, loc);
+                        }
+                        "exit" => {
+                            return self.ctx.builder().intrinsic(nyar_types::NyarBuiltin::Exit as u32, args, loc);
+                        }
+                        _ => {}
                     }
                 }
 
