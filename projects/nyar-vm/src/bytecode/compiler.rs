@@ -19,8 +19,24 @@ impl NyarBackend {
         let mut code = Vec::new();
         match tree {
             IKunTree::Module(_name, items) => {
+                let mut module_code = Vec::new();
                 for item in items {
-                    self.lower_tree(item)?;
+                    module_code.extend(self.lower_tree(item)?);
+                }
+                if !module_code.is_empty() {
+                    if module_code.last() != Some(&(Opcode::Return as u8)) {
+                        module_code.push(Opcode::Return as u8);
+                    }
+                    self.module.chunks.push(Chunk {
+                        locals: 32,
+                        upvalues: 0,
+                        max_stack: 64,
+                        code: module_code,
+                        handlers: vec![],
+                        lines: vec![],
+                        decoded: None,
+                        hotness: std::sync::atomic::AtomicU32::new(0),
+                    });
                 }
             }
             IKunTree::Export(name, body) => {
@@ -141,7 +157,7 @@ impl NyarBackend {
                     "method" => {
                         if args.len() >= 4 {
                             let name_idx = 0;
-                            let body_idx = args.len() - 1;
+                            let body_idx = 3; // [name, params, return_type, body]
                             if let (IKunTree::StringConstant(name), body) =
                                 (&args[name_idx], &args[body_idx])
                             {
@@ -173,6 +189,47 @@ impl NyarBackend {
                                     symbol: QualifiedName::from(name.as_str()),
                                     chunk_idx,
                                 });
+                            }
+                        }
+                    }
+                    "call" => {
+                        if args.len() == 3 {
+                            // [target, name, args]
+                            code.extend(self.lower_tree(&args[0])?); // target
+                            if let IKunTree::Symbol(name) = &args[1] {
+                                let name_idx = self.add_constant(Constant::String(name.clone()));
+                                if let IKunTree::Seq(call_args) = &args[2] {
+                                    for arg in call_args {
+                                        code.extend(self.lower_tree(arg)?);
+                                    }
+                                    code.extend_from_slice(
+                                        &Instruction::InvokeMethod(name_idx, call_args.len() as u8)
+                                            .encode(),
+                                    );
+                                }
+                            }
+                        } else if args.len() == 2 {
+                            // [name, args]
+                            if let IKunTree::Symbol(name) = &args[0] {
+                                let name_idx = self.add_constant(Constant::String(name.clone()));
+                                if let IKunTree::Seq(call_args) = &args[1] {
+                                    for arg in call_args {
+                                        code.extend(self.lower_tree(arg)?);
+                                    }
+                                    code.extend_from_slice(
+                                        &Instruction::Call(name_idx, call_args.len() as u8).encode(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    "get_field" => {
+                        if args.len() == 2 {
+                            // [target, name]
+                            code.extend(self.lower_tree(&args[0])?);
+                            if let IKunTree::Symbol(name) = &args[1] {
+                                let name_idx = self.add_constant(Constant::String(name.clone()));
+                                code.extend_from_slice(&Instruction::GetField(name_idx).encode());
                             }
                         }
                     }

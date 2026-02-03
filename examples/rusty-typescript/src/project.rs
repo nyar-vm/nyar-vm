@@ -1,4 +1,4 @@
-use crate::MiniTypescriptFrontend;
+use crate::RustyTypescriptFrontend;
 use nyar_vm::bytecode::format::NyarcModule;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -11,13 +11,13 @@ struct PackageJson {
 }
 
 pub struct ProjectLoader {
-    frontend: MiniTypescriptFrontend,
+    frontend: RustyTypescriptFrontend,
 }
 
 impl ProjectLoader {
     pub fn new(_base_dir: impl Into<PathBuf>) -> Self {
         Self {
-            frontend: MiniTypescriptFrontend::new(),
+            frontend: RustyTypescriptFrontend::new(),
         }
     }
 

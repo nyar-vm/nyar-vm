@@ -1,44 +1,119 @@
-//! Mini Python 语言编译器
+//! Rusty Python 语言编译器
 //!
-//! 这是一个类似 Python 的语言前端演示程序，支持编译到 Gaia 指令或 Python 字节码 (.pyc)
+//! 这是一个类似 Python 的语言 frontend 演示程序，支持编译到 Gaia 指令或 Python 字节码 (.pyc)
 
+use chomsky_extract::{Backend, BackendArtifact};
+use nyar_types::NyarFrontend;
+use rusty_python::codegen::GaiaTranslator;
+use rusty_python::pyc_codegen::PycTranslator;
+use rusty_python::RustyPythonFrontend;
 use std::{fs, path::Path, process::exit};
-use rusty_python::MiniPythonFrontend;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <input_file> [--pyc <output_pyc>]", args[0]);
+        eprintln!("Usage: {} <input_file> [--target <target>] [--output <output>]", args[0]);
+        eprintln!("Targets: gaia (default), pyc");
         exit(1);
     }
 
     let input_file = Path::new(&args[1]);
-    let frontend = MiniPythonFrontend::new();
+    let mut target = "gaia";
+    let mut output_path = None;
 
-    // 检查是否需要生成 pyc
-    let mut pyc_output = None;
-    for i in 0..args.len() {
-        if args[i] == "--pyc" && i + 1 < args.len() {
-            pyc_output = Some(&args[i + 1]);
-            break;
+    let mut i = 2;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--target" => {
+                if i + 1 < args.len() {
+                    target = &args[i + 1];
+                    i += 2;
+                } else {
+                    eprintln!("Missing value for --target");
+                    exit(1);
+                }
+            }
+            "--output" => {
+                if i + 1 < args.len() {
+                    output_path = Some(&args[i + 1]);
+                    i += 2;
+                } else {
+                    eprintln!("Missing value for --output");
+                    exit(1);
+                }
+            }
+            // Backward compatibility
+            "--pyc" => {
+                target = "pyc";
+                if i + 1 < args.len() {
+                    output_path = Some(&args[i + 1]);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            _ => i += 1,
         }
     }
 
-    if let Some(output_path) = pyc_output {
-        let source = fs::read_to_string(input_file).expect("Failed to read input file");
-        match frontend.compile_to_pyc(&source) {
-            Ok(bytes) => {
-                fs::write(output_path, bytes).expect("Failed to write pyc file");
-                println!("Compiled to {}", output_path);
+    let frontend = RustyPythonFrontend::new();
+    let source = fs::read_to_string(input_file).expect("Failed to read input file");
+
+    let ast = frontend.parse(&source).expect("Failed to parse source");
+    let tree = frontend.lower(&ast).expect("Failed to lower to IR");
+
+    let backend: Box<dyn Backend> = match target {
+        "gaia" => Box::new(GaiaTranslator::new()),
+        "pyc" => Box::new(PycTranslator::new(
+            input_file.file_name().unwrap().to_str().unwrap(),
+            "main",
+        )),
+        _ => {
+            eprintln!("Unknown target: {}", target);
+            exit(1);
+        }
+    };
+
+    println!("Target: {}", backend.name());
+
+    match backend.generate(&tree) {
+        Ok(artifact) => match artifact {
+            BackendArtifact::Source(s) => {
+                if let Some(out) = output_path {
+                    fs::write(out, s).expect("Failed to write output");
+                    println!("Generated source to {}", out);
+                } else {
+                    println!("Successfully compiled to Gaia module");
+                    // Run with NyarDriver if it's Gaia
+                    if target == "gaia" {
+                        let driver = nyar_vm::NyarDriver::new();
+                        if let Err(e) = driver.run_source(&frontend, input_file) {
+                            eprintln!("Runtime error: {:?}", e);
+                            exit(1);
+                        }
+                    } else {
+                        println!("{}", s);
+                    }
+                }
             }
-            Err(e) => {
-                eprintln!("Compilation error: {:?}", e);
+            BackendArtifact::Binary(b) => {
+                let out = output_path.map(|s| s.to_string()).unwrap_or_else(|| {
+                    let mut p = input_file.to_path_buf();
+                    p.set_extension(target);
+                    p.to_str().unwrap().to_string()
+                });
+                fs::write(&out, b).expect("Failed to write binary output");
+                println!("Generated binary to {}", out);
+            }
+            _ => {
+                eprintln!("Unsupported artifact type");
                 exit(1);
             }
+        },
+        Err(e) => {
+            eprintln!("Compilation error: {:?}", e);
+            exit(1);
         }
-    } else {
-        eprintln!("Error: Gaia runtime is currently disabled. Use --pyc to compile to Python bytecode.");
-        exit(1);
     }
 }
 
@@ -54,7 +129,7 @@ mod tests {
         writeln!(temp_file, "x = 42").unwrap();
         writeln!(temp_file, "print(x)").unwrap();
 
-        let mut frontend = MiniPythonFrontend::new();
+        let mut frontend = RustyPythonFrontend::new();
         let source = fs::read_to_string(temp_file.path()).unwrap();
         let result = frontend.parse(&source);
 
@@ -65,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_compile_to_gaia() {
-        let mut frontend = MiniPythonFrontend::new();
+        let mut frontend = RustyPythonFrontend::new();
         let source = "x = 42\nprint(x)";
 
         let result = frontend.compile_to_gaia(source);
@@ -78,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_simple_code() {
-        let mut frontend = MiniPythonFrontend::new();
+        let mut frontend = RustyPythonFrontend::new();
         let source = "x = 42";
 
         let result = frontend.tokenize(source);

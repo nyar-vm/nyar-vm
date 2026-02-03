@@ -59,7 +59,6 @@ impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
 
     /// 编译到 Chomsky UIR (IKunTree)
     fn lower(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
-        let translator = codegen::NyarTranslator::new();
-        translator.translate_to_tree(ast)
+        codegen::JavaUirConverter::convert_to_tree(ast, 1)
     }
 }

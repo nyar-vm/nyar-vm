@@ -3,7 +3,7 @@
 //! 这是一个类似 CSharp 的语言前端演示程序，支持编译到 Nyar 字节码
 
 use nyar_vm::NyarDriver;
-use rusty_csharp::MiniCSharpFrontend;
+use rusty_csharp::RustyCSharpFrontend;
 use std::{path::Path, process::exit};
 
 fn main() {
@@ -14,11 +14,11 @@ fn main() {
     }
 
     let input_file = Path::new(&args[1]);
-    let frontend = MiniCSharpFrontend::new();
+    let frontend = RustyCSharpFrontend::new();
     let driver = NyarDriver::new();
 
-    if let Err(e) = driver.run_source(&frontend, input_file) {
-        eprintln!("Runtime error: {:?}", e);
+    if let Err(e) = driver.compile_to_native(&frontend, input_file, Path::new("hello.exe")) {
+        eprintln!("Compile error: {:?}", e);
         exit(1);
     }
 }

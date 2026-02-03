@@ -1,7 +1,7 @@
 #![feature(new_range_api)]
-//! Mini CSharp 语言前端
+//! Rusty CSharp 语言前端
 //!
-//! 提供 Mini CSharp 的词法分析、语法分析和 Nyar 翻译功能。
+//! 提供 Rusty CSharp 的词法分析、语法分析和 Nyar 翻译功能。
 
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::{builder::Builder, source::SourceText};
@@ -13,13 +13,13 @@ pub mod row_type;
 pub mod tagless;
 pub mod visitor;
 
-/// Mini CSharp 前端
+/// Rusty CSharp 前端
 #[derive(Default)]
-pub struct MiniCSharpFrontend {
+pub struct RustyCSharpFrontend {
     language: JavaLanguage,
 }
 
-impl MiniCSharpFrontend {
+impl RustyCSharpFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self {
@@ -28,7 +28,7 @@ impl MiniCSharpFrontend {
     }
 }
 
-impl NyarFrontend for MiniCSharpFrontend {
+impl NyarFrontend for RustyCSharpFrontend {
     type Language = JavaLanguage;
 
     /// 解析 CSharp 源代码

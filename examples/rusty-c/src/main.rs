@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 compile_only = true;
             }
             "-o" | "--output" => {
+                compile_only = true;
                 if i + 1 < args.len() {
                     output_file = Some(args[i + 1].clone());
                     i += 1;

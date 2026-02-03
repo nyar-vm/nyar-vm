@@ -2,7 +2,8 @@
 //!
 //! 将 UIR (Universal Intermediate Representation) 转换为 Gaia 指令
 
-use chomsky_uir::{EGraph, IKunTree, Id};
+use chomsky_extract::{Backend, BackendArtifact, IKunTree};
+use chomsky_types::ChomskyResult;
 use gaia_assembler::{
     instruction::{CmpCondition, CoreInstruction, GaiaInstruction, ManagedInstruction},
     program::{GaiaBlock, GaiaConstant, GaiaFunction, GaiaModule, GaiaTerminator},
@@ -29,6 +30,23 @@ pub struct GaiaTranslator {
     current_label: String,
     /// 已完成的块
     blocks: Vec<GaiaBlock>,
+}
+
+impl Backend for GaiaTranslator {
+    fn name(&self) -> &str {
+        "gaia"
+    }
+
+    fn generate(&self, tree: &IKunTree) -> ChomskyResult<BackendArtifact> {
+        let mut translator = GaiaTranslator::new();
+        let module = translator.generate_from_tree(tree).map_err(|e| {
+            chomsky_types::ChomskyError::backend_error(format!("Gaia error: {:?}", e))
+        })?;
+        let json = serde_json::to_string_pretty(&module).map_err(|e| {
+            chomsky_types::ChomskyError::backend_error(format!("Serialization error: {:?}", e))
+        })?;
+        Ok(BackendArtifact::Source(json))
+    }
 }
 
 impl GaiaTranslator {
@@ -335,6 +353,23 @@ impl GaiaTranslator {
                         ManagedInstruction::CallStatic {
                             target: "global".to_string(),
                             method: name.clone(),
+                            signature: GaiaSignature {
+                                params: vec![GaiaType::Object; args.len()],
+                                return_type: GaiaType::Object,
+                            },
+                        },
+                    ));
+                }
+            }
+            IKunTree::CrossLangCall(lang, name, args) => {
+                for arg in args {
+                    self.generate_tree_node(arg, false)?;
+                }
+                if lang == "nyar" && name == "std::io::println" {
+                    self.current_instructions.push(GaiaInstruction::Managed(
+                        ManagedInstruction::CallStatic {
+                            target: "nyar.std.io".to_string(),
+                            method: "println".to_string(),
                             signature: GaiaSignature {
                                 params: vec![GaiaType::Object; args.len()],
                                 return_type: GaiaType::Object,

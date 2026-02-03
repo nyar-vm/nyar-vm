@@ -18,6 +18,20 @@ impl RustyPythonFrontend {
     pub fn new() -> Self {
         Self
     }
+
+    /// 词法分析（仅用于测试）
+    pub fn tokenize(&self, _source: &str) -> Result<Vec<String>, NyarError> {
+        // TODO: 实现真正的词法分析导出
+        Ok(vec!["dummy_token".to_string()])
+    }
+
+    /// 编译到 Gaia 程序
+    pub fn compile_to_gaia(&self, source: &str) -> Result<gaia_assembler::program::GaiaModule, NyarError> {
+        let ast = self.parse(source)?;
+        let tree = self.lower(&ast)?;
+        let mut translator = codegen::GaiaTranslator::new();
+        translator.generate_from_tree(&tree).map_err(|e| NyarError::Compile(format!("{:?}", e)))
+    }
 }
 
 impl NyarFrontend for RustyPythonFrontend {
@@ -62,6 +76,34 @@ impl RustyPythonFrontend {
                 Some(IKunTree::StateUpdate(
                     Box::new(target_node),
                     Box::new(value_node),
+                ))
+            }
+            Statement::AugmentedAssignment {
+                target,
+                operator,
+                value,
+            } => {
+                let target_node = self.lower_expression(target);
+                let value_node = self.lower_expression(value);
+                let op_name = match operator {
+                    oak_python::ast::AugmentedOperator::Add => "add",
+                    oak_python::ast::AugmentedOperator::Sub => "sub",
+                    oak_python::ast::AugmentedOperator::Mult => "mul",
+                    oak_python::ast::AugmentedOperator::Div => "div",
+                    oak_python::ast::AugmentedOperator::FloorDiv => "floordiv",
+                    oak_python::ast::AugmentedOperator::Mod => "mod",
+                    oak_python::ast::AugmentedOperator::Pow => "pow",
+                    oak_python::ast::AugmentedOperator::LShift => "lshift",
+                    oak_python::ast::AugmentedOperator::RShift => "rshift",
+                    oak_python::ast::AugmentedOperator::BitOr => "bitor",
+                    oak_python::ast::AugmentedOperator::BitXor => "bitxor",
+                    oak_python::ast::AugmentedOperator::BitAnd => "bitand",
+                };
+                let result_node =
+                    IKunTree::Extension(op_name.to_string(), vec![target_node.clone(), value_node]);
+                Some(IKunTree::StateUpdate(
+                    Box::new(target_node),
+                    Box::new(result_node),
                 ))
             }
             Statement::Expression(expr) => Some(self.lower_expression(expr)),
@@ -129,6 +171,35 @@ impl RustyPythonFrontend {
                     Box::new(IKunTree::Seq(body_items)),
                 ))
             }
+            Statement::For {
+                target,
+                iter,
+                body,
+                ..
+            } => {
+                let target_node = self.lower_expression(target);
+                let iter_node = self.lower_expression(iter);
+                let mut body_items = Vec::new();
+                for s in body {
+                    if let Some(node) = self.lower_statement(s) {
+                        body_items.push(node);
+                    }
+                }
+                // Map to a custom extension for for-each
+                Some(IKunTree::Extension(
+                    "foreach".to_string(),
+                    vec![target_node, iter_node, IKunTree::Seq(body_items)],
+                ))
+            }
+            Statement::Pass => Some(IKunTree::Seq(vec![])),
+            Statement::Break => Some(IKunTree::Apply(
+                Box::new(IKunTree::Symbol("break".to_string())),
+                vec![],
+            )),
+            Statement::Continue => Some(IKunTree::Apply(
+                Box::new(IKunTree::Symbol("continue".to_string())),
+                vec![],
+            )),
             _ => None,
         }
     }
@@ -166,6 +237,32 @@ impl RustyPythonFrontend {
                 };
                 IKunTree::Extension(op_name.to_string(), vec![left_node, right_node])
             }
+            Expression::UnaryOp { operator, operand } => {
+                let operand_node = self.lower_expression(operand);
+                let op_name = match operator {
+                    oak_python::ast::UnaryOperator::Invert => "invert",
+                    oak_python::ast::UnaryOperator::Not => "not",
+                    oak_python::ast::UnaryOperator::UAdd => "uadd",
+                    oak_python::ast::UnaryOperator::USub => "usub",
+                };
+                IKunTree::Extension(op_name.to_string(), vec![operand_node])
+            }
+            Expression::BoolOp { operator, values } => {
+                let op_name = match operator {
+                    oak_python::ast::BoolOperator::And => "and",
+                    oak_python::ast::BoolOperator::Or => "or",
+                };
+                let nodes = values.iter().map(|v| self.lower_expression(v)).collect();
+                IKunTree::Extension(op_name.to_string(), nodes)
+            }
+            Expression::List { elts } => {
+                let nodes = elts.iter().map(|e| self.lower_expression(e)).collect();
+                IKunTree::Extension("list".to_string(), nodes)
+            }
+            Expression::Tuple { elts } => {
+                let nodes = elts.iter().map(|e| self.lower_expression(e)).collect();
+                IKunTree::Extension("tuple".to_string(), nodes)
+            }
             Expression::Compare {
                 left,
                 ops,
@@ -192,9 +289,13 @@ impl RustyPythonFrontend {
                 // 特殊处理 print
                 if let IKunTree::Symbol(ref name) = func_node {
                     if name == "print" {
-                        // Python's print defaults to newline, but we could handle end="" if we wanted.
-                        // For now, map to println.
-                        return nyar_vm::runtime::NyarBuiltin::Println.emit(args_nodes);
+                        // Python's print defaults to newline.
+                        // Map to a standard cross-language call that all backends should handle.
+                        return IKunTree::CrossLangCall(
+                            "nyar".to_string(),
+                            "std::io::println".to_string(),
+                            args_nodes,
+                        );
                     }
                 }
 
@@ -206,27 +307,11 @@ impl RustyPythonFrontend {
 
     /// 编译到 Python 字节码 (.pyc)
     pub fn compile_to_pyc(&self, source: &str) -> Result<Vec<u8>, NyarError> {
-        use crate::pyc_codegen::{Marshal, PycTranslator};
+        use crate::pyc_codegen::{emit_pyc, PycTranslator};
         let ast = self.parse(source)?;
         let tree = self.lower(&ast)?;
         let mut translator = PycTranslator::new("program.py", "<module>");
-        let code_obj = translator.translate_from_tree(&tree);
-        let mut marshal = Marshal::new();
-        marshal.write_code_object(&code_obj);
-
-        // 构造 .pyc 文件头 (Python 3.12)
-        let mut pyc_bytes = Vec::new();
-        // 1. Magic number (Python 3.12: 3551 = 0x0DCB)
-        // 0x0DCB0D0A in little endian is 0xCB, 0x0D, 0x0D, 0x0A
-        pyc_bytes.extend_from_slice(&[0xCB, 0x0D, 0x0D, 0x0A]);
-        // 2. Bit field (0)
-        pyc_bytes.extend_from_slice(&[0, 0, 0, 0]);
-        // 3. Timestamp (0 for now)
-        pyc_bytes.extend_from_slice(&[0, 0, 0, 0]);
-        // 4. Source size (0 for now)
-        pyc_bytes.extend_from_slice(&[0, 0, 0, 0]);
-
-        pyc_bytes.extend_from_slice(&marshal.finish());
-        Ok(pyc_bytes)
+        let program = translator.translate_from_tree(&tree);
+        emit_pyc(&program).map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 }

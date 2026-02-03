@@ -1,5 +1,5 @@
 use nyar_vm::NyarDriver;
-use rusty_csharp::MiniCSharpFrontend;
+use rusty_csharp::RustyCSharpFrontend;
 use std::{path::Path, process::exit};
 
 fn main() {
@@ -10,7 +10,7 @@ fn main() {
     }
 
     let input_file = Path::new(&args[1]);
-    let frontend = MiniCSharpFrontend::new();
+    let frontend = RustyCSharpFrontend::new();
     let driver = NyarDriver::new();
 
     // 模拟编译：目前先编译为 native (stub)
