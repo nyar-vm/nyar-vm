@@ -190,6 +190,9 @@ impl<'a> UirConverter<'a> {
                 self.builder.assign(&var.name, value, loc)
             }
             ast::Statement::FunctionDeclaration(func) => {
+                if func.is_declare {
+                    return self.builder.constant(0, self.to_loc(func.span.into()));
+                }
                 let loc = self.to_loc(func.span.clone().into());
                 let mut body_ids = Vec::new();
                 for s in func.body {
@@ -223,6 +226,9 @@ impl<'a> UirConverter<'a> {
                 self.builder.return_(val, loc)
             }
             ast::Statement::ClassDeclaration(class) => {
+                if class.is_declare {
+                    return self.builder.constant(0, self.to_loc(class.span.into()));
+                }
                 let loc = self.to_loc(class.span.into());
                 let mut args = vec![self.builder.symbol(&class.name, loc.clone())];
                 if let Some(ast::TypeAnnotation::Identifier(ext)) = class.extends {
@@ -339,6 +345,9 @@ impl<'a> UirConverter<'a> {
                 self.builder.extension("gc.struct", args, loc)
             }
             ast::Statement::Namespace(ns) => {
+                if ns.is_declare {
+                    return self.builder.constant(0, self.to_loc(ns.span.into()));
+                }
                 let loc = self.to_loc(ns.span.into());
                 let mut items = Vec::new();
                 for s in ns.body {

@@ -196,10 +196,16 @@ impl<'a> JavaUirConverter<'a> {
         }
         let modifiers_id = self.builder.seq(modifiers, self.loc());
 
-        // 规范化 method 扩展：[name, modifiers, params, return_type, body]
+        let mut throws = Vec::new();
+        for t in &method.throws {
+            throws.push(self.builder.string(t, self.loc()));
+        }
+        let throws_id = self.builder.seq(throws, self.loc());
+
+        // 规范化 method 扩展：[name, modifiers, params, return_type, throws, body]
         Ok(self.builder.extension(
             "method",
-            vec![name_id, modifiers_id, params_id, ret_id, body_id],
+            vec![name_id, modifiers_id, params_id, ret_id, throws_id, body_id],
             self.loc(),
         ))
     }

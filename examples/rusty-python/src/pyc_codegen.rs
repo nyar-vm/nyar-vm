@@ -165,16 +165,21 @@ impl PycTranslator {
                 self.instructions.push(PythonInstruction::CALL(args.len() as u32));
                 self.instructions.push(PythonInstruction::POP_TOP);
             }
-            IKunTree::CrossLangCall(lang, name, args) => {
-                if lang == "nyar" && name == "std::io::println" {
+            IKunTree::CrossLangCall {
+                language,
+                function_name,
+                arguments,
+                ..
+            } => {
+                if language == "nyar" && function_name == "std::io::println" {
                     // Map back to Python's print
                     self.instructions.push(PythonInstruction::PUSH_NULL);
                     let idx = self.add_name("print");
                     self.instructions.push(PythonInstruction::LOAD_GLOBAL(idx << 1));
-                    for arg in args {
+                    for arg in arguments {
                         self.compile_node(arg);
                     }
-                    self.instructions.push(PythonInstruction::CALL(args.len() as u32));
+                    self.instructions.push(PythonInstruction::CALL(arguments.len() as u32));
                     self.instructions.push(PythonInstruction::POP_TOP);
                 }
             }
