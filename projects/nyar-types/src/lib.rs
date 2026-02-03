@@ -84,22 +84,19 @@ pub trait NyarFrontend: Default {
     type Language: Language;
 
     fn parse(&self, source: &str) -> Result<<Self::Language as Language>::TypedRoot, NyarError>;
-    fn lower(&self, ast: &<Self::Language as Language>::TypedRoot) -> Result<IKunTree, NyarError>;
-}
 
-/// 统一的接入接口，支持 EGraph 优化流
-pub trait NyarUnifiedFrontend: NyarFrontend {
+    /// 统一的接入接口，支持 EGraph 优化流
     fn lower_unified(&self, ast: &<Self::Language as Language>::TypedRoot, ctx: &mut NyarContext) -> Id;
 
     /// 默认实现：利用 lower_unified 生成 IKunTree
-    fn lower_to_tree(&self, ast: &<Self::Language as Language>::TypedRoot) -> Result<IKunTree, NyarError> {
+    fn lower(&self, ast: &<Self::Language as Language>::TypedRoot) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::new();
         let mut ctx = NyarContext::new(&mut egraph, 1);
         let root_id = self.lower_unified(ast, &mut ctx);
-        
+
         // 此处可以插入统一的优化流程
-        // egraph.rebuild(); 
-        
+        // egraph.rebuild();
+
         let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
         Ok(extractor.extract(root_id))
     }
