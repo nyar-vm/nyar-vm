@@ -1,9 +1,10 @@
 use crate::errors::CError;
-use nyar_types::{IKunTree, NyarContext, NyarError, NyarFrontend, NyarUnifiedFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_c::{ast, CBuilder, CLanguage, CRoot};
 use oak_core::source::SourceText;
 use std::ops::Range;
-use chomsky_uir::{Id, Loc};
+use chomsky_uir::Id;
+use chomsky_source::Loc;
 
 /// Rusty C 前端实现
 #[derive(Default)]
@@ -32,12 +33,6 @@ impl NyarFrontend for RustyCFrontend {
         output.result.map_err(|e| NyarError::from(CError::from(e)))
     }
 
-    fn lower(&self, ast: &CRoot) -> Result<IKunTree, NyarError> {
-        self.lower_to_tree(ast)
-    }
-}
-
-impl NyarUnifiedFrontend for RustyCFrontend {
     fn lower_unified(&self, ast: &CRoot, ctx: &mut NyarContext) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
@@ -152,8 +147,8 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 if let Some(expr) = &expr_stmt.expression {
                     self.convert_expression(expr)
                 } else {
-                    self.ctx.builder()
-                        .constant(0, self.to_loc(expr_stmt.span.clone().into()))
+                    let loc = self.to_loc(expr_stmt.span.clone().into());
+                    self.ctx.builder().constant(0, loc)
                 }
             }
             ast::Statement::Selection(sel) => match sel {
@@ -170,10 +165,8 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                     } else {
                         self.ctx.builder().constant(0, loc.clone())
                     };
-                    self.ctx.builder().branch(
-                        cond, then_id, else_id,
-                        self.to_loc(span.clone().into()),
-                    )
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().branch(cond, then_id, else_id, loc)
                 }
                 _ => self.ctx.builder().constant(0, loc),
             },
@@ -185,10 +178,8 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 } => {
                     let cond = self.convert_expression(condition);
                     let body = self.convert_statement(statement);
-                    self.ctx.builder().while_loop(
-                        cond, body,
-                        self.to_loc(span.clone().into()),
-                    )
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().while_loop(cond, body, loc)
                 }
                 ast::IterationStatement::DoWhile {
                     statement,
@@ -197,11 +188,8 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 } => {
                     let body = self.convert_statement(statement);
                     let cond = self.convert_expression(condition);
-                    self.ctx.builder().extension(
-                        "do_while",
-                        vec![body, cond],
-                        self.to_loc(span.clone().into()),
-                    )
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().extension("do_while", vec![body, cond], loc)
                 }
                 ast::IterationStatement::For {
                     init,
@@ -226,11 +214,8 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                         self.ctx.builder().constant(0, loc.clone())
                     };
                     let b = self.convert_statement(statement);
-                    self.ctx.builder().extension(
-                        "for",
-                        vec![i, c, u, b],
-                        self.to_loc(span.clone().into()),
-                    )
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().extension("for", vec![i, c, u, b], loc)
                 }
             },
             ast::Statement::Jump(jump) => match jump {
@@ -243,12 +228,12 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                     self.ctx.builder().return_(val, loc)
                 }
                 ast::JumpStatement::Break(span) => {
-                    self.ctx.builder()
-                        .extension("break", vec![], self.to_loc(span.clone().into()))
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().extension("break", vec![], loc)
                 }
                 ast::JumpStatement::Continue(span) => {
-                    self.ctx.builder()
-                        .extension("continue", vec![], self.to_loc(span.clone().into()))
+                    let loc = self.to_loc(span.clone().into());
+                    self.ctx.builder().extension("continue", vec![], loc)
                 }
                 _ => self.ctx.builder().constant(0, loc),
             },

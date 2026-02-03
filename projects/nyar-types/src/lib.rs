@@ -168,7 +168,7 @@ impl<'a, A: chomsky_uir::Analysis<IKun>> NyarContext<'a, A> {
         }
     }
 
-    pub fn builder(&mut self) -> IntentBuilder<A> {
+    pub fn builder(&mut self) -> IntentBuilder<'_, A> {
         IntentBuilder::new(self.egraph)
     }
 

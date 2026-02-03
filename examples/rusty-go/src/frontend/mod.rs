@@ -1,228 +1,234 @@
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use oak_go::{ast, GoBuilder, GoLanguage, GoRoot};
+use oak_core::source::SourceText;
+use oak_core::parser::session::ParseSession;
+use chomsky_uir::Id;
 use chomsky_source::Loc;
-use crate::GoBuilder;
-use chomsky_uir::{IKunTree, IntentBuilder, Id};
-use oak_core::parser::ParseSession;
-use oak_core::{SourceText, RedNode, RedTree, Builder};
-use oak_go::{ast, GoLanguage, GoRoot, GoSyntaxKind};
+use std::ops::Range;
 
+/// Rusty Go 前端实现
 #[derive(Default)]
-pub struct RustyGoFrontend;
-
-impl nyar_types::NyarFrontend for RustyGoFrontend {
-    type Language = GoLanguage;
-
-    fn parse(&self, source: &str) -> Result<GoRoot, nyar_types::NyarError> {
-        let language = GoLanguage::default();
-        let builder = GoBuilder::new(&language);
-        let source_text = SourceText::new(source.to_string());
-        
-        let mut session = ParseSession::new(1024);
-        let output = builder.build(&source_text, &[], &mut session);
-
-        output.result.map_err(|e| nyar_types::NyarError::Compile(format!("Build error: {:?}", e)))
-    }
-
-    fn lower(&self, ast: &GoRoot) -> Result<IKunTree, nyar_types::NyarError> {
-        let mut items = vec![];
-
-        for decl in &ast.declarations {
-            match decl {
-                ast::Declaration::Function(func) => {
-                    let mut params = vec![];
-                    for p in &func.params {
-                        params.push(p.name.clone());
-                    }
-                    let body = self.lower_block(&func.body)?;
-
-                    // 为 main 函数创建导出
-                    if func.name == "main" {
-                        items.push(IKunTree::Export(
-                            "main".to_string(),
-                            Box::new(IKunTree::Lambda(params, Box::new(body))),
-                        ));
-                    } else {
-                        items.push(IKunTree::Export(
-                            func.name.clone(),
-                            Box::new(IKunTree::Lambda(params, Box::new(body))),
-                        ));
-                    }
-                }
-                ast::Declaration::Variable(var) => {
-                    let val = if let Some(v) = &var.value {
-                        self.lower_expression(v)?
-                    } else {
-                        IKunTree::Constant(0)
-                    };
-                    items.push(IKunTree::Export(
-                        var.name.clone(),
-                        Box::new(val),
-                    ));
-                }
-                ast::Declaration::Const(c) => {
-                    let val = self.lower_expression(&c.value)?;
-                    items.push(IKunTree::Export(
-                        c.name.clone(),
-                        Box::new(val),
-                    ));
-                }
-                _ => {}
-            }
-        }
-
-        Ok(IKunTree::Module("rusty-go-program".to_string(), items))
-    }
+pub struct RustyGoFrontend {
+    language: GoLanguage,
 }
 
 impl RustyGoFrontend {
     pub fn new() -> Self {
-        Self
-    }
-
-    fn lower_block(&self, block: &ast::Block) -> Result<IKunTree, nyar_types::NyarError> {
-        let mut items = vec![];
-        for stmt in &block.statements {
-            items.push(self.lower_statement(stmt)?);
+        Self {
+            language: GoLanguage::default(),
         }
-        Ok(IKunTree::Seq(items))
+    }
+}
+
+impl NyarFrontend for RustyGoFrontend {
+    type Language = GoLanguage;
+
+    fn parse(&self, source: &str) -> Result<GoRoot, NyarError> {
+        use oak_core::Builder;
+        let builder = GoBuilder::new(&self.language);
+        let source_text = SourceText::new(source.to_string());
+        let mut session = ParseSession::<GoLanguage>::default();
+        let output = builder.build(&source_text, &[], &mut session);
+
+        output.result.map_err(|e| NyarError::Compile(format!("Build error: {:?}", e)))
     }
 
-    fn lower_statement(&self, stmt: &ast::Statement) -> Result<IKunTree, nyar_types::NyarError> {
+    fn lower_unified(&self, ast: &GoRoot, ctx: &mut NyarContext) -> Id {
+        let mut converter = UirConverter::new(ctx);
+        converter.convert_root(ast)
+    }
+}
+
+struct UirConverter<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+    ctx: &'a mut NyarContext<'b, A>,
+}
+
+impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A> {
+    fn new(ctx: &'a mut NyarContext<'b, A>) -> Self {
+        Self { ctx }
+    }
+
+    fn to_loc(&self, range: Range<usize>) -> Loc {
+        self.ctx.loc(range.start as u32, range.end as u32)
+    }
+
+    fn convert_root(&mut self, root: &GoRoot) -> Id {
+        let mut items = Vec::new();
+        for decl in &root.declarations {
+            items.push(self.convert_declaration(decl));
+        }
+        self.ctx.builder().module("main", items)
+    }
+
+    fn convert_declaration(&mut self, decl: &ast::Declaration) -> Id {
+        match decl {
+            ast::Declaration::Function(func) => self.convert_function(func),
+            ast::Declaration::Variable(var) => self.convert_variable(var),
+            ast::Declaration::Const(c) => self.convert_const(c),
+            _ => self.ctx.builder().constant(0, Loc::default()),
+        }
+    }
+
+    fn convert_function(&mut self, func: &ast::Function) -> Id {
+        let loc = self.to_loc(func.span.clone().into());
+        let mut params = Vec::new();
+        self.ctx.scopes.push_scope();
+        for p in &func.params {
+            params.push(self.ctx.scopes.declare_variable(&p.name));
+        }
+        let body = self.convert_block(&func.body);
+        self.ctx.scopes.pop_scope();
+
+        let lambda = self.ctx.builder().function(&func.name, params, vec![body]);
+        self.ctx.builder().assign(&func.name, lambda, loc)
+    }
+
+    fn convert_variable(&mut self, var: &ast::Variable) -> Id {
+        let loc = self.to_loc(var.span.clone().into());
+        let name = self.ctx.scopes.declare_variable(&var.name);
+        let val = if let Some(v) = &var.value {
+            self.convert_expression(v)
+        } else {
+            self.ctx.builder().constant(0, loc.clone())
+        };
+        self.ctx.builder().assign(&name, val, loc)
+    }
+
+    fn convert_const(&mut self, c: &ast::Const) -> Id {
+        let loc = self.to_loc(c.span.clone().into());
+        let name = self.ctx.scopes.declare_variable(&c.name);
+        let val = self.convert_expression(&c.value);
+        self.ctx.builder().assign(&name, val, loc)
+    }
+
+    fn convert_block(&mut self, block: &ast::Block) -> Id {
+        let loc = self.to_loc(block.span.clone().into());
+        let mut ids = Vec::new();
+        self.ctx.scopes.push_scope();
+        for stmt in &block.statements {
+            ids.push(self.convert_statement(stmt));
+        }
+        self.ctx.scopes.pop_scope();
+        self.ctx.builder().block(ids, loc)
+    }
+
+    fn convert_statement(&mut self, stmt: &ast::Statement) -> Id {
+        let span: Range<usize> = match stmt {
+            ast::Statement::Expression(expr) => self.get_expr_span(expr),
+            ast::Statement::Assignment { span, .. } => span.clone().into(),
+            ast::Statement::Return { span, .. } => span.clone().into(),
+            ast::Statement::If { span, .. } => span.clone().into(),
+            ast::Statement::For { span, .. } => span.clone().into(),
+        };
+        let loc = self.to_loc(span);
         match stmt {
-            ast::Statement::Expression(expr) => self.lower_expression(expr),
+            ast::Statement::Expression(expr) => self.convert_expression(expr),
             ast::Statement::Assignment { target, value, .. } => {
-                let val = self.lower_expression(value)?;
-                Ok(IKunTree::StateUpdate(
-                    Box::new(IKunTree::Symbol(target.clone())),
-                    Box::new(val),
-                ))
+                let val = self.convert_expression(value);
+                let name = self.ctx.scopes.resolve_variable(target);
+                let target_id = self.ctx.builder().symbol(&name, loc.clone());
+                self.ctx.builder().assign_to_id(target_id, val, loc)
             }
             ast::Statement::Return { value, .. } => {
                 let val = if let Some(v) = value {
-                    self.lower_expression(v)?
+                    self.convert_expression(v)
                 } else {
-                    IKunTree::Seq(vec![])
+                    self.ctx.builder().constant(0, loc.clone())
                 };
-                Ok(IKunTree::Return(Box::new(val)))
+                self.ctx.builder().return_(val, loc)
             }
-            ast::Statement::If { condition, then_block, else_block, .. } => {
-                let cond = self.lower_expression(condition)?;
-                let then = self.lower_block(then_block)?;
-                let els = if let Some(eb) = else_block {
-                    self.lower_block(eb)?
+            ast::Statement::If {
+                condition,
+                then_block,
+                else_block,
+                ..
+            } => {
+                let cond = self.convert_expression(condition);
+                let then_id = self.convert_block(then_block);
+                let else_id = if let Some(eb) = else_block {
+                    self.convert_block(eb)
                 } else {
-                    IKunTree::Seq(vec![])
+                    self.ctx.builder().constant(0, loc.clone())
                 };
-                Ok(IKunTree::Choice(Box::new(cond), Box::new(then), Box::new(els)))
+                self.ctx.builder().branch(cond, then_id, else_id, loc)
             }
-            ast::Statement::For { init, condition, post, body, .. } => {
-                let mut stmts = vec![];
+            ast::Statement::For {
+                init,
+                condition,
+                post,
+                body,
+                ..
+            } => {
+                self.ctx.scopes.push_scope();
+                let mut init_id = self.ctx.builder().constant(0, loc.clone());
                 if let Some(i) = init {
-                    stmts.push(self.lower_statement(i)?);
+                    init_id = self.convert_statement(i);
                 }
-
                 let cond = if let Some(c) = condition {
-                    self.lower_expression(c)?
+                    self.convert_expression(c)
                 } else {
-                    IKunTree::BooleanConstant(true)
+                    self.ctx.builder().constant(1, loc.clone())
                 };
-
-                let mut body_stmts = vec![self.lower_block(body)?];
+                let mut post_id = self.ctx.builder().constant(0, loc.clone());
                 if let Some(p) = post {
-                    body_stmts.push(self.lower_statement(p)?);
+                    post_id = self.convert_statement(p);
                 }
-
-                stmts.push(IKunTree::Repeat(Box::new(cond), Box::new(IKunTree::Seq(body_stmts))));
-                Ok(IKunTree::Seq(stmts))
+                let body_id = self.convert_block(body);
+                self.ctx.scopes.pop_scope();
+                self.ctx.builder().extension("for", vec![init_id, cond, post_id, body_id], loc)
             }
         }
     }
 
-    fn lower_expression(&self, expr: &ast::Expression) -> Result<IKunTree, nyar_types::NyarError> {
+    fn get_expr_span(&self, expr: &ast::Expression) -> Range<usize> {
+        match expr {
+            ast::Expression::Identifier { span, .. } => span.clone().into(),
+            ast::Expression::Literal { span, .. } => span.clone().into(),
+            ast::Expression::Binary { span, .. } => span.clone().into(),
+            ast::Expression::Call { span, .. } => span.clone().into(),
+        }
+    }
+
+    fn convert_expression(&mut self, expr: &ast::Expression) -> Id {
+        let span = self.get_expr_span(expr);
+        let loc = self.to_loc(span);
         match expr {
             ast::Expression::Identifier { name, .. } => {
-                if name.trim().is_empty() {
-                    return Err(nyar_types::NyarError::Compile("Empty identifier".to_string()));
-                }
-                Ok(IKunTree::Symbol(name.clone()))
+                let resolved = self.ctx.scopes.resolve_variable(name);
+                self.ctx.builder().symbol(&resolved, loc)
             }
             ast::Expression::Literal { value, .. } => {
                 if value.starts_with('"') && value.ends_with('"') {
-                    let s = &value[1..value.len() - 1];
-                    Ok(IKunTree::StringConstant(s.to_string()))
+                    self.ctx.builder().extension("string", vec![], loc) // Simplified string
                 } else if value == "true" {
-                    Ok(IKunTree::BooleanConstant(true))
+                    self.ctx.builder().constant(1, loc)
                 } else if value == "false" {
-                    Ok(IKunTree::BooleanConstant(false))
+                    self.ctx.builder().constant(0, loc)
                 } else if let Ok(n) = value.parse::<i64>() {
-                    Ok(IKunTree::Constant(n))
+                    self.ctx.builder().constant(n, loc)
                 } else {
-                    // 默认作为字符串常量，而不是符号
-                    Ok(IKunTree::StringConstant(value.clone()))
+                    self.ctx.builder().constant(0, loc)
                 }
             }
             ast::Expression::Binary { left, op, right, .. } => {
-                let l = self.lower_expression(left)?;
-                let r = self.lower_expression(right)?;
-                Ok(IKunTree::Extension(op.clone(), vec![l, r]))
+                let l = self.convert_expression(left);
+                let r = self.convert_expression(right);
+                self.ctx.builder().binary_op(op, l, r, loc)
             }
             ast::Expression::Call { func, args, .. } => {
-                let func_name = self.get_expression_name(func);
-                if func_name == "printf" || func_name == "println" {
-                    let mut arguments = vec![];
-                    for arg in args {
-                        arguments.push(self.lower_expression(arg)?);
-                    }
-                    Ok(nyar_vm::runtime::NyarBuiltin::Println.emit(arguments))
-                } else {
-                    let f = self.lower_expression(func)?;
-                    let mut arguments = vec![];
-                    for arg in args {
-                        arguments.push(self.lower_expression(arg)?);
-                    }
-                    Ok(IKunTree::Apply(Box::new(f), arguments))
+                let mut arguments = Vec::new();
+                for arg in args {
+                    arguments.push(self.convert_expression(arg));
                 }
-            }
-        }
-    }
 
-    fn get_expression_name(&self, expr: &ast::Expression) -> String {
-        match expr {
-            ast::Expression::Identifier { name, .. } => name.clone(),
-            _ => "unknown".to_string(),
-        }
-    }
-
-    fn get_loc(&self, node: &RedNode<GoLanguage>, source_id: u32) -> Loc {
-        let span = node.span();
-        Loc::new(source_id, span.start as u32, span.end as u32)
-    }
-
-    fn convert_red_to_uir(
-        &self,
-        builder: &mut IntentBuilder<()>,
-        node: RedNode<GoLanguage>,
-        source: &str,
-        source_id: u32,
-    ) -> Id {
-        let kind = node.green.kind;
-        let loc = self.get_loc(&node, source_id);
-
-        match kind {
-            GoSyntaxKind::SourceFile => {
-                let mut items = vec![];
-                for child in node.children() {
-                    if let RedTree::Node(n) = child {
-                        if n.green.kind != GoSyntaxKind::Error {
-                            let item = self.convert_red_to_uir(builder, n, source, source_id);
-                            items.push(item);
-                        }
+                if let ast::Expression::Identifier { name, .. } = &**func {
+                    if let Some(intrinsic) = self.ctx.map_intrinsic(name, arguments.clone(), loc.clone()) {
+                        return intrinsic;
                     }
                 }
-                builder.module("rusty-go", items)
-            }
-            _ => {
-                // Placeholder for other elements
-                builder.constant(0, loc)
+
+                let f = self.convert_expression(func);
+                self.ctx.builder().call(f, arguments, loc)
             }
         }
     }

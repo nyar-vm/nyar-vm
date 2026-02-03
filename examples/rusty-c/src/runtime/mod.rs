@@ -40,12 +40,12 @@ impl From<&str> for RuntimeError {
     }
 }
 
-pub struct MiniCRuntime {
+pub struct RustyCRuntime {
     _optimizer: UniversalOptimizer<()>,
     vm: NyarVM,
 }
 
-impl MiniCRuntime {
+impl RustyCRuntime {
     pub fn new() -> Self {
         Self {
             _optimizer: UniversalOptimizer::new(),

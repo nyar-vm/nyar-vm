@@ -2,9 +2,10 @@
 //!
 //! 这个库提供了 Rusty Python 语言的词法分析、语法分析和 Gaia 翻译功能。
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
-use oak_core::Parser;
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
+use chomsky_uir::Id;
+use chomsky_source::Loc;
 
 pub mod codegen;
 pub mod pyc_codegen;
@@ -17,20 +18,6 @@ impl RustyPythonFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self
-    }
-
-    /// 词法分析（仅用于测试）
-    pub fn tokenize(&self, _source: &str) -> Result<Vec<String>, NyarError> {
-        // TODO: 实现真正的词法分析导出
-        Ok(vec!["dummy_token".to_string()])
-    }
-
-    /// 编译到 Gaia 程序
-    pub fn compile_to_gaia(&self, source: &str) -> Result<gaia_assembler::program::GaiaModule, NyarError> {
-        let ast = self.parse(source)?;
-        let tree = self.lower(&ast)?;
-        let mut translator = codegen::GaiaTranslator::new();
-        translator.generate_from_tree(&tree).map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 }
 
@@ -56,35 +43,51 @@ impl NyarFrontend for RustyPythonFrontend {
         Ok(ast)
     }
 
-    fn lower(&self, ast: &PythonRoot) -> Result<IKunTree, NyarError> {
-        let mut items = Vec::new();
-        for stmt in &ast.program.statements {
-            if let Some(node) = self.lower_statement(stmt) {
-                items.push(node);
-            }
-        }
-        Ok(IKunTree::Module("rusty-python-program".to_string(), items))
+    fn lower_unified(&self, ast: &PythonRoot, ctx: &mut NyarContext) -> Id {
+        let mut converter = UirConverter::new(ctx);
+        converter.convert_root(ast)
     }
 }
 
-impl RustyPythonFrontend {
-    fn lower_statement(&self, stmt: &Statement) -> Option<IKunTree> {
+struct UirConverter<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> {
+    ctx: &'a mut NyarContext<'b, A>,
+}
+
+impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A> {
+    fn new(ctx: &'a mut NyarContext<'b, A>) -> Self {
+        Self { ctx }
+    }
+
+    fn convert_root(&mut self, root: &PythonRoot) -> Id {
+        let mut items = Vec::new();
+        for stmt in &root.program.statements {
+            if let Some(node) = self.convert_statement(stmt) {
+                items.push(node);
+            }
+        }
+        self.ctx.builder().module("main", items)
+    }
+
+    fn convert_statement(&mut self, stmt: &Statement) -> Option<Id> {
+        let loc = Loc::default(); // Python AST lacks spans
         match stmt {
             Statement::Assignment { target, value } => {
-                let target_node = self.lower_expression(target);
-                let value_node = self.lower_expression(value);
-                Some(IKunTree::StateUpdate(
-                    Box::new(target_node),
-                    Box::new(value_node),
-                ))
+                let val = self.convert_expression(value);
+                if let Expression::Name(name) = target {
+                    let name = self.ctx.scopes.declare_variable(name);
+                    Some(self.ctx.builder().assign(&name, val, loc))
+                } else {
+                    let target_id = self.convert_expression(target);
+                    Some(self.ctx.builder().assign_to_id(target_id, val, loc))
+                }
             }
             Statement::AugmentedAssignment {
                 target,
                 operator,
                 value,
             } => {
-                let target_node = self.lower_expression(target);
-                let value_node = self.lower_expression(value);
+                let target_node = self.convert_expression(target);
+                let value_node = self.convert_expression(value);
                 let op_name = match operator {
                     oak_python::ast::AugmentedOperator::Add => "add",
                     oak_python::ast::AugmentedOperator::Sub => "sub",
@@ -99,77 +102,67 @@ impl RustyPythonFrontend {
                     oak_python::ast::AugmentedOperator::BitXor => "bitxor",
                     oak_python::ast::AugmentedOperator::BitAnd => "bitand",
                 };
-                let result_node =
-                    IKunTree::Extension(op_name.to_string(), vec![target_node.clone(), value_node]);
-                Some(IKunTree::StateUpdate(
-                    Box::new(target_node),
-                    Box::new(result_node),
-                ))
+                let result_node = self.ctx.builder().binary_op(op_name, target_node, value_node, loc.clone());
+                Some(self.ctx.builder().assign_to_id(target_node, result_node, loc))
             }
-            Statement::Expression(expr) => Some(self.lower_expression(expr)),
+            Statement::Expression(expr) => Some(self.convert_expression(expr)),
             Statement::FunctionDef {
                 name,
                 parameters,
                 body,
                 ..
             } => {
-                let params = parameters.iter().map(|p| p.name.clone()).collect();
+                self.ctx.scopes.push_scope();
+                let params = parameters.iter().map(|p| self.ctx.scopes.declare_variable(&p.name)).collect();
                 let mut body_items = Vec::new();
                 for s in body {
-                    if let Some(node) = self.lower_statement(s) {
+                    if let Some(node) = self.convert_statement(s) {
                         body_items.push(node);
                     }
                 }
-                Some(IKunTree::StateUpdate(
-                    Box::new(IKunTree::Symbol(name.clone())),
-                    Box::new(IKunTree::Lambda(
-                        params,
-                        Box::new(IKunTree::Seq(body_items)),
-                    )),
-                ))
+                let body_id = self.ctx.builder().block(body_items, loc.clone());
+                self.ctx.scopes.pop_scope();
+                
+                let lambda = self.ctx.builder().function(name, params, vec![body_id]);
+                Some(self.ctx.builder().assign(name, lambda, loc))
             }
             Statement::Return(expr) => {
                 let val = expr
                     .as_ref()
-                    .map(|e| self.lower_expression(e))
-                    .unwrap_or(IKunTree::Constant(0));
-                Some(IKunTree::Apply(
-                    Box::new(IKunTree::Symbol("return".to_string())),
-                    vec![val],
-                ))
+                    .map(|e| self.convert_expression(e))
+                    .unwrap_or(self.ctx.builder().constant(0, loc.clone()));
+                Some(self.ctx.builder().return_(val, loc))
             }
             Statement::If { test, body, orelse } => {
-                let cond = self.lower_expression(test);
+                let cond = self.convert_expression(test);
                 let mut then_items = Vec::new();
                 for s in body {
-                    if let Some(node) = self.lower_statement(s) {
+                    if let Some(node) = self.convert_statement(s) {
                         then_items.push(node);
                     }
                 }
+                let then_id = self.ctx.builder().block(then_items, loc.clone());
+                
                 let mut else_items = Vec::new();
                 for s in orelse {
-                    if let Some(node) = self.lower_statement(s) {
+                    if let Some(node) = self.convert_statement(s) {
                         else_items.push(node);
                     }
                 }
-                Some(IKunTree::Choice(
-                    Box::new(cond),
-                    Box::new(IKunTree::Seq(then_items)),
-                    Box::new(IKunTree::Seq(else_items)),
-                ))
+                let else_id = self.ctx.builder().block(else_items, loc.clone());
+                
+                Some(self.ctx.builder().branch(cond, then_id, else_id, loc))
             }
             Statement::While { test, body, .. } => {
-                let cond = self.lower_expression(test);
+                let cond = self.convert_expression(test);
                 let mut body_items = Vec::new();
                 for s in body {
-                    if let Some(node) = self.lower_statement(s) {
+                    if let Some(node) = self.convert_statement(s) {
                         body_items.push(node);
                     }
                 }
-                Some(IKunTree::Repeat(
-                    Box::new(cond),
-                    Box::new(IKunTree::Seq(body_items)),
-                ))
+                let body_id = self.ctx.builder().block(body_items, loc.clone());
+                Some(self.ctx.builder().while_loop(cond, body_id, loc))
             }
             Statement::For {
                 target,
@@ -177,50 +170,45 @@ impl RustyPythonFrontend {
                 body,
                 ..
             } => {
-                let target_node = self.lower_expression(target);
-                let iter_node = self.lower_expression(iter);
+                let target_node = self.convert_expression(target);
+                let iter_node = self.convert_expression(iter);
                 let mut body_items = Vec::new();
                 for s in body {
-                    if let Some(node) = self.lower_statement(s) {
+                    if let Some(node) = self.convert_statement(s) {
                         body_items.push(node);
                     }
                 }
-                // Map to a custom extension for for-each
-                Some(IKunTree::Extension(
-                    "foreach".to_string(),
-                    vec![target_node, iter_node, IKunTree::Seq(body_items)],
-                ))
+                let body_id = self.ctx.builder().block(body_items, loc.clone());
+                Some(self.ctx.builder().extension("foreach", vec![target_node, iter_node, body_id], loc))
             }
-            Statement::Pass => Some(IKunTree::Seq(vec![])),
-            Statement::Break => Some(IKunTree::Apply(
-                Box::new(IKunTree::Symbol("break".to_string())),
-                vec![],
-            )),
-            Statement::Continue => Some(IKunTree::Apply(
-                Box::new(IKunTree::Symbol("continue".to_string())),
-                vec![],
-            )),
+            Statement::Pass => Some(self.ctx.builder().constant(0, loc)),
+            Statement::Break => Some(self.ctx.builder().extension("break", vec![], loc)),
+            Statement::Continue => Some(self.ctx.builder().extension("continue", vec![], loc)),
             _ => None,
         }
     }
 
-    fn lower_expression(&self, expr: &Expression) -> IKunTree {
+    fn convert_expression(&mut self, expr: &Expression) -> Id {
+        let loc = Loc::default();
         match expr {
             Expression::Literal(lit) => match lit {
-                Literal::Integer(i) => IKunTree::Constant(*i),
-                Literal::Float(f) => IKunTree::FloatConstant(f.to_bits()),
-                Literal::String(s) => IKunTree::StringConstant(s.clone()),
-                Literal::Boolean(b) => IKunTree::BooleanConstant(*b),
-                Literal::None => IKunTree::Constant(0),
+                Literal::Integer(i) => self.ctx.builder().constant(*i, loc),
+                Literal::Float(f) => self.ctx.builder().constant(f.to_bits() as i64, loc), // FIXME: use float
+                Literal::String(_s) => self.ctx.builder().extension("string", vec![], loc),
+                Literal::Boolean(b) => self.ctx.builder().constant(if *b { 1 } else { 0 }, loc),
+                Literal::None => self.ctx.builder().constant(0, loc),
             },
-            Expression::Name(name) => IKunTree::Symbol(name.clone()),
+            Expression::Name(name) => {
+                let resolved = self.ctx.scopes.resolve_variable(name);
+                self.ctx.builder().symbol(&resolved, loc)
+            }
             Expression::BinaryOp {
                 left,
                 operator,
                 right,
             } => {
-                let left_node = self.lower_expression(left);
-                let right_node = self.lower_expression(right);
+                let left_node = self.convert_expression(left);
+                let right_node = self.convert_expression(right);
                 let op_name = match operator {
                     oak_python::ast::BinaryOperator::Add => "add",
                     oak_python::ast::BinaryOperator::Sub => "sub",
@@ -235,41 +223,41 @@ impl RustyPythonFrontend {
                     oak_python::ast::BinaryOperator::BitXor => "bitxor",
                     oak_python::ast::BinaryOperator::BitAnd => "bitand",
                 };
-                IKunTree::Extension(op_name.to_string(), vec![left_node, right_node])
+                self.ctx.builder().binary_op(op_name, left_node, right_node, loc)
             }
             Expression::UnaryOp { operator, operand } => {
-                let operand_node = self.lower_expression(operand);
+                let operand_node = self.convert_expression(operand);
                 let op_name = match operator {
                     oak_python::ast::UnaryOperator::Invert => "invert",
                     oak_python::ast::UnaryOperator::Not => "not",
                     oak_python::ast::UnaryOperator::UAdd => "uadd",
                     oak_python::ast::UnaryOperator::USub => "usub",
                 };
-                IKunTree::Extension(op_name.to_string(), vec![operand_node])
+                self.ctx.builder().extension(op_name, vec![operand_node], loc)
             }
             Expression::BoolOp { operator, values } => {
                 let op_name = match operator {
                     oak_python::ast::BoolOperator::And => "and",
                     oak_python::ast::BoolOperator::Or => "or",
                 };
-                let nodes = values.iter().map(|v| self.lower_expression(v)).collect();
-                IKunTree::Extension(op_name.to_string(), nodes)
+                let nodes = values.iter().map(|v| self.convert_expression(v)).collect();
+                self.ctx.builder().extension(op_name, nodes, loc)
             }
             Expression::List { elts } => {
-                let nodes = elts.iter().map(|e| self.lower_expression(e)).collect();
-                IKunTree::Extension("list".to_string(), nodes)
+                let nodes = elts.iter().map(|e| self.convert_expression(e)).collect();
+                self.ctx.builder().extension("list", nodes, loc)
             }
             Expression::Tuple { elts } => {
-                let nodes = elts.iter().map(|e| self.lower_expression(e)).collect();
-                IKunTree::Extension("tuple".to_string(), nodes)
+                let nodes = elts.iter().map(|e| self.convert_expression(e)).collect();
+                self.ctx.builder().extension("tuple", nodes, loc)
             }
             Expression::Compare {
                 left,
                 ops,
                 comparators,
             } => {
-                let left_node = self.lower_expression(left);
-                let right_node = self.lower_expression(&comparators[0]);
+                let left_node = self.convert_expression(left);
+                let right_node = self.convert_expression(&comparators[0]);
                 let op_name = match ops[0] {
                     oak_python::ast::CompareOperator::Eq => "eq",
                     oak_python::ast::CompareOperator::NotEq => "noteq",
@@ -279,39 +267,24 @@ impl RustyPythonFrontend {
                     oak_python::ast::CompareOperator::GtE => "gte",
                     _ => "unknown",
                 };
-                IKunTree::Extension(op_name.to_string(), vec![left_node, right_node])
+                self.ctx.builder().binary_op(op_name, left_node, right_node, loc)
             }
             Expression::Call { func, args, .. } => {
-                let func_node = self.lower_expression(func);
-                let args_nodes: Vec<IKunTree> =
-                    args.iter().map(|a| self.lower_expression(a)).collect();
+                let mut arguments = Vec::new();
+                for arg in args {
+                    arguments.push(self.convert_expression(arg));
+                }
 
-                // 特殊处理 print
-                if let IKunTree::Symbol(ref name) = func_node {
-                    if name == "print" {
-                        // Python's print defaults to newline.
-                        // Map to a standard cross-language call that all backends should handle.
-                        return IKunTree::CrossLangCall(
-                            "nyar".to_string(),
-                            "std::io::println".to_string(),
-                            args_nodes,
-                        );
+                if let Expression::Name(name) = &**func {
+                    if let Some(intrinsic) = self.ctx.map_intrinsic(name, arguments.clone(), loc.clone()) {
+                        return intrinsic;
                     }
                 }
 
-                IKunTree::Apply(Box::new(func_node), args_nodes)
+                let f = self.convert_expression(func);
+                self.ctx.builder().call(f, arguments, loc)
             }
-            _ => IKunTree::Constant(0),
+            _ => self.ctx.builder().constant(0, loc),
         }
-    }
-
-    /// 编译到 Python 字节码 (.pyc)
-    pub fn compile_to_pyc(&self, source: &str) -> Result<Vec<u8>, NyarError> {
-        use crate::pyc_codegen::{emit_pyc, PycTranslator};
-        let ast = self.parse(source)?;
-        let tree = self.lower(&ast)?;
-        let mut translator = PycTranslator::new("program.py", "<module>");
-        let program = translator.translate_from_tree(&tree);
-        emit_pyc(&program).map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 }
