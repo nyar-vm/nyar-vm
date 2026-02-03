@@ -299,10 +299,10 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 if let ast::ExpressionKind::Identifier(name, _) = &*function.kind {
                     match name.as_str() {
                         "printf" | "print" => {
-                            return self.ctx.builder().intrinsic(1, args, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "io", "print", args, loc);
                         }
                         "exit" => {
-                            return self.ctx.builder().intrinsic(3, args, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "std", "exit", args, loc);
                         }
                         _ => {}
                     }

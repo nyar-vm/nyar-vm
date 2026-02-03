@@ -253,19 +253,19 @@ impl<'a, 'b, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'a, 'b, A
                 if let ast::Expression::Identifier { name, .. } = &**func {
                     match name.as_str() {
                         "fmt.Println" | "fmt.Printf" | "println" | "print" => {
-                            return self.ctx.builder().intrinsic(2, arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "io", "println", arguments, loc);
                         }
                         "os.Exit" => {
-                            return self.ctx.builder().intrinsic(3, arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "std", "exit", arguments, loc);
                         }
                         "panic" => {
-                            return self.ctx.builder().intrinsic(7, arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "std", "panic", arguments, loc);
                         }
                         "sin" | "Math.sin" | "math.sin" => {
-                            return self.ctx.builder().intrinsic(8, arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "math", "sin", arguments, loc);
                         }
                         "sqrt" | "Math.sqrt" | "math.sqrt" => {
-                            return self.ctx.builder().intrinsic(9, arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "math", "sqrt", arguments, loc);
                         }
                         _ => {}
                     }

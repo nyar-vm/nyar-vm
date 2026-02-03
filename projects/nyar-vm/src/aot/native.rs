@@ -322,30 +322,36 @@ impl NativeBackend {
                     self.emit_tree(item, builder, data, context)?;
                 }
             }
-            IKunTree::Intrinsic(id, args) => {
-                match id {
-                    2 => { // Println
-                        if let Some(IKunTree::StringConstant(s)) = args.first() {
-                            self.emit_write(s, true, builder, data)?;
+            IKunTree::CrossLangCall(lang, group, func, args) => {
+                if lang == "nyar" {
+                    // Map to intrinsic logic for AOT
+                    match (group.as_str(), func.as_str()) {
+                        ("io", "println") | ("", "println") => { // Println
+                            if let Some(IKunTree::StringConstant(s)) = args.first() {
+                                self.emit_write(s, true, builder, data)?;
+                            }
                         }
-                    }
-                    1 => { // Print
-                        if let Some(IKunTree::StringConstant(s)) = args.first() {
-                            self.emit_write(s, false, builder, data)?;
+                        ("io", "print") | ("", "print") => { // Print
+                            if let Some(IKunTree::StringConstant(s)) = args.first() {
+                                self.emit_write(s, false, builder, data)?;
+                            }
                         }
-                    }
-                    3 => { // Exit
-                        if let Some(IKunTree::Constant(code)) = args.first() {
-                            self.emit_exit(*code as i32, builder)?;
-                        } else {
-                            self.emit_exit(0, builder)?;
+                        ("std", "exit") | ("", "exit") => { // Exit
+                            if let Some(IKunTree::Constant(code)) = args.first() {
+                                self.emit_exit(*code as i32, builder)?;
+                            } else {
+                                self.emit_exit(0, builder)?;
+                            }
                         }
+                        ("std", "panic") | ("", "panic") => {
+                            if let Some(IKunTree::StringConstant(s)) = args.first() {
+                                self.emit_write(&format!("Panic: {}", s), true, builder, data)?;
+                            }
+                            self.emit_exit(1, builder)?;
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                }
-            }
-            IKunTree::CrossLangCall(lang, func, args) => {
-                if lang == "native" || lang == "csharp" {
+                } else if lang == "native" || lang == "csharp" {
                     // Avoid unused variable warning if we don't use func
                     let _ = func;
                     self.emit_printf(args, builder, data, context)?;

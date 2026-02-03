@@ -93,20 +93,36 @@ impl NyarBackend {
                     code.extend(self.lower_tree(item)?);
                 }
             }
-            IKunTree::CrossLangCall(_lang, name, args) => {
+            IKunTree::CrossLangCall(lang, group, func, args) => {
                 for arg in args {
                     code.extend(self.lower_tree(arg)?);
                 }
-                let name_idx = self.add_constant(Constant::String(name.clone()));
-                code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
-            }
-            IKunTree::Intrinsic(id, args) => {
-                for arg in args {
-                    code.extend(self.lower_tree(arg)?);
-                }
-                // Use FFICall with a constant that represents the intrinsic ID
-                // We use a special naming convention or just a number in the constant pool
-                let name = format!("$intrinsic:{}", id);
+                let name = if lang == "nyar" {
+                    // Try to map to intrinsic ID
+                    let id = match (group.as_str(), func.as_str()) {
+                        ("io", "print") | ("", "print") => 1,
+                        ("io", "println") | ("", "println") => 2,
+                        ("std", "exit") | ("", "exit") => 3,
+                        ("time", "now") | ("", "get_time") => 4,
+                        ("time", "sleep") | ("", "sleep") => 5,
+                        ("ops", "add") | ("", "native_add") => 6,
+                        ("std", "panic") | ("", "panic") => 7,
+                        ("math", "sin") | ("", "sin") => 8,
+                        ("math", "sqrt") | ("", "sqrt") => 9,
+                        ("mem", "alloc") | ("", "alloc") => 10,
+                        ("math", "abs") | ("", "abs") => 11,
+                        ("math", "cos") | ("", "cos") => 12,
+                        ("math", "tan") | ("", "tan") => 13,
+                        _ => 0,
+                    };
+                    if id > 0 {
+                        format!("$intrinsic:{}", id)
+                    } else {
+                        format!("{}:{}:{}", lang, group, func)
+                    }
+                } else {
+                    format!("{}:{}:{}", lang, group, func)
+                };
                 let name_idx = self.add_constant(Constant::String(name));
                 code.extend_from_slice(&Instruction::FFICall(name_idx, args.len() as u8).encode());
             }
