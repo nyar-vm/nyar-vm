@@ -49,7 +49,6 @@ impl NyarDriver {
     }
 
     /// AOT 编译到原生可执行文件
-    #[cfg(feature = "native")]
     pub fn compile_to_native<F: NyarFrontend>(
         &self,
         frontend: &F,
@@ -94,18 +93,28 @@ impl NyarDriver {
     ) -> Result<(), NyarError> {
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
-        let _tree = frontend.lower(&ast)?;
+        let tree = frontend.lower(&ast)?;
 
-        // TODO: 使用 nyar-aot 进行 WASM 生成
         println!("AOT: Compiling IKunTree to WASM at {:?}", output_path);
 
-        Err(NyarError::Compile(
-            "AOT compilation to WASM backend is not yet fully integrated".to_string(),
-        ))
+        use chomsky::adapters::GaiaWasiAdapter;
+        use chomsky_extract::Backend;
+        let adapter = GaiaWasiAdapter;
+        let artifact = adapter
+            .generate(&tree)
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
+
+        match artifact {
+            chomsky_extract::BackendArtifact::Binary(bytes) => {
+                fs::write(output_path, bytes).map_err(NyarError::from)?;
+            }
+            _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
+        }
+
+        Ok(())
     }
 
     /// 编译到 JVM .class 文件
-    #[cfg(feature = "jvm")]
     pub fn compile_to_jvm<F: NyarFrontend>(
         &self,
         frontend: &F,
@@ -113,7 +122,7 @@ impl NyarDriver {
         output_path: &Path,
     ) -> Result<(), NyarError> {
         use chomsky::adapters::GaiaJvmAdapter;
-        use chomsky::extract::Backend;
+        use chomsky_extract::Backend;
 
         let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
         let ast = frontend.parse(&source)?;
@@ -127,7 +136,7 @@ impl NyarDriver {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))?;
 
         match artifact {
-            chomsky::extract::BackendArtifact::Binary(bytes) => {
+            chomsky_extract::BackendArtifact::Binary(bytes) => {
                 fs::write(output_path, bytes).map_err(NyarError::from)?;
             }
             _ => return Err(NyarError::Compile("Expected binary artifact".to_string())),
@@ -136,14 +145,19 @@ impl NyarDriver {
         Ok(())
     }
 
-    /// 编译到 JVM .class 文件
-    #[cfg(not(feature = "jvm"))]
-    pub fn compile_to_jvm<F: NyarFrontend>(
+    /// 编译到 CLR 程序集
+    pub fn compile_to_clr<F: NyarFrontend>(
         &self,
-        _frontend: &F,
-        _source_path: &Path,
-        _output_path: &Path,
+        frontend: &F,
+        source_path: &Path,
+        output_path: &Path,
     ) -> Result<(), NyarError> {
-        Err(NyarError::Compile("JVM feature is not enabled".to_string()))
+        // TODO: 完善 CLR 适配器并在这里调用
+        let source = fs::read_to_string(source_path).map_err(NyarError::from)?;
+        let ast = frontend.parse(&source)?;
+        let _tree = frontend.lower(&ast)?;
+
+        println!("CLR: Compiling IKunTree to CLR at {:?}", output_path);
+        Err(NyarError::Compile("CLR backend is not yet fully integrated".to_string()))
     }
 }

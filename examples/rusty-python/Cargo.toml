@@ -19,6 +19,8 @@ oak-core = { path = "../../../oaks/projects/oak-core" }
 oak-python = { path = "../../../oaks/examples/oak-python" }
 nyar-types = { path = "../../projects/nyar-types" }
 nyar-vm = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-types = { workspace = true }
 python-assembler = { workspace = true }
 gaia-assembler = { workspace = true }
 gaia-types = { workspace = true }

@@ -41,6 +41,7 @@ chomsky = { path = "../ProjectChomsky/packages/chomsky", default-features = fals
 chomsky-source = { path = "../ProjectChomsky/packages/chomsky-source" }
 chomsky-uir = { path = "../ProjectChomsky/packages/chomsky-uir" }
 chomsky-cost = { path = "../ProjectChomsky/packages/chomsky-cost" }
+chomsky-types = { path = "../ProjectChomsky/packages/chomsky-types" }
 chomsky-extract = { path = "../ProjectChomsky/packages/chomsky-extract" }
 chomsky-rules = { path = "../ProjectChomsky/packages/chomsky-rules" }
 chomsky-rule-engine = { path = "../ProjectChomsky/packages/chomsky-rule-engine" }
