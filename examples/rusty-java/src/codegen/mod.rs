@@ -433,6 +433,10 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> JavaUirConverter<'a, 'b, V, A> {
                 let loc = self.loc();
                 Ok(self.builder().constant(*v, loc))
             }
+            Expression::Literal(Literal::Float(v)) => {
+                let loc = self.loc();
+                Ok(self.builder().float(*v, loc))
+            }
             Expression::Literal(Literal::String(s)) => {
                 let loc = self.loc();
                 Ok(self.builder().string(s, loc))

@@ -139,6 +139,12 @@ impl GaiaTranslator {
                                 continue;
                             }
                         }
+                    } else if name == "class_def" {
+                        if let IKunTree::Symbol(class_name) = &args[0] {
+                            self.defined_classes.insert(class_name.clone());
+                        }
+                        class_defs.push(args);
+                        continue;
                     }
                 }
             }

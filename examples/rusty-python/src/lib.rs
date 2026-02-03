@@ -72,6 +72,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
 
     fn convert_statement(&mut self, stmt: &Statement) -> Option<Id> {
         let loc = Loc::default(); // Python AST lacks spans
+        eprintln!("DEBUG: Converting statement: {:?}", stmt);
         match stmt {
             Statement::Assignment { target, value } => {
                 let val = self.convert_expression(value);
@@ -153,8 +154,12 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     }
                 }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
-                
                 let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
+                
+                // IMPORTANT: We MUST ensure all nodes in the body are fully resolved 
+                // BEFORE popping the scope if the UIR builder is lazy.
+                // However, Chomsky UIR's Id should be stable.
+                
                 self.ctx.scopes.pop_scope();
                 eprintln!("DEBUG: Popped scope for function {}", name);
                 let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
@@ -557,7 +562,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             Expression::Name(name) => {
                 let resolved = self.ctx.scopes.resolve_variable(name);
                 if name == "self" {
-                    eprintln!("DEBUG: Resolving 'self' -> '{}'", resolved);
+                    eprintln!("DEBUG: Resolving 'self' -> '{}' in expression: {:?}", resolved, expr);
                 }
                 self.ctx.builder().symbol(&resolved, loc)
             }

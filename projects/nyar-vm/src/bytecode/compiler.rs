@@ -36,6 +36,7 @@ impl NyarBackend {
     }
 
     pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, NyarError> {
+        println!("DEBUG: lower_tree: {:?}", tree);
         let mut code = Vec::new();
         match tree {
             IKunTree::Symbol(name) => {
