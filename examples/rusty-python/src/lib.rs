@@ -153,7 +153,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 self.ctx.scopes.pop_scope();
 
                 let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
-                let defaults_id = self.ctx.builder().seq(defaults, loc.clone());
+                let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
@@ -214,7 +214,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 self.ctx.scopes.pop_scope();
 
                 let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
-                let defaults_id = self.ctx.builder().seq(defaults, loc.clone());
+                let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
@@ -700,7 +700,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
 
                 let f = self.convert_expression(func);
                 if has_complex {
-                    let args_seq = self.ctx.builder().seq(arguments, loc.clone());
+                    let args_seq = self.ctx.builder().extension("list", arguments, loc.clone());
                     self.ctx.builder().extension("python_call", vec![f, args_seq], loc)
                 } else {
                     self.ctx.builder().call(f, arguments, loc)
@@ -758,7 +758,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 self.ctx.scopes.pop_scope();
 
                 let lam = self.ctx.builder().lambda(params, body_id, loc.clone());
-                let defaults_id = self.ctx.builder().seq(defaults, loc.clone());
+                let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
                 let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
                 let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 

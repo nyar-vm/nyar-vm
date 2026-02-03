@@ -820,6 +820,22 @@ impl GaiaTranslator {
                             CoreInstruction::PushConstant(GaiaConstant::Null),
                         ));
                     }
+                    "starred" | "starred_double" | "keyword_arg" => {
+                        for arg in args {
+                            self.generate_tree_node(arg, false)?;
+                        }
+                        self.current_instructions.push(GaiaInstruction::Managed(
+                            ManagedInstruction::CallMethod {
+                                target: "Builtins".to_string(),
+                                method: name.clone(),
+                                signature: GaiaSignature {
+                                    params: vec![GaiaType::Object; args.len()],
+                                    return_type: GaiaType::Object,
+                                },
+                                is_virtual: false,
+                            },
+                        ));
+                    }
                     _ => {}
                 }
             }

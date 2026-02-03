@@ -8,6 +8,8 @@ members = [
     "examples/rusty-c",
     "examples/rusty-go",
     "examples/rusty-csharp",
+    "examples/rusty-tcl",
+    "examples/rusty-swift",
 ]
 default-members = [
     "projects/nyar-types",

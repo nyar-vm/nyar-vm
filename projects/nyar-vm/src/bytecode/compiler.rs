@@ -1,4 +1,5 @@
 use crate::bytecode::instruction::Instruction;
+use crate::runtime::NyarBuiltin;
 use crate::bytecode::format::{Chunk, ClassInfo, Constant, ExportInfo, NyarcModule};
 use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
@@ -16,7 +17,6 @@ impl NyarBackend {
     }
 
     pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, NyarError> {
-        println!("Backend: lowering tree");
         let mut code = Vec::new();
         match tree {
             IKunTree::Symbol(name) => {
@@ -58,7 +58,7 @@ impl NyarBackend {
                 }
                 let chunk_idx = chunk_idx as u16;
                 self.module.chunks.push(Chunk {
-                    locals: 32,
+                    locals: params.len() as u16,
                     upvalues: 0,
                     max_stack: 64,
                     code: final_code,
@@ -75,20 +75,17 @@ impl NyarBackend {
                 }
             }
             IKunTree::Constant(v) => {
-                let idx = self.add_constant(Constant::Int(*v));
-                code.extend_from_slice(&Instruction::Push(idx).encode());
+                code.extend_from_slice(&Instruction::I64Const(*v).encode());
             }
             IKunTree::FloatConstant(v) => {
-                let idx = self.add_constant(Constant::Float(f64::from_bits(*v)));
-                code.extend_from_slice(&Instruction::Push(idx).encode());
+                code.extend_from_slice(&Instruction::F64Const(f64::from_bits(*v)).encode());
             }
             IKunTree::BooleanConstant(v) => {
                 let idx = self.add_constant(Constant::Int(if *v { 1 } else { 0 }));
                 code.extend_from_slice(&Instruction::Push(idx).encode());
             }
             IKunTree::StringConstant(v) => {
-                let idx = self.add_constant(Constant::String(v.clone()));
-                code.extend_from_slice(&Instruction::Push(idx).encode());
+                code.extend_from_slice(&Instruction::StringConst(v.clone()).encode());
             }
             IKunTree::Module(_name, items) => {
                 let mut module_code = Vec::new();
@@ -145,28 +142,12 @@ impl NyarBackend {
                     });
                 }
             }
-            IKunTree::Constant(v) => {
-                code.extend_from_slice(&Instruction::I64Const(*v).encode());
-            }
-            IKunTree::StringConstant(s) => {
-                code.extend_from_slice(&Instruction::StringConst(s.clone()).encode());
-            }
-            IKunTree::Symbol(s) => {
-                code.push(Opcode::LoadGlobal as u8);
-                let idx = self.add_constant(Constant::QualifiedName(QualifiedName::from(s.as_str())));
-                code.extend_from_slice(&(idx as u16).to_le_bytes());
-            }
             IKunTree::Return(val) => {
                 if let Some(code_tail) = self.lower_tail_call(val)? {
                     code.extend(code_tail);
                 } else {
                     code.extend(self.lower_tree(val)?);
                     code.push(Opcode::Return as u8);
-                }
-            }
-            IKunTree::Seq(items) => {
-                for item in items {
-                    code.extend(self.lower_tree(item)?);
                 }
             }
             IKunTree::Choice(cond, then_branch, else_branch) => {
@@ -213,32 +194,32 @@ impl NyarBackend {
                 let name = if lang == "nyar" {
                     // Try to map to intrinsic ID
                     let id = match (group.as_str(), func.as_str()) {
-                        ("io", "print") | ("", "print") => 1,
-                        ("io", "println") | ("", "println") => 2,
-                        ("std", "exit") | ("", "exit") => 3,
-                        ("time", "now") | ("", "get_time") => 4,
-                        ("time", "sleep") | ("", "sleep") => 5,
-                        ("ops", "add") | ("", "native_add") => 6,
-                        ("std", "panic") | ("", "panic") => 7,
-                        ("math", "sin") | ("", "sin") => 8,
-                        ("math", "sqrt") | ("", "sqrt") => 9,
-                        ("mem", "alloc") | ("", "alloc") => 10,
-                        ("math", "abs") | ("", "abs") => 11,
-                        ("math", "cos") | ("", "cos") => 12,
-                        ("math", "tan") | ("", "tan") => 13,
-                        ("ops", "bit_and") | ("", "bit_and") => 14,
-                        ("ops", "bit_or") | ("", "bit_or") => 15,
-                        ("ops", "bit_xor") | ("", "bit_xor") => 16,
-                        ("ops", "bit_not") | ("", "bit_not") => 17,
-                        ("ops", "bit_shl") | ("", "bit_shl") => 18,
-                        ("ops", "bit_shr") | ("", "bit_shr") => 19,
-                        ("mem", "free") => 20,
-                        ("mem", "realloc") => 21,
-                        ("mem", "set") => 22,
-                        ("mem", "copy") => 23,
-                        ("str", "len") => 24,
-                        ("str", "cmp") => 25,
-                        ("math", "rand") => 26,
+                        ("io", "print") | ("", "print") => NyarBuiltin::Print as u32,
+                        ("io", "println") | ("", "println") => NyarBuiltin::Println as u32,
+                        ("std", "exit") | ("", "exit") => NyarBuiltin::Exit as u32,
+                        ("time", "now") | ("", "get_time") => NyarBuiltin::GetTime as u32,
+                        ("time", "sleep") | ("", "sleep") => NyarBuiltin::Sleep as u32,
+                        ("ops", "add") | ("", "native_add") => NyarBuiltin::NativeAdd as u32,
+                        ("std", "panic") | ("", "panic") => NyarBuiltin::Panic as u32,
+                        ("math", "sin") | ("", "sin") => NyarBuiltin::MathSin as u32,
+                        ("math", "sqrt") | ("", "sqrt") => NyarBuiltin::MathSqrt as u32,
+                        ("mem", "alloc") | ("", "alloc") => NyarBuiltin::MemAlloc as u32,
+                        ("math", "abs") | ("", "abs") => NyarBuiltin::MathAbs as u32,
+                        ("math", "cos") | ("", "cos") => NyarBuiltin::MathCos as u32,
+                        ("math", "tan") | ("", "tan") => NyarBuiltin::MathTan as u32,
+                        ("ops", "bit_and") | ("", "bit_and") => NyarBuiltin::BitAnd as u32,
+                        ("ops", "bit_or") | ("", "bit_or") => NyarBuiltin::BitOr as u32,
+                        ("ops", "bit_xor") | ("", "bit_xor") => NyarBuiltin::BitXor as u32,
+                        ("ops", "bit_not") | ("", "bit_not") => NyarBuiltin::BitNot as u32,
+                        ("ops", "bit_shl") | ("", "bit_shl") => NyarBuiltin::BitShl as u32,
+                        ("ops", "bit_shr") | ("", "bit_shr") => NyarBuiltin::BitShr as u32,
+                        ("mem", "free") => NyarBuiltin::MemFree as u32,
+                        ("mem", "realloc") => NyarBuiltin::MemRealloc as u32,
+                        ("mem", "set") => NyarBuiltin::MemSet as u32,
+                        ("mem", "copy") => NyarBuiltin::MemCopy as u32,
+                        ("str", "len") => NyarBuiltin::StrLen as u32,
+                        ("str", "cmp") => NyarBuiltin::StrCmp as u32,
+                        ("math", "rand") => NyarBuiltin::MathRand as u32,
                         _ => 0,
                     };
                     if id > 0 {
@@ -421,9 +402,8 @@ impl NyarBackend {
                             // [name, value]
                             code.extend(self.lower_tree(&args[1])?);
                             if let IKunTree::Symbol(name) = &args[0] {
-                                let idx = self.add_constant(Constant::QualifiedName(QualifiedName::from(name.as_str())));
-                                code.push(Opcode::StoreGlobal as u8);
-                                code.extend_from_slice(&(idx as u16).to_le_bytes());
+                                let idx = self.add_constant(Constant::String(name.clone()));
+                                code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
                             }
                         }
                     }
@@ -482,96 +462,7 @@ impl NyarBackend {
                         code.extend(self.lower_tree(&args[1])?);
                         code.extend_from_slice(&Instruction::I64GeS.encode());
                     }
-                    "and" => {
-                        // short-circuit: a && b
-                        // eval a
-                        code.extend(self.lower_tree(&args[0])?);
-                        // dup
-                        code.extend_from_slice(&Instruction::Dup(0).encode());
-                        // jump if false to end
-                        let jump_placeholder = code.len();
-                        code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
-                        // pop (a)
-                        code.extend_from_slice(&Instruction::Pop.encode());
-                        // eval b
-                        code.extend(self.lower_tree(&args[1])?);
-                        // label end:
-                        let end_pos = code.len();
-                        let offset = (end_pos as isize - jump_placeholder as isize) as i16;
-                        let jump_instr = Instruction::JumpIfFalse(offset).encode();
-                        code[jump_placeholder..jump_placeholder + jump_instr.len()].copy_from_slice(&jump_instr);
-                    }
-                    "or" => {
-                        // short-circuit: a || b
-                        // eval a
-                        code.extend(self.lower_tree(&args[0])?);
-                        // dup
-                        code.extend_from_slice(&Instruction::Dup(0).encode());
-                        // jump if true to end
-                        let jump_placeholder = code.len();
-                        code.extend_from_slice(&Instruction::JumpIfTrue(0).encode());
-                        // pop (a)
-                        code.extend_from_slice(&Instruction::Pop.encode());
-                        // eval b
-                        code.extend(self.lower_tree(&args[1])?);
-                        // label end:
-                        let end_pos = code.len();
-                        let offset = (end_pos as isize - jump_placeholder as isize) as i16;
-                        let jump_instr = Instruction::JumpIfTrue(offset).encode();
-                        code[jump_placeholder..jump_placeholder + jump_instr.len()].copy_from_slice(&jump_instr);
-                    }
-                    "bit_and" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64And.encode());
-                    }
-                    "bit_or" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Or.encode());
-                    }
-                    "bit_xor" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Xor.encode());
-                    }
-                    "shl" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Shl.encode());
-                    }
-                    "shr" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64ShrS.encode());
-                    }
-                    "ushr" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64ShrU.encode());
-                    }
-                    "neg" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend_from_slice(&Instruction::I64Neg.encode());
-                    }
-                    "not" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend_from_slice(&Instruction::I64Not.encode());
-                    }
-                    "bit_not" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend_from_slice(&Instruction::I64Not.encode());
-                    }
-                    "break" => {
-                        // For now just halt or nop, or implement proper jump
-                        code.push(Opcode::Halt as u8);
-                    }
-                    "continue" => {
-                        code.push(Opcode::Nop as u8);
-                    }
-                    _ => {
-                        // Handle other extensions or fallback
-                    }
+                    _ => {}
                 }
             }
             _ => {}
@@ -579,118 +470,63 @@ impl NyarBackend {
         Ok(code)
     }
 
-    fn add_constant(&mut self, c: Constant) -> u16 {
-        if let Some(pos) = self.module.constants.iter().position(|x| x == &c) {
-            pos as u16
-        } else {
-            let idx = self.module.constants.len();
-            if idx >= u16::MAX as usize {
-                panic!("Constant pool overflow");
-            }
-            let idx = idx as u16;
-            self.module.constants.push(c);
-            idx
-        }
-    }
-
-    fn add_class(&mut self, name: String, fields: Vec<String>) -> u16 {
-        let qn = QualifiedName::from(name.as_str());
-        if let Some(pos) = self.module.classes.iter().position(|x| x.name == qn) {
-            pos as u16
-        } else {
-            let idx = self.module.classes.len();
-            if idx >= u16::MAX as usize {
-                panic!("Class pool overflow");
-            }
-            let idx = idx as u16;
-            self.module.classes.push(ClassInfo { name: qn, fields });
-            idx
-        }
-    }
-    pub fn finish(self) -> NyarcModule {
-        self.module
-    }
-
     fn lower_tail_call(&mut self, tree: &IKunTree) -> Result<Option<Vec<u8>>, NyarError> {
-        let mut code = Vec::new();
         match tree {
-            IKunTree::Extension(name, args) if name == "call" => {
-                if args.len() == 3 {
-                    // [target, name, args]
-                    code.extend(self.lower_tree(&args[0])?); // callee
-                    if let IKunTree::Symbol(name) = &args[1] {
-                        let name_idx = self.add_constant(Constant::String(name.clone()));
-                        code.push(Opcode::LoadGlobal as u8);
-                        code.extend_from_slice(&(name_idx as u16).to_le_bytes());
-                    }
-                    if let IKunTree::Seq(call_args) = &args[2] {
-                        for arg in call_args {
-                            code.extend(self.lower_tree(arg)?);
-                        }
-                        // Currently we don't have InvokeMethodTail, so we just use regular call for methods
-                        // Or we could implement it. But let's stick to simple tail calls for now.
-                        return Ok(None);
-                    }
-                } else if args.len() == 2 {
-                    // [name, args]
-                    if let IKunTree::Symbol(name) = &args[0] {
-                        let name_idx = self.add_constant(Constant::String(name.clone()));
-                        // To do a tail call, we first need to load the closure
-                        code.push(Opcode::LoadGlobal as u8);
-                        code.extend_from_slice(&(name_idx as u16).to_le_bytes());
-
-                        if let IKunTree::Seq(call_args) = &args[1] {
-                            for arg in call_args {
-                                code.extend(self.lower_tree(arg)?);
-                            }
-                            code.extend_from_slice(&Instruction::TailCall(call_args.len() as u8).encode());
-                            return Ok(Some(code));
-                        }
-                    }
-                }
-            }
-            IKunTree::CrossLangCall {
-                language,
-                module_path,
-                function_name,
-                arguments,
-            } if language == "nyar" => {
-                // Similar logic for nyar cross-lang calls
-                let name = format!("{}:{}:{}", language, module_path, function_name);
-                let name_idx = self.add_constant(Constant::String(name));
-                code.push(Opcode::LoadGlobal as u8);
-                code.extend_from_slice(&(name_idx as u16).to_le_bytes());
-
-                for arg in arguments {
+            IKunTree::Apply(callee, args) => {
+                let mut code = Vec::new();
+                for arg in args {
                     code.extend(self.lower_tree(arg)?);
                 }
-                code.extend_from_slice(&Instruction::TailCall(arguments.len() as u8).encode());
-                return Ok(Some(code));
+                if let IKunTree::Symbol(name) = &**callee {
+                    let idx = self.add_constant(Constant::String(name.clone()));
+                    code.extend_from_slice(&Instruction::TailCall(idx, args.len() as u8).encode());
+                } else {
+                    code.extend(self.lower_tree(callee)?);
+                    code.extend_from_slice(&Instruction::TailCallClosure(args.len() as u8).encode());
+                }
+                Ok(Some(code))
             }
-            _ => {}
+            _ => Ok(None),
         }
-        Ok(None)
+    }
+
+    fn add_constant(&mut self, constant: Constant) -> u16 {
+        if let Some(pos) = self.module.constants.iter().position(|c| c == &constant) {
+            pos as u16
+        } else {
+            let pos = self.module.constants.len() as u16;
+            self.module.constants.push(constant);
+            pos
+        }
+    }
+
+    fn add_class(&mut self, name: String, fields: Vec<String>) {
+        let qn = QualifiedName::from(name.as_str());
+        if !self.module.classes.iter().any(|c| c.name == qn) {
+            self.module.classes.push(ClassInfo {
+                name: qn,
+                fields: fields.into_iter().map(QualifiedName::from).collect(),
+            });
+        }
     }
 }
 
-impl Backend for NyarBackend {
-    fn name(&self) -> &str {
-        "nyar"
-    }
+impl Backend<IKunTree> for NyarBackend {
+    type Error = NyarError;
 
-    fn get_model(&self) -> &dyn chomsky_cost::CostModel {
-        &chomsky_cost::DEFAULT_COST_MODEL
-    }
-
-    fn generate(&self, tree: &IKunTree) -> Result<BackendArtifact, chomsky_types::ChomskyError> {
-        let mut backend = NyarBackend::new();
-        backend
-            .lower_tree(tree)
-            .map_err(|e| chomsky_types::ChomskyError::backend_error(format!("{:?}", e)))?;
-        let module = backend.finish();
-
-        let json = serde_json::to_string_pretty(&module)
-            .map_err(|e| chomsky_types::ChomskyError::backend_error(e.to_string()))?;
-        Ok(BackendArtifact::Source(json))
+    fn lower(&mut self, tree: &IKunTree) -> Result<BackendArtifact, Self::Error> {
+        self.lower_tree(tree)?;
+        let mut binary = Vec::new();
+        self.module.encode(&mut binary).map_err(|e| {
+            NyarError::new(
+                0x1001,
+                nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::Internal(e.to_string())),
+                nyar_types::SourceLocation::default(),
+            )
+        })?;
+        Ok(BackendArtifact {
+            binary,
+            source_map: vec![],
+        })
     }
 }

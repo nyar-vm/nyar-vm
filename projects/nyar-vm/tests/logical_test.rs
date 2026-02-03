@@ -29,7 +29,7 @@ fn test_logical_and_short_circuit() {
     let artifact = backend.finish();
     let mut vm = NyarVM::new();
     vm.load_module(artifact);
-    let res = vm.execute_symbol(&"test:main".into(), vec![]).unwrap();
+    let res = vm.execute_symbol(&"main".into(), vec![]).unwrap();
     assert_eq!(res.as_int(), 1);
 
     // true && false -> false
@@ -54,7 +54,7 @@ fn test_logical_and_short_circuit() {
     let artifact = backend.finish();
     let mut vm = NyarVM::new();
     vm.load_module(artifact);
-    let res = vm.execute_symbol(&"test:main".into(), vec![]).unwrap();
+    let res = vm.execute_symbol(&"main".into(), vec![]).unwrap();
     assert_eq!(res.as_int(), 0);
 
     // false && (panic) -> false (short-circuit)
@@ -84,7 +84,7 @@ fn test_logical_and_short_circuit() {
     let artifact = backend.finish();
     let mut vm = NyarVM::new();
     vm.load_module(artifact);
-    let res = vm.execute_symbol(&"test:main".into(), vec![]).unwrap();
+    let res = vm.execute_symbol(&"main".into(), vec![]).unwrap();
     assert_eq!(res.as_int(), 0);
 }
 
@@ -113,7 +113,7 @@ fn test_logical_or_short_circuit() {
     let artifact = backend.finish();
     let mut vm = NyarVM::new();
     vm.load_module(artifact);
-    let res = vm.execute_symbol(&"test:main".into(), vec![]).unwrap();
+    let res = vm.execute_symbol(&"main".into(), vec![]).unwrap();
     assert_eq!(res.as_int(), 0);
 
     // false || true -> true
@@ -138,7 +138,7 @@ fn test_logical_or_short_circuit() {
     let artifact = backend.finish();
     let mut vm = NyarVM::new();
     vm.load_module(artifact);
-    let res = vm.execute_symbol(&"test:main".into(), vec![]).unwrap();
+    let res = vm.execute_symbol(&"main".into(), vec![]).unwrap();
     assert_eq!(res.as_int(), 1);
 
     // true || (panic) -> true (short-circuit)
@@ -168,6 +168,6 @@ fn test_logical_or_short_circuit() {
     let artifact = backend.finish();
     let mut vm = NyarVM::new();
     vm.load_module(artifact);
-    let res = vm.execute_symbol(&"test:main".into(), vec![]).unwrap();
+    let res = vm.execute_symbol(&"main".into(), vec![]).unwrap();
     assert_eq!(res.as_int(), 1);
 }

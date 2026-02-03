@@ -3,9 +3,11 @@
 //!
 //! 提供 Mini Java 的词法分析、语法分析和 Nyar 翻译功能。
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{IKunTree, NyarError, NyarFrontend, NyarContext};
 use oak_core::{builder::Builder, source::SourceText};
 use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
+use oak_vfs::Vfs;
+use chomsky_uir::Id;
 
 pub mod codegen;
 pub mod row_type;
@@ -57,8 +59,16 @@ impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
+    /// 统一的接入接口，支持 EGraph 优化流
+    fn lower_unified<V: Vfs>(&self, ast: &JavaRoot, ctx: &mut NyarContext<V>) -> Id {
+        let mut converter = codegen::JavaUirConverter::new(ctx.egraph, ctx.source_id);
+        converter.convert_root(ast).unwrap_or(None).unwrap_or_else(|| {
+            ctx.builder().constant(0, ctx.loc(0, 0))
+        })
+    }
+
     /// 编译到 Chomsky UIR (IKunTree)
-    fn lower(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
+    fn lower<V: Vfs>(&self, ast: &JavaRoot, vfs: &V) -> Result<IKunTree, NyarError> {
         codegen::JavaUirConverter::convert_to_tree(ast, 1)
     }
 }

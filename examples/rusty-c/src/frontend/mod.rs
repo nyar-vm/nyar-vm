@@ -326,7 +326,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 }
                 ast::JumpStatement::Goto(identifier, span) => {
                     let loc = self.to_loc(span.clone().into());
-                    let label_name = self.ctx.builder().constant(identifier.clone(), loc.clone());
+                    let label_name = self.ctx.builder().string(identifier.clone().as_str(), loc.clone());
                     self.ctx.builder().extension("goto", vec![label_name], loc)
                 }
                 _ => self.ctx.builder().constant(0, loc),
@@ -340,10 +340,10 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
         match &*expr.kind {
             ast::ExpressionKind::Constant(c, _) => match c {
                 ast::Constant::Integer(val, _) => self.ctx.builder().constant(*val, loc),
-                ast::Constant::Float(val, _) => self.ctx.builder().constant(*val, loc),
+                ast::Constant::Float(val, _) => self.ctx.builder().float(*val, loc),
                 ast::Constant::Character(val, _) => self.ctx.builder().constant(*val as i64, loc),
             },
-            ast::ExpressionKind::StringLiteral(val, _) => self.ctx.builder().constant(val.clone(), loc),
+            ast::ExpressionKind::StringLiteral(val, _) => self.ctx.builder().string(val.as_str(), loc),
             ast::ExpressionKind::Identifier(name, _) => {
                 let resolved = self.ctx.scopes.resolve_variable(name);
                 self.ctx.builder().symbol(&resolved, loc)
@@ -361,7 +361,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             } => {
                 let obj = self.convert_expression(object);
                 let op = if *is_pointer { "arrow" } else { "dot" };
-                let member_id = self.ctx.builder().constant(member.clone(), loc.clone());
+                let member_id = self.ctx.builder().string(member.as_str(), loc.clone());
                 self.ctx.builder().extension(op, vec![obj, member_id], loc)
             }
             ast::ExpressionKind::Binary {

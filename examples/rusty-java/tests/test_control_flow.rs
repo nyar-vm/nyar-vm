@@ -18,7 +18,7 @@ fn test_control_flow_conversion() {
     // 4. 验证 UIR 结构
     // 检查 UIR 是否包含 expected 的控制流扩展
     let uir_str = format!("{:?}", uir);
-    assert!(uir_str.contains("\"if\""));
+    assert!(uir_str.contains("Choice"));
     assert!(uir_str.contains("\"while\""));
     assert!(uir_str.contains("\"do_while\""));
     assert!(uir_str.contains("\"for\""));

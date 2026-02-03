@@ -1,6 +1,6 @@
-use mini_tcl::MiniTclFrontend;
+use rusty_tcl::RustyTclFrontend;
 use nyar_vm::NyarDriver;
-use std::{path::Path, process::exit};
+use std::process::exit;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -9,11 +9,12 @@ fn main() {
         exit(1);
     }
 
-    let input_file = Path::new(&args[1]);
-    let frontend = MiniTclFrontend::new();
+    let input_file = &args[1];
+    let frontend = RustyTclFrontend::new();
     let driver = NyarDriver::new();
-    
-    if let Err(e) = driver.run_source(&frontend, input_file) {
+    let vfs = driver.default_vfs();
+
+    if let Err(e) = driver.run_source(&frontend, &vfs, input_file) {
         eprintln!("Runtime error: {:?}", e);
         exit(1);
     }

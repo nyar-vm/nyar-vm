@@ -898,13 +898,44 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 self.builder.extension("intersection_type", vec![seq], loc)
             }
             ast::TypeAnnotation::Reference { name, args } => {
-                let name_id = self.builder.symbol(&name, loc.clone());
-                let mut arg_ids = Vec::new();
-                for a in args {
-                    arg_ids.push(self.convert_type_annotation(a, loc.clone()));
+                match name.as_str() {
+                    "Partial" if args.len() == 1 => {
+                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                        self.builder.extension("partial_type", vec![inner], loc)
+                    }
+                    "Required" if args.len() == 1 => {
+                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                        self.builder.extension("required_type", vec![inner], loc)
+                    }
+                    "Readonly" if args.len() == 1 => {
+                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                        self.builder.extension("readonly_type", vec![inner], loc)
+                    }
+                    "Pick" if args.len() == 2 => {
+                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                        let keys = self.convert_type_annotation(args[1].clone(), loc.clone());
+                        self.builder.extension("pick_type", vec![inner, keys], loc)
+                    }
+                    "Omit" if args.len() == 2 => {
+                        let inner = self.convert_type_annotation(args[0].clone(), loc.clone());
+                        let keys = self.convert_type_annotation(args[1].clone(), loc.clone());
+                        self.builder.extension("omit_type", vec![inner, keys], loc)
+                    }
+                    "Record" if args.len() == 2 => {
+                        let key = self.convert_type_annotation(args[0].clone(), loc.clone());
+                        let value = self.convert_type_annotation(args[1].clone(), loc.clone());
+                        self.builder.extension("record_type", vec![key, value], loc)
+                    }
+                    _ => {
+                        let name_id = self.builder.symbol(&name, loc.clone());
+                        let mut arg_ids = Vec::new();
+                        for a in args {
+                            arg_ids.push(self.convert_type_annotation(a, loc.clone()));
+                        }
+                        let seq = self.builder.seq(arg_ids, loc.clone());
+                        self.builder.extension("type_ref", vec![name_id, seq], loc)
+                    }
                 }
-                let seq = self.builder.seq(arg_ids, loc.clone());
-                self.builder.extension("type_ref", vec![name_id, seq], loc)
             }
             ast::TypeAnnotation::Function {
                 params: _,
@@ -961,7 +992,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
     fn convert_class_member(&mut self, member: ast::ClassMember, loc: Loc) -> Id {
         match member {
             ast::ClassMember::Property {
-                decorators: _,
+                decorators,
                 name,
                 ty,
                 initializer,
@@ -988,10 +1019,17 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 args.push(self.builder.bool(is_abstract, loc.clone()));
                 args.push(self.builder.string(&format!("{:?}", visibility), loc.clone()));
                 args.push(self.builder.bool(is_optional, loc.clone()));
-                self.builder.extension("property", args, loc)
+                let mut prop_id = self.builder.extension("property", args, loc.clone());
+
+                // Handle property decorators
+                for dec in decorators {
+                    let dec_expr = self.convert_expression(dec.expression);
+                    prop_id = self.builder.call(dec_expr, vec![prop_id], loc.clone());
+                }
+                prop_id
             }
             ast::ClassMember::Method {
-                decorators: _,
+                decorators,
                 name,
                 type_params,
                 params,
@@ -1022,7 +1060,14 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                         p_args.push(self.builder.constant(0, p_loc.clone()));
                     }
                     p_args.push(self.builder.bool(p.optional, p_loc.clone()));
-                    param_ids.push(self.builder.extension("param", p_args, p_loc));
+                    let mut param_id = self.builder.extension("param", p_args, p_loc.clone());
+
+                    // Handle method parameter decorators
+                    for dec in p.decorators {
+                        let dec_expr = self.convert_expression(dec.expression);
+                        param_id = self.builder.call(dec_expr, vec![param_id], p_loc.clone());
+                    }
+                    param_ids.push(param_id);
                 }
                 args.push(self.builder.seq(param_ids, loc.clone()));
 
@@ -1038,14 +1083,20 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     args.push(self.builder.constant(0, loc.clone()));
                 }
 
+                args.push(self.builder.string(&format!("{:?}", visibility), loc.clone()));
                 args.push(self.builder.bool(is_static, loc.clone()));
                 args.push(self.builder.bool(is_abstract, loc.clone()));
                 args.push(self.builder.bool(is_getter, loc.clone()));
                 args.push(self.builder.bool(is_setter, loc.clone()));
-                args.push(self.builder.string(&format!("{:?}", visibility), loc.clone()));
                 args.push(self.builder.bool(is_optional, loc.clone()));
+                let mut method_id = self.builder.extension("method", args, loc.clone());
 
-                self.builder.extension("method", args, loc)
+                // Handle method decorators
+                for dec in decorators {
+                    let dec_expr = self.convert_expression(dec.expression);
+                    method_id = self.builder.call(dec_expr, vec![method_id], loc.clone());
+                }
+                method_id
             }
         }
     }
