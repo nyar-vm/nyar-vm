@@ -1,5 +1,5 @@
 [package]
-name = "mini-prolog"
+name = "rusty-prolog"
 version = "0.1.0"
 edition = "2021"
 

@@ -1,5 +1,5 @@
 [package]
-name = "mini-java"
+name = "rusty-java"
 version = "0.1.0"
 edition = "2021"
 

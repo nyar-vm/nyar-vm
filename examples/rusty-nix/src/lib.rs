@@ -2,11 +2,11 @@ use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_nix::{NixBuilder, NixLanguage};
 use oak_core::{Builder, SourceText};
 
-pub struct MiniNixFrontend {
+pub struct RustyNixFrontend {
     language: NixLanguage,
 }
 
-impl MiniNixFrontend {
+impl RustyNixFrontend {
     pub fn new() -> Self {
         Self {
             language: NixLanguage::default(),
@@ -14,13 +14,13 @@ impl MiniNixFrontend {
     }
 }
 
-impl Default for MiniNixFrontend {
+impl Default for RustyNixFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NyarFrontend for MiniNixFrontend {
+impl NyarFrontend for RustyNixFrontend {
     type Language = NixLanguage;
 
     fn parse(&self, source: &str) -> Result<(), NyarError> {
@@ -36,6 +36,6 @@ impl NyarFrontend for MiniNixFrontend {
 
     fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
         // TODO: 实现从 Nix AST 到 IKunTree 的转换
-        Ok(IKunTree::Module("mini-nix-program".to_string(), Vec::new()))
+        Ok(IKunTree::Module("rusty-nix-program".to_string(), Vec::new()))
     }
 }

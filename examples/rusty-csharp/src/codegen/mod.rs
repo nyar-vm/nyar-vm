@@ -23,36 +23,34 @@ impl NyarTranslator {
 
     pub fn translate_to_tree(&self, ast: &JavaRoot) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
-        self.translate_to_graph(ast, &mut egraph)?;
+        let mut builder = IntentBuilder::new(&mut egraph);
+        let root_id = self.translate_root(ast, &mut builder)?;
 
         let extractor =
             chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DefaultCostModel::default());
-        let root_id = egraph.classes.iter().next().map(|entry| *entry.key());
-        if let Some(root_id) = root_id {
-            Ok(extractor.extract(root_id))
-        } else {
-            Err(NyarError::Compile("No code generated".to_string()))
-        }
+        
+        Ok(extractor.extract(root_id))
     }
 
     fn translate_root(
         &self,
         root: &JavaRoot,
         builder: &mut IntentBuilder<ConstraintAnalysis>,
-    ) -> Result<(), NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let mut classes = Vec::new();
         for item in &root.items {
             if let Item::Class(class) = item {
-                self.translate_class(class, builder)?;
+                classes.push(self.translate_class(class, builder)?);
             }
         }
-        Ok(())
+        Ok(builder.seq(classes, Loc::unknown()))
     }
 
     fn translate_class(
         &self,
         class: &ClassDeclaration,
         builder: &mut IntentBuilder<ConstraintAnalysis>,
-    ) -> Result<(), NyarError> {
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut members = Vec::new();
         for member in &class.members {
             if let Member::Method(method) = member {
@@ -63,8 +61,7 @@ impl NyarTranslator {
         let loc = Loc::unknown();
         let name_id = builder.string(&class.name, loc);
         let members_id = builder.seq(members, loc);
-        builder.extension("class", vec![name_id, members_id], loc);
-        Ok(())
+        Ok(builder.extension("class", vec![name_id, members_id], loc))
     }
 
     fn translate_method(

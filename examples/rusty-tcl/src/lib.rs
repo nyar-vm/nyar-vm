@@ -2,11 +2,11 @@ use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_tcl::{TclBuilder, TclLanguage, TclRoot};
 use oak_core::{Builder, SourceText};
 
-pub struct MiniTclFrontend {
+pub struct RustyTclFrontend {
     language: TclLanguage,
 }
 
-impl MiniTclFrontend {
+impl RustyTclFrontend {
     pub fn new() -> Self {
         Self {
             language: TclLanguage::default(),
@@ -14,13 +14,13 @@ impl MiniTclFrontend {
     }
 }
 
-impl Default for MiniTclFrontend {
+impl Default for RustyTclFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NyarFrontend for MiniTclFrontend {
+impl NyarFrontend for RustyTclFrontend {
     type Language = TclLanguage;
 
     fn parse(&self, source: &str) -> Result<TclRoot, NyarError> {
@@ -36,6 +36,6 @@ impl NyarFrontend for MiniTclFrontend {
 
     fn lower(&self, _ast: &TclRoot) -> Result<IKunTree, NyarError> {
         // TODO: 实现从 TclRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("mini-tcl-program".to_string(), Vec::new()))
+        Ok(IKunTree::Module("rusty-tcl-program".to_string(), Vec::new()))
     }
 }

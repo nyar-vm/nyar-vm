@@ -1,6 +1,6 @@
-//! Mini Python 语言前端
+//! Rusty Python 语言前端
 //!
-//! 这个库提供了 Mini Python 语言的词法分析、语法分析和 Gaia 翻译功能。
+//! 这个库提供了 Rusty Python 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_core::Parser;
@@ -9,18 +9,18 @@ use oak_python::ast::{Expression, Literal, PythonRoot, Statement};
 pub mod codegen;
 pub mod pyc_codegen;
 
-/// Mini Python 前端
+/// Rusty Python 前端
 #[derive(Default)]
-pub struct MiniPythonFrontend;
+pub struct RustyPythonFrontend;
 
-impl MiniPythonFrontend {
+impl RustyPythonFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
         Self
     }
 }
 
-impl NyarFrontend for MiniPythonFrontend {
+impl NyarFrontend for RustyPythonFrontend {
     type Language = oak_python::PythonLanguage;
 
     fn parse(&self, source: &str) -> Result<PythonRoot, NyarError> {
@@ -49,11 +49,11 @@ impl NyarFrontend for MiniPythonFrontend {
                 items.push(node);
             }
         }
-        Ok(IKunTree::Module("mini-python-program".to_string(), items))
+        Ok(IKunTree::Module("rusty-python-program".to_string(), items))
     }
 }
 
-impl MiniPythonFrontend {
+impl RustyPythonFrontend {
     fn lower_statement(&self, stmt: &Statement) -> Option<IKunTree> {
         match stmt {
             Statement::Assignment { target, value } => {

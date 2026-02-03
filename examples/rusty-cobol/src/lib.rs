@@ -2,11 +2,11 @@ use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_cobol::{CobolLanguage, parser::CobolParser};
 use oak_core::{parser::Parser, SourceText};
 
-pub struct MiniCobolFrontend {
+pub struct RustyCobolFrontend {
     language: CobolLanguage,
 }
 
-impl MiniCobolFrontend {
+impl RustyCobolFrontend {
     pub fn new() -> Self {
         Self {
             language: CobolLanguage::default(),
@@ -14,13 +14,13 @@ impl MiniCobolFrontend {
     }
 }
 
-impl Default for MiniCobolFrontend {
+impl Default for RustyCobolFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NyarFrontend for MiniCobolFrontend {
+impl NyarFrontend for RustyCobolFrontend {
     type Language = CobolLanguage;
 
     fn parse(&self, source: &str) -> Result<(), NyarError> {
@@ -37,6 +37,6 @@ impl NyarFrontend for MiniCobolFrontend {
 
     fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
         // TODO: 实现从 COBOL AST 到 IKunTree 的转换
-        Ok(IKunTree::Module("mini-cobol-program".to_string(), Vec::new()))
+        Ok(IKunTree::Module("rusty-cobol-program".to_string(), Vec::new()))
     }
 }

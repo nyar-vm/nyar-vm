@@ -1,5 +1,5 @@
 [package]
-name = "mini-dart"
+name = "rusty-dart"
 version = "0.1.0"
 edition = "2021"
 

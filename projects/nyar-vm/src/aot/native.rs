@@ -47,16 +47,18 @@ impl Backend for NativeBackend {
         // 为每个变量分配 8 字节空间
         // 栈布局：[Shadow Space (32)] [Locals...]
         // Windows x64 ABI 要求在 call 之前栈必须 16 字节对齐。
-        // 进入函数时，由于返回地址压栈，RSP = 16n + 8。
-        // 因此我们分配的 stack_size 必须满足 (RSP - stack_size) % 16 == 0，即 stack_size = 16k + 8。
+        // 对于真正的入口点（Entry Point），进入时 RSP 通常是 16 字节对齐的（RSP = 16n）。
+        // 我们需要分配一定的栈空间，使得在调用其他函数前，RSP 依然是 16 字节对齐的。
+        // 即 (RSP - stack_size) % 16 == 0。
+        // 所以 stack_size 必须是 16 的倍数。
+        // 同时，Windows 要求至少 32 字节的影子空间。
         let mut offset = 32; // 至少预留 32 字节影子空间
         for local in locals {
             context.locals.insert(local, offset);
             offset += 8;
         }
-        // 计算对齐后的 stack_size，确保其结尾为 8
-        // 首先向上对齐到 16 的倍数，然后加 8
-        context.stack_size = ((offset + 15) & !15) + 8;
+        // 向上对齐到 16 的倍数
+        context.stack_size = (offset + 15) & !15;
 
         // 2. 函数序言 (Prologue)
         builder.add_instruction(Instruction::Sub {
@@ -68,12 +70,9 @@ impl Backend for NativeBackend {
         self.emit_tree(tree, &mut builder, &mut data_bytes, &mut context)?;
 
         // 4. 函数尾声 (Epilogue)
-        // 所有 Return 会跳转到这里
+        // 所有 Return 会跳转到这里。在这里我们不需要还原 RSP，因为我们要直接调用 ExitProcess。
+        // 如果是真正的函数调用，则需要 Add RSP, context.stack_size 并 Ret。
         builder.add_instruction(Instruction::Label("epilogue".to_string()));
-        builder.add_instruction(Instruction::Add {
-            dst: Operand::reg(Register::RSP),
-            src: Operand::imm(context.stack_size as i64, 32),
-        });
 
         // 5. 退出进程 (Terminate)
         // 使用 rax 作为退出码调用 ExitProcess
@@ -83,11 +82,16 @@ impl Backend for NativeBackend {
             src: Operand::reg(Register::EAX),
         });
         // call ExitProcess (index 2 in imports)
+        // 注意：此时 RSP 依然是 16 字节对齐的，且下方有足够的影子空间。
         builder.add_instruction(Instruction::Call {
             target: Operand::mem(None, None, 0, 2),
         });
-        
-        // 理论上不会执行到这里
+
+        // 理论上不会执行到这里，但为了保险起见，还原栈并返回
+        builder.add_instruction(Instruction::Add {
+            dst: Operand::reg(Register::RSP),
+            src: Operand::imm(context.stack_size as i64, 32),
+        });
         builder.add_instruction(Instruction::Ret);
 
         let code = builder.compile_instructions().map_err(|e| {

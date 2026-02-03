@@ -2,11 +2,11 @@ use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_prolog::{PrologBuilder, PrologLanguage, PrologRoot};
 use oak_core::{Builder, SourceText};
 
-pub struct MiniPrologFrontend {
+pub struct RustyPrologFrontend {
     language: PrologLanguage,
 }
 
-impl MiniPrologFrontend {
+impl RustyPrologFrontend {
     pub fn new() -> Self {
         Self {
             language: PrologLanguage::default(),
@@ -14,13 +14,13 @@ impl MiniPrologFrontend {
     }
 }
 
-impl Default for MiniPrologFrontend {
+impl Default for RustyPrologFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NyarFrontend for MiniPrologFrontend {
+impl NyarFrontend for RustyPrologFrontend {
     type Language = PrologLanguage;
 
     fn parse(&self, source: &str) -> Result<PrologRoot, NyarError> {
@@ -36,6 +36,6 @@ impl NyarFrontend for MiniPrologFrontend {
 
     fn lower(&self, _ast: &PrologRoot) -> Result<IKunTree, NyarError> {
         // TODO: 实现从 PrologRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("mini-prolog-program".to_string(), Vec::new()))
+        Ok(IKunTree::Module("rusty-prolog-program".to_string(), Vec::new()))
     }
 }

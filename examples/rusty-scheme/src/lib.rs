@@ -2,11 +2,11 @@ use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_scheme::{SchemeBuilder, SchemeLanguage};
 use oak_core::{Builder, SourceText};
 
-pub struct MiniSchemeFrontend {
+pub struct RustySchemeFrontend {
     language: SchemeLanguage,
 }
 
-impl MiniSchemeFrontend {
+impl RustySchemeFrontend {
     pub fn new() -> Self {
         Self {
             language: SchemeLanguage::default(),
@@ -14,13 +14,13 @@ impl MiniSchemeFrontend {
     }
 }
 
-impl Default for MiniSchemeFrontend {
+impl Default for RustySchemeFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NyarFrontend for MiniSchemeFrontend {
+impl NyarFrontend for RustySchemeFrontend {
     type Language = SchemeLanguage;
 
     fn parse(&self, source: &str) -> Result<(), NyarError> {
@@ -36,6 +36,6 @@ impl NyarFrontend for MiniSchemeFrontend {
 
     fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
         // TODO: 实现从 Scheme AST 到 IKunTree 的转换
-        Ok(IKunTree::Module("mini-scheme-program".to_string(), Vec::new()))
+        Ok(IKunTree::Module("rusty-scheme-program".to_string(), Vec::new()))
     }
 }

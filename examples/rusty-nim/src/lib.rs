@@ -2,11 +2,11 @@ use nyar_types::{IKunTree, NyarError, NyarFrontend};
 use oak_nim::{NimBuilder, NimLanguage, NimRoot};
 use oak_core::{Builder, SourceText};
 
-pub struct MiniNimFrontend {
+pub struct RustyNimFrontend {
     language: NimLanguage,
 }
 
-impl MiniNimFrontend {
+impl RustyNimFrontend {
     pub fn new() -> Self {
         Self {
             language: NimLanguage::default(),
@@ -14,13 +14,13 @@ impl MiniNimFrontend {
     }
 }
 
-impl Default for MiniNimFrontend {
+impl Default for RustyNimFrontend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NyarFrontend for MiniNimFrontend {
+impl NyarFrontend for RustyNimFrontend {
     type Language = NimLanguage;
 
     fn parse(&self, source: &str) -> Result<NimRoot, NyarError> {
@@ -36,6 +36,6 @@ impl NyarFrontend for MiniNimFrontend {
 
     fn lower(&self, _ast: &NimRoot) -> Result<IKunTree, NyarError> {
         // TODO: 实现从 NimRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("mini-nim-program".to_string(), Vec::new()))
+        Ok(IKunTree::Module("rusty-nim-program".to_string(), Vec::new()))
     }
 }
