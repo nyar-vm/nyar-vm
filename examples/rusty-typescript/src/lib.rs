@@ -266,7 +266,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 assign_args.push(self.builder.bool(func.is_declare, loc.clone()));
                 self.builder.extension("assign", assign_args, loc)
             }
-            ast::Statement::ExpressionStatement(expr) => self.convert_expression(expr),
+            ast::Statement::ExpressionStatement(stmt) => self.convert_expression(stmt.expression),
             ast::Statement::ImportDeclaration(import) => {
                 let loc = self.to_loc(import.span.into());
                 let mut args = vec![self.builder.string(&import.module_specifier, loc.clone())];
@@ -280,9 +280,9 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 let inner = self.convert_statement(*export.declaration);
                 self.builder.extension("export", vec![inner], loc)
             }
-            ast::Statement::ReturnStatement(value) => {
-                let loc = self.to_loc(span.into());
-                let val = if let Some(expr) = value {
+            ast::Statement::ReturnStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let val = if let Some(expr) = stmt.argument {
                     self.convert_expression(expr)
                 } else {
                     self.builder.constant(0, loc.clone())
@@ -440,17 +440,17 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 }
                 self.builder.block(stmts, loc)
             }
-            ast::Statement::BreakStatement => {
-                let loc = self.to_loc(span.into());
+            ast::Statement::BreakStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
                 self.builder.extension("break", vec![], loc)
             }
-            ast::Statement::ContinueStatement => {
-                let loc = self.to_loc(span.into());
+            ast::Statement::ContinueStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
                 self.builder.extension("continue", vec![], loc)
             }
-            ast::Statement::ThrowStatement(expr) => {
-                let loc = self.to_loc(span.into());
-                let val = self.convert_expression(expr);
+            ast::Statement::ThrowStatement(stmt) => {
+                let loc = self.to_loc(stmt.span.into());
+                let val = self.convert_expression(stmt.argument);
                 self.builder.extension("throw", vec![val], loc)
             }
             ast::Statement::DoWhileStatement(stmt) => {
