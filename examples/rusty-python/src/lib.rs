@@ -123,8 +123,8 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             body,
             ..
         } => {
-            // 在外层作用域声明函数名
-            let mangled_func_name = self.ctx.scopes.declare_variable(name);
+            // 在外层作用域查找是否已经声明过（例如在 ClassDef 中）
+            let mangled_func_name = self.ctx.scopes.resolve_variable(name);
             
             self.ctx.scopes.push_scope();
             let mut params = Vec::new();
@@ -135,7 +135,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             eprintln!("DEBUG: Function {} has {} parameters", name, parameters.len());
             for (i, p) in parameters.iter().enumerate() {
                 let mangled = self.ctx.scopes.declare_variable(&p.name);
-                eprintln!("DEBUG: Parameter {} : {} -> {}", i, p.name, mangled);
+                eprintln!("DEBUG: Declared parameter {} : {} -> {}", i, p.name, mangled);
                 params.push(mangled.clone());
                 if let Some(default) = &p.default {
                     defaults.push(self.convert_expression(default));
@@ -147,6 +147,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     kwarg = Some(self.ctx.builder().string(&p.name, loc.clone()));
                 }
             }
+            eprintln!("DEBUG: After parameter declaration, scopes: {:?}", self.ctx.scopes);
 
             let mut body_items = Vec::new();
             eprintln!("DEBUG: Converting body for function {}, {} statements", name, body.len());
@@ -528,16 +529,31 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let mangled_class_name = self.ctx.scopes.declare_variable(name);
                 
                 self.ctx.scopes.push_scope();
-            let mut body_items = Vec::new();
-            eprintln!("DEBUG: Converting body for class {}, {} statements", name, body.len());
-            for (i, s) in body.iter().enumerate() {
-                eprintln!("DEBUG: Converting statement {} for class {}: {:?}", i, name, s);
-                if let Some(node) = self.convert_statement(s) {
-                    body_items.push(node);
+                
+                // 在类作用域内声明方法名，以便在类体内引用
+                for s in body {
+                    if let Statement::FunctionDef { name: func_name, .. } = s {
+                        self.ctx.scopes.declare_variable(func_name);
+                    } else if let Statement::AsyncFunctionDef { name: func_name, .. } = s {
+                        self.ctx.scopes.declare_variable(func_name);
+                    }
                 }
-            }
+
+                let mut body_items = Vec::new();
+                eprintln!("DEBUG: Converting body for class {}, {} statements", name, body.len());
+                for (i, s) in body.iter().enumerate() {
+                    eprintln!("DEBUG: Converting statement {} for class {}: {:?}", i, name, s);
+                    if let Some(node) = self.convert_statement(s) {
+                        body_items.push(node);
+                    }
+                }
+                
+                // 重要：在 pop_scope 之前完成所有 body 的转换
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
+                
                 self.ctx.scopes.pop_scope();
+                eprintln!("DEBUG: Popped scope for class {}", name);
+
                 let bases_id = self.ctx.builder().extension("bases", base_nodes, loc.clone());
                 let class_node_vec = vec![self.ctx.builder().symbol(&mangled_class_name, loc.clone()), bases_id, body_id];
                 let mut class_node = self.ctx.builder().extension("class_def", class_node_vec, loc.clone());

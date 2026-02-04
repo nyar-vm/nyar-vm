@@ -132,11 +132,15 @@ impl ScopeManager {
 
     pub fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
+        eprintln!("DEBUG: pushed scope, depth: {}", self.scopes.len());
     }
 
     pub fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
             self.scopes.pop();
+            eprintln!("DEBUG: popped scope, depth: {}", self.scopes.len());
+        } else {
+            eprintln!("DEBUG: attempt to pop global scope ignored");
         }
     }
 

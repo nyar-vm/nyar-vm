@@ -347,6 +347,12 @@ impl GaiaTranslator {
                     self.current_instructions.push(GaiaInstruction::Core(
                         CoreInstruction::LoadLocal(local_index, GaiaType::Object),
                     ));
+                } else if let Some(mangled_name) = self.locals.keys().find(|k| k.starts_with(&(name.to_owned() + "_"))) {
+                    // 处理混淆后的变量名 (如 self_2)
+                    let local_index = self.locals[mangled_name];
+                    self.current_instructions.push(GaiaInstruction::Core(
+                        CoreInstruction::LoadLocal(local_index, GaiaType::Object),
+                    ));
                 } else if self.defined_classes.contains(name) {
                     // It's a class name, treat it as a constructor or static reference
                     self.current_instructions.push(GaiaInstruction::Core(
@@ -355,10 +361,10 @@ impl GaiaTranslator {
                 } else {
                     // Treat as a global/builtin symbol
                     // If it's a known builtin or global, Gaia might handle it
-                    // But if it's "self" and not in locals, something is wrong
-                    if name == "self" {
+                    // But if it's "self" (or starts with "self_") and not in locals, something is wrong
+                    if name == "self" || name.starts_with("self_") {
                         return Err(GaiaError::syntax_error(
-                            format!("Variable 'self' is used but not defined in this scope. Current locals: {:?}", self.locals.keys().collect::<Vec<_>>()),
+                            format!("Variable '{}' is used but not defined in this scope. Current locals: {:?}", name, self.locals.keys().collect::<Vec<_>>()),
                             SourceLocation::default(),
                         ));
                     }
