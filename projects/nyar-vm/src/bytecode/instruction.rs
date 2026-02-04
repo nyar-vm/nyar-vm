@@ -42,6 +42,8 @@ pub enum Instruction {
     SetElement,
     NewDynObject,
     RemoveKey,
+    Initiate(u8),
+    Finalize,
     NewList(u16),
     PushElementLeft,
     PopElementLeft,

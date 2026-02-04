@@ -51,6 +51,8 @@ pub enum Opcode {
     CheckCast = 0x42,
     Cast = 0x43,
     PopElementRight = 0x44,
+    Initiate = 0x45,
+    Finalize = 0x46,
     Perform = 0x50,
     WithHandler = 0x51,
     ResumeWith = 0x52,

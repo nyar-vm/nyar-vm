@@ -41,13 +41,13 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_call_closure(&mut self, argc: u16) -> Result<Option<usize>, NyarError> {
+        let callee = self.pop()?;
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
 
-        let callee = self.pop()?;
         let (instrs, locals_count, c_module_idx, c_chunk_idx) =
             if let Some(closure) = callee.try_as_closure() {
                 let chunk_idx = closure.func;
@@ -167,13 +167,13 @@ impl NyarVM {
         argc: u16,
         module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
+        let receiver = self.pop()?;
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
 
-        let receiver = self.pop()?;
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
             Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
@@ -195,37 +195,73 @@ impl NyarVM {
                 method_name.push(part.clone());
             }
 
-            if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&method_name) {
-                // Found class method, call it with receiver as first argument
-                let mut final_args = Vec::with_capacity(args.len() + 1);
-                final_args.push(receiver);
-                final_args.extend(args);
-                
-                let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-                let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+                if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&method_name) {
+                    // Found class method, call it with receiver as first argument
+                    let mut final_args = Vec::with_capacity(args.len() + 1);
+                    final_args.push(receiver);
+                    final_args.extend(args);
+                    
+                    let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
+                    let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 
-                if final_args.len() < locals_count {
-                    final_args.resize(locals_count, Value::null());
+                    if final_args.len() < locals_count {
+                        final_args.resize(locals_count, Value::null());
+                    }
+
+                    let new_frame = Frame {
+                        instrs,
+                        ip: 0,
+                        locals: final_args,
+                        upvalues: vec![None; locals_count],
+                        closure: Value::null(),
+                        module_idx: m_idx,
+                        chunk_idx: Some(chunk_idx as usize),
+                        location: Default::default(),
+                    };
+
+                    self.frames.push(new_frame);
+                    return Ok(Some(0));
+                } else {
+                    // Method not found on class, maybe it's a dynamic property that is a closure?
+                    // Try searching for just "MethodName" in class fields
+                    let field_idx = class_info.fields.iter().position(|f| f == name.parts.last().unwrap())
+                        .ok_or_else(|| self.error(nyar_types::VmErrorKind::SymbolNotFound(method_name.clone())))?;
+                    
+                    if field_idx < obj.fields.len() {
+                        let callee = obj.fields[field_idx];
+                        if callee.is_closure() {
+                            // It's a closure stored in a field, call it with arguments (including self)
+                            let mut final_args = Vec::with_capacity(args.len() + 1);
+                            final_args.push(receiver);
+                            final_args.extend(args);
+                            
+                            let closure = unsafe { callee.as_closure() };
+                            let m_idx = closure.module_idx;
+                            let c_idx = closure.func;
+                            let instrs = self.get_chunk_instructions(m_idx, c_idx)?;
+                            let locals_count = self.modules[m_idx].chunks[c_idx].locals as usize;
+
+                            if final_args.len() < locals_count {
+                                final_args.resize(locals_count, Value::null());
+                            }
+
+                            let new_frame = Frame {
+                                instrs,
+                                ip: 0,
+                                locals: final_args,
+                                upvalues: vec![None; locals_count],
+                                closure: callee,
+                                module_idx: m_idx,
+                                chunk_idx: Some(c_idx),
+                                location: Default::default(),
+                            };
+
+                            self.frames.push(new_frame);
+                            return Ok(Some(0));
+                        }
+                    }
+                    return Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(method_name)));
                 }
-
-                let new_frame = Frame {
-                    instrs,
-                    ip: 0,
-                    locals: final_args,
-                    upvalues: vec![None; locals_count],
-                    closure: Value::null(),
-                    module_idx: m_idx,
-                    chunk_idx: Some(chunk_idx as usize),
-                    location: Default::default(),
-                };
-
-                self.frames.push(new_frame);
-                return Ok(Some(0));
-            } else {
-                // Method not found on class, maybe it's a dynamic property that is a closure?
-                // For now, return error
-                return Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(method_name)));
-            }
         }
         Ok(None)
     }
@@ -325,13 +361,13 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_tail_call_closure(&mut self, argc: u8) -> Result<Option<usize>, NyarError> {
+        let callee = self.pop()?;
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
 
-        let callee = self.pop()?;
         let (instrs, locals_count, c_module_idx, c_chunk_idx) =
             if let Some(closure) = callee.try_as_closure() {
                 let chunk_idx = closure.func;
@@ -412,13 +448,13 @@ impl NyarVM {
         argc: u8,
         _module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
+        let trait_val = self.pop()?;
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
 
-        let trait_val = self.pop()?;
         let trait_obj = trait_val.try_as_trait_object().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x17)))?; // Opcode for CALL_VIRTUAL
         
         let witness_val = trait_obj.witness;

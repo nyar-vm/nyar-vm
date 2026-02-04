@@ -41,16 +41,7 @@ fn test_class_compilation() {
         code.push(Opcode::Return as u8);
     }
     
-    let mut module = backend.finish();
-    
-    // Add a chunk with the instantiation code
-    module.chunks.push(Chunk {
-        locals: 32,
-        upvalues: 0,
-        max_stack: 64,
-        code,
-        ..Default::default()
-    });
+    let mut module = backend.finish_with_code(code);
     
     // Verify class registration
     assert_eq!(module.classes.len(), 1);
@@ -89,14 +80,7 @@ fn test_bitwise_compilation() {
         code.push(Opcode::Return as u8);
     }
     
-    let mut module = backend.finish();
-    module.chunks.push(Chunk {
-        locals: 32,
-        upvalues: 0,
-        max_stack: 64,
-        code,
-        ..Default::default()
-    });
+    let mut module = backend.finish_with_code(code);
     
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
