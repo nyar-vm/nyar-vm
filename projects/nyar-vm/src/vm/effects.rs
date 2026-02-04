@@ -85,7 +85,7 @@ pub fn perform_effect_internal(
             let val = args.get(0).cloned().unwrap_or(Value::null());
             // Token enum has __variant__ and one field (u or x) mapped to _0
             let fields = vec![Value::string(variant_name.to_string(), &vm.gc), val];
-            let obj = Value::object(idx, fields, &vm.gc);
+            let obj = Value::object(module_idx, idx, fields, &vm.gc);
             return Ok(Some(obj));
         }
     }

@@ -651,8 +651,8 @@ impl Value {
         });
         Self::encode(ValueTag::Closure, g.as_ptr() as u64)
     }
-    pub fn object(class_idx: u16, fields: Vec<Value>, gc: &NyarGc) -> Self {
-        let g = gc.alloc(Object { class_idx, fields });
+    pub fn object(module_idx: usize, class_idx: u16, fields: Vec<Value>, gc: &NyarGc) -> Self {
+        let g = gc.alloc(Object { module_idx, class_idx, fields });
         Self::encode(ValueTag::Object, g.as_ptr() as u64)
     }
     pub fn trait_object(data: Value, witness: Value, gc: &NyarGc) -> Self {
@@ -941,6 +941,7 @@ pub struct Closure {
 
 #[derive(Clone)]
 pub struct Object {
+    pub module_idx: usize,
     pub class_idx: u16,
     pub fields: Vec<Value>,
 }

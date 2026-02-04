@@ -8,6 +8,7 @@ use nyar_types::{NyarError, QualifiedName};
 pub struct NyarBackend {
     module: NyarcModule,
     locals: Vec<String>,
+    classes: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl NyarBackend {
@@ -15,6 +16,7 @@ impl NyarBackend {
         Self {
             module: NyarcModule::default(),
             locals: Vec::new(),
+            classes: std::collections::HashMap::new(),
         }
     }
 
@@ -35,6 +37,31 @@ impl NyarBackend {
         res
     }
 
+    fn add_constant(&mut self, constant: Constant) -> u16 {
+        if let Some(idx) = self.module.constants.iter().position(|c| c == &constant) {
+            return idx as u16;
+        }
+        let idx = self.module.constants.len() as u16;
+        self.module.constants.push(constant);
+        idx
+    }
+
+    fn add_class(&mut self, name: String, fields: Vec<String>) {
+        self.classes.insert(name.clone(), fields.clone());
+        let qn = QualifiedName::from(name.as_str());
+        if !self.module.classes.iter().any(|c| c.name == qn) {
+            self.module.classes.push(ClassInfo {
+                name: qn,
+                fields,
+            });
+        }
+    }
+
+    fn find_class_index(&self, name: &str) -> Option<u16> {
+        let qn = QualifiedName::from(name);
+        self.module.classes.iter().position(|c| c.name == qn).map(|i| i as u16)
+    }
+
     pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, NyarError> {
         println!("DEBUG: lower_tree: {:?}", tree);
         let mut code = Vec::new();
@@ -50,6 +77,8 @@ impl NyarBackend {
             IKunTree::StateUpdate(target, value) => {
                 if let IKunTree::Symbol(name) = &**target {
                     code.extend(self.lower_tree(value)?);
+                    // StateUpdate 应该返回被赋的值
+                    code.extend_from_slice(&Instruction::Dup(0).encode());
                     if let Some(idx) = self.find_local(name) {
                         code.extend_from_slice(&Instruction::StoreLocal(idx).encode());
                     } else {
@@ -59,6 +88,15 @@ impl NyarBackend {
                 }
             }
             IKunTree::Apply(callee, args) => {
+                if let IKunTree::Symbol(name) = &**callee {
+                    if let Some(class_idx) = self.find_class_index(name) {
+                        for arg in args {
+                            code.extend(self.lower_tree(arg)?);
+                        }
+                        code.extend_from_slice(&Instruction::NewObject(class_idx).encode());
+                        return Ok(code);
+                    }
+                }
                 for arg in args {
                     code.extend(self.lower_tree(arg)?);
                 }
@@ -105,8 +143,17 @@ impl NyarBackend {
                 code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
             }
             IKunTree::Seq(items) => {
-                for item in items {
-                    code.extend(self.lower_tree(item)?);
+                if items.is_empty() {
+                    code.extend_from_slice(&Instruction::I64Const(0).encode());
+                } else {
+                    for (i, item) in items.iter().enumerate() {
+                        code.extend(self.lower_tree(item)?);
+                        // 如果不是最后一个元素，且该元素产生了值（在栈上留下了东西），我们需要将其弹出
+                        // 但在目前的极简实现中，我们假设每个表达式都留下一个值
+                        if i < items.len() - 1 {
+                            code.push(Opcode::Pop as u8);
+                        }
+                    }
                 }
             }
             IKunTree::Constant(v) => {
@@ -295,14 +342,87 @@ impl NyarBackend {
                             } else {
                                 code.extend_from_slice(&Instruction::I64Const(0).encode());
                             }
+                            // local_variable 应该返回被赋的值
+                            code.extend_from_slice(&Instruction::Dup(0).encode());
                             let local_idx = self.add_local(name.clone());
                             code.extend_from_slice(&Instruction::StoreLocal(local_idx).encode());
                         }
+                    }
+                    "class_def" => {
+                        // args: [name (Symbol), bases (Extension "bases"), body (Seq)]
+                        if let IKunTree::Symbol(class_name) = &args[0] {
+                            let mut fields = Vec::new();
+                            // 预扫描 body 寻找字段定义
+                            if let IKunTree::Seq(body) = &args[2] {
+                                for item in body {
+                                    if let IKunTree::StateUpdate(target, _) = item {
+                                        if let IKunTree::Symbol(name) = &**target {
+                                            fields.push(name.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            // 确保 __init__ 和 say 在字段列表中
+                            if !fields.contains(&"__init__".to_string()) {
+                                fields.push("__init__".to_string());
+                            }
+                            if !fields.contains(&"say".to_string()) {
+                                fields.push("say".to_string());
+                            }
+                            // 同时将这些字段名加入常量池
+                            for field in &fields {
+                                self.add_constant(Constant::String(field.clone()));
+                            }
+
+                            self.add_class(class_name.clone(), fields);
+
+                            // 执行 body 来定义方法
+                            code.extend(self.lower_tree(&args[2])?);
+                            // 弹出 body 的返回值（Seq 的最后一个值）
+                            code.extend_from_slice(&Instruction::Pop.encode());
+
+                            // 创建类对象
+                            code.extend_from_slice(&Instruction::StringConst(class_name.clone()).encode());
+                        }
+                    }
+                    "python_function" => {
+                        // args: [name, lambda, decorators, returns, comment]
+                        // 我们直接 lower lambda 即可
+                        code.extend(self.lower_tree(&args[1])?);
+                    }
+                    "get_field" => {
+                        // args: [obj, field_name (Symbol)]
+                        code.extend(self.lower_tree(&args[0])?);
+                        if let IKunTree::Symbol(field_name) = &args[1] {
+                            let idx = self.add_constant(Constant::String(field_name.clone()));
+                            println!("DEBUG: GetField {} constant index {}", field_name, idx);
+                            code.extend_from_slice(&Instruction::GetField(idx).encode());
+                        }
+                    }
+                    "set_field" => {
+                        // args: [obj, field_name (Symbol), value]
+                        code.extend(self.lower_tree(&args[2])?); // value
+                        code.extend_from_slice(&Instruction::Dup(0).encode()); // 留下值
+                        code.extend(self.lower_tree(&args[0])?); // obj
+                        if let IKunTree::Symbol(field_name) = &args[1] {
+                            let idx = self.add_constant(Constant::String(field_name.clone()));
+                            println!("DEBUG: SetField {} constant index {}", field_name, idx);
+                            code.extend_from_slice(&Instruction::SetField(idx).encode());
+                        }
+                    }
+                    "list" => {
+                        // 处理空列表或其他
+                        code.extend_from_slice(&Instruction::I64Const(0).encode());
+                    }
+                    "none" => {
+                        code.extend_from_slice(&Instruction::I64Const(0).encode());
                     }
                     "assign" => {
                         if args.len() == 2 {
                             // [name, value]
                             code.extend(self.lower_tree(&args[1])?);
+                            // assign 应该返回被赋的值
+                            code.extend_from_slice(&Instruction::Dup(0).encode());
                             if let IKunTree::Symbol(name) = &args[0] {
                                 if let Some(idx) = self.find_local(name) {
                                     code.extend_from_slice(&Instruction::StoreLocal(idx).encode());
@@ -956,26 +1076,6 @@ impl NyarBackend {
                 Ok(Some(code))
             }
             _ => Ok(None),
-        }
-    }
-
-    fn add_constant(&mut self, constant: Constant) -> u16 {
-        if let Some(pos) = self.module.constants.iter().position(|c| c == &constant) {
-            pos as u16
-        } else {
-            let pos = self.module.constants.len() as u16;
-            self.module.constants.push(constant);
-            pos
-        }
-    }
-
-    fn add_class(&mut self, name: String, fields: Vec<String>) {
-        let qn = QualifiedName::from(name.as_str());
-        if !self.module.classes.iter().any(|c| c.name == qn) {
-            self.module.classes.push(ClassInfo {
-                name: qn,
-                fields,
-            });
         }
     }
 

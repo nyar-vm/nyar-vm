@@ -166,7 +166,7 @@ pub unsafe extern "win64" fn nyar_vm_new_object(vm_ptr: *mut NyarVM, class_idx: 
         fields.push(vm.pop().unwrap_or(Value::null()));
     }
     fields.reverse();
-    let obj = Value::object(class_idx as u16, fields, &vm.gc);
+    let obj = Value::object(module_idx, class_idx as u16, fields, &vm.gc);
     vm.push(obj).unwrap();
     obj
 }

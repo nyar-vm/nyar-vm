@@ -176,15 +176,56 @@ impl NyarVM {
         let receiver = self.pop()?;
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
             _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15))), // Opcode for INVOKE_METHOD
         };
 
         if !receiver.is_object() {
             self.invoke_primitive_method(receiver, &name, args)?;
         } else {
-            // Object method invocation logic...
-            // For now, let's just push null as a placeholder if not handled
-            self.push(Value::null())?;
+            let obj = unsafe { receiver.as_object() };
+            let class_info = self.modules[obj.module_idx]
+                .classes
+                .get(obj.class_idx as usize)
+                .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
+
+            // Try to find method "ClassName::MethodName"
+            let mut method_name = class_info.name.clone();
+            for part in &name.parts {
+                method_name.push(part.clone());
+            }
+
+            if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&method_name) {
+                // Found class method, call it with receiver as first argument
+                let mut final_args = Vec::with_capacity(args.len() + 1);
+                final_args.push(receiver);
+                final_args.extend(args);
+                
+                let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
+                let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+
+                if final_args.len() < locals_count {
+                    final_args.resize(locals_count, Value::null());
+                }
+
+                let new_frame = Frame {
+                    instrs,
+                    ip: 0,
+                    locals: final_args,
+                    upvalues: vec![None; locals_count],
+                    closure: Value::null(),
+                    module_idx: m_idx,
+                    chunk_idx: Some(chunk_idx as usize),
+                    location: Default::default(),
+                };
+
+                self.frames.push(new_frame);
+                return Ok(Some(0));
+            } else {
+                // Method not found on class, maybe it's a dynamic property that is a closure?
+                // For now, return error
+                return Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(method_name)));
+            }
         }
         Ok(None)
     }

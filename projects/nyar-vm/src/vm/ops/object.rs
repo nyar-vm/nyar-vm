@@ -6,7 +6,8 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_new_object(&mut self, class_idx: u16) -> Result<Option<usize>, NyarError> {
         let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
-        let class_info = self.modules[frame.module_idx]
+        let module_idx = frame.module_idx;
+        let class_info = self.modules[module_idx]
             .classes
             .get(class_idx as usize)
             .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(class_idx as usize)))?;
@@ -16,36 +17,65 @@ impl NyarVM {
             fields.push(self.pop()?);
         }
         fields.reverse();
-        let obj = Value::object(class_idx, fields, &self.gc);
+        let obj = Value::object(module_idx, class_idx, fields, &self.gc);
         self.push(obj)?;
         Ok(None)
     }
 
     #[inline(always)]
     pub fn execute_get_field(&mut self, idx: u16) -> Result<Option<usize>, NyarError> {
+        let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
+        let module_idx = frame.module_idx;
+        
+        let field_name = match &self.modules[module_idx].constants[idx as usize] {
+            crate::bytecode::format::Constant::String(s) => s.clone(),
+            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+        };
+
         let obj_val = self.pop()?;
         let obj = unsafe { obj_val.as_object() };
-        if (idx as usize) < obj.fields.len() {
-            self.push(obj.fields[idx as usize])?;
+        
+        let class_info = &self.modules[obj.module_idx].classes[obj.class_idx as usize];
+             
+        let field_idx = class_info.fields.iter().position(|f| f == &field_name)
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::RuntimeError(format!("Field not found: {}", field_name))))?;
+
+        if field_idx < obj.fields.len() {
+            let val = obj.fields[field_idx];
+            self.push(val)?;
             Ok(None)
         } else {
-            Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))
+            Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(field_idx)))
         }
     }
 
     #[inline(always)]
     pub fn execute_set_field(&mut self, idx: u16) -> Result<Option<usize>, NyarError> {
+        let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
+        let module_idx = frame.module_idx;
+        
+        let field_name = match &self.modules[module_idx].constants[idx as usize] {
+            crate::bytecode::format::Constant::String(s) => s.clone(),
+            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+        };
+
         let val = self.pop()?;
         let obj_val = self.pop()?;
         let gc = &self.gc;
         let obj = unsafe { obj_val.as_object_mut() };
-        if (idx as usize) < obj.fields.len() {
-            obj.fields[idx as usize] = val;
+
+        let class_info = &self.modules[obj.module_idx].classes[obj.class_idx as usize];
+             
+        let field_idx = class_info.fields.iter().position(|f| f == &field_name)
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::RuntimeError(format!("Field not found: {}", field_name))))?;
+
+        if field_idx < obj.fields.len() {
+            obj.fields[field_idx] = val;
             val.write_barrier(gc);
             self.push(obj_val)?;
             Ok(None)
         } else {
-            Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))
+            Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(field_idx)))
         }
     }
 
