@@ -1,7 +1,7 @@
 use nyar_vm::bytecode::format::{minimal_module_with_chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::core::NyarVM;
-use nyar_vm::vm::VmError;
+use nyar_types::VmError;
 use nyar_types::QualifiedName;
 
 #[test]
@@ -48,8 +48,8 @@ fn perform_throw_unhandled() {
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module.clone());
     let err = vm.execute(module_idx, 0).err().unwrap();
-    match err {
-        VmError::UnhandledEffect(_) => {}
+    match *err.kind {
+        nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::UnhandledEffect(_)) => {}
         _ => panic!("Expected UnhandledEffect, got {:?}", err),
     }
 }
@@ -160,9 +160,9 @@ fn tuple_set_element_mismatch_should_fail() {
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
     let err = vm.execute(module_idx, 0).err().unwrap();
-    match err {
-        VmError::RuntimeError(_) => {}
-        _ => panic!(),
+    match *err.kind {
+        nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::TypeMismatch { .. }) => {}
+        _ => panic!("Expected TypeMismatch, got {:?}", err),
     }
 }
 

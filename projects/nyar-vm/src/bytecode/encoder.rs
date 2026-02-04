@@ -138,6 +138,11 @@ impl Instruction {
             Instruction::SizeOf => buf.push(Opcode::SizeOf as u8),
             Instruction::NewDynObject => buf.push(Opcode::NewDynObject as u8),
             Instruction::RemoveKey => buf.push(Opcode::RemoveKey as u8),
+            Instruction::Initiate(v) => {
+                buf.push(Opcode::Initiate as u8);
+                buf.push(*v);
+            }
+            Instruction::Finalize => buf.push(Opcode::Finalize as u8),
             Instruction::NewList(idx) => {
                 buf.push(Opcode::NewList as u8);
                 buf.extend_from_slice(&idx.to_le_bytes());

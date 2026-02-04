@@ -331,6 +331,8 @@ impl<'a> Decoder<'a> {
             Opcode::SetElement => Instruction::SetElement,
             Opcode::NewDynObject => Instruction::NewDynObject,
             Opcode::RemoveKey => Instruction::RemoveKey,
+            Opcode::Initiate => Instruction::Initiate(self.read_u8().ok_or(DecodeError::Truncated)?),
+            Opcode::Finalize => Instruction::Finalize,
             Opcode::NewList => Instruction::NewList(self.read_u16().ok_or(DecodeError::Truncated)?),
             Opcode::PushElementLeft => Instruction::PushElementLeft,
             Opcode::PopElementLeft => Instruction::PopElementLeft,

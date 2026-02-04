@@ -1,4 +1,4 @@
-use nyar_types::{QualifiedName, VmError};
+use nyar_types::QualifiedName;
 use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::core::NyarVM;

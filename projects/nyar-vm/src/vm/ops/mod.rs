@@ -487,6 +487,8 @@ impl NyarVM {
             Instruction::InvokeMethod(idx, argc) => {
                 self.execute_invoke_method(idx, argc.into(), module_idx)
             }
+            Instruction::Initiate(_v) => Ok(None),
+            Instruction::Finalize => Ok(None),
             Instruction::Halt => Err(self.error(nyar_types::VmErrorKind::Halt)),
         }
     }
