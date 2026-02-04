@@ -4,11 +4,11 @@ class Person:
         self.age = age
 
     def say_hello(self):
-        print("Hello, I am " + self.name)
-        print("I am " + self.age + " years old")
+        print(f"Hello, I am {self.name}")
+        print(f"I am {self.age} years old")
 
-p = Person("Alice", "25")
+p = Person("Alice", 25)
 p.say_hello()
 print(p.name)
-p.age = "26"
+p.age = 26
 print(p.age)

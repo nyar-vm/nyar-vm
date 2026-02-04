@@ -132,8 +132,10 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             let mut vararg = None;
             let mut kwarg = None;
 
-            for p in parameters {
+            eprintln!("DEBUG: Function {} has {} parameters", name, parameters.len());
+            for (i, p) in parameters.iter().enumerate() {
                 let mangled = self.ctx.scopes.declare_variable(&p.name);
+                eprintln!("DEBUG: Parameter {} : {} -> {}", i, p.name, mangled);
                 params.push(mangled.clone());
                 if let Some(default) = &p.default {
                     defaults.push(self.convert_expression(default));
@@ -149,7 +151,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             let mut body_items = Vec::new();
             eprintln!("DEBUG: Converting body for function {}, {} statements", name, body.len());
             for (i, s) in body.iter().enumerate() {
-                eprintln!("DEBUG: Converting statement {} for function {}", i, name);
+                eprintln!("DEBUG: Converting statement {} for function {}: {:?}", i, name, s);
                 if let Some(node) = self.convert_statement(s) {
                     body_items.push(node);
                 }
@@ -168,6 +170,66 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
             let name_node = self.ctx.builder().string(name, loc.clone());
+            let func_node = self.ctx.builder().extension(
+                "python_function",
+                vec![
+                    name_node,
+                    lam,
+                    defaults_id,
+                    vararg_id,
+                    kwarg_id,
+                ],
+                loc.clone(),
+            );
+            Some(self.ctx.builder().assign(&mangled_func_name, func_node, loc))
+        }
+        Statement::AsyncFunctionDef {
+            decorators,
+            name,
+            parameters,
+            body,
+            ..
+        } => {
+            // 在外层作用域声明函数名
+            let mangled_func_name = self.ctx.scopes.declare_variable(name);
+            
+            self.ctx.scopes.push_scope();
+            let mut params = Vec::new();
+            let mut defaults = Vec::new();
+            let mut vararg = None;
+            let mut kwarg = None;
+
+            for p in parameters {
+                let mangled = self.ctx.scopes.declare_variable(&p.name);
+                params.push(mangled);
+                if let Some(default) = &p.default {
+                    defaults.push(self.convert_expression(default));
+                }
+                if p.is_vararg {
+                    vararg = Some(self.ctx.builder().string(&p.name, loc.clone()));
+                }
+                if p.is_kwarg {
+                    kwarg = Some(self.ctx.builder().string(&p.name, loc.clone()));
+                }
+            }
+
+            let mut body_items = Vec::new();
+            for s in body {
+                if let Some(node) = self.convert_statement(s) {
+                    body_items.push(node);
+                }
+            }
+            let body_id = self.ctx.builder().block(body_items, loc.clone());
+            
+            let params_cloned = params.clone();
+            let lam = self.ctx.builder().lambda(params_cloned, body_id, loc.clone());
+            
+            self.ctx.scopes.pop_scope();
+            let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
+            let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
+            let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
+
+            let name_node = self.ctx.builder().string(name, loc.clone());
             let mut func_node = self.ctx.builder().extension(
                 "python_function",
                 vec![
@@ -179,73 +241,15 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 ],
                 loc.clone(),
             );
-            Statement::AsyncFunctionDef {
-                decorators,
-                name,
-                parameters,
-                body,
-                ..
-            } => {
-                // 在外层作用域声明函数名
-                let mangled_func_name = self.ctx.scopes.declare_variable(name);
-                
-                self.ctx.scopes.push_scope();
-                let mut params = Vec::new();
-                let mut defaults = Vec::new();
-                let mut vararg = None;
-                let mut kwarg = None;
+            func_node = self.ctx.builder().extension("async", vec![func_node], loc.clone());
 
-                for p in parameters {
-                    let mangled = self.ctx.scopes.declare_variable(&p.name);
-                    params.push(mangled);
-                    if let Some(default) = &p.default {
-                        defaults.push(self.convert_expression(default));
-                    }
-                    if p.is_vararg {
-                        vararg = Some(self.ctx.builder().string(&p.name, loc.clone()));
-                    }
-                    if p.is_kwarg {
-                        kwarg = Some(self.ctx.builder().string(&p.name, loc.clone()));
-                    }
-                }
-
-                let mut body_items = Vec::new();
-                for s in body {
-                    if let Some(node) = self.convert_statement(s) {
-                        body_items.push(node);
-                    }
-                }
-                let body_id = self.ctx.builder().block(body_items, loc.clone());
-                
-                let params_cloned = params.clone();
-                let lam = self.ctx.builder().lambda(params_cloned, body_id, loc.clone());
-                
-                self.ctx.scopes.pop_scope();
-                let defaults_id = self.ctx.builder().extension("list", defaults, loc.clone());
-                let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
-                let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
-
-                let name_node = self.ctx.builder().string(name, loc.clone());
-                let mut func_node = self.ctx.builder().extension(
-                    "python_function",
-                    vec![
-                        name_node,
-                        lam,
-                        defaults_id,
-                        vararg_id,
-                        kwarg_id,
-                    ],
-                    loc.clone(),
-                );
-                func_node = self.ctx.builder().extension("async", vec![func_node], loc.clone());
-
-                for dec in decorators.iter().rev() {
-                    let dec_node = self.convert_expression(dec);
-                    func_node = self.ctx.builder().call(dec_node, vec![func_node], loc.clone());
-                }
-
-                Some(self.ctx.builder().assign(&mangled_func_name, func_node, loc))
+            for dec in decorators.iter().rev() {
+                let dec_node = self.convert_expression(dec);
+                func_node = self.ctx.builder().call(dec_node, vec![func_node], loc.clone());
             }
+
+            Some(self.ctx.builder().assign(&mangled_func_name, func_node, loc))
+        }
             Statement::Return(expr) => {
                 let val = expr
                     .as_ref()
@@ -524,12 +528,14 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let mangled_class_name = self.ctx.scopes.declare_variable(name);
                 
                 self.ctx.scopes.push_scope();
-                let mut body_items = Vec::new();
-                for s in body {
-                    if let Some(node) = self.convert_statement(s) {
-                        body_items.push(node);
-                    }
+            let mut body_items = Vec::new();
+            eprintln!("DEBUG: Converting body for class {}, {} statements", name, body.len());
+            for (i, s) in body.iter().enumerate() {
+                eprintln!("DEBUG: Converting statement {} for class {}: {:?}", i, name, s);
+                if let Some(node) = self.convert_statement(s) {
+                    body_items.push(node);
                 }
+            }
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
                 self.ctx.scopes.pop_scope();
                 let bases_id = self.ctx.builder().extension("bases", base_nodes, loc.clone());
