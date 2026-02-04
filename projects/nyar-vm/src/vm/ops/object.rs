@@ -1,6 +1,7 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use crate::vm::NyarError;
+use nyar_types::{QualifiedName, VmErrorKind};
 
 impl NyarVM {
     #[inline(always)]
@@ -465,17 +466,120 @@ impl NyarVM {
         if val.is_object() {
             let obj = unsafe { val.as_object() };
             if obj.class_idx != class_idx {
-                return Err(self.error(nyar_types::VmErrorKind::TypeMismatch {
-                    expected: format!("class {}", class_idx),
-                    found: format!("class {}", obj.class_idx),
-                }));
+                self.pop()?;
+                let module_idx = obj.module_idx;
+                let fields = obj.fields.clone();
+                let new_obj = Value::object(module_idx, class_idx, fields, &self.gc);
+                self.push(new_obj)?;
             }
-        } else {
-            return Err(self.error(nyar_types::VmErrorKind::TypeMismatch {
-                expected: format!("class {}", class_idx),
-                found: format!("{:?}", val.tag()),
-            }));
         }
         Ok(None)
+    }
+
+    #[inline(always)]
+    pub fn execute_initiate(&mut self, argc: u8) -> Result<Option<usize>, NyarError> {
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+
+        let receiver = self.pop()?;
+        if !receiver.is_object() {
+            return Err(self.error(nyar_types::VmErrorKind::TypeMismatch {
+                expected: "Object".to_string(),
+                found: format!("{:?}", receiver.tag()),
+            }));
+        }
+
+        let obj = unsafe { receiver.as_object() };
+        let class_info = self.modules[obj.module_idx]
+            .classes
+            .get(obj.class_idx as usize)
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
+
+        // Try to find method "initiate" in the class or its traits
+        // For now, we look for a method named "initiate"
+        let method_name = QualifiedName::from("initiate");
+        
+        // Search in symbol table for ClassName::initiate
+        let mut full_method_name = class_info.name.clone();
+        full_method_name.parts.push("initiate".to_string());
+
+        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&full_method_name) {
+            let mut final_args = Vec::with_capacity(args.len() + 1);
+            final_args.push(receiver);
+            final_args.extend(args);
+
+            let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
+            let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+
+            if final_args.len() < locals_count {
+                final_args.resize(locals_count, Value::null());
+            }
+
+            let new_frame = crate::vm::value::Frame {
+                instrs,
+                ip: 0,
+                locals: final_args,
+                upvalues: vec![None; locals_count],
+                closure: Value::null(),
+                module_idx: m_idx,
+                chunk_idx: Some(chunk_idx as usize),
+                location: Default::default(),
+            };
+
+            self.frames.push(new_frame);
+            // After initiate, the object should be on the stack? 
+            // Usually constructors return the object.
+            Ok(Some(0))
+        } else {
+            // If no initiate method found, just return the object
+            self.push(receiver)?;
+            Ok(None)
+        }
+    }
+
+    #[inline(always)]
+    pub fn execute_finalize(&mut self) -> Result<Option<usize>, NyarError> {
+        let receiver = self.pop()?;
+        if !receiver.is_object() {
+            return Ok(None);
+        }
+
+        let obj = unsafe { receiver.as_object() };
+        let class_info = self.modules[obj.module_idx]
+            .classes
+            .get(obj.class_idx as usize)
+            .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
+
+        let mut full_method_name = class_info.name.clone();
+        full_method_name.parts.push("finalize".to_string());
+
+        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&full_method_name) {
+            let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
+            let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+
+            let mut final_args = vec![receiver];
+            if final_args.len() < locals_count {
+                final_args.resize(locals_count, Value::null());
+            }
+
+            let new_frame = crate::vm::value::Frame {
+                instrs,
+                ip: 0,
+                locals: final_args,
+                upvalues: vec![None; locals_count],
+                closure: Value::null(),
+                module_idx: m_idx,
+                chunk_idx: Some(chunk_idx as usize),
+                location: Default::default(),
+            };
+
+            self.frames.push(new_frame);
+            Ok(Some(0))
+        } else {
+            Ok(None)
+        }
     }
 }

@@ -1,4 +1,5 @@
-use nyar_types::QualifiedName;
+use nyar_types::{NyarError, QualifiedName};
+use nyar_types::VmError;
 use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::core::NyarVM;
@@ -663,7 +664,12 @@ fn run_throw_effect_uncaught_prints_traceback() {
     }));
     let r = vm.execute(module_idx, 0);
     assert!(r.is_err());
-    vm.print_traceback(&VmError::UnhandledError);
+    let err = NyarError::new(
+        0x1001,
+        nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::RuntimeError("UnhandledError".to_string())),
+        nyar_types::SourceLocation::default(),
+    );
+    vm.print_traceback(&err);
     let lines = output.borrow();
     assert!(!lines.is_empty());
     assert_eq!(lines[0], "Traceback (most recent call last):");

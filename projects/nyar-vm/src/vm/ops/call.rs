@@ -41,12 +41,12 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_call_closure(&mut self, argc: u16) -> Result<Option<usize>, NyarError> {
-        let callee = self.pop()?;
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
+        let callee = self.pop()?;
 
         let (instrs, locals_count, c_module_idx, c_chunk_idx) =
             if let Some(closure) = callee.try_as_closure() {
@@ -167,12 +167,12 @@ impl NyarVM {
         argc: u16,
         module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
-        let receiver = self.pop()?;
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
+        let receiver = self.pop()?;
 
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
@@ -361,12 +361,12 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_tail_call_closure(&mut self, argc: u8) -> Result<Option<usize>, NyarError> {
-        let callee = self.pop()?;
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
+        let callee = self.pop()?;
 
         let (instrs, locals_count, c_module_idx, c_chunk_idx) =
             if let Some(closure) = callee.try_as_closure() {
@@ -448,12 +448,12 @@ impl NyarVM {
         argc: u8,
         _module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
-        let trait_val = self.pop()?;
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
         }
         args.reverse();
+        let trait_val = self.pop()?;
 
         let trait_obj = trait_val.try_as_trait_object().ok_or_else(|| self.error(nyar_types::VmErrorKind::InvalidOpcode(0x17)))?; // Opcode for CALL_VIRTUAL
         

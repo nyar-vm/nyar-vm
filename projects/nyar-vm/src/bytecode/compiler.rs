@@ -384,13 +384,6 @@ impl NyarBackend {
                                     }
                                 }
                             }
-                            // 确保 __init__ 和 say 在字段列表中
-                            if !fields.contains(&"__init__".to_string()) {
-                                fields.push("__init__".to_string());
-                            }
-                            if !fields.contains(&"say".to_string()) {
-                                fields.push("say".to_string());
-                            }
                             // 同时将这些字段名加入常量池
                             for field in &fields {
                                 self.add_constant(Constant::String(field.clone()));
@@ -555,13 +548,16 @@ impl NyarBackend {
                             })?;
 
                             let mut arg_code = Vec::new();
+                            let mut argc = 0;
                             if let IKunTree::Seq(params) = &args[1] {
+                                argc = params.len() as u8;
                                 for param in params {
                                     arg_code.extend(self.lower_tree(param)?);
                                 }
                             }
                             code.extend(arg_code);
                             code.extend_from_slice(&Instruction::NewObject(idx).encode());
+                            code.extend_from_slice(&Instruction::Initiate(argc).encode());
                             return Ok(code);
                         }
                     }

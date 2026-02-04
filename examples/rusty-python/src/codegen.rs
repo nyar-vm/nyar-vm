@@ -909,17 +909,9 @@ impl GaiaTranslator {
                         for arg in args {
                             self.generate_tree_node(arg, false)?;
                         }
-                        // 3. 调用 __init__
+                        // 3. 调用 Initiate
                         self.current_instructions.push(GaiaInstruction::Managed(
-                            ManagedInstruction::CallMethod {
-                                target: name.clone(),
-                                method: "__init__".to_string(),
-                                signature: GaiaSignature {
-                                    params: vec![GaiaType::Object; args.len()],
-                                    return_type: GaiaType::Void,
-                                },
-                                is_virtual: false,
-                            },
+                            ManagedInstruction::Initiate(args.len()),
                         ));
                         return Ok(());
                     }
