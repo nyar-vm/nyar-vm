@@ -96,7 +96,12 @@ impl<'a, 'b, V: oak_vfs::Vfs> UirConverter<'a, 'b, V> {
                 self.ctx.builder().symbol(name, loc)
             }
             JuliaExpression::Literal(val) => {
-                self.ctx.builder().string(val, loc)
+                let unquoted = if (val.starts_with('"') && val.ends_with('"')) || (val.starts_with('\'') && val.ends_with('\'')) {
+                    &val[1..val.len() - 1]
+                } else {
+                    val
+                };
+                self.ctx.builder().string(unquoted, loc)
             }
             JuliaExpression::Binary { left, op, right } => {
                 let lhs = self.convert_expression(left);

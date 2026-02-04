@@ -88,7 +88,10 @@ impl NyarVM {
     ) -> Result<Option<usize>, NyarError> {
         let name = match self.modules[module_idx].constants.get(name_idx as usize) {
             Some(Constant::QualifiedName(qn)) => qn.clone(),
-            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(name_idx as usize))),
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+            _ => {
+                return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(name_idx as usize)))
+            }
         };
 
         let symbol = self.symbol_table.get(&name).copied();
@@ -119,6 +122,39 @@ impl NyarVM {
 
             self.frames.push(new_frame);
             Ok(Some(0))
+        } else if let Some(val) = self.builtins.get(&name).cloned() {
+            if let Some(closure) = val.try_as_closure() {
+                let m_idx = closure.module_idx;
+                let chunk_idx = closure.func;
+                let instrs = self.get_chunk_instructions(m_idx, chunk_idx)?;
+                let locals_count = self.modules[m_idx].chunks[chunk_idx].locals as usize;
+
+                let mut args = Vec::with_capacity(argc as usize);
+                for _ in 0..argc {
+                    args.push(self.pop()?);
+                }
+                args.reverse();
+
+                if args.len() < locals_count {
+                    args.resize(locals_count, Value::null());
+                }
+
+                let new_frame = Frame {
+                    instrs,
+                    ip: 0,
+                    locals: args,
+                    upvalues: vec![None; locals_count],
+                    closure: val,
+                    module_idx: m_idx,
+                    chunk_idx: Some(chunk_idx),
+                    location: Default::default(),
+                };
+
+                self.frames.push(new_frame);
+                Ok(Some(0))
+            } else {
+                Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))
+            }
         } else {
             Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))
         }

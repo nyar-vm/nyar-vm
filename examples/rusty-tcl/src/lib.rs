@@ -1,3 +1,4 @@
+use chomsky_uir::intent::CrossLanguageCall;
 use chomsky_uir::{IKun, Id};
 use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_core::{Builder, SourceText};
@@ -28,21 +29,51 @@ impl RustyTclFrontend {
 
     fn lower_command<V: Vfs>(&self, cmd: &TclCommand, ctx: &mut NyarContext<V>) -> Id {
         let words: Vec<Id> = cmd.words.iter().map(|w| self.lower_word(w, ctx)).collect();
+        // Skip commands that result in no meaningful words (e.g. only whitespace or empty words)
         if words.is_empty() {
             return ctx.egraph.add(IKun::Seq(vec![]));
         }
 
         // Check if it's a "set" command for state update
         if let Some(TclWord::Simple(name)) = cmd.words.first() {
+            let name = name.trim();
+            if name.is_empty() {
+                return ctx.egraph.add(IKun::Seq(vec![]));
+            }
+            
             if name == "set" && cmd.words.len() == 3 {
-                let target = self.lower_word(&cmd.words[1], ctx);
-                let value = self.lower_word(&cmd.words[2], ctx);
-                return ctx.egraph.add(IKun::StateUpdate(target, value));
+                // Tcl: set varName value
+                // In IKun, StateUpdate expects target to be a symbol.
+                // We should pass the symbol directly if possible.
+                if let TclWord::Simple(var_name) = &cmd.words[1] {
+                    let target = ctx.egraph.add(IKun::Symbol(var_name.trim().to_string()));
+                    let value = self.lower_word(&cmd.words[2], ctx);
+                    return ctx.egraph.add(IKun::StateUpdate(target, value));
+                }
+            }
+            if name == "puts" {
+                // Map puts to nyar:io:println
+                let args = if words.len() > 1 { words[1..].to_vec() } else { vec![] };
+                return ctx.egraph.add(IKun::CrossLangCall(CrossLanguageCall {
+                    language: "nyar".to_string(),
+                    module_path: "io".to_string(),
+                    function_name: "println".to_string(),
+                    arguments: args,
+                }));
             }
         }
 
         let mut words_iter = words.into_iter();
         let callee = words_iter.next().unwrap();
+        
+        // If the callee is an empty symbol, it's likely a parsing artifact or trailing whitespace command
+        let callee_node = ctx.egraph.get_class(callee).nodes.first().cloned();
+        if let Some(IKun::Symbol(ref s)) = callee_node {
+            if s.trim().is_empty() {
+                return ctx.egraph.add(IKun::Seq(vec![]));
+            }
+        }
+
         let args = words_iter.collect();
         ctx.egraph.add(IKun::Apply(callee, args))
     }
@@ -84,8 +115,12 @@ impl NyarFrontend for RustyTclFrontend {
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &TclRoot, ctx: &mut NyarContext<V>) -> Id {
-        println!("DEBUG: lowering TclRoot with {} items", ast.items.len());
         let items: Vec<Id> = ast.items.iter().map(|item| self.lower_item(item, ctx)).collect();
+        // Remove empty/no-op items that might result in empty symbols or unwanted applies
+        let items: Vec<Id> = items.into_iter().filter(|&id| {
+            let node = ctx.egraph.get_class(id).nodes.first().cloned();
+            !matches!(node, Some(IKun::Seq(ref v)) if v.is_empty())
+        }).collect();
         ctx.egraph.add(IKun::Module("main".to_string(), items))
     }
 }

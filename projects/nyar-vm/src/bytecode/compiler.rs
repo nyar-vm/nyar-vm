@@ -64,13 +64,18 @@ impl NyarBackend {
                 }
                 if let IKunTree::Symbol(name) = &**callee {
                     let idx = self.add_constant(Constant::String(name.clone()));
-                    code.extend_from_slice(&Instruction::Call(idx, args.len() as u8).encode());
+                    code.extend_from_slice(&Instruction::CallSymbol(idx, args.len() as u8).encode());
                 } else {
                     code.extend(self.lower_tree(callee)?);
                     code.extend_from_slice(&Instruction::CallClosure(args.len() as u8).encode());
                 }
             }
             IKunTree::Lambda(params, body) => {
+                let prev_locals = self.locals.clone();
+                self.locals.clear();
+                for param in params {
+                    self.add_local(param.clone());
+                }
                 let body_code = self.lower_tree(body)?;
                 let mut final_code = body_code;
                 if final_code.last() != Some(&(Opcode::Return as u8)) {
@@ -85,8 +90,9 @@ impl NyarBackend {
                     ));
                 }
                 let chunk_idx = chunk_idx as u16;
+                let num_locals = self.locals.len() as u16;
                 self.module.chunks.push(Chunk {
-                    locals: params.len() as u16,
+                    locals: num_locals.max(32),
                     upvalues: 0,
                     max_stack: 64,
                     code: final_code,
@@ -95,6 +101,7 @@ impl NyarBackend {
                     decoded: None,
                     hotness: std::sync::atomic::AtomicU32::new(0),
                 });
+                self.locals = prev_locals;
                 code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
             }
             IKunTree::Seq(items) => {
@@ -117,6 +124,8 @@ impl NyarBackend {
             }
             IKunTree::Module(name, items) => {
                 println!("DEBUG: Lowering Module {}: {:#?}", name, items);
+                let prev_locals = self.locals.clone();
+                self.locals.clear();
                 let mut module_code = Vec::new();
                 for item in items {
                     module_code.extend(self.lower_tree(item)?);
@@ -125,8 +134,9 @@ impl NyarBackend {
                 if module_code.last() != Some(&(Opcode::Return as u8)) {
                     module_code.push(Opcode::Return as u8);
                 }
+                let num_locals = self.locals.len() as u16;
                 self.module.chunks.push(Chunk {
-                    locals: 32,
+                    locals: num_locals.max(32),
                     upvalues: 0,
                     max_stack: 64,
                     code: module_code,
@@ -135,9 +145,15 @@ impl NyarBackend {
                     decoded: None,
                     hotness: std::sync::atomic::AtomicU32::new(0),
                 });
+                self.locals = prev_locals;
             }
             IKunTree::Export(name, body) => {
-                if let IKunTree::Lambda(_params, body) = &**body {
+                if let IKunTree::Lambda(params, body) = &**body {
+                    let prev_locals = self.locals.clone();
+                    self.locals.clear();
+                    for param in params {
+                        self.add_local(param.clone());
+                    }
                     let body_code = self.lower_tree(body)?;
                     let mut final_code = body_code;
                     // Ensure Return at the end
@@ -154,8 +170,9 @@ impl NyarBackend {
                         ));
                     }
                     let chunk_idx = chunk_idx as u16;
+                    let num_locals = self.locals.len() as u16;
                     self.module.chunks.push(Chunk {
-                        locals: 32,
+                        locals: num_locals.max(32),
                         upvalues: 0,
                         max_stack: 64,
                         code: final_code,
@@ -168,6 +185,7 @@ impl NyarBackend {
                         symbol: QualifiedName::from(name.as_str()),
                         chunk_idx,
                     });
+                    self.locals = prev_locals;
                 }
             }
             IKunTree::Return(val) => {
@@ -961,7 +979,20 @@ impl NyarBackend {
         }
     }
 
-    pub fn finish(self) -> NyarcModule {
+    pub fn finish(mut self) -> NyarcModule {
+        if self.module.chunks.is_empty() {
+            println!("DEBUG: No chunks in module, adding an empty return chunk");
+            self.module.chunks.push(Chunk {
+                locals: 32,
+                upvalues: 0,
+                max_stack: 64,
+                code: vec![Opcode::Return as u8],
+                handlers: vec![],
+                lines: vec![],
+                decoded: None,
+                hotness: std::sync::atomic::AtomicU32::new(0),
+            });
+        }
         self.module
     }
 }
