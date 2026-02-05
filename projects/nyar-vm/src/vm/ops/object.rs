@@ -1,7 +1,6 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use crate::vm::NyarError;
-use nyar_types::{QualifiedName, VmErrorKind};
 
 impl NyarVM {
     #[inline(always)]
@@ -15,9 +14,8 @@ impl NyarVM {
         let fields_count = class_info.fields.len();
         let mut fields = Vec::with_capacity(fields_count);
         for _ in 0..fields_count {
-            fields.push(self.pop()?);
+            fields.push(Value::null());
         }
-        fields.reverse();
         let obj = Value::object(module_idx, class_idx, fields, &self.gc);
         self.push(obj)?;
         Ok(None)
@@ -62,6 +60,14 @@ impl NyarVM {
 
         let val = self.pop()?;
         let obj_val = self.pop()?;
+        
+        if !obj_val.is_object() {
+            return Err(self.error(nyar_types::VmErrorKind::TypeMismatch {
+                expected: "Object".to_string(),
+                found: format!("{:?}", obj_val.tag()),
+            }));
+        }
+
         let gc = &self.gc;
         let obj = unsafe { obj_val.as_object_mut() };
 
@@ -498,10 +504,6 @@ impl NyarVM {
             .get(obj.class_idx as usize)
             .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
 
-        // Try to find method "initiate" in the class or its traits
-        // For now, we look for a method named "initiate"
-        let method_name = QualifiedName::from("initiate");
-        
         // Search in symbol table for ClassName::initiate
         let mut full_method_name = class_info.name.clone();
         full_method_name.parts.push("initiate".to_string());

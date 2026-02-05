@@ -34,11 +34,15 @@ impl NyarVM {
             },
         };
 
+        /*
+        /*
         #[cfg(debug_assertions)]
         self.log(&format!(
             "[Effect] Perform {} with {} args at {}",
             name, argc, effect_info.location
         ));
+        */
+        */
 
         // 1. Check for dynamic handler
         if let Some(handler) = self.handler_stack.pop() {
@@ -212,6 +216,9 @@ impl NyarVM {
                     Err(self.error(nyar_types::VmErrorKind::YieldAsync))
                 }
             }
+        } else if val.is_closure() {
+            self.push(val)?;
+            self.execute_call_closure(0)
         } else {
             // Not a future, just treat as ready
             self.push(val)?;
@@ -223,6 +230,12 @@ impl NyarVM {
     pub fn execute_block_on(&mut self) -> Result<Option<usize>, NyarError> {
         // Pop the future to block on.
         let future_val = self.pop()?;
+
+        if future_val.is_closure() {
+            let res = self.call_closure_sync(future_val, vec![])?;
+            self.push(res)?;
+            return Ok(None);
+        }
 
         if !future_val.is_future() {
             // Not a future, just push it back and continue.

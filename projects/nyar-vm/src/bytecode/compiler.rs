@@ -70,6 +70,7 @@ impl NyarBackend {
         match tree {
             IKunTree::Symbol(name) => {
                 if let Some(idx) = self.find_local(name) {
+                    println!("DEBUG: LoadLocal {} at index {}", name, idx);
                     code.extend_from_slice(&Instruction::LoadLocal(idx).encode());
                 } else {
                     let final_name = if let Some(class_name) = &self.current_class {
@@ -77,17 +78,19 @@ impl NyarBackend {
                     } else {
                         name.clone()
                     };
-                    let idx = self.add_constant(Constant::String(final_name));
+                    let idx = self.add_constant(Constant::String(final_name.clone()));
+                    println!("DEBUG: LoadGlobal {} constant index {}", final_name, idx);
                     code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
                 }
             }
             IKunTree::Apply(callee, args) => {
                 if let IKunTree::Symbol(name) = &**callee {
                     if let Some(class_idx) = self.find_class_index(name) {
+                        code.extend_from_slice(&Instruction::NewObject(class_idx).encode());
                         for arg in args {
                             code.extend(self.lower_tree(arg)?);
                         }
-                        code.extend_from_slice(&Instruction::NewObject(class_idx).encode());
+                        code.extend_from_slice(&Instruction::Initiate(args.len() as u8).encode());
                         return Ok(code);
                     }
                 }
@@ -143,12 +146,15 @@ impl NyarBackend {
             }
             IKunTree::StateUpdate(target, value) => {
                 if let IKunTree::Symbol(name) = &**target {
+                    println!("DEBUG: Compiling StateUpdate for {}, current_class: {:?}", name, self.current_class);
                     code.extend(self.lower_tree(value)?);
                     // StateUpdate 应该返回被赋的值
                     code.extend_from_slice(&Instruction::Dup(0).encode());
 
                     let final_name = if let Some(class_name) = &self.current_class {
-                        format!("{}::{}", class_name, name)
+                        let res = format!("{}::{}", class_name, name);
+                        println!("DEBUG: Prefixing name {} -> {}", name, res);
+                        res
                     } else {
                         name.clone()
                     };
@@ -214,6 +220,12 @@ impl NyarBackend {
                 self.locals = prev_locals;
             }
             IKunTree::Export(name, body) => {
+                let final_name = if let Some(class_name) = &self.current_class {
+                    format!("{}::{}", class_name, name)
+                } else {
+                    name.clone()
+                };
+
                 if let IKunTree::Lambda(params, body) = &**body {
                     let prev_locals = self.locals.clone();
                     self.locals.clear();
@@ -248,7 +260,7 @@ impl NyarBackend {
                         hotness: std::sync::atomic::AtomicU32::new(0),
                     });
                     self.module.exports.push(ExportInfo {
-                        symbol: QualifiedName::from(name.as_str()),
+                        symbol: QualifiedName::from(final_name.as_str()),
                         chunk_idx,
                     });
                     self.locals = prev_locals;
@@ -410,27 +422,8 @@ impl NyarBackend {
                     }
                     "python_function" => {
                         // args: [name, lambda, decorators, returns, comment]
-                        if let IKunTree::Symbol(name) = &args[0] {
-                            let final_name = if let Some(class_name) = &self.current_class {
-                                format!("{}::{}", class_name, name)
-                            } else {
-                                name.clone()
-                            };
-                            
-                            code.extend(self.lower_tree(&args[1])?);
-                            
-                            // 此时栈顶是 MakeClosure 生成的 closure
-                            // 我们需要将其存入全局符号表（或者是类的方法表，目前简化为全局符号）
-                            let idx = self.add_constant(Constant::String(final_name));
-                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
-                            
-                            // python_function 应该返回被定义的函数
-                            let idx = self.add_constant(Constant::String(name.clone()));
-                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
-                        } else {
-                            // 回退到原有的简单处理
-                            code.extend(self.lower_tree(&args[1])?);
-                        }
+                        // Just generate the closure and leave it on stack
+                        code.extend(self.lower_tree(&args[1])?);
                     }
                     "invoke_method" => {
                         // args: [obj, method_name (Symbol), args (Extension "args")]
@@ -457,9 +450,8 @@ impl NyarBackend {
                     }
                     "set_field" => {
                         // args: [obj, field_name (Symbol), value]
-                        code.extend(self.lower_tree(&args[2])?); // value
-                        code.extend_from_slice(&Instruction::Dup(0).encode()); // 留下值
                         code.extend(self.lower_tree(&args[0])?); // obj
+                        code.extend(self.lower_tree(&args[2])?); // value
                         if let IKunTree::Symbol(field_name) = &args[1] {
                             let idx = self.add_constant(Constant::String(field_name.clone()));
                             println!("DEBUG: SetField {} constant index {}", field_name, idx);
@@ -555,8 +547,8 @@ impl NyarBackend {
                                     arg_code.extend(self.lower_tree(param)?);
                                 }
                             }
-                            code.extend(arg_code);
                             code.extend_from_slice(&Instruction::NewObject(idx).encode());
+                            code.extend(arg_code);
                             code.extend_from_slice(&Instruction::Initiate(argc).encode());
                             return Ok(code);
                         }

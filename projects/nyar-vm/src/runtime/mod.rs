@@ -72,6 +72,8 @@ impl NyarVM {
         self.ffi.register_intrinsic(NyarBuiltin::Println as u32, Arc::new(crate::vm::ffi::NativePrintln));
         self.ffi.register("nyar:std::io:println".to_string(), Arc::new(crate::vm::ffi::NativePrintln));
         self.ffi.register("nyar:std::io:print".to_string(), Arc::new(crate::vm::ffi::NativePrint));
+        self.ffi.register("println".to_string(), Arc::new(crate::vm::ffi::NativePrintln));
+        self.ffi.register("print".to_string(), Arc::new(crate::vm::ffi::NativePrint));
         self.ffi.register_intrinsic(NyarBuiltin::Exit as u32, Arc::new(crate::vm::ffi::NativeExit));
         self.ffi.register_intrinsic(NyarBuiltin::GetTime as u32, Arc::new(crate::vm::ffi::NativeGetTime));
         self.ffi.register_intrinsic(NyarBuiltin::Sleep as u32, Arc::new(crate::vm::ffi::NativeSleep));

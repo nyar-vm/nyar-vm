@@ -748,7 +748,6 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 }
             }
             Expression::Call { func, args, keywords } => {
-                let mut arguments = args.iter().map(|arg| self.convert_expression(arg)).collect::<Vec<_>>();
                 let mut has_complex = false;
 
                 for arg in args {
@@ -760,6 +759,24 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
 
                 for kw in keywords {
                     has_complex = true;
+                    if kw.arg.is_none() { // **kwargs
+                        break;
+                    }
+                }
+
+                // 尝试优化为 invoke_method
+                if !has_complex {
+                    if let Expression::Attribute { value, attr } = &**func {
+                        let obj_node = self.convert_expression(value);
+                        let method_name = self.ctx.builder().symbol(attr, loc.clone());
+                        let arguments = args.iter().map(|arg| self.convert_expression(arg)).collect::<Vec<_>>();
+                        let args_ext = self.ctx.builder().extension("args", arguments, loc.clone());
+                        return self.ctx.builder().extension("invoke_method", vec![obj_node, method_name, args_ext], loc);
+                    }
+                }
+
+                let mut arguments = args.iter().map(|arg| self.convert_expression(arg)).collect::<Vec<_>>();
+                for kw in keywords {
                     let val = self.convert_expression(&kw.value);
                     let arg = if let Some(arg) = &kw.arg {
                         self.ctx.builder().string(arg, loc.clone())
@@ -767,12 +784,6 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                         self.ctx.builder().extension("none", vec![], loc.clone())
                     };
                     arguments.push(self.ctx.builder().extension("keyword_arg", vec![arg, val], loc.clone()));
-                }
-
-                if let Expression::Name(_name) = &**func {
-                    // if let Some(intrinsic) = self.ctx.map_intrinsic(name, &arguments, loc.clone()) {
-                    //     return intrinsic;
-                    // }
                 }
 
                 let f = self.convert_expression(func);

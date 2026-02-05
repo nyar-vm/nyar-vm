@@ -20,6 +20,7 @@ fn test_ffi_signature_validation() {
         closure: Value::null(),
         module_idx,
         chunk_idx: None,
+        location: Default::default(),
     };
     vm.frames.push(frame);
     

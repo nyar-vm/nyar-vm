@@ -261,4 +261,17 @@ impl NyarVM {
         self.modules.push(module);
         module_idx
     }
+
+    pub fn call_closure_sync(&mut self, callee: Value, args: Vec<Value>) -> Result<Value, NyarError> {
+        let target_depth = self.frames.len();
+        for arg in args {
+            self.push(arg)?;
+        }
+        self.push(callee)?;
+        self.execute_call_closure(0)?;
+        while self.frames.len() > target_depth {
+            self.execute_step()?;
+        }
+        self.pop()
+    }
 }

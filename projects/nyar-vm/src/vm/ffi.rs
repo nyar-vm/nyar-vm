@@ -150,8 +150,10 @@ impl FFIFunction for NativePrint {
             ret: FFIType::Null,
         })
     }
-    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        print!("{}", args[0]);
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        if !args.is_empty() {
+            vm.log(&format!("{}", args[0]));
+        }
         Ok(Value::null())
     }
 }
@@ -164,8 +166,10 @@ impl FFIFunction for NativePrintln {
             ret: FFIType::Null,
         })
     }
-    fn call(&self, _vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        println!("{}", args[0]);
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        if !args.is_empty() {
+            vm.log(&format!("{}", args[0]));
+        }
         Ok(Value::null())
     }
 }

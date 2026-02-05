@@ -1,7 +1,6 @@
 use nyar_vm::bytecode::format::NyarModule;
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::NyarVM;
-use nyar_types::VmError;
 
 #[test]
 fn test_halt_instruction() {

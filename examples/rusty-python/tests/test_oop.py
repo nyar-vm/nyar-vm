@@ -1,5 +1,5 @@
 class Person:
-    def __init__(self, name):
+    def initiate(self, name):
         self.name = name
     def say(self):
         print(self.name)

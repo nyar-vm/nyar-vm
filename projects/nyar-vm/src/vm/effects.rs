@@ -43,6 +43,12 @@ pub fn perform_effect_internal(
                 return Ok(Some(Value::null()));
             }
             "await" => {
+                if let Some(val) = args.get(0) {
+                    if val.is_closure() {
+                        let res = vm.call_closure_sync(*val, vec![])?;
+                        return Ok(Some(res));
+                    }
+                }
                 return Ok(None);
             }
             "add" => {

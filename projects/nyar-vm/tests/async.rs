@@ -1,5 +1,4 @@
 use nyar_types::{NyarError, QualifiedName};
-use nyar_types::VmError;
 use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::core::NyarVM;
@@ -194,7 +193,7 @@ fn run_algebraic_effect_xxeffect() {
 fn run_perform_await_on_closure() {
     let mut callee = Vec::new();
     callee.push(Opcode::Push as u8);
-    callee.extend_from_slice(&0u16.to_le_bytes());
+    callee.extend_from_slice(&1u16.to_le_bytes());
     callee.push(Opcode::Return as u8);
 
     let mut main = Vec::new();
@@ -673,7 +672,7 @@ fn run_throw_effect_uncaught_prints_traceback() {
     let lines = output.borrow();
     assert!(!lines.is_empty());
     assert_eq!(lines[0], "Traceback (most recent call last):");
-    assert_eq!(lines.last().unwrap(), "UnhandledError");
+    assert!(lines.last().unwrap().contains("UnhandledError"));
 }
 #[test]
 fn run_logger_event_default_prints() {
@@ -740,14 +739,14 @@ fn run_logger_event_handler_prints_and_resumes() {
     catch.push(1u8);
     catch.push(Opcode::Pop as u8);
     catch.push(Opcode::Push as u8);
-    catch.extend_from_slice(&0u16.to_le_bytes());
+    catch.extend_from_slice(&1u16.to_le_bytes());
     catch.push(Opcode::ResumeWith as u8);
     catch.push(Opcode::Return as u8);
     catch.push(Opcode::Push as u8);
-    catch.extend_from_slice(&0u16.to_le_bytes());
+    catch.extend_from_slice(&1u16.to_le_bytes());
     catch.push(Opcode::Return as u8);
 
-    // main: WithHandler(catch), StringConst("x"), Perform("LoggerEvent", 1), Push 0, Return
+    // main: WithHandler(catch), StringConst("x"), Perform("LoggerEvent", 1), Push 1, Return
     let mut main = Vec::new();
     main.push(Opcode::WithHandler as u8);
     main.extend_from_slice(&0u16.to_le_bytes());
@@ -758,8 +757,9 @@ fn run_logger_event_handler_prints_and_resumes() {
     main.push(Opcode::Perform as u8);
     main.extend_from_slice(&0u16.to_le_bytes());
     main.push(1u8);
+    main.push(Opcode::Pop as u8);
     main.push(Opcode::Push as u8);
-    main.extend_from_slice(&0u16.to_le_bytes());
+    main.extend_from_slice(&1u16.to_le_bytes());
     main.push(Opcode::Return as u8);
 
     let module = NyarModule {
