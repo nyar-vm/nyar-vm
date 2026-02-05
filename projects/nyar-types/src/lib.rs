@@ -144,6 +144,14 @@ impl ScopeManager {
         }
     }
 
+    /// 声明一个类成员（不进行混淆）
+    pub fn declare_member(&mut self, name: &str) -> String {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name.to_string(), name.to_string());
+        }
+        name.to_string()
+    }
+
     /// 声明一个变量并返回混淆后的名称
     pub fn declare_variable(&mut self, name: &str) -> String {
         // If it's already declared in current scope as global or nonlocal, use that mangled name

@@ -35,13 +35,14 @@ res = p.say()
     
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
-    
-    // The main code is in chunk 0 of the module
-    vm.execute(module_idx, 0).expect("Failed to execute");
-    
+
+    // The main code is in the last chunk of the module
+    let main_chunk_idx = (vm.modules[module_idx].chunks.len() - 1);
+    vm.execute(module_idx, main_chunk_idx).expect("Failed to execute");
+
     // Check results
     let res_name = QualifiedName::from("res");
     let res = vm.builtins.get(&res_name).expect("Global 'res' not found");
-    
+
     assert_eq!(res.try_as_str(), Some("Alice"));
 }

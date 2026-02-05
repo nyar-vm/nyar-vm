@@ -123,8 +123,9 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             body,
             ..
         } => {
+            let actual_name = if name == "__init__" { "initiate" } else { name };
             // 在外层作用域查找是否已经声明过（例如在 ClassDef 中）
-            let mangled_func_name = self.ctx.scopes.resolve_variable(name);
+            let mangled_func_name = self.ctx.scopes.resolve_variable(actual_name);
             
             self.ctx.scopes.push_scope();
             let mut params = Vec::new();
@@ -132,7 +133,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             let mut vararg = None;
             let mut kwarg = None;
 
-            eprintln!("DEBUG: Function {} has {} parameters", name, parameters.len());
+            eprintln!("DEBUG: Function {} (as {}) has {} parameters", name, actual_name, parameters.len());
             for (i, p) in parameters.iter().enumerate() {
                 let mangled = self.ctx.scopes.declare_variable(&p.name);
                 eprintln!("DEBUG: Declared parameter {} : {} -> {}", i, p.name, mangled);
@@ -170,7 +171,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             let vararg_id = vararg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
             let kwarg_id = kwarg.unwrap_or_else(|| self.ctx.builder().extension("none", vec![], loc.clone()));
 
-            let name_node = self.ctx.builder().string(name, loc.clone());
+            let name_node = self.ctx.builder().string(actual_name, loc.clone());
             let func_node = self.ctx.builder().extension(
                 "python_function",
                 vec![
@@ -531,13 +532,15 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 self.ctx.scopes.push_scope();
                 
                 // 在类作用域内声明方法名，以便在类体内引用
-                for s in body {
-                    if let Statement::FunctionDef { name: func_name, .. } = s {
-                        self.ctx.scopes.declare_variable(func_name);
-                    } else if let Statement::AsyncFunctionDef { name: func_name, .. } = s {
-                        self.ctx.scopes.declare_variable(func_name);
-                    }
+            for s in body {
+                if let Statement::FunctionDef { name: func_name, .. } = s {
+                    let actual_name = if func_name == "__init__" { "initiate" } else { func_name };
+                    self.ctx.scopes.declare_member(actual_name);
+                } else if let Statement::AsyncFunctionDef { name: func_name, .. } = s {
+                    let actual_name = if func_name == "__init__" { "initiate" } else { func_name };
+                    self.ctx.scopes.declare_member(actual_name);
                 }
+            }
 
                 let mut body_items = Vec::new();
                 eprintln!("DEBUG: Converting body for class {}, {} statements", name, body.len());

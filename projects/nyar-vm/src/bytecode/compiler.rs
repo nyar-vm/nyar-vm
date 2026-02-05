@@ -64,6 +64,52 @@ impl NyarBackend {
         self.module.classes.iter().position(|c| c.name == qn).map(|i| i as u16)
     }
 
+    fn scan_fields(&mut self, tree: &IKunTree, fields: &mut Vec<String>) {
+        match tree {
+            IKunTree::Seq(items) => {
+                for item in items {
+                    self.scan_fields(item, fields);
+                }
+            }
+            IKunTree::Lambda(_, body) => {
+                self.scan_fields(body, fields);
+            }
+            IKunTree::Extension(name, args) => {
+                if name == "set_field" {
+                    // args: [obj, name, value]
+                    if let IKunTree::Symbol(field_name) = &args[1] {
+                        if !fields.contains(field_name) {
+                            fields.push(field_name.clone());
+                        }
+                    }
+                } else if name == "python_function" {
+                    // args: [name, lambda, defaults, vararg, kwarg]
+                    self.scan_fields(&args[1], fields);
+                } else if name == "assign" {
+                    // args: [target, value]
+                    self.scan_fields(&args[1], fields);
+                } else {
+                    for arg in args {
+                        self.scan_fields(arg, fields);
+                    }
+                }
+            }
+            IKunTree::Apply(callee, args) => {
+                self.scan_fields(callee, fields);
+                for arg in args {
+                    self.scan_fields(arg, fields);
+                }
+            }
+            IKunTree::StateUpdate(_, value) => {
+                self.scan_fields(value, fields);
+            }
+            IKunTree::Export(_, value) => {
+                self.scan_fields(value, fields);
+            }
+            _ => {}
+        }
+    }
+
     pub fn lower_tree(&mut self, tree: &IKunTree) -> Result<Vec<u8>, NyarError> {
         println!("DEBUG: lower_tree: {:?}", tree);
         let mut code = Vec::new();
@@ -387,15 +433,30 @@ impl NyarBackend {
                         if let IKunTree::Symbol(class_name) = &args[0] {
                             let mut fields = Vec::new();
                             // 预扫描 body 寻找字段定义
-                            if let IKunTree::Seq(body) = &args[2] {
-                                for item in body {
-                                    if let IKunTree::StateUpdate(target, _) = item {
-                                        if let IKunTree::Symbol(name) = &**target {
-                                            fields.push(name.clone());
-                                        }
+                if let IKunTree::Seq(body) = &args[2] {
+                    for item in body {
+                        match item {
+                            IKunTree::StateUpdate(target, _) => {
+                                if let IKunTree::Symbol(name) = &**target {
+                                    if !fields.contains(name) {
+                                        fields.push(name.clone());
                                     }
                                 }
                             }
+                            IKunTree::Extension(ext_name, ext_args) if ext_name == "assign" => {
+                                if let IKunTree::Symbol(name) = &ext_args[0] {
+                                    if !fields.contains(name) {
+                                        fields.push(name.clone());
+                                    }
+                                }
+                            }
+                            _ => {
+                                // 递归扫描 lambda 体内的 set_field
+                                self.scan_fields(item, &mut fields);
+                            }
+                        }
+                    }
+                }
                             // 同时将这些字段名加入常量池
                             for field in &fields {
                                 self.add_constant(Constant::String(field.clone()));
@@ -408,7 +469,171 @@ impl NyarBackend {
                             self.current_class = Some(class_name.clone());
 
                             // 执行 body 来定义方法
-                            code.extend(self.lower_tree(&args[2])?);
+                            if let IKunTree::Seq(body) = &args[2] {
+                                for item in body {
+                                    match item {
+                                        IKunTree::Export(name, lambda) => {
+                                            let final_name = if let Some(class_name) = &self.current_class {
+                                                format!("{}::{}", class_name, name)
+                                            } else {
+                                                name.clone()
+                                            };
+                                            println!("DEBUG: Exporting class method: {}", final_name);
+                                            if let IKunTree::Lambda(params, body) = &**lambda {
+                                                let prev_locals = self.locals.clone();
+                                                self.locals.clear();
+                                                for param in params {
+                                                    self.add_local(param.clone());
+                                                }
+                                                let body_code = self.lower_tree(body)?;
+                                                let mut final_code = body_code;
+                                                if final_code.last() != Some(&(Opcode::Return as u8)) {
+                                                    final_code.push(Opcode::Return as u8);
+                                                }
+                                                let chunk_idx = self.module.chunks.len() as u16;
+                                                self.module.chunks.push(Chunk {
+                                                    locals: (self.locals.len() as u16).max(32),
+                                                    upvalues: 0,
+                                                    max_stack: 64,
+                                                    code: final_code,
+                                                    handlers: vec![],
+                                                    lines: vec![],
+                                                    decoded: None,
+                                                    hotness: std::sync::atomic::AtomicU32::new(0),
+                                                });
+                                                self.module.exports.push(ExportInfo {
+                                                    symbol: QualifiedName::from(final_name.as_str()),
+                                                    chunk_idx,
+                                                });
+                                                // 同时也将方法名作为一个全局变量，其值为一个闭包
+                                                let qn = QualifiedName::from(final_name.as_str());
+                                                let qn_idx = self.add_constant(Constant::QualifiedName(qn));
+                                                code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
+                                                code.extend_from_slice(&Instruction::StoreGlobal(qn_idx).encode());
+                                                code.extend_from_slice(&Instruction::Pop.encode());
+
+                                                self.locals = prev_locals;
+                                            }
+                                        }
+                                        IKunTree::StateUpdate(target, value) => {
+                                            if let IKunTree::Symbol(name) = &**target {
+                                                let mut method_lambda = None;
+                                                if let IKunTree::Lambda(_, _) = &**value {
+                                                    method_lambda = Some(&**value);
+                                                } else if let IKunTree::Extension(ext_name, ext_args) = &**value {
+                                                    if ext_name == "python_function" {
+                                                        method_lambda = Some(&ext_args[1]);
+                                                    }
+                                                }
+
+                                                if let Some(IKunTree::Lambda(params, body)) = method_lambda {
+                                                    let final_name = if let Some(class_name) = &self.current_class {
+                                                        format!("{}::{}", class_name, name)
+                                                    } else {
+                                                        name.clone()
+                                                    };
+                                                    println!("DEBUG: Exporting class method via StateUpdate: {}", final_name);
+                                                    let prev_locals = self.locals.clone();
+                                                    self.locals.clear();
+                                                    for param in params {
+                                                        self.add_local(param.clone());
+                                                    }
+                                                    let body_code = self.lower_tree(body)?;
+                                                    let mut final_code = body_code;
+                                                    if final_code.last() != Some(&(Opcode::Return as u8)) {
+                                                        final_code.push(Opcode::Return as u8);
+                                                    }
+                                                    let chunk_idx = self.module.chunks.len() as u16;
+                                                    self.module.chunks.push(Chunk {
+                                                        locals: (self.locals.len() as u16).max(32),
+                                                        upvalues: 0,
+                                                        max_stack: 64,
+                                                        code: final_code,
+                                                        handlers: vec![],
+                                                        lines: vec![],
+                                                        decoded: None,
+                                                        hotness: std::sync::atomic::AtomicU32::new(0),
+                                                    });
+                                                    self.module.exports.push(ExportInfo {
+                                                        symbol: QualifiedName::from(final_name.as_str()),
+                                                        chunk_idx,
+                                                    });
+                                                    // 同时也将方法名作为一个全局变量，其值为一个闭包
+                                                    let qn = QualifiedName::from(final_name.as_str());
+                                                    let qn_idx = self.add_constant(Constant::QualifiedName(qn));
+                                                    code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
+                                                    code.extend_from_slice(&Instruction::Dup(0).encode());
+                                                    code.extend_from_slice(&Instruction::StoreGlobal(qn_idx).encode());
+
+                                                    self.locals = prev_locals;
+                                                } else {
+                                                    code.extend(self.lower_tree(item)?);
+                                                }
+                                            }
+                                        }
+                                        IKunTree::Extension(ext_name, ext_args) if ext_name == "assign" => {
+                                            if let IKunTree::Symbol(name) = &ext_args[0] {
+                                                let value = &ext_args[1];
+                                                let mut method_lambda = None;
+                                                if let IKunTree::Lambda(_, _) = value {
+                                                    method_lambda = Some(value);
+                                                } else if let IKunTree::Extension(inner_ext_name, inner_ext_args) = value {
+                                                    if inner_ext_name == "python_function" {
+                                                        method_lambda = Some(&inner_ext_args[1]);
+                                                    }
+                                                }
+
+                                                if let Some(IKunTree::Lambda(params, body)) = method_lambda {
+                                                    let final_name = if let Some(class_name) = &self.current_class {
+                                                        format!("{}::{}", class_name, name)
+                                                    } else {
+                                                        name.clone()
+                                                    };
+                                                    println!("DEBUG: Exporting class method via assign extension: {}", final_name);
+                                                    let prev_locals = self.locals.clone();
+                                                    self.locals.clear();
+                                                    for param in params {
+                                                        self.add_local(param.clone());
+                                                    }
+                                                    let body_code = self.lower_tree(body)?;
+                                                    let mut final_code = body_code;
+                                                    if final_code.last() != Some(&(Opcode::Return as u8)) {
+                                                        final_code.push(Opcode::Return as u8);
+                                                    }
+                                                    let chunk_idx = self.module.chunks.len() as u16;
+                                                    self.module.chunks.push(Chunk {
+                                                        locals: (self.locals.len() as u16).max(32),
+                                                        upvalues: 0,
+                                                        max_stack: 64,
+                                                        code: final_code,
+                                                        handlers: vec![],
+                                                        lines: vec![],
+                                                        decoded: None,
+                                                        hotness: std::sync::atomic::AtomicU32::new(0),
+                                                    });
+                                                    self.module.exports.push(ExportInfo {
+                                                        symbol: QualifiedName::from(final_name.as_str()),
+                                                        chunk_idx,
+                                                    });
+                                                    // 同时也将方法名作为一个全局变量，其值为一个闭包
+                                                    let qn = QualifiedName::from(final_name.as_str());
+                                                    let qn_idx = self.add_constant(Constant::QualifiedName(qn));
+                                                    code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
+                                                    code.extend_from_slice(&Instruction::Dup(0).encode());
+                                                    code.extend_from_slice(&Instruction::StoreGlobal(qn_idx).encode());
+
+                                                    self.locals = prev_locals;
+                                                } else {
+                                                    code.extend(self.lower_tree(item)?);
+                                                }
+                                            }
+                                        }
+                                        _ => {
+                                            code.extend(self.lower_tree(item)?);
+                                        }
+                                    }
+                                }
+                            }
 
                             // 恢复类上下文
                             self.current_class = prev_class;
@@ -475,7 +700,12 @@ impl NyarBackend {
                                 if let Some(idx) = self.find_local(name) {
                                     code.extend_from_slice(&Instruction::StoreLocal(idx).encode());
                                 } else {
-                                    let idx = self.add_constant(Constant::String(name.clone()));
+                                    let final_name = if let Some(class_name) = &self.current_class {
+                                        format!("{}::{}", class_name, name)
+                                    } else {
+                                        name.clone()
+                                    };
+                                    let idx = self.add_constant(Constant::String(final_name));
                                     code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
                                 }
                             }
