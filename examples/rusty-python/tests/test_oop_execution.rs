@@ -8,8 +8,7 @@ use nyar_types::QualifiedName;
 
 #[test]
 fn test_python_oop_execution() {
-    let source = r#"
-class Person:
+    let source = r#"class Person:
     def __init__(self, name):
         self.name = name
     def say(self):
@@ -44,5 +43,5 @@ res = p.say()
     let res_name = QualifiedName::from("res");
     let res = vm.builtins.get(&res_name).expect("Global 'res' not found");
     
-    assert_eq!(res.try_as_str().expect("Expected string"), "Alice");
+    assert_eq!(res.try_as_str(), Some("Alice"));
 }
