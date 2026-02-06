@@ -1,5 +1,5 @@
 use byteorder::{LittleEndian, ReadBytesExt};
-use nyar_types::QualifiedName;
+use nyar_types::{QualifiedName, SourceLocation};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -66,12 +66,14 @@ impl PartialEq for Chunk {
 pub struct ClassInfo {
     pub name: QualifiedName,
     pub fields: Vec<String>,
+    pub location: SourceLocation,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TraitInfo {
     pub name: QualifiedName,
     pub methods: Vec<String>,
+    pub location: SourceLocation,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -337,7 +339,7 @@ impl NyarcModule {
                 for _ in 0..field_count {
                     fields.push(read_string(&mut cur)?);
                 }
-                classes.push(ClassInfo { name, fields });
+                classes.push(ClassInfo { name, fields, location: SourceLocation::default() });
             }
         }
 
@@ -355,7 +357,7 @@ impl NyarcModule {
                 for _ in 0..method_count {
                     methods.push(read_string(&mut cur)?);
                 }
-                traits.push(TraitInfo { name, methods });
+                traits.push(TraitInfo { name, methods, location: SourceLocation::default() });
             }
         }
 

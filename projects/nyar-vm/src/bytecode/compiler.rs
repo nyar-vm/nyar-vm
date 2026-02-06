@@ -3,7 +3,7 @@ use crate::runtime::NyarBuiltin;
 use crate::bytecode::format::{Chunk, ClassInfo, Constant, ExportInfo, NyarcModule};
 use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
-use nyar_types::{NyarError, QualifiedName};
+use nyar_types::{NyarError, QualifiedName, SourceLocation};
 
 pub struct NyarBackend {
     module: NyarcModule,
@@ -55,6 +55,7 @@ impl NyarBackend {
             self.module.classes.push(ClassInfo {
                 name: qn,
                 fields,
+                location: SourceLocation::default(),
             });
         }
     }

@@ -199,7 +199,11 @@ impl NyarVM {
                 None => return Ok(None),
             };
             if f.ip >= f.instrs.len() {
-                return Ok(None);
+                self.frames.pop();
+                if self.frames.is_empty() {
+                    return Ok(None);
+                }
+                return Ok(Some(()));
             }
             (f.ip, f.module_idx, f.chunk_idx)
         };
@@ -231,6 +235,7 @@ impl NyarVM {
             self.trace_log.borrow_mut().push(log_msg);
         }
 
+        let mut pushed_frame = false;
         let next_ip = {
             let frame_count_before = self.frames.len();
             let res = self.dispatch_instruction(ins, cur_ip, module_idx)?;
@@ -242,6 +247,7 @@ impl NyarVM {
                 if let Some(prev_f) = self.frames.get_mut(frame_count_before - 1) {
                     prev_f.ip += 1;
                 }
+                pushed_frame = true;
             }
             res
         };
@@ -249,7 +255,7 @@ impl NyarVM {
         if let Some(f) = self.frames.last_mut() {
             if let Some(new_ip) = next_ip {
                 f.ip = new_ip;
-            } else {
+            } else if !pushed_frame {
                 f.ip += 1;
             }
             Ok(Some(()))
