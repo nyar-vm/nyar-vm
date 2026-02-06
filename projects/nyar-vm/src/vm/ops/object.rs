@@ -508,7 +508,9 @@ impl NyarVM {
         let mut full_method_name = class_info.name.clone();
         full_method_name.parts.push("initiate".to_string());
 
-        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&full_method_name) {
+        let entry = self.symbol_table.get(&full_method_name);
+
+        if let Some(&(m_idx, chunk_idx)) = entry {
             let mut final_args = Vec::with_capacity(args.len() + 1);
             final_args.push(receiver);
             final_args.extend(args);
