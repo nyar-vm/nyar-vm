@@ -4,32 +4,32 @@
 
 Valkyrie provides a powerful macro system that supports compile-time code generation and metaprogramming. The macro system is divided into two main parts:
 
-- **Macro (`↯`)**: Compile-time function calls that do not capture subsequent parameters.
+- **Macro (`@`)**: Compile-time function calls that do not capture subsequent parameters.
 - **Annotation (`@`)**: Compile-time annotations that capture and act on subsequent declarations like `class`, `micro`, etc.
 
 ## Macro vs Annotation
 
-### Macro (`↯`)
+### Macro (`@`)
 
-Macros use the `↯` prefix and are compile-time function calls that do not capture subsequent code elements:
+Macros use the `@` prefix and are compile-time function calls that do not capture subsequent code elements:
 
 ```valkyrie
 # Compile-time constant computation
-let FIBONACCI_10: i32 = ↯evaluate(fibonacci(10))
-let LOOKUP_TABLE: [i32; 256] = ↯evaluate(generate_lookup_table())
+let FIBONACCI_10: i32 = @evaluate(fibonacci(10))
+let LOOKUP_TABLE: [i32; 256] = @evaluate(generate_lookup_table())
 
 # Environment variable access
-let database_url: string = ↯env("DATABASE_URL")
+let database_url: string = @env("DATABASE_URL")
 
 # String formatting
-let message: string = ↯format("Hello, {}!", name)
+let message: string = @format("Hello, {}!", name)
 
 # Vector creation
-let numbers = ↯vec(1, 2, 3, 4, 5)
-let zeros = ↯vec(0; 10)
+let numbers = @vec(1, 2, 3, 4, 5)
+let zeros = @vec(0; 10)
 
 # SQL query
-let query = ↯sql(
+let query = @sql(
     "SELECT id, name FROM users WHERE active = $1",
     true
 )
@@ -192,7 +192,7 @@ macro vec_of {
         }
     }
     (#(#x:expr),+ #(,)?) => {
-        ↯vec(#(#x),+)
+        @vec(#(#x),+)
     }
 }
 ```

@@ -221,7 +221,7 @@ A: 使用 `valkyrie.toml` 配置文件：
 [package]
 name = "my-project"
 version = "0.1.0"
-authors = ["Your Name <your.email↯example.com>"]
+authors = ["Your Name <your.email@example.com>"]
 
 [dependencies]
 std = "1.0"
