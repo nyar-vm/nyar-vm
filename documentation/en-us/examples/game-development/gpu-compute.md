@@ -8,7 +8,7 @@ Valkyrie 提供强大的 GPU 计算能力，支持通用 GPU 编程 (GPGPU)，�
 
 ```valkyrie
 # 计算着色器的基本结构
-@.compute(workgroup_size = [64, 1, 1])  # 64个线程为一个工作组
+@compute(workgroup_size = [64, 1, 1])  # 64个线程为一个工作组
 micro basic_compute(id: ComputeInput) {
     let thread_id = id.global_invocation_id.x
     let local_id = id.local_invocation_id.x
@@ -19,7 +19,7 @@ micro basic_compute(id: ComputeInput) {
 }
 
 # 2D 工作组示例
-@.compute(workgroup_size = [8, 8, 1])  # 8x8 = 64个线程
+@compute(workgroup_size = [8, 8, 1])  # 8x8 = 64个线程
 micro image_process_compute(id: ComputeInput) {
     let coords = id.global_invocation_id.xy
     let local_coords = id.local_invocation_id.xy
@@ -29,7 +29,7 @@ micro image_process_compute(id: ComputeInput) {
 }
 
 # 3D 工作组示例
-@.compute(workgroup_size = [4, 4, 4])  # 4x4x4 = 64个线程
+@compute(workgroup_size = [4, 4, 4])  # 4x4x4 = 64个线程
 micro volume_compute(id: ComputeInput) {
     let coords = id.global_invocation_id.xyz
     
@@ -42,11 +42,11 @@ micro volume_compute(id: ComputeInput) {
 
 ```valkyrie
 # 只读存储缓冲区
-@.group(0) @.binding(0)
+@group(0) @binding(0)
 let input_data: storage<array<f32>, read>
 
 # 可读写存储缓冲区
-@.group(0) @.binding(1)
+@group(0) @binding(1)
 let output_data: storage<array<f32>, read_write>
 
 # 结构化数据
@@ -57,11 +57,11 @@ struct ParticleData {
     life: f32
 }
 
-@.group(0) @.binding(2)
+@group(0) @binding(2)
 let particles: storage<array<ParticleData>, read_write>
 
 # Uniform 缓冲区（常量数据）
-@.group(1) @.binding(0)
+@group(1) @binding(0)
 struct ComputeParams {
     delta_time: f32,
     particle_count: u32,

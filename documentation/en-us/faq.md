@@ -188,28 +188,28 @@ A: 使用内置测试框架：
 
 ```valkyrie
 # 单元测试
-@.test
+@test
 micro test_addition() {
-    @.assert_eq(add(2, 3), 5)
-    @.assert_eq(add(-1, 1), 0)
+    @assert_eq(add(2, 3), 5)
+    @assert_eq(add(-1, 1), 0)
 }
 
 # 属性测试
-@.test
+@test
 micro test_addition_commutative() {
     forall (a: Int, b: Int) {
-        @.assert_eq(add(a, b), add(b, a))
+        @assert_eq(add(a, b), add(b, a))
     }
 }
 
 # 效应测试
-@.test
+@test
 micro test_state_effect() {
     let result = handle counter() with State {
         get() -> resume(0),
         set(value) -> resume(())
     }
-    @.assert_eq(result, 1)
+    @assert_eq(result, 1)
 }
 ```
 

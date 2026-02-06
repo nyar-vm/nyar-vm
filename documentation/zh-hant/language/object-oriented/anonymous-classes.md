@@ -186,17 +186,17 @@ micro create_handler(handler_type: string) -> class {
     match handler_type {
         case "json" => class {
             micro handle(self, request: string) -> string {
-                @format("{{\"response\": \"{}\"}}", request)
+                ↯format("{{\"response\": \"{}\"}}", request)
             }
         },
         case "xml" => class {
             micro handle(self, request: string) -> string {
-                @format("<response>{}</response>", request)
+                ↯format("<response>{}</response>", request)
             }
         },
         case _ => class {
             micro handle(self, request: string) -> string {
-                @format("Plain response: {}", request)
+                ↯format("Plain response: {}", request)
             }
         }
     }

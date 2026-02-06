@@ -17,12 +17,12 @@ fn verify_lowering(source: &str) {
 #[test]
 fn test_decorators_lowering() {
     let source = r#"
-@deco1
-@deco2(arg)
+↯deco1
+↯deco2(arg)
 def func(x):
     pass
 
-@class_deco
+↯class_deco
 class MyClass:
     pass
 "#;

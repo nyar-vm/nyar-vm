@@ -8,7 +8,7 @@ Valkyrie 提供强大的 GPU 计算能力，支持通用 GPU 编程 (GPGPU)，�
 
 ```valkyrie
 # 计算着色器的基本结构
-@.compute(workgroup_size = [64, 1, 1])  # 64个线程为一个工作组
+@compute(workgroup_size = [64, 1, 1])  # 64个线程为一个工作组
 micro basic_compute(id: ComputeInput) {
     let thread_id = id.global_invocation_id.x
     let local_id = id.local_invocation_id.x
@@ -19,7 +19,7 @@ micro basic_compute(id: ComputeInput) {
 }
 
 # 2D 工作组示例
-@.compute(workgroup_size = [8, 8, 1])  # 8x8 = 64个线程
+@compute(workgroup_size = [8, 8, 1])  # 8x8 = 64个线程
 micro image_process_compute(id: ComputeInput) {
     let coords = id.global_invocation_id.xy
     let local_coords = id.local_invocation_id.xy
@@ -29,7 +29,7 @@ micro image_process_compute(id: ComputeInput) {
 }
 
 # 3D 工作组示例
-@.compute(workgroup_size = [4, 4, 4])  # 4x4x4 = 64个线程
+@compute(workgroup_size = [4, 4, 4])  # 4x4x4 = 64个线程
 micro volume_compute(id: ComputeInput) {
     let coords = id.global_invocation_id.xyz
     
@@ -42,11 +42,11 @@ micro volume_compute(id: ComputeInput) {
 
 ```valkyrie
 # 只读存储缓冲区
-@.group(0) @.binding(0)
+@group(0) @binding(0)
 let input_data: storage<array<f32>, read>
 
 # 可读写存储缓冲区
-@.group(0) @.binding(1)
+@group(0) @binding(1)
 let output_data: storage<array<f32>, read_write>
 
 # 结构化数据
@@ -57,11 +57,11 @@ struct ParticleData {
     life: f32
 }
 
-@.group(0) @.binding(2)
+@group(0) @binding(2)
 let particles: storage<array<ParticleData>, read_write>
 
 # Uniform 缓冲区（常量数据）
-@.group(1) @.binding(0)
+@group(1) @binding(0)
 struct ComputeParams {
     delta_time: f32,
     particle_count: u32,
@@ -76,7 +76,7 @@ struct ComputeParams {
 
 ```valkyrie
 # 共享内存用于工作组内通信
-@compute(workgroup_size = [256, 1, 1])
+↯compute(workgroup_size = [256, 1, 1])
 micro parallel_sum(id: ComputeInput) {
     # 共享内存声明
     var<workgroup> shared_data: array<f32, 256>
@@ -182,7 +182,7 @@ class ParallelReduction {
 
 ```valkyrie
 # Blelloch 扫描算法实现
-@compute(workgroup_size = [256, 1, 1])
+↯compute(workgroup_size = [256, 1, 1])
 micro prefix_sum_up_sweep(id: ComputeInput, params: ScanParams) {
     var<workgroup> shared_data: array<u32, 512>  # 双倍大小用于 padding
     
@@ -251,7 +251,7 @@ micro prefix_sum_up_sweep(id: ComputeInput, params: ScanParams) {
 
 ```valkyrie
 # 双调排序 (Bitonic Sort)
-@compute(workgroup_size = [256, 1, 1])
+↯compute(workgroup_size = [256, 1, 1])
 micro bitonic_sort(id: ComputeInput, params: SortParams) {
     var<workgroup> shared_data: array<u32, 256>
     
@@ -298,7 +298,7 @@ micro bitonic_sort(id: ComputeInput, params: SortParams) {
 }
 
 # 基数排序实现
-@compute(workgroup_size = [256, 1, 1])
+↯compute(workgroup_size = [256, 1, 1])
 micro radix_sort_count(id: ComputeInput, params: RadixSortParams) {
     var<workgroup> local_histogram: array<u32, 16>  # 4-bit 基数
     
@@ -342,10 +342,10 @@ struct Body {
     _padding: f32  # 对齐到 16 字节
 }
 
-@group(0) @binding(0)
+↯group(0) ↯binding(0)
 let bodies: storage<array<Body>, read_write>
 
-@group(0) @binding(1)
+↯group(0) ↯binding(1)
 struct NBodyParams {
     body_count: u32,
     delta_time: f32,
@@ -353,7 +353,7 @@ struct NBodyParams {
     damping: f32
 }
 
-@compute(workgroup_size = [64, 1, 1])
+↯compute(workgroup_size = [64, 1, 1])
 micro n_body_simulation(id: ComputeInput, params: NBodyParams) {
     let index = id.global_invocation_id.x
     if index >= params.body_count {
@@ -389,7 +389,7 @@ micro n_body_simulation(id: ComputeInput, params: NBodyParams) {
 }
 
 # 优化版本：使用共享内存
-@compute(workgroup_size = [64, 1, 1])
+↯compute(workgroup_size = [64, 1, 1])
 micro n_body_optimized(id: ComputeInput, params: NBodyParams) {
     var<workgroup> shared_bodies: array<Body, 64>
     
@@ -454,10 +454,10 @@ struct FluidParticle {
     _padding: f32
 }
 
-@group(0) @binding(0)
+↯group(0) ↯binding(0)
 let particles: storage<array<FluidParticle>, read_write>
 
-@group(0) @binding(1)
+↯group(0) ↯binding(1)
 struct SPHParams {
     particle_count: u32,
     rest_density: f32,
@@ -504,7 +504,7 @@ micro viscosity_laplacian_kernel(r: f32, h: f32) -> f32 {
 }
 
 # 密度计算
-@compute(workgroup_size = [64, 1, 1])
+↯compute(workgroup_size = [64, 1, 1])
 micro compute_density(id: ComputeInput, params: SPHParams) {
     let index = id.global_invocation_id.x
     if index >= params.particle_count {
@@ -529,7 +529,7 @@ micro compute_density(id: ComputeInput, params: SPHParams) {
 }
 
 # 力计算
-@compute(workgroup_size = [64, 1, 1])
+↯compute(workgroup_size = [64, 1, 1])
 micro compute_forces(id: ComputeInput, params: SPHParams) {
     let index = id.global_invocation_id.x
     if index >= params.particle_count {
@@ -570,7 +570,7 @@ micro compute_forces(id: ComputeInput, params: SPHParams) {
 }
 
 # 积分更新
-@compute(workgroup_size = [64, 1, 1])
+↯compute(workgroup_size = [64, 1, 1])
 micro integrate_particles(id: ComputeInput, params: SPHParams) {
     let index = id.global_invocation_id.x
     if index >= params.particle_count {
@@ -609,7 +609,7 @@ micro integrate_particles(id: ComputeInput, params: SPHParams) {
 
 ```valkyrie
 # 高效的矩阵乘法实现
-@compute(workgroup_size = [16, 16, 1])
+↯compute(workgroup_size = [16, 16, 1])
 micro matrix_multiply(id: ComputeInput, params: MatMulParams) {
     var<workgroup> tile_a: array<array<f32, 16>, 16>
     var<workgroup> tile_b: array<array<f32, 16>, 16>
@@ -660,7 +660,7 @@ micro matrix_multiply(id: ComputeInput, params: MatMulParams) {
 }
 
 # 批量矩阵乘法
-@compute(workgroup_size = [8, 8, 4])
+↯compute(workgroup_size = [8, 8, 4])
 micro batch_matrix_multiply(id: ComputeInput, params: BatchMatMulParams) {
     let batch = id.global_invocation_id.z
     let row = id.global_invocation_id.y
@@ -689,7 +689,7 @@ micro batch_matrix_multiply(id: ComputeInput, params: BatchMatMulParams) {
 
 ```valkyrie
 # 2D 卷积层
-@compute(workgroup_size = [8, 8, 1])
+↯compute(workgroup_size = [8, 8, 1])
 micro conv2d(id: ComputeInput, params: Conv2DParams) {
     let out_y = id.global_invocation_id.y
     let out_x = id.global_invocation_id.x
@@ -750,7 +750,7 @@ micro gelu(x: f32) -> f32 {
 }
 
 # 批量归一化
-@compute(workgroup_size = [256, 1, 1])
+↯compute(workgroup_size = [256, 1, 1])
 micro batch_norm(id: ComputeInput, params: BatchNormParams) {
     let index = id.global_invocation_id.x
     if index >= params.size {
@@ -774,7 +774,7 @@ micro batch_norm(id: ComputeInput, params: BatchNormParams) {
 
 ```valkyrie
 # 双边滤波器
-@compute(workgroup_size = [8, 8, 1])
+↯compute(workgroup_size = [8, 8, 1])
 micro bilateral_filter(id: ComputeInput, params: BilateralParams) {
     let coords = id.global_invocation_id.xy
     let dimensions = textureDimensions(input_texture)
@@ -825,7 +825,7 @@ micro bilateral_filter(id: ComputeInput, params: BilateralParams) {
 }
 
 # 非局部均值去噪
-@compute(workgroup_size = [8, 8, 1])
+↯compute(workgroup_size = [8, 8, 1])
 micro non_local_means(id: ComputeInput, params: NLMParams) {
     let coords = id.global_invocation_id.xy
     let dimensions = textureDimensions(input_texture)
@@ -892,7 +892,7 @@ micro non_local_means(id: ComputeInput, params: NLMParams) {
 
 ```valkyrie
 # 合并内存访问
-@compute(workgroup_size = [32, 1, 1])  # warp size
+↯compute(workgroup_size = [32, 1, 1])  # warp size
 micro coalesced_access(id: ComputeInput) {
     let thread_id = id.global_invocation_id.x
     
@@ -906,7 +906,7 @@ micro coalesced_access(id: ComputeInput) {
 }
 
 # 使用共享内存减少全局内存访问
-@compute(workgroup_size = [256, 1, 1])
+↯compute(workgroup_size = [256, 1, 1])
 micro shared_memory_optimization(id: ComputeInput) {
     var<workgroup> shared_cache: array<f32, 256>
     
@@ -932,7 +932,7 @@ micro shared_memory_optimization(id: ComputeInput) {
 
 ```valkyrie
 # 避免分支分歧
-@compute(workgroup_size = [32, 1, 1])
+↯compute(workgroup_size = [32, 1, 1])
 micro branch_optimization(id: ComputeInput) {
     let thread_id = id.global_invocation_id.x
     let value = input_data[thread_id]
@@ -959,7 +959,7 @@ micro branch_optimization(id: ComputeInput) {
 
 ```valkyrie
 # 优化寄存器使用
-@compute(workgroup_size = [128, 1, 1])  # 调整工作组大小以平衡占用率
+↯compute(workgroup_size = [128, 1, 1])  # 调整工作组大小以平衡占用率
 micro register_optimization(id: ComputeInput) {
     let thread_id = id.global_invocation_id.x
     
@@ -972,7 +972,7 @@ micro register_optimization(id: ComputeInput) {
 }
 
 # 内存带宽优化
-@compute(workgroup_size = [64, 1, 1])
+↯compute(workgroup_size = [64, 1, 1])
 micro bandwidth_optimization(id: ComputeInput) {
     let thread_id = id.global_invocation_id.x
     
@@ -993,7 +993,7 @@ micro bandwidth_optimization(id: ComputeInput) {
 
 ```valkyrie
 # 调试缓冲区
-@group(2) @binding(0)
+↯group(2) ↯binding(0)
 let debug_buffer: storage<array<DebugInfo>, write>
 
 struct DebugInfo {
@@ -1003,7 +1003,7 @@ struct DebugInfo {
     timestamp: u32
 }
 
-@compute(workgroup_size = [64, 1, 1])
+↯compute(workgroup_size = [64, 1, 1])
 micro debug_compute(id: ComputeInput) {
     let thread_id = id.global_invocation_id.x
     

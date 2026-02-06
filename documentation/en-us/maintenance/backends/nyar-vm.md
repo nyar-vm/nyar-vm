@@ -40,13 +40,13 @@ NyarVM is the internal reference interpreter for Nyar.
     - [x] Code coverage statistics.
 
 ### 6. FFI Mechanism
-- **Design**: FFI markers are attached to `micro` function declarations via annotations (e.g., `↯import`).
+- **Design**: FFI markers are attached to `micro` function declarations via annotations (e.g., `@import`).
 - **Advantages**:
     - **Type Safety**: Using the function's `parameters` and `returns` definitions, the compiler can accurately generate marshaling code.
     - **Multi-backend Adaptation**: Interpreted and executed by different backends via the `target` parameter (e.g., `wasm`, `jvm`, `clr`, `dll`).
 - **Example**:
     ```nyar
-    ↯import(target: wasm, "wasi:random/insecure", "get-insecure-random-u64")
+    @import(target: wasm, "wasi:random/insecure", "get-insecure-random-u64")
     micro get_random_u64() -> u64
     ```
 

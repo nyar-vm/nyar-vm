@@ -141,7 +141,7 @@ namespace network {
     pub class TcpStream { /* ... */ }
     
     # 異步功能（需要 async 特性）
-    @.cfg(feature = "async")
+    @cfg(feature = "async")
     pub namespace async {
         pub class AsyncTcpStream { /* ... */ }
         
@@ -151,7 +151,7 @@ namespace network {
     }
     
     # TLS 支持（需要 tls 特性）
-    @.cfg(feature = "tls")
+    @cfg(feature = "tls")
     pub namespace tls {
         pub class TlsStream { /* ... */ }
         
@@ -173,7 +173,7 @@ namespace platform {
     }
     
     # Windows 實現
-    @.cfg(target_os = "windows")
+    @cfg(target_os = "windows")
     pub namespace windows {
         pub class WindowsFileSystem
         
@@ -186,7 +186,7 @@ namespace platform {
     }
     
     # Unix 實現
-    @.cfg(any(target_os = "linux", target_os = "macos"))
+    @cfg(any(target_os = "linux", target_os = "macos"))
     pub namespace unix {
         pub class UnixFileSystem
         
@@ -218,7 +218,7 @@ using serde.{Serialize, Deserialize}
 using tokio.runtime.Runtime
 using log.{info, warn, error}
 
-@.derive(Serialize, Deserialize)
+@derive(Serialize, Deserialize)
 class Config {
     host: String,
     port: u16,
@@ -269,7 +269,7 @@ api = { path = "../api" }
 ```valkyrie
 namespace config {
     # 靜態配置
-    pub static DATABASE_URL: String = @env("DATABASE_URL")
+    pub static DATABASE_URL: String = ↯env("DATABASE_URL")
     pub static MAX_CONNECTIONS: i32 = 100
     
     # 延遲初始化
@@ -323,23 +323,23 @@ namespace math.geometry {
     }
     
     # 測試模塊
-    @.cfg(test)
+    @cfg(test)
     namespace tests {
         using super.*
         
-        @.test
+        @test
         micro test_distance_same_point() {
             let p = Point { x: 1.0, y: 2.0 }
             let dist = distance(p, p)
-            @assert_equal(dist, 0.0)
+            ↯assert_equal(dist, 0.0)
         }
         
-        @.test
+        @test
         micro test_distance_different_points() {
             let p1 = Point { x: 0.0, y: 0.0 }
             let p2 = Point { x: 3.0, y: 4.0 }
             let dist = distance(p1, p2)
-            @assert_equal(dist, 5.0)
+            ↯assert_equal(dist, 5.0)
         }
     }
 }
@@ -352,18 +352,18 @@ namespace math.geometry {
 using myapp.api.*
 using myapp.database.*
 
-@.test
+@test
 micro test_full_workflow() {
     # 設置測試環境
     let config = TestConfig::default()
     initialize_test_database(config)
     
     # 執行測試
-    let user = create_user("alice", "alice@example.com")
-    @.assert_true(user.is_ok())
+    let user = create_user("alice", "alice↯example.com")
+    @assert_true(user.is_ok())
     
-    let found_user = find_user_by_email("alice@example.com")
-    @.assert_true(found_user.is_some())
+    let found_user = find_user_by_email("alice↯example.com")
+    @assert_true(found_user.is_some())
     
     # 清理
     cleanup_test_database()

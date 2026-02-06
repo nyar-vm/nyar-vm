@@ -605,7 +605,7 @@ match result {
 ```valkyrie
 # 简单宏定义
 macro debug_print($expr) {
-    @.cfg(debug_assertions)
+    @cfg(debug_assertions)
     print("DEBUG: {} = {}", stringify!($expr), $expr)
 }
 
@@ -634,7 +634,7 @@ create_class!(Person, name: String, age: i32)
 
 ```valkyrie
 # 编译时常量
-@.const_eval
+@const_eval
 micro fibonacci_const(n: i32) -> i32 {
     if n <= 1 {
         n
@@ -646,7 +646,7 @@ micro fibonacci_const(n: i32) -> i32 {
 let fib_10 = fibonacci_const(10)  # 编译时计算
 
 # 编译时类型生成
-@.derive(Debug, Clone, PartialEq)
+@derive(Debug, Clone, PartialEq)
 class Point {
     x: f64
     y: f64
@@ -689,13 +689,13 @@ async micro process_urls(urls: [String]) -> [Result<String, Error>] {
 
 ```valkyrie
 # 内联优化
-@.inline
+@inline
 micro fast_add(a: i32, b: i32) -> i32 {
     a + b
 }
 
 # 特化优化
-@.specialize
+@specialize
 micro generic_sort<T>(data: [T]) -> [T]
 where T: Ord
 {

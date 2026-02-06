@@ -73,7 +73,7 @@ class Email {
     address: string,
 
     micro new(address: string) -> Self {
-        @.require(is_valid_email(address), "Invalid email format")
+        @require(is_valid_email(address), "Invalid email format")
         Email { address }
     }
 }

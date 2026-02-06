@@ -215,7 +215,7 @@ class Builder {
         Person {
             name: self.name.unwrap_or("Unknown"),
             age: self.age.unwrap_or(0),
-            email: self.email.unwrap_or("unknown@example.com")
+            email: self.email.unwrap_or("unknown↯example.com")
         }
     }
 }
@@ -224,7 +224,7 @@ class Builder {
 let person = Builder::new()
     .name("Alice")
     .age(30)
-    .email("alice@example.com")
+    .email("alice↯example.com")
     .build()
 ```
 

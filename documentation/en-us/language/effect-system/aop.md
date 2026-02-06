@@ -83,7 +83,7 @@ class MetricsHandler {
 ```valkyrie
 class PaymentService {
     # Using multiple aspects
-    @.around(LogAspect, MetricsAspect)
+    @around(LogAspect, MetricsAspect)
     micro process_payment(self, order_id: String, amount: Decimal) -> Receipt {
         # Before advice executes automatically
         perform LogAspect.before_method("PaymentService", "process_payment", [order_id, amount])
@@ -125,7 +125,7 @@ effect AuditAspect {
 
 # Security Audit Service
 class SecurityAuditService {
-    @.around(LogAspect, AuditAspect)
+    @around(LogAspect, AuditAspect)
     micro update_user_profile(self, user_id: string, profile: UserProfile) -> Unit {
         perform AuditAspect.log_access(user_id, "user_profile", "update")
         
@@ -220,7 +220,7 @@ class DynamicAspectManager {
         self.aspects.retain { $a != aspect }
     }
     
-    @.around(DynamicAspect)
+    @around(DynamicAspect)
     micro execute_with_aspects⟨T⟩(self, operation: { -> T }) -> T {
         let context = AspectContext::new()
         
@@ -289,7 +289,7 @@ Aspects increase the overhead of method calls; use them cautiously in performanc
 ```valkyrie
 # Example: Complete AOP Application
 class OrderService {
-    @.around(LogAspect, MetricsAspect, SecurityAspect, TransactionAspect)
+    @around(LogAspect, MetricsAspect, SecurityAspect, TransactionAspect)
     micro create_order(self, user_id: string, items: [OrderItem]) -> Order {
         # Before advice for all aspects executes automatically
         # - Log method call

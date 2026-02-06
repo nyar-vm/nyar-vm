@@ -40,13 +40,13 @@ NyarVM 是 Nyar 的內部參考解釋器。
     - [x] 代碼覆蓋率統計。
 
 ### 6. FFI 機制
-- **設計**：FFI 標記通過 Annotation (如 `↯import`) 掛載於 `micro` 函數聲明之上。
+- **設計**：FFI 標記通過 Annotation (如 `@import`) 掛載於 `micro` 函數聲明之上。
 - **優勢**：
     - **類型安全**：利用函數的 `parameters` 和 `returns` 定義，編譯器能準確生成參數封送（Marshaling）代碼。
     - **多後端適配**：通過 `target` 參數（如 `wasm`, `jvm`, `clr`, `dll`）由不同後端解釋執行。
 - **示例**：
     ```nyar
-    ↯import(target: wasm, "wasi:random/insecure", "get-insecure-random-u64")
+    @import(target: wasm, "wasi:random/insecure", "get-insecure-random-u64")
     micro get_random_u64() -> u64
     ```
 

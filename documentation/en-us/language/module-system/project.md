@@ -38,7 +38,7 @@ project-root/
     
     // 作者信息
     "authors": [
-        "Developer Name <email@example.com>"
+        "Developer Name <email↯example.com>"
     ],
     
     // 许可证
@@ -269,7 +269,7 @@ valkyrie init
 
 ```bash
 # 添加依赖
-valkyrie add serde@^1.0
+valkyrie add serde↯^1.0
 
 # 添加开发依赖
 valkyrie add --dev test-framework
@@ -361,7 +361,7 @@ valkyrie publish
     "lib": "src/lib.vk",
     "description": "High-performance data structures for Valkyrie",
     
-    "authors": ["Library Team <team@example.com>"],
+    "authors": ["Library Team <team↯example.com>"],
     "license": "Apache-2.0",
     "repository": "https://github.com/team/data-structures",
     

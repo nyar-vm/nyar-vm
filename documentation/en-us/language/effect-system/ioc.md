@@ -150,7 +150,7 @@ class DatabaseUserRepository {
     private connection: DatabaseConnection
     
     # Constructor injection
-    new(@.inject connection: DatabaseConnection) {
+    new(@inject connection: DatabaseConnection) {
         self.connection = connection
     }
     
@@ -176,7 +176,7 @@ class DatabaseUserRepository {
 class SmtpEmailService {
     private config: EmailConfig
     
-    new(@.inject config: EmailConfig) {
+    new(@inject config: EmailConfig) {
         self.config = config
     }
     
@@ -200,14 +200,14 @@ class UserService {
     
     # Constructor injection
     new(
-        @.inject user_repository: UserRepository,
-        @.inject email_service: EmailService
+        @inject user_repository: UserRepository,
+        @inject email_service: EmailService
     ) {
         self.user_repository = user_repository
         self.email_service = email_service
     }
     
-    @.transactional
+    @transactional
     micro create_user(self, name: string, email: string) -> User {
         let user = User {
             id: generate_id(),
@@ -232,7 +232,7 @@ class UserService {
         self.user_repository.find_by_id(id)
     }
     
-    @.authorized("admin")
+    @authorized("admin")
     micro delete_user(self, id: string) -> unit {
         if let user = self.user_repository.find_by_id(id) {
             self.user_repository.delete(id)
@@ -433,7 +433,7 @@ class CachedUserRepository {
     private inner: UserRepository
     private mut cache: {string: User} = {}
     
-    new(@.inject inner: UserRepository) {
+    new(@inject inner: UserRepository) {
         self.inner = inner
     }
     

@@ -219,16 +219,16 @@ micro align_up(addr: usize, align: usize) -> usize {
 ```valkyrie
 # WASI system call wrappers
 mod wasi {
-    @.import(wasm32, "wasi_snapshot_preview1", "fd_write")
+    @import(wasm32, "wasi_snapshot_preview1", "fd_write")
     micro fd_write(fd: i32, iovs_ptr: *const IoVec, iovs_len: usize, nwritten: *mut usize) -> i32
 
-    @.import(wasm32, "wasi_snapshot_preview1", "fd_read")
+    @import(wasm32, "wasi_snapshot_preview1", "fd_read")
     micro fd_read(fd: i32, iovs_ptr: *const IoVec, iovs_len: usize, nread: *mut usize) -> i32
 
-    @.import(wasm32, "wasi_snapshot_preview1", "clock_time_get")
+    @import(wasm32, "wasi_snapshot_preview1", "clock_time_get")
     micro clock_time_get(id: i32, precision: i64, time: *mut i64) -> i32
 
-    @.import(wasm32, "wasi_snapshot_preview1", "random_get")
+    @import(wasm32, "wasi_snapshot_preview1", "random_get")
     micro random_get(buf: *mut u8, buf_len: usize) -> i32
 
     struct IoVec {
@@ -369,7 +369,7 @@ static VECTOR_TABLE: [unsafe micro(); 256] = [
 
 # Interrupt Handlers
 @interrupt
-@.export(c, "timer_interrupt")
+@export(c, "timer_interrupt")
 micro timer_interrupt() {
     # Clear interrupt flag
     clear_timer_interrupt()
@@ -384,7 +384,7 @@ micro timer_interrupt() {
 }
 
 @interrupt
-@.export(c, "gpio_interrupt")
+@export(c, "gpio_interrupt")
 micro gpio_interrupt() {
     let pin_state = read_gpio_interrupt_status()
     

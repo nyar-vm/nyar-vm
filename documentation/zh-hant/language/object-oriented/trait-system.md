@@ -22,7 +22,7 @@ trait Clone {
 trait Debug {
     micro debug_fmt(self) -> string {
         # 默認實現
-        @format("{}@{:p}", self.type_name(), &self)
+        ↯format("{}↯{:p}", self.type_name(), &self)
     }
 }
 ```
@@ -75,7 +75,7 @@ class Point {
 
 imply Point: Display {
     micro fmt(self, f: mut Formatter) -> Result {
-        f.write(@format("({}, {})", self.x, self.y))
+        f.write(↯format("({}, {})", self.x, self.y))
     }
 }
 
@@ -97,7 +97,7 @@ imply⟨T: Display⟩ [T]: Display {
             .map { $item.fmt() }
             .collect::⟨[string]⟩()
             .join(", ")
-        @format("[{}]", items)
+        ↯format("[{}]", items)
     }
 }
 
@@ -301,22 +301,22 @@ micro print_info⟨T: Printable⟩(item: T) {
 Valkyrie 提供了自動派生常用 trait 的宏：
 
 ```valkyrie
-@.derive(Debug, Clone, PartialEq, Eq, Hash)
+@derive(Debug, Clone, PartialEq, Eq, Hash)
 class User {
     id: u64,
     name: string,
     email: string,
 }
 
-@.derive(Display)
+@derive(Display)
 class Point {
     x: f64,
     y: f64,
 }
 
 # 自定義派生行為
-@.derive(Debug, Clone)
-@.derive_display(format = "User({})", field = "name")
+@derive(Debug, Clone)
+@derive_display(format = "User({})", field = "name")
 class SimpleUser {
     name: string,
     internal_id: u64,  # 不會在 Display 中顯示

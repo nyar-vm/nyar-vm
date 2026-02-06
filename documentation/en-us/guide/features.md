@@ -614,7 +614,7 @@ match result {
 ```valkyrie
 # Simple macro definition
 macro debug_print($expr) {
-    @.cfg(debug_assertions)
+    @cfg(debug_assertions)
     print("DEBUG: {} = {}", stringify!($expr), $expr)
 }
 
@@ -643,7 +643,7 @@ create_class!(Person, name: String, age: i32)
 
 ```valkyrie
 # Compile-time constant
-@.const_eval
+@const_eval
 micro fibonacci_const(n: i32) -> i32 {
     if n <= 1 {
         n
@@ -655,7 +655,7 @@ micro fibonacci_const(n: i32) -> i32 {
 let fib_10 = fibonacci_const(10)  # Calculated at compile-time
 
 # Compile-time type generation
-@.derive(Debug, Clone, PartialEq)
+@derive(Debug, Clone, PartialEq)
 class Point {
     x: f64
     y: f64
@@ -698,13 +698,13 @@ async micro process_urls(urls: [String]) -> [Result<String, Error>] {
 
 ```valkyrie
 # Inline optimization
-@.inline
+@inline
 micro fast_add(a: i32, b: i32) -> i32 {
     a + b
 }
 
 # Specialization optimization
-@.specialize
+@specialize
 micro generic_sort<T>(data: [T]) -> [T]
 where T: Ord
 {

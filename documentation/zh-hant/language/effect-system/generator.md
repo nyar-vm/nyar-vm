@@ -437,13 +437,13 @@ micro test_generator() {
     let gen = count_up(3)
     
     # 測試生成的值
-    @assert_equal(gen.next(), 0)
-    @assert_equal(gen.next(), 1)
-    @assert_equal(gen.next(), 2)
-    @assert_equal(gen.next(), null)
+    ↯assert_equal(gen.next(), 0)
+    ↯assert_equal(gen.next(), 1)
+    ↯assert_equal(gen.next(), 2)
+    ↯assert_equal(gen.next(), null)
     
     # 測試狀態
-    @assert_equal(gen.state(), GeneratorState::Completed)
+    ↯assert_equal(gen.state(), GeneratorState::Completed)
 }
 
 # 生成器集成測試
@@ -452,7 +452,7 @@ micro test_pipeline() {
     let pipeline = pipeline_stage1(input.iter())
     let results = pipeline.collect()
     
-    @assert_equal(results, [2, 4, 6, 8])
+    ↯assert_equal(results, [2, 4, 6, 8])
 }
 ```
 

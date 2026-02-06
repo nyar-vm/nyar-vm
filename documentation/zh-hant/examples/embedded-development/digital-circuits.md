@@ -1069,9 +1069,9 @@ enum OptimizationGoal {
 }
 
 # 综合属性注解
-@synthesis(clock_gating = true)
-@synthesis(retiming = true)
-@synthesis(resource_sharing = true)
+↯synthesis(clock_gating = true)
+↯synthesis(retiming = true)
+↯synthesis(resource_sharing = true)
 struct OptimizedProcessor {
     config: SynthesisConfig
 }
@@ -1083,7 +1083,7 @@ imply OptimizedProcessor: Module {
         ProcessorIO::new()
     }
     
-    @synthesis(pipeline_stages = 5)
+    ↯synthesis(pipeline_stages = 5)
     micro elaborate(self) {
         # 流水线处理器实现
         let fetch_stage = FetchStage::new()

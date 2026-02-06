@@ -112,13 +112,13 @@ class Logger {
 class HybridReader(file_reader: FileReader, net_reader: NetworkReader, Logger) {
     micro read_from_file(self) -> string {
         let content = self.file_reader.read()
-        self.log(@format("Read from file: {}", content))
+        self.log(↯format("Read from file: {}", content))
         content
     }
     
     micro read_from_network(self) -> string {
         let content = self.net_reader.read()
-        self.log(@format("Read from network: {}", content))
+        self.log(↯format("Read from network: {}", content))
         content
     }
     
@@ -424,7 +424,7 @@ class MediaPlayer(audio: AudioPlayer, video: VideoPlayer) {
 
 ```valkyrie
 # Clear inheritance documentation
-@.doc("""
+@doc("""
 MultiProcessor inheritance relationship:
 - DataProcessor: Provides data processing capabilities
 - NetworkHandler: Provides network communication capabilities

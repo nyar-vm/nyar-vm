@@ -33,19 +33,19 @@ type RGB = Vec3
 
 ```valkyrie
 # Vertex Shader 标记
-@.vertex
+@vertex
 micro vertex_main(vertex: VertexInput) -> VertexOutput {
     # 顶点着色器逻辑
 }
 
 # Fragment Shader 标记
-@.fragment
+@fragment
 micro fragment_main(input: FragmentInput) -> FragmentOutput {
     # 片段着色器逻辑
 }
 
 # Compute Shader 标记
-@.compute(workgroup_size = [8, 8, 1])
+@compute(workgroup_size = [8, 8, 1])
 micro compute_main(id: ComputeInput) {
     # 计算着色器逻辑
 }
@@ -58,25 +58,25 @@ micro compute_main(id: ComputeInput) {
 ```valkyrie
 # 顶点输入结构
 struct VertexInput {
-    @.location(0) position: Vec3,
-    @.location(1) color: Vec3,
-    @.location(2) uv: Vec2
+    @location(0) position: Vec3,
+    @location(1) color: Vec3,
+    @location(2) uv: Vec2
 }
 
 # 顶点输出结构
 struct VertexOutput {
-    @.builtin(position) clip_position: Vec4,
-    @.location(0) color: Vec3,
-    @.location(1) uv: Vec2
+    @builtin(position) clip_position: Vec4,
+    @location(0) color: Vec3,
+    @location(1) uv: Vec2
 }
 
 # Uniform 缓冲区
-@.group(0) @.binding(0)
+@group(0) @binding(0)
 struct CameraUniform {
     view_proj: Mat4
 }
 
-@.vertex
+@vertex
 micro vertex_main(vertex: VertexInput, camera: CameraUniform) -> VertexOutput {
     VertexOutput {
         clip_position: camera.view_proj * Vec4(vertex.position, 1.0),
@@ -91,22 +91,22 @@ micro vertex_main(vertex: VertexInput, camera: CameraUniform) -> VertexOutput {
 ```valkyrie
 # 片段输入（来自顶点着色器）
 struct FragmentInput {
-    @.location(0) color: Vec3,
-    @.location(1) uv: Vec2
+    @location(0) color: Vec3,
+    @location(1) uv: Vec2
 }
 
 # 片段输出
 struct FragmentOutput {
-    @.location(0) color: Vec4
+    @location(0) color: Vec4
 }
 
 # 纹理和采样器
-@.group(1) @.binding(0)
+@group(1) @binding(0)
 let texture: Texture2D
-@.group(1) @.binding(1)
+@group(1) @binding(1)
 let sampler: Sampler
 
-@.fragment
+@fragment
 micro fragment_main(input: FragmentInput) -> FragmentOutput {
     let tex_color = texture.sample(sampler, input.uv)
     let final_color = tex_color * Vec4(input.color, 1.0)
@@ -229,7 +229,7 @@ micro geometry_schlick_ggx(ndotv: f32, roughness: f32) -> f32 {
 
 ```valkyrie
 # 屏幕空间效果的片段着色器
-@fragment
+↯fragment
 micro post_process_main(input: FragmentInput) -> FragmentOutput {
     let uv = input.uv
     let color = texture.sample(sampler, uv)
@@ -291,17 +291,17 @@ struct Particle {
 }
 
 # 计算着色器输入
-@group(0) @binding(0)
+↯group(0) ↯binding(0)
 let particles: storage<array<Particle>, read_write>
 
-@group(0) @binding(1)
+↯group(0) ↯binding(1)
 struct SimulationParams {
     delta_time: f32,
     gravity: Vec3,
     damping: f32
 }
 
-@compute(workgroup_size = [64, 1, 1])
+↯compute(workgroup_size = [64, 1, 1])
 micro update_particles(id: ComputeInput, params: SimulationParams) {
     let index = id.global_invocation_id.x
     if index >= particles.len() {
@@ -340,9 +340,9 @@ micro spawn_new_particle() -> Particle {
 
 ```valkyrie
 # 图像卷积计算着色器
-@group(0) @binding(0)
+↯group(0) ↯binding(0)
 let input_texture: texture_2d<f32>
-@group(0) @binding(1)
+↯group(0) ↯binding(1)
 let output_texture: texture_storage_2d<rgba8unorm, write>
 
 # 卷积核
@@ -358,7 +358,7 @@ const SOBEL_Y: [[f32; 3]; 3] = [
     [ 1.0,  2.0,  1.0]
 ]
 
-@compute(workgroup_size = [8, 8, 1])
+↯compute(workgroup_size = [8, 8, 1])
 micro edge_detection(id: ComputeInput) {
     let coords = id.global_invocation_id.xy
     let dimensions = textureDimensions(input_texture)
@@ -406,7 +406,7 @@ struct GraphicsContext {
 micro create_render_pipeline(context: GraphicsContext) -> wgpu::RenderPipeline {
     # 编译 Valkyrie shader 到 WGSL
     let vertex_shader = compile_valkyrie_shader("
-        @vertex
+        ↯vertex
         micro vertex_main(vertex: VertexInput, camera: CameraUniform) -> VertexOutput {
             VertexOutput {
                 clip_position: camera.view_proj * Vec4(vertex.position, 1.0),
@@ -417,7 +417,7 @@ micro create_render_pipeline(context: GraphicsContext) -> wgpu::RenderPipeline {
     ")
     
     let fragment_shader = compile_valkyrie_shader("
-        @fragment
+        ↯fragment
         micro fragment_main(input: FragmentInput) -> FragmentOutput {
             let tex_color = texture.sample(sampler, input.uv)
             FragmentOutput { color: tex_color }
@@ -532,7 +532,7 @@ struct GBuffer {
 }
 
 # 几何阶段着色器
-@fragment
+↯fragment
 micro geometry_pass_fragment(input: FragmentInput) -> GBufferOutput {
     let albedo = texture_albedo.sample(sampler, input.uv)
     let normal_map = texture_normal.sample(sampler, input.uv)
@@ -549,7 +549,7 @@ micro geometry_pass_fragment(input: FragmentInput) -> GBufferOutput {
 }
 
 # 光照阶段着色器
-@fragment
+↯fragment
 micro lighting_pass_fragment(input: ScreenQuadInput) -> Vec4 {
     let uv = input.uv
     
@@ -598,7 +598,7 @@ micro lighting_pass_fragment(input: ScreenQuadInput) -> Vec4 {
 
 ```valkyrie
 # 阴影映射顶点着色器
-@vertex
+↯vertex
 micro shadow_vertex_main(vertex: VertexInput, light_space: LightSpaceUniform) -> ShadowVertexOutput {
     ShadowVertexOutput {
         clip_position: light_space.light_space_matrix * Vec4(vertex.position, 1.0)
@@ -606,13 +606,13 @@ micro shadow_vertex_main(vertex: VertexInput, light_space: LightSpaceUniform) ->
 }
 
 # 阴影映射片段着色器（深度写入）
-@fragment
+↯fragment
 micro shadow_fragment_main(input: ShadowVertexOutput) {
     # 只写入深度，不需要颜色输出
 }
 
 # 使用阴影的主渲染着色器
-@fragment
+↯fragment
 micro main_fragment_with_shadow(input: FragmentInput) -> Vec4 {
     let world_pos = input.world_position
     let normal = normalize(input.normal)
@@ -722,7 +722,7 @@ struct InstanceData {
 }
 
 # 实例化顶点着色器
-@vertex
+↯vertex
 micro instanced_vertex_main(
     vertex: VertexInput,
     instance: InstanceData,
@@ -806,7 +806,7 @@ macro debug_value(name: String, value: f32) {
 }
 
 # 带调试信息的片段着色器
-@fragment
+↯fragment
 micro debug_fragment_main(input: FragmentInput) -> FragmentOutput {
     let uv = input.uv
     let color = texture.sample(sampler, uv)

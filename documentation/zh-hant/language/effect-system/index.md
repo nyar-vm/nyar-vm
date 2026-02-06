@@ -482,8 +482,8 @@ micro test_validation_error() {
     }
     .catch {
         case ValidationError:
-            @assert_equal(error.field, "email")
-            @assert_equal(error.constraint, "Email cannot be empty")
+            ↯assert_equal(error.field, "email")
+            ↯assert_equal(error.constraint, "Email cannot be empty")
     }
 }
 
@@ -500,8 +500,8 @@ micro test_retry_exhausted() {
     }
     .catch {
         case RetryExhausted:
-            @assert_equal(error.attempts, 3)
-            @assert_equal(call_count, 3)
+            ↯assert_equal(error.attempts, 3)
+            ↯assert_equal(call_count, 3)
     }
 }
 ```

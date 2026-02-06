@@ -455,7 +455,7 @@ fn run_bootstrap_nyarc_module() {
                 if let Some(c) = module.constants.get(*ci as usize) {
                     if let nyar_vm::bytecode::format::Constant::String(s) = c {
                         if s.ends_with(".vk") || s.contains("vcc bootstrap started") {
-                            println!("  push@{:04}: {}", i, s);
+                            println!("  push↯{:04}: {}", i, s);
                         }
                     }
                 }
@@ -470,10 +470,10 @@ fn run_bootstrap_nyarc_module() {
                         _ => None,
                     })
                     .unwrap_or("<non-string>".to_string());
-                println!("  ffical@{:04}: {} argc={}", i, name, argc);
+                println!("  ffical↯{:04}: {} argc={}", i, name, argc);
             }
             nyar_vm::bytecode::instruction::Instruction::InvokeMethod(mid, argc) => {
-                println!("  invoke@{:04}: mid={} argc={}", i, mid, argc);
+                println!("  invoke↯{:04}: mid={} argc={}", i, mid, argc);
             }
             _ => {}
         }

@@ -334,23 +334,23 @@ class SortedList<T> where T: Ord {
 
 ```valkyrie
 # 屬性裝飾器
-@.derive(Debug, Clone, PartialEq)
+@derive(Debug, Clone, PartialEq)
 class Point {
     x: f64
     y: f64
 }
 
-@.test
+@test
 micro test_addition() {
-    @assert_equal(2 + 2, 4)
+    ↯assert_equal(2 + 2, 4)
 }
 
-@.deprecated("Use new_function instead")
+@deprecated("Use new_function instead")
 micro old_function() {
     # 已廢棄的函式
 }
 
-@.inline
+@inline
 micro fast_calculation(x: i32) -> i32 {
     x * x + 2 * x + 1
 }

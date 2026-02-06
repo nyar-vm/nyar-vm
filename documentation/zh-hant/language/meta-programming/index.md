@@ -29,17 +29,17 @@ Valkyrie 的元編程系統深度集成在多層 IR 架構中，在不同層次�
 **常量表達式求值**:
 ```valkyrie
 // 編譯時常量計算
-let FIBONACCI_10: i32 = @evaluate(fibonacci(10))
-let LOOKUP_TABLE: [i32; 256] = @evaluate(generate_lookup_table())
+let FIBONACCI_10: i32 = ↯evaluate(fibonacci(10))
+let LOOKUP_TABLE: [i32; 256] = ↯evaluate(generate_lookup_table())
 
 // 編譯時字符串處理
-let CONFIG_KEY: string = @evaluate(@format("app.{}.version", @env("BUILD_TARGET")))
+let CONFIG_KEY: string = ↯evaluate(↯format("app.{}.version", ↯env("BUILD_TARGET")))
 ```
 
 **編譯時函數執行**:
 ```valkyrie
 // 標記為編譯時函數
-@.const_fn
+@const_fn
 micro fibonacci(n: i32) -> i32 {
     n.match {
         case 0 | 1: n
@@ -48,7 +48,7 @@ micro fibonacci(n: i32) -> i32 {
 }
 
 // 編譯時數據結構操作
-@.const_fn
+@const_fn
 micro build_state_machine() -> StateMachine {
     let mut sm = StateMachine()
     sm.add_state("start")
@@ -76,19 +76,19 @@ macro vec_of {
         }
     }
     (#(#x:expr),+ #(,)?) => {
-        @vec(#(#x),+)
+        ↯vec(#(#x),+)
     }
 }
 
 // 使用示例
-let zeros = @vec_of(0; 10)
-let numbers = @vec_of(1, 2, 3, 4, 5)
+let zeros = ↯vec_of(0; 10)
+let numbers = ↯vec_of(1, 2, 3, 4, 5)
 ```
 
 **過程宏**:
 ```valkyrie
 // 自定義派生宏
-@.derive(Serialize, Deserialize, Debug)
+@derive(Serialize, Deserialize, Debug)
 class User {
     id: u64,
     name: string,
@@ -96,14 +96,14 @@ class User {
 }
 
 // 屬性宏
-@.api_endpoint(method: "GET", path: "/users/{id}")
+@api_endpoint(method: "GET", path: "/users/{id}")
 micro get_user(id: u64) -> Result⟨User, ApiError⟩ {
     // 自動生成路由註冊和參數驗證代碼
     database::find_user(id)
 }
 
 // 函數式宏
-let sql_query = @sql(
+let sql_query = ↯sql(
     "SELECT id, name, email FROM users WHERE active = $1",
     true
 )
@@ -114,7 +114,7 @@ let sql_query = @sql(
 **基於模板的代碼生成**:
 ```valkyrie
 // 模板定義
-@template {
+↯template {
     name: "crud_operations",
     params: [Entity: Type, Key: Type],
     body: {
@@ -139,7 +139,7 @@ let sql_query = @sql(
 }
 
 // 模板實例化
-@generate_code {
+↯generate_code {
     crud_operations⟨User, UserId⟩
     crud_operations⟨Product, ProductId⟩
     crud_operations⟨Order, OrderId⟩
@@ -149,7 +149,7 @@ let sql_query = @sql(
 **反射驅動的代碼生成**:
 ```valkyrie
 // 自動生成序列化代碼
-@.auto_serialize
+@auto_serialize
 class Config {
     database_url: string,
     port: u16,

@@ -128,12 +128,12 @@ class PriorityScheduler {
 
 ```valkyrie
 # WASM 导出函数
-@wasm_export
+↯wasm_export
 micro add(a: i32, b: i32) -> i32 {
     a + b
 }
 
-@wasm_export
+↯wasm_export
 micro process_buffer(ptr: *mut u8, len: usize) -> i32 {
     let buffer = unsafe { slice::from_raw_parts_mut(ptr, len) }
     
@@ -219,16 +219,16 @@ micro align_up(addr: usize, align: usize) -> usize {
 ```valkyrie
 # WASI 系統調用封裝
 mod wasi {
-    @.import(wasm32, "wasi_snapshot_preview1", "fd_write")
+    @import(wasm32, "wasi_snapshot_preview1", "fd_write")
     micro fd_write(fd: i32, iovs_ptr: *const IoVec, iovs_len: usize, nwritten: *mut usize) -> i32
 
-    @.import(wasm32, "wasi_snapshot_preview1", "fd_read")
+    @import(wasm32, "wasi_snapshot_preview1", "fd_read")
     micro fd_read(fd: i32, iovs_ptr: *const IoVec, iovs_len: usize, nread: *mut usize) -> i32
 
-    @.import(wasm32, "wasi_snapshot_preview1", "clock_time_get")
+    @import(wasm32, "wasi_snapshot_preview1", "clock_time_get")
     micro clock_time_get(id: i32, precision: i64, time: *mut i64) -> i32
 
-    @.import(wasm32, "wasi_snapshot_preview1", "random_get")
+    @import(wasm32, "wasi_snapshot_preview1", "random_get")
     micro random_get(buf: *mut u8, buf_len: usize) -> i32
 
     struct IoVec {
@@ -359,7 +359,7 @@ impl<P: GpioPin> Led<P> {
 
 ```valkyrie
 # 中断向量表
-@link_section = ".vector_table"
+↯link_section = ".vector_table"
 static VECTOR_TABLE: [unsafe micro(); 256] = [
     reset_handler,
     nmi_handler,
@@ -368,8 +368,8 @@ static VECTOR_TABLE: [unsafe micro(); 256] = [
 ]
 
 # 中断处理程序
-@interrupt
-@.export(c, "timer_interrupt")
+↯interrupt
+@export(c, "timer_interrupt")
 micro timer_interrupt() {
     # 清除中断标志
     clear_timer_interrupt()
@@ -383,8 +383,8 @@ micro timer_interrupt() {
     }
 }
 
-@interrupt
-@.export(c, "gpio_interrupt")
+↯interrupt
+@export(c, "gpio_interrupt")
 micro gpio_interrupt() {
     let pin_state = read_gpio_interrupt_status()
     

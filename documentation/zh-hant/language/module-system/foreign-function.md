@@ -8,22 +8,22 @@ Valkyrie 提供了強大的 FFI 系統，支持與 C、C++、Rust、Python、Jav
 
 ```valkyrie
 # 聲明外部 C 函數
-@.import(c, "libc", "malloc")
+@import(c, "libc", "malloc")
 micro malloc(size: usize) -> *mut u8
 
-@.import(c, "libc", "free")
+@import(c, "libc", "free")
 micro free(ptr: *mut u8)
 
-@.import(c, "libc", "strlen")
+@import(c, "libc", "strlen")
 micro strlen(s: *const i8) -> usize
 
-@.import(c, "libc", "printf")
+@import(c, "libc", "printf")
 micro printf(format: *const i8, ...) -> i32
 
-@.import(c, "libc", "sin")
+@import(c, "libc", "sin")
 micro sin(x: f64) -> f64
 
-@.import(c, "libc", "cos")
+@import(c, "libc", "cos")
 micro cos(x: f64) -> f64
 
 # 使用 C 函數
@@ -45,26 +45,26 @@ micro use_c_functions() {
 
 ```valkyrie
 # C 兼容的類
-@.repr(C)
+@repr(C)
 class Point {
     x: f64
     y: f64
 }
 
-@.repr(C)
+@repr(C)
 class Rectangle {
     top_left: Point
     bottom_right: Point
 }
 
 # 聲明使用類的 C 函數
-@.import(c, "geometry_lib", "calculate_distance")
+@import(c, "geometry_lib", "calculate_distance")
 micro calculate_distance(p1: *const Point, p2: *const Point) -> f64
 
-@.import(c, "geometry_lib", "rectangle_area")
+@import(c, "geometry_lib", "rectangle_area")
 micro rectangle_area(rect: *const Rectangle) -> f64
 
-@.import(c, "geometry_lib", "create_point")
+@import(c, "geometry_lib", "create_point")
 micro create_point(x: f64, y: f64) -> Point
 
 # 使用類與 C 交互
@@ -91,22 +91,22 @@ micro geometry_calculations() {
 ```valkyrie
 # C++ 類的 C 包裝器聲明
 # Vector3D 類的 C 接口
-@.import(c, "vector_lib", "vector3d_new")
+@import(c, "vector_lib", "vector3d_new")
 micro vector3d_new(x: f64, y: f64, z: f64) -> *mut void
 
-@.import(c, "vector_lib", "vector3d_delete")
+@import(c, "vector_lib", "vector3d_delete")
 micro vector3d_delete(ptr: *mut void)
 
-@.import(c, "vector_lib", "vector3d_magnitude")
+@import(c, "vector_lib", "vector3d_magnitude")
 micro vector3d_magnitude(ptr: *const void) -> f64
 
-@.import(c, "vector_lib", "vector3d_normalize")
+@import(c, "vector_lib", "vector3d_normalize")
 micro vector3d_normalize(ptr: *mut void)
 
-@.import(c, "vector_lib", "vector3d_dot")
+@import(c, "vector_lib", "vector3d_dot")
 micro vector3d_dot(ptr1: *const void, ptr2: *const void) -> f64
 
-@.import(c, "vector_lib", "vector3d_cross")
+@import(c, "vector_lib", "vector3d_cross")
 micro vector3d_cross(ptr1: *const void, ptr2: *const void) -> *mut void
 
 # Valkyrie 包裝器
@@ -157,17 +157,17 @@ imply Vector3D: Drop {
 
 ```valkyrie
 # 鏈接 Rust 靜態庫
-@.link(name: "myrust_lib", kind: "static")
-@.import(rust, "myrust_lib", "rust_fibonacci")
+@link(name: "myrust_lib", kind: "static")
+@import(rust, "myrust_lib", "rust_fibonacci")
 micro rust_fibonacci(n: u32) -> u64
 
-@.import(rust, "myrust_lib", "rust_sort_array")
+@import(rust, "myrust_lib", "rust_sort_array")
 micro rust_sort_array(arr: *mut i32, len: usize)
 
-@.import(rust, "myrust_lib", "rust_json_parse")
+@import(rust, "myrust_lib", "rust_json_parse")
 micro rust_json_parse(json_str: *const i8) -> *mut void
 
-@.import(rust, "myrust_lib", "rust_json_free")
+@import(rust, "myrust_lib", "rust_json_free")
 micro rust_json_free(ptr: *mut void)
 
 # 使用 Rust 函數
@@ -187,12 +187,12 @@ micro use_rust_library() {
 
 ```valkyrie
 # 導出 Valkyrie 函數給 C/C++
-@.export(c, "valkyrie_add")
+@export(c, "valkyrie_add")
 micro valkyrie_add(a: i32, b: i32) -> i32 {
     a + b
 }
 
-@.export(c, "valkyrie_process_array")
+@export(c, "valkyrie_process_array")
 micro valkyrie_process_array(arr: *mut f64, len: usize) {
     if arr.is_null() { return }
     
@@ -204,7 +204,7 @@ micro valkyrie_process_array(arr: *mut f64, len: usize) {
     }
 }
 
-@.export(c, "valkyrie_create_string")
+@export(c, "valkyrie_create_string")
 micro valkyrie_create_string(s: *const i8) -> *mut i8 {
     if s.is_null() { return std::ptr::null_mut() }
     
@@ -218,7 +218,7 @@ micro valkyrie_create_string(s: *const i8) -> *mut i8 {
     }
 }
 
-@.export(c, "valkyrie_free_string")
+@export(c, "valkyrie_free_string")
 micro valkyrie_free_string(s: *mut i8) {
     if !s.is_null() {
         unsafe {
@@ -282,7 +282,7 @@ plt.show()
 # 創建 Python 擴展模塊
 using pyo3::prelude
 
-@.pyfunction
+@pyfunction
 micro fibonacci(n: u32) -> u64 {
     match n {
         0 => 0,
@@ -291,7 +291,7 @@ micro fibonacci(n: u32) -> u64 {
     }
 }
 
-@.pyfunction
+@pyfunction
 micro matrix_multiply(a: [[f64]], b: [[f64]]) -> Result<[[f64]], PyError> {
     let rows_a = a.len()
     let cols_a = a[0].len()
@@ -314,15 +314,15 @@ micro matrix_multiply(a: [[f64]], b: [[f64]]) -> Result<[[f64]], PyError> {
     Ok(result)
 }
 
-@.pyclass
+@pyclass
 class Calculator {
-    @.pyo3(get, set)
+    @pyo3(get, set)
     value: f64,
 }
 
-@.pymethods
+@pymethods
 imply Calculator {
-    @.new
+    @new
     micro new(initial_value: f64) -> Self {
         Calculator { value: initial_value }
     }
@@ -342,7 +342,7 @@ imply Calculator {
     }
 }
 
-@.pymodule
+@pymodule
 micro valkyrie_math(_py: Python, m: PyModule) -> Result<(), PyError> {
     m.add_function(wrap_pyfunction!(fibonacci, m)?)?;
     m.add_function(wrap_pyfunction!(matrix_multiply, m)?)?;
@@ -359,15 +359,15 @@ micro valkyrie_math(_py: Python, m: PyModule) -> Result<(), PyError> {
 # 編譯到 WebAssembly
 using wasm_bindgen.prelude
 
-@.wasm_bindgen
+@wasm_bindgen
 # 導入 JavaScript 函數
-@.import(js, "console", "log")
+@import(js, "console", "log")
 micro log(s: string)
 
-@.import(js, "Math", "random")
+@import(js, "Math", "random")
 micro random() -> f64
 
-@.import(js, "window", "alert")
+@import(js, "window", "alert")
 micro alert(s: string)
 
 # 使用宏簡化日誌
@@ -375,16 +375,16 @@ macro console_log(args) {
     log("{}".format(args))
 }
 
-@.wasm_bindgen
+@wasm_bindgen
 class GameEngine {
     width: u32
     height: u32
     entities: [Entity]
 }
 
-@.wasm_bindgen
+@wasm_bindgen
 imply GameEngine {
-    @.wasm_bindgen(constructor)
+    @wasm_bindgen(constructor)
     micro new(width: u32, height: u32) -> Self {
         console_log("Creating game engine {}x{}".format(width, height))
         GameEngine {
@@ -394,14 +394,14 @@ imply GameEngine {
         }
     }
     
-    @.wasm_bindgen
+    @wasm_bindgen
     micro add_entity(mut self, x: f64, y: f64) -> usize {
         let entity = Entity { x, y, vx: 0.0, vy: 0.0 }
         self.entities.push(entity)
         self.entities.len() - 1
     }
     
-    @.wasm_bindgen
+    @wasm_bindgen
     micro update(mut self, dt: f64) {
         for entity in mut self.entities {
             entity.x += entity.vx * dt
@@ -417,7 +417,7 @@ imply GameEngine {
         }
     }
     
-    @.wasm_bindgen
+    @wasm_bindgen
     micro get_entity_positions(self) -> [f64] {
         let mut positions = []
         for entity in self.entities {
@@ -436,7 +436,7 @@ class Entity {
 }
 
 # 導出數學函數
-@.wasm_bindgen
+@wasm_bindgen
 micro fast_inverse_sqrt(x: f32) -> f32 {
     # Quake III 快速平方根倒數算法
     let i = x.to_bits()
@@ -445,7 +445,7 @@ micro fast_inverse_sqrt(x: f32) -> f32 {
     y * (1.5 - 0.5 * x * y * y)
 }
 
-@.wasm_bindgen
+@wasm_bindgen
 micro mandelbrot(cx: f64, cy: f64, max_iter: u32) -> u32 {
     let mut x = 0.0
     let mut y = 0.0
@@ -468,7 +468,7 @@ micro mandelbrot(cx: f64, cy: f64, max_iter: u32) -> u32 {
 # Node.js N-API 綁定
 using napi.bindgen_prelude
 
-@.napi
+@napi
 micro fibonacci(n: u32) -> u64 {
     match n {
         0 => 0,
@@ -477,7 +477,7 @@ micro fibonacci(n: u32) -> u64 {
     }
 }
 
-@.napi
+@napi
 micro process_image(data: Buffer, width: u32, height: u32) -> Result<Buffer, Error> {
     let mut pixels = data.to_vector()
     
@@ -492,19 +492,19 @@ micro process_image(data: Buffer, width: u32, height: u32) -> Result<Buffer, Err
     Ok(Buffer::from(pixels))
 }
 
-@.napi
+@napi
 class FileProcessor {
     buffer_size: u32
 }
 
-@.napi
+@napi
 imply FileProcessor {
-    @.napi(constructor)
+    @napi(constructor)
     micro new(buffer_size: u32) -> Self {
         FileProcessor { buffer_size }
     }
     
-    @.napi
+    @napi
     micro process_file(self, path: string) -> Result<string, Error> {
         # 文件處理邏輯
         let content = std::fs::read_to_string(path)
@@ -517,7 +517,7 @@ imply FileProcessor {
         Ok("File: {}, Lines: {}, Characters: {}".format(path, lines, chars))
     }
     
-    @.napi
+    @napi
     async micro process_file_async(self, path: string) -> Result<string, Error> {
         # 異步文件處理
         let content = tokio::fs::read_to_string(path).await
@@ -642,13 +642,13 @@ imply PluginManager {
 
 # 插件導出宏
 macro export_plugin(plugin_type) {
-    @.export(c, "create_plugin")
+    @export(c, "create_plugin")
     micro create_plugin() -> *mut Plugin {
         let plugin = Box::new(plugin_type::new())
         Box::into_raw(plugin)
     }
     
-    @.export(c, "destroy_plugin")
+    @export(c, "destroy_plugin")
     micro destroy_plugin(plugin: *mut Plugin) {
         if !plugin.is_null() {
             unsafe {
@@ -757,7 +757,7 @@ imply ManagedBuffer: Drop {
 
 ```valkyrie
 # FFI 錯誤類型
-@.derive(Debug)
+@derive(Debug)
 enums FFIError {
     NullPointer
     InvalidUtf8(Error)

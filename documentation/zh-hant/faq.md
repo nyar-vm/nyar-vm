@@ -146,8 +146,8 @@ A: Valkyrie 提供无缝集成：
 
 ```valkyrie
 # 导入 JavaScript 模块
-using "@std/fetch" { fetch }
-using "@std/console" { console }
+using "↯std/fetch" { fetch }
+using "↯std/console" { console }
 
 # 导出给 JavaScript 使用
 export micro greet(name: String) -> String {
@@ -188,28 +188,28 @@ A: 使用内置测试框架：
 
 ```valkyrie
 # 单元测试
-@.test
+@test
 micro test_addition() {
-    @.assert_eq(add(2, 3), 5)
-    @.assert_eq(add(-1, 1), 0)
+    @assert_eq(add(2, 3), 5)
+    @assert_eq(add(-1, 1), 0)
 }
 
 # 属性测试
-@.test
+@test
 micro test_addition_commutative() {
     forall (a: Int, b: Int) {
-        @.assert_eq(add(a, b), add(b, a))
+        @assert_eq(add(a, b), add(b, a))
     }
 }
 
 # 效应测试
-@.test
+@test
 micro test_state_effect() {
     let result = handle counter() with State {
         get() -> resume(0),
         set(value) -> resume(())
     }
-    @.assert_eq(result, 1)
+    @assert_eq(result, 1)
 }
 ```
 
@@ -221,7 +221,7 @@ A: 使用 `valkyrie.toml` 配置文件：
 [package]
 name = "my-project"
 version = "0.1.0"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Your Name <your.email↯example.com>"]
 
 [dependencies]
 std = "1.0"

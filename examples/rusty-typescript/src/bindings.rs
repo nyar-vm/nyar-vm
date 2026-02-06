@@ -137,7 +137,7 @@ pub(crate) use __export_compiler_impl as export;
 #[allow(clippy::octal_escapes)]
 pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 200] = *b"\
 \0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07J\x01A\x02\x01A\x04\x01\
-p}\x01j\x01\0\x01s\x01@\x01\x06sources\0\x01\x04\0\x07compile\x01\x02\x04\0\x1dn\
+p}\x01j\x01\0\x01s\x01↯\x01\x06sources\0\x01\x04\0\x07compile\x01\x02\x04\0\x1dn\
 yar:mini-typescript/compiler\x04\0\x0b\x0e\x01\0\x08compiler\x03\0\0\0G\x09produ\
 cers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x06\
 0.41.0";

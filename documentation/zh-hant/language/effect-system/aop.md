@@ -83,7 +83,7 @@ class MetricsHandler {
 ```valkyrie
 class PaymentService {
     # 使用多個切面
-    @.around(LogAspect, MetricsAspect)
+    @around(LogAspect, MetricsAspect)
     micro process_payment(self, order_id: string, amount: Decimal) -> Receipt {
         # 前置通知自動執行
         perform LogAspect.before_method("PaymentService", "process_payment", [order_id, amount])
@@ -125,7 +125,7 @@ effect AuditAspect {
 
 # 安全審計服務
 class SecurityAuditService {
-    @.around(LogAspect, AuditAspect)
+    @around(LogAspect, AuditAspect)
     micro update_user_profile(self, user_id: string, profile: UserProfile) -> Unit {
         perform AuditAspect.log_access(user_id, "user_profile", "update")
         
@@ -220,7 +220,7 @@ class DynamicAspectManager {
         self.aspects.retain { $a != aspect }
     }
     
-    @.around(DynamicAspect)
+    @around(DynamicAspect)
     micro execute_with_aspects<T>(self, operation: { -> T }) -> T {
         let context = AspectContext::new()
         
@@ -289,7 +289,7 @@ class AspectChain {
 ```valkyrie
 # 示例：完整的 AOP 應用
 class OrderService {
-    @.around(LogAspect, MetricsAspect, SecurityAspect, TransactionAspect)
+    @around(LogAspect, MetricsAspect, SecurityAspect, TransactionAspect)
     micro create_order(self, user_id: string, items: [OrderItem]) -> Order {
         # 所有切面的前置通知會自動執行
         # - 日誌記錄方法呼叫

@@ -4,63 +4,63 @@
 
 Valkyrie provides a powerful macro system that supports compile-time code generation and metaprogramming. The macro system is divided into two main parts:
 
-- **Macro (`@`)**: Compile-time function calls that do not capture subsequent parameters.
-- **Annotation (`@.`)**: Compile-time annotations that capture and act on subsequent declarations like `class`, `micro`, etc.
+- **Macro (`↯`)**: Compile-time function calls that do not capture subsequent parameters.
+- **Annotation (`@`)**: Compile-time annotations that capture and act on subsequent declarations like `class`, `micro`, etc.
 
 ## Macro vs Annotation
 
-### Macro (`@`)
+### Macro (`↯`)
 
-Macros use the `@` prefix and are compile-time function calls that do not capture subsequent code elements:
+Macros use the `↯` prefix and are compile-time function calls that do not capture subsequent code elements:
 
 ```valkyrie
 # Compile-time constant computation
-let FIBONACCI_10: i32 = @evaluate(fibonacci(10))
-let LOOKUP_TABLE: [i32; 256] = @evaluate(generate_lookup_table())
+let FIBONACCI_10: i32 = ↯evaluate(fibonacci(10))
+let LOOKUP_TABLE: [i32; 256] = ↯evaluate(generate_lookup_table())
 
 # Environment variable access
-let database_url: string = @env("DATABASE_URL")
+let database_url: string = ↯env("DATABASE_URL")
 
 # String formatting
-let message: string = @format("Hello, {}!", name)
+let message: string = ↯format("Hello, {}!", name)
 
 # Vector creation
-let numbers = @vec(1, 2, 3, 4, 5)
-let zeros = @vec(0; 10)
+let numbers = ↯vec(1, 2, 3, 4, 5)
+let zeros = ↯vec(0; 10)
 
 # SQL query
-let query = @sql(
+let query = ↯sql(
     "SELECT id, name FROM users WHERE active = $1",
     true
 )
 ```
 
-### Annotation (`@.`)
+### Annotation (`@`)
 
-Annotations use the `@.` prefix and capture and act on subsequent declarations:
+Annotations use the `@` prefix and capture and act on subsequent declarations:
 
 ```valkyrie
 # Test annotation
-@.test
+@test
 micro test_addition() {
-    @.assert_eq(2 + 2, 4)
+    @assert_eq(2 + 2, 4)
 }
 
 # Serialization annotation
-@.derive(Serialize, Deserialize)
+@derive(Serialize, Deserialize)
 class User {
     name: string
     email: string
 }
 
 # Benchmark annotation
-@.benchmark
+@benchmark
 micro fibonacci_benchmark() {
     fibonacci(30)
 }
 
 # Conditional compilation annotation
-@.cfg(feature = "debug")
+@cfg(feature = "debug")
 micro debug_function() {
     print("Debug mode enabled")
 }
@@ -72,13 +72,13 @@ micro debug_function() {
 
 ```valkyrie
 # Compile-time constant computation
-let PI_SQUARED: f64 = @evaluate(3.14159 * 3.14159)
+let PI_SQUARED: f64 = ↯evaluate(3.14159 * 3.14159)
 
 # Compile-time file reading
-let config_content: string = @compile_time_read_file("config.toml")
+let config_content: string = ↯compile_time_read_file("config.toml")
 
 # Compile-time environment configuration
-@compile_time_env {
+↯compile_time_env {
     memory_limit: "256MB",
     execution_timeout: "30s",
 }
@@ -88,7 +88,7 @@ let config_content: string = @compile_time_read_file("config.toml")
 
 ```valkyrie
 # Template definition
-@template {
+↯template {
     name: "crud_operations",
     params: [Entity: Type, Key: Type],
     body: {
@@ -111,7 +111,7 @@ let config_content: string = @compile_time_read_file("config.toml")
 }
 
 # Template instantiation
-@generate_code {
+↯generate_code {
     crud_operations⟨User, UserId⟩
     crud_operations⟨Product, ProductId⟩
 }
@@ -121,7 +121,7 @@ let config_content: string = @compile_time_read_file("config.toml")
 
 ```valkyrie
 # Macro expansion strategy control
-@macro_expansion(strategy: "eager", max_depth: 100)
+↯macro_expansion(strategy: "eager", max_depth: 100)
 macro recursive_macro {
     # Recursive macro definition
 }
@@ -132,15 +132,15 @@ macro recursive_macro {
 ### Testing
 
 ```valkyrie
-@.test
+@test
 micro test_user_creation() {
-    let user = User("Alice", "alice@example.com")
-    @.assert_true(user.is_valid())
-    @.assert_eq(user.name, "Alice")
+    let user = User("Alice", "alice↯example.com")
+    @assert_true(user.is_valid())
+    @assert_eq(user.name, "Alice")
 }
 
-@.test
-@.should_panic
+@test
+@should_panic
 micro test_invalid_email() {
     User("Bob", "invalid-email")
 }
@@ -149,13 +149,13 @@ micro test_invalid_email() {
 ### Derivation
 
 ```valkyrie
-@.derive(Debug, Clone, PartialEq)
+@derive(Debug, Clone, PartialEq)
 class Point {
     x: f64,
     y: f64,
 }
 
-@.derive(Serialize, Deserialize)
+@derive(Serialize, Deserialize)
 class Config {
     database_url: string
     port: u16
@@ -165,12 +165,12 @@ class Config {
 ### Conditional Compilation
 
 ```valkyrie
-@.cfg(target_os = "windows")
+@cfg(target_os = "windows")
 micro windows_specific_function() {
     # Windows-specific implementation
 }
 
-@.cfg(feature = "async")
+@cfg(feature = "async")
 class AsyncHandler {
     # Async handler implementation
 }
@@ -192,7 +192,7 @@ macro vec_of {
         }
     }
     (#(#x:expr),+ #(,)?) => {
-        @vec(#(#x),+)
+        ↯vec(#(#x),+)
     }
 }
 ```

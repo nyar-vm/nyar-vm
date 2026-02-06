@@ -63,7 +63,7 @@ Nyar 是一个现代的通用虚拟机运行时，专为构建可靠、高性能
     i32.add
     
     // 调用内置打印
-    call @print_i32
+    call ↯print_i32
     
     // 返回结果
     push 0

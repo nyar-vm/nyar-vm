@@ -33,19 +33,19 @@ type RGB = Vec3
 
 ```valkyrie
 # Vertex Shader 标记
-@.vertex
+@vertex
 micro vertex_main(vertex: VertexInput) -> VertexOutput {
     # 顶点着色器逻辑
 }
 
 # Fragment Shader 标记
-@.fragment
+@fragment
 micro fragment_main(input: FragmentInput) -> FragmentOutput {
     # 片段着色器逻辑
 }
 
 # Compute Shader 标记
-@.compute(workgroup_size = [8, 8, 1])
+@compute(workgroup_size = [8, 8, 1])
 micro compute_main(id: ComputeInput) {
     # 计算着色器逻辑
 }
@@ -58,25 +58,25 @@ micro compute_main(id: ComputeInput) {
 ```valkyrie
 # 顶点输入结构
 struct VertexInput {
-    @.location(0) position: Vec3,
-    @.location(1) color: Vec3,
-    @.location(2) uv: Vec2
+    @location(0) position: Vec3,
+    @location(1) color: Vec3,
+    @location(2) uv: Vec2
 }
 
 # 顶点输出结构
 struct VertexOutput {
-    @.builtin(position) clip_position: Vec4,
-    @.location(0) color: Vec3,
-    @.location(1) uv: Vec2
+    @builtin(position) clip_position: Vec4,
+    @location(0) color: Vec3,
+    @location(1) uv: Vec2
 }
 
 # Uniform 缓冲区
-@.group(0) @.binding(0)
+@group(0) @binding(0)
 struct CameraUniform {
     view_proj: Mat4
 }
 
-@.vertex
+@vertex
 micro vertex_main(vertex: VertexInput, camera: CameraUniform) -> VertexOutput {
     VertexOutput {
         clip_position: camera.view_proj * Vec4(vertex.position, 1.0),
@@ -91,22 +91,22 @@ micro vertex_main(vertex: VertexInput, camera: CameraUniform) -> VertexOutput {
 ```valkyrie
 # 片段输入（来自顶点着色器）
 struct FragmentInput {
-    @.location(0) color: Vec3,
-    @.location(1) uv: Vec2
+    @location(0) color: Vec3,
+    @location(1) uv: Vec2
 }
 
 # 片段输出
 struct FragmentOutput {
-    @.location(0) color: Vec4
+    @location(0) color: Vec4
 }
 
 # 纹理和采样器
-@.group(1) @.binding(0)
+@group(1) @binding(0)
 let texture: Texture2D
-@.group(1) @.binding(1)
+@group(1) @binding(1)
 let sampler: Sampler
 
-@.fragment
+@fragment
 micro fragment_main(input: FragmentInput) -> FragmentOutput {
     let tex_color = texture.sample(sampler, input.uv)
     let final_color = tex_color * Vec4(input.color, 1.0)

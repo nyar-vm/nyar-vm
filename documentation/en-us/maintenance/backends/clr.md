@@ -43,7 +43,7 @@ CLR (Common Language Runtime) 是 .NET 平台的运行时环境。与 JVM 类似
 - **异常映射**: 在非 `resume` 情况下，`raise` 等价于 CLR 的 `throw` 指令。需要为不同的效应生成对应的 `Exception` 子类。
 - **延续支持 (Continuations)**: 由于 CLR 不支持限定延续，对于 `resume` 场景，需要将函数重写为状态机（类似于 C# 的 `async` 或 `yield return`），将局部变量提升为类字段，并通过状态码管理执行流的恢复。
 
-### FFI 与外部导入 (`↯import`)
+### FFI 与外部导入 (`@import`)
 - **CLR 专用标记**: 针对 `target: clr` 的导入标记，直接映射到 .NET 程序集的元数据。
 - **调用方式**: 使用 `call` 指令调用完全限定的方法名（如 `[mscorlib]System.Console::WriteLine`）。
 - **独立性**: CLR 后端的 FFI 路径与 WASM/WASI 完全独立，不需要考虑 WASM 目标的调用约定或 Marshalling 垫片。
@@ -70,7 +70,7 @@ CLR (Common Language Runtime) 是 .NET 平台的运行时环境。与 JVM 类似
 
 ### 短期计划 (Short-term Plan)
 1. **AE 异常映射**: 实现非 resume 情况下的效应到异常的自动转换。
-2. **CLR FFI 验证**: 实现 `↯import(target: clr, ...)` 的后端支持，能够成功调用 .NET BCL 方法。
+2. **CLR FFI 验证**: 实现 `@import(target: clr, ...)` 的后端支持，能够成功调用 .NET BCL 方法。
 3. **测试框架**: 完善集成测试，支持自动运行生成的 `.exe` 并比对输出。
 4. **数组与切片**: 深度测试数组和切片操作的边界情况。
 
