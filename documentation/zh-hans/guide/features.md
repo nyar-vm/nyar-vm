@@ -147,37 +147,36 @@ match day {
 #### 解构匹配
 
 ```valkyrie
-# 元组解构
+# 1. 元组解构
 match point {
-    case (0, 0): "Origin"
-    case (x, 0): "On X-axis at ${x}"
-    case (0, y): "On Y-axis at ${y}"
-    case (x, y) if x == y: "Diagonal at ${x}"
-    case (x, y): "Point at (${x}, ${y})"
+    case (x, 0): "On X-axis at {x}"
+    case (0, y): "On Y-axis at {y}"
+    case (x, y) if x == y: "Diagonal at {x}"
+    case (x, y): "Point at ({x}, {y})"
 }
 
-# 数组解构
-match array {
-    case []: "Empty"
-    case [x]: "Single element: ${x}"
-    case [first, ..rest]: "First: ${first}, Rest: ${rest.len()} items"
+# 2. 数组解构
+match numbers {
+    case []: "Empty list"
+    case [x]: "Single element: {x}"
+    case [first, ..rest]: "First: {first}, Rest: {rest.len()} items"
 }
 
-# 对象解构
-match person {
-    case { name: "Alice", age }: "Alice is ${age} years old"
-    case { name, age: 18..=25 }: "Young adult: ${name}"
-    case { name, age }: "${name} is ${age} years old"
+# 3. 对象解构
+match user {
+    case { name: "Alice", age }: "Alice is {age} years old"
+    case { name, age: 18..=25 }: "Young adult: {name}"
+    case { name, age }: "{name} is {age} years old"
 }
 ```
 
 #### 联合类型匹配
 
 ```valkyrie
-# Result 类型匹配
+# 4. Result 类型匹配
 match result {
-    case Fine(value): "Success: ${value}"
-    case Fail(error): "Error: ${error}"
+    case Fine(value): "Success: {value}"
+    case Fail(error): "Error: {error}"
 }
 
 # 复杂联合类型
@@ -307,11 +306,11 @@ class Animal {
     }
     
     speak(self) {
-        print("${self.name} makes a sound")
+        print("{self.name} makes a sound")
     }
     
     get_info(self) -> String {
-        "${self.name} is ${self.age} years old"
+        "{self.name} is {self.age} years old"
     }
 }
 
@@ -328,11 +327,11 @@ class Dog extends Animal {
     }
     
     speak(self) {
-        print("${self.name} barks: Woof!")
+        print("{self.name} barks: Woof!")
     }
     
     fetch(self, item: String) {
-        print("${self.name} fetches the ${item}")
+        print("{self.name} fetches the {item}")
     }
 }
 ```
@@ -361,7 +360,7 @@ class Circle {
 
 impl Drawable for Circle {
     draw(self) {
-        print("Drawing circle with radius ${self.radius}")
+        print("Drawing circle with radius {self.radius}")
     }
     
     get_area(self) -> f64 {

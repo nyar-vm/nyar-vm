@@ -67,8 +67,8 @@ type User = {
 
 # 模式匹配
 match result {
-    case Fine { value }: print("成功: ${value}")
-    case Fail { error }: print("错误: ${error}")
+    case Fine { value }: print("成功: {value}")
+    case Fail { error }: print("错误: {error}")
 }
 ```
 
@@ -82,7 +82,7 @@ effect Async {
 }
 
 micro fetch_user_data(id: Int) -> User {
-    let response = fetch("/api/users/${id}").await
+    let response = fetch("/api/users/{id}").await
     parse_json(response)
 }
 

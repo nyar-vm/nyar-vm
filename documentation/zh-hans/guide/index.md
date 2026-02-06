@@ -211,18 +211,35 @@ class Person {
         Self { name, age }
     }
     
-    greet(self) {
-        print("Hello, I'm ${self.name}")
+    speak(self) {
+        print("Hello, I'm {self.name}")
     }
     
     get_info(self) -> String {
-        "${self.name} is ${self.age} years old"
+        "{self.name} is {self.age} years old"
     }
 }
 
+### 异常处理
+
+```valkyrie
+micro divide(a: i32, b: i32) -> Result⟨i32, String⟩ {
+    if b == 0 {
+        Fail("Division by zero")
+    } else {
+        Fine(a / b)
+    }
+}
+
+match divide(10, 2) {
+    case Fine(res): print("Result: {res}")
+    case Fail(err): print("Error: {err}")
+}
+```
+
 # 使用类
 let person = Person::new("Alice", 30)
-person.greet()
+person.speak()
 let info = person.get_info()
 ```
 
@@ -305,7 +322,7 @@ r"""多行原始字符串
 # 字符串插值
 let name = "Alice"
 let age = 30
-let message = "Hello, ${name}! You are ${age} years old."
+let message = "Hello, {name}! You are {age} years old."
 ```
 
 ### 其他字面量
