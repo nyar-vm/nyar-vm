@@ -158,9 +158,9 @@ match score {
 # 元组解构
 match point {
     case (0, 0): "Origin"
-    case (x, 0): "On X-axis at ${ x }"
-    case (0, y): "On Y-axis at ${ y }"
-    case (x, y): "Point at (${ x }, ${ y })"
+    case (x, 0): "On X-axis at {x}"
+    case (0, y): "On Y-axis at {y}"
+    case (x, y): "Point at ({x}, {y})"
 }
 ```
 
@@ -194,8 +194,8 @@ union Result<T, E> {
 # 使用联合类型
 let result: Result<i32, String> = Fine { value: 42 }
 match result {
-    case Fine { value }: print("Success: ${ value }")
-    case Fail { error }: print("Error: ${ error }")
+    case Fine { value }: print("Success: {value}")
+    case Fail { error }: print("Error: {error}")
 }
 ```
 
@@ -278,9 +278,9 @@ using math.geometry.Point as GeomPoint
 # 使用导入的内容
 micro main() {
     let p1 = Point { x: 0.0, y: 0.0 }
-let p2 = Point { x: 3.0, y: 4.0 }
+    let p2 = Point { x: 3.0, y: 4.0 }
     let dist = distance(p1, p2)
-    print("Distance: ${dist}")
+    print("Distance: {dist}")
 }
 ```
 

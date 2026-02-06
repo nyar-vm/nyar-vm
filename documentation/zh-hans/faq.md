@@ -151,7 +151,7 @@ using "@std/console" { console }
 
 # 导出给 JavaScript 使用
 export micro greet(name: String) -> String {
-    "Hello, ${name}!"
+    "Hello, {name}!"
 }
 
 # 使用 JavaScript 对象

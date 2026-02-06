@@ -265,11 +265,32 @@ impl NyarVM {
     pub fn call_closure_sync(&mut self, callee: Value, args: Vec<Value>) -> Result<Value, NyarError> {
         let target_depth = self.frames.len();
         let argc = args.len() as u16;
+        self.push(callee)?;
         for arg in args {
             self.push(arg)?;
         }
-        self.push(callee)?;
         self.execute_call_closure(argc)?;
+        while self.frames.len() > target_depth {
+            self.execute_step()?;
+        }
+        self.pop()
+    }
+
+    pub fn resume_continuation_sync(&mut self, continuation: Value, result: Value) -> Result<Value, NyarError> {
+        let target_depth = self.frames.len();
+        if let Some(cont) = continuation.try_as_continuation() {
+            // Restore frames
+            self.frames.extend(cont.frames.clone());
+            // Restore stack slice
+            for val in &cont.stack_slice {
+                self.push(*val)?;
+            }
+            // Push the result of resume
+            self.push(result)?;
+        } else {
+            return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x14)));
+        }
+
         while self.frames.len() > target_depth {
             self.execute_step()?;
         }
