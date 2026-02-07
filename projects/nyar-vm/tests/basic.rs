@@ -199,6 +199,7 @@ fn run_has_key_object() {
         classes: vec![nyar_vm::bytecode::format::ClassInfo {
             name: QualifiedName::new(vec!["C".to_string()]),
             fields: vec!["a".to_string(), "b".to_string()],
+            location: nyar_types::SourceLocation::default(),
         }],
         traits: vec![],
         impls: vec![],
@@ -227,12 +228,14 @@ fn run_match_variant() {
         }],
         classes: vec![
             nyar_vm::bytecode::format::ClassInfo {
-                name: QualifiedName::new(vec!["V".to_string()]),
+                name: QualifiedName::new(vec!["A".to_string()]),
                 fields: vec![],
+                location: nyar_types::SourceLocation::default(),
             },
             nyar_vm::bytecode::format::ClassInfo {
-                name: QualifiedName::new(vec!["W".to_string()]),
+                name: QualifiedName::new(vec!["B".to_string()]),
                 fields: vec![],
+                location: nyar_types::SourceLocation::default(),
             },
         ],
         ..Default::default()
@@ -326,6 +329,7 @@ fn run_sizeof_array_string_bigint_object() {
         classes: vec![nyar_vm::bytecode::format::ClassInfo {
             name: QualifiedName::new(vec!["O".to_string()]),
             fields: vec!["x".to_string(), "y".to_string()],
+            location: nyar_types::SourceLocation::default(),
         }],
         ..Default::default()
     };

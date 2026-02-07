@@ -3,6 +3,7 @@ use crate::runtime::NyarBuiltin;
 use crate::bytecode::format::{Chunk, ClassInfo, Constant, ExportInfo, NyarcModule};
 use crate::bytecode::opcode::Opcode;
 use chomsky_extract::{Backend, BackendArtifact, IKunTree};
+use chomsky_types::LineMap;
 use nyar_types::{NyarError, QualifiedName, SourceLocation};
 
 pub struct NyarBackend {
@@ -12,7 +13,7 @@ pub struct NyarBackend {
     current_class: Option<String>,
     current_location: SourceLocation,
     current_lines: Vec<(u32, u32)>,
-    lines_stack: Vec<Vec<(u32, u32)>>,
+    line_maps: std::collections::HashMap<u32, LineMap>,
 }
 
 impl NyarBackend {
@@ -24,8 +25,12 @@ impl NyarBackend {
             current_class: None,
             current_location: SourceLocation::default(),
             current_lines: Vec::new(),
-            lines_stack: Vec::new(),
+            line_maps: std::collections::HashMap::new(),
         }
+    }
+
+    pub fn add_line_map(&mut self, source_id: u32, content: &str) {
+        self.line_maps.insert(source_id, LineMap::new(content));
     }
 
     fn add_local(&mut self, name: String) -> u8 {
@@ -132,9 +137,14 @@ impl NyarBackend {
         match tree {
             IKunTree::Source(loc, body) => {
                 let prev_loc = self.current_location;
+                let line = if let Some(map) = self.line_maps.get(&loc.source_id) {
+                    map.lookup(loc.span.start).0
+                } else {
+                    loc.span.start
+                };
                 self.current_location = SourceLocation {
                     source_id: loc.source_id as u32,
-                    offset: loc.span.start as u32,
+                    offset: line as u32,
                 };
                 let res = self.lower_tree(body)?;
                 self.current_location = prev_loc;
@@ -290,7 +300,7 @@ impl NyarBackend {
                     code: module_code,
                     handlers: vec![],
                     lines: final_lines,
-                    decoded: Default::default(),
+                    decoded: std::sync::OnceLock::new(),
                     hotness: std::sync::atomic::AtomicU32::new(0),
                 });
                 self.locals = prev_locals;
@@ -302,7 +312,12 @@ impl NyarBackend {
                     name.clone()
                 };
 
-                if let IKunTree::Lambda(params, body) = &**body {
+                let mut current = body.as_ref();
+                while let IKunTree::Source(_, inner) = current {
+                    current = inner.as_ref();
+                }
+
+                if let IKunTree::Lambda(params, body) = current {
                     let prev_locals = self.locals.clone();
                     let prev_lines = std::mem::take(&mut self.current_lines);
                     self.locals.clear();
@@ -326,21 +341,27 @@ impl NyarBackend {
                     }
                     let chunk_idx = chunk_idx as u16;
                     let num_locals = self.locals.len() as u16;
-                self.module.chunks.push(Chunk {
-                    locals: num_locals.max(32),
-                    upvalues: 0,
-                    max_stack: 64,
-                    code: body_code,
-                    handlers: vec![],
-                    lines: final_lines,
-                    decoded: std::sync::OnceLock::new(),
-                    hotness: std::sync::atomic::AtomicU32::new(0),
-                });
+                    self.module.chunks.push(Chunk {
+                        locals: num_locals.max(32),
+                        upvalues: 0,
+                        max_stack: 64,
+                        code: body_code,
+                        handlers: vec![],
+                        lines: final_lines,
+                        decoded: std::sync::OnceLock::new(),
+                        hotness: std::sync::atomic::AtomicU32::new(0),
+                    });
                     self.module.exports.push(ExportInfo {
                         symbol: QualifiedName::from(final_name.as_str()),
                         chunk_idx,
                     });
                     self.locals = prev_locals;
+                } else {
+                    // If it's not a lambda, it might be a module-level constant or expression
+                    let code_piece = self.lower_tree(body)?;
+                    // We don't have a good way to "export" an expression result yet,
+                    // but we can at least emit the code.
+                    code.extend(code_piece);
                 }
             }
             IKunTree::Return(val) => {
@@ -1455,7 +1476,7 @@ impl Backend for NyarBackend {
                 code: final_code,
                 handlers: vec![],
                 lines,
-                decoded: None,
+                decoded: Default::default(),
                 hotness: std::sync::atomic::AtomicU32::new(0),
             });
         }

@@ -1,6 +1,8 @@
 pub mod io;
 pub mod fs;
 pub mod http;
+pub mod json;
+pub mod net;
 pub mod async_ffi;
 
 use crate::vm::core::NyarVM;
@@ -108,6 +110,17 @@ impl FFIRegistry {
         self.register("std.http.get".to_string(), Arc::new(http::StdHttpGet));
         self.register("std.http.post".to_string(), Arc::new(http::StdHttpPost));
         self.register("std.http.set_proxy".to_string(), Arc::new(http::StdHttpSetProxy));
+
+        self.register("std.json.parse".to_string(), Arc::new(json::StdJsonParse));
+        self.register("std.json.stringify".to_string(), Arc::new(json::StdJsonStringify));
+
+        self.register("std.net.TcpStream.connect".to_string(), Arc::new(net::TcpConnect));
+        self.register("std.net.TcpStream.read".to_string(), Arc::new(net::TcpRead));
+        self.register("std.net.TcpStream.write".to_string(), Arc::new(net::TcpWrite));
+        self.register("std.net.TcpStream.close".to_string(), Arc::new(net::TcpClose));
+        self.register("std.net.TcpListener.listen".to_string(), Arc::new(net::TcpListen));
+        self.register("std.net.TcpListener.accept".to_string(), Arc::new(net::TcpAccept));
+        self.register("std.net.TcpListener.close".to_string(), Arc::new(net::TcpClose));
 
         self.register("std.async.delay".to_string(), Arc::new(async_ffi::AsyncDelay));
         self.register("std.async.spawn".to_string(), Arc::new(async_ffi::AsyncSpawn));

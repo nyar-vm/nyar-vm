@@ -35,7 +35,7 @@ impl NyarDriver {
         backend.lower_tree(&tree)?;
         let module = backend.finish();
         let mut vm = NyarVM::new();
-        let module_idx = vm.load_module(module, uri.to_string());
+        let module_idx = vm.load_named_module(module, uri.to_string());
         let main_name = QualifiedName::new(vec!["main".to_string()]);
         if vm.execute_symbol(&main_name, vec![]).is_ok() {
             Ok(())
@@ -59,7 +59,7 @@ impl NyarDriver {
         backend.lower_tree(&tree)?;
         let module = backend.finish();
         let mut vm = NyarVM::new();
-        let module_idx = vm.load_module(module, "code".to_string());
+        let module_idx = vm.load_named_module(module, "code".to_string());
         let main_name = QualifiedName::new(vec!["main".to_string()]);
         if vm.execute_symbol(&main_name, vec![]).is_ok() {
             Ok(())

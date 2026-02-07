@@ -25,6 +25,7 @@ thiserror = "1.0"
 dashmap = "5.5"
 indexmap = "2.2"
 pe-assembler = { workspace = true }
+oak-json = { path = "../../../oaks/examples/oak-json" }
  reqwest = { workspace = true }
 gaia-assembler = { workspace = true }
 gaia-types = { workspace = true }

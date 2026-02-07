@@ -1,7 +1,6 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
-use std::sync::Arc;
 use std::time::Duration;
 
 pub struct AsyncDelay;
@@ -47,16 +46,7 @@ impl FFIFunction for AsyncSpawn {
             return Err(vm.error(nyar_types::VmErrorKind::RuntimeError("Invalid closure".to_string())));
         }
 
-        let mut new_vm = NyarVM::new();
-        new_vm.gc = vm.gc.clone();
-        new_vm.modules = vm.modules.clone();
-        new_vm.module_names = vm.module_names.clone();
-        new_vm.trace_log = vm.trace_log.clone();
-        new_vm.ffi = vm.ffi.clone();
-        new_vm.symbol_table = vm.symbol_table.clone();
-        new_vm.builtins = vm.builtins.clone();
-        new_vm.jit = vm.jit.clone();
-
+        let mut new_vm = vm.spawn_child();
         let future = Value::future(&vm.gc);
         let future_clone = future;
 
@@ -68,7 +58,7 @@ impl FFIFunction for AsyncSpawn {
         
         tokio::spawn(async move {
             // Manually setup the call frame for the closure
-            if let Err(e) = new_vm.execute_call_closure(0) {
+            if let Err(_e) = new_vm.execute_call_closure(0) {
                  unsafe {
                     let f = future_clone.as_future_mut();
                     f.status = FutureStatus::Failed;

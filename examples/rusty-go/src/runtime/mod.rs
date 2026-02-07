@@ -137,7 +137,7 @@ impl RustyGoRuntime {
             code,
             handlers: vec![],
             lines: vec![],
-            decoded: None,
+            decoded: std::sync::OnceLock::new(),
             hotness: std::sync::atomic::AtomicU32::new(0),
         })
     }

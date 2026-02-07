@@ -654,12 +654,11 @@ fn run_throw_effect_uncaught_prints_traceback() {
     };
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
-    use std::cell::RefCell;
-    use std::rc::Rc;
-    let output = Rc::new(RefCell::new(Vec::<String>::new()));
+    use std::sync::{Arc, Mutex};
+    let output = Arc::new(Mutex::new(Vec::<String>::new()));
     let out_clone = output.clone();
-    vm.stdout = Some(Box::new(move |msg: &str| {
-        out_clone.borrow_mut().push(msg.to_string());
+    vm.stdout = Some(Arc::new(move |msg: &str| {
+        out_clone.lock().unwrap().push(msg.to_string());
     }));
     let r = vm.execute(module_idx, 0);
     assert!(r.is_err());
@@ -669,7 +668,7 @@ fn run_throw_effect_uncaught_prints_traceback() {
         nyar_types::SourceLocation::default(),
     );
     vm.print_traceback(&err);
-    let lines = output.borrow();
+    let lines = output.lock().unwrap();
     assert!(!lines.is_empty());
     assert_eq!(lines[0], "Traceback (most recent call last):");
     assert!(lines.last().unwrap().contains("UnhandledError"));
@@ -705,16 +704,15 @@ fn run_logger_event_default_prints() {
     };
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
-    use std::cell::RefCell;
-    use std::rc::Rc;
-    let output = Rc::new(RefCell::new(Vec::<String>::new()));
+    use std::sync::{Arc, Mutex};
+    let output = Arc::new(Mutex::new(Vec::<String>::new()));
     let out_clone = output.clone();
-    vm.stdout = Some(Box::new(move |msg: &str| {
-        out_clone.borrow_mut().push(msg.to_string());
+    vm.stdout = Some(Arc::new(move |msg: &str| {
+        out_clone.lock().unwrap().push(msg.to_string());
     }));
     let v = vm.execute(module_idx, 0).unwrap();
     assert_eq!(v.as_int(), 0);
-    let lines = output.borrow();
+    let lines = output.lock().unwrap();
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0], "hello");
 }
@@ -786,16 +784,15 @@ fn run_logger_event_handler_prints_and_resumes() {
     };
     let mut vm = NyarVM::new();
     let module_idx = vm.load_module(module);
-    use std::cell::RefCell;
-    use std::rc::Rc;
-    let output = Rc::new(RefCell::new(Vec::<String>::new()));
+    use std::sync::{Arc, Mutex};
+    let output = Arc::new(Mutex::new(Vec::<String>::new()));
     let out_clone = output.clone();
-    vm.stdout = Some(Box::new(move |msg: &str| {
-        out_clone.borrow_mut().push(msg.to_string());
+    vm.stdout = Some(Arc::new(move |msg: &str| {
+        out_clone.lock().unwrap().push(msg.to_string());
     }));
     let v = vm.execute(module_idx, 1).unwrap();
     assert_eq!(v.as_int(), 0);
-    let lines = output.borrow();
+    let lines = output.lock().unwrap();
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0], "x");
 }

@@ -49,7 +49,7 @@ fn test_witness_table_instructions() {
                 code: main_code,
                 handlers: vec![],
                 lines: vec![],
-                decoded: None,
+                decoded: std::sync::OnceLock::new(),
                 hotness: AtomicU32::new(0),
             },
             Chunk {
@@ -59,7 +59,7 @@ fn test_witness_table_instructions() {
                 code: method_code,
                 handlers: vec![],
                 lines: vec![],
-                decoded: None,
+                decoded: std::sync::OnceLock::new(),
                 hotness: AtomicU32::new(0),
             },
         ],

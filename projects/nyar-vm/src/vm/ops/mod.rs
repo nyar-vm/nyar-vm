@@ -82,7 +82,7 @@ impl NyarVM {
         &self,
         module_idx: usize,
         chunk_idx: usize,
-    ) -> Result<std::sync::Arc<Vec<Instruction>>, NyarError> {
+    ) -> Result<std::sync::Arc<Vec<(Instruction, u32)>>, NyarError> {
         if module_idx >= self.modules.len() {
             return Err(self.error(nyar_types::VmErrorKind::ModuleNotFound(module_idx)));
         }
@@ -101,8 +101,13 @@ impl NyarVM {
 
         let mut decoder = crate::bytecode::decoder::Decoder::new(&chunk.code);
         let mut instructions = Vec::new();
-        while let Ok(ins) = decoder.next_result() {
-            instructions.push(ins);
+        while decoder.position() < chunk.code.len() as u64 {
+            let pos = decoder.position() as u32;
+            if let Ok(ins) = decoder.next_result() {
+                instructions.push((ins, pos));
+            } else {
+                break;
+            }
         }
 
         let instrs = std::sync::Arc::new(instructions);
@@ -212,11 +217,12 @@ impl NyarVM {
         // Update location before dispatch
         if let Some(c_idx) = chunk_idx {
             let chunk = &self.modules[module_idx].chunks[c_idx];
+            let byte_offset = self.frames.last().unwrap().instrs[cur_ip].1;
             // Find the line info for the current IP
             // lines is Vec<(offset, line)>
             let mut line_offset = 0;
             for &(offset, line) in &chunk.lines {
-                if cur_ip as u32 >= offset {
+                if byte_offset >= offset {
                     line_offset = line;
                 } else {
                     break;
@@ -227,7 +233,7 @@ impl NyarVM {
             }
         }
 
-        let ins = self.frames.last().unwrap().instrs[cur_ip].clone();
+        let ins = self.frames.last().unwrap().instrs[cur_ip].0.clone();
 
         #[cfg(debug_assertions)]
         {

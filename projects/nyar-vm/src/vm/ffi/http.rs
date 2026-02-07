@@ -4,7 +4,6 @@ use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
 use nyar_types::NyarError;
 use std::sync::{Arc, RwLock, OnceLock};
 use reqwest::{Client, Proxy};
-use tokio::runtime::Runtime;
 
 static HTTP_CLIENT: OnceLock<Arc<RwLock<Client>>> = OnceLock::new();
 static PROXY_URL: OnceLock<Arc<RwLock<Option<String>>>> = OnceLock::new();

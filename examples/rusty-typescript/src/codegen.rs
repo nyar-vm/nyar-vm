@@ -346,7 +346,7 @@ impl NyarTranslator {
             code: std::mem::take(&mut self.code),
             handlers: vec![],
             lines: vec![],
-            decoded: None,
+            decoded: std::sync::OnceLock::new(),
             hotness: std::sync::atomic::AtomicU32::new(0),
         });
 
@@ -389,7 +389,7 @@ impl NyarTranslator {
             code: std::mem::take(&mut self.code),
             handlers: vec![],
             lines: vec![],
-            decoded: None,
+            decoded: std::sync::OnceLock::new(),
             hotness: std::sync::atomic::AtomicU32::new(0),
         });
 

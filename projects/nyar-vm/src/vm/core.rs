@@ -8,7 +8,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 
 use nyar_types::QualifiedName;
-use crate::bytecode::format::{NyarcModule, Constant};
+use crate::bytecode::format::NyarcModule;
 
 pub trait JitProvider: Send + Sync {
     fn try_execute(
@@ -35,7 +35,7 @@ pub struct NyarVM {
     pub module_names: Arc<Vec<String>>,
     pub handler_stack: Vec<HandlerFrame>,
     #[allow(clippy::type_complexity)]
-    pub stdout: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    pub stdout: Option<Arc<dyn Fn(&str) + Send + Sync>>,
     pub trace_log: Arc<std::sync::Mutex<Vec<String>>>,
     pub ffi: FFIRegistry,
     pub symbol_table: Arc<DashMap<QualifiedName, (usize, u16)>>, // (module_idx, chunk_idx)
@@ -44,6 +44,7 @@ pub struct NyarVM {
     pub local_hotness: u8,
     pub last_gc_count: u64,
     pub current_waker: Option<std::task::Waker>,
+    pub network: crate::vm::net::NetworkContext,
 }
 
 impl Trace for NyarVM {
@@ -79,10 +80,33 @@ impl NyarVM {
             local_hotness: 0,
             last_gc_count: 0,
             current_waker: None,
+            network: crate::vm::net::NetworkContext::new(),
         };
         vm.ffi.register_std();
         vm.register_builtins();
         vm
+    }
+
+    pub fn spawn_child(&self) -> Self {
+        Self {
+            gc: self.gc.clone(),
+            stack: Vec::with_capacity(64),
+            sp: 0,
+            frames: Vec::new(),
+            modules: self.modules.clone(),
+            module_names: self.module_names.clone(),
+            handler_stack: Vec::new(),
+            stdout: self.stdout.clone(),
+            trace_log: self.trace_log.clone(),
+            ffi: self.ffi.clone(),
+            symbol_table: self.symbol_table.clone(),
+            builtins: self.builtins.clone(),
+            jit: self.jit.clone(),
+            local_hotness: 0,
+            last_gc_count: 0,
+            current_waker: None,
+            network: self.network.clone(),
+        }
     }
 
     pub fn push(&mut self, v: Value) -> Result<(), NyarError> {
@@ -264,7 +288,11 @@ impl NyarVM {
         res
     }
 
-    pub fn load_module(&mut self, module: NyarcModule, name: String) -> usize {
+    pub fn load_module(&mut self, module: NyarcModule) -> usize {
+        self.load_named_module(module, "anonymous".to_string())
+    }
+
+    pub fn load_named_module(&mut self, module: NyarcModule, name: String) -> usize {
         let module_idx = self.modules.len();
 
         // Update symbol table with exports from this module

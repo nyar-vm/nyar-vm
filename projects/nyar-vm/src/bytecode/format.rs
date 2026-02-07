@@ -26,7 +26,7 @@ pub struct Chunk {
     #[serde(default)]
     pub lines: Vec<(u32, u32)>, // offset, line
     #[serde(skip)]
-    pub decoded: std::sync::OnceLock<std::sync::Arc<Vec<crate::bytecode::instruction::Instruction>>>,
+    pub decoded: std::sync::OnceLock<std::sync::Arc<Vec<(crate::bytecode::instruction::Instruction, u32)>>>,
     #[serde(skip)]
     pub hotness: std::sync::atomic::AtomicU32,
 }

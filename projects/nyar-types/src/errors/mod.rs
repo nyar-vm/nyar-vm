@@ -104,6 +104,18 @@ pub enum DecodeErrorKind {
     Truncated,
 }
 
+impl From<&str> for NyarError {
+    fn from(s: &str) -> Self {
+        Self::RuntimeError(s.to_string())
+    }
+}
+
+impl From<String> for NyarError {
+    fn from(s: String) -> Self {
+        Self::RuntimeError(s)
+    }
+}
+
 impl NyarError {
     pub fn new(code: u32, kind: NyarErrorKind, location: SourceLocation) -> Self {
         Self {

@@ -113,9 +113,9 @@ pub fn perform_effect_internal(
         }
     }
     
-    // Check for std.io, std.fs and std.http effects
+    // Check for std.io, std.fs, std.net and std.http effects
     let effect_name = effect.name.to_string();
-    if effect_name.starts_with("std.io.") || effect_name.starts_with("std.fs.") || effect_name.starts_with("std.http.") {
+    if effect_name.starts_with("std.io.") || effect_name.starts_with("std.fs.") || effect_name.starts_with("std.net.") || effect_name.starts_with("std.http.") {
         if let Some(func) = vm.ffi.get(&effect_name) {
             let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
             return Ok(Some(res));

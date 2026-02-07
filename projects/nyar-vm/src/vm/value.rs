@@ -957,7 +957,7 @@ pub struct Continuation {
 
 #[derive(Clone)]
 pub struct Frame {
-    pub instrs: std::sync::Arc<Vec<Instruction>>,
+    pub instrs: std::sync::Arc<Vec<(Instruction, u32)>>,
     pub ip: usize,
     pub locals: Vec<Value>,
     pub upvalues: Vec<Option<Upvalue>>,
