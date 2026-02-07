@@ -32,6 +32,44 @@ impl FFIFunction for AsyncDelay {
     }
 }
 
+pub struct AsyncAwait;
+impl FFIFunction for AsyncAwait {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Any],
+            ret: FFIType::Any,
+        })
+    }
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        if let Some(val) = args.get(0) {
+            if val.is_closure() {
+                let res = vm.call_closure_sync(*val, vec![])?;
+                return Ok(res);
+            } else if val.is_future() {
+                let future = unsafe { val.as_future() };
+                match future.status {
+                    FutureStatus::Ready => {
+                        return Ok(future.result);
+                    }
+                    FutureStatus::Failed => {
+                        return Err(vm.error(nyar_types::VmErrorKind::FutureFailed));
+                    }
+                    FutureStatus::Pending => {
+                        // Register waker and yield
+                        unsafe {
+                            let future_mut = val.as_future_mut();
+                            future_mut.waker = vm.current_waker.clone();
+                        }
+                        return Err(vm.error(nyar_types::VmErrorKind::YieldAsync));
+                    }
+                }
+            }
+        }
+        Ok(Value::null())
+    }
+}
+
+
 pub struct AsyncSpawn;
 impl FFIFunction for AsyncSpawn {
     fn signature(&self) -> Option<FFISignature> {

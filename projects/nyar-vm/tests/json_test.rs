@@ -5,7 +5,7 @@ use nyar_vm::vm::value::Value;
 fn test_json_parse_ffi() {
     let mut vm = NyarVM::new();
     
-    if let Some(func) = vm.ffi.get("std.json.parse") {
+    if let Some(func) = vm.ffi.get("std.config.json.Json.parse") {
         let json_str = r#"{"name": "Valkyrie", "version": 1, "active": true, "tags": ["lang", "vm"]}"#;
         let args = vec![Value::string(json_str.to_string(), &vm.gc)];
         let res = func.call(&mut vm, args).expect("JSON parse failed");
@@ -28,7 +28,7 @@ fn test_json_parse_ffi() {
 #[test]
 fn test_json_parse_null() {
     let mut vm = NyarVM::new();
-    if let Some(func) = vm.ffi.get("std.json.parse") {
+    if let Some(func) = vm.ffi.get("std.config.json.Json.parse") {
         let args = vec![Value::string("null".to_string(), &vm.gc)];
         let res = func.call(&mut vm, args).expect("JSON parse failed");
         assert!(res.is_null());
@@ -38,7 +38,7 @@ fn test_json_parse_null() {
 #[test]
 fn test_json_stringify_ffi() {
     let mut vm = NyarVM::new();
-    if let Some(func) = vm.ffi.get("std.json.stringify") {
+    if let Some(func) = vm.ffi.get("std.config.json.Json.stringify") {
         // Test primitive
         let args = vec![Value::int(42)];
         let res = func.call(&mut vm, args).expect("JSON stringify failed");

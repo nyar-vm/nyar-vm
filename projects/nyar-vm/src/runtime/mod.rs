@@ -1,7 +1,10 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
+use crate::vm::effects::EffectHandler;
+use nyar_types::{EffectInfo, NyarError};
 pub use nyar_types::QualifiedName;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Nyar 标准内建函数定义
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -61,9 +64,108 @@ pub enum NyarBuiltin {
     MathRand = 26,
 }
 
-use std::sync::Arc;
+pub struct DefaultEffectHandler;
+
+impl EffectHandler for DefaultEffectHandler {
+    fn perform_effect(
+        &self,
+        vm: &mut NyarVM,
+        _module_idx: usize,
+        effect: EffectInfo,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, NyarError> {
+        if effect.name.parts.len() == 1 {
+            let name = &effect.name.parts[0];
+            match name.as_str() {
+                "LoggerEvent" | "print" => {
+                    for arg in &args {
+                        vm.log(&format!("{}", arg));
+                    }
+                    return Ok(None);
+                }
+                "exit" => {
+                    let code = args.get(0).map(|v| v.as_int()).unwrap_or(0) as i32;
+                    std::process::exit(code);
+                }
+                "now" => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs_f64();
+                    return Ok(Some(Value::float(now)));
+                }
+                "get_env" => {
+                    if let Some(key) = args.get(0).and_then(|v| v.try_as_str()) {
+                        if let Ok(val) = std::env::var(key) {
+                            return Ok(Some(Value::string(val, &vm.gc)));
+                        }
+                    }
+                    return Ok(Some(Value::null()));
+                }
+                "add" => {
+                    let a = args.get(0).cloned().unwrap_or(Value::null());
+                    let b = args.get(1).cloned().unwrap_or(Value::null());
+                    let res = match (a.tag(), b.tag()) {
+                        (crate::vm::value::ValueTag::Int, crate::vm::value::ValueTag::Int) => {
+                            Value::int(a.as_int() + b.as_int())
+                        }
+                        (crate::vm::value::ValueTag::F32, crate::vm::value::ValueTag::F32) => {
+                            Value::f32(a.as_f32() + b.as_f32())
+                        }
+                        (crate::vm::value::ValueTag::F64, crate::vm::value::ValueTag::F64) => {
+                            Value::float(a.as_f64() + b.as_f64())
+                        }
+                        (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => {
+                            let mut s = a.try_as_str().unwrap_or("").to_string();
+                            s.push_str(b.try_as_str().unwrap_or(""));
+                            Value::string(s, &vm.gc)
+                        }
+                        _ => Value::null(),
+                    };
+                    return Ok(Some(res));
+                }
+                "Fetch" => {
+                    if let Some(func) = vm.ffi.get("std.http.get") {
+                        let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+                        return Ok(Some(res));
+                    }
+                }
+                "delay" => {
+                    if let Some(func) = vm.ffi.get("std.async.delay") {
+                        let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+                        return Ok(Some(res));
+                    }
+                }
+                "spawn" => {
+                    if let Some(func) = vm.ffi.get("std.async.spawn") {
+                        let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+                        return Ok(Some(res));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Fallback to FFI for std.* effects if not handled above
+        let effect_name = effect.name.to_string();
+        if effect_name.starts_with("std.") {
+            if let Some(func) = vm.ffi.get(&effect_name) {
+                let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+                return Ok(Some(res));
+            }
+        }
+
+        Err(vm.error(nyar_types::VmErrorKind::UnhandledEffect(effect.name)))
+    }
+}
 
 impl NyarVM {
+    pub fn setup_default_runtime(&mut self) {
+        self.ffi.register_std();
+        self.register_builtins();
+        self.effect_handler = Some(Arc::new(DefaultEffectHandler));
+    }
+
     pub fn register_builtins(&mut self) {
         // Builtins are registered using their canonical names
         self.register_java_builtins();

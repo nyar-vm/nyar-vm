@@ -8,40 +8,37 @@ pub struct HandlerFrame {
     pub frame_depth: usize,
 }
 
+pub trait EffectHandler: Send + Sync {
+    fn perform_effect(
+        &self,
+        vm: &mut crate::vm::core::NyarVM,
+        module_idx: usize,
+        effect: EffectInfo,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, NyarError>;
+}
+
 pub fn perform_effect_internal(
     vm: &mut crate::vm::core::NyarVM,
     module_idx: usize,
     effect: EffectInfo,
     args: Vec<Value>,
 ) -> Result<Option<Value>, NyarError> {
+    // 1. Try external handler first
+    if let Some(handler) = vm.effect_handler.clone() {
+        match handler.perform_effect(vm, module_idx, effect.clone(), args.clone()) {
+            Ok(res) => return Ok(res),
+            Err(e) if matches!(*e.kind, nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::UnhandledEffect(_))) => {
+                // Continue to intrinsic handlers
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    // 2. Intrinsic handlers (Mechanism)
     if effect.name.parts.len() == 1 {
         let name = &effect.name.parts[0];
         match name.as_str() {
-            "LoggerEvent" | "print" => {
-                for arg in &args {
-                    vm.log(&format!("{}", arg));
-                }
-                return Ok(None);
-            }
-            "exit" => {
-                let code = args.get(0).map(|v| v.as_int()).unwrap_or(0) as i32;
-                std::process::exit(code);
-            }
-            "now" => {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs_f64();
-                return Ok(Some(Value::float(now)));
-            }
-            "get_env" => {
-                if let Some(key) = args.get(0).and_then(|v| v.try_as_str()) {
-                    if let Ok(val) = std::env::var(key) {
-                        return Ok(Some(Value::string(val, &vm.gc)));
-                    }
-                }
-                return Ok(Some(Value::null()));
-            }
             "await" => {
                 if let Some(val) = args.get(0) {
                     if val.is_closure() {
@@ -69,60 +66,11 @@ pub fn perform_effect_internal(
                 }
                 return Ok(None);
             }
-            "add" => {
-                let a = args.get(0).cloned().unwrap_or(Value::null());
-                let b = args.get(1).cloned().unwrap_or(Value::null());
-                let res = match (a.tag(), b.tag()) {
-                    (crate::vm::value::ValueTag::Int, crate::vm::value::ValueTag::Int) => {
-                        Value::int(a.as_int() + b.as_int())
-                    }
-                    (crate::vm::value::ValueTag::F32, crate::vm::value::ValueTag::F32) => {
-                        Value::f32(a.as_f32() + b.as_f32())
-                    }
-                    (crate::vm::value::ValueTag::F64, crate::vm::value::ValueTag::F64) => {
-                        Value::float(a.as_f64() + b.as_f64())
-                    }
-                    (crate::vm::value::ValueTag::String, crate::vm::value::ValueTag::String) => {
-                        let mut s = a.try_as_str().unwrap_or("").to_string();
-                        s.push_str(b.try_as_str().unwrap_or(""));
-                        Value::string(s, &vm.gc)
-                    }
-                    _ => Value::null(),
-                };
-                return Ok(Some(res));
-            }
-            "Fetch" => {
-                if let Some(func) = vm.ffi.get("std.http.get") {
-                    let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
-                    return Ok(Some(res));
-                }
-            }
-            "delay" => {
-                if let Some(func) = vm.ffi.get("std.async.delay") {
-                    let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
-                    return Ok(Some(res));
-                }
-            }
-            "spawn" => {
-                if let Some(func) = vm.ffi.get("std.async.spawn") {
-                    let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
-                    return Ok(Some(res));
-                }
-            }
             _ => {}
         }
     }
-    
-    // Check for std.io, std.fs, std.net and std.http effects
-    let effect_name = effect.name.to_string();
-    if effect_name.starts_with("std.io.") || effect_name.starts_with("std.fs.") || effect_name.starts_with("std.net.") || effect_name.starts_with("std.http.") {
-        if let Some(func) = vm.ffi.get(&effect_name) {
-            let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
-            return Ok(Some(res));
-        }
-    }
 
-    // Handle Token variants using QualifiedName
+    // Handle Token variants using QualifiedName (Mechanism for Algebraic Effects)
     if effect.name.parts.len() >= 2 && effect.name.parts[effect.name.parts.len() - 2] == "Token" {
         let variant_name = effect.name.parts.last().map(|s| s.as_str()).unwrap_or("");
         // Find Token class
@@ -141,7 +89,16 @@ pub fn perform_effect_internal(
             return Ok(Some(obj));
         }
     }
+
+    // 3. FFI Fallback (Mechanism for standard libraries)
+    let effect_name = effect.name.to_string();
+    if let Some(func) = vm.ffi.get(&effect_name) {
+        let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+        return Ok(Some(res));
+    }
+
     vm.log("Traceback (most recent call last):");
     vm.log(&format!("UnhandledEffect: {} at source {} offset {}", effect.name, effect.location.source_id, effect.location.offset));
     Err(vm.error(nyar_types::VmErrorKind::UnhandledEffect(effect.name)))
 }
+

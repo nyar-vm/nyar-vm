@@ -111,8 +111,8 @@ impl FFIRegistry {
         self.register("std.http.post".to_string(), Arc::new(http::StdHttpPost));
         self.register("std.http.set_proxy".to_string(), Arc::new(http::StdHttpSetProxy));
 
-        self.register("std.json.parse".to_string(), Arc::new(json::StdJsonParse));
-        self.register("std.json.stringify".to_string(), Arc::new(json::StdJsonStringify));
+        self.register("std.config.json.Json.parse".to_string(), Arc::new(json::StdJsonParse));
+        self.register("std.config.json.Json.stringify".to_string(), Arc::new(json::StdJsonStringify));
 
         self.register("std.net.TcpStream.connect".to_string(), Arc::new(net::TcpConnect));
         self.register("std.net.TcpStream.read".to_string(), Arc::new(net::TcpRead));
@@ -122,8 +122,9 @@ impl FFIRegistry {
         self.register("std.net.TcpListener.accept".to_string(), Arc::new(net::TcpAccept));
         self.register("std.net.TcpListener.close".to_string(), Arc::new(net::TcpClose));
 
-        self.register("std.async.delay".to_string(), Arc::new(async_ffi::AsyncDelay));
-        self.register("std.async.spawn".to_string(), Arc::new(async_ffi::AsyncSpawn));
+        self.register("std.async.Async.delay".to_string(), Arc::new(async_ffi::AsyncDelay));
+        self.register("std.async.Async.spawn".to_string(), Arc::new(async_ffi::AsyncSpawn));
+        self.register("std.async.Async.await".to_string(), Arc::new(async_ffi::AsyncAwait));
     }
 }
 

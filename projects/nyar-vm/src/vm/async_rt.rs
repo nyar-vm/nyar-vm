@@ -92,6 +92,24 @@ impl<'a> VmFuture<'a> {
         while loop_count < 1024 {
             loop_count += 1;
             
+            // Ensure we have at least one frame to execute
+            if self.vm.frames.is_empty() {
+                let instrs = match self.vm.get_chunk_instructions(self.module_idx, self.chunk_idx) {
+                    Ok(i) => i,
+                    Err(e) => return Poll::Ready(Err(e)),
+                };
+                self.vm.frames.push(crate::vm::value::Frame {
+                    instrs,
+                    upvalues: vec![None; 32],
+                    module_idx: self.module_idx,
+                    chunk_idx: Some(self.chunk_idx),
+                    ip: 0,
+                    locals: vec![crate::vm::value::Value::null(); 32],
+                    location: Default::default(),
+                    closure: crate::vm::value::Value::null(),
+                });
+            }
+
             match self.vm.execute_step() {
                 Ok(Some(())) => {}
                 Ok(None) => {

@@ -57,8 +57,9 @@ impl Backend for NativeBackend {
             context.locals.insert(local, offset);
             offset += 8;
         }
-        // 向上对齐到 16 的倍数
-        context.stack_size = (offset + 15) & !15;
+        // 向上对齐到 16 的倍数再加 8，以确保 call 时的 RSP 为 16 字节对齐
+        // (RSP_entry = 16n + 8, RSP_call = RSP_entry - stack_size = 16n + 8 - (16k + 8) = 16m)
+        context.stack_size = ((offset + 15) & !15) + 8;
 
         // 2. 函数序言 (Prologue)
         builder.add_instruction(Instruction::Sub {

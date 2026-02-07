@@ -2,7 +2,6 @@ use nyar_vm::bytecode::format::{Chunk, Constant, NyarModule};
 use nyar_vm::bytecode::opcode::Opcode;
 use nyar_vm::vm::async_rt::VmFuture;
 use nyar_vm::vm::core::NyarVM;
-use std::sync::Arc;
 use std::time::Instant;
 
 #[tokio::test]
@@ -154,10 +153,10 @@ async fn pressure_test_10k_spawn_delay() {
     let module = NyarModule {
         constants: vec![
             Constant::Int(10),                 // 0
-            Constant::String("std.async.delay".to_string()), // 1
+            Constant::String("std.async.Async.delay".to_string()), // 1
             Constant::Int(0),                  // 2
             Constant::Int(10000),              // 3
-            Constant::String("std.async.spawn".to_string()), // 4
+            Constant::String("std.async.Async.spawn".to_string()), // 4
             Constant::Int(1),                  // 5
         ],
         chunks: vec![

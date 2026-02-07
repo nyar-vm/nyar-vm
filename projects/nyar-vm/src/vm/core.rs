@@ -45,6 +45,7 @@ pub struct NyarVM {
     pub last_gc_count: u64,
     pub current_waker: Option<std::task::Waker>,
     pub network: crate::vm::net::NetworkContext,
+    pub effect_handler: Option<Arc<dyn crate::vm::effects::EffectHandler>>,
 }
 
 impl Trace for NyarVM {
@@ -81,9 +82,9 @@ impl NyarVM {
             last_gc_count: 0,
             current_waker: None,
             network: crate::vm::net::NetworkContext::new(),
+            effect_handler: None,
         };
         vm.ffi.register_std();
-        vm.register_builtins();
         vm
     }
 
@@ -106,6 +107,7 @@ impl NyarVM {
             last_gc_count: 0,
             current_waker: None,
             network: self.network.clone(),
+            effect_handler: self.effect_handler.clone(),
         }
     }
 
