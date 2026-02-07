@@ -598,7 +598,7 @@ fn run_throw_effect_catch_returns() {
 
 #[test]
 fn run_throw_effect_uncaught_is_unhandled_error() {
-    // perform throw without handler -> VmError::UnhandledError
+    // raise throw without handler -> VmError::UnhandledError
     let mut main = Vec::new();
     main.push(Opcode::Push as u8);
     main.extend_from_slice(&1u16.to_le_bytes()); // 1

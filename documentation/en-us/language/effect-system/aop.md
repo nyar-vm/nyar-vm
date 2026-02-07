@@ -86,23 +86,23 @@ class PaymentService {
     @around(LogAspect, MetricsAspect)
     micro process_payment(self, order_id: String, amount: Decimal) -> Receipt {
         # Before advice executes automatically
-        perform LogAspect.before_method("PaymentService", "process_payment", [order_id, amount])
-        let timing_ctx = perform MetricsAspect.start_timing("payment_processing")
+        raise LogAspect.before_method("PaymentService", "process_payment", [order_id, amount])
+        let timing_ctx = raise MetricsAspect.start_timing("payment_processing")
         
         try {
             # Core business logic
             let receipt = self.do_payment(order_id, amount)
             
             # After advice
-            perform LogAspect.after_method("PaymentService", "process_payment", receipt)
-            let duration = perform MetricsAspect.end_timing(timing_ctx)
-            perform MetricsAspect.record_metric("payment_duration", duration.as_millis())
+            raise LogAspect.after_method("PaymentService", "process_payment", receipt)
+            let duration = raise MetricsAspect.end_timing(timing_ctx)
+            raise MetricsAspect.record_metric("payment_duration", duration.as_millis())
             
             receipt
         }
         .catch {
             case _:
-                perform LogAspect.on_error("PaymentService", "process_payment", error)
+                raise LogAspect.on_error("PaymentService", "process_payment", error)
                 raise error
         }
     }
@@ -127,14 +127,14 @@ effect AuditAspect {
 class SecurityAuditService {
     @around(LogAspect, AuditAspect)
     micro update_user_profile(self, user_id: string, profile: UserProfile) -> Unit {
-        perform AuditAspect.log_access(user_id, "user_profile", "update")
+        raise AuditAspect.log_access(user_id, "user_profile", "update")
         
         let old_profile = self.get_user_profile(user_id)
         
         # Update logic
         self.save_user_profile(user_id, profile)
         
-        perform AuditAspect.log_data_change("users", user_id, old_profile, profile)
+        raise AuditAspect.log_data_change("users", user_id, old_profile, profile)
     }
 }
 ```
@@ -176,7 +176,7 @@ class AspectComposer {
             execute(context) -> T {
                 # Execute before advice of all aspects in order
                 for aspect in aspects {
-                    perform aspect.before(context)
+                    raise aspect.before(context)
                 }
                 
                 try {
@@ -184,7 +184,7 @@ class AspectComposer {
                     
                     # Execute after advice of all aspects in reverse order
                     for aspect in aspects.reverse() {
-                        perform aspect.after(context, result)
+                        raise aspect.after(context, result)
                     }
                     
                     result
@@ -193,7 +193,7 @@ class AspectComposer {
                     case _:
                         # Execute error advice
                         for aspect in aspects.reverse() {
-                            perform aspect.on_error(context, error)
+                            raise aspect.on_error(context, error)
                         }
                         raise error
                 }
@@ -226,14 +226,14 @@ class DynamicAspectManager {
         
         # Dynamically apply all registered aspects
         for aspect in self.aspects {
-            perform aspect.before(context)
+            raise aspect.before(context)
         }
         
         try {
             let result = operation()
             
             for aspect in self.aspects.reverse() {
-                perform aspect.after(context, result)
+                raise aspect.after(context, result)
             }
             
             result
@@ -241,7 +241,7 @@ class DynamicAspectManager {
         .catch {
             case _:
                 for aspect in self.aspects.reverse() {
-                    perform aspect.on_error(context, error)
+                    raise aspect.on_error(context, error)
                 }
                 raise error
         }
@@ -266,7 +266,7 @@ class AspectChain {
             self.current_index += 1
             
             # Execute current aspect
-            perform aspect.around(context, || { self.proceed(context) })
+            raise aspect.around(context, || { self.proceed(context) })
         }
     }
 }

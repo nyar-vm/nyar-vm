@@ -61,7 +61,7 @@ effect Http {
 
 // 使用效應的函數
 micro fetch_user_data(id: Int) -> User {
-    let response = perform Http.get(`/api/users/${id}`)
+    let response = raise Http.get(`/api/users/${id}`)
     parse_json(response)
 }
 

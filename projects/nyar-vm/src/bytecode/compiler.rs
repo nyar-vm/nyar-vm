@@ -1066,16 +1066,16 @@ impl NyarBackend {
                             // Finally handler catches everything, runs finalbody, then re-performs
                             // Handler receives: [effect_obj, args_list, continuation]
                             
-                            // Load effect_obj and args_list to re-perform later
+                            // Load effect_obj and args_list to re-raise later
                             finally_handler_code.extend_from_slice(&Instruction::LoadLocal(0).encode());
                             finally_handler_code.extend_from_slice(&Instruction::LoadLocal(1).encode());
                             
                             // Run finalbody
                             finally_handler_code.extend(self.lower_tree(finalbody)?);
                             
-                            // Re-perform
-                            // We need an instruction that can perform with dynamic name and args list
-                            // Nyar VM might need a dynamic perform. For now, let's assume it's python:raise
+                            // Re-raise
+                            // We need an instruction that can raise with dynamic name and args list
+                            // Nyar VM might need a dynamic raise. For now, let's assume it's python:raise
                             let re_perform_idx = self.add_constant(Constant::String("python:raise".to_string()));
                             finally_handler_code.extend_from_slice(&Instruction::Perform(re_perform_idx, 2).encode());
                             finally_handler_code.push(Opcode::Return as u8);
@@ -1105,7 +1105,7 @@ impl NyarBackend {
                         // Match! [exc, cause] are on stack
                         except_handler_code.extend(self.lower_tree(handlers)?);
                         
-                        // If no except matched, re-perform
+                        // If no except matched, re-raise
                         let re_perform_idx = self.add_constant(Constant::String("python:raise".to_string()));
                         except_handler_code.extend_from_slice(&Instruction::Perform(re_perform_idx, 2).encode());
 

@@ -51,7 +51,7 @@
 
 NyarVM 原生支持代数效应（Algebraic Effects），这对 JIT 提出了更高要求。`nyar-jit` 针对这一领域实现了深度优化：
 
--   **效应内联 (Effect Inlining)**: 通过静态分析或内联缓存（IC）识别特定的 Effect Handler。如果 Handler 是确定的，JIT 会将其逻辑直接内联到 `perform` 调用点，消除动态分发开销。
+-   **效应内联 (Effect Inlining)**: 通过静态分析或内联缓存（IC）识别特定的 Effect Handler。如果 Handler 是确定的，JIT 会将其逻辑直接内联到 `raise` 调用点，消除动态分发开销。
 -   **延续对象的标量替换 (Scalar Replacement of Continuations)**: 对于不逃逸当前作用域的协程延续（Continuation），JIT 会将其状态拆散并分配到寄存器中，避免在堆上创建延续对象。
 -   **尾调用优化 (Tail-Call Optimization)**: 许多效应模式（如状态传递）本质上是递归的。`nyar-jit` 确保这些调用被转换为跳转，防止栈溢出并提升性能。
 -   **栈图与精确追踪**: 为了支持多跳延续（Multi-shot Continuations），JIT 生成的机器码包含精确的栈图（Stack Maps），确保 GC 在协程挂起和恢复时能准确识别根集合。
@@ -70,7 +70,7 @@ NyarVM 原生支持代数效应（Algebraic Effects），这对 JIT 提出了更
 针对 NyarVM 的核心特性，JIT 进行了指令级的深度定制：
 
 -   **Await 点内联 (Await Inlining)**: JIT 会尝试分析 `await` 目标的确定性。对于已就绪（Ready）的任务或可预测的异步流，JIT 会直接将异步等待逻辑展开为顺序执行代码，消除协程挂起与恢复的上下文切换开销。
--   **Effect 路径特化**: 当一个 Effect 被频繁 perform 且对应的 Handler 处于固定上下文时，JIT 会将整个 Effect 处理路径实例化为一段紧凑的直接跳转序列，使代数效应的性能接近普通的函数调用。
+-   **Effect 路径特化**: 当一个 Effect 被频繁 raise 且对应的 Handler 处于固定上下文时，JIT 会将整个 Effect 处理路径实例化为一段紧凑的直接跳转序列，使代数效应的性能接近普通的函数调用。
 -   **协程状态机展开**: JIT 会将基于状态机的协程逻辑重新构造为扁平的控制流图，利用 CPU 的分支预测器优化原本复杂的状态跳转。
 
 ## 前瞻性：GC 与 JIT 的深度协同 (GC-JIT Co-optimization)

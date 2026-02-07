@@ -410,7 +410,7 @@ impl Preprocessor {
                 continue;
             }
 
-            // Regular line, perform macro expansion
+            // Regular line, raise macro expansion
             let expanded_line = self.expand_macros_in_line(line);
             output.push_str(&expanded_line);
             output.push('\n');

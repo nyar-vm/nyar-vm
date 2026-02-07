@@ -86,23 +86,23 @@ class PaymentService {
     @around(LogAspect, MetricsAspect)
     micro process_payment(self, order_id: string, amount: Decimal) -> Receipt {
         # 前置通知自動執行
-        perform LogAspect.before_method("PaymentService", "process_payment", [order_id, amount])
-        let timing_ctx = perform MetricsAspect.start_timing("payment_processing")
+        raise LogAspect.before_method("PaymentService", "process_payment", [order_id, amount])
+        let timing_ctx = raise MetricsAspect.start_timing("payment_processing")
         
         try {
             # 核心業務邏輯
             let receipt = self.do_payment(order_id, amount)
             
             # 後置通知
-            perform LogAspect.after_method("PaymentService", "process_payment", receipt)
-            let duration = perform MetricsAspect.end_timing(timing_ctx)
-            perform MetricsAspect.record_metric("payment_duration", duration.as_millis())
+            raise LogAspect.after_method("PaymentService", "process_payment", receipt)
+            let duration = raise MetricsAspect.end_timing(timing_ctx)
+            raise MetricsAspect.record_metric("payment_duration", duration.as_millis())
             
             receipt
         }
         .catch {
             case _:
-                perform LogAspect.on_error("PaymentService", "process_payment", error)
+                raise LogAspect.on_error("PaymentService", "process_payment", error)
                 raise error
         }
     }
@@ -127,14 +127,14 @@ effect AuditAspect {
 class SecurityAuditService {
     @around(LogAspect, AuditAspect)
     micro update_user_profile(self, user_id: string, profile: UserProfile) -> Unit {
-        perform AuditAspect.log_access(user_id, "user_profile", "update")
+        raise AuditAspect.log_access(user_id, "user_profile", "update")
         
         let old_profile = self.get_user_profile(user_id)
         
         # 更新邏輯
         self.save_user_profile(user_id, profile)
         
-        perform AuditAspect.log_data_change("users", user_id, old_profile, profile)
+        raise AuditAspect.log_data_change("users", user_id, old_profile, profile)
     }
 }
 ```
@@ -176,7 +176,7 @@ class AspectComposer {
             execute(context) -> T {
                 # 按順序執行所有切面的前置通知
                 for aspect in aspects {
-                    perform aspect.before(context)
+                    raise aspect.before(context)
                 }
                 
                 try {
@@ -184,7 +184,7 @@ class AspectComposer {
                     
                     # 按逆序執行所有切面的後置通知
                     for aspect in aspects.reverse() {
-                        perform aspect.after(context, result)
+                        raise aspect.after(context, result)
                     }
                     
                     result
@@ -193,7 +193,7 @@ class AspectComposer {
                     case _:
                         # 執行異常通知
                         for aspect in aspects.reverse() {
-                            perform aspect.on_error(context, error)
+                            raise aspect.on_error(context, error)
                         }
                         raise error
                 }
@@ -226,14 +226,14 @@ class DynamicAspectManager {
         
         # 動態應用所有註冊的切面
         for aspect in self.aspects {
-            perform aspect.before(context)
+            raise aspect.before(context)
         }
         
         try {
             let result = operation()
             
             for aspect in self.aspects.reverse() {
-                perform aspect.after(context, result)
+                raise aspect.after(context, result)
             }
             
             result
@@ -241,7 +241,7 @@ class DynamicAspectManager {
         .catch {
             case _:
                 for aspect in self.aspects.reverse() {
-                    perform aspect.on_error(context, error)
+                    raise aspect.on_error(context, error)
                 }
                 raise error
         }
@@ -266,7 +266,7 @@ class AspectChain {
             self.current_index += 1
             
             # 執行當前切面
-            perform aspect.around(context, || { self.proceed(context) })
+            raise aspect.around(context, || { self.proceed(context) })
         }
     }
 }

@@ -101,7 +101,7 @@ class IoCContainer {
             # 使用反射或編譯時資訊建立實例
             let constructor = service_type.get_constructor()
             let dependencies = constructor.get_parameters().map({ 
-                perform DependencyInjection.resolve($param.type)
+                raise DependencyInjection.resolve($param.type)
             })
             constructor.invoke(dependencies)
         }
@@ -123,8 +123,8 @@ class IoCContainer {
     }
     
     private micro auto_wire⟨T⟩(self, service_type: Type⟨T⟩) -> T {
-        let instance = perform ServiceLifecycle.create(service_type)
-        let initialized = perform ServiceLifecycle.initialize(instance)
+        let instance = raise ServiceLifecycle.create(service_type)
+        let initialized = raise ServiceLifecycle.initialize(instance)
         self.services[service_type] = initialized
         initialized
     }
@@ -269,19 +269,19 @@ class ApplicationConfig {
         
         # 註冊服務實現
         container.register_factory(UserRepository, {
-            let connection = perform DependencyInjection.resolve(DatabaseConnection)
+            let connection = raise DependencyInjection.resolve(DatabaseConnection)
             DatabaseUserRepository::new(connection)
         })
         
         container.register_factory(EmailService, {
-            let config = perform DependencyInjection.resolve(EmailConfig)
+            let config = raise DependencyInjection.resolve(EmailConfig)
             SmtpEmailService::new(config)
         })
         
         # 註冊應用服務
         container.register_factory(UserService, {
-            let user_repo = perform DependencyInjection.resolve(UserRepository)
-            let email_service = perform DependencyInjection.resolve(EmailService)
+            let user_repo = raise DependencyInjection.resolve(UserRepository)
+            let email_service = raise DependencyInjection.resolve(EmailService)
             UserService::new(user_repo, email_service)
         })
     }
@@ -299,7 +299,7 @@ class Application {
     
     micro run(self) {
         with self.container {
-            let user_service = perform DependencyInjection.resolve(UserService)
+            let user_service = raise DependencyInjection.resolve(UserService)
             
             # 使用服務
             let user = user_service.create_user("Alice", "alice↯example.com")
@@ -336,7 +336,7 @@ class ScopeManager {
         if let services = self.scoped_services.remove(scope_id) {
             # 清理作用域內的服务
             for (_, service) in services {
-                perform ServiceLifecycle.dispose(service)
+                raise ServiceLifecycle.dispose(service)
             }
         }
         
@@ -465,7 +465,7 @@ class CachedUserRepository {
 # 註冊裝飾器
 container.register_factory(UserRepository, {
     let base_repo = DatabaseUserRepository::new(
-        perform DependencyInjection.resolve(DatabaseConnection)
+        raise DependencyInjection.resolve(DatabaseConnection)
     )
     CachedUserRepository::new(base_repo)
 })
@@ -505,21 +505,21 @@ class WebApplication {
         
         # 倉儲層
         self.container.register_factory(UserRepository, {
-            let conn = perform DependencyInjection.resolve(DatabaseConnection)
+            let conn = raise DependencyInjection.resolve(DatabaseConnection)
             let base_repo = DatabaseUserRepository::new(conn)
             CachedUserRepository::new(base_repo)
         })
         
         # 應用服務層
         self.container.register_scoped(UserService, {
-            let user_repo = perform DependencyInjection.resolve(UserRepository)
-            let email_service = perform DependencyInjection.resolve(EmailService)
+            let user_repo = raise DependencyInjection.resolve(UserRepository)
+            let email_service = raise DependencyInjection.resolve(EmailService)
             UserService::new(user_repo, email_service)
         })
         
         # 控制器層
         self.container.register_scoped(UserController, {
-            let user_service = perform DependencyInjection.resolve(UserService)
+            let user_service = raise DependencyInjection.resolve(UserService)
             UserController::new(user_service)
         })
     }
@@ -531,7 +531,7 @@ class WebApplication {
         
         try {
             with self.container, self.scope_manager {
-                let controller = perform DependencyInjection.resolve(UserController)
+                let controller = raise DependencyInjection.resolve(UserController)
                 controller.handle(request)
             }
         } finally {

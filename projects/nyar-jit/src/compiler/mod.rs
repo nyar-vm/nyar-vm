@@ -1060,7 +1060,7 @@ impl NyarJit {
                     let const_id = intents.len();
                     intents.push(IKun::Constant(idx as i64));
                     let id = intents.len();
-                    intents.push(IKun::Extension("perform".to_string(), {
+                    intents.push(IKun::Extension("raise".to_string(), {
                         let mut v = vec![const_id];
                         v.extend(args);
                         v

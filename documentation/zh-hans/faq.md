@@ -28,8 +28,8 @@ effect State<T> {
 }
 
 micro counter() -> Int {
-    let current = perform State::get()
-    perform State::set(current + 1)
+    let current = raise State::get()
+    raise State::set(current + 1)
     current + 1
 }
 ```
@@ -113,7 +113,7 @@ effect Exception {
 
 micro safe_divide(a: Float, b: Float) -> Float {
     if b == 0.0 {
-        perform Exception.throw("除零错误")
+        raise Exception.throw("除零错误")
     } else {
         a / b
     }

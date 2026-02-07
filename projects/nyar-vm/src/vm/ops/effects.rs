@@ -46,7 +46,7 @@ impl NyarVM {
 
         // 1. Check for dynamic handler
         if let Some(handler) = self.handler_stack.pop() {
-            // Capture continuation. The current instruction is 'perform', 
+            // Capture continuation. The current instruction is 'raise', 
             // so we want the continuation to resume at the NEXT instruction.
             let mut captured_frames = self.frames.clone();
             if let Some(f) = captured_frames.last_mut() {
@@ -140,7 +140,7 @@ impl NyarVM {
         self.stack = cont.stack_slice.clone();
         self.sp = self.stack.len();
 
-        // Push the resumed value as the result of the 'perform' instruction.
+        // Push the resumed value as the result of the 'raise' instruction.
         self.push(val)?;
 
         // Return the instruction pointer where we should resume execution.
@@ -168,7 +168,7 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_match_effect(&mut self, idx: u16, module_idx: usize) -> Result<Option<usize>, NyarError> {
-        // The effect object is on the stack, pushed by the VM during perform dispatch
+        // The effect object is on the stack, pushed by the VM during raise dispatch
         // OR it's in locals[0] of the handler frame if we are using the new logic.
         // Let's check the stack first, as it's more direct for the MatchEffect opcode.
         let val = self.peek_at(0)?;
