@@ -398,14 +398,7 @@ pub unsafe extern "win64" fn nyar_vm_load_global(vm_ptr: *mut NyarVM, name_idx: 
         Some(Constant::QualifiedName(qn)) => qn.clone(),
         _ => return Value::null(),
     };
-    let symbol = if let Some(v) = vm.builtins.get(&name) {
-        Some(Ok(*v))
-    } else if let Some(res) = vm.symbol_table.get(&name) {
-        let (m_idx, c_idx) = *res;
-        Some(Err((m_idx, c_idx)))
-    } else {
-        None
-    };
+    let symbol = vm.builtins.get(&name).map(|v| Ok(*v)).or_else(|| vm.symbol_table.get(&name).map(|res| Err(*res)));
 
     match symbol {
         Some(Ok(val)) => {

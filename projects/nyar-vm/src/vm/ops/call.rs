@@ -122,41 +122,44 @@ impl NyarVM {
 
             self.frames.push(new_frame);
             Ok(Some(0))
-        } else if let Some(val) = self.builtins.get(&name).cloned() {
-            if let Some(closure) = val.try_as_closure() {
-                let m_idx = closure.module_idx;
-                let chunk_idx = closure.func;
-                let instrs = self.get_chunk_instructions(m_idx, chunk_idx)?;
-                let locals_count = self.modules[m_idx].chunks[chunk_idx].locals as usize;
+        } else {
+            let callee = self.builtins.get(&name).map(|v| *v);
+            if let Some(val) = callee {
+                if let Some(closure) = val.try_as_closure() {
+                    let m_idx = closure.module_idx;
+                    let chunk_idx = closure.func;
+                    let instrs = self.get_chunk_instructions(m_idx, chunk_idx)?;
+                    let locals_count = self.modules[m_idx].chunks[chunk_idx].locals as usize;
 
-                let mut args = Vec::with_capacity(argc as usize);
-                for _ in 0..argc {
-                    args.push(self.pop()?);
+                    let mut args = Vec::with_capacity(argc as usize);
+                    for _ in 0..argc {
+                        args.push(self.pop()?);
+                    }
+                    args.reverse();
+
+                    if args.len() < locals_count {
+                        args.resize(locals_count, Value::null());
+                    }
+
+                    let new_frame = Frame {
+                        instrs,
+                        ip: 0,
+                        locals: args,
+                        upvalues: vec![None; locals_count],
+                        closure: val,
+                        module_idx: m_idx,
+                        chunk_idx: Some(chunk_idx),
+                        location: Default::default(),
+                    };
+
+                    self.frames.push(new_frame);
+                    Ok(Some(0))
+                } else {
+                    Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))
                 }
-                args.reverse();
-
-                if args.len() < locals_count {
-                    args.resize(locals_count, Value::null());
-                }
-
-                let new_frame = Frame {
-                    instrs,
-                    ip: 0,
-                    locals: args,
-                    upvalues: vec![None; locals_count],
-                    closure: val,
-                    module_idx: m_idx,
-                    chunk_idx: Some(chunk_idx),
-                    location: Default::default(),
-                };
-
-                self.frames.push(new_frame);
-                Ok(Some(0))
             } else {
                 Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))
             }
-        } else {
-            Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))
         }
     }
 
@@ -198,7 +201,8 @@ impl NyarVM {
             #[cfg(debug_assertions)]
             println!("DEBUG: InvokeMethod searching for {} in symbol_table and builtins", method_name);
 
-            if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&method_name) {
+            let entry = self.symbol_table.get(&method_name).map(|r| *r);
+            if let Some((m_idx, chunk_idx)) = entry {
                 // Found class method, call it with receiver as first argument
                 let mut final_args = Vec::with_capacity(args.len() + 1);
                 final_args.push(receiver);
@@ -224,7 +228,9 @@ impl NyarVM {
 
                 self.frames.push(new_frame);
                 return Ok(Some(0));
-            } else if let Some(&callee) = self.builtins.get(&method_name) {
+            }
+            let builtin_method = self.builtins.get(&method_name).map(|v| *v);
+            if let Some(callee) = builtin_method {
                 // Found method in builtins (e.g. a closure defined in a class body)
                 if callee.is_closure() {
                     let mut final_args = Vec::with_capacity(args.len() + 1);
@@ -260,8 +266,8 @@ impl NyarVM {
             #[cfg(debug_assertions)]
             {
                 println!("DEBUG: Method {} not found. Available builtins:", method_name);
-                for k in self.builtins.keys() {
-                    println!("  - {}", k);
+                for entry in self.builtins.iter() {
+                    println!("  - {}", entry.key());
                 }
             }
 
@@ -452,7 +458,7 @@ impl NyarVM {
             _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
         };
 
-        let symbol = self.symbol_table.get(&name).copied();
+        let symbol = self.symbol_table.get(&name).map(|r| *r);
         if let Some((m_idx, chunk_idx)) = symbol {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
             let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
@@ -628,7 +634,7 @@ impl NyarVM {
             }
         } else {
             // If not found in FFI, maybe it's a builtin?
-            if let Some(_val) = self.builtins.get(&name_qn).cloned() {
+            if let Some(_val) = self.builtins.get(&name_qn).map(|v| *v) {
                 // If it's a closure/function, we should probably call it, 
                 // but FFICall usually implies direct native call.
                 // For now, return error if not a native function.

@@ -94,17 +94,25 @@ impl<'a> VmFuture<'a> {
             
             match self.vm.execute_step() {
                 Ok(Some(())) => {}
-                Ok(None) => return Poll::Ready(Ok(self.vm.pop().unwrap_or(crate::vm::value::Value::null()))),
+                Ok(None) => {
+                    self.vm.gc.flush_thread_local();
+                    return Poll::Ready(Ok(self.vm.pop().unwrap_or(crate::vm::value::Value::null())));
+                }
                 Err(e) if matches!(*e.kind, nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync)) => {
                     // Await on a pending future. The waker has been registered in execute_await.
                     // We don't wake_by_ref here because we wait for the IO/future to wake us.
+                    self.vm.gc.flush_thread_local();
                     return Poll::Pending;
                 }
-                Err(e) => return Poll::Ready(Err(e)),
+                Err(e) => {
+                    self.vm.gc.flush_thread_local();
+                    return Poll::Ready(Err(e));
+                }
             }
         }
 
         // 3. Not finished yet, yield and continue in next poll
+        self.vm.gc.flush_thread_local();
         cx.waker().wake_by_ref();
         Poll::Pending
     }

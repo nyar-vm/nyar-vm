@@ -94,7 +94,7 @@ impl NyarVM {
         };
         let val = if let Some(v) = self.builtins.get(&name) {
             Some(*v)
-        } else if let Some(res) = self.symbol_table.get(&name) {
+        } else if let Some(_res) = self.symbol_table.get(&name) {
             Some(Value::null())
         } else {
             None

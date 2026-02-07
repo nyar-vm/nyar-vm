@@ -79,23 +79,23 @@ impl NyarVM {
     }
 
     pub fn get_chunk_instructions(
-        &mut self,
+        &self,
         module_idx: usize,
         chunk_idx: usize,
     ) -> Result<std::sync::Arc<Vec<Instruction>>, NyarError> {
         if module_idx >= self.modules.len() {
             return Err(self.error(nyar_types::VmErrorKind::ModuleNotFound(module_idx)));
         }
-        let module = &mut self.modules[module_idx];
+        let module = &self.modules[module_idx];
         if chunk_idx >= module.chunks.len() {
             return Err(self.error(nyar_types::VmErrorKind::ChunkNotFound {
                 module: module_idx,
                 chunk: chunk_idx,
             }));
         }
-        let chunk = &mut module.chunks[chunk_idx];
+        let chunk = &module.chunks[chunk_idx];
 
-        if let Some(ref instrs) = chunk.decoded {
+        if let Some(instrs) = chunk.decoded.get() {
             return Ok(instrs.clone());
         }
 
@@ -106,7 +106,7 @@ impl NyarVM {
         }
 
         let instrs = std::sync::Arc::new(instructions);
-        chunk.decoded = Some(instrs.clone());
+        let _ = chunk.decoded.set(instrs.clone());
         Ok(instrs)
     }
 

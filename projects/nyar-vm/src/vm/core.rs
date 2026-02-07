@@ -1,4 +1,4 @@
-use crate::bytecode::format::NyarcModule;
+
 use crate::vm::effects::HandlerFrame;
 use crate::vm::ffi::FFIRegistry;
 use crate::vm::value::{Value, Frame};
@@ -7,7 +7,8 @@ use nyar_gc::{MarkContext, NyarGc, Trace};
 use std::sync::Arc;
 use dashmap::DashMap;
 
-use nyar_types::{QualifiedName, Constant};
+use nyar_types::QualifiedName;
+use crate::bytecode::format::{NyarcModule, Constant};
 
 pub trait JitProvider: Send + Sync {
     fn try_execute(
@@ -26,12 +27,12 @@ pub trait JitProvider: Send + Sync {
 }
 
 pub struct NyarVM {
-    pub gc: NyarGc,
+    pub gc: Arc<NyarGc>,
     pub stack: Vec<Value>,
     pub sp: usize,
     pub frames: Vec<Frame>,
-    pub modules: Vec<NyarcModule>,
-    pub module_names: Vec<String>,
+    pub modules: Arc<Vec<NyarcModule>>,
+    pub module_names: Arc<Vec<String>>,
     pub handler_stack: Vec<HandlerFrame>,
     #[allow(clippy::type_complexity)]
     pub stdout: Option<Box<dyn Fn(&str) + Send + Sync>>,
@@ -62,7 +63,7 @@ impl Trace for NyarVM {
 impl NyarVM {
     pub fn new() -> Self {
         let mut vm = Self {
-            gc: NyarGc::new(),
+            gc: Arc::new(NyarGc::new()),
             stack: Vec::with_capacity(64),
             sp: 0,
             frames: Vec::new(),
@@ -202,7 +203,7 @@ impl NyarVM {
     }
 
     pub fn decay_hotness(&self) {
-        for module in &self.modules {
+        for module in self.modules.iter() {
             for chunk in &module.chunks {
                 let old = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
                 chunk
@@ -264,8 +265,7 @@ impl NyarVM {
     }
 
     pub fn load_module(&mut self, module: NyarcModule, name: String) -> usize {
-        let modules = Arc::make_mut(&mut self.modules);
-        let module_idx = modules.len();
+        let module_idx = self.modules.len();
 
         // Update symbol table with exports from this module
         for export in &module.exports {
@@ -273,7 +273,7 @@ impl NyarVM {
                 .insert(export.symbol.clone(), (module_idx, export.chunk_idx));
         }
 
-        modules.push(module);
+        Arc::make_mut(&mut self.modules).push(module);
         Arc::make_mut(&mut self.module_names).push(name);
         module_idx
     }

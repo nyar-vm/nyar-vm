@@ -212,7 +212,7 @@ impl NyarBackend {
                     code: body_code,
                     handlers: vec![],
                     lines: final_lines,
-                    decoded: None,
+                    decoded: std::sync::OnceLock::new(),
                     hotness: std::sync::atomic::AtomicU32::new(0),
                 });
                 self.locals = prev_locals;
@@ -290,7 +290,7 @@ impl NyarBackend {
                     code: module_code,
                     handlers: vec![],
                     lines: final_lines,
-                    decoded: None,
+                    decoded: Default::default(),
                     hotness: std::sync::atomic::AtomicU32::new(0),
                 });
                 self.locals = prev_locals;
@@ -326,16 +326,16 @@ impl NyarBackend {
                     }
                     let chunk_idx = chunk_idx as u16;
                     let num_locals = self.locals.len() as u16;
-                    self.module.chunks.push(Chunk {
-                        locals: num_locals.max(32),
-                        upvalues: 0,
-                        max_stack: 64,
-                        code: body_code,
-                        handlers: vec![],
-                        lines: final_lines,
-                        decoded: None,
-                        hotness: std::sync::atomic::AtomicU32::new(0),
-                    });
+                self.module.chunks.push(Chunk {
+                    locals: num_locals.max(32),
+                    upvalues: 0,
+                    max_stack: 64,
+                    code: body_code,
+                    handlers: vec![],
+                    lines: final_lines,
+                    decoded: std::sync::OnceLock::new(),
+                    hotness: std::sync::atomic::AtomicU32::new(0),
+                });
                     self.module.exports.push(ExportInfo {
                         symbol: QualifiedName::from(final_name.as_str()),
                         chunk_idx,
@@ -528,7 +528,7 @@ impl NyarBackend {
                                                     code: body_code,
                                                     handlers: vec![],
                                                     lines: final_lines,
-                                                    decoded: None,
+                                                    decoded: std::sync::OnceLock::new(),
                                                     hotness: std::sync::atomic::AtomicU32::new(0),
                                                 });
                                                 self.module.exports.push(ExportInfo {
@@ -582,7 +582,7 @@ impl NyarBackend {
                                                         code: body_code,
                                                         handlers: vec![],
                                                         lines: final_lines,
-                                                        decoded: None,
+                                                        decoded: std::sync::OnceLock::new(),
                                                         hotness: std::sync::atomic::AtomicU32::new(0),
                                                     });
                                                     self.module.exports.push(ExportInfo {
@@ -640,7 +640,7 @@ impl NyarBackend {
                                                         code: body_code,
                                                         handlers: vec![],
                                                         lines: final_lines,
-                                                        decoded: None,
+                                                        decoded: std::sync::OnceLock::new(),
                                                         hotness: std::sync::atomic::AtomicU32::new(0),
                                                     });
                                                     self.module.exports.push(ExportInfo {
@@ -867,7 +867,7 @@ impl NyarBackend {
                                     code: body_code,
                                     handlers: vec![],
                                     lines: final_lines,
-                                    decoded: None,
+                                    decoded: std::sync::OnceLock::new(),
                                     hotness: std::sync::atomic::AtomicU32::new(0),
                                 });
                                 self.module.exports.push(ExportInfo {
@@ -916,7 +916,7 @@ impl NyarBackend {
                                 code: body_code,
                                 handlers: vec![],
                                 lines: final_lines,
-                                decoded: None,
+                                decoded: std::sync::OnceLock::new(),
                                 hotness: std::sync::atomic::AtomicU32::new(0),
                             });
                             self.emit(Instruction::MakeClosure(chunk_idx, vec![]), &mut code);
@@ -1116,7 +1116,7 @@ impl NyarBackend {
                                 code: finally_handler_code,
                                 handlers: vec![],
                                 lines: final_lines,
-                                decoded: None,
+                                decoded: std::sync::OnceLock::new(),
                                 hotness: std::sync::atomic::AtomicU32::new(0),
                             });
                             self.emit(Instruction::WithHandler(finally_chunk_idx), &mut code);
@@ -1153,7 +1153,7 @@ impl NyarBackend {
                             code: except_handler_code,
                             handlers: vec![],
                             lines: final_lines,
-                            decoded: None,
+                            decoded: std::sync::OnceLock::new(),
                             hotness: std::sync::atomic::AtomicU32::new(0),
                         });
 
@@ -1410,7 +1410,7 @@ impl NyarBackend {
                 code: vec![Opcode::Return as u8],
                 handlers: vec![],
                 lines: vec![],
-                decoded: None,
+                decoded: std::sync::OnceLock::new(),
                 hotness: std::sync::atomic::AtomicU32::new(0),
             });
         }
@@ -1425,7 +1425,7 @@ impl NyarBackend {
             code,
             handlers: vec![],
             lines: vec![],
-            decoded: None,
+            decoded: std::sync::OnceLock::new(),
             hotness: std::sync::atomic::AtomicU32::new(0),
         });
         self.module

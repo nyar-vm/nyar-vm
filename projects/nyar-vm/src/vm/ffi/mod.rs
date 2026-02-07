@@ -1,11 +1,12 @@
 pub mod io;
 pub mod fs;
 pub mod http;
+pub mod async_ffi;
 
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use nyar_types::NyarError;
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::sync::Arc;
 
 pub type FFIResult = Result<Value, NyarError>;
@@ -38,9 +39,9 @@ pub trait FFIFunction: Send + Sync {
 
 #[derive(Clone)]
 pub struct FFIRegistry {
-    pub functions: HashMap<String, Arc<dyn FFIFunction>>,
-    pub intrinsics: HashMap<u32, Arc<dyn FFIFunction>>,
-    pub loaders: HashMap<String, Arc<dyn ModuleLoader>>,
+    pub functions: Arc<DashMap<String, Arc<dyn FFIFunction>>>,
+    pub intrinsics: Arc<DashMap<u32, Arc<dyn FFIFunction>>>,
+    pub loaders: Arc<DashMap<String, Arc<dyn ModuleLoader>>>,
 }
 
 pub trait ModuleLoader: Send + Sync {
@@ -56,9 +57,9 @@ impl Default for FFIRegistry {
 impl FFIRegistry {
     pub fn new() -> Self {
         Self {
-            functions: HashMap::new(),
-            intrinsics: HashMap::new(),
-            loaders: HashMap::new(),
+            functions: Arc::new(DashMap::new()),
+            intrinsics: Arc::new(DashMap::new()),
+            loaders: Arc::new(DashMap::new()),
         }
     }
 
@@ -87,11 +88,11 @@ impl FFIRegistry {
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn FFIFunction>> {
-        self.functions.get(name).cloned()
+        self.functions.get(name).map(|r| r.value().clone())
     }
 
     pub fn get_intrinsic(&self, id: u32) -> Option<Arc<dyn FFIFunction>> {
-        self.intrinsics.get(&id).cloned()
+        self.intrinsics.get(&id).map(|r| r.value().clone())
     }
 
     pub fn register_std(&mut self) {
@@ -107,6 +108,9 @@ impl FFIRegistry {
         self.register("std.http.get".to_string(), Arc::new(http::StdHttpGet));
         self.register("std.http.post".to_string(), Arc::new(http::StdHttpPost));
         self.register("std.http.set_proxy".to_string(), Arc::new(http::StdHttpSetProxy));
+
+        self.register("std.async.delay".to_string(), Arc::new(async_ffi::AsyncDelay));
+        self.register("std.async.spawn".to_string(), Arc::new(async_ffi::AsyncSpawn));
     }
 }
 

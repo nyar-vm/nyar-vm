@@ -47,6 +47,24 @@ pub fn perform_effect_internal(
                     if val.is_closure() {
                         let res = vm.call_closure_sync(*val, vec![])?;
                         return Ok(Some(res));
+                    } else if val.is_future() {
+                        let future = val.try_as_future().unwrap();
+                        match future.status {
+                            crate::vm::value::FutureStatus::Ready => {
+                                return Ok(Some(future.result));
+                            }
+                            crate::vm::value::FutureStatus::Failed => {
+                                return Err(vm.error(nyar_types::VmErrorKind::RuntimeError("Future failed".to_string())));
+                            }
+                            crate::vm::value::FutureStatus::Pending => {
+                                // Register waker and yield
+                                unsafe {
+                                    let future_mut = val.as_future_mut();
+                                    future_mut.waker = vm.current_waker.clone();
+                                }
+                                return Err(vm.error(nyar_types::VmErrorKind::YieldAsync));
+                            }
+                        }
                     }
                 }
                 return Ok(None);
@@ -75,6 +93,18 @@ pub fn perform_effect_internal(
             }
             "Fetch" => {
                 if let Some(func) = vm.ffi.get("std.http.get") {
+                    let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+                    return Ok(Some(res));
+                }
+            }
+            "delay" => {
+                if let Some(func) = vm.ffi.get("std.async.delay") {
+                    let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+                    return Ok(Some(res));
+                }
+            }
+            "spawn" => {
+                if let Some(func) = vm.ffi.get("std.async.spawn") {
                     let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
                     return Ok(Some(res));
                 }

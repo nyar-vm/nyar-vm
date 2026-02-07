@@ -508,9 +508,9 @@ impl NyarVM {
         let mut full_method_name = class_info.name.clone();
         full_method_name.parts.push("initiate".to_string());
 
-        let entry = self.symbol_table.get(&full_method_name);
+        let entry = self.symbol_table.get(&full_method_name).map(|r| *r);
 
-        if let Some(&(m_idx, chunk_idx)) = entry {
+        if let Some((m_idx, chunk_idx)) = entry {
             let mut final_args = Vec::with_capacity(args.len() + 1);
             final_args.push(receiver);
             final_args.extend(args);
@@ -560,8 +560,8 @@ impl NyarVM {
         let mut full_method_name = class_info.name.clone();
         full_method_name.parts.push("finalize".to_string());
 
-        if let Some(res) = self.symbol_table.get(&full_method_name) {
-            let (m_idx, chunk_idx) = *res;
+        let entry = self.symbol_table.get(&full_method_name).map(|r| *r);
+        if let Some((m_idx, chunk_idx)) = entry {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
             let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 

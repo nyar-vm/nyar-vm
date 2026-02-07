@@ -26,13 +26,17 @@ pub struct Chunk {
     #[serde(default)]
     pub lines: Vec<(u32, u32)>, // offset, line
     #[serde(skip)]
-    pub decoded: Option<std::sync::Arc<Vec<crate::bytecode::instruction::Instruction>>>,
+    pub decoded: std::sync::OnceLock<std::sync::Arc<Vec<crate::bytecode::instruction::Instruction>>>,
     #[serde(skip)]
     pub hotness: std::sync::atomic::AtomicU32,
 }
 
 impl Clone for Chunk {
     fn clone(&self) -> Self {
+        let decoded = std::sync::OnceLock::new();
+        if let Some(d) = self.decoded.get() {
+            let _ = decoded.set(d.clone());
+        }
         Self {
             locals: self.locals,
             upvalues: self.upvalues,
@@ -40,7 +44,7 @@ impl Clone for Chunk {
             code: self.code.clone(),
             handlers: self.handlers.clone(),
             lines: self.lines.clone(),
-            decoded: self.decoded.clone(),
+            decoded,
             hotness: std::sync::atomic::AtomicU32::new(
                 self.hotness.load(std::sync::atomic::Ordering::Relaxed),
             ),
@@ -56,7 +60,7 @@ impl PartialEq for Chunk {
             && self.code == other.code
             && self.handlers == other.handlers
             && self.lines == other.lines
-            && self.decoded == other.decoded
+            && self.decoded.get() == other.decoded.get()
             && self.hotness.load(std::sync::atomic::Ordering::Relaxed)
                 == other.hotness.load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -196,7 +200,7 @@ impl Default for Chunk {
             code: vec![],
             handlers: vec![],
             lines: vec![],
-            decoded: None,
+            decoded: std::sync::OnceLock::new(),
             hotness: std::sync::atomic::AtomicU32::new(0),
         }
     }
@@ -320,7 +324,7 @@ impl NyarcModule {
                 code,
                 handlers: vec![],
                 lines,
-                decoded: None,
+                decoded: std::sync::OnceLock::new(),
                 hotness: std::sync::atomic::AtomicU32::new(0),
             });
         }

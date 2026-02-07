@@ -2,17 +2,12 @@ use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
 use nyar_types::NyarError;
-use std::ptr::NonNull;
 use std::sync::{Arc, RwLock, OnceLock};
 use reqwest::{Client, Proxy};
 use tokio::runtime::Runtime;
 
-struct SendFuturePtr(NonNull<Future>);
-unsafe impl Send for SendFuturePtr {}
-
 static HTTP_CLIENT: OnceLock<Arc<RwLock<Client>>> = OnceLock::new();
 static PROXY_URL: OnceLock<Arc<RwLock<Option<String>>>> = OnceLock::new();
-static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 fn get_client() -> Arc<RwLock<Client>> {
     HTTP_CLIENT.get_or_init(|| Arc::new(RwLock::new(Client::new()))).clone()
@@ -20,15 +15,6 @@ fn get_client() -> Arc<RwLock<Client>> {
 
 fn get_proxy_url() -> Arc<RwLock<Option<String>>> {
     PROXY_URL.get_or_init(|| Arc::new(RwLock::new(None))).clone()
-}
-
-fn get_runtime() -> &'static Runtime {
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create tokio runtime")
-    })
 }
 
 pub struct StdHttpGet;
@@ -44,24 +30,21 @@ impl FFIFunction for StdHttpGet {
         let url_str = url_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Url must be a string".to_string()))?.to_string();
 
         let future_val = Value::future(&vm.gc);
-        let future_ptr = unsafe { future_val.as_future_mut() as *mut Future };
-        let future_send_ptr = SendFuturePtr(unsafe { NonNull::new_unchecked(future_ptr) });
+        let future_ptr_usize = unsafe { future_val.as_future_mut() as *mut Future as usize };
 
         let client = get_client().read().unwrap().clone();
-        let rt = get_runtime();
-        let gc_ptr = &vm.gc as *const nyar_gc::NyarGc as usize;
+        let gc = vm.gc.clone();
 
-        rt.spawn(async move {
+        tokio::spawn(async move {
             let res = client.get(&url_str).send().await;
-            let future_ptr = future_send_ptr.0.as_ptr();
             match res {
                 Ok(resp) => {
                     let text_res = resp.text().await;
+                    let future_ptr = future_ptr_usize as *mut Future;
                     match text_res {
                         Ok(t) => {
                             unsafe {
-                                let gc = &*(gc_ptr as *const nyar_gc::NyarGc);
-                                (*future_ptr).result = Value::string(t, gc);
+                                (*future_ptr).result = Value::string(t, &gc);
                                 (*future_ptr).status = FutureStatus::Ready;
                                 if let Some(waker) = (*future_ptr).waker.take() {
                                     waker.wake();
@@ -79,6 +62,7 @@ impl FFIFunction for StdHttpGet {
                     }
                 }
                 Err(_) => {
+                    let future_ptr = future_ptr_usize as *mut Future;
                     unsafe {
                         (*future_ptr).status = FutureStatus::Failed;
                         if let Some(waker) = (*future_ptr).waker.take() {
@@ -103,18 +87,55 @@ impl FFIFunction for StdHttpPost {
     }
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let url_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing url argument".to_string()))?;
-        let url_str = url_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Url must be a string".to_string()))?;
+        let url_str = url_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Url must be a string".to_string()))?.to_string();
         let body_val = args.get(1).ok_or_else(|| NyarError::RuntimeError("Missing body argument".to_string()))?;
-        let body_str = body_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Body must be a string".to_string()))?;
+        let body_str = body_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Body must be a string".to_string()))?.to_string();
+
+        let future_val = Value::future(&vm.gc);
+        let future_ptr_usize = unsafe { future_val.as_future_mut() as *mut Future as usize };
 
         let client = get_client().read().unwrap().clone();
-        let rt = get_runtime();
-        
-        let response = rt.block_on(async {
-            client.post(url_str).body(body_str.to_string()).send().await?.text().await
-        }).map_err(|e| NyarError::RuntimeError(e.to_string()))?;
+        let gc = vm.gc.clone();
 
-        Ok(Value::string(response, &vm.gc))
+        tokio::spawn(async move {
+            let res = client.post(&url_str).body(body_str).send().await;
+            match res {
+                Ok(resp) => {
+                    let text_res = resp.text().await;
+                    let future_ptr = future_ptr_usize as *mut Future;
+                    match text_res {
+                        Ok(t) => {
+                            unsafe {
+                                (*future_ptr).result = Value::string(t, &gc);
+                                (*future_ptr).status = FutureStatus::Ready;
+                                if let Some(waker) = (*future_ptr).waker.take() {
+                                    waker.wake();
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            unsafe {
+                                (*future_ptr).status = FutureStatus::Failed;
+                                if let Some(waker) = (*future_ptr).waker.take() {
+                                    waker.wake();
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    let future_ptr = future_ptr_usize as *mut Future;
+                    unsafe {
+                        (*future_ptr).status = FutureStatus::Failed;
+                        if let Some(waker) = (*future_ptr).waker.take() {
+                            waker.wake();
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(future_val)
     }
 }
 
