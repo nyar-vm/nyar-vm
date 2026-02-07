@@ -73,9 +73,25 @@ pub fn perform_effect_internal(
                 };
                 return Ok(Some(res));
             }
+            "Fetch" => {
+                if let Some(func) = vm.ffi.get("std.http.get") {
+                    let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+                    return Ok(Some(res));
+                }
+            }
             _ => {}
         }
     }
+    
+    // Check for std.io, std.fs and std.http effects
+    let effect_name = effect.name.to_string();
+    if effect_name.starts_with("std.io.") || effect_name.starts_with("std.fs.") || effect_name.starts_with("std.http.") || effect_name.starts_with("std.html.") {
+        if let Some(func) = vm.ffi.get(&effect_name) {
+            let res = func.call(vm, args).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+            return Ok(Some(res));
+        }
+    }
+
     // Handle Token variants using QualifiedName
     if effect.name.parts.len() >= 2 && effect.name.parts[effect.name.parts.len() - 2] == "Token" {
         let variant_name = effect.name.parts.last().map(|s| s.as_str()).unwrap_or("");

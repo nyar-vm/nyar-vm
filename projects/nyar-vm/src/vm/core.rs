@@ -41,6 +41,7 @@ pub struct NyarVM {
     pub jit: Option<std::sync::Arc<dyn JitProvider>>,
     pub local_hotness: u8,
     pub last_gc_count: u64,
+    pub current_waker: Option<std::task::Waker>,
 }
 
 impl Trace for NyarVM {
@@ -74,7 +75,9 @@ impl NyarVM {
             jit: None,
             local_hotness: 0,
             last_gc_count: 0,
+            current_waker: None,
         };
+        vm.ffi.register_std();
         vm.register_builtins();
         vm
     }

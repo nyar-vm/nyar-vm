@@ -5,11 +5,17 @@ use chomsky_uir::IKun;
 use gaia_types::helpers::Architecture;
 use nyar_types::VmError;
 
-pub struct NyarAot<A: chomsky_uir::egraph::Analysis<IKun> + 'static = ()> {
+pub struct NyarAot<A: chomsky_uir::egraph::Analysis<IKun> + 'static = ()>
+where
+    A::Data: chomsky_uir::egraph::HasDebugInfo,
+{
     pub optimizer: UniversalOptimizer<A>,
 }
 
-impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static> NyarAot<A> {
+impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static> NyarAot<A>
+where
+    A::Data: chomsky_uir::egraph::HasDebugInfo,
+{
     pub fn new() -> Self
     where
         A: Default,
@@ -62,7 +68,10 @@ impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static> NyarAot<A> {
     }
 }
 
-impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static + Default> Default for NyarAot<A> {
+impl<A: chomsky_uir::egraph::Analysis<IKun> + 'static + Default> Default for NyarAot<A>
+where
+    A::Data: chomsky_uir::egraph::HasDebugInfo,
+{
     fn default() -> Self {
         Self::new()
     }

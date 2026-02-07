@@ -24,6 +24,9 @@ rand = "0.8"
 thiserror = "1.0"
 indexmap = "2.2"
 pe-assembler = { workspace = true }
+ reqwest = { workspace = true }
+nipper = { workspace = true }
+scraper = { workspace = true }
 gaia-assembler = { workspace = true }
 gaia-types = { workspace = true }
 x86_64-assembler = { workspace = true }
@@ -31,7 +34,7 @@ clap = { workspace = true, optional = true }
 tokio = { version = "1.0", features = ["full"], optional = true }
 
 [features]
-default = ["clap"]
+default = ["clap", "tokio"]
 clap = ["dep:clap"]
 tokio = ["dep:tokio", "nyar-gc/tokio"]
 native = []

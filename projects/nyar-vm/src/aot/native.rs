@@ -163,6 +163,9 @@ impl NativeBackend {
             IKunTree::Export(_, body) => {
                 self.collect_locals(body, locals);
             }
+            IKunTree::Source(_, body) => {
+                self.collect_locals(body, locals);
+            }
             _ => {}
         }
     }
@@ -200,11 +203,14 @@ impl NativeBackend {
                 if let Some(&offset) = context.locals.get(name) {
                     builder.add_instruction(Instruction::Mov {
                         dst: Operand::reg(Register::RAX),
-                        src: Operand::mem(Some(Register::RSP), None, 1, offset),
+                        src: Operand::mem(Some(Register::RSP), None, 0, offset),
                     });
                 } else {
                     eprintln!("Warning: Unresolved symbol {}", name);
                 }
+            }
+            IKunTree::Source(_, body) => {
+                self.emit_tree(body, builder, data, context)?;
             }
             IKunTree::StateUpdate(target, value) => {
                 self.emit_tree(value, builder, data, context)?;

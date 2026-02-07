@@ -201,7 +201,8 @@ impl NyarVM {
     #[inline(always)]
     pub fn execute_await(&mut self) -> Result<Option<usize>, NyarError> {
         let val = self.pop()?;
-        if let Some(future) = val.try_as_future() {
+        if val.is_future() {
+            let future = unsafe { val.as_future_mut() };
             match future.status {
                 crate::vm::value::FutureStatus::Ready => {
                     self.push(future.result)?;
@@ -211,6 +212,10 @@ impl NyarVM {
                     Err(self.error(nyar_types::VmErrorKind::FutureFailed))
                 }
                 crate::vm::value::FutureStatus::Pending => {
+                    // Register current waker to the future
+                    if let Some(waker) = &self.current_waker {
+                        future.waker = Some(waker.clone());
+                    }
                     // Push the future back and yield
                     self.push(val)?;
                     Err(self.error(nyar_types::VmErrorKind::YieldAsync))

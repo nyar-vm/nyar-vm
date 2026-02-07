@@ -10,6 +10,9 @@ pub struct NyarBackend {
     locals: Vec<String>,
     classes: std::collections::HashMap<String, Vec<String>>,
     current_class: Option<String>,
+    current_location: SourceLocation,
+    current_lines: Vec<(u32, u32)>,
+    lines_stack: Vec<Vec<(u32, u32)>>,
 }
 
 impl NyarBackend {
@@ -19,6 +22,9 @@ impl NyarBackend {
             locals: Vec::new(),
             classes: std::collections::HashMap::new(),
             current_class: None,
+            current_location: SourceLocation::default(),
+            current_lines: Vec::new(),
+            lines_stack: Vec::new(),
         }
     }
 
@@ -46,6 +52,15 @@ impl NyarBackend {
         let idx = self.module.constants.len() as u16;
         self.module.constants.push(constant);
         idx
+    }
+
+    fn emit(&mut self, instr: Instruction, code: &mut Vec<u8>) {
+        let offset = code.len() as u32;
+        let line = self.current_location.offset;
+        if self.current_lines.is_empty() || self.current_lines.last().unwrap().1 != line {
+            self.current_lines.push((offset, line));
+        }
+        code.extend_from_slice(&instr.encode());
     }
 
     fn add_class(&mut self, name: String, fields: Vec<String>) {
@@ -115,10 +130,20 @@ impl NyarBackend {
         println!("DEBUG: lower_tree: {:?}", tree);
         let mut code = Vec::new();
         match tree {
+            IKunTree::Source(loc, body) => {
+                let prev_loc = self.current_location;
+                self.current_location = SourceLocation {
+                    source_id: loc.source_id as u32,
+                    offset: loc.span.start as u32,
+                };
+                let res = self.lower_tree(body)?;
+                self.current_location = prev_loc;
+                return Ok(res);
+            }
             IKunTree::Symbol(name) => {
                 if let Some(idx) = self.find_local(name) {
                     println!("DEBUG: LoadLocal {} at index {}", name, idx);
-                    code.extend_from_slice(&Instruction::LoadLocal(idx).encode());
+                    self.emit(Instruction::LoadLocal(idx), &mut code);
                 } else {
                     let final_name = if let Some(class_name) = &self.current_class {
                         format!("{}::{}", class_name, name)
@@ -127,17 +152,17 @@ impl NyarBackend {
                     };
                     let idx = self.add_constant(Constant::String(final_name.clone()));
                     println!("DEBUG: LoadGlobal {} constant index {}", final_name, idx);
-                    code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
+                    self.emit(Instruction::LoadGlobal(idx), &mut code);
                 }
             }
             IKunTree::Apply(callee, args) => {
                 if let IKunTree::Symbol(name) = &**callee {
                     if let Some(class_idx) = self.find_class_index(name) {
-                        code.extend_from_slice(&Instruction::NewObject(class_idx).encode());
+                        self.emit(Instruction::NewObject(class_idx), &mut code);
                         for arg in args {
                             code.extend(self.lower_tree(arg)?);
                         }
-                        code.extend_from_slice(&Instruction::Initiate(args.len() as u8).encode());
+                        self.emit(Instruction::Initiate(args.len() as u8), &mut code);
                         return Ok(code);
                     }
                 }
@@ -151,23 +176,25 @@ impl NyarBackend {
                         name.clone()
                     };
                     let idx = self.add_constant(Constant::String(final_name));
-                    code.extend_from_slice(&Instruction::CallSymbol(idx, args.len() as u8).encode());
+                    self.emit(Instruction::CallSymbol(idx, args.len() as u8), &mut code);
                 } else {
                     code.extend(self.lower_tree(callee)?);
-                    code.extend_from_slice(&Instruction::CallClosure(args.len() as u8).encode());
+                    self.emit(Instruction::CallClosure(args.len() as u8), &mut code);
                 }
             }
             IKunTree::Lambda(params, body) => {
                 let prev_locals = self.locals.clone();
+                let prev_lines = std::mem::take(&mut self.current_lines);
                 self.locals.clear();
                 for param in params {
                     self.add_local(param.clone());
                 }
-                let body_code = self.lower_tree(body)?;
-                let mut final_code = body_code;
-                if final_code.last() != Some(&(Opcode::Return as u8)) {
-                    final_code.push(Opcode::Return as u8);
+                let mut body_code = self.lower_tree(body)?;
+                if body_code.last() != Some(&(Opcode::Return as u8)) {
+                    self.emit(Instruction::Return, &mut body_code);
                 }
+                let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
+
                 let chunk_idx = self.module.chunks.len();
                 if chunk_idx >= u16::MAX as usize {
                     return Err(NyarError::new(
@@ -182,21 +209,21 @@ impl NyarBackend {
                     locals: num_locals.max(32),
                     upvalues: 0,
                     max_stack: 64,
-                    code: final_code,
+                    code: body_code,
                     handlers: vec![],
-                    lines: vec![],
+                    lines: final_lines,
                     decoded: None,
                     hotness: std::sync::atomic::AtomicU32::new(0),
                 });
                 self.locals = prev_locals;
-                code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
+                self.emit(Instruction::MakeClosure(chunk_idx, vec![]), &mut code);
             }
             IKunTree::StateUpdate(target, value) => {
                 if let IKunTree::Symbol(name) = &**target {
                     println!("DEBUG: Compiling StateUpdate for {}, current_class: {:?}", name, self.current_class);
                     code.extend(self.lower_tree(value)?);
                     // StateUpdate 应该返回被赋的值
-                    code.extend_from_slice(&Instruction::Dup(0).encode());
+                    self.emit(Instruction::Dup(0), &mut code);
 
                     let final_name = if let Some(class_name) = &self.current_class {
                         let res = format!("{}::{}", class_name, name);
@@ -207,43 +234,44 @@ impl NyarBackend {
                     };
 
                     if let Some(idx) = self.find_local(name) {
-                        code.extend_from_slice(&Instruction::StoreLocal(idx).encode());
+                        self.emit(Instruction::StoreLocal(idx), &mut code);
                     } else {
                         let idx = self.add_constant(Constant::String(final_name));
-                        code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                        self.emit(Instruction::StoreGlobal(idx), &mut code);
                     }
                 }
             }
             IKunTree::Seq(items) => {
                 if items.is_empty() {
-                    code.extend_from_slice(&Instruction::I64Const(0).encode());
+                    self.emit(Instruction::I64Const(0), &mut code);
                 } else {
                     for (i, item) in items.iter().enumerate() {
                         code.extend(self.lower_tree(item)?);
                         // 如果不是最后一个元素，且该元素产生了值（在栈上留下了东西），我们需要将其弹出
                         // 但在目前的极简实现中，我们假设每个表达式都留下一个值
                         if i < items.len() - 1 {
-                            code.push(Opcode::Pop as u8);
+                            self.emit(Instruction::Pop, &mut code);
                         }
                     }
                 }
             }
             IKunTree::Constant(v) => {
-                code.extend_from_slice(&Instruction::I64Const(*v).encode());
+                self.emit(Instruction::I64Const(*v), &mut code);
             }
             IKunTree::FloatConstant(v) => {
-                code.extend_from_slice(&Instruction::F64Const(f64::from_bits(*v)).encode());
+                self.emit(Instruction::F64Const(f64::from_bits(*v)), &mut code);
             }
             IKunTree::BooleanConstant(v) => {
                 let idx = self.add_constant(Constant::Int(if *v { 1 } else { 0 }));
-                code.extend_from_slice(&Instruction::Push(idx).encode());
+                self.emit(Instruction::Push(idx), &mut code);
             }
             IKunTree::StringConstant(v) => {
-                code.extend_from_slice(&Instruction::StringConst(v.clone()).encode());
+                self.emit(Instruction::StringConst(v.clone()), &mut code);
             }
             IKunTree::Module(name, items) => {
                 println!("DEBUG: Lowering Module {}: {:#?}", name, items);
                 let prev_locals = self.locals.clone();
+                let prev_lines = std::mem::take(&mut self.current_lines);
                 self.locals.clear();
                 let mut module_code = Vec::new();
                 for item in items {
@@ -251,8 +279,9 @@ impl NyarBackend {
                 }
                 println!("DEBUG: Module code generated: {:02X?}", module_code);
                 if module_code.last() != Some(&(Opcode::Return as u8)) {
-                    module_code.push(Opcode::Return as u8);
+                    self.emit(Instruction::Return, &mut module_code);
                 }
+                let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
                 let num_locals = self.locals.len() as u16;
                 self.module.chunks.push(Chunk {
                     locals: num_locals.max(32),
@@ -260,7 +289,7 @@ impl NyarBackend {
                     max_stack: 64,
                     code: module_code,
                     handlers: vec![],
-                    lines: vec![],
+                    lines: final_lines,
                     decoded: None,
                     hotness: std::sync::atomic::AtomicU32::new(0),
                 });
@@ -275,16 +304,17 @@ impl NyarBackend {
 
                 if let IKunTree::Lambda(params, body) = &**body {
                     let prev_locals = self.locals.clone();
+                    let prev_lines = std::mem::take(&mut self.current_lines);
                     self.locals.clear();
                     for param in params {
                         self.add_local(param.clone());
                     }
-                    let body_code = self.lower_tree(body)?;
-                    let mut final_code = body_code;
+                    let mut body_code = self.lower_tree(body)?;
                     // Ensure Return at the end
-                    if final_code.last() != Some(&(Opcode::Return as u8)) {
-                        final_code.push(Opcode::Return as u8);
+                    if body_code.last() != Some(&(Opcode::Return as u8)) {
+                        self.emit(Instruction::Return, &mut body_code);
                     }
+                    let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
 
                     let chunk_idx = self.module.chunks.len();
                     if chunk_idx >= u16::MAX as usize {
@@ -300,9 +330,9 @@ impl NyarBackend {
                         locals: num_locals.max(32),
                         upvalues: 0,
                         max_stack: 64,
-                        code: final_code,
+                        code: body_code,
                         handlers: vec![],
-                        lines: vec![],
+                        lines: final_lines,
                         decoded: None,
                         hotness: std::sync::atomic::AtomicU32::new(0),
                     });
@@ -318,7 +348,7 @@ impl NyarBackend {
                     code.extend(code_tail);
                 } else {
                     code.extend(self.lower_tree(val)?);
-                    code.push(Opcode::Return as u8);
+                    self.emit(Instruction::Return, &mut code);
                 }
             }
             IKunTree::Choice(cond, then_branch, else_branch) => {
@@ -327,7 +357,7 @@ impl NyarBackend {
                 
                 // 2. Placeholder for JumpIfFalse to else_branch
                 let jump_false_placeholder = code.len();
-                code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                self.emit(Instruction::JumpIfFalse(0), &mut code);
                 
                 // 3. Evaluate then_branch
                 let then_code = self.lower_tree(then_branch)?;
@@ -335,7 +365,7 @@ impl NyarBackend {
                 
                 // 4. Placeholder for Jump to end
                 let jump_end_placeholder = code.len();
-                code.extend_from_slice(&Instruction::Jump(0).encode());
+                self.emit(Instruction::Jump(0), &mut code);
                 
                 // 5. Fill JumpIfFalse target
                 let else_start = code.len();
@@ -407,9 +437,7 @@ impl NyarBackend {
                 };
                 let name_idx = self.add_constant(Constant::String(name.clone()));
                 println!("DEBUG: Added FFICall constant: {} at index {}", name, name_idx);
-                code.extend_from_slice(
-                    &Instruction::FFICall(name_idx, args.len() as u8).encode(),
-                );
+                self.emit(Instruction::FFICall(name_idx, args.len() as u8), &mut code);
             }
             IKunTree::Extension(name, args) => {
                 println!("Backend: Extension {}, args len {}", name, args.len());
@@ -421,12 +449,12 @@ impl NyarBackend {
                             if let Some(init) = args.get(2) {
                                 code.extend(self.lower_tree(init)?);
                             } else {
-                                code.extend_from_slice(&Instruction::I64Const(0).encode());
+                                self.emit(Instruction::I64Const(0), &mut code);
                             }
                             // local_variable 应该返回被赋的值
-                            code.extend_from_slice(&Instruction::Dup(0).encode());
+                            self.emit(Instruction::Dup(0), &mut code);
                             let local_idx = self.add_local(name.clone());
-                            code.extend_from_slice(&Instruction::StoreLocal(local_idx).encode());
+                            self.emit(Instruction::StoreLocal(local_idx), &mut code);
                         }
                     }
                     "class_def" => {
@@ -482,23 +510,24 @@ impl NyarBackend {
                                             println!("DEBUG: Exporting class method: {}", final_name);
                                             if let IKunTree::Lambda(params, body) = &**lambda {
                                                 let prev_locals = self.locals.clone();
+                                                let prev_lines = std::mem::take(&mut self.current_lines);
                                                 self.locals.clear();
                                                 for param in params {
                                                     self.add_local(param.clone());
                                                 }
-                                                let body_code = self.lower_tree(body)?;
-                                                let mut final_code = body_code;
-                                                if final_code.last() != Some(&(Opcode::Return as u8)) {
-                                                    final_code.push(Opcode::Return as u8);
+                                                let mut body_code = self.lower_tree(body)?;
+                                                if body_code.last() != Some(&(Opcode::Return as u8)) {
+                                                    self.emit(Instruction::Return, &mut body_code);
                                                 }
+                                                let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
                                                 let chunk_idx = self.module.chunks.len() as u16;
                                                 self.module.chunks.push(Chunk {
                                                     locals: (self.locals.len() as u16).max(32),
                                                     upvalues: 0,
                                                     max_stack: 64,
-                                                    code: final_code,
+                                                    code: body_code,
                                                     handlers: vec![],
-                                                    lines: vec![],
+                                                    lines: final_lines,
                                                     decoded: None,
                                                     hotness: std::sync::atomic::AtomicU32::new(0),
                                                 });
@@ -509,9 +538,9 @@ impl NyarBackend {
                                                 // 同时也将方法名作为一个全局变量，其值为一个闭包
                                                 let qn = QualifiedName::from(final_name.as_str());
                                                 let qn_idx = self.add_constant(Constant::QualifiedName(qn));
-                                                code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
-                                                code.extend_from_slice(&Instruction::StoreGlobal(qn_idx).encode());
-                                                code.extend_from_slice(&Instruction::Pop.encode());
+                                                self.emit(Instruction::MakeClosure(chunk_idx, vec![]), &mut code);
+                                                self.emit(Instruction::StoreGlobal(qn_idx), &mut code);
+                                                self.emit(Instruction::Pop, &mut code);
 
                                                 self.locals = prev_locals;
                                             }
@@ -535,23 +564,24 @@ impl NyarBackend {
                                                     };
                                                     println!("DEBUG: Exporting class method via StateUpdate: {}", final_name);
                                                     let prev_locals = self.locals.clone();
+                                                    let prev_lines = std::mem::take(&mut self.current_lines);
                                                     self.locals.clear();
                                                     for param in params {
                                                         self.add_local(param.clone());
                                                     }
-                                                    let body_code = self.lower_tree(body)?;
-                                                    let mut final_code = body_code;
-                                                    if final_code.last() != Some(&(Opcode::Return as u8)) {
-                                                        final_code.push(Opcode::Return as u8);
+                                                    let mut body_code = self.lower_tree(body)?;
+                                                    if body_code.last() != Some(&(Opcode::Return as u8)) {
+                                                        self.emit(Instruction::Return, &mut body_code);
                                                     }
+                                                    let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
                                                     let chunk_idx = self.module.chunks.len() as u16;
                                                     self.module.chunks.push(Chunk {
                                                         locals: (self.locals.len() as u16).max(32),
                                                         upvalues: 0,
                                                         max_stack: 64,
-                                                        code: final_code,
+                                                        code: body_code,
                                                         handlers: vec![],
-                                                        lines: vec![],
+                                                        lines: final_lines,
                                                         decoded: None,
                                                         hotness: std::sync::atomic::AtomicU32::new(0),
                                                     });
@@ -562,9 +592,9 @@ impl NyarBackend {
                                                     // 同时也将方法名作为一个全局变量，其值为一个闭包
                                                     let qn = QualifiedName::from(final_name.as_str());
                                                     let qn_idx = self.add_constant(Constant::QualifiedName(qn));
-                                                    code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
-                                                    code.extend_from_slice(&Instruction::Dup(0).encode());
-                                                    code.extend_from_slice(&Instruction::StoreGlobal(qn_idx).encode());
+                                                    self.emit(Instruction::MakeClosure(chunk_idx, vec![]), &mut code);
+                                                    self.emit(Instruction::Dup(0), &mut code);
+                                                    self.emit(Instruction::StoreGlobal(qn_idx), &mut code);
 
                                                     self.locals = prev_locals;
                                                 } else {
@@ -592,23 +622,24 @@ impl NyarBackend {
                                                     };
                                                     println!("DEBUG: Exporting class method via assign extension: {}", final_name);
                                                     let prev_locals = self.locals.clone();
+                                                    let prev_lines = std::mem::take(&mut self.current_lines);
                                                     self.locals.clear();
                                                     for param in params {
                                                         self.add_local(param.clone());
                                                     }
-                                                    let body_code = self.lower_tree(body)?;
-                                                    let mut final_code = body_code;
-                                                    if final_code.last() != Some(&(Opcode::Return as u8)) {
-                                                        final_code.push(Opcode::Return as u8);
+                                                    let mut body_code = self.lower_tree(body)?;
+                                                    if body_code.last() != Some(&(Opcode::Return as u8)) {
+                                                        self.emit(Instruction::Return, &mut body_code);
                                                     }
+                                                    let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
                                                     let chunk_idx = self.module.chunks.len() as u16;
                                                     self.module.chunks.push(Chunk {
                                                         locals: (self.locals.len() as u16).max(32),
                                                         upvalues: 0,
                                                         max_stack: 64,
-                                                        code: final_code,
+                                                        code: body_code,
                                                         handlers: vec![],
-                                                        lines: vec![],
+                                                        lines: final_lines,
                                                         decoded: None,
                                                         hotness: std::sync::atomic::AtomicU32::new(0),
                                                     });
@@ -619,9 +650,9 @@ impl NyarBackend {
                                                     // 同时也将方法名作为一个全局变量，其值为一个闭包
                                                     let qn = QualifiedName::from(final_name.as_str());
                                                     let qn_idx = self.add_constant(Constant::QualifiedName(qn));
-                                                    code.extend_from_slice(&Instruction::MakeClosure(chunk_idx, vec![]).encode());
-                                                    code.extend_from_slice(&Instruction::Dup(0).encode());
-                                                    code.extend_from_slice(&Instruction::StoreGlobal(qn_idx).encode());
+                                                    self.emit(Instruction::MakeClosure(chunk_idx, vec![]), &mut code);
+                                                    self.emit(Instruction::Dup(0), &mut code);
+                                                    self.emit(Instruction::StoreGlobal(qn_idx), &mut code);
 
                                                     self.locals = prev_locals;
                                                 } else {
@@ -640,10 +671,10 @@ impl NyarBackend {
                             self.current_class = prev_class;
 
                             // 弹出 body 的返回值（Seq 的最后一个值）
-                            code.extend_from_slice(&Instruction::Pop.encode());
+                            self.emit(Instruction::Pop, &mut code);
 
                             // 创建类对象
-                            code.extend_from_slice(&Instruction::StringConst(class_name.clone()).encode());
+                            self.emit(Instruction::StringConst(class_name.clone()), &mut code);
                         }
                     }
                     "python_function" => {
@@ -662,7 +693,7 @@ impl NyarBackend {
                             code.extend(self.lower_tree(&args[0])?);
                             // 3. Invoke method
                             let idx = self.add_constant(Constant::String(method_name.clone()));
-                            code.extend_from_slice(&Instruction::InvokeMethod(idx, method_args.len() as u8).encode());
+                            self.emit(Instruction::InvokeMethod(idx, method_args.len() as u8), &mut code);
                         }
                     }
                     "get_field" => {
@@ -671,7 +702,7 @@ impl NyarBackend {
                         if let IKunTree::Symbol(field_name) = &args[1] {
                             let idx = self.add_constant(Constant::String(field_name.clone()));
                             println!("DEBUG: GetField {} constant index {}", field_name, idx);
-                            code.extend_from_slice(&Instruction::GetField(idx).encode());
+                            self.emit(Instruction::GetField(idx), &mut code);
                         }
                     }
                     "set_field" => {
@@ -681,25 +712,25 @@ impl NyarBackend {
                         if let IKunTree::Symbol(field_name) = &args[1] {
                             let idx = self.add_constant(Constant::String(field_name.clone()));
                             println!("DEBUG: SetField {} constant index {}", field_name, idx);
-                            code.extend_from_slice(&Instruction::SetField(idx).encode());
+                            self.emit(Instruction::SetField(idx), &mut code);
                         }
                     }
                     "list" => {
                         // 处理空列表或其他
-                        code.extend_from_slice(&Instruction::I64Const(0).encode());
+                        self.emit(Instruction::I64Const(0), &mut code);
                     }
                     "none" => {
-                        code.extend_from_slice(&Instruction::I64Const(0).encode());
+                        self.emit(Instruction::I64Const(0), &mut code);
                     }
                     "assign" => {
                         if args.len() == 2 {
                             // [name, value]
                             code.extend(self.lower_tree(&args[1])?);
                             // assign 应该返回被赋的值
-                            code.extend_from_slice(&Instruction::Dup(0).encode());
+                            self.emit(Instruction::Dup(0), &mut code);
                             if let IKunTree::Symbol(name) = &args[0] {
                                 if let Some(idx) = self.find_local(name) {
-                                    code.extend_from_slice(&Instruction::StoreLocal(idx).encode());
+                                    self.emit(Instruction::StoreLocal(idx), &mut code);
                                 } else {
                                     let final_name = if let Some(class_name) = &self.current_class {
                                         format!("{}::{}", class_name, name)
@@ -707,7 +738,7 @@ impl NyarBackend {
                                         name.clone()
                                     };
                                     let idx = self.add_constant(Constant::String(final_name));
-                                    code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
+                                    self.emit(Instruction::StoreGlobal(idx), &mut code);
                                 }
                             }
                         }
@@ -718,10 +749,10 @@ impl NyarBackend {
                                 code.extend(code_tail);
                             } else {
                                 code.extend(self.lower_tree(val)?);
-                                code.push(Opcode::Return as u8);
+                                self.emit(Instruction::Return, &mut code);
                             }
                         } else {
-                            code.push(Opcode::Return as u8);
+                            self.emit(Instruction::Return, &mut code);
                         }
                     }
                     "class" => {
@@ -748,7 +779,7 @@ impl NyarBackend {
                                 for member in members {
                                     code.extend(self.lower_tree(member)?);
                                     // 弹出成员定义的返回值（如果有的话）
-                                    code.extend_from_slice(&Instruction::Pop.encode());
+                                    self.emit(Instruction::Pop, &mut code);
                                 }
                                 
                                 // 恢复类上下文
@@ -756,7 +787,7 @@ impl NyarBackend {
                             }
                             
                             // 创建类对象（或者是返回类名）
-                            code.extend_from_slice(&Instruction::StringConst(class_name.clone()).encode());
+                            self.emit(Instruction::StringConst(class_name.clone()), &mut code);
                         }
                     }
                     "new" => {
@@ -778,9 +809,9 @@ impl NyarBackend {
                                     arg_code.extend(self.lower_tree(param)?);
                                 }
                             }
-                            code.extend_from_slice(&Instruction::NewObject(idx).encode());
+                            self.emit(Instruction::NewObject(idx), &mut code);
                             code.extend(arg_code);
-                            code.extend_from_slice(&Instruction::Initiate(argc).encode());
+                            self.emit(Instruction::Initiate(argc), &mut code);
                             return Ok(code);
                         }
                     }
@@ -792,6 +823,7 @@ impl NyarBackend {
                                 (&args[name_idx], &args[body_idx])
                             {
                                 let prev_locals = self.locals.clone();
+                                let prev_lines = std::mem::take(&mut self.current_lines);
                                 self.locals.clear();
                                 // Add parameters to locals if present
                                 if args.len() >= 4 {
@@ -811,11 +843,11 @@ impl NyarBackend {
                                     }
                                 }
 
-                                let body_code = self.lower_tree(body)?;
-                                let mut final_code = body_code;
-                                if final_code.last() != Some(&(Opcode::Return as u8)) {
-                                    final_code.push(Opcode::Return as u8);
+                                let mut body_code = self.lower_tree(body)?;
+                                if body_code.last() != Some(&(Opcode::Return as u8)) {
+                                    self.emit(Instruction::Return, &mut body_code);
                                 }
+                                let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
                                 let chunk_idx = self.module.chunks.len();
                                 if chunk_idx >= u16::MAX as usize {
                                     return Err(NyarError::new(
@@ -832,9 +864,9 @@ impl NyarBackend {
                                     locals: num_locals.max(32),
                                     upvalues: 0,
                                     max_stack: 64,
-                                    code: final_code,
+                                    code: body_code,
                                     handlers: vec![],
-                                    lines: vec![],
+                                    lines: final_lines,
                                     decoded: None,
                                     hotness: std::sync::atomic::AtomicU32::new(0),
                                 });
@@ -851,6 +883,7 @@ impl NyarBackend {
                             // [params, body]
                             let body = &args[1];
                             let prev_locals = self.locals.clone();
+                            let prev_lines = std::mem::take(&mut self.current_lines);
                             self.locals.clear();
                             if let IKunTree::Seq(params) = &args[0] {
                                 for param in params {
@@ -859,11 +892,11 @@ impl NyarBackend {
                                     }
                                 }
                             }
-                            let body_code = self.lower_tree(body)?;
-                            let mut final_code = body_code;
-                            if final_code.last() != Some(&(Opcode::Return as u8)) {
-                                final_code.push(Opcode::Return as u8);
+                            let mut body_code = self.lower_tree(body)?;
+                            if body_code.last() != Some(&(Opcode::Return as u8)) {
+                                self.emit(Instruction::Return, &mut body_code);
                             }
+                            let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
                             let chunk_idx = self.module.chunks.len();
                             if chunk_idx >= u16::MAX as usize {
                                 return Err(NyarError::new(
@@ -880,15 +913,13 @@ impl NyarBackend {
                                 locals: num_locals.max(32),
                                 upvalues: 0,
                                 max_stack: 64,
-                                code: final_code,
+                                code: body_code,
                                 handlers: vec![],
-                                lines: vec![],
+                                lines: final_lines,
                                 decoded: None,
                                 hotness: std::sync::atomic::AtomicU32::new(0),
                             });
-                            code.extend_from_slice(
-                                &Instruction::MakeClosure(chunk_idx, vec![]).encode(),
-                            );
+                            self.emit(Instruction::MakeClosure(chunk_idx, vec![]), &mut code);
                             self.locals = prev_locals;
                         }
                     }
@@ -902,10 +933,7 @@ impl NyarBackend {
                                     for arg in call_args {
                                         code.extend(self.lower_tree(arg)?);
                                     }
-                                    code.extend_from_slice(
-                                        &Instruction::InvokeMethod(name_idx, call_args.len() as u8)
-                                            .encode(),
-                                    );
+                                    self.emit(Instruction::InvokeMethod(name_idx, call_args.len() as u8), &mut code);
                                 }
                             }
                         } else if args.len() == 2 {
@@ -916,9 +944,7 @@ impl NyarBackend {
                                     for arg in call_args {
                                         code.extend(self.lower_tree(arg)?);
                                     }
-                                    code.extend_from_slice(
-                                        &Instruction::Call(name_idx, call_args.len() as u8).encode(),
-                                    );
+                                    self.emit(Instruction::Call(name_idx, call_args.len() as u8), &mut code);
                                 }
                             }
                         }
@@ -926,84 +952,84 @@ impl NyarBackend {
                     "import" => {
                         if let IKunTree::StringConstant(name) = &args[0] {
                             let idx = self.add_constant(Constant::String(name.clone()));
-                            code.extend_from_slice(&Instruction::Call(idx, 0).encode());
+                            self.emit(Instruction::Call(idx, 0), &mut code);
                         }
                     }
                     "import_from" => {
                         if args.len() == 2 {
                             if let (IKunTree::StringConstant(module), IKunTree::StringConstant(member)) = (&args[0], &args[1]) {
                                 let mod_idx = self.add_constant(Constant::String(module.clone()));
-                                code.extend_from_slice(&Instruction::Call(mod_idx, 0).encode());
+                                self.emit(Instruction::Call(mod_idx, 0), &mut code);
                                 let mem_idx = self.add_constant(Constant::String(member.clone()));
-                                code.extend_from_slice(&Instruction::GetField(mem_idx).encode());
+                                self.emit(Instruction::GetField(mem_idx), &mut code);
                             }
                         }
                     }
                     "add" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Add.encode());
+                        self.emit(Instruction::I64Add, &mut code);
                     }
                     "sub" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Sub.encode());
+                        self.emit(Instruction::I64Sub, &mut code);
                     }
                     "mul" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Mul.encode());
+                        self.emit(Instruction::I64Mul, &mut code);
                     }
                     "div" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64DivS.encode());
+                        self.emit(Instruction::I64DivS, &mut code);
                     }
                     "rem" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64RemS.encode());
+                        self.emit(Instruction::I64RemS, &mut code);
                     }
                     "bit_and" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64And.encode());
+                        self.emit(Instruction::I64And, &mut code);
                     }
                     "bit_or" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Or.encode());
+                        self.emit(Instruction::I64Or, &mut code);
                     }
                     "bit_xor" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Xor.encode());
+                        self.emit(Instruction::I64Xor, &mut code);
                     }
                     "bit_not" => {
                         code.extend(self.lower_tree(&args[0])?);
-                        code.extend_from_slice(&Instruction::I64Not.encode());
+                        self.emit(Instruction::I64Not, &mut code);
                     }
                     "bit_shl" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Shl.encode());
+                        self.emit(Instruction::I64Shl, &mut code);
                     }
                     "bit_shr" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64ShrS.encode());
+                        self.emit(Instruction::I64ShrS, &mut code);
                     }
                     "and" => {
                         // a && b
                         // eval a
                         code.extend(self.lower_tree(&args[0])?);
                         // dup for jump
-                        code.extend_from_slice(&Instruction::Dup(0).encode());
+                        self.emit(Instruction::Dup(0), &mut code);
                         // if false, jump to end (keep false on stack)
                         let placeholder = code.len();
-                        code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                        self.emit(Instruction::JumpIfFalse(0), &mut code);
                         // if true, pop a and eval b
-                        code.extend_from_slice(&Instruction::Pop.encode());
+                        self.emit(Instruction::Pop, &mut code);
                         code.extend(self.lower_tree(&args[1])?);
                         // label end
                         let end_pos = code.len();
@@ -1016,12 +1042,12 @@ impl NyarBackend {
                         // eval a
                         code.extend(self.lower_tree(&args[0])?);
                         // dup for jump
-                        code.extend_from_slice(&Instruction::Dup(0).encode());
+                        self.emit(Instruction::Dup(0), &mut code);
                         // if true, jump to end (keep true on stack)
                         let placeholder = code.len();
-                        code.extend_from_slice(&Instruction::JumpIfTrue(0).encode());
+                        self.emit(Instruction::JumpIfTrue(0), &mut code);
                         // if false, pop a and eval b
-                        code.extend_from_slice(&Instruction::Pop.encode());
+                        self.emit(Instruction::Pop, &mut code);
                         code.extend(self.lower_tree(&args[1])?);
                         // label end
                         let end_pos = code.len();
@@ -1035,17 +1061,17 @@ impl NyarBackend {
                         code.extend(self.lower_tree(&args[1])?);
                         let name_idx =
                             self.add_constant(Constant::String("python:raise".to_string()));
-                        code.extend_from_slice(&Instruction::Perform(name_idx, 2).encode());
+                        self.emit(Instruction::Perform(name_idx, 2), &mut code);
                     }
                     "assert" => {
                         // [test, msg]
                         code.extend(self.lower_tree(&args[0])?);
                         let placeholder = code.len();
-                        code.extend_from_slice(&Instruction::JumpIfTrue(0).encode());
+                        self.emit(Instruction::JumpIfTrue(0), &mut code);
                         code.extend(self.lower_tree(&args[1])?);
                         let name_idx = self
                             .add_constant(Constant::String("python:AssertionError".to_string()));
-                        code.extend_from_slice(&Instruction::Perform(name_idx, 1).encode());
+                        self.emit(Instruction::Perform(name_idx, 1), &mut code);
                         let end_pos = code.len();
                         let off = (end_pos as isize - placeholder as isize) as i16;
                         let instr = Instruction::JumpIfTrue(off).encode();
@@ -1063,12 +1089,13 @@ impl NyarBackend {
                         
                         if has_finally {
                             let mut finally_handler_code = Vec::new();
+                            let prev_lines = std::mem::take(&mut self.current_lines);
                             // Finally handler catches everything, runs finalbody, then re-performs
                             // Handler receives: [effect_obj, args_list, continuation]
                             
                             // Load effect_obj and args_list to re-raise later
-                            finally_handler_code.extend_from_slice(&Instruction::LoadLocal(0).encode());
-                            finally_handler_code.extend_from_slice(&Instruction::LoadLocal(1).encode());
+                            self.emit(Instruction::LoadLocal(0), &mut finally_handler_code);
+                            self.emit(Instruction::LoadLocal(1), &mut finally_handler_code);
                             
                             // Run finalbody
                             finally_handler_code.extend(self.lower_tree(finalbody)?);
@@ -1077,9 +1104,10 @@ impl NyarBackend {
                             // We need an instruction that can raise with dynamic name and args list
                             // Nyar VM might need a dynamic raise. For now, let's assume it's python:raise
                             let re_perform_idx = self.add_constant(Constant::String("python:raise".to_string()));
-                            finally_handler_code.extend_from_slice(&Instruction::Perform(re_perform_idx, 2).encode());
-                            finally_handler_code.push(Opcode::Return as u8);
+                            self.emit(Instruction::Perform(re_perform_idx, 2), &mut finally_handler_code);
+                            self.emit(Instruction::Return, &mut finally_handler_code);
 
+                            let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
                             let finally_chunk_idx = self.module.chunks.len() as u16;
                             self.module.chunks.push(Chunk {
                                 locals: 3,
@@ -1087,34 +1115,36 @@ impl NyarBackend {
                                 max_stack: 64,
                                 code: finally_handler_code,
                                 handlers: vec![],
-                                lines: vec![],
+                                lines: final_lines,
                                 decoded: None,
                                 hotness: std::sync::atomic::AtomicU32::new(0),
                             });
-                            code.extend_from_slice(&Instruction::WithHandler(finally_chunk_idx).encode());
+                            self.emit(Instruction::WithHandler(finally_chunk_idx), &mut code);
                         }
 
                         // 2. Wrap body in except handler
                         let mut except_handler_code = Vec::new();
+                        let prev_lines = std::mem::take(&mut self.current_lines);
                         let raise_name_idx = self.add_constant(Constant::String("python:raise".to_string()));
-                        except_handler_code.extend_from_slice(&Instruction::MatchEffect(raise_name_idx).encode());
+                        self.emit(Instruction::MatchEffect(raise_name_idx), &mut except_handler_code);
                         
                         let next_handler_placeholder = except_handler_code.len();
-                        except_handler_code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                        self.emit(Instruction::JumpIfFalse(0), &mut except_handler_code);
 
                         // Match! [exc, cause] are on stack
                         except_handler_code.extend(self.lower_tree(handlers)?);
                         
                         // If no except matched, re-raise
                         let re_perform_idx = self.add_constant(Constant::String("python:raise".to_string()));
-                        except_handler_code.extend_from_slice(&Instruction::Perform(re_perform_idx, 2).encode());
+                        self.emit(Instruction::Perform(re_perform_idx, 2), &mut except_handler_code);
 
                         let handler_end = except_handler_code.len();
                         let off = (handler_end as isize - next_handler_placeholder as isize) as i16;
                         let instr = Instruction::JumpIfFalse(off).encode();
                         except_handler_code[next_handler_placeholder..next_handler_placeholder + instr.len()].copy_from_slice(&instr);
-                        except_handler_code.push(Opcode::Return as u8);
+                        self.emit(Instruction::Return, &mut except_handler_code);
 
+                        let final_lines = std::mem::replace(&mut self.current_lines, prev_lines);
                         let except_chunk_idx = self.module.chunks.len() as u16;
                         self.module.chunks.push(Chunk {
                             locals: 3,
@@ -1122,17 +1152,17 @@ impl NyarBackend {
                             max_stack: 64,
                             code: except_handler_code,
                             handlers: vec![],
-                            lines: vec![],
+                            lines: final_lines,
                             decoded: None,
                             hotness: std::sync::atomic::AtomicU32::new(0),
                         });
 
-                        code.extend_from_slice(&Instruction::WithHandler(except_chunk_idx).encode());
+                        self.emit(Instruction::WithHandler(except_chunk_idx), &mut code);
                         code.extend(self.lower_tree(body)?);
                         code.extend(self.lower_tree(orelse)?);
                         
                         // End of WithHandler(except)
-                        code.push(Opcode::Pop as u8); // Pop the handler if finished normally? 
+                        self.emit(Instruction::Pop, &mut code); // Pop the handler if finished normally? 
                         // Actually WithHandler might need an explicit end or it ends with the scope.
                         
                         if has_finally {
@@ -1148,27 +1178,27 @@ impl NyarBackend {
                         let mut jump_placeholder = None;
                         
                         if has_type {
-                            code.extend_from_slice(&Instruction::Dup(1).encode()); // Dup exc
+                            self.emit(Instruction::Dup(1), &mut code); // Dup exc
                             code.extend(self.lower_tree(&args[0])?); // type
-                            code.extend_from_slice(&Instruction::InstanceOf(0).encode());
+                            self.emit(Instruction::InstanceOf(0), &mut code);
                             
                             let placeholder = code.len();
-                            code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                            self.emit(Instruction::JumpIfFalse(0), &mut code);
                             jump_placeholder = Some(placeholder);
                         }
                         
                         // 2. Assign name if present
                         if let IKunTree::Symbol(name) = &args[1] {
                              let name_idx = self.add_constant(Constant::String(name.clone()));
-                             code.extend_from_slice(&Instruction::Dup(1).encode()); // Dup exc
-                             code.extend_from_slice(&Instruction::StoreGlobal(name_idx).encode());
+                             self.emit(Instruction::Dup(1), &mut code); // Dup exc
+                             self.emit(Instruction::StoreGlobal(name_idx), &mut code);
                         }
                         
                         // 3. Execute body
                         code.extend(self.lower_tree(&args[2])?);
                         
                         // 4. Return from handler (handled!)
-                        code.push(Opcode::Return as u8);
+                        self.emit(Instruction::Return, &mut code);
 
                         if let Some(placeholder) = jump_placeholder {
                             let end_pos = code.len();
@@ -1188,18 +1218,18 @@ impl NyarBackend {
                                         // Store context object in a temporary global/local for __exit__
                                         let temp_name = format!("$with_ctx_{}", i);
                                         let temp_idx = self.add_constant(Constant::String(temp_name));
-                                        code.extend_from_slice(&Instruction::Dup(0).encode());
-                                        code.extend_from_slice(&Instruction::StoreGlobal(temp_idx).encode());
+                                        self.emit(Instruction::Dup(0), &mut code);
+                                        self.emit(Instruction::StoreGlobal(temp_idx), &mut code);
                                         
                                         // Call __enter__
                                         let enter_idx = self.add_constant(Constant::String("__enter__".to_string()));
-                                        code.extend_from_slice(&Instruction::InvokeMethod(enter_idx, 0).encode());
+                                        self.emit(Instruction::InvokeMethod(enter_idx, 0), &mut code);
                                         
                                         if let IKunTree::Symbol(var_name) = &item_args[1] {
                                             let var_idx = self.add_constant(Constant::String(var_name.clone()));
-                                            code.extend_from_slice(&Instruction::StoreGlobal(var_idx).encode());
+                                            self.emit(Instruction::StoreGlobal(var_idx), &mut code);
                                         } else {
-                                            code.extend_from_slice(&Instruction::Pop.encode());
+                                            self.emit(Instruction::Pop, &mut code);
                                         }
                                     }
                                 }
@@ -1212,14 +1242,14 @@ impl NyarBackend {
                             for (i, _) in items.iter().enumerate().rev() {
                                 let temp_name = format!("$with_ctx_{}", i);
                                 let temp_idx = self.add_constant(Constant::String(temp_name));
-                                exit_code.extend_from_slice(&Instruction::LoadGlobal(temp_idx).encode());
+                                self.emit(Instruction::LoadGlobal(temp_idx), &mut exit_code);
                                 let exit_idx = self.add_constant(Constant::String("__exit__".to_string()));
                                 // Call __exit__(None, None, None)
-                                exit_code.extend_from_slice(&Instruction::Push(self.add_constant(Constant::String("None".to_string()))).encode());
-                                exit_code.extend_from_slice(&Instruction::Push(self.add_constant(Constant::String("None".to_string()))).encode());
-                                exit_code.extend_from_slice(&Instruction::Push(self.add_constant(Constant::String("None".to_string()))).encode());
-                                exit_code.extend_from_slice(&Instruction::InvokeMethod(exit_idx, 3).encode());
-                                exit_code.extend_from_slice(&Instruction::Pop.encode());
+                                self.emit(Instruction::Push(self.add_constant(Constant::String("None".to_string()))), &mut exit_code);
+                                self.emit(Instruction::Push(self.add_constant(Constant::String("None".to_string()))), &mut exit_code);
+                                self.emit(Instruction::Push(self.add_constant(Constant::String("None".to_string()))), &mut exit_code);
+                                self.emit(Instruction::InvokeMethod(exit_idx, 3), &mut exit_code);
+                                self.emit(Instruction::Pop, &mut exit_code);
                             }
                         }
 
@@ -1234,11 +1264,11 @@ impl NyarBackend {
                         code.extend(self.lower_tree(&args[0])?);
                         
                         let jump_false_placeholder = code.len();
-                        code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
+                        self.emit(Instruction::JumpIfFalse(0), &mut code);
                         
                         code.extend(self.lower_tree(&args[1])?);
                         let jump_end_placeholder = code.len();
-                        code.extend_from_slice(&Instruction::Jump(0).encode());
+                        self.emit(Instruction::Jump(0), &mut code);
                         
                         let else_start = code.len();
                         let else_offset = (else_start as isize - jump_false_placeholder as isize) as i16;
@@ -1253,7 +1283,7 @@ impl NyarBackend {
                     }
                     "sizeof" => {
                         code.extend(self.lower_tree(&args[0])?);
-                        code.extend_from_slice(&Instruction::SizeOf.encode());
+                        self.emit(Instruction::SizeOf, &mut code);
                     }
                     "cast" => {
                         // (type)expr
@@ -1261,85 +1291,85 @@ impl NyarBackend {
                         code.extend(self.lower_tree(&args[1])?);
                         if let IKunTree::Symbol(type_name) = &args[0] {
                             let idx = self.add_constant(Constant::String(type_name.clone()));
-                            code.extend_from_slice(&Instruction::Cast(idx).encode());
+                            self.emit(Instruction::Cast(idx), &mut code);
                         } else if let IKunTree::StringConstant(type_name) = &args[0] {
                             let idx = self.add_constant(Constant::String(type_name.clone()));
-                            code.extend_from_slice(&Instruction::Cast(idx).encode());
+                            self.emit(Instruction::Cast(idx), &mut code);
                         }
                     }
                     "inc_pre" => {
                         if let IKunTree::Symbol(name) = &args[0] {
                             let idx = self.add_constant(Constant::String(name.clone()));
-                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
-                            code.extend_from_slice(&Instruction::I64Const(1).encode());
-                            code.extend_from_slice(&Instruction::I64Add.encode());
-                            code.extend_from_slice(&Instruction::Dup(0).encode());
-                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
-                            code.extend_from_slice(&Instruction::Pop.encode());
+                            self.emit(Instruction::LoadGlobal(idx), &mut code);
+                            self.emit(Instruction::I64Const(1), &mut code);
+                            self.emit(Instruction::I64Add, &mut code);
+                            self.emit(Instruction::Dup(0), &mut code);
+                            self.emit(Instruction::StoreGlobal(idx), &mut code);
+                            self.emit(Instruction::Pop, &mut code);
                         }
                     }
                     "inc_post" => {
                         if let IKunTree::Symbol(name) = &args[0] {
                             let idx = self.add_constant(Constant::String(name.clone()));
-                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
-                            code.extend_from_slice(&Instruction::Dup(0).encode());
-                            code.extend_from_slice(&Instruction::I64Const(1).encode());
-                            code.extend_from_slice(&Instruction::I64Add.encode());
-                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
-                            code.extend_from_slice(&Instruction::Pop.encode());
+                            self.emit(Instruction::LoadGlobal(idx), &mut code);
+                            self.emit(Instruction::Dup(0), &mut code);
+                            self.emit(Instruction::I64Const(1), &mut code);
+                            self.emit(Instruction::I64Add, &mut code);
+                            self.emit(Instruction::StoreGlobal(idx), &mut code);
+                            self.emit(Instruction::Pop, &mut code);
                         }
                     }
                     "dec_pre" => {
                         if let IKunTree::Symbol(name) = &args[0] {
                             let idx = self.add_constant(Constant::String(name.clone()));
-                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
-                            code.extend_from_slice(&Instruction::I64Const(1).encode());
-                            code.extend_from_slice(&Instruction::I64Sub.encode());
-                            code.extend_from_slice(&Instruction::Dup(0).encode());
-                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
-                            code.extend_from_slice(&Instruction::Pop.encode());
+                            self.emit(Instruction::LoadGlobal(idx), &mut code);
+                            self.emit(Instruction::I64Const(1), &mut code);
+                            self.emit(Instruction::I64Sub, &mut code);
+                            self.emit(Instruction::Dup(0), &mut code);
+                            self.emit(Instruction::StoreGlobal(idx), &mut code);
+                            self.emit(Instruction::Pop, &mut code);
                         }
                     }
                     "dec_post" => {
                         if let IKunTree::Symbol(name) = &args[0] {
                             let idx = self.add_constant(Constant::String(name.clone()));
-                            code.extend_from_slice(&Instruction::LoadGlobal(idx).encode());
-                            code.extend_from_slice(&Instruction::Dup(0).encode());
-                            code.extend_from_slice(&Instruction::I64Const(1).encode());
-                            code.extend_from_slice(&Instruction::I64Sub.encode());
-                            code.extend_from_slice(&Instruction::StoreGlobal(idx).encode());
-                            code.extend_from_slice(&Instruction::Pop.encode());
+                            self.emit(Instruction::LoadGlobal(idx), &mut code);
+                            self.emit(Instruction::Dup(0), &mut code);
+                            self.emit(Instruction::I64Const(1), &mut code);
+                            self.emit(Instruction::I64Sub, &mut code);
+                            self.emit(Instruction::StoreGlobal(idx), &mut code);
+                            self.emit(Instruction::Pop, &mut code);
                         }
                     }
                     "eq" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Eq.encode());
+                        self.emit(Instruction::I64Eq, &mut code);
                     }
                     "ne" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64Ne.encode());
+                        self.emit(Instruction::I64Ne, &mut code);
                     }
                     "lt" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64LtS.encode());
+                        self.emit(Instruction::I64LtS, &mut code);
                     }
                     "le" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64LeS.encode());
+                        self.emit(Instruction::I64LeS, &mut code);
                     }
                     "gt" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64GtS.encode());
+                        self.emit(Instruction::I64GtS, &mut code);
                     }
                     "ge" => {
                         code.extend(self.lower_tree(&args[0])?);
                         code.extend(self.lower_tree(&args[1])?);
-                        code.extend_from_slice(&Instruction::I64GeS.encode());
+                        self.emit(Instruction::I64GeS, &mut code);
                     }
                     _ => {}
                 }
@@ -1358,10 +1388,10 @@ impl NyarBackend {
                 }
                 if let IKunTree::Symbol(name) = &**callee {
                     let idx = self.add_constant(Constant::String(name.clone()));
-                    code.extend_from_slice(&Instruction::TailCall(idx, args.len() as u8).encode());
+                    self.emit(Instruction::TailCall(idx, args.len() as u8), &mut code);
                 } else {
                     code.extend(self.lower_tree(callee)?);
-                    code.extend_from_slice(&Instruction::TailCallClosure(args.len() as u8).encode());
+                    self.emit(Instruction::TailCallClosure(args.len() as u8), &mut code);
                 }
                 Ok(Some(code))
             }
@@ -1414,15 +1444,16 @@ impl Backend for NyarBackend {
         if !code.is_empty() {
             let mut final_code = code;
             if final_code.last() != Some(&(Opcode::Return as u8)) {
-                final_code.push(Opcode::Return as u8);
+                this.emit(Instruction::Return, &mut final_code);
             }
+            let lines = std::mem::take(&mut this.current_lines);
             this.module.chunks.push(Chunk {
                 locals: 32,
                 upvalues: 0,
                 max_stack: 64,
                 code: final_code,
                 handlers: vec![],
-                lines: vec![],
+                lines,
                 decoded: None,
                 hotness: std::sync::atomic::AtomicU32::new(0),
             });

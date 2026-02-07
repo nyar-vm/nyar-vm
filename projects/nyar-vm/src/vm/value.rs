@@ -204,6 +204,7 @@ pub enum FutureStatus {
 pub struct Future {
     pub status: FutureStatus,
     pub result: Value,
+    pub waker: Option<std::task::Waker>,
 }
 
 impl Trace for Future {
@@ -671,6 +672,7 @@ impl Value {
         let g = gc.alloc(Future {
             status: FutureStatus::Pending,
             result: Value::null(),
+            waker: None,
         });
         Self::encode(ValueTag::Future, g.as_ptr() as u64)
     }

@@ -73,6 +73,9 @@ impl<'a> Future for VmFuture<'a> {
 
 impl<'a> VmFuture<'a> {
     fn poll_internal(&mut self, cx: &mut Context<'_>) -> Poll<Result<crate::vm::value::Value, NyarError>> {
+        // 0. Update current waker
+        self.vm.current_waker = Some(cx.waker().clone());
+
         // 1. Check if GC requested a stop
         if nyar_gc::runtime::GC_STOP_THE_WORLD.load(std::sync::atomic::Ordering::Acquire) {
             // Cooperative yield for GC

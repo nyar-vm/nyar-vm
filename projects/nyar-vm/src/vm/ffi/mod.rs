@@ -1,3 +1,8 @@
+pub mod io;
+pub mod fs;
+pub mod http;
+pub mod html;
+
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use nyar_types::NyarError;
@@ -87,6 +92,25 @@ impl FFIRegistry {
 
     pub fn get_intrinsic(&self, id: u32) -> Option<Arc<dyn FFIFunction>> {
         self.intrinsics.get(&id).cloned()
+    }
+
+    pub fn register_std(&mut self) {
+        self.register("std.io.print".to_string(), Arc::new(io::StdIoPrint));
+        self.register("std.io.println".to_string(), Arc::new(io::StdIoPrintln));
+        self.register("std.io.read_line".to_string(), Arc::new(io::StdIoReadLine));
+        
+        self.register("std.fs.read_to_string".to_string(), Arc::new(fs::StdFsReadToString));
+        self.register("std.fs.write".to_string(), Arc::new(fs::StdFsWrite));
+        self.register("std.fs.exists".to_string(), Arc::new(fs::StdFsExists));
+        self.register("std.fs.remove_file".to_string(), Arc::new(fs::StdFsRemoveFile));
+
+        self.register("std.http.get".to_string(), Arc::new(http::StdHttpGet));
+        self.register("std.http.post".to_string(), Arc::new(http::StdHttpPost));
+        self.register("std.http.set_proxy".to_string(), Arc::new(http::StdHttpSetProxy));
+
+        self.register("std.html.parse".to_string(), Arc::new(html::StdHtmlParse));
+        self.register("std.html.select_text".to_string(), Arc::new(html::StdHtmlSelectText));
+        self.register("std.html.select_attr".to_string(), Arc::new(html::StdHtmlSelectAttr));
     }
 }
 
