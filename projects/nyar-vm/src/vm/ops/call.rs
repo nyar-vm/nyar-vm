@@ -57,7 +57,7 @@ impl NyarVM {
                     self.modules[module_idx].chunks[chunk_idx].locals as usize;
                 (instrs, locals_count, module_idx, chunk_idx)
             } else {
-                return Err(self.error(nyar_types::VmErrorKind::TypeError("callee is not a closure".to_string())));
+                return Err(self.error(nyar_types::VmErrorKind::RuntimeError("callee is not a closure".to_string())));
             };
 
         if args.len() < locals_count {

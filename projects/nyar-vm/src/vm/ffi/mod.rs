@@ -2,6 +2,8 @@ pub mod io;
 pub mod fs;
 pub mod http;
 pub mod json;
+pub mod toml;
+pub mod von;
 pub mod net;
 pub mod async_ffi;
 
@@ -98,33 +100,39 @@ impl FFIRegistry {
     }
 
     pub fn register_std(&mut self) {
-        self.register("std.io.print".to_string(), Arc::new(io::StdIoPrint));
-        self.register("std.io.println".to_string(), Arc::new(io::StdIoPrintln));
-        self.register("std.io.read_line".to_string(), Arc::new(io::StdIoReadLine));
+        self.register("std::io::print".to_string(), Arc::new(io::StdIoPrint));
+        self.register("std::io::println".to_string(), Arc::new(io::StdIoPrintln));
+        self.register("std::io::read_line".to_string(), Arc::new(io::StdIoReadLine));
         
-        self.register("std.fs.read_to_string".to_string(), Arc::new(fs::StdFsReadToString));
-        self.register("std.fs.write".to_string(), Arc::new(fs::StdFsWrite));
-        self.register("std.fs.exists".to_string(), Arc::new(fs::StdFsExists));
-        self.register("std.fs.remove_file".to_string(), Arc::new(fs::StdFsRemoveFile));
+        self.register("std::fs::read_to_string".to_string(), Arc::new(fs::StdFsReadToString));
+        self.register("std::fs::write".to_string(), Arc::new(fs::StdFsWrite));
+        self.register("std::fs::exists".to_string(), Arc::new(fs::StdFsExists));
+        self.register("std::fs::remove_file".to_string(), Arc::new(fs::StdFsRemoveFile));
 
-        self.register("std.http.get".to_string(), Arc::new(http::StdHttpGet));
-        self.register("std.http.post".to_string(), Arc::new(http::StdHttpPost));
-        self.register("std.http.set_proxy".to_string(), Arc::new(http::StdHttpSetProxy));
+        self.register("std::http::get".to_string(), Arc::new(http::StdHttpGet));
+        self.register("std::http::post".to_string(), Arc::new(http::StdHttpPost));
+        self.register("std::http::set_proxy".to_string(), Arc::new(http::StdHttpSetProxy));
 
-        self.register("std.config.json.Json.parse".to_string(), Arc::new(json::StdJsonParse));
-        self.register("std.config.json.Json.stringify".to_string(), Arc::new(json::StdJsonStringify));
+        self.register("std::config::json::___parse".to_string(), Arc::new(json::StdJsonParse));
+        self.register("std::config::json::___stringify".to_string(), Arc::new(json::StdJsonStringify));
 
-        self.register("std.net.TcpStream.connect".to_string(), Arc::new(net::TcpConnect));
-        self.register("std.net.TcpStream.read".to_string(), Arc::new(net::TcpRead));
-        self.register("std.net.TcpStream.write".to_string(), Arc::new(net::TcpWrite));
-        self.register("std.net.TcpStream.close".to_string(), Arc::new(net::TcpClose));
-        self.register("std.net.TcpListener.listen".to_string(), Arc::new(net::TcpListen));
-        self.register("std.net.TcpListener.accept".to_string(), Arc::new(net::TcpAccept));
-        self.register("std.net.TcpListener.close".to_string(), Arc::new(net::TcpClose));
+        self.register("std::config::toml::___parse".to_string(), Arc::new(toml::StdTomlParse));
+        self.register("std::config::toml::___stringify".to_string(), Arc::new(toml::StdTomlStringify));
 
-        self.register("std.async.Async.delay".to_string(), Arc::new(async_ffi::AsyncDelay));
-        self.register("std.async.Async.spawn".to_string(), Arc::new(async_ffi::AsyncSpawn));
-        self.register("std.async.Async.await".to_string(), Arc::new(async_ffi::AsyncAwait));
+        self.register("std::config::von::___parse".to_string(), Arc::new(von::StdVonParse));
+        self.register("std::config::von::___stringify".to_string(), Arc::new(von::StdVonStringify));
+
+        self.register("std::net::TcpStream::connect".to_string(), Arc::new(net::TcpConnect));
+        self.register("std::net::TcpStream::read".to_string(), Arc::new(net::TcpRead));
+        self.register("std::net::TcpStream::write".to_string(), Arc::new(net::TcpWrite));
+        self.register("std::net::TcpStream::close".to_string(), Arc::new(net::TcpClose));
+        self.register("std::net::TcpListener::listen".to_string(), Arc::new(net::TcpListen));
+        self.register("std::net::TcpListener::accept".to_string(), Arc::new(net::TcpAccept));
+        self.register("std::net::TcpListener::close".to_string(), Arc::new(net::TcpClose));
+
+        self.register("std::async::Async::delay".to_string(), Arc::new(async_ffi::AsyncDelay));
+        self.register("std::async::Async::spawn".to_string(), Arc::new(async_ffi::AsyncSpawn));
+        self.register("std::async::Async::await".to_string(), Arc::new(async_ffi::AsyncAwait));
     }
 }
 
@@ -152,10 +160,7 @@ impl FFIFunction for NativeGetTime {
         })
     }
     fn call(&self, _vm: &mut NyarVM, _args: Vec<Value>) -> FFIResult {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = _vm.platform.clock_now();
         Ok(Value::int(now as i64))
     }
 }
@@ -175,7 +180,7 @@ impl FFIFunction for NativeSleep {
         // In a real VM, we might register a timer and yield.
         // For now, we just sleep synchronously to simulate work,
         // but we could also return VmError::YieldAsync if we had a timer system.
-        std::thread::sleep(std::time::Duration::from_millis(ms));
+        _vm.platform.sleep(ms);
         Ok(Value::null())
     }
 }

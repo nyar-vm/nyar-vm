@@ -34,8 +34,6 @@ pub struct NyarVM {
     pub modules: Arc<Vec<NyarcModule>>,
     pub module_names: Arc<Vec<String>>,
     pub handler_stack: Vec<HandlerFrame>,
-    #[allow(clippy::type_complexity)]
-    pub stdout: Option<Arc<dyn Fn(&str) + Send + Sync>>,
     pub trace_log: Arc<std::sync::Mutex<Vec<String>>>,
     pub ffi: FFIRegistry,
     pub symbol_table: Arc<DashMap<QualifiedName, (usize, u16)>>, // (module_idx, chunk_idx)
@@ -45,6 +43,7 @@ pub struct NyarVM {
     pub last_gc_count: u64,
     pub current_waker: Option<std::task::Waker>,
     pub network: crate::vm::net::NetworkContext,
+    pub platform: Arc<dyn crate::vm::platform::NyarPlatform>,
     pub effect_handler: Option<Arc<dyn crate::vm::effects::EffectHandler>>,
 }
 
@@ -72,7 +71,6 @@ impl NyarVM {
             modules: Arc::new(Vec::new()),
             module_names: Arc::new(Vec::new()),
             handler_stack: Vec::new(),
-            stdout: None,
             trace_log: Arc::new(std::sync::Mutex::new(Vec::new())),
             ffi: FFIRegistry::new(),
             symbol_table: Arc::new(DashMap::new()),
@@ -82,6 +80,7 @@ impl NyarVM {
             last_gc_count: 0,
             current_waker: None,
             network: crate::vm::net::NetworkContext::new(),
+            platform: Arc::new(crate::vm::platform::StubPlatform),
             effect_handler: None,
         };
         vm.ffi.register_std();
@@ -97,16 +96,16 @@ impl NyarVM {
             modules: self.modules.clone(),
             module_names: self.module_names.clone(),
             handler_stack: Vec::new(),
-            stdout: self.stdout.clone(),
             trace_log: self.trace_log.clone(),
             ffi: self.ffi.clone(),
             symbol_table: self.symbol_table.clone(),
             builtins: self.builtins.clone(),
             jit: self.jit.clone(),
             local_hotness: 0,
-            last_gc_count: 0,
-            current_waker: None,
+            last_gc_count: self.last_gc_count,
+            current_waker: self.current_waker.clone(),
             network: self.network.clone(),
+            platform: self.platform.clone(),
             effect_handler: self.effect_handler.clone(),
         }
     }
@@ -180,17 +179,12 @@ impl NyarVM {
         }
     }
 
-    pub fn print_line(&self, msg: &str) {
-        if let Some(cb) = &self.stdout {
-            cb(msg);
-        } else {
-            println!("{}", msg);
-        }
-        self.trace_log.lock().unwrap().push(msg.to_string());
+    pub fn log(&self, msg: &str) {
+        self.platform.stdout_write(&format!("{}\n", msg));
     }
 
-    pub fn log(&self, msg: &str) {
-        self.print_line(msg);
+    pub fn print_line(&self, msg: &str) {
+        self.platform.stdout_write(&format!("{}\n", msg));
     }
 
     pub fn get_module(&self, idx: usize) -> &NyarcModule {

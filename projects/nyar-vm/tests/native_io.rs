@@ -7,9 +7,9 @@ use nyar_types::QualifiedName;
 fn test_std_io_println_effect() {
     let mut vm = NyarVM::new();
     
-    // Create a dummy module with "std.io.println" constant
+    // Create a dummy module with "std::io::println" constant
     let mut module = NyarcModule::default();
-    module.constants.push(Constant::QualifiedName(QualifiedName::from("std.io.println")));
+    module.constants.push(Constant::QualifiedName(QualifiedName::from("std::io::println")));
     let module_idx = vm.load_module(module);
     
     // Set up a frame
@@ -44,10 +44,10 @@ fn test_std_fs_write_read_effect() {
     
     // Create a dummy module with FS constants
     let mut module = NyarcModule::default();
-    module.constants.push(Constant::QualifiedName(QualifiedName::from("std.fs.write"))); // 0
-    module.constants.push(Constant::QualifiedName(QualifiedName::from("std.fs.read_to_string"))); // 1
-    module.constants.push(Constant::QualifiedName(QualifiedName::from("std.fs.exists"))); // 2
-    module.constants.push(Constant::QualifiedName(QualifiedName::from("std.fs.remove_file"))); // 3
+    module.constants.push(Constant::QualifiedName(QualifiedName::from("std::fs::write"))); // 0
+    module.constants.push(Constant::QualifiedName(QualifiedName::from("std::fs::read_to_string"))); // 1
+    module.constants.push(Constant::QualifiedName(QualifiedName::from("std::fs::exists"))); // 2
+    module.constants.push(Constant::QualifiedName(QualifiedName::from("std::fs::remove_file"))); // 3
     let module_idx = vm.load_module(module);
     
     // Set up a frame

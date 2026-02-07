@@ -166,7 +166,12 @@ impl NyarBackend {
                 }
             }
             IKunTree::Apply(callee, args) => {
-                if let IKunTree::Symbol(name) = &**callee {
+                let mut current_callee = callee.as_ref();
+                while let IKunTree::Source(_, inner) = current_callee {
+                    current_callee = inner.as_ref();
+                }
+
+                if let IKunTree::Symbol(name) = current_callee {
                     if let Some(class_idx) = self.find_class_index(name) {
                         self.emit(Instruction::NewObject(class_idx), &mut code);
                         for arg in args {
@@ -179,7 +184,7 @@ impl NyarBackend {
                 for arg in args {
                     code.extend(self.lower_tree(arg)?);
                 }
-                if let IKunTree::Symbol(name) = &**callee {
+                if let IKunTree::Symbol(name) = current_callee {
                     let final_name = if let Some(class_name) = &self.current_class {
                         format!("{}::{}", class_name, name)
                     } else {

@@ -86,34 +86,37 @@ micro fetch_user_data(id: Int) -> User {
     parse_json(response)
 }
 
-# 处理异步效应
-handle fetch_user_data(42) with Async {
-    await(promise) -> resume(promise.await)
+# Handle async effect
+try {
+    fetch_user_data(42)
+} .catch {
+    case Async::await { promise }:
+        resume(promise.await)
 }
 ```
 
-### Q: 如何进行错误处理？
+### Q: How to handle errors?
 
-A: Valkyrie 提供多种错误处理方式：
+A: Valkyrie provides multiple ways to handle errors:
 
 ```valkyrie
-# 1. 使用 Result 类型
+// 1. Using Result type
 micro divide(a: Float, b: Float) -> Result<Float, String> {
     if b == 0.0 {
-        Fail { error: "除零错误" }
+        Fail { error: "Division by zero" }
     } else {
         Fine { value: a / b }
     }
 }
 
-# 2. 使用异常效应
+// 2. Using Exception effect
 effect Exception {
     throw(message: String): Never
 }
 
 micro safe_divide(a: Float, b: Float) -> Float {
     if b == 0.0 {
-        raise Exception.throw("除零错误")
+        Exception::throw { message: "Division by zero" }
     } else {
         a / b
     }
@@ -182,34 +185,38 @@ A: Valkyrie 提供完整的工具链：
 - **调试器**：源码级调试支持
 - **测试框架**：内置单元测试和集成测试
 
-### Q: 如何编写和运行测试？
+### Q: How to write and run tests?
 
-A: 使用内置测试框架：
+A: Use the built-in testing framework:
 
 ```valkyrie
-# 单元测试
+// Unit test
 @test
 micro test_addition() {
-    @assert_eq(add(2, 3), 5)
-    @assert_eq(add(-1, 1), 0)
+    Assert::eq(add(2, 3), 5)
+    Assert::eq(add(-1, 1), 0)
 }
 
-# 属性测试
+// Property testing
 @test
 micro test_addition_commutative() {
-    forall (a: Int, b: Int) {
-        @assert_eq(add(a, b), add(b, a))
-    }
+    Assert::forall(forall a: Int, b: Int {
+        add(a, b) == add(b, a)
+    })
 }
 
-# 效应测试
+// Effect testing
 @test
 micro test_state_effect() {
-    let result = handle counter() with State {
-        get() -> resume(0),
-        set(value) -> resume(())
+    let result = try {
+        counter()
+    } .catch {
+        case State::get {}:
+            resume(0)
+        case State::set { value }:
+            resume(())
     }
-    @assert_eq(result, 1)
+    Assert::eq(result, 1)
 }
 ```
 

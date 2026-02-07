@@ -6,6 +6,8 @@ pub use nyar_types::QualifiedName;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+pub mod platform;
+
 /// Nyar 标准内建函数定义
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u32)]
@@ -79,24 +81,21 @@ impl EffectHandler for DefaultEffectHandler {
             match name.as_str() {
                 "LoggerEvent" | "print" => {
                     for arg in &args {
-                        vm.log(&format!("{}", arg));
+                        vm.platform.stdout_write(&format!("{}", arg));
                     }
                     return Ok(None);
                 }
                 "exit" => {
                     let code = args.get(0).map(|v| v.as_int()).unwrap_or(0) as i32;
-                    std::process::exit(code);
+                    vm.platform.proc_exit(code);
                 }
                 "now" => {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64();
+                    let now = vm.platform.clock_now();
                     return Ok(Some(Value::float(now)));
                 }
                 "get_env" => {
                     if let Some(key) = args.get(0).and_then(|v| v.try_as_str()) {
-                        if let Ok(val) = std::env::var(key) {
+                        if let Some(val) = vm.platform.get_env(key) {
                             return Ok(Some(Value::string(val, &vm.gc)));
                         }
                     }
@@ -161,6 +160,22 @@ impl EffectHandler for DefaultEffectHandler {
 
 impl NyarVM {
     pub fn setup_default_runtime(&mut self) {
+        #[cfg(not(target_os = "unknown"))]
+        {
+            self.platform = Arc::new(platform::NativePlatform);
+        }
+        #[cfg(target_os = "unknown")]
+        {
+            #[cfg(feature = "wasi")]
+            {
+                self.platform = Arc::new(platform::WasiPlatform);
+            }
+            #[cfg(not(feature = "wasi"))]
+            {
+                self.platform = Arc::new(crate::vm::platform::StubPlatform);
+            }
+        }
+        
         self.ffi.register_std();
         self.register_builtins();
         self.effect_handler = Some(Arc::new(DefaultEffectHandler));

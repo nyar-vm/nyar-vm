@@ -86,34 +86,37 @@ micro fetch_user_data(id: Int) -> User {
     parse_json(response)
 }
 
-# 处理异步效应
-handle fetch_user_data(42) with Async {
-    await(promise) -> resume(promise.await)
+# 處理异步效應
+try {
+    fetch_user_data(42)
+} .catch {
+    case Async::await { promise }:
+        resume(promise.await)
 }
 ```
 
-### Q: 如何进行错误处理？
+### Q: 如何進行錯誤處理？
 
-A: Valkyrie 提供多种错误处理方式：
+A: Valkyrie 提供多種錯誤處理方式：
 
 ```valkyrie
-# 1. 使用 Result 类型
+# 1. 使用 Result 類型
 micro divide(a: Float, b: Float) -> Result<Float, String> {
     if b == 0.0 {
-        Fail { error: "除零错误" }
+        Fail { error: "除零錯誤" }
     } else {
         Fine { value: a / b }
     }
 }
 
-# 2. 使用异常效应
+# 2. 使用異常效應
 effect Exception {
     throw(message: String): Never
 }
 
 micro safe_divide(a: Float, b: Float) -> Float {
     if b == 0.0 {
-        raise Exception.throw("除零错误")
+        Exception::throw { message: "除零錯誤" }
     } else {
         a / b
     }
@@ -182,34 +185,38 @@ A: Valkyrie 提供完整的工具链：
 - **调试器**：源码级调试支持
 - **测试框架**：内置单元测试和集成测试
 
-### Q: 如何编写和运行测试？
+### Q: 如何編寫和運行測試？
 
-A: 使用内置测试框架：
+A: 使用內置測試框架：
 
 ```valkyrie
-# 单元测试
+# 單元測試
 @test
 micro test_addition() {
-    @assert_eq(add(2, 3), 5)
-    @assert_eq(add(-1, 1), 0)
+    Assert::eq(add(2, 3), 5)
+    Assert::eq(add(-1, 1), 0)
 }
 
-# 属性测试
+# 屬性測試
 @test
 micro test_addition_commutative() {
-    forall (a: Int, b: Int) {
-        @assert_eq(add(a, b), add(b, a))
-    }
+    Assert::forall(forall a: Int, b: Int {
+        add(a, b) == add(b, a)
+    })
 }
 
-# 效应测试
+# 效應測試
 @test
 micro test_state_effect() {
-    let result = handle counter() with State {
-        get() -> resume(0),
-        set(value) -> resume(())
+    let result = try {
+        counter()
+    } .catch {
+        case State::get {}:
+            resume(0)
+        case State::set { value }:
+            resume(())
     }
-    @assert_eq(result, 1)
+    Assert::eq(result, 1)
 }
 ```
 

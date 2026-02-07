@@ -87,8 +87,11 @@ micro fetch_user_data(id: Int) -> User {
 }
 
 # 处理异步效应
-handle fetch_user_data(42) with Async {
-    await(promise) -> resume(promise.await)
+try {
+    fetch_user_data(42)
+} .catch {
+    case Async::await { promise }:
+        resume(promise.await)
 }
 ```
 
@@ -113,7 +116,7 @@ effect Exception {
 
 micro safe_divide(a: Float, b: Float) -> Float {
     if b == 0.0 {
-        raise Exception.throw("除零错误")
+        Exception::throw { message: "除零错误" }
     } else {
         a / b
     }
@@ -190,26 +193,30 @@ A: 使用内置测试框架：
 # 单元测试
 @test
 micro test_addition() {
-    @assert_eq(add(2, 3), 5)
-    @assert_eq(add(-1, 1), 0)
+    Assert::eq(add(2, 3), 5)
+    Assert::eq(add(-1, 1), 0)
 }
 
 # 属性测试
 @test
 micro test_addition_commutative() {
-    forall (a: Int, b: Int) {
-        @assert_eq(add(a, b), add(b, a))
-    }
+    Assert::forall(forall a: Int, b: Int {
+        add(a, b) == add(b, a)
+    })
 }
 
 # 效应测试
 @test
 micro test_state_effect() {
-    let result = handle counter() with State {
-        get() -> resume(0),
-        set(value) -> resume(())
+    let result = try {
+        counter()
+    } .catch {
+        case State::get {}:
+            resume(0)
+        case State::set { value }:
+            resume(())
     }
-    @assert_eq(result, 1)
+    Assert::eq(result, 1)
 }
 ```
 

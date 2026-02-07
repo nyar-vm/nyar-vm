@@ -47,8 +47,8 @@ div {
 ```valkyrie
 div {
     match user.status {
-        case .online:  span { "在线" }
-        case .offline: span { "离线" }
+        case online:  span { "在线" }
+        case offline: span { "离线" }
         else:          span { "未知" }
     }
 }

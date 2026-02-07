@@ -32,6 +32,7 @@ gaia-types = { workspace = true }
 x86_64-assembler = { workspace = true }
 clap = { workspace = true, optional = true }
 tokio = { version = "1.0", features = ["full"], optional = true }
+wasi = { version = "0.14.7", optional = true }
 
 [features]
 default = ["clap", "tokio"]
@@ -39,3 +40,4 @@ clap = ["dep:clap"]
 tokio = ["dep:tokio", "nyar-gc/tokio"]
 native = []
 jvm = ["chomsky/jvm"]
+wasi = ["dep:wasi"]

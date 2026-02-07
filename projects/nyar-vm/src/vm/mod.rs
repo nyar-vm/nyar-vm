@@ -2,6 +2,7 @@ pub mod async_rt;
 pub mod core;
 pub mod effects;
 pub mod net;
+pub mod platform;
 pub mod ffi;
 pub mod ops;
 pub mod safety;
