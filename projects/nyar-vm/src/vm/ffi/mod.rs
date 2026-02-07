@@ -1,7 +1,6 @@
 pub mod io;
 pub mod fs;
 pub mod http;
-pub mod html;
 
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
@@ -37,6 +36,7 @@ pub trait FFIFunction: Send + Sync {
     }
 }
 
+#[derive(Clone)]
 pub struct FFIRegistry {
     pub functions: HashMap<String, Arc<dyn FFIFunction>>,
     pub intrinsics: HashMap<u32, Arc<dyn FFIFunction>>,
@@ -107,10 +107,6 @@ impl FFIRegistry {
         self.register("std.http.get".to_string(), Arc::new(http::StdHttpGet));
         self.register("std.http.post".to_string(), Arc::new(http::StdHttpPost));
         self.register("std.http.set_proxy".to_string(), Arc::new(http::StdHttpSetProxy));
-
-        self.register("std.html.parse".to_string(), Arc::new(html::StdHtmlParse));
-        self.register("std.html.select_text".to_string(), Arc::new(html::StdHtmlSelectText));
-        self.register("std.html.select_attr".to_string(), Arc::new(html::StdHtmlSelectAttr));
     }
 }
 

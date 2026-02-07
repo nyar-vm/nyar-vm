@@ -1245,9 +1245,10 @@ impl NyarBackend {
                                 self.emit(Instruction::LoadGlobal(temp_idx), &mut exit_code);
                                 let exit_idx = self.add_constant(Constant::String("__exit__".to_string()));
                                 // Call __exit__(None, None, None)
-                                self.emit(Instruction::Push(self.add_constant(Constant::String("None".to_string()))), &mut exit_code);
-                                self.emit(Instruction::Push(self.add_constant(Constant::String("None".to_string()))), &mut exit_code);
-                                self.emit(Instruction::Push(self.add_constant(Constant::String("None".to_string()))), &mut exit_code);
+                                let none_idx = self.add_constant(Constant::String("None".to_string()));
+                                self.emit(Instruction::Push(none_idx), &mut exit_code);
+                                self.emit(Instruction::Push(none_idx), &mut exit_code);
+                                self.emit(Instruction::Push(none_idx), &mut exit_code);
                                 self.emit(Instruction::InvokeMethod(exit_idx, 3), &mut exit_code);
                                 self.emit(Instruction::Pop, &mut exit_code);
                             }

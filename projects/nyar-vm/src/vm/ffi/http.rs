@@ -1,5 +1,5 @@
 use crate::vm::core::NyarVM;
-use crate::vm::value::Value;
+use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
 use nyar_types::NyarError;
 use std::sync::{Arc, RwLock, OnceLock};
@@ -37,16 +37,54 @@ impl FFIFunction for StdHttpGet {
     }
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let url_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing url argument".to_string()))?;
-        let url_str = url_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Url must be a string".to_string()))?;
+        let url_str = url_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Url must be a string".to_string()))?.to_string();
+
+        let future_val = Value::future(&vm.gc);
+        let future_ptr = unsafe { future_val.as_future_mut() as *mut Future as usize };
 
         let client = get_client().read().unwrap().clone();
         let rt = get_runtime();
-        
-        let response = rt.block_on(async {
-            client.get(url_str).send().await?.text().await
-        }).map_err(|e| NyarError::RuntimeError(e.to_string()))?;
+        let gc_ptr = &vm.gc as *const crate::vm::core::NyarGc as usize;
 
-        Ok(Value::string(response, &vm.gc))
+        rt.spawn(async move {
+            let res = client.get(&url_str).send().await;
+            let future_ptr = future_ptr as *mut Future;
+            match res {
+                Ok(resp) => {
+                    let text = resp.text().await;
+                    match text {
+                        Ok(t) => {
+                            unsafe {
+                                let gc = &*(gc_ptr as *const crate::vm::core::NyarGc);
+                                (*future_ptr).result = Value::string(t, gc);
+                                (*future_ptr).status = FutureStatus::Ready;
+                                if let Some(waker) = (*future_ptr).waker.take() {
+                                    waker.wake();
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            unsafe {
+                                (*future_ptr).status = FutureStatus::Failed;
+                                if let Some(waker) = (*future_ptr).waker.take() {
+                                    waker.wake();
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    unsafe {
+                        (*future_ptr).status = FutureStatus::Failed;
+                        if let Some(waker) = (*future_ptr).waker.take() {
+                            waker.wake();
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(future_val)
     }
 }
 

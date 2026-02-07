@@ -63,7 +63,7 @@ impl<'a> Future for VmFuture<'a> {
         {
             // If we are in a tokio task, update the traceback summary
             let summary = self.vm.get_traceback_summary();
-            return VM_TRACEBACK.scope(summary, || self.poll_internal(cx));
+            return VM_TRACEBACK.sync_scope(summary, || self.poll_internal(cx));
         }
 
         #[cfg(not(feature = "tokio"))]
@@ -99,8 +99,8 @@ impl<'a> VmFuture<'a> {
                 Ok(Some(())) => {}
                 Ok(None) => return Poll::Ready(Ok(self.vm.pop().unwrap_or(crate::vm::value::Value::null()))),
                 Err(e) if matches!(*e.kind, nyar_types::NyarErrorKind::Vm(nyar_types::VmErrorKind::YieldAsync)) => {
-                    // Instruction requested a yield
-                    cx.waker().wake_by_ref();
+                    // Await on a pending future. The waker has been registered in execute_await.
+                    // We don't wake_by_ref here because we wait for the IO/future to wake us.
                     return Poll::Pending;
                 }
                 Err(e) => return Poll::Ready(Err(e)),
