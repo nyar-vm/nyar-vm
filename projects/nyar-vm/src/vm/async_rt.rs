@@ -11,42 +11,39 @@ tokio::task_local! {
     pub static VM_TRACEBACK: String;
 }
 
-#[derive(Default)]
-pub struct AsyncRuntime {}
+#[cfg(feature = "tokio")]
+pub struct NyarRuntime {
+    handle: tokio::runtime::Handle,
+}
 
-impl AsyncRuntime {
+#[cfg(feature = "tokio")]
+impl NyarRuntime {
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Blocks the current thread until the given future completes.
-    /// This is a simple executor that doesn't require an external async runtime.
-    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-        let mut future = Box::pin(future);
-        let waker = self.create_waker();
-        let mut cx = Context::from_waker(&waker);
-        loop {
-            match future.as_mut().poll(&mut cx) {
-                Poll::Ready(res) => return res,
-                Poll::Pending => {
-                    std::thread::yield_now();
-                }
-            }
+        Self {
+            handle: tokio::runtime::Handle::current(),
         }
     }
 
-    fn create_waker(&self) -> std::task::Waker {
-        use std::task::{RawWaker, RawWakerVTable, Waker};
+    pub fn spawn<F>(&self, future: F) -> tokio::task::JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.handle.spawn(future)
+    }
 
-        unsafe fn noop(_: *const ()) {}
-        unsafe fn clone(p: *const ()) -> RawWaker {
-            RawWaker::new(p, &VTABLE)
-        }
-
-        static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, noop, noop, noop);
-        unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+    pub fn spawn_vm(&self, mut vm: NyarVM, module_idx: usize, chunk_idx: usize) -> tokio::task::JoinHandle<Result<crate::vm::value::Value, NyarError>> {
+        self.handle.spawn(async move {
+            let future = VmFuture {
+                vm: &mut vm,
+                module_idx,
+                chunk_idx,
+            };
+            future.await
+        })
     }
 }
+
 
 /// A wrapper for VM execution in an async context, integrating with nyar-gc's cooperative yielding.
 pub struct VmFuture<'a> {

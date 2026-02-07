@@ -4,10 +4,10 @@ use crate::vm::ffi::FFIRegistry;
 use crate::vm::value::{Value, Frame};
 use crate::vm::NyarError;
 use nyar_gc::{MarkContext, NyarGc, Trace};
+use std::sync::Arc;
+use dashmap::DashMap;
 
-
-use nyar_types::QualifiedName;
-
+use nyar_types::{QualifiedName, Constant};
 
 pub trait JitProvider: Send + Sync {
     fn try_execute(
@@ -31,13 +31,14 @@ pub struct NyarVM {
     pub sp: usize,
     pub frames: Vec<Frame>,
     pub modules: Vec<NyarcModule>,
+    pub module_names: Vec<String>,
     pub handler_stack: Vec<HandlerFrame>,
     #[allow(clippy::type_complexity)]
-    pub stdout: Option<Box<dyn Fn(&str)>>,
-    pub trace_log: std::cell::RefCell<Vec<String>>,
+    pub stdout: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    pub trace_log: Arc<std::sync::Mutex<Vec<String>>>,
     pub ffi: FFIRegistry,
-    pub symbol_table: std::collections::HashMap<QualifiedName, (usize, u16)>, // (module_idx, chunk_idx)
-    pub builtins: std::collections::HashMap<QualifiedName, Value>,
+    pub symbol_table: Arc<DashMap<QualifiedName, (usize, u16)>>, // (module_idx, chunk_idx)
+    pub builtins: Arc<DashMap<QualifiedName, Value>>,
     pub jit: Option<std::sync::Arc<dyn JitProvider>>,
     pub local_hotness: u8,
     pub last_gc_count: u64,
@@ -52,8 +53,8 @@ impl Trace for NyarVM {
         for frame in &self.frames {
             frame.trace(ctx);
         }
-        for builtin in self.builtins.values() {
-            builtin.trace(ctx);
+        for r in self.builtins.iter() {
+            r.value().trace(ctx);
         }
     }
 }
@@ -65,13 +66,14 @@ impl NyarVM {
             stack: Vec::with_capacity(64),
             sp: 0,
             frames: Vec::new(),
-            modules: Vec::new(),
+            modules: Arc::new(Vec::new()),
+            module_names: Arc::new(Vec::new()),
             handler_stack: Vec::new(),
             stdout: None,
-            trace_log: std::cell::RefCell::new(Vec::new()),
+            trace_log: Arc::new(std::sync::Mutex::new(Vec::new())),
             ffi: FFIRegistry::new(),
-            symbol_table: std::collections::HashMap::new(),
-            builtins: std::collections::HashMap::new(),
+            symbol_table: Arc::new(DashMap::new()),
+            builtins: Arc::new(DashMap::new()),
             jit: None,
             local_hotness: 0,
             last_gc_count: 0,
@@ -157,7 +159,7 @@ impl NyarVM {
         } else {
             println!("{}", msg);
         }
-        self.trace_log.borrow_mut().push(msg.to_string());
+        self.trace_log.lock().unwrap().push(msg.to_string());
     }
 
     pub fn log(&self, msg: &str) {
@@ -177,8 +179,11 @@ impl NyarVM {
                 // Try to find a symbol for this chunk
                 self.symbol_table
                     .iter()
-                    .find(|(_, &(m_idx, c_idx))| m_idx == f.module_idx && c_idx as usize == chunk_idx)
-                    .map(|(name, _)| name.to_string())
+                    .find(|r| {
+                        let (m_idx, c_idx) = *r.value();
+                        m_idx == f.module_idx && c_idx as usize == chunk_idx
+                    })
+                    .map(|r| r.key().to_string())
                     .unwrap_or_else(|| format!("Chunk#{}", chunk_idx))
             } else {
                 "Anonymous".to_string()
@@ -221,16 +226,22 @@ impl NyarVM {
             } else if let Some(chunk_idx) = f.chunk_idx {
                 self.symbol_table
                     .iter()
-                    .find(|(_, &(m_idx, c_idx))| m_idx == f.module_idx && c_idx as usize == chunk_idx)
-                    .map(|(name, _)| name.to_string())
+                    .find(|r| {
+                        let (m_idx, c_idx) = *r.value();
+                        m_idx == f.module_idx && c_idx as usize == chunk_idx
+                    })
+                    .map(|r| r.key().to_string())
                     .unwrap_or_else(|| format!("Chunk#{}", chunk_idx))
             } else {
                 "Anonymous".to_string()
             };
 
             let info = format!(
-                "  [frame {}] {} at {}",
-                i, func_name, f.location
+                "  [frame {}] {} at {}:{}",
+                i,
+                func_name,
+                self.module_names.get(f.location.source_id as usize).cloned().unwrap_or_else(|| format!("source:{}", f.location.source_id)),
+                f.location.offset
             );
             self.print_line(&info);
         }
@@ -240,10 +251,10 @@ impl NyarVM {
     pub fn dump_symbol_table(&self) -> String {
         let mut res = String::new();
         res.push_str("Symbol Table Dump:\n");
-        let mut symbols: Vec<_> = self.symbol_table.iter().collect();
+        let mut symbols: Vec<_> = self.symbol_table.iter().map(|r| (r.key().clone(), *r.value())).collect();
         symbols.sort_by(|a, b| a.0.to_string().cmp(&b.0.to_string()));
 
-        for (name, &(m_idx, c_idx)) in symbols {
+        for (name, (m_idx, c_idx)) in symbols {
             res.push_str(&format!(
                 "  {} -> Module {}, Chunk {}\n",
                 name, m_idx, c_idx
@@ -252,8 +263,9 @@ impl NyarVM {
         res
     }
 
-    pub fn load_module(&mut self, module: NyarcModule) -> usize {
-        let module_idx = self.modules.len();
+    pub fn load_module(&mut self, module: NyarcModule, name: String) -> usize {
+        let modules = Arc::make_mut(&mut self.modules);
+        let module_idx = modules.len();
 
         // Update symbol table with exports from this module
         for export in &module.exports {
@@ -261,7 +273,8 @@ impl NyarVM {
                 .insert(export.symbol.clone(), (module_idx, export.chunk_idx));
         }
 
-        self.modules.push(module);
+        modules.push(module);
+        Arc::make_mut(&mut self.module_names).push(name);
         module_idx
     }
 

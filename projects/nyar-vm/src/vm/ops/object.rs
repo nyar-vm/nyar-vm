@@ -560,7 +560,8 @@ impl NyarVM {
         let mut full_method_name = class_info.name.clone();
         full_method_name.parts.push("finalize".to_string());
 
-        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(&full_method_name) {
+        if let Some(res) = self.symbol_table.get(&full_method_name) {
+            let (m_idx, chunk_idx) = *res;
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
             let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
 

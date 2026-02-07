@@ -39,7 +39,7 @@ impl FFIFunction for StdIoPrint {
                 print!("{}", s);
                 let _ = io::stdout().flush();
             }
-            vm.trace_log.borrow_mut().push(s);
+            vm.trace_log.lock().unwrap().push(s);
         }
         Ok(Value::null())
     }

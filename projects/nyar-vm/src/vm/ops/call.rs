@@ -94,7 +94,7 @@ impl NyarVM {
             }
         };
 
-        let symbol = self.symbol_table.get(&name).copied();
+        let symbol = self.symbol_table.get(&name).map(|r| *r.value());
         if let Some((m_idx, chunk_idx)) = symbol {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
             let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;

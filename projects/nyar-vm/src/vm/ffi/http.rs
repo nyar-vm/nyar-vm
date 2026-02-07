@@ -2,9 +2,13 @@ use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
 use nyar_types::NyarError;
+use std::ptr::NonNull;
 use std::sync::{Arc, RwLock, OnceLock};
 use reqwest::{Client, Proxy};
 use tokio::runtime::Runtime;
+
+struct SendFuturePtr(NonNull<Future>);
+unsafe impl Send for SendFuturePtr {}
 
 static HTTP_CLIENT: OnceLock<Arc<RwLock<Client>>> = OnceLock::new();
 static PROXY_URL: OnceLock<Arc<RwLock<Option<String>>>> = OnceLock::new();
@@ -40,22 +44,23 @@ impl FFIFunction for StdHttpGet {
         let url_str = url_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Url must be a string".to_string()))?.to_string();
 
         let future_val = Value::future(&vm.gc);
-        let future_ptr = unsafe { future_val.as_future_mut() as *mut Future as usize };
+        let future_ptr = unsafe { future_val.as_future_mut() as *mut Future };
+        let future_send_ptr = SendFuturePtr(unsafe { NonNull::new_unchecked(future_ptr) });
 
         let client = get_client().read().unwrap().clone();
         let rt = get_runtime();
-        let gc_ptr = &vm.gc as *const crate::vm::core::NyarGc as usize;
+        let gc_ptr = &vm.gc as *const nyar_gc::NyarGc as usize;
 
         rt.spawn(async move {
             let res = client.get(&url_str).send().await;
-            let future_ptr = future_ptr as *mut Future;
+            let future_ptr = future_send_ptr.0.as_ptr();
             match res {
                 Ok(resp) => {
-                    let text = resp.text().await;
-                    match text {
+                    let text_res = resp.text().await;
+                    match text_res {
                         Ok(t) => {
                             unsafe {
-                                let gc = &*(gc_ptr as *const crate::vm::core::NyarGc);
+                                let gc = &*(gc_ptr as *const nyar_gc::NyarGc);
                                 (*future_ptr).result = Value::string(t, gc);
                                 (*future_ptr).status = FutureStatus::Ready;
                                 if let Some(waker) = (*future_ptr).waker.take() {
@@ -63,7 +68,7 @@ impl FFIFunction for StdHttpGet {
                                 }
                             }
                         }
-                        Err(e) => {
+                        Err(_) => {
                             unsafe {
                                 (*future_ptr).status = FutureStatus::Failed;
                                 if let Some(waker) = (*future_ptr).waker.take() {

@@ -45,7 +45,8 @@ impl NyarVM {
     }
 
     pub fn execute_symbol(&mut self, name: &QualifiedName, args: Vec<Value>) -> Result<Value, NyarError> {
-        if let Some(&(m_idx, chunk_idx)) = self.symbol_table.get(name) {
+        let entry = self.symbol_table.get(name).map(|r| *r);
+        if let Some((m_idx, chunk_idx)) = entry {
             if let Some(jit) = self.jit.clone() {
                 if let Some(res) = jit.try_execute(self, m_idx, chunk_idx as usize) {
                     return res;
@@ -232,7 +233,7 @@ impl NyarVM {
         {
             let log_msg = format!("VM: [{:04}] {:?} (stack size: {}) at {}", cur_ip, ins, self.sp, self.frames.last().unwrap().location);
             println!("{}", log_msg);
-            self.trace_log.borrow_mut().push(log_msg);
+            self.trace_log.lock().unwrap().push(log_msg);
         }
 
         let mut pushed_frame = false;

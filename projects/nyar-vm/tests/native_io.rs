@@ -33,7 +33,7 @@ fn test_std_io_println_effect() {
     assert!(res.is_ok());
     
     // Check if message was logged
-    let logs = vm.trace_log.borrow();
+    let logs = vm.trace_log.lock().unwrap();
     assert!(logs.contains(&"Hello, Effect!".to_string()));
 }
 

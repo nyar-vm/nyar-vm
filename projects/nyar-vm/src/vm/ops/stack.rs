@@ -92,11 +92,16 @@ impl NyarVM {
             Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
             _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x07))),
         };
-        if let Some(v) = self.builtins.get(&name) {
-            self.push(*v)?;
-            Ok(None)
-        } else if let Some(&(_m_idx, _c_idx)) = self.symbol_table.get(&name) {
-            self.push(Value::null())?;
+        let val = if let Some(v) = self.builtins.get(&name) {
+            Some(*v)
+        } else if let Some(res) = self.symbol_table.get(&name) {
+            Some(Value::null())
+        } else {
+            None
+        };
+
+        if let Some(v) = val {
+            self.push(v)?;
             Ok(None)
         } else {
             Err(self.error(nyar_types::VmErrorKind::SymbolNotFound(name)))

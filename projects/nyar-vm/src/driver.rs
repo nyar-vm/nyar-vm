@@ -35,7 +35,7 @@ impl NyarDriver {
         backend.lower_tree(&tree)?;
         let module = backend.finish();
         let mut vm = NyarVM::new();
-        let module_idx = vm.load_module(module);
+        let module_idx = vm.load_module(module, uri.to_string());
         let main_name = QualifiedName::new(vec!["main".to_string()]);
         if vm.execute_symbol(&main_name, vec![]).is_ok() {
             Ok(())
@@ -59,11 +59,16 @@ impl NyarDriver {
         backend.lower_tree(&tree)?;
         let module = backend.finish();
         let mut vm = NyarVM::new();
-        let module_idx = vm.load_module(module);
-        let chunk_idx = vm.get_module(module_idx).chunks.len().saturating_sub(1);
-        vm.execute(module_idx, chunk_idx)
-            .map(|_| ())
-            .map_err(NyarError::from)
+        let module_idx = vm.load_module(module, "code".to_string());
+        let main_name = QualifiedName::new(vec!["main".to_string()]);
+        if vm.execute_symbol(&main_name, vec![]).is_ok() {
+            Ok(())
+        } else {
+            let chunk_idx = vm.get_module(module_idx).chunks.len().saturating_sub(1);
+            vm.execute(module_idx, chunk_idx)
+                .map(|_| ())
+                .map_err(NyarError::from)
+        }
     }
 
     /// AOT 编译到原生可执行文件
