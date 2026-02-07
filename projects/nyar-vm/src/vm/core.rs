@@ -26,18 +26,35 @@ pub trait JitProvider: Send + Sync {
     ) -> Result<*const u8, NyarError>;
 }
 
+pub struct NyarEnv {
+    pub modules: DashMap<usize, NyarcModule>,
+    pub module_names: DashMap<usize, String>,
+    pub symbol_table: DashMap<QualifiedName, (usize, u16)>,
+    pub builtins: DashMap<QualifiedName, Value>,
+    pub next_module_idx: std::sync::atomic::AtomicUsize,
+}
+
+impl NyarEnv {
+    pub fn new() -> Self {
+        Self {
+            modules: DashMap::new(),
+            module_names: DashMap::new(),
+            symbol_table: DashMap::new(),
+            builtins: DashMap::new(),
+            next_module_idx: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+}
+
 pub struct NyarVM {
     pub gc: Arc<NyarGc>,
+    pub env: Arc<NyarEnv>,
     pub stack: Vec<Value>,
     pub sp: usize,
     pub frames: Vec<Frame>,
-    pub modules: Arc<Vec<NyarcModule>>,
-    pub module_names: Arc<Vec<String>>,
     pub handler_stack: Vec<HandlerFrame>,
     pub trace_log: Arc<std::sync::Mutex<Vec<String>>>,
     pub ffi: FFIRegistry,
-    pub symbol_table: Arc<DashMap<QualifiedName, (usize, u16)>>, // (module_idx, chunk_idx)
-    pub builtins: Arc<DashMap<QualifiedName, Value>>,
     pub jit: Option<std::sync::Arc<dyn JitProvider>>,
     pub local_hotness: u8,
     pub last_gc_count: u64,
@@ -55,7 +72,7 @@ impl Trace for NyarVM {
         for frame in &self.frames {
             frame.trace(ctx);
         }
-        for r in self.builtins.iter() {
+        for r in self.env.builtins.iter() {
             r.value().trace(ctx);
         }
     }
@@ -65,16 +82,13 @@ impl NyarVM {
     pub fn new() -> Self {
         let mut vm = Self {
             gc: Arc::new(NyarGc::new()),
+            env: Arc::new(NyarEnv::new()),
             stack: Vec::with_capacity(64),
             sp: 0,
             frames: Vec::new(),
-            modules: Arc::new(Vec::new()),
-            module_names: Arc::new(Vec::new()),
             handler_stack: Vec::new(),
             trace_log: Arc::new(std::sync::Mutex::new(Vec::new())),
             ffi: FFIRegistry::new(),
-            symbol_table: Arc::new(DashMap::new()),
-            builtins: Arc::new(DashMap::new()),
             jit: None,
             local_hotness: 0,
             last_gc_count: 0,
@@ -90,16 +104,13 @@ impl NyarVM {
     pub fn spawn_child(&self) -> Self {
         Self {
             gc: self.gc.clone(),
+            env: self.env.clone(),
             stack: Vec::with_capacity(64),
             sp: 0,
             frames: Vec::new(),
-            modules: self.modules.clone(),
-            module_names: self.module_names.clone(),
             handler_stack: Vec::new(),
             trace_log: self.trace_log.clone(),
             ffi: self.ffi.clone(),
-            symbol_table: self.symbol_table.clone(),
-            builtins: self.builtins.clone(),
             jit: self.jit.clone(),
             local_hotness: 0,
             last_gc_count: self.last_gc_count,
@@ -187,8 +198,14 @@ impl NyarVM {
         self.platform.stdout_write(&format!("{}\n", msg));
     }
 
-    pub fn get_module(&self, idx: usize) -> &NyarcModule {
-        &self.modules[idx]
+    pub fn get_module(&self, idx: usize) -> dashmap::mapref::one::Ref<usize, NyarcModule> {
+        self.env.modules.get(&idx).expect("Module not found")
+    }
+
+    pub fn gc_stats(&self) -> (usize, u64) {
+        let allocated = self.gc.allocated_bytes.load(std::sync::atomic::Ordering::Relaxed);
+        let collections = self.gc.total_collections.load(std::sync::atomic::Ordering::Relaxed);
+        (allocated, collections)
     }
 
     pub fn get_traceback_summary(&self) -> String {
@@ -198,7 +215,7 @@ impl NyarVM {
                 format!("Closure#{}", closure.func)
             } else if let Some(chunk_idx) = f.chunk_idx {
                 // Try to find a symbol for this chunk
-                self.symbol_table
+                self.env.symbol_table
                     .iter()
                     .find(|r| {
                         let (m_idx, c_idx) = *r.value();
@@ -223,8 +240,8 @@ impl NyarVM {
     }
 
     pub fn decay_hotness(&self) {
-        for module in self.modules.iter() {
-            for chunk in &module.chunks {
+        for module in self.env.modules.iter() {
+            for chunk in &module.value().chunks {
                 let old = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
                 chunk
                     .hotness
@@ -245,7 +262,7 @@ impl NyarVM {
             let func_name = if let Some(closure) = f.closure.try_as_closure() {
                 format!("Closure#{}", closure.func)
             } else if let Some(chunk_idx) = f.chunk_idx {
-                self.symbol_table
+                self.env.symbol_table
                     .iter()
                     .find(|r| {
                         let (m_idx, c_idx) = *r.value();
@@ -261,7 +278,7 @@ impl NyarVM {
                 "  [frame {}] {} at {}:{}",
                 i,
                 func_name,
-                self.module_names.get(f.location.source_id as usize).cloned().unwrap_or_else(|| format!("source:{}", f.location.source_id)),
+                self.env.module_names.get(&(f.location.source_id as usize)).map(|r| r.value().clone()).unwrap_or_else(|| format!("source:{}", f.location.source_id)),
                 f.location.offset
             );
             self.print_line(&info);
@@ -272,7 +289,7 @@ impl NyarVM {
     pub fn dump_symbol_table(&self) -> String {
         let mut res = String::new();
         res.push_str("Symbol Table Dump:\n");
-        let mut symbols: Vec<_> = self.symbol_table.iter().map(|r| (r.key().clone(), *r.value())).collect();
+        let mut symbols: Vec<_> = self.env.symbol_table.iter().map(|r| (r.key().clone(), *r.value())).collect();
         symbols.sort_by(|a, b| a.0.to_string().cmp(&b.0.to_string()));
 
         for (name, (m_idx, c_idx)) in symbols {
@@ -289,16 +306,16 @@ impl NyarVM {
     }
 
     pub fn load_named_module(&mut self, module: NyarcModule, name: String) -> usize {
-        let module_idx = self.modules.len();
+        let module_idx = self.env.next_module_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Update symbol table with exports from this module
         for export in &module.exports {
-            self.symbol_table
+            self.env.symbol_table
                 .insert(export.symbol.clone(), (module_idx, export.chunk_idx));
         }
 
-        Arc::make_mut(&mut self.modules).push(module);
-        Arc::make_mut(&mut self.module_names).push(name);
+        self.env.modules.insert(module_idx, module);
+        self.env.module_names.insert(module_idx, name);
         module_idx
     }
 

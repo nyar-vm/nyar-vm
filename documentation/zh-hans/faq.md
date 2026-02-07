@@ -82,8 +82,8 @@ effect Async {
 }
 
 micro fetch_user_data(id: Int) -> User {
-    let response = fetch("/api/users/{id}").await
-    parse_json(response)
+    let response = fetch("/api/users/{id}").await;
+    parse_json(response);
 }
 
 # 处理异步效应
@@ -91,7 +91,7 @@ try {
     fetch_user_data(42)
 } .catch {
     case Async::await { promise }:
-        resume(promise.await)
+        resume(promise.await);
 }
 ```
 

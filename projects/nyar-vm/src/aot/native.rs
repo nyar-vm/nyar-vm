@@ -435,7 +435,7 @@ impl NativeBackend {
 
         // lpOverlapped (stack [rsp+32]) = NULL
         builder.add_instruction(Instruction::Mov {
-            dst: Operand::mem(Some(Register::RSP), None, 1, 32),
+            dst: Operand::mem(Some(Register::RSP), None, 0, 32),
             src: Operand::imm(0, 32),
         });
 
@@ -481,7 +481,7 @@ impl NativeBackend {
                 // Push to stack (beyond shadow space)
                 // RSP + 32 + (i-4)*8
                 builder.add_instruction(Instruction::Mov {
-                    dst: Operand::mem(Some(Register::RSP), None, 1, 32 + (i as i32 - 4) * 8),
+                    dst: Operand::mem(Some(Register::RSP), None, 0, 32 + (i as i32 - 4) * 8),
                     src: Operand::reg(Register::RAX),
                 });
             }

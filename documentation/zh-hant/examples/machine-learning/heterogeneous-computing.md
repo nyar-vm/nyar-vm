@@ -335,7 +335,7 @@ micro check_memory_usage() {
 #### 2. 性能基准测试 (Benchmarking)
 
 ```valkyrie
-using std.time.Instant
+using std::time::Instant;
 
 micro benchmark(name: String, f: micro() -> ()) {
     let start = Instant::now()

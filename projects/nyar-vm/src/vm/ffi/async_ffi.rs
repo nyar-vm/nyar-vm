@@ -32,6 +32,67 @@ impl FFIFunction for AsyncDelay {
     }
 }
 
+pub struct AsyncTimeout;
+impl FFIFunction for AsyncTimeout {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Any, FFIType::Int], // Future/Closure, ms
+            ret: FFIType::Any,
+        })
+    }
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        let target = args.get(0).cloned().unwrap_or(Value::null());
+        let ms = args.get(1).map(|v| v.as_int()).unwrap_or(0) as u64;
+        
+        let future = Value::future(&vm.gc);
+        let future_clone = future;
+
+        if target.is_future() {
+            tokio::spawn(async move {
+                 let timeout = tokio::time::sleep(Duration::from_millis(ms));
+                
+                tokio::select! {
+                    _ = timeout => {
+                        unsafe {
+                            let f = future_clone.as_future_mut();
+                            f.status = FutureStatus::Failed;
+                            // Maybe set result to "Timeout"
+                            if let Some(waker) = f.waker.take() {
+                                waker.wake();
+                            }
+                        }
+                    }
+                    _ = async {
+                        loop {
+                            unsafe {
+                                let f = target.as_future();
+                                if f.status != FutureStatus::Pending {
+                                    return f.status;
+                                }
+                            }
+                            tokio::task::yield_now().await;
+                        }
+                    } => {
+                        unsafe {
+                            let f = future_clone.as_future_mut();
+                            let target_f = target.as_future();
+                            f.status = target_f.status;
+                            f.result = target_f.result;
+                            if let Some(waker) = f.waker.take() {
+                                waker.wake();
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            return Err(vm.error(nyar_types::VmErrorKind::RuntimeError("Target must be a future".to_string())));
+        }
+
+        Ok(future)
+    }
+}
+
 pub struct AsyncAwait;
 impl FFIFunction for AsyncAwait {
     fn signature(&self) -> Option<FFISignature> {

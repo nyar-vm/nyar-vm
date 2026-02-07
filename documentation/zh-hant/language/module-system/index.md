@@ -28,8 +28,8 @@ imply Point {
 使用 `using` 關鍵字導入其他命名空間的成員。
 
 ```valkyrie
-using math.geometry;
-using math.geometry.Point;
+using math::geometry;
+using math::geometry::Point;
 ```
 
 ## 可見性控制

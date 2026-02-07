@@ -1,7 +1,6 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::Value;
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
-use nyar_types::NyarError;
 
 pub struct StdIoPrintln;
 impl FFIFunction for StdIoPrintln {

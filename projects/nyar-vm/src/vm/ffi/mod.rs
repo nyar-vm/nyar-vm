@@ -108,6 +108,8 @@ impl FFIRegistry {
         self.register("std::fs::write".to_string(), Arc::new(fs::StdFsWrite));
         self.register("std::fs::exists".to_string(), Arc::new(fs::StdFsExists));
         self.register("std::fs::remove_file".to_string(), Arc::new(fs::StdFsRemoveFile));
+        self.register("std::fs::async_read_to_string".to_string(), Arc::new(fs::AsyncFsReadToString));
+        self.register("std::fs::async_write".to_string(), Arc::new(fs::AsyncFsWrite));
 
         self.register("std::http::get".to_string(), Arc::new(http::StdHttpGet));
         self.register("std::http::post".to_string(), Arc::new(http::StdHttpPost));
@@ -133,6 +135,7 @@ impl FFIRegistry {
         self.register("std::async::Async::delay".to_string(), Arc::new(async_ffi::AsyncDelay));
         self.register("std::async::Async::spawn".to_string(), Arc::new(async_ffi::AsyncSpawn));
         self.register("std::async::Async::await".to_string(), Arc::new(async_ffi::AsyncAwait));
+        self.register("std::async::Async::timeout".to_string(), Arc::new(async_ffi::AsyncTimeout));
     }
 }
 
