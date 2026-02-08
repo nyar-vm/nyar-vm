@@ -1,0 +1,39 @@
+[package]
+name = "rusty-c"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rusty_c"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rusty-c"
+path = "src/main.rs"
+
+[[bin]]
+name = "cling"
+path = "bin/cling.rs"
+
+[dependencies]
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
+oak-core = { workspace = true }
+oak-vfs = { workspace = true }
+oak-c = { workspace = true }
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-cost = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-types = { workspace = true }
+gaia-assembler = { workspace = true }
+clap = { workspace = true }
+oak-repl = { workspace = true }
+thiserror = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.8"
+tempfile = "3.10"
+
+[dev-dependencies]

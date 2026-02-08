@@ -1,0 +1,29 @@
+[package]
+name = "rusty-kotlin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-vm = { path = "../../projects/nyar-vm" }
+nyar-types = { path = "../../projects/nyar-types" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
+oak-kotlin = { path = "../../../oaks/examples/oak-kotlin" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
+chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
+serde = { version = "1.0", features = ["derive"] }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rusty-kotlin"
+path = "src/main.rs"
+
+[[bin]]
+name = "kotlin"
+path = "bin/kotlin.rs"
+
+[[bin]]
+name = "kotlinc"
+path = "bin/kotlinc.rs"

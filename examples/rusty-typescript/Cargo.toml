@@ -1,0 +1,48 @@
+[package]
+name = "rusty-typescript"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rusty_typescript"
+path = "src/lib.rs"
+crate-type = ["lib", "cdylib"]
+
+[[bin]]
+name = "tsc"
+path = "bin/tsc.rs"
+
+[[bin]]
+name = "tsx"
+path = "bin/tsx.rs"
+
+[dependencies]
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
+chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
+chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
+chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
+oak-typescript = { path = "../../../oaks/examples/oak-typescript", default-features = false }
+nyar-types = { path = "../../projects/nyar-types" }
+nyar-aot = { path = "../../projects/nyar-aot" }
+nyar-vm = { path = "../../projects/nyar-vm" }
+oak-vfs = { path = "../../../oaks/projects/oak-vfs" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+clap = { version = "4.5", features = ["derive"] }
+tempfile = "3.10"
+wit-bindgen = "0.35.0"
+
+[features]
+default = ["native"]
+native = ["nyar-vm/native"]
+
+[package.metadata.component]
+package = "nyar:rusty0-typescript"
+target = { path = "wit", world = "compiler" }
+
+[dev-dependencies]
+chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }

@@ -1,0 +1,12 @@
+[package]
+name = "nyar-gc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-gc-derive = { path = "nyar-gc-derive" }
+tokio = { version = "1.0", features = ["full"], optional = true }
+
+[features]
+default = []
+tokio = ["dep:tokio"]

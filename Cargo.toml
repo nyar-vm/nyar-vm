@@ -1,0 +1,63 @@
+[workspace]
+resolver = "2"
+members = [
+    "projects/*",
+    "examples/rusty-typescript",
+    "examples/rusty-python",
+    "examples/rusty-java",
+    "examples/rusty-c",
+    "examples/rusty-go",
+    "examples/rusty-csharp",
+    "examples/rusty-tcl",
+    "examples/rusty-swift",
+    "examples/rusty-julia",
+]
+default-members = [
+    "projects/nyar-types",
+    "projects/nyar-vm",
+]
+exclude = ["examples/valkyrie-bootstrap", "projects/nyar-tools"]
+
+[profile.release]
+lto = true
+opt-level = "s"
+
+[workspace.dependencies]
+chomsky = { path = "../ProjectChomsky/packages/chomsky", default-features = false }
+chomsky-uir = { path = "../ProjectChomsky/packages/chomsky-uir" }
+chomsky-cost = { path = "../ProjectChomsky/packages/chomsky-cost" }
+chomsky-types = { path = "../ProjectChomsky/packages/chomsky-types" }
+chomsky-extract = { path = "../ProjectChomsky/packages/chomsky-extract" }
+chomsky-emit = { path = "../ProjectChomsky/packages/chomsky-emit" }
+chomsky-rules = { path = "../ProjectChomsky/packages/chomsky-rules" }
+chomsky-rule-engine = { path = "../ProjectChomsky/packages/chomsky-rule-engine" }
+oak-core = { path = "../oaks/projects/oak-core" }
+oak-vfs = { path = "../oaks/projects/oak-vfs" }
+oak-repl = { path = "../oaks/projects/oak-repl" }
+oak-rust = { path = "../oaks/examples/oak-rust" }
+oak-c = { path = "../oaks/examples/oak-c" }
+oak-typescript = { path = "../oaks/examples/oak-typescript" }
+gaia-jit = { path = "../project-gaia/projects/gaia-jit" }
+gaia-types = { path = "../project-gaia/projects/gaia-types" }
+gaia-assembler = { path = "../project-gaia/projects/gaia-assembler" }
+python-assembler = { path = "../project-gaia/examples/pyc-assembler" }
+pe-assembler = { path = "../project-gaia/examples/pe-assembler" }
+x86_64-assembler = { path = "../project-gaia/examples/x86_64-assembler" }
+nyar-vm = { path = "projects/nyar-vm" }
+nyar-types = { path = "projects/nyar-types" }
+nyar-aot = { path = "projects/nyar-aot" }
+
+criterion = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+clap = { version = "4.5", features = ["derive"] }
+byteorder = "1.5"
+url = "2.5"
+tempfile = "3.10"
+num-bigint = "0.4"
+num-traits = "0.2"
+rand = "0.8"
+reqwest = { version = "0.12", features = ["json"] }
+nipper = "0.1"
+scraper = "0.19"

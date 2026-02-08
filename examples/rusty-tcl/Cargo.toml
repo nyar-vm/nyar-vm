@@ -1,0 +1,14 @@
+[package]
+name = "rusty-tcl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+oak-core = { workspace = true }
+oak-vfs = { workspace = true }
+oak-tcl = { path = "../../../oaks/examples/oak-tcl" }
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+serde = { workspace = true }

@@ -13,7 +13,26 @@ Cargo.lock
 # Node
 node_modules/
 cache/
+dist/
 package-lock.json
+
+# Asm
+*.exe
+*.dll
+*.pdb
+*.txt
+*.log
 
 # Wasm
 *.wasm
+
+# Python
+*.pyc
+
+#
+*.nyar
+*.nyarc
+*.nyar.toml
+*.nyar.json
+
+*.class

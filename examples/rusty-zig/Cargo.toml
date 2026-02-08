@@ -1,0 +1,12 @@
+[package]
+name = "rusty-zig"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-vm = { path = "../../projects/nyar-vm" }
+nyar-types = { path = "../../projects/nyar-types" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
+oak-zig = { path = "../../../oaks/examples/oak-zig" }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }

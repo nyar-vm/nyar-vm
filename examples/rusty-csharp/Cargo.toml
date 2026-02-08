@@ -1,0 +1,33 @@
+[package]
+name = "rusty-csharp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rusty_csharp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "csc"
+path = "bin/csc.rs"
+
+[[bin]]
+name = "csx"
+path = "bin/csharp.rs"
+
+[dependencies]
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
+chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
+chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
+oak-java = { path = "../../../oaks/examples/oak-java" }
+oak-csharp = { path = "../../../oaks/examples/oak-csharp" }
+nyar-types = { path = "../../projects/nyar-types" }
+nyar-vm = { path = "../../projects/nyar-vm" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+clap = { version = "4.5", features = ["derive"] }
+tempfile = "3.10"

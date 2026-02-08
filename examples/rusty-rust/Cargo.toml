@@ -1,0 +1,30 @@
+[package]
+name = "rusty-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-vm = { path = "../../projects/nyar-vm" }
+nyar-types = { path = "../../projects/nyar-types" }
+nyar-aot = { path = "../../projects/nyar-aot" }
+oak-core = { workspace = true }
+oak-rust = { workspace = true }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+gaia-assembler = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rusty-rust"
+path = "src/main.rs"
+
+[[bin]]
+name = "rustc"
+path = "bin/rustc.rs"

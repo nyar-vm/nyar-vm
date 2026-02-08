@@ -1,0 +1,26 @@
+//! Mini Java 语言编译器
+//!
+//! 这是一个类似 Java 的语言前端演示程序，支持编译到 Nyar 字节码
+
+use rusty_java::MiniJavaFrontend;
+use nyar_vm::NyarDriver;
+use oak_vfs::vfs::disk::DiskVfs;
+use std::process::exit;
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: {} <input_file>", args[0]);
+        exit(1);
+    }
+
+    let input_file = &args[1];
+    let frontend = MiniJavaFrontend::default();
+    let driver = NyarDriver::new();
+    let vfs = DiskVfs::new();
+
+    if let Err(e) = driver.run_source(&frontend, &vfs, input_file) {
+        eprintln!("Runtime error: {:?}", e);
+        exit(1);
+    }
+}

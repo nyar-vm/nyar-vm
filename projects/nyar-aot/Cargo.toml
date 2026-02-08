@@ -1,0 +1,18 @@
+[package]
+name = "nyar-aot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false }
+chomsky-uir = { workspace = true }
+chomsky-cost = { workspace = true }
+chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
+nyar-types = { path = "../nyar-types" }
+pe-assembler = { workspace = true }
+gaia-types = { workspace = true }
+
+[features]
+default = ["native"]
+native = ["chomsky/default"]

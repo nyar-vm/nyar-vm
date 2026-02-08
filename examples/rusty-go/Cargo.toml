@@ -1,0 +1,27 @@
+[package]
+name = "rusty-go"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-vm = { path = "../../projects/nyar-vm" }
+nyar-types = { path = "../../projects/nyar-types" }
+oak-core = { path = "../../../oaks/projects/oak-core" }
+oak-go = { path = "../../../oaks/examples/oak-go" }
+oak-repl = { path = "../../../oaks/projects/oak-repl" }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
+chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
+chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
+clap = { version = "4.5", features = ["derive"] }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rusty-go"
+path = "src/main.rs"
+
+[[bin]]
+name = "debug-tokens"
+path = "src/debug_tokens.rs"

@@ -1,0 +1,202 @@
+use crate::vm::core::NyarVM;
+use crate::vm::value::{Value, FutureStatus};
+use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
+use std::time::Duration;
+
+pub struct AsyncDelay;
+impl FFIFunction for AsyncDelay {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Int],
+            ret: FFIType::Any,
+        })
+    }
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        let ms = args.get(0).map(|v| v.as_int()).unwrap_or(0) as u64;
+        let future = Value::future(&vm.gc);
+        let future_clone = future;
+        
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(ms)).await;
+            unsafe {
+                let f = future_clone.as_future_mut();
+                f.status = FutureStatus::Ready;
+                f.result = Value::null();
+                if let Some(waker) = f.waker.take() {
+                    waker.wake();
+                }
+            }
+        });
+        
+        Ok(future)
+    }
+}
+
+pub struct AsyncTimeout;
+impl FFIFunction for AsyncTimeout {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Any, FFIType::Int], // Future/Closure, ms
+            ret: FFIType::Any,
+        })
+    }
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        let target = args.get(0).cloned().unwrap_or(Value::null());
+        let ms = args.get(1).map(|v| v.as_int()).unwrap_or(0) as u64;
+        
+        let future = Value::future(&vm.gc);
+        let future_clone = future;
+
+        if target.is_future() {
+            tokio::spawn(async move {
+                 let timeout = tokio::time::sleep(Duration::from_millis(ms));
+                
+                tokio::select! {
+                    _ = timeout => {
+                        unsafe {
+                            let f = future_clone.as_future_mut();
+                            f.status = FutureStatus::Failed;
+                            // Maybe set result to "Timeout"
+                            if let Some(waker) = f.waker.take() {
+                                waker.wake();
+                            }
+                        }
+                    }
+                    _ = async {
+                        loop {
+                            unsafe {
+                                let f = target.as_future();
+                                if f.status != FutureStatus::Pending {
+                                    return f.status;
+                                }
+                            }
+                            tokio::task::yield_now().await;
+                        }
+                    } => {
+                        unsafe {
+                            let f = future_clone.as_future_mut();
+                            let target_f = target.as_future();
+                            f.status = target_f.status;
+                            f.result = target_f.result;
+                            if let Some(waker) = f.waker.take() {
+                                waker.wake();
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            return Err(vm.error(nyar_types::VmErrorKind::RuntimeError("Target must be a future".to_string())));
+        }
+
+        Ok(future)
+    }
+}
+
+pub struct AsyncAwait;
+impl FFIFunction for AsyncAwait {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Any],
+            ret: FFIType::Any,
+        })
+    }
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        if let Some(val) = args.get(0) {
+            if val.is_closure() {
+                let res = vm.call_closure_sync(*val, vec![])?;
+                return Ok(res);
+            } else if val.is_future() {
+                let future = unsafe { val.as_future() };
+                match future.status {
+                    FutureStatus::Ready => {
+                        return Ok(future.result);
+                    }
+                    FutureStatus::Failed => {
+                        return Err(vm.error(nyar_types::VmErrorKind::FutureFailed));
+                    }
+                    FutureStatus::Pending => {
+                        // Register waker and yield
+                        unsafe {
+                            let future_mut = val.as_future_mut();
+                            future_mut.waker = vm.current_waker.clone();
+                        }
+                        return Err(vm.error(nyar_types::VmErrorKind::YieldAsync));
+                    }
+                }
+            }
+        }
+        Ok(Value::null())
+    }
+}
+
+
+pub struct AsyncSpawn;
+impl FFIFunction for AsyncSpawn {
+    fn signature(&self) -> Option<FFISignature> {
+        Some(FFISignature {
+            params: vec![FFIType::Any], // Closure
+            ret: FFIType::Any, // Future
+        })
+    }
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        let closure = args.get(0).cloned().unwrap_or(Value::null());
+        if !closure.is_closure() {
+            return Err(vm.error(nyar_types::VmErrorKind::RuntimeError("Invalid closure".to_string())));
+        }
+
+        let mut new_vm = vm.spawn_child();
+        let future = Value::future(&vm.gc);
+        let future_clone = future;
+
+        // Setup the new VM to call the closure
+        new_vm.push(closure).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+        // We need to trigger the call. 
+        // A simple way is to use a specialized entry point or just manually setup the frame.
+        // For now, let's assume the closure is already pushed and we just need to execute.
+        
+        tokio::spawn(async move {
+            // Manually setup the call frame for the closure
+            if let Err(_e) = new_vm.execute_call_closure(0) {
+                 unsafe {
+                    let f = future_clone.as_future_mut();
+                    f.status = FutureStatus::Failed;
+                    if let Some(waker) = f.waker.take() {
+                        waker.wake();
+                    }
+                }
+                return;
+            }
+
+            let vm_future = crate::vm::async_rt::VmFuture {
+                vm: &mut new_vm,
+                module_idx: 0, // Not used in poll_internal for execution, but good to have
+                chunk_idx: 0,
+            };
+
+            match vm_future.await {
+                Ok(res) => {
+                    unsafe {
+                        let f = future_clone.as_future_mut();
+                        f.status = FutureStatus::Ready;
+                        f.result = res;
+                        if let Some(waker) = f.waker.take() {
+                            waker.wake();
+                        }
+                    }
+                }
+                Err(_) => {
+                    unsafe {
+                        let f = future_clone.as_future_mut();
+                        f.status = FutureStatus::Failed;
+                        if let Some(waker) = f.waker.take() {
+                            waker.wake();
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(future)
+    }
+}

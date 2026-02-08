@@ -1,0 +1,62 @@
+#![feature(new_range_api)]
+//! Mini Java 语言前端
+//!
+//! 提供 Mini Java 的词法分析、语法分析和 Nyar 翻译功能。
+
+pub use nyar_types::{IKunTree, NyarError, NyarFrontend, NyarContext};
+use oak_core::{builder::Builder, source::SourceText};
+use oak_java::{JavaBuilder, JavaLanguage, JavaRoot};
+use oak_vfs::Vfs;
+use chomsky_uir::Id;
+
+pub mod codegen;
+pub mod row_type;
+pub mod tagless;
+pub mod visitor;
+
+/// Mini Java 前端
+pub struct MiniJavaFrontend<'a> {
+    _language: &'a JavaLanguage,
+    builder: JavaBuilder<'a>,
+}
+
+impl<'a> Default for MiniJavaFrontend<'a> {
+    fn default() -> Self {
+        // Use a leaked language for simplicity in this example to satisfy lifetimes
+        let language = Box::leak(Box::new(JavaLanguage::default()));
+        Self::new(language)
+    }
+}
+
+impl<'a> MiniJavaFrontend<'a> {
+    /// 创建新的前端实例
+    pub fn new(language: &'a JavaLanguage) -> Self {
+        Self {
+            _language: language,
+            builder: JavaBuilder::new(language),
+        }
+    }
+}
+
+impl<'a> NyarFrontend for MiniJavaFrontend<'a> {
+    type Language = JavaLanguage;
+
+    /// 解析 Java 源代码
+    fn parse(&self, source: &str) -> Result<JavaRoot, NyarError> {
+        let mut session = oak_core::parser::ParseSession::<JavaLanguage>::default();
+        let source_text = SourceText::new(source);
+        let output = self.builder.build(&source_text, &[], &mut session);
+        output
+            .result
+            .map_err(|e| NyarError::Compile(format!("{:?}", e)))
+    }
+
+    /// 统一的接入接口，支持 EGraph 优化流
+    fn lower_unified<V: Vfs>(&self, ast: &JavaRoot, ctx: &mut NyarContext<V>) -> Id {
+        let mut converter = codegen::JavaUirConverter::new(ctx);
+        converter.convert_root(ast).unwrap_or_else(|_| {
+            let loc = ctx.loc(0, 0);
+            ctx.builder().constant(0, loc)
+        })
+    }
+}

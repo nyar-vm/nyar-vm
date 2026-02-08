@@ -1,0 +1,43 @@
+[package]
+name = "nyar-vm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-gc = { path = "../nyar-gc", features = ["tokio"] }
+nyar-types = { path = "../nyar-types" }
+oak-core = { workspace = true }
+oak-vfs = { workspace = true }
+nyar-aot = { path = "../nyar-aot", default-features = false }
+chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false, features = ["pe", "x86", "jvm"] }
+chomsky-uir = { workspace = true }
+chomsky-cost = { workspace = true }
+chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
+chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
+byteorder = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+rand = "0.8"
+thiserror = "1.0"
+dashmap = "5.5"
+indexmap = "2.2"
+pe-assembler = { workspace = true }
+oak-json = { path = "../../../oaks/examples/oak-json" }
+ reqwest = { workspace = true }
+gaia-assembler = { workspace = true }
+gaia-types = { workspace = true }
+x86_64-assembler = { workspace = true }
+clap = { workspace = true, optional = true }
+tokio = { version = "1.0", features = ["full"], optional = true }
+wasi = { version = "0.14.7", optional = true }
+
+[features]
+default = ["clap", "tokio"]
+clap = ["dep:clap"]
+tokio = ["dep:tokio", "nyar-gc/tokio"]
+native = []
+jvm = ["chomsky/jvm"]
+wasi = ["dep:wasi"]
