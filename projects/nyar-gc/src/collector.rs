@@ -48,6 +48,8 @@ pub struct NyarGc {
     pub post_collect: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Total number of collection cycles performed.
     pub total_collections: AtomicU64,
+    /// Global roots that are always traced.
+    pub global_roots: Mutex<Vec<*const dyn Trace>>,
     /// Number of threads to use for parallel marking.
     pub marking_threads: usize,
 }
@@ -206,7 +208,7 @@ impl NyarGc {
         layout: Layout,
     ) -> Gc<T> {
         let state = self.state.load(Ordering::Acquire);
-        let marking = state == GcState::Marking as u8;
+        let marking = state != GcState::Idle as u8;
 
         let (type_id, _) = Self::get_type_info::<T>();
         let size = layout.size();
@@ -224,6 +226,7 @@ impl NyarGc {
             let base = (ptr as usize) & !(BLOCK_SIZE - 1);
             let block_header = base as *const GcBlockHeader;
             (*block_header).set_marked(&(*ptr).header);
+            (*ptr).header.set_marked(true);
         }
 
         std::ptr::write(&mut (*ptr).data, value);
@@ -288,6 +291,8 @@ impl NyarGc {
             }),
             allocated_bytes: AtomicUsize::new(0),
             threshold: AtomicUsize::new(1024 * 1024), // 1MB default threshold
+            total_collections: AtomicU64::new(0),
+            global_roots: Mutex::new(Vec::new()),
             free_lists: [
                 AtomicUptr::new(std::ptr::null_mut()),
                 AtomicUptr::new(std::ptr::null_mut()),
@@ -410,7 +415,7 @@ impl NyarGc {
 
         // Flags: marked (bit 16), generation (bit 17), large (bit 19)
         let state = self.state.load(Ordering::Acquire);
-        let marking = state == GcState::Marking as u8;
+        let marking = state != GcState::Idle as u8;
 
         let mut flags = (1 << 17) | (1 << 19);
         if marking {
@@ -785,40 +790,42 @@ impl NyarGc {
         });
     }
 
+    pub fn total_collections(&self) -> u64 {
+        self.total_collections.load(Ordering::Relaxed)
+    }
+
+    /// Register a global root that should always be traced during GC.
+    ///
+    /// # Safety
+    /// The caller must ensure the pointer remains valid until it is unregistered.
+    pub unsafe fn register_global_root(&self, root: *const dyn Trace) {
+        let mut roots = self.global_roots.lock().unwrap();
+        roots.push(root);
+    }
+
+    /// Unregister a previously registered global root.
+    pub unsafe fn unregister_global_root(&self, root: *const dyn Trace) {
+        let mut roots = self.global_roots.lock().unwrap();
+        if let Some(pos) = roots.iter().rposition(|&p| std::ptr::addr_eq(p, root)) {
+            roots.swap_remove(pos);
+        }
+    }
+
     /// Trigger a full blocking garbage collection.
     /// This is intended to be called when the system is idle or requires a deep cleanup.
-    pub fn full_gc(&self) {
-        unsafe {
-            // Use a CAS to ensure only one thread starts the collection
-            if self
-                .state
-                .compare_exchange(
-                    GcState::Idle as u8,
-                    GcState::Marking as u8,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
-                .is_err()
-            {
-                // If already collecting, just wait for STW to finish or for state to return to Idle
-                while self.state.load(Ordering::Acquire) != GcState::Idle as u8 {
-                    std::thread::yield_now();
-                }
-                return;
+    pub unsafe fn full_gc<F>(&self, mut mark_roots: F)
+    where
+        F: FnMut(&mut MarkContext<'_>),
+    {
+        // Force transition to Marking state by resetting to Idle first if needed
+        self.set_state(GcState::Idle);
+
+        // Run until we return to Idle state
+        loop {
+            self.step(usize::MAX, &mut mark_roots);
+            if self.get_state() == GcState::Idle {
+                break;
             }
-
-            // Request all threads to pause if they are in an async loop
-            crate::runtime::GC_STOP_THE_WORLD.store(true, Ordering::Release);
-
-            self.collect_all(|ctx| {
-                // 1. Scan roots registered in the current thread
-                crate::stack::scan_thread_roots(ctx);
-
-                // TODO: In a multi-threaded VM, we would need to wait for other threads
-                // to reach a safepoint/yield and then scan their roots.
-            });
-
-            crate::runtime::GC_STOP_THE_WORLD.store(false, Ordering::Release);
         }
     }
 
@@ -852,6 +859,13 @@ impl NyarGc {
 
         // 1. Mark roots
         mark_roots(&mut ctx);
+        // Trace global roots
+        {
+            let roots = self.global_roots.lock().unwrap();
+            for root in roots.iter() {
+                unsafe { (**root).trace(&mut ctx) };
+            }
+        }
         drop(mark_stack);
 
         // 2. Parallel marking
@@ -1011,9 +1025,9 @@ impl NyarGc {
     ///
     /// # Safety
     /// The caller must ensure that all root pointers are traced via the provided closure if GC is in Marking state.
-    pub unsafe fn step<F>(&self, work_limit: usize, mark_roots: F)
+    pub unsafe fn step<F>(&self, work_limit: usize, mut mark_roots: F)
     where
-        F: FnOnce(&mut MarkContext<'_>),
+        F: FnMut(&mut MarkContext<'_>),
     {
         match self.get_state() {
             GcState::Idle => {
@@ -1047,6 +1061,13 @@ impl NyarGc {
                     mark_stack: &mut *mark_stack,
                 };
                 mark_roots(&mut ctx);
+                // Trace global roots
+                {
+                    let roots = self.global_roots.lock().unwrap();
+                    for root in roots.iter() {
+                        unsafe { (**root).trace(&mut ctx) };
+                    }
+                }
             }
             GcState::Marking => {
                 let mut mark_stack = self.mark_stack.lock().unwrap();
@@ -1059,13 +1080,26 @@ impl NyarGc {
                     work_done += 1;
                 }
                 if ctx.mark_stack.is_empty() {
-                    self.set_state(GcState::Sweeping);
-                    // Mark all blocks as needing sweep for lazy/concurrent sweepers
-                    let mut block_curr = self.blocks_head.load(Ordering::Acquire);
-                    while !block_curr.is_null() {
-                        unsafe {
-                            (*block_curr).state.store(1, Ordering::Release);
-                            block_curr = (*block_curr).get_next();
+                    // Remark phase: re-scan roots one last time to catch changes during incremental marking
+                    mark_roots(&mut ctx);
+                    // Trace global roots
+                    {
+                        let roots = self.global_roots.lock().unwrap();
+                        for root in roots.iter() {
+                            unsafe { (**root).trace(&mut ctx) };
+                        }
+                    }
+                    self.process_mark_stack(&mut ctx);
+
+                    if ctx.mark_stack.is_empty() {
+                        self.set_state(GcState::Sweeping);
+                        // Mark all blocks as needing sweep for lazy/concurrent sweepers
+                        let mut block_curr = self.blocks_head.load(Ordering::Acquire);
+                        while !block_curr.is_null() {
+                            unsafe {
+                                (*block_curr).state.store(1, Ordering::Release);
+                                block_curr = (*block_curr).get_next();
+                            }
                         }
                     }
                 }

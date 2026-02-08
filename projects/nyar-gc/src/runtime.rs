@@ -79,6 +79,6 @@ impl GcRuntime for crate::NyarGc {
     fn full_gc(&self) {
         // When the VM enters an idle period (e.g., waiting for user input or frame sync),
         // we can raise a full GC to reduce heap pressure and fragmentation.
-        self.full_gc();
+        // self.full_gc(); // Avoid infinite recursion and missing roots
     }
 }

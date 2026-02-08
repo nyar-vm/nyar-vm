@@ -145,7 +145,13 @@ impl FFIRegistry {
 pub struct NativeGcCollect;
 impl FFIFunction for NativeGcCollect {
     fn call(&self, vm: &mut NyarVM, _args: Vec<Value>) -> FFIResult {
-        vm.gc.full_gc();
+        unsafe {
+            use nyar_gc::Trace;
+            vm.gc.full_gc(|ctx| {
+                nyar_gc::stack::scan_thread_roots(ctx);
+                vm.trace(ctx);
+            });
+        }
         Ok(Value::null())
     }
 }

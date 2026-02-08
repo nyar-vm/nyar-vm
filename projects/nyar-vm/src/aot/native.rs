@@ -57,9 +57,16 @@ impl Backend for NativeBackend {
             context.locals.insert(local, offset);
             offset += 8;
         }
-        // 向上对齐到 16 的倍数再加 8，以确保 call 时的 RSP 为 16 字节对齐
-        // (RSP_entry = 16n + 8, RSP_call = RSP_entry - stack_size = 16n + 8 - (16k + 8) = 16m)
-        context.stack_size = ((offset + 15) & !15) + 8;
+        // 向上对齐到 16 的倍数
+        // Windows x64 ABI 要求在 call 之前栈必须 16 字节对齐。
+        // 对于 PE 入口点，RSP 通常是 16 字节对齐的 (16n)。
+        // 为了保持对齐，分配的 stack_size 必须是 16 的倍数。
+        // 同时必须确保有足够的空间容纳影子空间 (32) 和溢出参数。
+        // WriteFile 有 5 个参数，第 5 个在 [RSP + 32]，所以至少需要 40 字节。
+        context.stack_size = (offset + 15) & !15;
+        if context.stack_size < 48 {
+            context.stack_size = 48;
+        }
 
         // 2. 函数序言 (Prologue)
         builder.add_instruction(Instruction::Sub {

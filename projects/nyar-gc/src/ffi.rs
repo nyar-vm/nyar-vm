@@ -1,3 +1,4 @@
+use crate::collector::NyarGc;
 use crate::object::{Gc, Trace};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -6,34 +7,27 @@ use std::sync::Arc;
 /// This is useful for FFI or keeping objects alive on the Rust stack.
 pub struct Root<T: Trace + 'static> {
     inner: Gc<T>,
-    // In a production GC, this would register the pointer in a global root set.
-    // For this implementation, we can simulate it by holding an Arc to the collector
-    // or adding it to a specialized root registry in NyarGc.
-    _marker: Arc<RootRegistry>,
-}
-
-struct RootRegistry {
-    // This would be managed by NyarGc
+    gc: Arc<NyarGc>,
 }
 
 impl<T: Trace + 'static> Root<T> {
-    pub fn new(gc: Gc<T>) -> Self {
-        // Implementation detail: register with collector
-        Self {
-            inner: gc,
-            _marker: Arc::new(RootRegistry {}),
+    pub fn new(gc: Arc<NyarGc>, obj: Gc<T>) -> Self {
+        unsafe {
+            gc.register_global_root(&obj as *const dyn Trace);
         }
+        Self { inner: obj, gc }
     }
 
     pub fn as_gc(&self) -> Gc<T> {
         self.inner
     }
+}
 
-    /// Convert to a raw pointer for FFI.
-    /// # Safety
-    /// The caller must ensure the Root remains alive while the raw pointer is used.
-    pub unsafe fn as_raw(&self) -> *const T {
-        self.inner.as_ptr() as *const T
+impl<T: Trace + 'static> Drop for Root<T> {
+    fn drop(&mut self) {
+        unsafe {
+            self.gc.unregister_global_root(&self.inner as *const dyn Trace);
+        }
     }
 }
 
@@ -44,8 +38,26 @@ impl<T: Trace + 'static> Deref for Root<T> {
     }
 }
 
-/// Helper to safely execute a closure with a temporary root.
-pub fn with_root<T: Trace + 'static, R>(gc: Gc<T>, f: impl FnOnce(&Root<T>) -> R) -> R {
-    let root = Root::new(gc);
-    f(&root)
+/// A handle for a persistent root that is not a GC-managed object itself, 
+/// but contains GC-managed objects and implements Trace.
+pub struct PersistentRoot<T: Trace + 'static> {
+    gc: Arc<NyarGc>,
+    ptr: *const T,
+}
+
+impl<T: Trace + 'static> PersistentRoot<T> {
+    /// # Safety
+    /// The pointer must remain valid and stable (not moved) until the PersistentRoot is dropped.
+    pub unsafe fn new(gc: Arc<NyarGc>, ptr: *const T) -> Self {
+        gc.register_global_root(ptr as *const dyn Trace);
+        Self { gc, ptr }
+    }
+}
+
+impl<T: Trace + 'static> Drop for PersistentRoot<T> {
+    fn drop(&mut self) {
+        unsafe {
+            self.gc.unregister_global_root(self.ptr as *const dyn Trace);
+        }
+    }
 }
