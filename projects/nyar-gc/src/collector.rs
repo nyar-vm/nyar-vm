@@ -862,7 +862,7 @@ impl NyarGc {
         {
             let roots = self.global_roots.lock().unwrap();
             for root in roots.iter() {
-                unsafe { (**root).trace(&mut ctx) };
+                unsafe { root.as_ref().trace(&mut ctx) };
             }
         }
         drop(mark_stack);
@@ -1064,7 +1064,7 @@ impl NyarGc {
                 {
                     let roots = self.global_roots.lock().unwrap();
                     for root in roots.iter() {
-                        unsafe { (**root).trace(&mut ctx) };
+                        unsafe { root.as_ref().trace(&mut ctx) };
                     }
                 }
             }
