@@ -7,34 +7,41 @@
 
 ---
 
-## 🏗️ 核心执行架构
+## 🏗️ 核心架构：三位一体的执行语言
 
 NyarVM 的设计核心在于将异构语言前端降解为统一的字节码表示，并根据运行环境灵活选择执行策略。
 
 ```mermaid
 graph TD
+    %% Global Styles
+    classDef frontend fill:#e3f2fd,stroke:#2196f3,stroke-width:2px;
+    classDef ir fill:#fff3e0,stroke:#ff9800,stroke-width:2px;
+    classDef runtime fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px;
+    classDef engine fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
+    classDef os fill:#eceff1,stroke:#607d8b,stroke-dasharray: 5 5;
+
     subgraph Frontends ["语言前端 (Source Layer)"]
         direction LR
-        SL[静态语言: C, Java, Valkyrie...]
-        DL[动态语言: TS, Python, Lua...]
+        SL["静态语言 (C, Java, Valkyrie)"]:::frontend
+        DL["动态语言 (TS, Python, Lua)"]:::frontend
     end
 
     subgraph IR_Layer ["中间表示 (Nyar IR)"]
-        IR[Nyar Bytecode: 基于栈的高级指令集]
+        IR["Nyar Bytecode (Stack-based)"]:::ir
     end
 
     subgraph Runtime ["统一运行时 (Nyar Runtime)"]
         direction TB
-        VM[解释器: 快速启动/调试]
+        VM["VM 解释器 (Quick Start)"]:::runtime
         
         subgraph Acceleration ["加速引擎"]
-            JIT[JIT: 基于热点与类型的动态优化]
-            AOT[AOT: 静态编译至原生机器码]
+            JIT["nyar-jit (Dynamic Opt)"]:::engine
+            AOT["nyar-aot (Native AOT)"]:::engine
         end
         
         subgraph Management ["资源管理"]
-            GC[nyar-gc: 分块式 TLAB 垃圾回收]
-            Types[nyar-types: NaN-Boxing 类型系统]
+            GC["nyar-gc (TLAB/Block)"]:::runtime
+            Types["nyar-types (NaN-Boxing)"]:::runtime
         end
     end
 
@@ -43,38 +50,45 @@ graph TD
     IR --> VM
     VM <--> JIT
     VM <--> AOT
-    Runtime <--> OS[Windows / Linux / macOS / WASI]
+    Runtime <--> OS["Operating System (Win/Lin/Mac/WASI)"]:::os
 
-    style IR_Layer fill:#f9f,stroke:#333,stroke-width:2px
-    style Runtime fill:#bbf,stroke:#333,stroke-width:1px
 ```
 
 ---
 
 ## 🏎️ 混合执行策略
 
-### 1. 静态语言流 (以 C 为例)
+### 1. 静态语言流 (Static Languages)
 静态语言利用 NyarVM 严谨的类型系统，在编译阶段完成单态化与去抽象化。
 
 ```mermaid
 graph LR
-    C_Src[C 源代码] -->|Frontend| IR[Nyar IR]
-    IR -->|Static Analysis| Plan{执行决策}
-    Plan -->|生产环境| AOT[nyar-aot: 原生二进制]
-    Plan -->|开发阶段| JIT[nyar-jit: 即时优化机器码]
-    Plan -->|极速预览| Interp[VM: 解释执行]
+    classDef source fill:#e3f2fd,stroke:#2196f3;
+    classDef process fill:#fff3e0,stroke:#ff9800;
+    classDef target fill:#e8f5e9,stroke:#4caf50,font-weight:bold;
+
+    Src["C/Valkyrie 源代码"]:::source -->|Frontend| IR["Nyar IR"]:::process
+    IR -->|Static Analysis| Plan{"执行决策"}
+    
+    Plan -->|生产环境| AOT["nyar-aot: 原生二进制 (Native)"]:::target
+    Plan -->|开发阶段| JIT["nyar-jit: 即时优化机器码"]:::target
+    Plan -->|极速预览| Interp["VM: 解释执行"]:::target
 ```
 
-### 2. 动态语言流 (以 TypeScript 为例)
+### 2. 动态语言流 (Dynamic Languages)
 动态语言通过 **NaN-Boxing** 技术实现高效的运行时类型分发。
 
 ```mermaid
 graph TD
-    TS_Src[TS 源代码] -->|Frontend| IR[Nyar IR]
-    IR -->|VM| Profile[运行时类型采样]
-    Profile -->|收集 Tag| Guard{类型守卫消除}
-    Guard -->|Hot Path| JIT[生成特化机器码]
-    IR -->|Snapshot| AOT_Snap[预编译二进制快照]
+    classDef source fill:#fce4ec,stroke:#f06292;
+    classDef process fill:#fff3e0,stroke:#ff9800;
+    classDef hot fill:#f1f8e9,stroke:#8bc34a;
+
+    TS_Src["TypeScript 源代码"]:::source -->|Frontend| IR["Nyar IR"]:::process
+    IR -->|VM| Profile["运行时类型采样"]:::process
+    Profile -->|收集 Tag| Guard{"类型守卫消除"}
+    Guard -->|Hot Path| JIT["JIT 特化机器码"]:::hot
+    IR -->|Snapshot| AOT_Snap["AOT 二进制快照"]:::hot
 ```
 
 #### NaN-Boxing 64-bit 内存布局
@@ -96,15 +110,16 @@ Nyar IR 原生支持高阶控制流，通过捕获 **Continuation** 实现极致
 
 ```mermaid
 sequenceDiagram
+    autonumber
     participant Op as Nyar Opcode
     participant VM as VM Runtime
     participant Handler as Effect Handler
     
-    Op->>VM: Perform(Effect)
-    VM->>VM: Capture Current Stack (Continuation)
-    VM->>Handler: Jump to Nearest Handler
-    Handler->>VM: Process & Resume
-    VM->>Op: Restore Stack & Continue
+    Op->>+VM: Perform(Effect)
+    Note over VM: Capture Current Stack<br/>(Continuation)
+    VM->>+Handler: Jump to Nearest Handler
+    Handler->>-VM: Process & Resume
+    VM->>-Op: Restore Stack & Continue
 ```
 
 ### 2. 内存管理 (nyar-gc)
@@ -112,16 +127,23 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    subgraph GC_Heap ["分块式堆空间"]
-        Block1[Block 0]
-        Block2[Block 1]
-        BlockN[Block N]
+    classDef heap fill:#e1f5fe,stroke:#01579b;
+    classDef thread fill:#f1f8e9,stroke:#33691e;
+    classDef block fill:#ffffff,stroke:#0288d1,stroke-width:2px;
+
+    subgraph GC_Heap ["分块式堆空间 (Global Heap)"]
+        direction TB
+        Block1["Block 0 (Used)"]:::block
+        Block2["Block 1 (Active)"]:::block
+        BlockN["Block N (Free)"]:::block
     end
     
-    subgraph Threads ["工作线程"]
-        T1[Thread 1] -->|TLAB| Block1
-        T2[Thread 2] -->|TLAB| Block2
+    subgraph Threads ["工作线程 (Worker Threads)"]
+        T1["Thread 1"]:::thread -->|TLAB| Block1
+        T2["Thread 2"]:::thread -->|TLAB| Block2
     end
+
+    class GC_Heap heap
 ```
 
 ---

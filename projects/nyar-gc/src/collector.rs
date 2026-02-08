@@ -49,7 +49,7 @@ pub struct NyarGc {
     /// Total number of collection cycles performed.
     pub total_collections: AtomicU64,
     /// Global roots that are always traced.
-    pub global_roots: Mutex<Vec<*const dyn Trace>>,
+    pub global_roots: Mutex<Vec<SendPtr<dyn Trace>>>,
     /// Number of threads to use for parallel marking.
     pub marking_threads: usize,
 }
@@ -306,7 +306,6 @@ impl NyarGc {
                 AtomicUptr::new(std::ptr::null_mut()),
             ],
             post_collect: Mutex::new(None),
-            total_collections: AtomicU64::new(0),
             marking_threads: std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(1),
@@ -800,13 +799,13 @@ impl NyarGc {
     /// The caller must ensure the pointer remains valid until it is unregistered.
     pub unsafe fn register_global_root(&self, root: *const dyn Trace) {
         let mut roots = self.global_roots.lock().unwrap();
-        roots.push(root);
+        roots.push(SendPtr(NonNull::new_unchecked(root as *mut dyn Trace)));
     }
 
     /// Unregister a previously registered global root.
     pub unsafe fn unregister_global_root(&self, root: *const dyn Trace) {
         let mut roots = self.global_roots.lock().unwrap();
-        if let Some(pos) = roots.iter().rposition(|&p| std::ptr::addr_eq(p, root)) {
+        if let Some(pos) = roots.iter().rposition(|&p| std::ptr::addr_eq(p.as_ptr() as *const dyn Trace, root)) {
             roots.swap_remove(pos);
         }
     }
@@ -1086,7 +1085,7 @@ impl NyarGc {
                     {
                         let roots = self.global_roots.lock().unwrap();
                         for root in roots.iter() {
-                            unsafe { (**root).trace(&mut ctx) };
+                            unsafe { root.as_ref().trace(&mut ctx) };
                         }
                     }
                     self.process_mark_stack(&mut ctx);
