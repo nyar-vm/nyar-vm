@@ -54,6 +54,9 @@ impl<T: Trace + 'static> PersistentRoot<T> {
     }
 }
 
+unsafe impl<T: Trace + 'static> Send for PersistentRoot<T> {}
+unsafe impl<T: Trace + 'static> Sync for PersistentRoot<T> {}
+
 impl<T: Trace + 'static> Drop for PersistentRoot<T> {
     fn drop(&mut self) {
         unsafe {
