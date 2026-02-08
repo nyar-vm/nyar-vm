@@ -145,17 +145,17 @@ impl FFIFunction for AsyncSpawn {
             return Err(vm.error(nyar_types::VmErrorKind::RuntimeError("Invalid closure".to_string())));
         }
 
-        let mut new_vm = vm.spawn_child();
+        let mut new_vm = Box::new(vm.spawn_child());
+        new_vm.push(closure).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
+        let vm_ptr = Box::into_raw(new_vm);
         let future = Value::future(&vm.gc);
         let future_clone = future;
+        let gc_clone = vm.gc.clone();
 
-        // Setup the new VM to call the closure
-        new_vm.push(closure).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
-        // We need to trigger the call. 
-        // A simple way is to use a specialized entry point or just manually setup the frame.
-        // For now, let's assume the closure is already pushed and we just need to execute.
-        
         tokio::spawn(async move {
+            let mut new_vm = unsafe { Box::from_raw(vm_ptr) };
+            let _root = unsafe { nyar_gc::PersistentRoot::new(gc_clone, &*new_vm) };
+
             // Manually setup the call frame for the closure
             if let Err(_e) = new_vm.execute_call_closure(0) {
                  unsafe {
