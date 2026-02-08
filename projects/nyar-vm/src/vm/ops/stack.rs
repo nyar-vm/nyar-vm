@@ -7,16 +7,20 @@ use nyar_types::QualifiedName;
 impl NyarVM {
     #[inline(always)]
     pub fn execute_push(&mut self, idx: u16, module_idx: usize) -> Result<Option<usize>, NyarError> {
-        let c = self.modules[module_idx]
-            .constants
-            .get(idx as usize)
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))?;
+        let c = {
+            let module = self.get_module(module_idx);
+            module
+                .constants
+                .get(idx as usize)
+                .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize)))?
+                .clone()
+        };
         match c {
-            Constant::Int(i) => self.push(Value::int(i.clone())),
-            Constant::Float(x) => self.push(Value::float(x.clone())),
-            Constant::String(s) => self.push(Value::string(s.clone(), &self.gc)),
+            Constant::Int(i) => self.push(Value::int(i)),
+            Constant::Float(x) => self.push(Value::float(x)),
+            Constant::String(s) => self.push(Value::string(s, &self.gc)),
             Constant::QualifiedName(qn) => {
-                self.push(Value::qualified_name(qn.clone(), &self.gc))
+                self.push(Value::qualified_name(qn, &self.gc))
             }
         }?;
         Ok(None)
@@ -86,15 +90,17 @@ impl NyarVM {
 
     #[inline(always)]
     pub fn execute_load_global(&mut self, name_idx: u16, module_idx: usize) -> Result<Option<usize>, NyarError> {
-        let module = &self.modules[module_idx];
-        let name = match module.constants.get(name_idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x07))),
+        let name = {
+            let module = self.get_module(module_idx);
+            match module.constants.get(name_idx as usize) {
+                Some(Constant::QualifiedName(qn)) => qn.clone(),
+                Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+                _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x07))),
+            }
         };
-        let val = if let Some(v) = self.builtins.get(&name) {
-            Some(*v)
-        } else if let Some(_res) = self.symbol_table.get(&name) {
+        let val = if let Some(v) = self.env.builtins.get(&name) {
+            Some(*v.value())
+        } else if let Some(_res) = self.env.symbol_table.get(&name) {
             Some(Value::null())
         } else {
             None
@@ -112,13 +118,15 @@ impl NyarVM {
     pub fn execute_store_global(&mut self, name_idx: u16, module_idx: usize) -> Result<Option<usize>, NyarError> {
         let v = self.pop()?;
         let gc = &self.gc;
-        let module = &self.modules[module_idx];
-        let name = match module.constants.get(name_idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x08))),
+        let name = {
+            let module = self.get_module(module_idx);
+            match module.constants.get(name_idx as usize) {
+                Some(Constant::QualifiedName(qn)) => qn.clone(),
+                Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+                _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x08))),
+            }
         };
-        self.builtins.insert(name, v);
+        self.env.builtins.insert(name, v);
         v.write_barrier(gc);
         Ok(None)
     }

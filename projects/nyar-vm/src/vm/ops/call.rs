@@ -12,7 +12,10 @@ impl NyarVM {
         module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
         let instrs = self.get_chunk_instructions(module_idx, chunk_idx as usize)?;
-        let locals_count = self.modules[module_idx].chunks[chunk_idx as usize].locals as usize;
+        let locals_count = {
+            let module = self.get_module(module_idx);
+            module.chunks[chunk_idx as usize].locals as usize
+        };
 
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
@@ -53,8 +56,10 @@ impl NyarVM {
                 let chunk_idx = closure.func;
                 let module_idx = closure.module_idx;
                 let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
-                let locals_count =
-                    self.modules[module_idx].chunks[chunk_idx].locals as usize;
+                let locals_count = {
+                    let module = self.get_module(module_idx);
+                    module.chunks[chunk_idx].locals as usize
+                };
                 (instrs, locals_count, module_idx, chunk_idx)
             } else {
                 return Err(self.error(nyar_types::VmErrorKind::RuntimeError("callee is not a closure".to_string())));
@@ -86,18 +91,24 @@ impl NyarVM {
         argc: u16,
         module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
-        let name = match self.modules[module_idx].constants.get(name_idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => {
-                return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(name_idx as usize)))
+        let name = {
+            let module = self.get_module(module_idx);
+            match module.constants.get(name_idx as usize) {
+                Some(Constant::QualifiedName(qn)) => qn.clone(),
+                Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+                _ => {
+                    return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(name_idx as usize)))
+                }
             }
         };
 
-        let symbol = self.symbol_table.get(&name).map(|r| *r.value());
+        let symbol = self.env.symbol_table.get(&name).map(|r| *r.value());
         if let Some((m_idx, chunk_idx)) = symbol {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-            let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+            let locals_count = {
+                let module = self.get_module(m_idx);
+                module.chunks[chunk_idx as usize].locals as usize
+            };
 
             let mut args = Vec::with_capacity(argc as usize);
             for _ in 0..argc {
@@ -123,13 +134,16 @@ impl NyarVM {
             self.frames.push(new_frame);
             Ok(Some(0))
         } else {
-            let callee = self.builtins.get(&name).map(|v| *v);
+            let callee = self.env.builtins.get(&name).map(|v| *v.value());
             if let Some(val) = callee {
                 if let Some(closure) = val.try_as_closure() {
                     let m_idx = closure.module_idx;
                     let chunk_idx = closure.func;
                     let instrs = self.get_chunk_instructions(m_idx, chunk_idx)?;
-                    let locals_count = self.modules[m_idx].chunks[chunk_idx].locals as usize;
+                    let locals_count = {
+                        let module = self.get_module(m_idx);
+                        module.chunks[chunk_idx].locals as usize
+                    };
 
                     let mut args = Vec::with_capacity(argc as usize);
                     for _ in 0..argc {
@@ -177,20 +191,24 @@ impl NyarVM {
         args.reverse();
         let receiver = self.pop()?;
 
-        let name = match self.modules[module_idx].constants.get(name_idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15))), // Opcode for INVOKE_METHOD
+        let name = {
+            let module = self.get_module(module_idx);
+            match module.constants.get(name_idx as usize) {
+                Some(Constant::QualifiedName(qn)) => qn.clone(),
+                Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+                _ => return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x15))), // Opcode for INVOKE_METHOD
+            }
         };
 
         if !receiver.is_object() {
             self.invoke_primitive_method(receiver, &name, args)?;
         } else {
             let obj = unsafe { receiver.as_object() };
-            let class_info = self.modules[obj.module_idx]
-                .classes
-                .get(obj.class_idx as usize)
-                .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
+            let class_info = {
+                let module = self.get_module(obj.module_idx);
+                module.classes.get(obj.class_idx as usize)
+                    .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?.clone()
+            };
 
             // Try to find method "ClassName::MethodName"
             let mut method_name = class_info.name.clone();
@@ -201,7 +219,7 @@ impl NyarVM {
             #[cfg(debug_assertions)]
             println!("DEBUG: InvokeMethod searching for {} in symbol_table and builtins", method_name);
 
-            let entry = self.symbol_table.get(&method_name).map(|r| *r);
+            let entry = self.env.symbol_table.get(&method_name).map(|r| *r.value());
             if let Some((m_idx, chunk_idx)) = entry {
                 // Found class method, call it with receiver as first argument
                 let mut final_args = Vec::with_capacity(args.len() + 1);
@@ -209,7 +227,10 @@ impl NyarVM {
                 final_args.extend(args);
 
                 let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-                let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+                let locals_count = {
+                    let module = self.get_module(m_idx);
+                    module.chunks[chunk_idx as usize].locals as usize
+                };
 
                 if final_args.len() < locals_count {
                     final_args.resize(locals_count, Value::null());
@@ -229,7 +250,7 @@ impl NyarVM {
                 self.frames.push(new_frame);
                 return Ok(Some(0));
             }
-            let builtin_method = self.builtins.get(&method_name).map(|v| *v);
+            let builtin_method = self.env.builtins.get(&method_name).map(|v| *v.value());
             if let Some(callee) = builtin_method {
                 // Found method in builtins (e.g. a closure defined in a class body)
                 if callee.is_closure() {
@@ -241,7 +262,10 @@ impl NyarVM {
                     let m_idx = closure.module_idx;
                     let c_idx = closure.func;
                     let instrs = self.get_chunk_instructions(m_idx, c_idx)?;
-                    let locals_count = self.modules[m_idx].chunks[c_idx].locals as usize;
+                    let locals_count = {
+                        let module = self.get_module(m_idx);
+                        module.chunks[c_idx].locals as usize
+                    };
 
                     if final_args.len() < locals_count {
                         final_args.resize(locals_count, Value::null());
@@ -266,7 +290,7 @@ impl NyarVM {
             #[cfg(debug_assertions)]
             {
                 println!("DEBUG: Method {} not found. Available builtins:", method_name);
-                for entry in self.builtins.iter() {
+                for entry in self.env.builtins.iter() {
                     println!("  - {}", entry.key());
                 }
             }
@@ -288,7 +312,10 @@ impl NyarVM {
                     let m_idx = closure.module_idx;
                     let c_idx = closure.func;
                     let instrs = self.get_chunk_instructions(m_idx, c_idx)?;
-                    let locals_count = self.modules[m_idx].chunks[c_idx].locals as usize;
+                    let locals_count = {
+                        let module = self.get_module(m_idx);
+                        module.chunks[c_idx].locals as usize
+                    };
 
                     if final_args.len() < locals_count {
                         final_args.resize(locals_count, Value::null());
@@ -421,8 +448,10 @@ impl NyarVM {
                 let chunk_idx = closure.func;
                 let module_idx = closure.module_idx;
                 let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
-                let locals_count =
-                    self.modules[module_idx].chunks[chunk_idx].locals as usize;
+                let locals_count = {
+                    let module = self.get_module(module_idx);
+                    module.chunks[chunk_idx].locals as usize
+                };
                 (instrs, locals_count, module_idx, chunk_idx)
             } else {
                 return Err(self.error(nyar_types::VmErrorKind::InvalidOpcode(0x16))); // Opcode for TAIL_CALL_CLOSURE
@@ -452,16 +481,22 @@ impl NyarVM {
         argc: u8,
         module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
-        let name = match self.modules[module_idx].constants.get(idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+        let name = {
+            let module = self.get_module(module_idx);
+            match module.constants.get(idx as usize) {
+                Some(Constant::QualifiedName(qn)) => qn.clone(),
+                Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+                _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+            }
         };
 
-        let symbol = self.symbol_table.get(&name).map(|r| *r);
+        let symbol = self.env.symbol_table.get(&name).map(|r| *r.value());
         if let Some((m_idx, chunk_idx)) = symbol {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-            let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+            let locals_count = {
+                let module = self.get_module(m_idx);
+                module.chunks[chunk_idx as usize].locals as usize
+            };
 
             let mut args = Vec::with_capacity(argc as usize);
             for _ in 0..argc {
@@ -517,7 +552,10 @@ impl NyarVM {
         final_args.extend(args);
 
         let instrs = self.get_chunk_instructions(target_module_idx, *chunk_idx as usize)?;
-        let locals_count = self.modules[target_module_idx].chunks[*chunk_idx as usize].locals as usize;
+        let locals_count = {
+            let module = self.get_module(target_module_idx);
+            module.chunks[*chunk_idx as usize].locals as usize
+        };
 
         if final_args.len() < locals_count {
             final_args.resize(locals_count, Value::null());
@@ -574,10 +612,13 @@ impl NyarVM {
         argc: u8,
         module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
-        let name_qn = match self.modules[module_idx].constants.get(idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+        let name_qn = {
+            let module = self.get_module(module_idx);
+            match module.constants.get(idx as usize) {
+                Some(Constant::QualifiedName(qn)) => qn.clone(),
+                Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+                _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+            }
         };
         let name = name_qn.to_string();
 
@@ -634,7 +675,7 @@ impl NyarVM {
             }
         } else {
             // If not found in FFI, maybe it's a builtin?
-            if let Some(_val) = self.builtins.get(&name_qn).map(|v| *v) {
+            if let Some(_val) = self.env.builtins.get(&name_qn).map(|v| *v.value()) {
                 // If it's a closure/function, we should probably call it, 
                 // but FFICall usually implies direct native call.
                 // For now, return error if not a native function.

@@ -789,17 +789,35 @@ impl NyarGc {
     /// This is intended to be called when the system is idle or requires a deep cleanup.
     pub fn full_gc(&self) {
         unsafe {
+            // Use a CAS to ensure only one thread starts the collection
+            if self
+                .state
+                .compare_exchange(
+                    GcState::Idle as u8,
+                    GcState::Marking as u8,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_err()
+            {
+                // If already collecting, just wait for STW to finish or for state to return to Idle
+                while self.state.load(Ordering::Acquire) != GcState::Idle as u8 {
+                    std::thread::yield_now();
+                }
+                return;
+            }
+
             // Request all threads to pause if they are in an async loop
             crate::runtime::GC_STOP_THE_WORLD.store(true, Ordering::Release);
-            
+
             self.collect_all(|ctx| {
                 // 1. Scan roots registered in the current thread
                 crate::stack::scan_thread_roots(ctx);
-                
+
                 // TODO: In a multi-threaded VM, we would need to wait for other threads
                 // to reach a safepoint/yield and then scan their roots.
             });
-            
+
             crate::runtime::GC_STOP_THE_WORLD.store(false, Ordering::Release);
         }
     }
@@ -1141,6 +1159,7 @@ impl NyarGc {
                             );
                             self.reclaim_empty_blocks();
                             self.coalesce_free_lists();
+                            self.total_collections.fetch_add(1, Ordering::SeqCst);
                             self.set_state(GcState::Idle);
                             break;
                         }

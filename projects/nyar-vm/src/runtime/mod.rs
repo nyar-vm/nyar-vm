@@ -227,6 +227,6 @@ impl NyarVM {
             system_mut.entries.insert("out".to_string(), out);
         }
 
-        self.builtins.insert(QualifiedName::new(vec!["System".to_string()]), system);
+        self.env.builtins.insert(QualifiedName::new(vec!["System".to_string()]), system);
     }
 }

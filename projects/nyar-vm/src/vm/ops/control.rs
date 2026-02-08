@@ -96,13 +96,13 @@ impl NyarVM {
                     self.last_gc_count = gc_count;
                 }
 
-                let chunk = &self.modules[m_idx].chunks[chunk_idx];
-                chunk
-                    .hotness
-                    .fetch_add(256, std::sync::atomic::Ordering::Relaxed);
+                let hotness = {
+                    let module = self.get_module(m_idx);
+                    module.chunks[chunk_idx].hotness.fetch_add(256, std::sync::atomic::Ordering::Relaxed) + 256
+                };
 
                 if let Some(jit) = self.jit.clone() {
-                    if chunk.hotness.load(std::sync::atomic::Ordering::Relaxed) >= 10240 {
+                    if hotness >= 10240 {
                         if let Ok(entry) = jit.osr(self, m_idx, chunk_idx, target as u32) {
                             println!("OSR triggered for chunk {} at target {}", chunk_idx, target);
                             match self.execute_jit_at(entry) {

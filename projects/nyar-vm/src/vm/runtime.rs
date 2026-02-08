@@ -155,12 +155,13 @@ pub unsafe extern "win64" fn nyar_vm_set_element(vm_ptr: *mut NyarVM, obj: Value
 pub unsafe extern "win64" fn nyar_vm_new_object(vm_ptr: *mut NyarVM, class_idx: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    let module = &vm.modules[module_idx];
-    if (class_idx as usize) >= module.classes.len() {
-        return Value::null();
-    }
-    let class_info = &module.classes[class_idx as usize];
-    let fields_count = class_info.fields.len();
+    let fields_count = {
+        let module = vm.get_module(module_idx);
+        if (class_idx as usize) >= module.classes.len() {
+            return Value::null();
+        }
+        module.classes[class_idx as usize].fields.len()
+    };
     let mut fields = Vec::with_capacity(fields_count);
     for _ in 0..fields_count {
         fields.push(vm.pop().unwrap_or(Value::null()));
@@ -392,13 +393,15 @@ pub unsafe extern "win64" fn nyar_vm_resume(vm_ptr: *mut NyarVM, cont: Value, va
 pub unsafe extern "win64" fn nyar_vm_load_global(vm_ptr: *mut NyarVM, name_idx: u32) -> Value {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    let module = &vm.modules[module_idx];
-    let name = match module.constants.get(name_idx as usize) {
-        Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-        Some(Constant::QualifiedName(qn)) => qn.clone(),
-        _ => return Value::null(),
+    let name = {
+        let module = vm.get_module(module_idx);
+        match module.constants.get(name_idx as usize) {
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            _ => return Value::null(),
+        }
     };
-    let symbol = vm.builtins.get(&name).map(|v| Ok(*v)).or_else(|| vm.symbol_table.get(&name).map(|res| Err(*res)));
+    let symbol = vm.env.builtins.get(&name).map(|v| Ok(*v.value())).or_else(|| vm.env.symbol_table.get(&name).map(|res| Err(*res.value())));
 
     match symbol {
         Some(Ok(val)) => {
@@ -442,13 +445,15 @@ pub unsafe extern "win64" fn nyar_vm_invoke_method(vm_ptr: *mut NyarVM, name_idx
 pub unsafe extern "win64" fn nyar_vm_store_global(vm_ptr: *mut NyarVM, name_idx: u32, val: Value) {
     let vm = &mut *vm_ptr;
     let module_idx = vm.frames.last().unwrap().module_idx;
-    let module = &vm.modules[module_idx];
-    let name = match module.constants.get(name_idx as usize) {
-        Some(Constant::QualifiedName(qn)) => qn.clone(),
-        Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-        _ => return,
+    let name = {
+        let module = vm.get_module(module_idx);
+        match module.constants.get(name_idx as usize) {
+            Some(Constant::QualifiedName(qn)) => qn.clone(),
+            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+            _ => return,
+        }
     };
-    vm.builtins.insert(name, val);
+    vm.env.builtins.insert(name, val);
     val.write_barrier(&vm.gc);
 }
 

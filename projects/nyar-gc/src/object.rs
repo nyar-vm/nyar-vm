@@ -4,6 +4,18 @@ use std::cell::UnsafeCell;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
 
+impl<T: Trace> Trace for std::sync::Arc<T> {
+    fn trace(&self, ctx: &mut MarkContext<'_>) {
+        (**self).trace(ctx);
+    }
+}
+
+impl<T: Trace> Trace for Box<T> {
+    fn trace(&self, ctx: &mut MarkContext<'_>) {
+        (**self).trace(ctx);
+    }
+}
+
 /// A cell that can be used within GC-managed objects to store GC pointers.
 pub struct GcCell<T: Trace + 'static> {
     pub inner: UnsafeCell<T>,

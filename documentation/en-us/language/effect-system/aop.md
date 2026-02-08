@@ -86,23 +86,23 @@ class PaymentService {
     @around(LogAspect, MetricsAspect)
     micro process_payment(self, order_id: String, amount: Decimal) -> Receipt {
         # Before advice executes automatically
-        raise LogAspect.before_method("PaymentService", "process_payment", [order_id, amount])
-        let timing_ctx = raise MetricsAspect.start_timing("payment_processing")
+        raise LogAspect::before_method("PaymentService", "process_payment", [order_id, amount])
+        let timing_ctx = raise MetricsAspect::start_timing("payment_processing")
         
         try {
             # Core business logic
             let receipt = self.do_payment(order_id, amount)
             
             # After advice
-            raise LogAspect.after_method("PaymentService", "process_payment", receipt)
-            let duration = raise MetricsAspect.end_timing(timing_ctx)
-            raise MetricsAspect.record_metric("payment_duration", duration.as_millis())
+            raise LogAspect::after_method("PaymentService", "process_payment", receipt)
+            let duration = raise MetricsAspect::end_timing(timing_ctx)
+            raise MetricsAspect::record_metric("payment_duration", duration.as_millis())
             
             receipt
         }
         .catch {
-            case _:
-                raise LogAspect.on_error("PaymentService", "process_payment", error)
+            case error:
+                raise LogAspect::on_error("PaymentService", "process_payment", error)
                 raise error
         }
     }
@@ -127,14 +127,14 @@ effect AuditAspect {
 class SecurityAuditService {
     @around(LogAspect, AuditAspect)
     micro update_user_profile(self, user_id: string, profile: UserProfile) -> Unit {
-        raise AuditAspect.log_access(user_id, "user_profile", "update")
+        raise AuditAspect::log_access(user_id, "user_profile", "update")
         
         let old_profile = self.get_user_profile(user_id)
         
         # Update logic
         self.save_user_profile(user_id, profile)
         
-        raise AuditAspect.log_data_change("users", user_id, old_profile, profile)
+        raise AuditAspect::log_data_change("users", user_id, old_profile, profile)
     }
 }
 ```
@@ -226,22 +226,22 @@ class DynamicAspectManager {
         
         # Dynamically apply all registered aspects
         for aspect in self.aspects {
-            raise aspect.before(context)
+            raise aspect::before(context)
         }
         
         try {
             let result = operation()
             
             for aspect in self.aspects.reverse() {
-                raise aspect.after(context, result)
+                raise aspect::after(context, result)
             }
             
             result
         }
         .catch {
-            case _:
+            case error:
                 for aspect in self.aspects.reverse() {
-                    raise aspect.on_error(context, error)
+                    raise aspect::on_error(context, error)
                 }
                 raise error
         }
@@ -266,7 +266,7 @@ class AspectChain {
             self.current_index += 1
             
             # Execute current aspect
-            raise aspect.around(context, || { self.proceed(context) })
+            raise aspect::around(context, || { self.proceed(context) })
         }
     }
 }

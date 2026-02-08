@@ -74,25 +74,17 @@ match result {
 
 ### Q: 如何处理异步操作？
 
-A: 使用代数效应处理异步：
+A: Valkyrie 支持原生的 `async/await` 语法：
 
 ```valkyrie
-effect Async {
-    await<T>(promise: Promise<T>): T
-}
-
-micro fetch_user_data(id: Int) -> User {
+micro fetch_user_data(id: i32) -> User {
     let response = fetch("/api/users/{id}").await;
-    parse_json(response);
+    parse_json(response)
 }
 
-# 处理异步效应
-try {
-    fetch_user_data(42)
-} .catch {
-    case Async::await { promise }:
-        resume(promise.await);
-}
+// 顶层也可以使用 await
+let user = fetch_user_data(42).await;
+print("User: {user.name}");
 ```
 
 ### Q: 如何进行错误处理？

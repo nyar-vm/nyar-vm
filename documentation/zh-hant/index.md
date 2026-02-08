@@ -61,22 +61,25 @@ effect Http {
 
 // 使用效應的函數
 micro fetch_user_data(id: Int) -> User {
-    let response = raise Http.get(`/api/users/${id}`)
+    let response = raise Http::get(`/api/users/{id}`)
     parse_json(response)
 }
 
 // 效應處理器
 micro main() {
-    handle fetch_user_data(42) with Http {
-        get(url) -> resume(http_client.get(url)),
-        post(url, body) -> resume(http_client.post(url, body))
+    try {
+        fetch_user_data(42)
+    }
+    .catch {
+        case Http::get(url): resume(http_client.get(url))
+        case Http::post(url, body): resume(http_client.post(url, body))
     }
 }
 
 // 模式匹配和類型安全
 match user_result {
-    Some(u) if u.age >= 18: print("成年用戶: ${u.name}"),
-    Some(u): print("未成年用戶: ${u.name}"),
+    Some(u) if u.age >= 18: print("成年用戶: {u.name}"),
+    Some(u): print("未成年用戶: {u.name}"),
     None: print("用戶不存在")
 }
 ```

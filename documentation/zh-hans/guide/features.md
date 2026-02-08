@@ -484,7 +484,7 @@ let result = if x > 0 {
 
 # 守卫条件
 if let Some { value } = optional_value {
-    print(f"Got value: {value}")
+    print("Got value: {value}")
 }
 ```
 
@@ -512,7 +512,7 @@ for item in collection {
 }
 
 for (index, value) in collection.enumerate() {
-    print(f"Index {index}: {value}")
+    print("Index {index}: {value}")
 }
 
 # 无限循环
@@ -559,12 +559,12 @@ try {
 }
 .catch {
     case error: String:
-        print(f"String error: {error}")
+        print("String error: {error}")
     case error: NetworkError:
-        print(f"Network error: {error.message}")
+        print("Network error: {error.message}")
         retry_connection()
     case error:
-        print(f"Unknown error: {error}")
+        print("Unknown error: {error}")
 }
 ```
 
@@ -582,19 +582,18 @@ micro divide(a: f64, b: f64) -> Result<f64, String> {
 
 # 链式错误处理
 let result = divide(10.0, 2.0)
-    .map { $value * 2.0 }
-    .and_then { $value -> 
-        if $value > 100.0 {
-            Err { error: "Value too large" }
+    .map { %1 * 2.0 }
+    .and_then { value -> 
+        if value > 100.0 {
+            Fail { error: "Value too large" }
         } else {
-            Ok { value: $value }
+            Fine { value: value }
         }
     }
 
 match result {
-    with [error_handling];
-    case Fine { value }: print(f"Result: {value}")
-    case Fail { error }: print(f"Error: {error}")
+    case Fine { value }: print("Result: {value}")
+    case Fail { error }: print("Error: {error}")
 }
 ```
 

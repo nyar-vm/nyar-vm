@@ -7,11 +7,14 @@ impl NyarVM {
     pub fn execute_new_object(&mut self, class_idx: u16) -> Result<Option<usize>, NyarError> {
         let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
         let module_idx = frame.module_idx;
-        let class_info = self.modules[module_idx]
-            .classes
-            .get(class_idx as usize)
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(class_idx as usize)))?;
-        let fields_count = class_info.fields.len();
+        let fields_count = {
+            let module = self.get_module(module_idx);
+            let class_info = module
+                .classes
+                .get(class_idx as usize)
+                .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(class_idx as usize)))?;
+            class_info.fields.len()
+        };
         let mut fields = Vec::with_capacity(fields_count);
         for _ in 0..fields_count {
             fields.push(Value::null());
@@ -26,19 +29,24 @@ impl NyarVM {
         let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
         let module_idx = frame.module_idx;
         
-        let field_name = match &self.modules[module_idx].constants[idx as usize] {
-            crate::bytecode::format::Constant::String(s) => s.clone(),
-            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+        let field_name = {
+            let module = self.get_module(module_idx);
+            match &module.constants[idx as usize] {
+                crate::bytecode::format::Constant::String(s) => s.clone(),
+                _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+            }
         };
 
         let obj_val = self.pop()?;
         let obj = unsafe { obj_val.as_object() };
         
-        let class_info = &self.modules[obj.module_idx].classes[obj.class_idx as usize];
+        let field_idx = {
+            let module = self.get_module(obj.module_idx);
+            let class_info = &module.classes[obj.class_idx as usize];
+            class_info.fields.iter().position(|f| f == &field_name)
+                .ok_or_else(|| self.error(nyar_types::VmErrorKind::RuntimeError(format!("Field not found: {}", field_name))))?
+        };
              
-        let field_idx = class_info.fields.iter().position(|f| f == &field_name)
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::RuntimeError(format!("Field not found: {}", field_name))))?;
-
         if field_idx < obj.fields.len() {
             let val = obj.fields[field_idx];
             self.push(val)?;
@@ -53,9 +61,12 @@ impl NyarVM {
         let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
         let module_idx = frame.module_idx;
         
-        let field_name = match &self.modules[module_idx].constants[idx as usize] {
-            crate::bytecode::format::Constant::String(s) => s.clone(),
-            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+        let field_name = {
+            let module = self.get_module(module_idx);
+            match &module.constants[idx as usize] {
+                crate::bytecode::format::Constant::String(s) => s.clone(),
+                _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+            }
         };
 
         let val = self.pop()?;
@@ -71,11 +82,13 @@ impl NyarVM {
         let gc = &self.gc;
         let obj = unsafe { obj_val.as_object_mut() };
 
-        let class_info = &self.modules[obj.module_idx].classes[obj.class_idx as usize];
+        let field_idx = {
+            let module = self.get_module(obj.module_idx);
+            let class_info = &module.classes[obj.class_idx as usize];
+            class_info.fields.iter().position(|f| f == &field_name)
+                .ok_or_else(|| self.error(nyar_types::VmErrorKind::RuntimeError(format!("Field not found: {}", field_name))))?
+        };
              
-        let field_idx = class_info.fields.iter().position(|f| f == &field_name)
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::RuntimeError(format!("Field not found: {}", field_name))))?;
-
         if field_idx < obj.fields.len() {
             obj.fields[field_idx] = val;
             val.write_barrier(gc);
@@ -243,11 +256,14 @@ impl NyarVM {
             let key_str = key.try_as_str().ok_or_else(|| self.error(nyar_types::VmErrorKind::TypeMismatch { expected: "String".to_string(), found: format!("{:?}", key.tag()) }))?;
             let obj = unsafe { obj_val.as_object() };
             let frame = self.frames.last().ok_or_else(|| self.error(nyar_types::VmErrorKind::NoActiveFrame))?;
-            let class_info = self.modules[frame.module_idx]
-                .classes
-                .get(obj.class_idx as usize)
-                .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
-            let has_field = class_info.fields.iter().any(|f| f == key_str);
+            let has_field = {
+                let module = self.get_module(frame.module_idx);
+                let class_info = module
+                    .classes
+                    .get(obj.class_idx as usize)
+                    .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
+                class_info.fields.iter().any(|f| f == key_str)
+            };
             self.push(Value::bool(has_field))?;
             Ok(None)
         } else if obj_val.is_array() {
@@ -499,16 +515,17 @@ impl NyarVM {
         }
 
         let obj = unsafe { receiver.as_object() };
-        let class_info = self.modules[obj.module_idx]
-            .classes
-            .get(obj.class_idx as usize)
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
+        let class_info = {
+            let module = self.get_module(obj.module_idx);
+            module.classes.get(obj.class_idx as usize)
+                .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?.clone()
+        };
 
         // Search in symbol table for ClassName::initiate
         let mut full_method_name = class_info.name.clone();
         full_method_name.parts.push("initiate".to_string());
 
-        let entry = self.symbol_table.get(&full_method_name).map(|r| *r);
+        let entry = self.env.symbol_table.get(&full_method_name).map(|r| *r.value()); // Modified to use env.symbol_table
 
         if let Some((m_idx, chunk_idx)) = entry {
             let mut final_args = Vec::with_capacity(args.len() + 1);
@@ -516,7 +533,10 @@ impl NyarVM {
             final_args.extend(args);
 
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-            let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+            let locals_count = {
+                let module = self.get_module(m_idx);
+                module.chunks[chunk_idx as usize].locals as usize
+            };
 
             if final_args.len() < locals_count {
                 final_args.resize(locals_count, Value::null());
@@ -552,18 +572,22 @@ impl NyarVM {
         }
 
         let obj = unsafe { receiver.as_object() };
-        let class_info = self.modules[obj.module_idx]
-            .classes
-            .get(obj.class_idx as usize)
-            .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?;
+        let class_info = {
+            let module = self.get_module(obj.module_idx);
+            module.classes.get(obj.class_idx as usize)
+                .ok_or_else(|| self.error(nyar_types::VmErrorKind::IndexOutOfBounds(obj.class_idx as usize)))?.clone()
+        };
 
         let mut full_method_name = class_info.name.clone();
         full_method_name.parts.push("finalize".to_string());
 
-        let entry = self.symbol_table.get(&full_method_name).map(|r| *r);
+        let entry = self.env.symbol_table.get(&full_method_name).map(|r| *r.value());
         if let Some((m_idx, chunk_idx)) = entry {
             let instrs = self.get_chunk_instructions(m_idx, chunk_idx as usize)?;
-            let locals_count = self.modules[m_idx].chunks[chunk_idx as usize].locals as usize;
+            let locals_count = {
+                let module = self.get_module(m_idx);
+                module.chunks[chunk_idx as usize].locals as usize
+            };
 
             let mut final_args = vec![receiver];
             if final_args.len() < locals_count {

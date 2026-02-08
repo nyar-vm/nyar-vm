@@ -56,7 +56,7 @@ let config = try Result⟨Config⟩ {
         log_error(msg)
         Config::default()
     case error:
-        print("Unexpected error: ${error}")
+        print("Unexpected error: {error}")
         Config::empty()
 }
 
@@ -64,7 +64,7 @@ let config = try Result⟨Config⟩ {
 let data = try Result⟨Data⟩ {
     fetch_remote_data()?
 }
-catch network_error {
+.catch {
     case TimeoutError: retry_with_backoff()
     case ConnectionError(msg): use_cached_data()
     case error:

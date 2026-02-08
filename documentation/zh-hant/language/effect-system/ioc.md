@@ -19,19 +19,19 @@
 
 ```valkyrie
 # 定義依賴注入 Effect
-eff DependencyInjection {
+effect DependencyInjection {
     resolve⟨T⟩(service_type: Type⟨T⟩) -> T
     resolve_named⟨T⟩(service_type: Type⟨T⟩, name: string) -> T
-    register⟨T⟩(service_type: Type⟨T⟩, instance: T): unit
-    register_factory⟨T⟩(service_type: Type⟨T⟩, factory: { -> T }): unit
-    register_singleton⟨T⟩(service_type: Type⟨T⟩, factory: { -> T }): unit
+    register⟨T⟩(service_type: Type⟨T⟩, instance: T): Unit
+    register_factory⟨T⟩(service_type: Type⟨T⟩, factory: { -> T }): Unit
+    register_singleton⟨T⟩(service_type: Type⟨T⟩, factory: { -> T }): Unit
 }
 
 # 定義服務生命週期 Effect
-eff ServiceLifecycle {
+effect ServiceLifecycle {
     create⟨T⟩(service_type: Type⟨T⟩) -> T
     initialize⟨T⟩(instance: T): T
-    dispose⟨T⟩(instance: T): unit
+    dispose⟨T⟩(instance: T): Unit
 }
 ```
 
@@ -45,86 +45,84 @@ class IoCContainer {
     private mut singletons: {Type: Any} = {}
     private mut named_services: {string: {Type: Any}} = {}
     
-    handle DependencyInjection {
-        resolve⟨T⟩(service_type) -> T {
-            # 首先檢查單例
-            match self.singletons.get(service_type) {
-                case instance: return instance as T
-                case null: {}
-            }
+    micro run_with_container(self, task: { -> Unit }) {
+        try {
+            task()
+        }
+        .catch {
+            case DependencyInjection::resolve⟨T⟩(service_type):
+                # 首先檢查單例
+                match self.singletons.get(service_type) {
+                    case instance: resume(instance as T)
+                    case null: {}
+                }
+                
+                # 檢查工廠方法
+                match self.factories.get(service_type) {
+                    case factory: resume(factory() as T)
+                    case null: {}
+                }
+                
+                # 檢查已註冊的實例
+                match self.services.get(service_type) {
+                    case instance: resume(instance as T)
+                    case null: {}
+                }
+                
+                # 嘗試自動裝配
+                resume(self.auto_wire(service_type))
             
-            # 檢查工廠方法
-            match self.factories.get(service_type) {
-                case factory: return factory() as T
-                case null: {}
-            }
+            case DependencyInjection::resolve_named⟨T⟩(service_type, name):
+                match self.named_services.get(name) {
+                    case named_map:
+                        match named_map.get(service_type) {
+                            case instance: resume(instance as T)
+                            case null: {}
+                        }
+                    case null: {}
+                }
+                raise ServiceNotFoundError { service_type, name }
             
-            # 檢查已註冊的實例
-            match self.services.get(service_type) {
-                case instance: return instance as T
-                case null: {}
-            }
+            case DependencyInjection::register⟨T⟩(service_type, instance):
+                self.services[service_type] = instance
+                resume()
             
-            # 嘗試自動裝配
-            self.auto_wire(service_type)
-        }
-        
-        resolve_named⟨T⟩(service_type, name) -> T {
-            match self.named_services.get(name) {
-                case named_map:
-                    match named_map.get(service_type) {
-                        case instance: return instance as T
-                        case null: {}
-                    }
-                case null: {}
-            }
+            case DependencyInjection::register_factory⟨T⟩(service_type, factory):
+                self.factories[service_type] = factory
+                resume()
             
-            raise ServiceNotFoundError { service_type, name }
-        }
-        
-        register⟨T⟩(service_type, instance) {
-            self.services[service_type] = instance
-        }
-        
-        register_factory⟨T⟩(service_type, factory) {
-            self.factories[service_type] = factory
-        }
-        
-        register_singleton⟨T⟩(service_type, factory) {
-            let instance = factory()
-            self.singletons[service_type] = instance
-        }
-    }
-    
-    handle ServiceLifecycle {
-        create⟨T⟩(service_type) -> T {
-            # 使用反射或編譯時資訊建立實例
-            let constructor = service_type.get_constructor()
-            let dependencies = constructor.get_parameters().map({ 
-                raise DependencyInjection.resolve($param.type)
-            })
-            constructor.invoke(dependencies)
-        }
-        
-        initialize⟨T⟩(instance) -> T {
-            # 執行初始化邏輯
-            if instance implements Initializable {
-                instance.initialize()
-            }
-            instance
-        }
-        
-        dispose⟨T⟩(instance) {
-            # 執行清理邏輯
-            if instance implements Disposable {
-                instance.dispose()
-            }
+            case DependencyInjection::register_singleton⟨T⟩(service_type, factory):
+                let instance = factory()
+                self.singletons[service_type] = instance
+                resume()
+                
+            case ServiceLifecycle::create⟨T⟩(service_type):
+                # 使用反射或編譯時資訊建立實例
+                let constructor = service_type.get_constructor()
+                let dependencies = constructor.get_parameters().map({ 
+                    raise DependencyInjection::resolve($param.type)
+                })
+                resume(constructor.invoke(dependencies))
+            
+            case ServiceLifecycle::initialize⟨T⟩(instance):
+                # 執行初始化邏輯
+                if instance implements Initializable {
+                    instance.initialize()
+                }
+                resume(instance)
+            
+            case ServiceLifecycle::dispose⟨T⟩(instance):
+                # 執行清理邏輯
+                if instance implements Disposable {
+                    instance.dispose()
+                }
+                resume()
         }
     }
     
     private micro auto_wire⟨T⟩(self, service_type: Type⟨T⟩) -> T {
-        let instance = raise ServiceLifecycle.create(service_type)
-        let initialized = raise ServiceLifecycle.initialize(instance)
+        let instance = raise ServiceLifecycle::create(service_type)
+        let initialized = raise ServiceLifecycle::initialize(instance)
         self.services[service_type] = initialized
         initialized
     }
@@ -222,7 +220,7 @@ class UserService {
         self.email_service.send_email(
             user.email,
             "Welcome!",
-            f"Welcome {user.name}!"
+            "Welcome {user.name}!"
         )
         
         user
@@ -269,19 +267,19 @@ class ApplicationConfig {
         
         # 註冊服務實現
         container.register_factory(UserRepository, {
-            let connection = raise DependencyInjection.resolve(DatabaseConnection)
+            let connection = raise DependencyInjection::resolve(DatabaseConnection)
             DatabaseUserRepository::new(connection)
         })
         
         container.register_factory(EmailService, {
-            let config = raise DependencyInjection.resolve(EmailConfig)
+            let config = raise DependencyInjection::resolve(EmailConfig)
             SmtpEmailService::new(config)
         })
         
         # 註冊應用服務
         container.register_factory(UserService, {
-            let user_repo = raise DependencyInjection.resolve(UserRepository)
-            let email_service = raise DependencyInjection.resolve(EmailService)
+            let user_repo = raise DependencyInjection::resolve(UserRepository)
+            let email_service = raise DependencyInjection::resolve(EmailService)
             UserService::new(user_repo, email_service)
         })
     }
@@ -299,14 +297,14 @@ class Application {
     
     micro run(self) {
         with self.container {
-            let user_service = raise DependencyInjection.resolve(UserService)
+            let user_service = raise DependencyInjection::resolve(UserService)
             
             # 使用服務
             let user = user_service.create_user("Alice", "alice↯example.com")
-            print(f"Created user: {user.id}")
+            print("Created user: {user.id}")
             
             let found_user = user_service.get_user(user.id)
-            print(f"Found user: {found_user}")
+            print("Found user: {found_user}")
         }
     }
 }
@@ -465,7 +463,7 @@ class CachedUserRepository {
 # 註冊裝飾器
 container.register_factory(UserRepository, {
     let base_repo = DatabaseUserRepository::new(
-        raise DependencyInjection.resolve(DatabaseConnection)
+        raise DependencyInjection::resolve(DatabaseConnection)
     )
     CachedUserRepository::new(base_repo)
 })
@@ -505,21 +503,21 @@ class WebApplication {
         
         # 倉儲層
         self.container.register_factory(UserRepository, {
-            let conn = raise DependencyInjection.resolve(DatabaseConnection)
+            let conn = raise DependencyInjection::resolve(DatabaseConnection)
             let base_repo = DatabaseUserRepository::new(conn)
             CachedUserRepository::new(base_repo)
         })
         
         # 應用服務層
         self.container.register_scoped(UserService, {
-            let user_repo = raise DependencyInjection.resolve(UserRepository)
-            let email_service = raise DependencyInjection.resolve(EmailService)
+            let user_repo = raise DependencyInjection::resolve(UserRepository)
+            let email_service = raise DependencyInjection::resolve(EmailService)
             UserService::new(user_repo, email_service)
         })
         
         # 控制器層
         self.container.register_scoped(UserController, {
-            let user_service = raise DependencyInjection.resolve(UserService)
+            let user_service = raise DependencyInjection::resolve(UserService)
             UserController::new(user_service)
         })
     }
@@ -531,7 +529,7 @@ class WebApplication {
         
         try {
             with self.container, self.scope_manager {
-                let controller = raise DependencyInjection.resolve(UserController)
+                let controller = raise DependencyInjection::resolve(UserController)
                 controller.handle(request)
             }
         } finally {

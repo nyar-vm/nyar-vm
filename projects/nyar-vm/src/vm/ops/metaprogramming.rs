@@ -37,11 +37,13 @@ impl NyarVM {
             
             let module_idx = code.module_idx;
             let chunk_idx = code.chunk_idx;
-            
+
             let instrs = self.get_chunk_instructions(module_idx, chunk_idx)?;
-            let chunk = &self.modules[module_idx].chunks[chunk_idx];
-            
-            let locals_count = chunk.locals as usize;
+            let locals_count = {
+                let module = self.get_module(module_idx);
+                module.chunks[chunk_idx].locals as usize
+            };
+
             let mut locals = vec![Value::null(); locals_count];
             
             // Pop argc arguments from stack and put into locals

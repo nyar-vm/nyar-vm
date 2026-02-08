@@ -45,7 +45,7 @@ impl NyarVM {
     }
 
     pub fn execute_symbol(&mut self, name: &QualifiedName, args: Vec<Value>) -> Result<Value, NyarError> {
-        let entry = self.symbol_table.get(name).map(|r| *r);
+        let entry = self.env.symbol_table.get(name).map(|r| *r.value());
         if let Some((m_idx, chunk_idx)) = entry {
             if let Some(jit) = self.jit.clone() {
                 if let Some(res) = jit.try_execute(self, m_idx, chunk_idx as usize) {
@@ -83,10 +83,10 @@ impl NyarVM {
         module_idx: usize,
         chunk_idx: usize,
     ) -> Result<std::sync::Arc<Vec<(Instruction, u32)>>, NyarError> {
-        if module_idx >= self.modules.len() {
+        if module_idx >= self.env.modules.len() {
             return Err(self.error(nyar_types::VmErrorKind::ModuleNotFound(module_idx)));
         }
-        let module = &self.modules[module_idx];
+        let module = self.get_module(module_idx);
         if chunk_idx >= module.chunks.len() {
             return Err(self.error(nyar_types::VmErrorKind::ChunkNotFound {
                 module: module_idx,
@@ -169,16 +169,8 @@ impl NyarVM {
         
         loop {
             loop_count += 1;
-            
-            // Periodically check for GC requests (Cooperative Safepoint)
+
             if loop_count % 1024 == 0 {
-                if nyar_gc::runtime::GC_STOP_THE_WORLD.load(std::sync::atomic::Ordering::Acquire) {
-                    // If GC requested a stop, we flush TLAB and potentially wait
-                    self.gc.flush_thread_local();
-                    // In a multi-threaded VM, we might want to park the thread here
-                    // For now, we just ensure data is visible to GC
-                }
-                
                 if loop_count > 10_000_000 {
                     let err = self.error(nyar_types::VmErrorKind::LimitExceeded);
                     self.print_traceback(&err);
@@ -199,6 +191,26 @@ impl NyarVM {
     }
 
     pub fn execute_step(&mut self) -> Result<Option<()>, NyarError> {
+        self.step_count = self.step_count.wrapping_add(1);
+        if self.step_count % 1024 == 0 {
+            let allocated = self.gc.allocated_bytes.load(std::sync::atomic::Ordering::Relaxed);
+            let threshold = self.gc.threshold.load(std::sync::atomic::Ordering::Relaxed);
+
+            if allocated >= threshold
+                || nyar_gc::runtime::GC_STOP_THE_WORLD.load(std::sync::atomic::Ordering::Acquire)
+            {
+                self.gc.flush_thread_local();
+                // Perform an incremental GC step
+                unsafe {
+                    use nyar_gc::Trace;
+                    self.gc.step(1024, |ctx| {
+                        nyar_gc::stack::scan_thread_roots(ctx);
+                        self.trace(ctx);
+                    });
+                }
+            }
+        }
+
         let (cur_ip, module_idx, chunk_idx) = {
             let f = match self.frames.last() {
                 Some(f) => f,
@@ -216,18 +228,22 @@ impl NyarVM {
 
         // Update location before dispatch
         if let Some(c_idx) = chunk_idx {
-            let chunk = &self.modules[module_idx].chunks[c_idx];
-            let byte_offset = self.frames.last().unwrap().instrs[cur_ip].1;
-            // Find the line info for the current IP
-            // lines is Vec<(offset, line)>
-            let mut line_offset = 0;
-            for &(offset, line) in &chunk.lines {
-                if byte_offset >= offset {
-                    line_offset = line;
-                } else {
-                    break;
+            let line_offset = {
+                let module = self.get_module(module_idx);
+                let chunk = &module.chunks[c_idx];
+                let byte_offset = self.frames.last().unwrap().instrs[cur_ip].1;
+                // Find the line info for the current IP
+                // lines is Vec<(offset, line)>
+                let mut line_offset = 0;
+                for &(offset, line) in &chunk.lines {
+                    if byte_offset >= offset {
+                        line_offset = line;
+                    } else {
+                        break;
+                    }
                 }
-            }
+                line_offset
+            };
             if let Some(f) = self.frames.last_mut() {
                 f.location = nyar_types::SourceLocation::new(module_idx as u32, line_offset);
             }

@@ -136,6 +136,43 @@ impl FFIRegistry {
         self.register("std::async::Async::spawn".to_string(), Arc::new(async_ffi::AsyncSpawn));
         self.register("std::async::Async::await".to_string(), Arc::new(async_ffi::AsyncAwait));
         self.register("std::async::Async::timeout".to_string(), Arc::new(async_ffi::AsyncTimeout));
+
+        self.register("std::gc::collect".to_string(), Arc::new(NativeGcCollect));
+        self.register("std::gc::stats".to_string(), Arc::new(NativeGcStats));
+    }
+}
+
+pub struct NativeGcCollect;
+impl FFIFunction for NativeGcCollect {
+    fn call(&self, vm: &mut NyarVM, _args: Vec<Value>) -> FFIResult {
+        vm.gc.full_gc();
+        Ok(Value::null())
+    }
+}
+
+pub struct NativeGcStats;
+impl FFIFunction for NativeGcStats {
+    fn call(&self, vm: &mut NyarVM, _args: Vec<Value>) -> FFIResult {
+        let stats = Value::dyn_object(&vm.gc);
+        if let Some(mut obj) = stats.try_as_dyn_object_mut() {
+            obj.entries.insert(
+                "allocated_bytes".to_string(),
+                Value::int(vm.gc.allocated_bytes() as i64),
+            );
+            obj.entries.insert(
+                "total_collections".to_string(),
+                Value::int(
+                    vm.gc
+                        .total_collections
+                        .load(std::sync::atomic::Ordering::Relaxed) as i64,
+                ),
+            );
+            obj.entries.insert(
+                "threshold".to_string(),
+                Value::int(vm.gc.threshold.load(std::sync::atomic::Ordering::Relaxed) as i64),
+            );
+        }
+        Ok(stats)
     }
 }
 

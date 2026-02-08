@@ -36,19 +36,19 @@ effect MetricsAspect {
 ### 實現切面處理器
 
 ```valkyrie
-# 日誌切面處理器
+# 切面處理器
 class ConsoleLogHandler {
     handle LogAspect {
         before_method(class_name, method_name, args) {
-            print(f"→ {class_name}.{method_name}({args})")
+            print("→ {class_name}::{method_name}({args})")
         }
         
         after_method(class_name, method_name, result) {
-            print(f"← {class_name}.{method_name} = {result}")
+            print("← {class_name}::{method_name} = {result}")
         }
         
         on_error(class_name, method_name, error) {
-            print(f"× {class_name}.{method_name} throws {error}")
+            print("× {class_name}::{method_name} throws {error}")
         }
     }
 }
@@ -86,23 +86,23 @@ class PaymentService {
     @around(LogAspect, MetricsAspect)
     micro process_payment(self, order_id: string, amount: Decimal) -> Receipt {
         # 前置通知自動執行
-        raise LogAspect.before_method("PaymentService", "process_payment", [order_id, amount])
-        let timing_ctx = raise MetricsAspect.start_timing("payment_processing")
+        raise LogAspect::before_method("PaymentService", "process_payment", [order_id, amount])
+        let timing_ctx = raise MetricsAspect::start_timing("payment_processing")
         
         try {
             # 核心業務邏輯
             let receipt = self.do_payment(order_id, amount)
             
             # 後置通知
-            raise LogAspect.after_method("PaymentService", "process_payment", receipt)
-            let duration = raise MetricsAspect.end_timing(timing_ctx)
-            raise MetricsAspect.record_metric("payment_duration", duration.as_millis())
+            raise LogAspect::after_method("PaymentService", "process_payment", receipt)
+            let duration = raise MetricsAspect::end_timing(timing_ctx)
+            raise MetricsAspect::record_metric("payment_duration", duration.as_millis())
             
             receipt
         }
         .catch {
-            case _:
-                raise LogAspect.on_error("PaymentService", "process_payment", error)
+            case error:
+                raise LogAspect::on_error("PaymentService", "process_payment", error)
                 raise error
         }
     }
@@ -127,14 +127,14 @@ effect AuditAspect {
 class SecurityAuditService {
     @around(LogAspect, AuditAspect)
     micro update_user_profile(self, user_id: string, profile: UserProfile) -> Unit {
-        raise AuditAspect.log_access(user_id, "user_profile", "update")
+        raise AuditAspect::log_access(user_id, "user_profile", "update")
         
         let old_profile = self.get_user_profile(user_id)
         
         # 更新邏輯
         self.save_user_profile(user_id, profile)
         
-        raise AuditAspect.log_data_change("users", user_id, old_profile, profile)
+        raise AuditAspect::log_data_change("users", user_id, old_profile, profile)
     }
 }
 ```
@@ -149,14 +149,19 @@ effect ConditionalAspect {
 }
 
 class DebugAspect {
-    handle ConditionalAspect {
-        should_apply(context) -> bool {
-            # 只在調試模式下應用
-            config.debug_mode && context.method_name.starts_with("debug_")
+    // 處理器實現
+    micro apply(context: AspectContext) {
+        try {
+            if (raise ConditionalAspect::should_apply(context)) {
+                raise ConditionalAspect::apply_advice(context)
+            }
         }
-        
-        apply_advice(context) {
-            print(f"Debug: {context.class_name}.{context.method_name}")
+        .catch {
+            case ConditionalAspect::should_apply(ctx): 
+                resume(config.debug_mode && ctx.method_name.starts_with("debug_"))
+            case ConditionalAspect::apply_advice(ctx):
+                print("Debug: {ctx.class_name}.{ctx.method_name}")
+                resume()
         }
     }
 }
@@ -172,11 +177,14 @@ class AspectComposer {
             execute(context: AspectContext): T
         }
         
-        handle ComposedAspect {
-            execute(context) -> T {
+        try {
+            // 執行邏輯
+        }
+        .catch {
+            case ComposedAspect::execute(context):
                 # 按順序執行所有切面的前置通知
                 for aspect in aspects {
-                    raise aspect.before(context)
+                    raise aspect::before(context)
                 }
                 
                 try {
@@ -184,20 +192,19 @@ class AspectComposer {
                     
                     # 按逆序執行所有切面的後置通知
                     for aspect in aspects.reverse() {
-                        raise aspect.after(context, result)
+                        raise aspect::after(context, result)
                     }
                     
-                    result
+                    resume(result)
                 }
                 .catch {
-                    case _:
+                    case error:
                         # 執行異常通知
                         for aspect in aspects.reverse() {
-                            raise aspect.on_error(context, error)
+                            raise aspect::on_error(context, error)
                         }
                         raise error
                 }
-            }
         }
     }
 }
@@ -226,22 +233,22 @@ class DynamicAspectManager {
         
         # 動態應用所有註冊的切面
         for aspect in self.aspects {
-            raise aspect.before(context)
+            raise aspect::before(context)
         }
         
         try {
             let result = operation()
             
             for aspect in self.aspects.reverse() {
-                raise aspect.after(context, result)
+                raise aspect::after(context, result)
             }
             
             result
         }
         .catch {
-            case _:
+            case error:
                 for aspect in self.aspects.reverse() {
-                    raise aspect.on_error(context, error)
+                    raise aspect::on_error(context, error)
                 }
                 raise error
         }
@@ -266,7 +273,7 @@ class AspectChain {
             self.current_index += 1
             
             # 執行當前切面
-            raise aspect.around(context, || { self.proceed(context) })
+            raise aspect::around(context, || { self.proceed(context) })
         }
     }
 }
@@ -301,7 +308,7 @@ class OrderService {
             id: generate_order_id(),
             user_id,
             items,
-            status: OrderStatus.Pending,
+            status: OrderStatus::Pending,
             created_at: now()
         }
         
@@ -327,7 +334,7 @@ with log_handler, metrics_handler {
         OrderItem { product_id: "p1", quantity: 2 },
         OrderItem { product_id: "p2", quantity: 1 }
     ])
-    print(f"Created order: {order.id}")
+    print("Created order: {order.id}")
 }
 ```
 

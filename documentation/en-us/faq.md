@@ -72,27 +72,19 @@ match result {
 }
 ```
 
-### Q: 如何处理异步操作？
+### Q: How to handle asynchronous operations?
 
-A: 使用代数效应处理异步：
+A: Valkyrie supports native `async/await` syntax:
 
 ```valkyrie
-effect Async {
-    await<T>(promise: Promise<T>): T
-}
-
-micro fetch_user_data(id: Int) -> User {
-    let response = fetch("/api/users/${id}").await
+micro fetch_user_data(id: i32) -> User {
+    let response = fetch("/api/users/{id}").await;
     parse_json(response)
 }
 
-# Handle async effect
-try {
-    fetch_user_data(42)
-} .catch {
-    case Async::await { promise }:
-        resume(promise.await)
-}
+// Top-level await is also supported
+let user = fetch_user_data(42).await;
+print("User: {user.name}");
 ```
 
 ### Q: How to handle errors?

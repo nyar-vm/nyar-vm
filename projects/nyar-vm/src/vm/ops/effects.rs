@@ -13,10 +13,13 @@ impl NyarVM {
         argc: u8,
         module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
-        let name = match self.modules[module_idx].constants.get(idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+        let name = {
+            let module = self.get_module(module_idx);
+            match module.constants.get(idx as usize) {
+                Some(Constant::QualifiedName(qn)) => qn.clone(),
+                Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+                _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+            }
         };
 
         let mut args = Vec::with_capacity(argc as usize);
@@ -60,8 +63,10 @@ impl NyarVM {
             // Push handler frame
             let handler_module_idx = handler.module_idx;
             let instrs = self.get_chunk_instructions(handler_module_idx, handler.catch_chunk)?;
-            let chunk = &self.modules[handler_module_idx].chunks[handler.catch_chunk];
-            let locals_count = chunk.locals as usize;
+            let locals_count = {
+                let module = self.get_module(handler_module_idx);
+                module.chunks[handler.catch_chunk].locals as usize
+            };
             
             let effect_obj = Value::effect(effect_info, args.clone(), &self.gc);
             let args_list = Value::list(args, &self.gc);
@@ -172,11 +177,14 @@ impl NyarVM {
         // OR it's in locals[0] of the handler frame if we are using the new logic.
         // Let's check the stack first, as it's more direct for the MatchEffect opcode.
         let val = self.peek_at(0)?;
-        
-        let target_name = match self.modules[module_idx].constants.get(idx as usize) {
-            Some(Constant::QualifiedName(qn)) => qn.clone(),
-            Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
-            _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+
+        let target_name = {
+            let module = self.get_module(module_idx);
+            match module.constants.get(idx as usize) {
+                Some(Constant::QualifiedName(qn)) => qn.clone(),
+                Some(Constant::String(s)) => QualifiedName::from(s.as_str()),
+                _ => return Err(self.error(nyar_types::VmErrorKind::IndexOutOfBounds(idx as usize))),
+            }
         };
 
         if let Some(effect) = val.try_as_effect() {

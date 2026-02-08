@@ -61,22 +61,25 @@ effect Http {
 
 // Function using effects
 micro fetch_user_data(id: Int) -> User {
-    let response = raise Http.get(`/api/users/${id}`)
+    let response = raise Http::get(`/api/users/{id}`)
     parse_json(response)
 }
 
 // Effect handler
 micro main() {
-    handle fetch_user_data(42) with Http {
-        get(url) -> resume(http_client.get(url)),
-        post(url, body) -> resume(http_client.post(url, body))
+    try {
+        fetch_user_data(42)
+    }
+    .catch {
+        case Http::get(url): resume(http_client.get(url))
+        case Http::post(url, body): resume(http_client.post(url, body))
     }
 }
 
 // Pattern matching and type safety
 match user_result {
-    Some(u) if u.age >= 18: print("Adult user: ${u.name}"),
-    Some(u): print("Minor user: ${u.name}"),
+    Some(u) if u.age >= 18: print("Adult user: {u.name}"),
+    Some(u): print("Minor user: {u.name}"),
     None: print("User does not exist")
 }
 ```

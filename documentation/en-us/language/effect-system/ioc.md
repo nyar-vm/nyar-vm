@@ -19,19 +19,19 @@ The container is responsible for managing the lifecycle of objects, including cr
 
 ```valkyrie
 # Define Dependency Injection Effect
-eff DependencyInjection {
+effect DependencyInjection {
     resolve⟨T⟩(service_type: Type⟨T⟩) -> T
     resolve_named⟨T⟩(service_type: Type⟨T⟩, name: string) -> T
-    register⟨T⟩(service_type: Type⟨T⟩, instance: T): unit
-    register_factory⟨T⟩(service_type: Type⟨T⟩, factory: { -> T }): unit
-    register_singleton⟨T⟩(service_type: Type⟨T⟩, factory: { -> T }): unit
+    register⟨T⟩(service_type: Type⟨T⟩, instance: T): Unit
+    register_factory⟨T⟩(service_type: Type⟨T⟩, factory: { -> T }): Unit
+    register_singleton⟨T⟩(service_type: Type⟨T⟩, factory: { -> T }): Unit
 }
 
 # Define Service Lifecycle Effect
-eff ServiceLifecycle {
+effect ServiceLifecycle {
     create⟨T⟩(service_type: Type⟨T⟩) -> T
     initialize⟨T⟩(instance: T): T
-    dispose⟨T⟩(instance: T): unit
+    dispose⟨T⟩(instance: T): Unit
 }
 ```
 
@@ -101,7 +101,7 @@ class IoCContainer {
             # Use reflection or compile-time info to create instances
             let constructor = service_type.get_constructor()
             let dependencies = constructor.get_parameters().map({ 
-                raise DependencyInjection.resolve($param.type)
+                raise DependencyInjection::resolve($param.type)
             })
             constructor.invoke(dependencies)
         }
@@ -123,8 +123,8 @@ class IoCContainer {
     }
     
     private micro auto_wire⟨T⟩(self, service_type: Type⟨T⟩) -> T {
-        let instance = raise ServiceLifecycle.create(service_type)
-        let initialized = raise ServiceLifecycle.initialize(instance)
+        let instance = raise ServiceLifecycle::create(service_type)
+        let initialized = raise ServiceLifecycle::initialize(instance)
         self.services[service_type] = initialized
         initialized
     }
@@ -269,19 +269,19 @@ class ApplicationConfig {
         
         # Register service implementations
         container.register_factory(UserRepository, {
-            let connection = raise DependencyInjection.resolve(DatabaseConnection)
+            let connection = raise DependencyInjection::resolve(DatabaseConnection)
             DatabaseUserRepository::new(connection)
         })
         
         container.register_factory(EmailService, {
-            let config = raise DependencyInjection.resolve(EmailConfig)
+            let config = raise DependencyInjection::resolve(EmailConfig)
             SmtpEmailService::new(config)
         })
         
         # Register application services
         container.register_factory(UserService, {
-            let user_repo = raise DependencyInjection.resolve(UserRepository)
-            let email_service = raise DependencyInjection.resolve(EmailService)
+            let user_repo = raise DependencyInjection::resolve(UserRepository)
+            let email_service = raise DependencyInjection::resolve(EmailService)
             UserService::new(user_repo, email_service)
         })
     }
@@ -299,14 +299,14 @@ class Application {
     
     micro run(self) {
         with self.container {
-            let user_service = raise DependencyInjection.resolve(UserService)
+            let user_service = raise DependencyInjection::resolve(UserService)
             
             # Use the service
             let user = user_service.create_user("Alice", "alice@example.com")
-            print(f"Created user: {user.id}")
+            print("Created user: {user.id}")
             
             let found_user = user_service.get_user(user.id)
-            print(f"Found user: {found_user}")
+            print("Found user: {found_user}")
         }
     }
 }
@@ -465,7 +465,7 @@ class CachedUserRepository {
 # Register decorator
 container.register_factory(UserRepository, {
     let base_repo = DatabaseUserRepository::new(
-        raise DependencyInjection.resolve(DatabaseConnection)
+        raise DependencyInjection::resolve(DatabaseConnection)
     )
     CachedUserRepository::new(base_repo)
 })
@@ -505,21 +505,21 @@ class WebApplication {
         
         # Repository layer
         self.container.register_factory(UserRepository, {
-            let conn = raise DependencyInjection.resolve(DatabaseConnection)
+            let conn = raise DependencyInjection::resolve(DatabaseConnection)
             let base_repo = DatabaseUserRepository::new(conn)
             CachedUserRepository::new(base_repo)
         })
         
         # Application service layer
         self.container.register_scoped(UserService, {
-            let user_repo = raise DependencyInjection.resolve(UserRepository)
-            let email_service = raise DependencyInjection.resolve(EmailService)
+            let user_repo = raise DependencyInjection::resolve(UserRepository)
+            let email_service = raise DependencyInjection::resolve(EmailService)
             UserService::new(user_repo, email_service)
         })
         
         # Controller layer
         self.container.register_scoped(UserController, {
-            let user_service = raise DependencyInjection.resolve(UserService)
+            let user_service = raise DependencyInjection::resolve(UserService)
             UserController::new(user_service)
         })
     }
@@ -531,7 +531,7 @@ class WebApplication {
         
         try {
             with self.container, self.scope_manager {
-                let controller = raise DependencyInjection.resolve(UserController)
+                let controller = raise DependencyInjection::resolve(UserController)
                 controller.handle(request)
             }
         } finally {

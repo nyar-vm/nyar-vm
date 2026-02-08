@@ -78,9 +78,11 @@ impl Backend for NativeBackend {
         // 5. 退出进程 (Terminate)
         // 使用 rax 作为退出码调用 ExitProcess
         builder.add_instruction(Instruction::Label("terminate".to_string()));
+        // 将 RAX (WriteFile 的返回值) 存入本地变量或丢弃，这里我们想用程序最后的返回值
+        // 但目前 main 还没有返回值逻辑，所以我们先强制返回 0
         builder.add_instruction(Instruction::Mov {
             dst: Operand::reg(Register::ECX),
-            src: Operand::reg(Register::EAX),
+            src: Operand::imm(0, 32),
         });
         // call ExitProcess (index 2 in imports)
         // 注意：此时 RSP 依然是 16 字节对齐的，且下方有足够的影子空间。
@@ -434,10 +436,16 @@ impl NativeBackend {
         });
 
         // lpOverlapped (stack [rsp+32]) = NULL
+        // Windows x64 ABI: lpOverlapped 是第 5 个参数，必须放在 [RSP + 32]
+        // 必须确保是 64 位清零，否则高位垃圾数据会导致 API 调用失败
         builder.add_instruction(Instruction::Mov {
             dst: Operand::mem(Some(Register::RSP), None, 0, 32),
-            src: Operand::imm(0, 32),
+            src: Operand::imm(0, 64),
         });
+
+        // 检查栈对齐（调试辅助）
+        // 如果在 Call 之前 RSP 不是 16 字节对齐，某些 Windows API 可能会崩溃
+        // 虽然 WriteFile 通常对对齐不敏感，但影子空间是必须的
 
         builder.add_instruction(Instruction::Call {
             target: Operand::mem(None, None, 0, 1),

@@ -46,6 +46,22 @@ impl NyarEnv {
     }
 }
 
+pub struct TracebackLink {
+    pub parent: Option<Arc<TracebackLink>>,
+    pub frames: Vec<Frame>,
+}
+
+impl Trace for TracebackLink {
+    fn trace(&self, ctx: &mut MarkContext) {
+        for frame in &self.frames {
+            frame.trace(ctx);
+        }
+        if let Some(parent) = &self.parent {
+            parent.trace(ctx);
+        }
+    }
+}
+
 pub struct NyarVM {
     pub gc: Arc<NyarGc>,
     pub env: Arc<NyarEnv>,
@@ -57,11 +73,13 @@ pub struct NyarVM {
     pub ffi: FFIRegistry,
     pub jit: Option<std::sync::Arc<dyn JitProvider>>,
     pub local_hotness: u8,
+    pub step_count: u16,
     pub last_gc_count: u64,
     pub current_waker: Option<std::task::Waker>,
     pub network: crate::vm::net::NetworkContext,
     pub platform: Arc<dyn crate::vm::platform::NyarPlatform>,
     pub effect_handler: Option<Arc<dyn crate::vm::effects::EffectHandler>>,
+    pub parent_traceback: Option<Arc<TracebackLink>>,
 }
 
 impl Trace for NyarVM {
@@ -74,6 +92,9 @@ impl Trace for NyarVM {
         }
         for r in self.env.builtins.iter() {
             r.value().trace(ctx);
+        }
+        if let Some(link) = &self.parent_traceback {
+            link.trace(ctx);
         }
     }
 }
@@ -91,17 +112,25 @@ impl NyarVM {
             ffi: FFIRegistry::new(),
             jit: None,
             local_hotness: 0,
+            step_count: 0,
             last_gc_count: 0,
             current_waker: None,
             network: crate::vm::net::NetworkContext::new(),
             platform: Arc::new(crate::vm::platform::StubPlatform),
             effect_handler: None,
+            parent_traceback: None,
         };
         vm.ffi.register_std();
         vm
     }
 
     pub fn spawn_child(&self) -> Self {
+        // Capture current traceback as parent for the child
+        let parent_traceback = Some(Arc::new(TracebackLink {
+            parent: self.parent_traceback.clone(),
+            frames: self.frames.clone(),
+        }));
+
         Self {
             gc: self.gc.clone(),
             env: self.env.clone(),
@@ -113,11 +142,13 @@ impl NyarVM {
             ffi: self.ffi.clone(),
             jit: self.jit.clone(),
             local_hotness: 0,
+            step_count: 0,
             last_gc_count: self.last_gc_count,
             current_waker: self.current_waker.clone(),
             network: self.network.clone(),
             platform: self.platform.clone(),
             effect_handler: self.effect_handler.clone(),
+            parent_traceback,
         }
     }
 
@@ -252,6 +283,13 @@ impl NyarVM {
 
     pub fn print_traceback(&self, err: &NyarError) {
         self.print_line("Traceback (most recent call last):");
+        
+        // Print parent tracebacks first (if any)
+        if let Some(link) = &self.parent_traceback {
+            self.print_traceback_link(link);
+            self.print_line(" --- Async Spawn Boundary ---");
+        }
+
         let start = if self.frames.len() > 20 {
             self.print_line(&format!("... ({} frames omitted)", self.frames.len() - 20));
             self.frames.len() - 20
@@ -259,31 +297,45 @@ impl NyarVM {
             0
         };
         for (i, f) in self.frames.iter().enumerate().skip(start) {
-            let func_name = if let Some(closure) = f.closure.try_as_closure() {
-                format!("Closure#{}", closure.func)
-            } else if let Some(chunk_idx) = f.chunk_idx {
-                self.env.symbol_table
-                    .iter()
-                    .find(|r| {
-                        let (m_idx, c_idx) = *r.value();
-                        m_idx == f.module_idx && c_idx as usize == chunk_idx
-                    })
-                    .map(|r| r.key().to_string())
-                    .unwrap_or_else(|| format!("Chunk#{}", chunk_idx))
-            } else {
-                "Anonymous".to_string()
-            };
-
-            let info = format!(
-                "  [frame {}] {} at {}:{}",
-                i,
-                func_name,
-                self.env.module_names.get(&(f.location.source_id as usize)).map(|r| r.value().clone()).unwrap_or_else(|| format!("source:{}", f.location.source_id)),
-                f.location.offset
-            );
-            self.print_line(&info);
+            self.print_frame(i, f);
         }
         self.print_line(&format!("{}", err));
+    }
+
+    fn print_traceback_link(&self, link: &TracebackLink) {
+        if let Some(parent) = &link.parent {
+            self.print_traceback_link(parent);
+            self.print_line(" --- Async Spawn Boundary ---");
+        }
+        for (i, f) in link.frames.iter().enumerate() {
+            self.print_frame(i, f);
+        }
+    }
+
+    fn print_frame(&self, i: usize, f: &Frame) {
+        let func_name = if let Some(closure) = f.closure.try_as_closure() {
+            format!("Closure#{}", closure.func)
+        } else if let Some(chunk_idx) = f.chunk_idx {
+            self.env.symbol_table
+                .iter()
+                .find(|r| {
+                    let (m_idx, c_idx) = *r.value();
+                    m_idx == f.module_idx && c_idx as usize == chunk_idx
+                })
+                .map(|r| r.key().to_string())
+                .unwrap_or_else(|| format!("Chunk#{}", chunk_idx))
+        } else {
+            "Anonymous".to_string()
+        };
+
+        let info = format!(
+            "  [frame {}] {} at {}:{}",
+            i,
+            func_name,
+            self.env.module_names.get(&(f.location.source_id as usize)).map(|r| r.value().clone()).unwrap_or_else(|| format!("source:{}", f.location.source_id)),
+            f.location.offset
+        );
+        self.print_line(&info);
     }
 
     pub fn dump_symbol_table(&self) -> String {
@@ -308,14 +360,16 @@ impl NyarVM {
     pub fn load_named_module(&mut self, module: NyarcModule, name: String) -> usize {
         let module_idx = self.env.next_module_idx.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        // Update symbol table with exports from this module
-        for export in &module.exports {
-            self.env.symbol_table
-                .insert(export.symbol.clone(), (module_idx, export.chunk_idx));
-        }
-
+        let exports = module.exports.clone();
         self.env.modules.insert(module_idx, module);
         self.env.module_names.insert(module_idx, name);
+
+        // Update symbol table with exports from this module AFTER inserting the module
+        for export in exports {
+            self.env.symbol_table
+                .insert(export.symbol, (module_idx, export.chunk_idx));
+        }
+
         module_idx
     }
 

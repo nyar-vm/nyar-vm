@@ -190,7 +190,24 @@ async fn pressure_test_10k_spawn_delay() {
     let off_back_await = (await_cond_idx as i16) - (jump_back_await_idx as i16);
     main[instr_indices[jump_back_await_idx] + 1..instr_indices[jump_back_await_idx] + 3].copy_from_slice(&off_back_await.to_le_bytes());
     
-    // 35: LoadLocal 0
+    // 35: FFICall std::gc::stats
+    instr_indices.push(main.len());
+    main.extend_from_slice(&[Opcode::FFICall as u8, 6, 0, 0]);
+    instrs_count += 1;
+    // 36: Pop
+    instr_indices.push(main.len());
+    main.extend_from_slice(&[Opcode::Pop as u8]);
+    instrs_count += 1;
+    // 37: FFICall std::gc::collect
+    instr_indices.push(main.len());
+    main.extend_from_slice(&[Opcode::FFICall as u8, 7, 0, 0]);
+    instrs_count += 1;
+    // 38: Pop
+    instr_indices.push(main.len());
+    main.extend_from_slice(&[Opcode::Pop as u8]);
+    instrs_count += 1;
+
+    // 39: LoadLocal 0
     let end_idx = instrs_count;
     let off_to_end = (end_idx as i16) - (jump_to_end_idx as i16);
     main[instr_indices[jump_to_end_idx] + 1..instr_indices[jump_to_end_idx] + 3].copy_from_slice(&off_to_end.to_le_bytes());
@@ -198,7 +215,7 @@ async fn pressure_test_10k_spawn_delay() {
     instr_indices.push(main.len());
     main.extend_from_slice(&[Opcode::LoadLocal as u8, 0]);
     instrs_count += 1;
-    // 36: Return
+    // 40: Return
     instr_indices.push(main.len());
     main.extend_from_slice(&[Opcode::Return as u8]);
     instrs_count += 1;
@@ -211,6 +228,8 @@ async fn pressure_test_10k_spawn_delay() {
             Constant::Int(10000),              // 3
             Constant::String("std::async::Async::spawn".to_string()), // 4
             Constant::Int(1),                  // 5
+            Constant::String("std::gc::stats".to_string()), // 6
+            Constant::String("std::gc::collect".to_string()), // 7
         ],
         chunks: vec![
             Chunk {

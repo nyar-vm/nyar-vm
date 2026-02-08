@@ -74,12 +74,13 @@ pub fn perform_effect_internal(
     if effect.name.parts.len() >= 2 && effect.name.parts[effect.name.parts.len() - 2] == "Token" {
         let variant_name = effect.name.parts.last().map(|s| s.as_str()).unwrap_or("");
         // Find Token class
-        let class_idx = vm.modules[module_idx]
-            .classes
-            .iter()
-            .position(|c| {
-                c.name.parts.last().map(|s| s.as_str()) == Some("Token")
-            });
+        let class_idx = {
+            let module = vm.get_module(module_idx);
+            module
+                .classes
+                .iter()
+                .position(|c| c.name.parts.last().map(|s| s.as_str()) == Some("Token"))
+        };
         if let Some(idx) = class_idx {
             let idx = idx as u16;
             let val = args.get(0).cloned().unwrap_or(Value::null());

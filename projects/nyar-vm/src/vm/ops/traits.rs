@@ -19,19 +19,22 @@ impl NyarVM {
         module_idx: usize,
     ) -> Result<Option<usize>, NyarError> {
         // Find the impl that matches t_idx and i_idx
-        let module = &self.modules[module_idx];
-        let impl_info = module
-            .impls
-            .iter()
-            .find(|im| im.class_idx == t_idx && im.trait_idx == i_idx)
-            .ok_or_else(|| {
-                self.error(nyar_types::VmErrorKind::ImplNotFound {
-                    class: t_idx,
-                    trait_id: i_idx,
-                })
-            })?;
+        let impl_info = {
+            let module = self.get_module(module_idx);
+            module
+                .impls
+                .iter()
+                .find(|im| im.class_idx == t_idx && im.trait_idx == i_idx)
+                .ok_or_else(|| {
+                    self.error(nyar_types::VmErrorKind::ImplNotFound {
+                        class: t_idx,
+                        trait_id: i_idx,
+                    })
+                })?
+                .clone()
+        };
 
-        let methods = impl_info.methods.clone();
+        let methods = impl_info.methods;
         let witness = Value::witness_table(module_idx, methods, &self.gc);
         self.push(witness)?;
 

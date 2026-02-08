@@ -135,6 +135,11 @@ impl Trace for Frame {
         for local in &self.locals {
             local.trace(ctx);
         }
+        for upvalue in &self.upvalues {
+            if let Some(uv) = upvalue {
+                uv.get().trace(ctx);
+            }
+        }
     }
 }
 
