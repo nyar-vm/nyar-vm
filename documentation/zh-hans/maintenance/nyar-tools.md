@@ -1,6 +1,6 @@
 # nyar-tools
 
-`nyar-tools`（二进制名为 `nyarc`）是 Nyar VM 的官方命令行工具链，集成了运行、编译、调试和基准测试功能。
+`nyar-tools`（二进制名为 `nyar`）是 Nyar VM 的官方命令行工具链，集成了运行、编译、调试和基准测试功能。
 
 ## 核心职责
 
@@ -13,26 +13,26 @@
 ### `run`
 执行一个 `.nyar` 字节码文件或直接运行源码。
 ```bash
-nyarc run hello.nyar
-nyarc run hello.java
+nyar run hello.nyar
+nyar run hello.java
 ```
 
 ### `compile`
 将源码或字节码编译为指定的后端构件。
 ```bash
-nyarc compile main.kt --target wasm --output main.wasm
+nyar compile main.kt --target wasm --output main.wasm
 ```
 
 ### `dump`
 反汇编 `.nyar` 文件，用于检查生成的指令流。
 ```bash
-nyarc dump app.nyar
+nyar dump app.nyar
 ```
 
 ### `repl`
 启动交互式 Shell，支持快速验证语法和表达式。
 ```bash
-nyarc repl
+nyar repl
 ```
 
 ### `bench`

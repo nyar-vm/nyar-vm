@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::process::ExitCode;
 
-use nyar::NyarCli;
+use nyar_tools::NyarCli;
 
 fn main() -> ExitCode {
     let cli = NyarCli::parse();
