@@ -31,20 +31,23 @@ impl RustyFSharpFrontend {
 impl NyarFrontend for RustyFSharpFrontend {
     type Language = FSharpLanguage;
 
-    fn parse(&self, source: &str) -> Result<oak_core::GreenNode<FSharpLanguage>, NyarError> {
+    fn parse(&self, source: &str) -> Result<oak_fsharp::ast::FSharpRoot, NyarError> {
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<FSharpLanguage>::default();
-        let parser = oak_fsharp::parser::FSharpParser::new(&self.language);
-        let mut cache = oak_core::parser::ParseCacheImpl::default();
-        let output = parser.parse(&source_text, &[], &mut cache);
-        
+        let builder = oak_fsharp::builder::FSharpBuilder::new(&self.language);
+        let output = builder.build(&source_text, &[], &mut session);
+
         output.result
-            .map(|node| node.clone())
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &oak_core::GreenNode<FSharpLanguage>) -> Result<IKunTree, NyarError> {
-        // TODO: 实现真正的从 FSharp GreenNode 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-fsharp-program".to_string(), Vec::new()))
+    fn lower_unified<V: nyar_types::Vfs>(
+        &self,
+        ast: &oak_fsharp::ast::FSharpRoot,
+        ctx: &mut nyar_types::NyarContext<'_, V>,
+    ) -> chomsky_uir::Id {
+        let translator = crate::codegen::NyarTranslator::new();
+        let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
+        translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
     }
 }

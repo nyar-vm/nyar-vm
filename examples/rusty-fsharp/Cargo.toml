@@ -12,3 +12,6 @@ oak-core = { workspace = true }
 oak-fsharp = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+chomsky-types = { workspace = true }

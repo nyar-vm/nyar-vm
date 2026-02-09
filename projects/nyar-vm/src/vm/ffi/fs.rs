@@ -76,7 +76,7 @@ impl FFIFunction for StdFsWrite {
         let content_val = args.get(1).ok_or_else(|| NyarError::RuntimeError("Missing content argument".to_string()))?;
         let content_str = content_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Content must be a string".to_string()))?;
         
-        vm.platform.fs_write(path_str, content_str).map_err(NyarError::RuntimeError)?;
+        vm.platform.fs_write(path_str, content_str)?;
         Ok(Value::null())
     }
 }
@@ -152,7 +152,7 @@ impl FFIFunction for StdFsRemoveFile {
         let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
         let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
         
-        vm.platform.fs_remove_file(path_str).map_err(NyarError::RuntimeError)?;
+        vm.platform.fs_remove_file(path_str)?;
         Ok(Value::null())
     }
 }

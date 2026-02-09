@@ -1,11 +1,15 @@
-# Nyar VM
+# @nyar/nyar
 
-Nyar virtual machine CLI.
+The command-line interface for the Nyar virtual machine.
+
+## Overview
+
+This package provides the `nyar` command, which is the primary tool for running, compiling, and managing projects on the Nyar virtual machine.
 
 ## Installation
 
 ```bash
-npm install -g ↯nyar-vm/nyar
+npm install -g @nyar/nyar
 ```
 
 ## Usage
@@ -13,3 +17,15 @@ npm install -g ↯nyar-vm/nyar
 ```bash
 nyar --help
 ```
+
+## Platform Support
+
+This package automatically downloads the appropriate native binary for your platform:
+- Windows (x64)
+- Linux (x64)
+- macOS (x64, ARM64)
+- WebAssembly (WASI)
+
+## License
+
+MIT

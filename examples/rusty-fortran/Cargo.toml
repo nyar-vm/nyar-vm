@@ -12,3 +12,5 @@ oak-core = { workspace = true }
 oak-fortran = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }

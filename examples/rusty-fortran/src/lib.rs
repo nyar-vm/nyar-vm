@@ -5,7 +5,7 @@
 pub mod codegen;
 
 use nyar_types::{NyarContext, NyarError, NyarFrontend, Vfs};
-use oak_core::source::SourceText;
+use oak_core::{builder::Builder, source::SourceText};
 use oak_fortran::{FortranBuilder, FortranLanguage, ast::FortranRoot};
 use chomsky_uir::Id;
 
@@ -38,7 +38,8 @@ impl NyarFrontend for RustyFortranFrontend {
     }
 
     fn lower_unified<V: Vfs>(&self, ast: &FortranRoot, ctx: &mut NyarContext<V>) -> Id {
-        // TODO: 实现真正的从 FortranRoot 到 IKunTree 的转换
-        ctx.builder().module("rusty-fortran-program", vec![])
+        let translator = crate::codegen::NyarTranslator::new();
+        let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
+        translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
     }
 }

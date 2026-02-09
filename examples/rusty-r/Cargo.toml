@@ -12,4 +12,5 @@ oak-core = { workspace = true }
 oak-r = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
+chomsky-types = { workspace = true }
 serde = { workspace = true }

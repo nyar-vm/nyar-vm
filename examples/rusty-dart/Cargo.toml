@@ -9,5 +9,6 @@ authors.workspace = true
 nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
+oak-vfs = { workspace = true }
 oak-dart = { workspace = true }
 chomsky-uir = { workspace = true }
