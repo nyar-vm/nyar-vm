@@ -1,7 +1,8 @@
 use crate::vm::core::NyarVM;
-use crate::vm::value::{Value, FutureStatus};
+use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
 use crate::vm::net::NetworkHandle;
+use nyar_gc::Root;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub struct TcpConnect;
@@ -14,18 +15,20 @@ impl FFIFunction for TcpConnect {
     }
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let addr = args.get(0).and_then(|v| v.try_as_str()).unwrap_or("").to_string();
-        let future = Value::future(&vm.gc);
-        let future_clone = future;
+        let future_val = Value::future(&vm.gc);
+        let root: Root<Future> = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
         let network = vm.network.clone();
+        let gc = vm.gc.clone();
         
         tokio::spawn(async move {
             match tokio::net::TcpStream::connect(addr).await {
                 Ok(stream) => {
                     let id = network.insert(NetworkHandle::TcpStream(stream));
                     unsafe {
-                        let f = future_clone.as_future_mut();
+                        let f = root.as_mut();
                         f.status = FutureStatus::Ready;
                         f.result = Value::int(id as i64);
+                        root.as_gc().write_barrier(&gc);
                         if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }
@@ -33,8 +36,9 @@ impl FFIFunction for TcpConnect {
                 }
                 Err(_) => {
                     unsafe {
-                        let f = future_clone.as_future_mut();
+                        let f = root.as_mut();
                         f.status = FutureStatus::Failed;
+                        root.as_gc().write_barrier(&gc);
                         if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }
@@ -43,7 +47,7 @@ impl FFIFunction for TcpConnect {
             }
         });
         
-        Ok(future)
+        Ok(future_val)
     }
 }
 
@@ -58,8 +62,8 @@ impl FFIFunction for TcpRead {
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let id = args.get(0).map(|v| v.as_int()).unwrap_or(-1) as u64;
         let len = args.get(1).map(|v| v.as_int()).unwrap_or(0) as usize;
-        let future = Value::future(&vm.gc);
-        let future_clone = future;
+        let future_val = Value::future(&vm.gc);
+        let root: Root<Future> = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
         let network = vm.network.clone();
         let gc = vm.gc.clone();
         
@@ -71,9 +75,10 @@ impl FFIFunction for TcpRead {
                         Ok(n) => {
                             buf.truncate(n);
                             unsafe {
-                                let f = future_clone.as_future_mut();
+                                let f = root.as_gc().as_mut();
                                 f.status = FutureStatus::Ready;
                                 f.result = Value::bytes(buf, &gc);
+                                root.as_gc().write_barrier(&gc);
                                 if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
@@ -81,8 +86,9 @@ impl FFIFunction for TcpRead {
                         }
                         Err(_) => {
                             unsafe {
-                                let f = future_clone.as_future_mut();
+                                let f = root.as_gc().as_mut();
                                 f.status = FutureStatus::Failed;
+                                root.as_gc().write_barrier(&gc);
                                 if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
@@ -91,8 +97,9 @@ impl FFIFunction for TcpRead {
                     }
                 } else {
                      unsafe {
-                        let f = future_clone.as_future_mut();
+                        let f = root.as_gc().as_mut();
                         f.status = FutureStatus::Failed;
+                        root.as_gc().write_barrier(&gc);
                         if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }
@@ -100,8 +107,9 @@ impl FFIFunction for TcpRead {
                 }
             } else {
                 unsafe {
-                    let f = future_clone.as_future_mut();
+                    let f = root.as_gc().as_mut();
                     f.status = FutureStatus::Failed;
+                    root.as_gc().write_barrier(&gc);
                     if let Some(waker) = f.waker.take() {
                         waker.wake();
                     }
@@ -109,7 +117,7 @@ impl FFIFunction for TcpRead {
             }
         });
         
-        Ok(future)
+        Ok(future_val)
     }
 }
 

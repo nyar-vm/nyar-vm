@@ -46,6 +46,8 @@ x86_64-assembler = { path = "../project-gaia/examples/x86_64-assembler" }
 nyar-vm = { path = "projects/nyar-vm" }
 nyar-types = { path = "projects/nyar-types" }
 nyar-aot = { path = "projects/nyar-aot" }
+nyar-macros = { path = "projects/nyar-macros" }
+nyar-gc = { path = "projects/nyar-gc" }
 
 criterion = "0.5"
 serde = { version = "1.0", features = ["derive"] }

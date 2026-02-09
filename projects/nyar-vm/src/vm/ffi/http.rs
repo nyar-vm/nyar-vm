@@ -1,6 +1,7 @@
 use crate::vm::core::NyarVM;
 use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
+use nyar_gc::Root;
 use nyar_types::NyarError;
 use std::sync::{Arc, RwLock, OnceLock};
 use reqwest::{Client, Proxy};
@@ -29,6 +30,7 @@ impl FFIFunction for StdHttpGet {
         let url_str = url_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Url must be a string".to_string()))?.to_string();
 
         let future_val = Value::future(&vm.gc);
+        let root: Root<Future> = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
         let client = get_client().read().unwrap().clone();
         let gc = vm.gc.clone();
 
@@ -40,10 +42,10 @@ impl FFIFunction for StdHttpGet {
                     match text_res {
                         Ok(t) => {
                             unsafe {
-                                let f = future_val.as_future_mut();
+                                let f = root.as_gc().as_mut();
                                 f.result = Value::string(t, &gc);
                                 f.status = FutureStatus::Ready;
-                                future_val.write_barrier(&gc);
+                                root.as_gc().write_barrier(&gc);
                                 if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
@@ -51,9 +53,9 @@ impl FFIFunction for StdHttpGet {
                         }
                         Err(_) => {
                             unsafe {
-                                let f = future_val.as_future_mut();
+                                let f = root.as_gc().as_mut();
                                 f.status = FutureStatus::Failed;
-                                future_val.write_barrier(&gc);
+                                root.as_gc().write_barrier(&gc);
                                 if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
@@ -63,9 +65,9 @@ impl FFIFunction for StdHttpGet {
                 }
                 Err(_) => {
                     unsafe {
-                        let f = future_val.as_future_mut();
+                        let f = root.as_gc().as_mut();
                         f.status = FutureStatus::Failed;
-                        future_val.write_barrier(&gc);
+                        root.as_gc().write_barrier(&gc);
                         if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }
@@ -93,6 +95,7 @@ impl FFIFunction for StdHttpPost {
         let body_str = body_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Body must be a string".to_string()))?.to_string();
 
         let future_val = Value::future(&vm.gc);
+        let root: Root<Future> = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
         let client = get_client().read().unwrap().clone();
         let gc = vm.gc.clone();
 
@@ -104,10 +107,10 @@ impl FFIFunction for StdHttpPost {
                     match text_res {
                         Ok(t) => {
                             unsafe {
-                                let f = future_val.as_future_mut();
+                                let f = root.as_gc().as_mut();
                                 f.result = Value::string(t, &gc);
                                 f.status = FutureStatus::Ready;
-                                future_val.write_barrier(&gc);
+                                root.as_gc().write_barrier(&gc);
                                 if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
@@ -115,9 +118,9 @@ impl FFIFunction for StdHttpPost {
                         }
                         Err(_) => {
                             unsafe {
-                                let f = future_val.as_future_mut();
+                                let f = root.as_gc().as_mut();
                                 f.status = FutureStatus::Failed;
-                                future_val.write_barrier(&gc);
+                                root.as_gc().write_barrier(&gc);
                                 if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
@@ -127,9 +130,9 @@ impl FFIFunction for StdHttpPost {
                 }
                 Err(_) => {
                     unsafe {
-                        let f = future_val.as_future_mut();
+                        let f = root.as_gc().as_mut();
                         f.status = FutureStatus::Failed;
-                        future_val.write_barrier(&gc);
+                        root.as_gc().write_barrier(&gc);
                         if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }

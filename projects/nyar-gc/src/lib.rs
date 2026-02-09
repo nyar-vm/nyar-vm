@@ -7,7 +7,7 @@ pub mod runtime;
 pub mod stack;
 pub mod tlab;
 
-pub use nyar_gc_derive::Trace;
+pub use nyar_macros::Trace;
 
 pub use block::{GcBlock, GcBlockHeader, BLOCK_SIZE};
 pub use collector::NyarGc;

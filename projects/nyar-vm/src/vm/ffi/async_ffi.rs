@@ -1,7 +1,9 @@
 use crate::vm::core::NyarVM;
-use crate::vm::value::{Value, FutureStatus};
+use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
+use nyar_gc::Root;
 use std::time::Duration;
+use nyar_types::NyarError;
 
 pub struct AsyncDelay;
 impl FFIFunction for AsyncDelay {
@@ -13,22 +15,24 @@ impl FFIFunction for AsyncDelay {
     }
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
         let ms = args.get(0).map(|v| v.as_int()).unwrap_or(0) as u64;
-        let future = Value::future(&vm.gc);
-        let future_clone = future;
+        let future_val = Value::future(&vm.gc);
+        let root: Root<Future> = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
+        let gc = vm.gc.clone();
         
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(ms)).await;
             unsafe {
-                let f = future_clone.as_future_mut();
-                f.status = FutureStatus::Ready;
-                f.result = Value::null();
-                if let Some(waker) = f.waker.take() {
-                    waker.wake();
+                    let f = root.as_mut();
+                    f.status = FutureStatus::Ready;
+                    f.result = Value::null();
+                    root.as_gc().write_barrier(&gc);
+                    if let Some(waker) = f.waker.take() {
+                        waker.wake();
+                    }
                 }
-            }
         });
         
-        Ok(future)
+        Ok(future_val)
     }
 }
 
@@ -44,19 +48,21 @@ impl FFIFunction for AsyncTimeout {
         let target = args.get(0).cloned().unwrap_or(Value::null());
         let ms = args.get(1).map(|v| v.as_int()).unwrap_or(0) as u64;
         
-        let future = Value::future(&vm.gc);
-        let future_clone = future;
+        let future_val = Value::future(&vm.gc);
+        let root: Root<Future> = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
+        let gc = vm.gc.clone();
 
         if target.is_future() {
+            let target_root: Root<Future> = Root::new(vm.gc.clone(), unsafe { target.as_gc_future() });
             tokio::spawn(async move {
                  let timeout = tokio::time::sleep(Duration::from_millis(ms));
                 
                 tokio::select! {
                     _ = timeout => {
                         unsafe {
-                            let f = future_clone.as_future_mut();
+                            let f = root.as_mut();
                             f.status = FutureStatus::Failed;
-                            // Maybe set result to "Timeout"
+                            root.as_gc().write_barrier(&gc);
                             if let Some(waker) = f.waker.take() {
                                 waker.wake();
                             }
@@ -65,19 +71,20 @@ impl FFIFunction for AsyncTimeout {
                     _ = async {
                         loop {
                             unsafe {
-                                let f = target.as_future();
-                                if f.status != FutureStatus::Pending {
-                                    return f.status;
+                                let f = target_root.as_gc();
+                                if f.as_ref().status != FutureStatus::Pending {
+                                    return f.as_ref().status;
                                 }
                             }
                             tokio::task::yield_now().await;
                         }
                     } => {
                         unsafe {
-                            let f = future_clone.as_future_mut();
-                            let target_f = target.as_future();
-                            f.status = target_f.status;
-                            f.result = target_f.result;
+                            let f = root.as_mut();
+                            let target_f = target_root.as_gc();
+                            f.status = target_f.as_ref().status;
+                            f.result = target_f.as_ref().result;
+                            root.as_gc().write_barrier(&gc);
                             if let Some(waker) = f.waker.take() {
                                 waker.wake();
                             }
@@ -89,7 +96,7 @@ impl FFIFunction for AsyncTimeout {
             return Err(vm.error(nyar_types::VmErrorKind::RuntimeError("Target must be a future".to_string())));
         }
 
-        Ok(future)
+        Ok(future_val)
     }
 }
 
@@ -220,5 +227,108 @@ impl FFIFunction for AsyncSpawn {
         });
 
         Ok(future)
+    }
+}
+
+pub struct AsyncWaitAll;
+impl FFIFunction for AsyncWaitAll {
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        let futures = args;
+        let future_val = Value::future(&vm.gc);
+        let root = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
+        let gc = vm.gc.clone();
+
+        let mut roots = vec![];
+        for f in &futures {
+            if let Some(f_gc) = unsafe { f.try_as_gc_future() } {
+                roots.push(Root::new(vm.gc.clone(), f_gc));
+            }
+        }
+
+        tokio::spawn(async move {
+            let mut results = vec![];
+            for r in roots {
+                let res = loop {
+                    let (status, result) = unsafe {
+                        let f = r.as_mut();
+                        (f.status, f.result)
+                    };
+                    match status {
+                        FutureStatus::Ready => break Ok(result),
+                        FutureStatus::Failed => break Err(()),
+                        FutureStatus::Pending => {
+                            tokio::task::yield_now().await;
+                        }
+                    }
+                };
+                results.push(res);
+            }
+
+            let failed = results.iter().any(|r| r.is_err());
+            unsafe {
+                let f = root.as_mut();
+                if failed {
+                    f.status = FutureStatus::Failed;
+                } else {
+                    let items: Vec<Value> = results.into_iter().map(|r| r.unwrap()).collect();
+                    f.status = FutureStatus::Ready;
+                    f.result = Value::array(items, &gc);
+                }
+                root.as_gc().write_barrier(&gc);
+                if let Some(waker) = f.waker.take() {
+                    waker.wake();
+                }
+            }
+        });
+
+        Ok(future_val)
+    }
+}
+
+pub struct AsyncWaitAny;
+impl FFIFunction for AsyncWaitAny {
+    fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
+        let futures = args;
+        let future_val = Value::future(&vm.gc);
+        let root = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
+        let gc = vm.gc.clone();
+
+        let mut roots = vec![];
+        for f in &futures {
+            if let Some(f_gc) = unsafe { f.try_as_gc_future() } {
+                roots.push(Root::new(vm.gc.clone(), f_gc));
+            }
+        }
+
+        tokio::spawn(async move {
+            loop {
+                let mut finished = None;
+                for (i, r) in roots.iter().enumerate() {
+                    let status = unsafe { r.as_mut().status };
+                    if status != FutureStatus::Pending {
+                        finished = Some((i, status));
+                        break;
+                    }
+                }
+
+                if let Some((idx, status)) = finished {
+                    unsafe {
+                        let f = root.as_mut();
+                        let target_root = &roots[idx];
+                        let target_f = target_root.as_gc();
+                        f.status = status;
+                        f.result = target_f.as_ref().result;
+                        root.as_gc().write_barrier(&gc);
+                        if let Some(waker) = f.waker.take() {
+                            waker.wake();
+                        }
+                    }
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        });
+
+        Ok(future_val)
     }
 }

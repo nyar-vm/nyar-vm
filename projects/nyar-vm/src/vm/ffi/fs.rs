@@ -1,6 +1,7 @@
 use crate::vm::core::NyarVM;
-use crate::vm::value::{Value, FutureStatus};
+use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
+use nyar_gc::Root;
 use nyar_types::NyarError;
 
 pub struct StdFsReadToString;
@@ -32,31 +33,32 @@ impl FFIFunction for AsyncFsReadToString {
         let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
         let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?.to_string();
         
-        let future = Value::future(&vm.gc);
-        let future_clone = future;
-        let gc_clone = vm.gc.clone();
+        let future_val = Value::future(&vm.gc);
+        let root: Root<Future> = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
+        let gc = vm.gc.clone();
 
         tokio::spawn(async move {
             let res = tokio::fs::read_to_string(&path_str).await;
             unsafe {
-                let f = future_clone.as_future_mut();
-                match res {
-                    Ok(content) => {
-                        f.status = FutureStatus::Ready;
-                        f.result = Value::string(content, &gc_clone);
+                    let f = root.as_mut();
+                    match res {
+                        Ok(content) => {
+                            f.status = FutureStatus::Ready;
+                            f.result = Value::string(content, &gc);
+                            root.as_gc().write_barrier(&gc);
+                        }
+                        Err(_e) => {
+                            f.status = FutureStatus::Failed;
+                            root.as_gc().write_barrier(&gc);
+                        }
                     }
-                    Err(_e) => {
-                        f.status = FutureStatus::Failed;
-                        // For now we just mark as failed, maybe add error value later
+                    if let Some(waker) = f.waker.take() {
+                        waker.wake();
                     }
                 }
-                if let Some(waker) = f.waker.take() {
-                    waker.wake();
-                }
-            }
         });
 
-        Ok(future)
+        Ok(future_val)
     }
 }
 
@@ -93,20 +95,23 @@ impl FFIFunction for AsyncFsWrite {
         let content_val = args.get(1).ok_or_else(|| NyarError::RuntimeError("Missing content argument".to_string()))?;
         let content_str = content_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Content must be a string".to_string()))?.to_string();
         
-        let future = Value::future(&vm.gc);
-        let future_clone = future;
+        let future_val = Value::future(&vm.gc);
+        let root: Root<Future> = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
+        let gc = vm.gc.clone();
 
         tokio::spawn(async move {
             let res = tokio::fs::write(&path_str, &content_str).await;
             unsafe {
-                let f = future_clone.as_future_mut();
+                let f = root.as_gc().as_mut();
                 match res {
                     Ok(_) => {
                         f.status = FutureStatus::Ready;
                         f.result = Value::null();
+                        root.as_gc().write_barrier(&gc);
                     }
-                    Err(_) => {
+                    Err(_e) => {
                         f.status = FutureStatus::Failed;
+                        root.as_gc().write_barrier(&gc);
                     }
                 }
                 if let Some(waker) = f.waker.take() {
@@ -115,7 +120,7 @@ impl FFIFunction for AsyncFsWrite {
             }
         });
 
-        Ok(future)
+        Ok(future_val)
     }
 }
 

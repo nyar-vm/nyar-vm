@@ -288,8 +288,28 @@ unsafe impl<T: Trace + 'static> Send for Gc<T> {}
 unsafe impl<T: Trace + 'static> Sync for Gc<T> {}
 
 impl<T: Trace + 'static> Gc<T> {
+    pub fn new(ptr: *mut GcBox<T>) -> Self {
+        Self {
+            ptr: unsafe { NonNull::new_unchecked(ptr) },
+        }
+    }
+
     pub fn as_ptr(&self) -> *mut GcBox<T> {
         self.ptr.as_ptr()
+    }
+
+    pub unsafe fn as_mut(&self) -> &mut T {
+        &mut (*self.ptr.as_ptr()).data
+    }
+
+    pub fn as_gc(&self) -> Gc<T> {
+        *self
+    }
+
+    pub fn write_barrier(&self, gc: &crate::collector::NyarGc) {
+        unsafe {
+            gc.write_barrier_ptr(NonNull::new_unchecked(&self.ptr.as_ref().header as *const _ as *mut _));
+        }
     }
 }
 

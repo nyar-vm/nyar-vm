@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-nyar-gc = { path = "../nyar-gc", features = ["tokio"] }
-nyar-types = { path = "../nyar-types" }
+nyar-gc = { workspace = true, features = ["tokio"] }
+nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
 nyar-aot = { path = "../nyar-aot", default-features = false }

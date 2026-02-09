@@ -1,7 +1,7 @@
 use crate::bytecode::instruction::Instruction;
 use num_bigint::BigInt as NativeBigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
-use nyar_gc::{GcBox, GcHeader, MarkContext, NyarGc, Trace};
+use nyar_gc::{Gc, GcBox, GcHeader, MarkContext, NyarGc, Trace};
 use nyar_types::QualifiedName;
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
@@ -70,7 +70,7 @@ impl Trace for Value {
             return;
         }
         match self.tag() {
-            ValueTag::Int | ValueTag::Bool | ValueTag::Null | ValueTag::Code => {}
+            ValueTag::Int | ValueTag::Bool | ValueTag::Null => {}
             ValueTag::WitnessTable
             | ValueTag::String
             | ValueTag::BigInt
@@ -82,6 +82,7 @@ impl Trace for Value {
             | ValueTag::Tuple
             | ValueTag::Continuation
             | ValueTag::Function
+            | ValueTag::Code
             | ValueTag::TraitObject
             | ValueTag::QualifiedName
             | ValueTag::Future
@@ -95,10 +96,43 @@ impl Trace for Value {
     }
 }
 
-impl Trace for TraitObject {
+impl Trace for BigInt {
+    #[inline(always)]
+    fn trace(&self, _ctx: &mut MarkContext) {
+        // BigInt optimization:
+        // 1. Trace is a no-op because it contains no GC-managed pointers.
+        // 2. Marked as #[inline(always)] to minimize call overhead during GC marking.
+        //
+        // Memory Layout & GC Integration:
+        // [ GcBox<BigInt> (GC Heap) ]
+        // |-> [ GcHeader (8 bytes) ]
+        // |-> [ BigInt (24 bytes) ]
+        //     |-> [ NativeBigInt (num_bigint::BigInt) ]
+        //         |-> sign: Sign (1 byte + padding)
+        //         |-> data: Vec<u32> (24 bytes)
+        //             |-> [ ptr ] -> [ u32, u32, ... ] (Standard Heap)
+        //             |-> [ cap ]
+        //             |-> [ len ]
+        //
+        // Note: The Vec<u32> is allocated via the standard allocator.
+        // For future optimization, a custom allocator for num_bigint that
+        // uses GC-managed memory could be implemented to avoid hybrid heap usage.
+    }
+}
+
+impl Trace for Array {
     fn trace(&self, ctx: &mut MarkContext) {
-        self.data.trace(ctx);
-        self.witness.trace(ctx);
+        for item in &self.items {
+            item.trace(ctx);
+        }
+    }
+}
+
+impl Trace for Object {
+    fn trace(&self, ctx: &mut MarkContext) {
+        for val in &self.fields {
+            val.trace(ctx);
+        }
     }
 }
 
@@ -110,12 +144,45 @@ impl Trace for Closure {
     }
 }
 
-impl Trace for Object {
+impl Trace for List {
     fn trace(&self, ctx: &mut MarkContext) {
-        for field in &self.fields {
-            field.trace(ctx);
+        for item in &self.items {
+            item.trace(ctx);
         }
     }
+}
+
+impl Trace for Tuple {
+    fn trace(&self, ctx: &mut MarkContext) {
+        for item in &self.items {
+            item.trace(ctx);
+        }
+    }
+}
+
+impl Trace for DynObject {
+    fn trace(&self, ctx: &mut MarkContext) {
+        for value in self.entries.values() {
+            value.trace(ctx);
+        }
+    }
+}
+
+impl Trace for WitnessTable {
+    fn trace(&self, _ctx: &mut MarkContext) {}
+}
+
+impl Trace for Effect {
+    fn trace(&self, ctx: &mut MarkContext) {
+        self.info.name.trace(ctx);
+        for val in &self.args {
+            val.trace(ctx);
+        }
+    }
+}
+
+impl Trace for Bytes {
+    fn trace(&self, _ctx: &mut MarkContext) {}
 }
 
 impl Trace for Continuation {
@@ -143,59 +210,10 @@ impl Trace for Frame {
     }
 }
 
-impl Trace for BigInt {
-    #[inline(always)]
-    fn trace(&self, _ctx: &mut MarkContext) {
-        // BigInt optimization:
-        // 1. Trace is a no-op because it contains no GC-managed pointers.
-        // 2. Marked as #[inline(always)] to minimize call overhead during GC marking.
-        // 
-        // Memory Layout & GC Integration:
-        // [ GcBox<BigInt> (GC Heap) ]
-        // |-> [ GcHeader (8 bytes) ]
-        // |-> [ BigInt (24 bytes) ] 
-        //     |-> [ NativeBigInt (num_bigint::BigInt) ]
-        //         |-> sign: Sign (1 byte + padding)
-        //         |-> data: Vec<u32> (24 bytes)
-        //             |-> [ ptr ] -> [ u32, u32, ... ] (Standard Heap)
-        //             |-> [ cap ]
-        //             |-> [ len ]
-        // 
-        // Note: The Vec<u32> is allocated via the standard allocator.
-        // For future optimization, a custom allocator for num_bigint that
-        // uses GC-managed memory could be implemented to avoid hybrid heap usage.
-    }
-}
-
-impl Trace for DynObject {
+impl Trace for TraitObject {
     fn trace(&self, ctx: &mut MarkContext) {
-        for value in self.entries.values() {
-            value.trace(ctx);
-        }
-    }
-}
-
-impl Trace for Array {
-    fn trace(&self, ctx: &mut MarkContext) {
-        for item in &self.items {
-            item.trace(ctx);
-        }
-    }
-}
-
-impl Trace for List {
-    fn trace(&self, ctx: &mut MarkContext) {
-        for item in &self.items {
-            item.trace(ctx);
-        }
-    }
-}
-
-impl Trace for Tuple {
-    fn trace(&self, ctx: &mut MarkContext) {
-        for item in &self.items {
-            item.trace(ctx);
-        }
+        self.data.trace(ctx);
+        self.witness.trace(ctx);
     }
 }
 
@@ -270,6 +288,7 @@ impl Value {
             | ValueTag::Tuple
             | ValueTag::Continuation
             | ValueTag::Function
+            | ValueTag::Code
             | ValueTag::TraitObject
             | ValueTag::QualifiedName
             | ValueTag::Future
@@ -278,7 +297,6 @@ impl Value {
                 let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
                 gc.write_barrier_ptr(header_ptr);
             },
-            ValueTag::Code => {} // Code objects are usually immutable/static but can be traced
             _ => {}
         }
     }
@@ -452,6 +470,10 @@ impl Value {
     pub unsafe fn as_future_mut<'a>(&self) -> &'a mut Future {
         let ptr = self.payload() as *mut GcBox<Future>;
         &mut (*ptr).data
+    }
+
+    pub unsafe fn as_gc_future(&self) -> Gc<Future> {
+        Gc::new(self.payload() as *mut GcBox<Future>)
     }
     pub fn int(v: i64) -> Self {
         Self::encode(ValueTag::Int, v as u64)
@@ -691,7 +713,7 @@ impl Value {
             return false;
         }
         match self.tag() {
-            ValueTag::Int | ValueTag::Bool | ValueTag::Null | ValueTag::Code => false,
+            ValueTag::Int | ValueTag::Bool | ValueTag::Null => false,
             _ => true,
         }
     }
@@ -952,13 +974,13 @@ impl Upvalue {
         self.0.store(val.0, std::sync::atomic::Ordering::Relaxed);
         // Write barrier
         if val.is_gc_ptr() {
-            unsafe {
-                crate::vm::core::CURRENT_GC.with(|curr| {
-                    if let Some(gc) = &*curr.borrow() {
+            crate::vm::core::CURRENT_GC.with(|curr| {
+                if let Some(gc) = &*curr.borrow() {
+                    unsafe {
                         gc.write_barrier_raw(val.payload() as *mut GcHeader);
                     }
-                });
-            }
+                }
+            });
         }
     }
 }
@@ -1031,25 +1053,10 @@ pub struct Bytes {
     pub data: Vec<u8>,
 }
 
-impl Trace for Bytes {
-    fn trace(&self, _ctx: &mut MarkContext) {
-        // Vec<u8> is now traceable (no-op)
-    }
-}
-
 #[derive(Clone)]
 pub struct Effect {
     pub info: nyar_types::EffectInfo,
     pub args: Vec<Value>,
-}
-
-impl Trace for Effect {
-    fn trace(&self, ctx: &mut MarkContext) {
-        self.info.name.trace(ctx);
-        for arg in &self.args {
-            arg.trace(ctx);
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -1065,9 +1072,5 @@ pub struct Code {
 }
 
 impl Trace for Code {
-    fn trace(&self, _ctx: &mut MarkContext) {}
-}
-
-impl Trace for WitnessTable {
     fn trace(&self, _ctx: &mut MarkContext) {}
 }

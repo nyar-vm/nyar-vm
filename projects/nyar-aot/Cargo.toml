@@ -9,7 +9,7 @@ chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features 
 chomsky-uir = { workspace = true }
 chomsky-cost = { workspace = true }
 chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
-nyar-types = { path = "../nyar-types" }
+nyar-types = { workspace = true }
 pe-assembler = { workspace = true }
 gaia-types = { workspace = true }
 
