@@ -4,27 +4,20 @@
 
 pub mod codegen;
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_core::{source::SourceText, Builder};
 use oak_dart::{DartBuilder, DartLanguage, DartRoot};
+use oak_vfs::Vfs;
+use chomsky_uir::Id;
 
 /// Rusty Dart 前端
-pub struct RustyDartFrontend {
-    language: DartLanguage,
-}
-
-impl Default for RustyDartFrontend {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[derive(Default)]
+pub struct RustyDartFrontend;
 
 impl RustyDartFrontend {
     /// 创建新的前端实例
     pub fn new() -> Self {
-        Self {
-            language: DartLanguage::default(),
-        }
+        Self
     }
 }
 
@@ -32,7 +25,8 @@ impl NyarFrontend for RustyDartFrontend {
     type Language = DartLanguage;
 
     fn parse(&self, source: &str) -> Result<DartRoot, NyarError> {
-        let builder = DartBuilder::new(&self.language);
+        let language = DartLanguage::default();
+        let builder = DartBuilder::new(&language);
         let source_text = SourceText::new(source);
         let mut session = oak_core::parser::ParseSession::<DartLanguage>::default();
 
@@ -42,8 +36,8 @@ impl NyarFrontend for RustyDartFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &DartRoot) -> Result<IKunTree, NyarError> {
-        // TODO: 实现真正的从 DartRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-dart-program".to_string(), Vec::new()))
+    fn lower_unified<V: Vfs>(&self, ast: &DartRoot, ctx: &mut NyarContext<V>) -> Id {
+        let mut converter = codegen::UirConverter::new(ctx);
+        converter.convert_root(ast)
     }
 }

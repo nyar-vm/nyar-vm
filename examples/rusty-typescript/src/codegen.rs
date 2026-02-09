@@ -266,7 +266,7 @@ impl NyarTranslator {
                                                     break;
                                                 }
                                             }
-                                            IKun::Lambda(params, body) => {
+                                            IKun::Lambda(_params, _body) => {
                                                 // Handle exported Lambda directly (if it doesn't have a name, we might have an issue,
                                                 // but usually exports have names from the declaration)
                                                 // For now, let's just mark as handled to avoid warning

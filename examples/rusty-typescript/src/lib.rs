@@ -182,7 +182,6 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
     }
 
     fn convert_statement(&mut self, stmt: ast::Statement) -> Id {
-        let span = stmt.span();
         match stmt {
             ast::Statement::VariableDeclaration(var) => {
                 if var.is_declare {

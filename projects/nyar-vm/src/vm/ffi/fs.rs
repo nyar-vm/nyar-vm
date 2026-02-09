@@ -16,7 +16,7 @@ impl FFIFunction for StdFsReadToString {
         let path_val = args.get(0).ok_or_else(|| NyarError::RuntimeError("Missing path argument".to_string()))?;
         let path_str = path_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Path must be a string".to_string()))?;
         
-        let content = vm.platform.fs_read_to_string(path_str).map_err(NyarError::RuntimeError)?;
+        let content = vm.platform.fs_read_to_string(path_str)?;
         Ok(Value::string(content, &vm.gc))
     }
 }

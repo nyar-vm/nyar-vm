@@ -395,7 +395,6 @@ impl ScriptType {
             (_, ScriptType::Atom(AtomType::Any)) => true,
 
             // Unknown can only be assigned to Any or Unknown
-            (ScriptType::Atom(AtomType::Unknown), ScriptType::Atom(AtomType::Any)) => true,
             (ScriptType::Atom(AtomType::Unknown), ScriptType::Atom(AtomType::Unknown)) => true,
             (ScriptType::Atom(AtomType::Unknown), _) => false,
 
@@ -406,8 +405,6 @@ impl ScriptType {
             (ScriptType::Atom(a), ScriptType::Atom(b)) => a == b,
 
             // Null safety (strict mode simulation)
-            (ScriptType::Atom(AtomType::Null), ScriptType::Atom(AtomType::Null)) => true,
-            (ScriptType::Atom(AtomType::Undefined), ScriptType::Atom(AtomType::Undefined)) => true,
             (ScriptType::Atom(AtomType::Null), _) => false,
             (ScriptType::Atom(AtomType::Undefined), _) => false,
 
@@ -522,7 +519,7 @@ impl ScriptType {
             }
 
             // Template literal types (simplified)
-            (ScriptType::Literal(LiteralType::String(s)), ScriptType::TemplateLiteral(_)) => {
+            (ScriptType::Literal(LiteralType::String(_s)), ScriptType::TemplateLiteral(_)) => {
                 // In a real implementation, we would check if the string matches the template
                 // For now, assume string literals are assignable to template literals if they might match
                 true
