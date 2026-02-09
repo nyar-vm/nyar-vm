@@ -1,12 +1,15 @@
+#![feature(new_range_api)]
 //! Rusty R 语言前端
 //!
 //! 这个库提供了 Rusty R 语言的词法分析、语法分析和 Gaia 翻译功能。
 
 pub mod codegen;
 
-use nyar_types::{NyarError, NyarFrontend};
+use nyar_types::{NyarError, NyarFrontend, NyarContext, Id};
 use oak_core::{source::SourceText, Builder};
 use oak_r::{ast::RRoot, RBuilder, RLanguage};
+use oak_vfs::Vfs;
+use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty R 前端
 pub struct RustyRFrontend {
@@ -28,7 +31,7 @@ impl RustyRFrontend {
     }
 }
 
-impl NyarFrontend for RustyRFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyRFrontend {
     type Language = RLanguage;
 
     fn parse(&self, source: &str) -> Result<RRoot, NyarError> {
@@ -42,11 +45,11 @@ impl NyarFrontend for RustyRFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: nyar_types::Vfs>(
+    fn lower_unified<V: Vfs>(
         &self,
         ast: &RRoot,
-        ctx: &mut nyar_types::NyarContext<'_, V>,
-    ) -> chomsky_uir::egraph::Id {
+        ctx: &mut NyarContext<'_, V, ConstraintAnalysis>,
+    ) -> Id {
         let translator = crate::codegen::NyarTranslator::new();
         let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
         translator

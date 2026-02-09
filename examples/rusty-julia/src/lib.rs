@@ -4,12 +4,11 @@
 
 pub mod codegen;
 
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Loc, Vfs};
 use oak_core::{source::SourceText, Builder};
 use oak_julia::{JuliaBuilder, JuliaLanguage, JuliaRoot};
 use oak_julia::ast::{JuliaExpression, JuliaStatement};
-use chomsky_uir::Id;
-use chomsky_types::Loc;
+use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Julia 前端
 pub struct RustyJuliaFrontend {
@@ -31,7 +30,7 @@ impl RustyJuliaFrontend {
     }
 }
 
-impl NyarFrontend for RustyJuliaFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyJuliaFrontend {
     type Language = JuliaLanguage;
 
     fn parse(&self, source: &str) -> Result<JuliaRoot, NyarError> {
@@ -45,18 +44,18 @@ impl NyarFrontend for RustyJuliaFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: oak_vfs::Vfs>(&self, ast: &JuliaRoot, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &JuliaRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
 }
 
-struct UirConverter<'a, 'b, V: oak_vfs::Vfs> {
-    ctx: &'a mut NyarContext<'b, V>,
+struct UirConverter<'a, 'b, V: Vfs> {
+    ctx: &'a mut NyarContext<'b, V, ConstraintAnalysis>,
 }
 
-impl<'a, 'b, V: oak_vfs::Vfs> UirConverter<'a, 'b, V> {
-    fn new(ctx: &'a mut NyarContext<'b, V>) -> Self {
+impl<'a, 'b, V: Vfs> UirConverter<'a, 'b, V> {
+    fn new(ctx: &'a mut NyarContext<'b, V, ConstraintAnalysis>) -> Self {
         Self { ctx }
     }
 
@@ -67,7 +66,7 @@ impl<'a, 'b, V: oak_vfs::Vfs> UirConverter<'a, 'b, V> {
                 items.push(node);
             }
         }
-        self.ctx.builder().module("main", items)
+        self.ctx.builder().module("main", items, Loc::default())
     }
 
     fn convert_statement(&mut self, stmt: &JuliaStatement) -> Option<Id> {
@@ -81,7 +80,7 @@ impl<'a, 'b, V: oak_vfs::Vfs> UirConverter<'a, 'b, V> {
                     }
                 }
                 self.ctx.scopes.pop_scope();
-                let func_id = self.ctx.builder().function(&func.name, Vec::new(), body);
+                let func_id = self.ctx.builder().function(&func.name, Vec::new(), body, Loc::default());
                 Some(func_id)
             }
             JuliaStatement::Expression(expr) => Some(self.convert_expression(expr)),

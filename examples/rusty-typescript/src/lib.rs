@@ -178,7 +178,7 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
         for stmt in root.statements {
             items.push(self.convert_statement(stmt));
         }
-        self.builder.module("main", items)
+        self.builder.module("main", items, Loc::default())
     }
 
     fn convert_statement(&mut self, stmt: ast::Statement) -> Id {

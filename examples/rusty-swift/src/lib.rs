@@ -4,14 +4,12 @@
 
 pub mod codegen;
 
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
-use oak_vfs::Vfs;
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Loc, Vfs};
 use oak_core::Builder;
 use oak_core::source::SourceText;
 use oak_swift::ast::{Expression, Literal, Statement, SwiftRoot};
 use oak_swift::{SwiftBuilder, SwiftLanguage};
-use chomsky_uir::Id;
-use chomsky_types::Loc;
+use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Swift 前端
 pub struct RustySwiftFrontend {
@@ -33,7 +31,7 @@ impl RustySwiftFrontend {
     }
 }
 
-impl NyarFrontend for RustySwiftFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustySwiftFrontend {
     type Language = SwiftLanguage;
 
     fn parse(&self, source: &str) -> Result<SwiftRoot, NyarError> {
@@ -45,7 +43,7 @@ impl NyarFrontend for RustySwiftFrontend {
         output.result.map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &SwiftRoot, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &SwiftRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
@@ -67,7 +65,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 items.push(node);
             }
         }
-        self.ctx.builder().module("main", items)
+        self.ctx.builder().module("main", items, Loc::default())
     }
 
     fn convert_statement(&mut self, stmt: &Statement) -> Option<Id> {
@@ -102,21 +100,29 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let loop_body = self.convert_statements(body);
                 Some(self.ctx.builder().while_loop(cond, loop_body, loc))
             }
-            Statement::FunctionDef { name, parameters, body, .. } => {
-                let mut params = Vec::new();
-                for param in parameters {
-                    let id = self.ctx.scopes.declare_variable(&param.name);
-                    params.push(id);
-                }
-                let mut func_body = Vec::new();
-                for stmt in body {
-                    if let Some(id) = self.convert_statement(stmt) {
-                        func_body.push(id);
-                    }
-                }
-                Some(self.ctx.builder().function(name, params, func_body))
+            Statement::FunctionDef {
+                name,
+                parameters,
+                body,
+                ..
+            } => {
+                self.ctx.scopes.push_scope();
+                let params = parameters.iter().map(|p| self.ctx.scopes.declare_variable(&p.name)).collect();
+                let func_body = body.iter().filter_map(|s| self.convert_statement(s)).collect();
+                self.ctx.scopes.pop_scope();
+                Some(self.ctx.builder().function(name, params, func_body, Loc::default()))
             }
             Statement::Block(stmts) => Some(self.convert_statements(stmts)),
+            Statement::For {
+                variable,
+                iterable,
+                body,
+            } => {
+                let iter = self.convert_expression(iterable);
+                let loop_body = self.convert_statements(body);
+                let var_id = self.ctx.builder().symbol(variable, loc.clone());
+                Some(self.ctx.builder().extension("for", vec![var_id, iter, loop_body], loc))
+            }
         }
     }
 

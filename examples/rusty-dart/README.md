@@ -4,22 +4,24 @@ A Dart language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-dart` is a compiler frontend that brings the Dart programming language to the Nyar VM. It is designed to provide a high-performance runtime for Dart applications, leveraging Nyar's advanced JIT compilation and garbage collection for both mobile and server-side scenarios.
+`rusty-dart` is a compiler frontend that brings the Dart programming language to the Nyar VM ecosystem. It provides a high-performance runtime for Dart applications, leveraging Nyar's advanced JIT compilation, garbage collection, and algebraic effects for both mobile and server-side scenarios.
 
 ## Features
 
-- **Modern Dart Support**: Targeted at modern Dart specifications, including null safety.
-- **Efficient Object System**: Maps Dart's class-based object model and mixins to Nyar's native object system.
-- **Async/Await Integration**: Maps Dart's `Future` and `Stream` abstractions to Nyar's native algebraic effects and continuations.
-- **High Performance**: Benefit from `nyar-jit` optimizations for hot Dart code.
-- **Hot Reload Capability**: Designed to support future hot-reload features in the Nyar ecosystem.
+- **Modern Dart Support**: Targeted at modern Dart specifications, including null safety and sound typing.
+- **Efficient Object System**: Maps Dart's class-based object model, mixins, and extensions to Nyar's native object system.
+- **Nyar Ecosystem Integration**:
+  - **`nyar-jit`**: Provides multi-tier optimization (Baseline to Extreme) for hot Dart code.
+  - **`nyar-gc`**: Leverages Nyar's precise garbage collector for high-performance memory management.
+  - **Algebraic Effects**: Maps Dart's `async/await`, `Future`, and `Stream` abstractions to Nyar's native effects and continuations.
+- **Hot Reload Capability**: Designed to support future hot-reload features within the Nyar development environment.
 
 ## Supported Constructs
 
 - **Core Syntax**: `class`, `mixin`, `extension`, `enum`.
 - **Functions**: Support for closures, arrow functions, and optional parameters.
 - **Collections**: Integrated support for Dart Lists, Sets, and Maps.
-- **Async Programming**: `async`, `await`, `yield`.
+- **Async Programming**: Full support for `async`, `await`, and `yield`.
 - **Type System**: Support for Dart's sound type system and null safety checks.
 
 ## Getting Started

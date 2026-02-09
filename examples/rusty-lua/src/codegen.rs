@@ -1,7 +1,7 @@
 //! Gaia 指令生成器 (已重构为意图树生成器)
 
-use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder, Id};
-use nyar_types::NyarError;
+use chomsky_uir::{ConstraintAnalysis, IntentBuilder, Id};
+use nyar_types::{NyarError, NyarContext, Loc, Vfs};
 use oak_lua::ast::*;
 
 /// Gaia 翻译器，将 Lua AST 转换为意图树
@@ -13,11 +13,9 @@ impl GaiaTranslator {
         Self
     }
 
-    /// 从 Lua AST 生成意图树
-    pub fn translate_to_tree(&self, ast: &LuaRoot) -> Result<IKunTree, NyarError> {
-        let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
-        let mut builder = IntentBuilder::new(&mut egraph);
-
+    /// 统一的转换接口
+    pub fn lower_unified<V: Vfs>(&self, ast: &LuaRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+        let mut builder = ctx.builder();
         let mut statements = Vec::new();
         for stmt in &ast.statements {
             if let Ok(id) = self.translate_statement(stmt, &mut builder) {
@@ -25,15 +23,11 @@ impl GaiaTranslator {
             }
         }
 
-        let loc = chomsky_types::Loc::default();
-        let root = builder.block(statements, loc);
-        
-        let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
-        Ok(extractor.extract(root))
+        builder.module("main", statements, Loc::default())
     }
 
     fn translate_statement(&self, stmt: &LuaStatement, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
-        let loc = chomsky_types::Loc::default();
+        let loc = Loc::default();
         match stmt {
             LuaStatement::Local(s) => {
                 let mut ids = Vec::new();
@@ -68,7 +62,7 @@ impl GaiaTranslator {
     }
 
     fn translate_expression(&self, expr: &LuaExpression, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
-        let loc = chomsky_types::Loc::default();
+        let loc = Loc::default();
         match expr {
             LuaExpression::Number(n) => Ok(builder.float(*n, loc)),
             LuaExpression::String(s) => Ok(builder.string(s, loc)),

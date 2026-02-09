@@ -12,6 +12,8 @@ use chomsky_types::Loc;
 pub mod codegen;
 pub mod pyc_codegen;
 
+use chomsky_uir::ConstraintAnalysis;
+
 /// Rusty Python 前端
 #[derive(Default)]
 pub struct RustyPythonFrontend;
@@ -23,7 +25,7 @@ impl RustyPythonFrontend {
     }
 }
 
-impl NyarFrontend for RustyPythonFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyPythonFrontend {
     type Language = oak_python::PythonLanguage;
 
     fn parse(&self, source: &str) -> Result<PythonRoot, NyarError> {
@@ -45,7 +47,7 @@ impl NyarFrontend for RustyPythonFrontend {
         Ok(ast)
     }
 
-    fn lower_unified<V: Vfs>(&self, ast: &PythonRoot, ctx: &mut NyarContext<V>) -> Id {
+    fn lower_unified<V: Vfs>(&self, ast: &PythonRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
         let mut converter = UirConverter::new(ctx);
         converter.convert_root(ast)
     }
@@ -67,7 +69,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 items.push(node);
             }
         }
-        self.ctx.builder().module("main", items)
+        self.ctx.builder().module("main", items, Loc::default())
     }
 
     fn convert_statement(&mut self, stmt: &Statement) -> Option<Id> {

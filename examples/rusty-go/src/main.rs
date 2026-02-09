@@ -2,9 +2,9 @@ use clap::Parser;
 use rusty_go::frontend::RustyGoFrontend;
 use rusty_go::runtime::RustyGoRuntime;
 use nyar_types::NyarFrontend;
-use nyar_vm::vm::core::NyarEnv;
+use chomsky_uir::EGraph;
+use oak_vfs::MemoryVfs;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -32,11 +32,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Parsing and lowering {}...", args.input.display());
     let ast = frontend.parse(&source).map_err(|e| format!("Parse error: {:?}", e))?;
     
-    let mut ctx = nyar_types::NyarContext::default();
+    let mut egraph = EGraph::new();
+    let vfs = MemoryVfs::new();
+    let mut ctx = nyar_types::NyarContext::new(&mut egraph, &vfs, 0);
     let root_id = frontend.lower_unified(&ast, &mut ctx);
     
-    let egraph = ctx.take_egraph();
-
     // 4. Optimize if requested
     let intent_graph = if args.optimize {
         println!("Optimizing...");

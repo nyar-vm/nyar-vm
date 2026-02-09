@@ -1,7 +1,6 @@
 use nyar_types::CliError;
-use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::Chunk;
-use nyar_vm::vm::interpreter::NyarVM;
+use nyar_vm::vm::NyarVM;
 use std::io::{BufRead, Write};
 
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
@@ -55,13 +54,16 @@ pub fn repl() -> Result<(), CliError> {
                 upvalues: 0,
                 max_stack: 8,
                 code,
-                handlers: vec![],
-                lines: vec![],
+                ..Default::default()
             };
-            if let Ok(program) = Decoder::new(&chunk.code).decode_all() {
-                let mut vm = NyarVM::new(vec![], vec![chunk], vec![], vec![], vec![], vec![]);
-                let _ = vm.execute(&program);
-            }
+            let module = nyar_vm::bytecode::format::NyarcModule {
+                chunks: vec![chunk],
+                ..Default::default()
+            };
+            let mut vm = NyarVM::new();
+            vm.platform = std::sync::Arc::new(nyar_vm::runtime::platform::NativePlatform);
+            let module_idx = vm.load_module(module);
+            let _ = vm.execute(module_idx, 0);
         }
     }
     Ok(())

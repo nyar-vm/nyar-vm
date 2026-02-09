@@ -1,13 +1,8 @@
 use crate::bytecode::instruction::{Instruction, UpvalueRef};
 use crate::bytecode::opcode::*;
 use byteorder::{LittleEndian, ReadBytesExt};
+pub use nyar_types::DecodeError;
 use std::io::Cursor;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DecodeError {
-    Truncated,
-    InvalidOpcode(u8),
-}
 
 pub struct Decoder<'a> {
     code: &'a [u8],

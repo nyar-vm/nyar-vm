@@ -4,30 +4,31 @@ A Julia language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-julia` is a compiler frontend that brings the Julia programming language to the Nyar VM. It focuses on Julia's strengths—high-performance numerical computing and multiple dispatch—mapping them to Nyar's native execution engine and optimization pipeline.
+`rusty-julia` is a compiler frontend that brings the Julia programming language—known for its combination of high-level ease and low-level performance—to the Nyar VM ecosystem. It targets scientific computing, data analysis, and general-purpose programming by mapping Julia's multiple dispatch and dynamic type system to Nyar's advanced runtime.
 
 ## Features
 
-- **Multiple Dispatch**: Implements Julia's core multiple dispatch mechanism using Nyar's witness tables and virtual call system.
-- **Numerical Performance**: Optimized for Julia's specialized array operations and numerical types.
-- **Dynamic Typing with Static Performance**: Leverages `nyar-jit` and E-Graph optimization to achieve near-native performance for hot Julia code.
-- **Metaprogramming**: Integrated with Nyar's macro system to support Julia's powerful macro and reflection capabilities.
-- **Nyar Integration**: Compiles to Gaia IR, enabling interoperability with other scientific languages like R and Fortran.
+- **Multiple Dispatch**: Maps Julia's core multiple dispatch paradigm to Nyar's native virtual call and dynamic dispatch mechanisms.
+- **Just-In-Time Specialization**: Leverages `nyar-jit` to perform type-specialized compilation for hot code paths, similar to Julia's own LLVM-based JIT.
+- **Nyar Ecosystem Integration**:
+  - **`nyar-jit`**: Provides multi-tier optimization (Baseline, Optimizing, Extreme) for numeric kernels.
+  - **`nyar-gc`**: Manages complex object graphs and arrays with high-performance mark-and-sweep.
+  - **`nyar-aot`**: Supports Ahead-of-Time optimization of static Julia modules using E-Graph saturation.
+- **Metaprogramming**: Support for Julia's powerful macro and expression manipulation system, integrated with Nyar's native metaprogramming primitives.
 
 ## Supported Constructs
 
-- **Core Syntax**: `function`, `struct`, `mutable struct`, `module`, `using`.
-- **Multiple Dispatch**: Full support for defining methods with different type signatures.
-- **Control Flow**: `if`, `for`, `while`, `try-catch`.
-- **Arrays**: Robust support for Julia's multi-dimensional array system.
-- **Macros**: Support for Julia-style macros and code generation.
+- **Core Syntax**: `function`, `struct`, `module`, `macro`.
+- **Control Flow**: `if`, `while`, `for`, `try/catch`.
+- **Types**: Support for parametric types and abstract type hierarchies.
+- **Arrays**: Native integration with Nyar's array representation for high-performance linear algebra.
 
 ## Getting Started
 
 ### Usage via Nyar CLI
 
 ```bash
-nyar run script.jl
+nyar run analysis.jl
 ```
 
 ### Usage as a Library
@@ -37,7 +38,7 @@ use rusty_julia::RustyJuliaFrontend;
 use nyar_types::NyarFrontend;
 
 let frontend = RustyJuliaFrontend::new();
-let ast = frontend.parse("function hello(name)\n    println(\"Hello, $name!\")\nend\nhello(\"Julia\")").unwrap();
+let ast = frontend.parse("f(x) = x^2 + 2x + 1").unwrap();
 // Lower and execute via NyarVM
 ```
 

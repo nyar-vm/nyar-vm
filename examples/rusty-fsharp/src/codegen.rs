@@ -86,7 +86,7 @@ impl NyarTranslator {
                 items.push(id);
             }
         }
-        Ok(ctx.builder.module(&ns.name, items))
+        Ok(ctx.builder.module(&ns.name, items, Loc::default()))
     }
 
     fn translate_module<A: chomsky_uir::Analysis<IKun>>(
@@ -100,15 +100,56 @@ impl NyarTranslator {
                 items.push(id);
             }
         }
-        Ok(ctx.builder.module(&m.name, items))
+        Ok(ctx.builder.module(&m.name, items, Loc::default()))
     }
 
     fn translate_binding<A: chomsky_uir::Analysis<IKun>>(
         &self,
-        _b: &Binding,
+        b: &Binding,
         ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
-        // Placeholder for let binding
-        Ok(ctx.builder.seq(vec![], Loc::default()))
+        let loc = Loc::default();
+        let value = self.translate_expression(&b.expression, ctx)?;
+
+        if b.parameters.is_empty() {
+            Ok(ctx.builder.assign(&b.name, value, loc))
+        } else {
+            Ok(ctx.builder.function(&b.name, b.parameters.clone(), vec![value], loc))
+        }
+    }
+
+    fn translate_expression<A: chomsky_uir::Analysis<IKun>>(
+        &self,
+        expr: &Expression,
+        ctx: &mut TranslatorContext<'_, A>,
+    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+        let loc = Loc::default();
+        match expr {
+            Expression::Simple(s) => {
+                if let Ok(v) = s.parse::<i64>() {
+                    Ok(ctx.builder.constant(v, loc))
+                } else if let Ok(v) = s.parse::<f64>() {
+                    Ok(ctx.builder.float(v, loc))
+                } else if s == "true" {
+                    Ok(ctx.builder.bool(true, loc))
+                } else if s == "false" {
+                    Ok(ctx.builder.bool(false, loc))
+                } else if !s.is_empty() && s.chars().next().unwrap().is_ascii_alphabetic() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                    Ok(ctx.builder.symbol(s, loc))
+                } else {
+                    Ok(ctx.builder.string(s, loc))
+                }
+            }
+            Expression::If { condition, then_branch, else_branch } => {
+                let cond = self.translate_expression(condition, ctx)?;
+                let then_ = self.translate_expression(then_branch, ctx)?;
+                let else_ = if let Some(eb) = else_branch {
+                    self.translate_expression(eb, ctx)?
+                } else {
+                    ctx.builder.constant(0, loc)
+                };
+                Ok(ctx.builder.branch(cond, then_, else_, loc))
+            }
+        }
     }
 }

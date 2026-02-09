@@ -11,3 +11,6 @@ nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-lua = { workspace = true }
 chomsky-uir = { workspace = true }
+chomsky-types = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }

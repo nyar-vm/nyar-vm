@@ -5,17 +5,11 @@ use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
 pub struct StdIoPrintln;
 impl FFIFunction for StdIoPrintln {
     fn signature(&self) -> Option<FFISignature> {
-        Some(FFISignature {
-            params: vec![FFIType::Any],
-            ret: FFIType::Null,
-        })
+        None
     }
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        if let Some(arg) = args.get(0) {
-            vm.platform.stdout_write(&format!("{}\n", arg));
-        } else {
-            vm.platform.stdout_write("\n");
-        }
+        let output = args.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ");
+        vm.platform.stdout_write(&format!("{}\n", output));
         Ok(Value::null())
     }
 }
@@ -23,17 +17,12 @@ impl FFIFunction for StdIoPrintln {
 pub struct StdIoPrint;
 impl FFIFunction for StdIoPrint {
     fn signature(&self) -> Option<FFISignature> {
-        Some(FFISignature {
-            params: vec![FFIType::Any],
-            ret: FFIType::Null,
-        })
+        None
     }
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        if let Some(arg) = args.get(0) {
-            let s = format!("{}", arg);
-            vm.platform.stdout_write(&s);
-            vm.trace_log.lock().unwrap().push(s);
-        }
+        let output = args.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ");
+        vm.platform.stdout_write(&output);
+        vm.trace_log.lock().unwrap().push(output);
         Ok(Value::null())
     }
 }

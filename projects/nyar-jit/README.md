@@ -9,34 +9,41 @@ A multi-tier Just-In-Time (JIT) compiler for the Nyar VM.
 ## Key Features
 
 - **Multi-Tier Compilation**:
-  - **Baseline Tier**: Fast compilation for initial warm-up.
-  - **Optimizing Tier**: Advanced optimizations using E-Graph equality saturation.
-  - **Extreme Tier**: Full-scale optimization for the hottest code paths.
-- **E-Graph Optimization**: Leverages the `chomsky` optimizer to perform global, rule-based optimizations, ensuring high-quality native code.
-- **On-Stack Replacement (OSR)**: Ability to transition from the interpreter to JIT-compiled code even while a function is currently executing on the stack.
-- **Inline Caching (IC)**: Optimizes dynamic method calls and field accesses by caching lookup results at call sites.
+  - **Tier 0 (Interpreter)**: Default execution mode for cold code.
+  - **Tier 1 (Baseline)**: Fast compilation for initial warm-up, performing simple peephole optimizations.
+  - **Tier 2 (Optimizing)**: Advanced optimizations using E-Graph equality saturation for hot code paths.
+  - **Tier 3 (Extreme)**: Full-scale global optimization for the most critical loops and functions.
+- **E-Graph Optimization Pipeline**:
+  - Leverages the `chomsky` optimizer to perform rule-based optimizations.
+  - **Equality Saturation**: Explores multiple optimization paths simultaneously, ensuring optimal code generation without fragile heuristic ordering.
+- **On-Stack Replacement (OSR)**:
+  - Dynamically transitions from the interpreter to JIT-compiled code during long-running loops.
+  - Improves performance for long-running computations without waiting for function re-entry.
+- **Dynamic Optimization & Inline Caching (IC)**:
+  - Optimizes dynamic method calls and field accesses by caching lookup results directly at call sites.
+  - Automatically deoptimizes if runtime assumptions (e.g., object shapes) are violated.
 - **Advanced Optimization Rules**:
-  - **Algebraic Simplification**: Simplifies complex arithmetic and logic expressions.
-  - **Constant Folding**: Evaluates constant expressions at compile time.
-  - **Allocation Sinking**: Eliminates unnecessary object allocations by moving them to where they are actually used or scalarizing them.
-  - **Barrier Elision**: Removes redundant GC write barriers for performance.
-- **Tiering Thresholds**: Configurable hotness thresholds to trigger transitions between different execution tiers.
-- **Executable Memory Management**: Safe and efficient management of executable memory regions via `gaia-jit`.
+  - **Algebraic Simplification**: Constant folding, strength reduction, and identity elimination.
+  - **Allocation Sinking**: Eliminates unnecessary object allocations by scalarizing objects or moving allocations out of hot loops.
+  - **Barrier Elision**: Analyzes object lifetimes to remove redundant GC write barriers.
+- **Tiering Thresholds**: Highly configurable hotness counters trigger transitions between different execution tiers based on invocation count and loop iterations.
 
 ## Architecture
 
-- **`NyarJit`**: The primary `JitProvider` implementation for `nyar-vm`.
-- **`UniversalOptimizer`**: The core optimization engine powered by `chomsky`.
-- **`InlineCache`**: Manages runtime caches for dynamic dispatch.
-- **`CompiledCode`**: Represents a unit of JIT-compiled native code with associated metadata like tier and OSR points.
+- **`NyarJit`**: The primary `JitProvider` implementation that interfaces with the VM.
+- **`UniversalOptimizer`**: The core optimization engine powered by `chomsky`, managing the E-Graph and rule applications.
+- **`InlineCache`**: Manages a global registry of polymorphic and monomorphic inline caches for dynamic dispatch.
+- **`CompiledCode`**: Represents a unit of native code with associated metadata for stack mapping, deoptimization points, and OSR entry.
 
-## How it Works
+## Execution Flow
 
-1. **Profiling**: The interpreter tracks function "hotness" during execution.
-2. **Threshold Trigger**: When a function exceeds a threshold, it is queued for JIT compilation.
-3. **Compilation**: The Gaia IR is converted to an intermediate representation (UIR), optimized, and then lowered to native machine code (x86_64, etc.).
-4. **Execution**: The VM's execution flow is diverted to the native entry point.
-5. **Deoptimization**: If assumptions made during JIT (e.g., type stability) are violated, the execution safely falls back to the interpreter.
+1. **Profiling**: The interpreter tracks invocation and loop backedge counts.
+2. **Threshold Trigger**: Once a threshold is reached, the function is scheduled for JIT compilation.
+3. **UIR Lowering**: Gaia IR is converted to Universal Intermediate Representation (UIR).
+4. **Optimization**: E-Graph saturation applies optimization rules.
+5. **Code Generation**: The optimal tree is lowered to native machine code (x86_64, etc.) via `gaia-jit`.
+6. **Installation**: The compiled code is installed into the VM's code cache.
+7. **Deoptimization**: If a JIT assumption fails, the state is reconstructed and execution safely falls back to the interpreter.
 
 ## License
 

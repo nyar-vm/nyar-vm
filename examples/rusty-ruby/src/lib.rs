@@ -4,9 +4,10 @@
 
 pub mod codegen;
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_core::{source::SourceText, Builder};
 use oak_ruby::{ast::RubyAst, RubyBuilder, RubyLanguage};
+use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Ruby 前端
 pub struct RustyRubyFrontend {
@@ -28,7 +29,7 @@ impl RustyRubyFrontend {
     }
 }
 
-impl NyarFrontend for RustyRubyFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyRubyFrontend {
     type Language = RubyLanguage;
 
     fn parse(&self, source: &str) -> Result<RubyAst, NyarError> {
@@ -42,8 +43,7 @@ impl NyarFrontend for RustyRubyFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &RubyAst) -> Result<IKunTree, NyarError> {
-        // TODO: 实现真正的从 RubyAst 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-ruby-program".to_string(), Vec::new()))
+    fn lower_unified<V: Vfs>(&self, _ast: &RubyAst, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+        ctx.egraph.add(chomsky_uir::IKun::Seq(vec![]))
     }
 }

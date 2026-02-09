@@ -4,9 +4,10 @@
 
 pub mod codegen;
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarError, NyarFrontend, NyarContext, Id, Vfs};
 use oak_core::{source::SourceText, Builder};
 use oak_lua::{ast::LuaRoot, LuaBuilder, LuaLanguage};
+use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Lua 前端
 pub struct RustyLuaFrontend {
@@ -28,7 +29,7 @@ impl RustyLuaFrontend {
     }
 }
 
-impl NyarFrontend for RustyLuaFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyLuaFrontend {
     type Language = LuaLanguage;
 
     fn parse(&self, source: &str) -> Result<LuaRoot, NyarError> {
@@ -42,8 +43,8 @@ impl NyarFrontend for RustyLuaFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, ast: &LuaRoot) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, ast: &LuaRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
         let translator = codegen::GaiaTranslator::new();
-        translator.translate_to_tree(ast)
+        translator.lower_unified(ast, ctx)
     }
 }

@@ -80,12 +80,16 @@ impl RustyCRuntime {
         let module_idx = self.vm.load_module(module);
 
         // Find main or first export
-        if let Some(export) = self.vm.env.modules[module_idx]
-            .exports
-            .iter()
-            .find(|e| e.symbol == "main".into())
-            .or(self.vm.env.modules[module_idx].exports.first())
-        {
+        let export = {
+            let module = self.vm.env.modules.get(&module_idx).ok_or(RuntimeError::EntryPointNotFound)?;
+            module.exports
+                .iter()
+                .find(|e| e.symbol == "main".into())
+                .cloned()
+                .or_else(|| module.exports.first().cloned())
+        };
+
+        if let Some(export) = export {
             match self.vm.execute(module_idx, export.chunk_idx as usize) {
                 Ok(val) => {
                     println!("Execution result: {}", val);

@@ -4,9 +4,10 @@
 
 pub mod codegen;
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_core::{source::SourceText, Builder};
 use oak_php::{PhpBuilder, PhpLanguage, PhpRoot};
+use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty PHP 前端
 pub struct RustyPhpFrontend {
@@ -28,7 +29,7 @@ impl RustyPhpFrontend {
     }
 }
 
-impl NyarFrontend for RustyPhpFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyPhpFrontend {
     type Language = PhpLanguage;
 
     fn parse(&self, source: &str) -> Result<PhpRoot, NyarError> {
@@ -42,8 +43,7 @@ impl NyarFrontend for RustyPhpFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &PhpRoot) -> Result<IKunTree, NyarError> {
-        // TODO: 实现真正的从 PhpRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-php-program".to_string(), Vec::new()))
+    fn lower_unified<V: Vfs>(&self, _ast: &PhpRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+        ctx.egraph.add(chomsky_uir::IKun::Seq(vec![]))
     }
 }

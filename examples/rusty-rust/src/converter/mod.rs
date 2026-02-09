@@ -1,7 +1,7 @@
 //! Oak Rust AST 到 Chomsky UIR 的转换器
 
 use chomsky_types::Loc;
-use chomsky_uir::{ConstraintAnalysis, IKun, Id, IntentBuilder};
+use chomsky_uir::{Analysis, IKun, Id, IntentBuilder};
 use core::range::Range;
 use oak_rust::ast as oak_ast;
 use oak_rust::lexer::RustTokenType;
@@ -32,9 +32,9 @@ fn stmt_span(stmt: &oak_ast::Statement) -> Range<usize> {
 }
 
 /// 将 Oak Rust AST 根节点转换为 Chomsky UIR
-pub fn convert_root(
+pub fn convert_root<A: Analysis<IKun>>(
     root: &oak_ast::RustRoot,
-    builder: &mut IntentBuilder<ConstraintAnalysis>,
+    builder: &mut IntentBuilder<A>,
 ) -> Id {
     let mut items = Vec::new();
     for item in &root.items {
@@ -43,7 +43,7 @@ pub fn convert_root(
     builder.extension("module", items, Loc::unknown())
 }
 
-fn convert_item(item: &oak_ast::Item, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Id {
+fn convert_item<A: Analysis<IKun>>(item: &oak_ast::Item, builder: &mut IntentBuilder<A>) -> Id {
     match item {
         oak_ast::Item::Function(f) => convert_function(f, builder),
         oak_ast::Item::Struct(s) => convert_struct(s, builder),
@@ -51,7 +51,7 @@ fn convert_item(item: &oak_ast::Item, builder: &mut IntentBuilder<ConstraintAnal
     }
 }
 
-fn convert_function(f: &oak_ast::Function, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Id {
+fn convert_function<A: Analysis<IKun>>(f: &oak_ast::Function, builder: &mut IntentBuilder<A>) -> Id {
     let loc = span_to_loc(f.span.clone());
 
     // Params
@@ -65,7 +65,7 @@ fn convert_function(f: &oak_ast::Function, builder: &mut IntentBuilder<Constrain
     builder.assign(&f.name.name, lambda, loc)
 }
 
-fn convert_struct(s: &oak_ast::Struct, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Id {
+fn convert_struct<A: Analysis<IKun>>(s: &oak_ast::Struct, builder: &mut IntentBuilder<A>) -> Id {
     let loc = span_to_loc(s.span.clone());
     let mut fields = Vec::new();
     for field in &s.fields {
@@ -79,7 +79,7 @@ fn convert_struct(s: &oak_ast::Struct, builder: &mut IntentBuilder<ConstraintAna
     builder.extension("struct_def", args, loc)
 }
 
-fn convert_block(block: &oak_ast::Block, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Id {
+fn convert_block<A: Analysis<IKun>>(block: &oak_ast::Block, builder: &mut IntentBuilder<A>) -> Id {
     let loc = span_to_loc(block.span.clone());
     let stmts = block
         .statements
@@ -89,9 +89,9 @@ fn convert_block(block: &oak_ast::Block, builder: &mut IntentBuilder<ConstraintA
     builder.seq(stmts, loc)
 }
 
-fn convert_statement(
+fn convert_statement<A: Analysis<IKun>>(
     stmt: &oak_ast::Statement,
-    builder: &mut IntentBuilder<ConstraintAnalysis>,
+    builder: &mut IntentBuilder<A>,
 ) -> Id {
     let loc = span_to_loc(stmt_span(stmt));
     match stmt {
@@ -99,20 +99,22 @@ fn convert_statement(
             let value = if let Some(e) = expr {
                 convert_expr(e, builder)
             } else {
-                builder.constant(0, loc)
+                builder.seq(vec![], loc)
             };
             builder.assign(&name.name, value, loc)
         }
-        oak_ast::Statement::ExprStmt { expr, .. } => convert_expr(expr, builder),
         oak_ast::Statement::Return { expr, .. } => {
-            let arg = if let Some(e) = expr {
+            let value = if let Some(e) = expr {
                 convert_expr(e, builder)
             } else {
-                builder.constant(0, loc)
+                builder.seq(vec![], loc)
             };
-            builder.return_(arg, loc)
+            builder.extension("return", vec![value], loc)
         }
-        _ => builder.string("unsupported_stmt", loc),
+        oak_ast::Statement::ExprStmt { expr, .. } => convert_expr(expr, builder),
+        oak_ast::Statement::Break { .. } => builder.extension("break", vec![], loc),
+        oak_ast::Statement::Continue { .. } => builder.extension("continue", vec![], loc),
+        oak_ast::Statement::Item(item) => convert_item(item, builder),
     }
 }
 
@@ -129,7 +131,7 @@ fn extract_name(expr: &oak_ast::Expr) -> Option<String> {
     }
 }
 
-fn convert_expr(expr: &oak_ast::Expr, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Id {
+fn convert_expr<A: Analysis<IKun>>(expr: &oak_ast::Expr, builder: &mut IntentBuilder<A>) -> Id {
     // Note: Loc is tricky to get from expr ref if not stored.
     // oak_ast::Expr usually has span.
     let loc = Loc::unknown(); // Simplified for now as Expr might not expose span easily in this match context

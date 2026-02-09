@@ -1,7 +1,6 @@
 use nyar_types::CliError;
-use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::Chunk;
-use nyar_vm::vm::interpreter::NyarVM;
+use nyar_vm::vm::NyarVM;
 use std::io::Write;
 
 pub fn bench() -> Result<(), CliError> {
@@ -14,15 +13,18 @@ pub fn bench() -> Result<(), CliError> {
         upvalues: 0,
         max_stack: 8,
         code,
-        handlers: vec![],
-        lines: vec![],
+        ..Default::default()
     };
-    let program = Decoder::new(&chunk.code).decode_all().unwrap_or_default();
-    let consts = vec![nyar_vm::bytecode::format::Constant::Int(1)];
-    let mut vm = NyarVM::new(consts, vec![chunk], vec![], vec![], vec![], vec![]);
+    let module = nyar_vm::bytecode::format::NyarcModule {
+        constants: vec![nyar_vm::bytecode::format::Constant::Int(1)],
+        chunks: vec![chunk],
+        ..Default::default()
+    };
+    let mut vm = NyarVM::new();
+    let module_idx = vm.load_module(module);
     let mut acc = 0i64;
     for _ in 0..10000 {
-        let _ = vm.execute(&program);
+        let _ = vm.execute(module_idx, 0);
         acc += 1;
     }
     std::io::stdout().write_all(format!("{}\n", acc).as_bytes())?;

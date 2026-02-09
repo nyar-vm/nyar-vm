@@ -2,10 +2,8 @@
 
 use chomsky_cost::DefaultCostModel;
 use chomsky_extract::IKunExtractor;
-use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, Id, IntentBuilder};
-use nyar_types::NyarError;
-use oak_core::Language;
+use nyar_types::{NyarError, Loc};
 use oak_kotlin::ast::*;
 use oak_kotlin::kind::KotlinSyntaxKind;
 use oak_kotlin::language::KotlinLanguage;
@@ -19,21 +17,21 @@ impl NyarTranslator {
 
     pub fn translate_to_tree(&self, root: &KotlinRoot) -> Result<IKunTree, NyarError> {
         let mut egraph = EGraph::<IKun, ConstraintAnalysis>::new();
-        let root_id = self.translate_to_graph(root, &mut egraph)?;
+        let mut builder = IntentBuilder::new(&mut egraph);
+        let root_id = self.translate_to_id(root, &mut builder)?;
         let extractor = IKunExtractor::new(&egraph, DefaultCostModel);
         Ok(extractor.extract(root_id))
     }
 
-    pub fn translate_to_graph(
+    pub fn translate_to_id(
         &self,
         root: &KotlinRoot,
-        egraph: &mut EGraph<IKun, ConstraintAnalysis>,
+        builder: &mut IntentBuilder<ConstraintAnalysis>,
     ) -> Result<Id, NyarError> {
-        let mut builder = IntentBuilder::new(egraph);
         let mut members = Vec::new();
 
         for decl in &root.declarations {
-            members.push(self.translate_declaration(decl, &mut builder)?);
+            members.push(self.translate_declaration(decl, builder)?);
         }
 
         let root_id = builder.seq(members, Loc::default());

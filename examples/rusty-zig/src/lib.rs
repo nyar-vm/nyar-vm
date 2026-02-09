@@ -4,8 +4,9 @@
 
 pub mod codegen;
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_zig::ZigLanguage;
+use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Zig 前端
 pub struct RustyZigFrontend {
@@ -27,7 +28,7 @@ impl RustyZigFrontend {
     }
 }
 
-impl NyarFrontend for RustyZigFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyZigFrontend {
     type Language = ZigLanguage;
 
     fn parse(&self, _source: &str) -> Result<(), NyarError> {
@@ -35,8 +36,8 @@ impl NyarFrontend for RustyZigFrontend {
         Ok(())
     }
 
-    fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, _ast: &(), ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
         // TODO: 实现真正的从 AST 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-zig-program".to_string(), Vec::new()))
+        ctx.builder().seq(vec![], Default::default())
     }
 }

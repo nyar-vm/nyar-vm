@@ -1,6 +1,7 @@
 use nyar_types::{CliError, FormatError};
 use nyar_vm::bytecode::decoder::Decoder;
 use nyar_vm::bytecode::format::NyarModule;
+use oak_core::source::Source;
 use oak_vfs::{DiskVfs, Vfs};
 use std::io::Write;
 

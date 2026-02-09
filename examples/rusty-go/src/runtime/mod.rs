@@ -46,9 +46,11 @@ pub struct RustyGoRuntime {
 
 impl RustyGoRuntime {
     pub fn new() -> Self {
+        let mut vm = NyarVM::new();
+        vm.setup_default_runtime();
         Self {
             _optimizer: UniversalOptimizer::new(),
-            vm: NyarVM::new(),
+            vm,
         }
     }
 
@@ -69,30 +71,31 @@ impl RustyGoRuntime {
         let module_idx = self.vm.load_module(module);
 
         // Find main or first export
-        if let Some(module_ref) = self.vm.env.modules.get(&module_idx) {
-            if let Some(export) = module_ref
+        let entry_info = if let Some(module_ref) = self.vm.env.modules.get(&module_idx) {
+            module_ref
                 .exports
                 .iter()
                 .find(|e| e.symbol == "main".into())
                 .or(module_ref.exports.first())
-            {
-                match self.vm.execute(module_idx, export.chunk_idx as usize) {
-                    Ok(val) => {
-                        println!("Execution result: {}", val);
-                    }
-                    Err(e) => {
-                        println!("Nyar VM execution failed: {:?}", e);
-                        return Err(RuntimeError::NyarVm(format!("{:?}", e)));
-                    }
+                .map(|e| (e.chunk_idx as usize, e.symbol.clone()))
+        } else {
+            None
+        };
+
+        if let Some((chunk_idx, _symbol)) = entry_info {
+            match self.vm.execute(module_idx, chunk_idx) {
+                Ok(val) => {
+                    println!("Execution result: {}", val);
+                    Ok(())
                 }
-            } else {
-                return Err(RuntimeError::EntryPointNotFound);
+                Err(e) => {
+                    println!("Nyar VM execution failed: {:?}", e);
+                    Err(RuntimeError::NyarVm(format!("{:?}", e)))
+                }
             }
         } else {
-            return Err(RuntimeError::Other(format!("Module {} not found", module_idx)));
+            Err(RuntimeError::EntryPointNotFound)
         }
-
-        Ok(())
     }
 
     fn translate_to_nyar(&self, tree: &IKunTree) -> Result<NyarcModule, RuntimeError> {
@@ -221,7 +224,7 @@ impl RustyGoRuntime {
                 // Push function
                 self.emit_tree(func, code, module)?;
                 // Call closure
-                code.extend_from_slice(&Instruction::CallClosure(argc as u16).encode());
+                code.extend_from_slice(&Instruction::CallClosure(argc as u8).encode());
             }
             IKunTree::CrossLangCall { language, module_path, function_name, arguments } => {
                 if language == "native" || language == "nyar" {
@@ -231,7 +234,11 @@ impl RustyGoRuntime {
                     }
                     // FFICall expects (constant_idx_of_name, argc)
                     let name_idx = module.constants.len() as u16;
-                    let full_name = format!("{}::{}", module_path, function_name);
+                    let full_name = if module_path.is_empty() {
+                        function_name.clone()
+                    } else {
+                        format!("{}::{}", module_path, function_name)
+                    };
                     module.constants.push(Constant::String(full_name));
                     code.extend_from_slice(
                         &Instruction::FFICall(name_idx, arguments.len() as u8).encode(),

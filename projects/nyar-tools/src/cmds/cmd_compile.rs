@@ -1,14 +1,15 @@
 use nyar_types::{CliError, FormatError};
 use nyar_vm::bytecode::format::NyarModule;
+use oak_core::source::Source;
 use oak_vfs::{DiskVfs, Vfs};
 
-pub fn compile(target: &str, input: &str, output: Option<String>) -> Result<(), CliError> {
+pub fn compile(target: &str, input: &str, _output: Option<String>) -> Result<(), CliError> {
     let vfs = DiskVfs::new();
     
     let source = vfs.get_source(input)
         .ok_or_else(|| CliError::Format(FormatError::Text(format!("File not found: {}", input))))?;
     
-    let module = if input.ends_with(".nyar") {
+    let _module = if input.ends_with(".nyar") {
         let text = source.get_text_from(0);
         NyarModule::parse_toml_str(&text)?
     } else {
@@ -48,6 +49,7 @@ pub fn compile(target: &str, input: &str, output: Option<String>) -> Result<(), 
     }
 }
 
+#[allow(dead_code)]
 fn derive_base(path: &str) -> String {
     let p = std::path::Path::new(path);
     let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("output");

@@ -14,7 +14,8 @@ int myVar = 0;
     let vfs = MemoryVfs::new();
     let tree = frontend.lower(&ast, &vfs).expect("Failed to lower AST to UIR");
     
-    let tree_str = format!("{:?}", tree);
+    let tree_str = format!("{:#?}", tree);
+    println!("{}", tree_str);
     assert!(tree_str.contains("MyClass"));
     assert!(tree_str.contains("myFunc"));
     assert!(tree_str.contains("myVar"));

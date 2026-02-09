@@ -8,11 +8,14 @@ A COBOL language frontend for the Nyar VM.
 
 ## Features
 
-- **Standard COBOL Support**: Aims to support common COBOL dialects and standards.
+- **Standard COBOL Support**: Aims to support common COBOL dialects and standards (COBOL-85/2002).
 - **Modern Execution Environment**: Runs COBOL code on the `nyar-vm`, providing benefits like automatic memory management (via `nyar-gc`) and multi-tier JIT optimization.
 - **Data Division Mapping**: Maps COBOL's complex data structures and pictures to Nyar's native types and objects.
-- **Nyar Integration**: Seamlessly compiles to Gaia IR, enabling interoperability with modern languages like Python and Go.
-- **High Performance**: Leverages `nyar-jit` to optimize critical business logic paths.
+- **Nyar Ecosystem Integration**:
+  - **`nyar-jit`**: Optimizes hot business logic paths and numeric processing.
+  - **`nyar-gc`**: Automatically manages the lifecycle of managed COBOL records.
+  - **`nyar-aot`**: Supports Ahead-of-Time optimization for batch processing modules.
+- **Interoperability**: Seamlessly integrates with modern Nyar languages for hybrid application development.
 
 ## Supported Constructs
 
@@ -27,6 +30,17 @@ A COBOL language frontend for the Nyar VM.
 
 ```bash
 nyar run program.cbl
+```
+
+### Usage as a Library
+
+```rust
+use rusty_cobol::RustyCobolFrontend;
+use nyar_types::NyarFrontend;
+
+let frontend = RustyCobolFrontend::new();
+let ast = frontend.parse("IDENTIFICATION DIVISION. PROGRAM-ID. HELLO.").unwrap();
+// Lower and execute via NyarVM
 ```
 
 ## License

@@ -100,7 +100,7 @@ impl NyarTranslator {
                 items.push(id);
             }
         }
-        Ok(ctx.builder.module("root", items))
+        Ok(ctx.builder.module("root", items, Loc::unknown()))
     }
 
     fn translate_item<A: chomsky_uir::Analysis<IKun>>(
@@ -147,7 +147,7 @@ impl NyarTranslator {
                 items.push(id);
             }
         }
-        Ok(ctx.builder.module(&ns.name, items))
+        Ok(ctx.builder.module(&ns.name, items, Loc::unknown()))
     }
 
     fn translate_class<A: chomsky_uir::Analysis<IKun>>(
@@ -186,7 +186,7 @@ impl NyarTranslator {
         }
         
         let loc = Loc::unknown();
-        let mut class_id = ctx.builder.module(&class.name, members);
+        let mut class_id = ctx.builder.module(&class.name, members, loc);
 
         // 处理泛型参数
         if !class.type_parameters.is_empty() {
@@ -264,7 +264,7 @@ impl NyarTranslator {
                 members.push(self.translate_method(method, ctx)?);
             }
         }
-        Ok(ctx.builder.module(&interface.name, members))
+        Ok(ctx.builder.module(&interface.name, members, Loc::unknown()))
     }
 
     pub fn translate_struct<A: chomsky_uir::Analysis<IKun>>(
@@ -281,7 +281,7 @@ impl NyarTranslator {
                 _ => {}
             }
         }
-        Ok(ctx.builder.module(&struct_decl.name, members))
+        Ok(ctx.builder.module(&struct_decl.name, members, Loc::unknown()))
     }
 
     pub fn translate_record<A: chomsky_uir::Analysis<IKun>>(
@@ -299,7 +299,7 @@ impl NyarTranslator {
                 _ => {}
             }
         }
-        Ok(ctx.builder.module(&record_decl.name, members))
+        Ok(ctx.builder.module(&record_decl.name, members, Loc::unknown()))
     }
 
     fn translate_enum<A: chomsky_uir::Analysis<IKun>>(
@@ -313,7 +313,7 @@ impl NyarTranslator {
             let value_id = ctx.builder.constant(0, loc);
             variants.push(ctx.builder.export(&variant.name, value_id, loc));
         }
-        Ok(ctx.builder.module(&enum_decl.name, variants))
+        Ok(ctx.builder.module(&enum_decl.name, variants, loc))
     }
 
     fn translate_field<A: chomsky_uir::Analysis<IKun>>(
@@ -365,7 +365,7 @@ impl NyarTranslator {
             let set_id = ctx.builder.lambda(vec!["value".to_string()], body_id, loc);
             accessors.push(ctx.builder.export(&format!("set_{}", prop.name), set_id, loc));
         }
-        Ok(ctx.builder.module(&prop.name, accessors))
+        Ok(ctx.builder.module(&prop.name, accessors, loc))
     }
 
     fn translate_indexer<A: chomsky_uir::Analysis<IKun>>(
@@ -400,7 +400,7 @@ impl NyarTranslator {
             let set_id = ctx.builder.lambda(set_params, body_id, loc);
             accessors.push(ctx.builder.export("set_Item", set_id, loc));
         }
-        Ok(ctx.builder.module("Indexer", accessors))
+        Ok(ctx.builder.module("Indexer", accessors, loc))
     }
 
     fn translate_event<A: chomsky_uir::Analysis<IKun>>(

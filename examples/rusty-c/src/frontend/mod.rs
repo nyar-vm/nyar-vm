@@ -88,7 +88,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
         for decl in &root.translation_unit.external_declarations {
             items.push(self.convert_external_declaration(decl));
         }
-        self.ctx.builder().module("main", items)
+        self.ctx.builder().module("main", items, Loc::default())
     }
 
     fn convert_external_declaration(&mut self, decl: &ast::ExternalDeclaration) -> Id {
@@ -131,7 +131,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             return self.ctx.builder().block(body_ids, loc);
         }
 
-        let lambda = self.ctx.builder().function(&name, params, body_ids);
+        let lambda = self.ctx.builder().function(&name, params, body_ids, loc.clone());
         self.ctx.builder().assign(&name, lambda, loc)
     }
 

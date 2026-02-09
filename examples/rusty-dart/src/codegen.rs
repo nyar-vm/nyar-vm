@@ -22,7 +22,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<IKun>> UirConverter<'a, 'b, V, A> 
                 items.push(node);
             }
         }
-        self.ctx.builder().module("main", items)
+        self.ctx.builder().module("main", items, Loc::default())
     }
 
     fn convert_item(&mut self, item: &Item) -> Option<Id> {

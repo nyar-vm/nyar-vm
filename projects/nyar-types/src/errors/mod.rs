@@ -1,7 +1,14 @@
 use crate::{QualifiedName, SourceLocation};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DecodeError {
+    Truncated,
+    InvalidOpcode(u8),
+}
+
 pub type VmError = NyarError;
 pub type AotError = NyarError;
+pub type CliError = NyarError;
 
 #[derive(Debug)]
 pub enum FormatError {
@@ -139,6 +146,23 @@ impl NyarError {
     #[allow(non_snake_case)]
     pub fn InternalError(msg: String) -> Self {
         Self::new(0xFFFF, NyarErrorKind::Vm(VmErrorKind::RuntimeError(msg)), SourceLocation::default())
+    }
+    #[allow(non_snake_case)]
+    pub fn NoChunk() -> Self {
+        Self::new(0x1001, NyarErrorKind::Cli(CliErrorKind::NoChunk), SourceLocation::default())
+    }
+    #[allow(non_snake_case)]
+    pub fn Format(err: FormatError) -> Self {
+        err.into()
+    }
+}
+
+impl From<DecodeError> for NyarError {
+    fn from(e: DecodeError) -> Self {
+        match e {
+            DecodeError::Truncated => Self::new(0x5001, NyarErrorKind::Decode(DecodeErrorKind::Truncated), SourceLocation::default()),
+            DecodeError::InvalidOpcode(op) => Self::new(0x5002, NyarErrorKind::Decode(DecodeErrorKind::InvalidOpcode(op)), SourceLocation::default()),
+        }
     }
 }
 

@@ -80,29 +80,43 @@ pub struct EffectInfo {
     pub location: SourceLocation,
 }
 
-pub trait NyarFrontend: Default {
+pub trait NyarFrontend<A: chomsky_uir::Analysis<IKun> = ()>: Default
+where
+    A::Data: HasDebugInfo,
+{
     type Language: Language;
 
     fn parse(&self, source: &str) -> Result<<Self::Language as Language>::TypedRoot, NyarError>;
 
     /// 统一的接入接口，支持 EGraph 优化流
-    fn lower_unified<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, ctx: &mut NyarContext<V>) -> Id;
+    fn lower_unified<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, ctx: &mut NyarContext<V, A>) -> Id;
 
     /// 默认实现：利用 lower_unified 生成 IKunTree
-    fn lower<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &V) -> Result<IKunTree, NyarError> {
+    fn lower<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &V) -> Result<IKunTree, NyarError>
+    where
+        A::Data: HasDebugInfo,
+    {
         let mut egraph = EGraph::new();
-        let mut ctx = NyarContext::new(&mut egraph, vfs, 1);
+        let mut ctx = NyarContext::new(&mut egraph, vfs, 0);
         let root_id = self.lower_unified(ast, &mut ctx);
 
         // 此处可以插入统一的优化流程
-        // egraph.rebuild();
+        egraph.rebuild();
 
         let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
         Ok(extractor.extract(root_id))
     }
 
     /// 利用 Gaia 编译到特定目标
-    fn compile_to_gaia<V: Vfs>(&self, ast: &<Self::Language as Language>::TypedRoot, vfs: &V, target: &str) -> Result<chomsky_extract::BackendArtifact, NyarError> {
+    fn compile_to_gaia<V: Vfs>(
+        &self,
+        ast: &<Self::Language as Language>::TypedRoot,
+        vfs: &V,
+        target: &str,
+    ) -> Result<chomsky_extract::BackendArtifact, NyarError>
+    where
+        A::Data: HasDebugInfo,
+    {
         let tree = self.lower(ast, vfs)?;
         let emitter = chomsky_emit::GaiaEmitter::new(target).standalone();
         use chomsky_extract::Backend;
@@ -111,6 +125,7 @@ pub trait NyarFrontend: Default {
 }
 
 use std::collections::HashMap;
+pub use chomsky_uir::egraph::HasDebugInfo;
 pub use chomsky_uir::{EGraph, IKun, Id, IntentBuilder};
 pub use oak_vfs::Vfs;
 pub use chomsky_types::Loc;

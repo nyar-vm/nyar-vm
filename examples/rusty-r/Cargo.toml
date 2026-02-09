@@ -13,4 +13,5 @@ oak-r = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-types = { workspace = true }
+oak-vfs = { workspace = true }
 serde = { workspace = true }

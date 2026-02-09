@@ -234,15 +234,11 @@ impl FFIFunction for NativeSleep {
 pub struct NativePrint;
 impl FFIFunction for NativePrint {
     fn signature(&self) -> Option<FFISignature> {
-        Some(FFISignature {
-            params: vec![FFIType::Any],
-            ret: FFIType::Null,
-        })
+        None
     }
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        if !args.is_empty() {
-            vm.log(&format!("{}", args[0]));
-        }
+        let output = args.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ");
+        vm.log(&output);
         Ok(Value::null())
     }
 }
@@ -250,15 +246,11 @@ impl FFIFunction for NativePrint {
 pub struct NativePrintln;
 impl FFIFunction for NativePrintln {
     fn signature(&self) -> Option<FFISignature> {
-        Some(FFISignature {
-            params: vec![FFIType::Any],
-            ret: FFIType::Null,
-        })
+        None
     }
     fn call(&self, vm: &mut NyarVM, args: Vec<Value>) -> FFIResult {
-        if !args.is_empty() {
-            vm.log(&format!("{}", args[0]));
-        }
+        let output = args.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(" ");
+        vm.log(&format!("{}\n", output));
         Ok(Value::null())
     }
 }

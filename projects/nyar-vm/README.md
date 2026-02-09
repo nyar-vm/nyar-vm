@@ -1,6 +1,6 @@
 # nyar-vm
 
-The core execution engine for the Nyar VM ecosystem.
+The core execution engine for the Nyar virtual machine ecosystem.
 
 ## Overview
 
@@ -8,44 +8,58 @@ The core execution engine for the Nyar VM ecosystem.
 
 ## Key Features
 
-- **NaN-Boxing Value Representation**: Efficiently stores integers, booleans, pointers, and small strings within a 64-bit double-precision floating-point format.
-- **Algebraic Effects**: Built-in support for delimited continuations and effect handlers, enabling powerful control flow abstractions like async/await, generators, and backtracking.
-- **Advanced Bytecode (Gaia IR)**: A comprehensive instruction set covering:
-  - Arithmetic and bitwise operations for various types.
-  - Object-oriented features (fields, methods, virtual calls).
-  - Functional constructs (first-class closures, upvalues, tail calls).
-  - Metaprogramming (quotes, splices, macros).
-  - Logic programming primitives.
-- **Multi-Tier Execution**: Seamlessly transitions from an efficient bytecode interpreter to JIT-compiled native code.
-- **Concurrency & Async**: Native support for futures and non-blocking execution.
-- **FFI & Platform Integration**: Extensible registry for foreign function interfaces and platform-specific capabilities.
+- **NaN-Boxing Value Representation**:
+  - Efficiently stores integers, booleans, pointers, and small strings within a 64-bit double-precision floating-point format.
+  - Minimizes memory footprint and improves cache locality.
+  - Direct hardware support for floating-point operations.
+- **Algebraic Effects & Delimited Continuations**:
+  - Built-in support for first-class effect handlers.
+  - Enables powerful control flow abstractions like `async/await`, generators, backtracking, and dependency injection without complex state machines.
+- **Gaia IR Execution**:
+  - A comprehensive instruction set designed for high-level language mapping.
+  - Support for Object-Oriented (virtual calls, fields) and Functional (tail calls, closures) patterns.
+  - Integrated metaprogramming primitives (quotes, splices).
+- **Multi-Tier Execution Pipeline**:
+  - Starts with an efficient bytecode interpreter for fast startup.
+  - Seamlessly transitions to JIT-compiled native code via `nyar-jit` for hot paths.
+- **Advanced Concurrency Model**:
+  - Native support for lightweight tasks and futures.
+  - Non-blocking I/O and event-driven execution built into the core.
+- **Robust FFI System**:
+  - Extensible registry for bridging with native Rust code and system libraries.
+  - Support for both synchronous and asynchronous foreign function calls.
 
 ## Architecture
 
-The VM is built with several key components:
-- **Environment (`NyarEnv`)**: Manages loaded modules, symbol tables, and global builtins.
-- **Core VM (`NyarVM`)**: Maintains the execution stack, call frames, and handler stacks for algebraic effects.
-- **Value System**: Implements a uniform 64-bit value type with integrated garbage collection tracing.
-- **JIT Provider**: An interface for plugging in various JIT compilers (like `nyar-jit`).
+The VM is composed of several high-level modules:
+- **`vm::core`**: The main execution engine, maintaining the stack, call frames, and effect handler stacks.
+- **`vm::value`**: Implements the NaN-boxed value system and GC integration.
+- **`vm::ops`**: Contains implementation of the Gaia IR instruction set, categorized by functionality (arithmetic, control, effects, etc.).
+- **`bytecode`**: Handles loading, decoding, and encoding of the Gaia IR binary format.
+- **`runtime`**: Provides platform-specific abstractions for I/O, networking, and filesystem access.
+
+## Instruction Set Highlights
+
+- **Arithmetic**: Typed operations for `i32`, `i64`, `f64`, and `BigInt`.
+- **Object**: `GET_FIELD`, `SET_FIELD`, `INVOKE_VIRTUAL`, `INSTANCE_OF`.
+- **Functional**: `MAKE_CLOSURE`, `TAIL_CALL`, `RETURN`.
+- **Effects**: `HANDLE`, `PERFORM`, `RESUME`.
+- **Metaprogramming**: `QUOTE`, `SPLICE`, `EVAL`.
 
 ## Getting Started
-
-### Prerequisites
-
-- Rust (latest stable or nightly)
-- Cargo
 
 ### Usage
 
 To integrate the VM into your project:
 
 ```rust
-use nyar_vm::vm::core::NyarVM;
+use nyar_vm::NyarVM;
 use std::sync::Arc;
 
 fn main() {
     let vm = NyarVM::new();
-    // Load modules and execute bytecode
+    // Load Gaia IR modules and execute
+    // let result = vm.execute_module(my_module);
 }
 ```
 

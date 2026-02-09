@@ -9,9 +9,10 @@ pub mod row_type;
 pub mod tagless;
 pub mod visitor;
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_core::{builder::Builder, source::SourceText};
 use oak_kotlin::{KotlinBuilder, KotlinLanguage, KotlinRoot};
+use chomsky_uir::ConstraintAnalysis;
 
 /// Rusty Kotlin 前端
 pub struct RustyKotlinFrontend {
@@ -37,7 +38,7 @@ impl RustyKotlinFrontend {
     }
 }
 
-impl NyarFrontend for RustyKotlinFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyKotlinFrontend {
     type Language = KotlinLanguage;
 
     fn parse(&self, source: &str) -> Result<KotlinRoot, NyarError> {
@@ -52,10 +53,8 @@ impl NyarFrontend for RustyKotlinFrontend {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    fn lower(&self, ast: &KotlinRoot) -> Result<IKunTree, NyarError> {
-        let translator = codegen::NyarTranslator::new();
-        let tree = translator.translate_to_tree(ast)?;
-        println!("Lowered to tree: {:?}", tree);
-        Ok(tree)
+    fn lower_unified<V: Vfs>(&self, ast: &KotlinRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+        let mut translator = codegen::NyarTranslator::new();
+        translator.translate_to_id(ast, &mut ctx.builder()).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
     }
 }

@@ -1,6 +1,7 @@
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_nim::{NimBuilder, NimLanguage, NimRoot};
 use oak_core::{Builder, SourceText};
+use chomsky_uir::ConstraintAnalysis;
 
 pub struct RustyNimFrontend {
     language: NimLanguage,
@@ -20,7 +21,7 @@ impl Default for RustyNimFrontend {
     }
 }
 
-impl NyarFrontend for RustyNimFrontend {
+impl NyarFrontend<ConstraintAnalysis> for RustyNimFrontend {
     type Language = NimLanguage;
 
     fn parse(&self, source: &str) -> Result<NimRoot, NyarError> {
@@ -34,8 +35,8 @@ impl NyarFrontend for RustyNimFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &NimRoot) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, _ast: &NimRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
         // TODO: 实现从 NimRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-nim-program".to_string(), Vec::new()))
+        ctx.builder().seq(vec![], Default::default())
     }
 }

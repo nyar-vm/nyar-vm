@@ -58,7 +58,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
         for decl in &root.declarations {
             items.push(self.convert_declaration(decl));
         }
-        self.ctx.builder().module("main", items)
+        self.ctx.builder().module("main", items, Loc::default())
     }
 
     fn convert_declaration(&mut self, decl: &ast::Declaration) -> Id {
@@ -80,8 +80,8 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
         let body = self.convert_block(&func.body);
         self.ctx.scopes.pop_scope();
 
-        let lambda = self.ctx.builder().function(&func.name, params, vec![body]);
-        self.ctx.builder().assign(&func.name, lambda, loc)
+        let lambda = self.ctx.builder().lambda(params, body, loc.clone());
+        self.ctx.builder().export(&func.name, lambda, loc)
     }
 
     fn convert_type(&mut self, t: &ast::TypeDecl) -> Id {
@@ -256,19 +256,19 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 if let ast::Expression::Identifier { name, .. } = &**func {
                     match name.as_str() {
                         "fmt.Println" | "fmt.Printf" | "println" | "print" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "io", "println", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "std::io", "println", arguments, loc);
                         }
                         "os.Exit" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "std", "exit", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "", "$intrinsic:3", arguments, loc);
                         }
                         "panic" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "std", "panic", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "", "$intrinsic:7", arguments, loc);
                         }
                         "sin" | "Math.sin" | "math.sin" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "math", "sin", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "", "$intrinsic:8", arguments, loc);
                         }
                         "sqrt" | "Math.sqrt" | "math.sqrt" => {
-                            return self.ctx.builder().cross_lang_call("nyar", "math", "sqrt", arguments, loc);
+                            return self.ctx.builder().cross_lang_call("nyar", "", "$intrinsic:9", arguments, loc);
                         }
                         _ => {}
                     }
