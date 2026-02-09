@@ -221,7 +221,7 @@ impl NyarVM {
                 unsafe {
                     use nyar_gc::Trace;
                     self.gc.step(1024, |ctx| {
-                        nyar_gc::stack::scan_thread_roots(ctx);
+                        nyar_gc::stack::scan_all_thread_roots(ctx);
                         self.trace(ctx);
                     });
                 }
