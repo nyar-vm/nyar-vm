@@ -167,21 +167,38 @@ impl NyarVM {
         use nyar_gc::stack::StackRootGuard;
         let _vm_root = unsafe { StackRootGuard::<'static, NyarVM>::from_raw(self as *const NyarVM) };
         
-        loop {
+        // Set current GC for write barriers
+        let _gc_guard = crate::vm::core::CURRENT_GC.with(|curr| {
+            let mut curr = curr.borrow_mut();
+            let old = curr.take();
+            *curr = Some(self.gc.clone());
+            old
+        });
+
+        let res = loop {
             loop_count += 1;
 
             if loop_count % 1024 == 0 {
                 if loop_count > 10_000_000 {
                     let err = self.error(nyar_types::VmErrorKind::LimitExceeded);
                     self.print_traceback(&err);
-                    return Err(err);
+                    break Err(err);
                 }
             }
 
-            if self.execute_step()?.is_none() {
-                break;
+            match self.execute_step() {
+                Ok(Some(())) => continue,
+                Ok(None) => break Ok(()),
+                Err(e) => break Err(e),
             }
-        }
+        };
+
+        // Restore old GC
+        crate::vm::core::CURRENT_GC.with(|curr| {
+            *curr.borrow_mut() = _gc_guard;
+        });
+
+        res?;
 
         if self.sp > 0 {
             self.pop()

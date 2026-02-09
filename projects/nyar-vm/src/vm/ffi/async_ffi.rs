@@ -147,14 +147,25 @@ impl FFIFunction for AsyncSpawn {
 
         let mut new_vm = Box::new(vm.spawn_child());
         new_vm.push(closure).map_err(|e| vm.error(nyar_types::VmErrorKind::RuntimeError(e.to_string())))?;
-        let vm_ptr = Box::into_raw(new_vm);
+        let vm_raw_ptr = Box::into_raw(new_vm);
+        let vm_ptr = nyar_gc::ptr::SendPtr(std::ptr::NonNull::new(vm_raw_ptr).unwrap());
         let future = Value::future(&vm.gc);
         let future_clone = future;
         let gc_clone = vm.gc.clone();
 
+        // Register the new VM as a global root while it is running in another thread.
+        unsafe {
+            gc_clone.register_global_root(vm_raw_ptr);
+        }
+
         tokio::spawn(async move {
-            let mut new_vm = unsafe { Box::from_raw(vm_ptr) };
-            let _root = unsafe { nyar_gc::PersistentRoot::new(gc_clone, &*new_vm) };
+            let mut new_vm = unsafe { Box::from_raw(vm_ptr.as_ptr()) };
+            let gc_clone = gc_clone;
+            let future_clone = future_clone;
+            // Although it is registered as a global root, we still use a StackRootGuard for consistency
+            // if we were in a normal synchronous run. But here it is more about the persistent root.
+            // Let's keep using PersistentRoot as well if it's already there, but register_global_root is the key.
+            // let _root = unsafe { nyar_gc::PersistentRoot::new(gc_clone.clone(), &*new_vm) };
 
             // Manually setup the call frame for the closure
             if let Err(_e) = new_vm.execute_call_closure(0) {
@@ -165,6 +176,10 @@ impl FFIFunction for AsyncSpawn {
                         waker.wake();
                     }
                 }
+                // Unregister before dropping
+                unsafe {
+                    gc_clone.unregister_global_root(&*new_vm);
+                }
                 return;
             }
 
@@ -174,7 +189,14 @@ impl FFIFunction for AsyncSpawn {
                 chunk_idx: 0,
             };
 
-            match vm_future.await {
+            let res = vm_future.await;
+
+            // Unregister global root after execution finishes
+            unsafe {
+                gc_clone.unregister_global_root(&*new_vm);
+            }
+
+            match res {
                 Ok(res) => {
                     unsafe {
                         let f = future_clone.as_future_mut();

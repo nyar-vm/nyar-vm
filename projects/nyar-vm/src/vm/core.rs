@@ -26,6 +26,10 @@ pub trait JitProvider: Send + Sync {
     ) -> Result<*const u8, NyarError>;
 }
 
+thread_local! {
+    pub static CURRENT_GC: std::cell::RefCell<Option<Arc<NyarGc>>> = std::cell::RefCell::new(None);
+}
+
 pub struct NyarEnv {
     pub modules: DashMap<usize, NyarcModule>,
     pub module_names: DashMap<usize, String>,
@@ -241,6 +245,13 @@ impl NyarVM {
 
     pub fn get_traceback_summary(&self) -> String {
         let mut res = String::new();
+        
+        // Include parent traceback summary first
+        if let Some(link) = &self.parent_traceback {
+            res.push_str(&self.get_traceback_link_summary(link));
+            res.push_str(" --- Async Spawn Boundary ---\n");
+        }
+
         for (i, f) in self.frames.iter().enumerate().rev().take(10) {
             let func_name = if let Some(closure) = f.closure.try_as_closure() {
                 format!("Closure#{}", closure.func)
@@ -266,6 +277,37 @@ impl NyarVM {
         }
         if self.frames.len() > 10 {
             res.push_str(&format!("  ... ({} more frames)\n", self.frames.len() - 10));
+        }
+        res
+    }
+
+    fn get_traceback_link_summary(&self, link: &TracebackLink) -> String {
+        let mut res = String::new();
+        if let Some(parent) = &link.parent {
+            res.push_str(&self.get_traceback_link_summary(parent));
+            res.push_str(" --- Async Spawn Boundary ---\n");
+        }
+        for (i, f) in link.frames.iter().enumerate().rev().take(5) {
+            let func_name = if let Some(closure) = f.closure.try_as_closure() {
+                format!("Closure#{}", closure.func)
+            } else if let Some(chunk_idx) = f.chunk_idx {
+                self.env.symbol_table
+                    .iter()
+                    .find(|r| {
+                        let (m_idx, c_idx) = *r.value();
+                        m_idx == f.module_idx && c_idx as usize == chunk_idx
+                    })
+                    .map(|r| r.key().to_string())
+                    .unwrap_or_else(|| format!("Chunk#{}", chunk_idx))
+            } else {
+                "Anonymous".to_string()
+            };
+
+            let info = format!(
+                "  [frame {}] {} at {}\n",
+                i, func_name, f.location
+            );
+            res.push_str(&info);
         }
         res
     }

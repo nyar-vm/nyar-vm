@@ -272,6 +272,7 @@ impl Value {
             | ValueTag::Function
             | ValueTag::TraitObject
             | ValueTag::QualifiedName
+            | ValueTag::Future
             | ValueTag::Effect
             | ValueTag::Bytes => unsafe {
                 let header_ptr = NonNull::new_unchecked(payload as *mut GcHeader);
@@ -681,6 +682,19 @@ impl Value {
         });
         Self::encode(ValueTag::Future, g.as_ptr() as u64)
     }
+    pub fn is_gc_ptr(&self) -> bool {
+        if self.is_float() {
+            return false;
+        }
+        let payload = self.payload();
+        if payload == 0 {
+            return false;
+        }
+        match self.tag() {
+            ValueTag::Int | ValueTag::Bool | ValueTag::Null | ValueTag::Code => false,
+            _ => true,
+        }
+    }
     pub fn as_int(&self) -> i64 {
         self.payload() as i64
     }
@@ -936,6 +950,16 @@ impl Upvalue {
     }
     pub fn set(&self, val: Value) {
         self.0.store(val.0, std::sync::atomic::Ordering::Relaxed);
+        // Write barrier
+        if val.is_gc_ptr() {
+            unsafe {
+                crate::vm::core::CURRENT_GC.with(|curr| {
+                    if let Some(gc) = &*curr.borrow() {
+                        gc.write_barrier_raw(val.payload() as *mut GcHeader);
+                    }
+                });
+            }
+        }
     }
 }
 

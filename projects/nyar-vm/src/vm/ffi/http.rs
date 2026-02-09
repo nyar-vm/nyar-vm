@@ -29,8 +29,6 @@ impl FFIFunction for StdHttpGet {
         let url_str = url_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Url must be a string".to_string()))?.to_string();
 
         let future_val = Value::future(&vm.gc);
-        let future_ptr_usize = unsafe { future_val.as_future_mut() as *mut Future as usize };
-
         let client = get_client().read().unwrap().clone();
         let gc = vm.gc.clone();
 
@@ -39,21 +37,24 @@ impl FFIFunction for StdHttpGet {
             match res {
                 Ok(resp) => {
                     let text_res = resp.text().await;
-                    let future_ptr = future_ptr_usize as *mut Future;
                     match text_res {
                         Ok(t) => {
                             unsafe {
-                                (*future_ptr).result = Value::string(t, &gc);
-                                (*future_ptr).status = FutureStatus::Ready;
-                                if let Some(waker) = (*future_ptr).waker.take() {
+                                let f = future_val.as_future_mut();
+                                f.result = Value::string(t, &gc);
+                                f.status = FutureStatus::Ready;
+                                future_val.write_barrier(&gc);
+                                if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
                             }
                         }
                         Err(_) => {
                             unsafe {
-                                (*future_ptr).status = FutureStatus::Failed;
-                                if let Some(waker) = (*future_ptr).waker.take() {
+                                let f = future_val.as_future_mut();
+                                f.status = FutureStatus::Failed;
+                                future_val.write_barrier(&gc);
+                                if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
                             }
@@ -61,10 +62,11 @@ impl FFIFunction for StdHttpGet {
                     }
                 }
                 Err(_) => {
-                    let future_ptr = future_ptr_usize as *mut Future;
                     unsafe {
-                        (*future_ptr).status = FutureStatus::Failed;
-                        if let Some(waker) = (*future_ptr).waker.take() {
+                        let f = future_val.as_future_mut();
+                        f.status = FutureStatus::Failed;
+                        future_val.write_barrier(&gc);
+                        if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }
                     }
@@ -91,8 +93,6 @@ impl FFIFunction for StdHttpPost {
         let body_str = body_val.try_as_str().ok_or_else(|| NyarError::RuntimeError("Body must be a string".to_string()))?.to_string();
 
         let future_val = Value::future(&vm.gc);
-        let future_ptr_usize = unsafe { future_val.as_future_mut() as *mut Future as usize };
-
         let client = get_client().read().unwrap().clone();
         let gc = vm.gc.clone();
 
@@ -101,21 +101,24 @@ impl FFIFunction for StdHttpPost {
             match res {
                 Ok(resp) => {
                     let text_res = resp.text().await;
-                    let future_ptr = future_ptr_usize as *mut Future;
                     match text_res {
                         Ok(t) => {
                             unsafe {
-                                (*future_ptr).result = Value::string(t, &gc);
-                                (*future_ptr).status = FutureStatus::Ready;
-                                if let Some(waker) = (*future_ptr).waker.take() {
+                                let f = future_val.as_future_mut();
+                                f.result = Value::string(t, &gc);
+                                f.status = FutureStatus::Ready;
+                                future_val.write_barrier(&gc);
+                                if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
                             }
                         }
                         Err(_) => {
                             unsafe {
-                                (*future_ptr).status = FutureStatus::Failed;
-                                if let Some(waker) = (*future_ptr).waker.take() {
+                                let f = future_val.as_future_mut();
+                                f.status = FutureStatus::Failed;
+                                future_val.write_barrier(&gc);
+                                if let Some(waker) = f.waker.take() {
                                     waker.wake();
                                 }
                             }
@@ -123,10 +126,11 @@ impl FFIFunction for StdHttpPost {
                     }
                 }
                 Err(_) => {
-                    let future_ptr = future_ptr_usize as *mut Future;
                     unsafe {
-                        (*future_ptr).status = FutureStatus::Failed;
-                        if let Some(waker) = (*future_ptr).waker.take() {
+                        let f = future_val.as_future_mut();
+                        f.status = FutureStatus::Failed;
+                        future_val.write_barrier(&gc);
+                        if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }
                     }

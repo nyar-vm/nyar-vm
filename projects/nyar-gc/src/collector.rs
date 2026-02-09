@@ -52,6 +52,8 @@ pub struct NyarGc {
     pub global_roots: Mutex<Vec<SendPtr<dyn Trace>>>,
     /// Number of threads to use for parallel marking.
     pub marking_threads: usize,
+    /// Write barrier buffer for incremental GC.
+    pub write_barrier_buffer: Mutex<Vec<SendPtr<GcHeader>>>,
 }
 
 #[repr(transparent)]
@@ -309,6 +311,7 @@ impl NyarGc {
             marking_threads: std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(1),
+            write_barrier_buffer: Mutex::new(Vec::new()),
         }
     }
 
@@ -969,6 +972,18 @@ impl NyarGc {
         }
     }
 
+    /// Mark an object that was modified during the marking phase.
+    pub fn write_barrier_raw(&self, header_ptr: *mut GcHeader) {
+        if self.get_state() == GcState::Marking {
+            if !header_ptr.is_null() {
+                unsafe {
+                    let mut buffer = self.write_barrier_buffer.lock().unwrap();
+                    buffer.push(SendPtr(NonNull::new_unchecked(header_ptr)));
+                }
+            }
+        }
+    }
+
     pub unsafe fn reclaim_empty_blocks(&self) {
         let mut prev: *mut GcBlockHeader = std::ptr::null_mut();
         let mut curr = self.blocks_head.load(Ordering::Acquire);
@@ -980,6 +995,7 @@ impl NyarGc {
             // Reclaim block if it's full (cursor == BLOCK_SIZE) and has no live objects
             if header.cursor.load(Ordering::Relaxed) >= BLOCK_SIZE
                 && header.live_bytes.load(Ordering::Relaxed) == 0
+                && self.get_state() == GcState::Idle
             {
                 // Don't reclaim if it's the only block
                 if prev.is_null() && next.is_null() {
@@ -1073,31 +1089,53 @@ impl NyarGc {
                 let mut ctx = MarkContext {
                     mark_stack: &mut *mark_stack,
                 };
+
+                // Process write barrier buffer first
+                {
+                    let mut buffer = self.write_barrier_buffer.lock().unwrap();
+                    for ptr in buffer.drain(..) {
+                        unsafe { ctx.mark(ptr.0) };
+                    }
+                }
+
                 let mut work_done = 0;
                 while work_done < work_limit && !ctx.mark_stack.is_empty() {
                     self.process_mark_stack(&mut ctx);
                     work_done += 1;
                 }
                 if ctx.mark_stack.is_empty() {
-                    // Remark phase: re-scan roots one last time to catch changes during incremental marking
-                    mark_roots(&mut ctx);
-                    // Trace global roots
+                    // Re-check write barrier buffer
                     {
-                        let roots = self.global_roots.lock().unwrap();
-                        for root in roots.iter() {
-                            unsafe { root.as_ref().trace(&mut ctx) };
+                        let mut buffer = self.write_barrier_buffer.lock().unwrap();
+                        if !buffer.is_empty() {
+                            for ptr in buffer.drain(..) {
+                                unsafe { ctx.mark(ptr.0) };
+                            }
+                            self.process_mark_stack(&mut ctx);
                         }
                     }
-                    self.process_mark_stack(&mut ctx);
 
                     if ctx.mark_stack.is_empty() {
-                        self.set_state(GcState::Sweeping);
-                        // Mark all blocks as needing sweep for lazy/concurrent sweepers
-                        let mut block_curr = self.blocks_head.load(Ordering::Acquire);
-                        while !block_curr.is_null() {
-                            unsafe {
-                                (*block_curr).state.store(1, Ordering::Release);
-                                block_curr = (*block_curr).get_next();
+                        // Remark phase: re-scan roots one last time to catch changes during incremental marking
+                        mark_roots(&mut ctx);
+                        // Trace global roots
+                        {
+                            let roots = self.global_roots.lock().unwrap();
+                            for root in roots.iter() {
+                                unsafe { root.as_ref().trace(&mut ctx) };
+                            }
+                        }
+                        self.process_mark_stack(&mut ctx);
+
+                        if ctx.mark_stack.is_empty() {
+                            self.set_state(GcState::Sweeping);
+                            // Mark all blocks as needing sweep for lazy/concurrent sweepers
+                            let mut block_curr = self.blocks_head.load(Ordering::Acquire);
+                            while !block_curr.is_null() {
+                                unsafe {
+                                    (*block_curr).state.store(1, Ordering::Release);
+                                    block_curr = (*block_curr).get_next();
+                                }
                             }
                         }
                     }
