@@ -139,7 +139,7 @@ impl NyarTranslator {
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut items = Vec::new();
         // 处理特性的翻译（可选，取决于 Nyar 是否支持模块特性）
-        for attr in &ns.attributes {
+        for _attr in &ns.attributes {
             // items.push(self.translate_attribute(attr, ctx)?);
         }
         for item in &ns.items {
@@ -464,10 +464,10 @@ impl NyarTranslator {
         Ok(ctx.builder.export(&method.name, lambda, loc))
     }
 
-    fn translate_block(
+    fn translate_block<A: chomsky_uir::Analysis<IKun>>(
         &self,
         statements: &[Statement],
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut stmts = Vec::new();
         for stmt in statements {
@@ -476,10 +476,10 @@ impl NyarTranslator {
         Ok(ctx.builder.block(stmts, Loc::unknown()))
     }
 
-    fn translate_stmt(
+    fn translate_stmt<A: chomsky_uir::Analysis<IKun>>(
         &self,
         stmt: &Statement,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         match stmt {
@@ -565,10 +565,10 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_expr(
+    fn translate_expr<A: chomsky_uir::Analysis<IKun>>(
         &self,
         expr: &Expression,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         match expr {
@@ -641,10 +641,10 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_query(
+    fn translate_query<A: chomsky_uir::Analysis<IKun>>(
         &self,
         query: &QueryExpression,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         // LINQ 翻译通常将其转换为方法链调用

@@ -37,4 +37,4 @@ package = "nyar:rusty0-typescript"
 target = { path = "wit", world = "compiler" }
 
 [dev-dependencies]
-chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }
+chomsky-emit = { workspace = true }

@@ -170,7 +170,8 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
         Self { builder, source_id }
     }
 
-    fn to_loc(&self, range: Range<usize>) -> Loc {
+    fn to_loc(&self, range: impl Into<std::ops::Range<usize>>) -> Loc {
+        let range = range.into();
         Loc::new(self.source_id, range.start as u32, range.end as u32)
     }
 
@@ -187,9 +188,9 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
         match stmt {
             ast::Statement::VariableDeclaration(var) => {
                 if var.is_declare {
-                    return self.builder.constant(0, self.to_loc(var.span.into()));
+                    return self.builder.constant(0, self.to_loc(var.span));
                 }
-                let loc = self.to_loc(var.span.into());
+                let loc = self.to_loc(var.span);
                 let value = if let Some(expr) = var.value {
                     self.convert_expression(expr)
                 } else {
@@ -797,83 +798,103 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                 }
                 self.builder.extension("yield", args, loc)
             }
-            ast::ExpressionKind::JsxElement(elem) => {
-                self.convert_jsx_element(*elem, loc)
-            }
-            ast::ExpressionKind::JsxFragment(fragment) => {
-                self.convert_jsx_fragment(*fragment, loc)
-            }
+            ast::ExpressionKind::JsxElement(elem) => self.convert_jsx_element(*elem, loc),
+            ast::ExpressionKind::JsxFragment(fragment) => self.convert_jsx_fragment(*fragment, loc),
             ast::ExpressionKind::JsxSelfClosingElement(element) => {
                 self.convert_jsx_self_closing_element(*element, loc)
             }
-
-                let mut attr_ids = Vec::new();
-                for attr_or_spread in elem.opening_element.attributes {
-                    match attr_or_spread {
-                        ast::JsxAttributeOrSpread::Attribute(attr) => {
-                            let attr_loc = self.to_loc(attr.span.into());
-                            let name = self.builder.string(&attr.name, attr_loc.clone());
-                            let value = if let Some(val) = attr.value {
-                                self.convert_jsx_attribute_value(val)
-                            } else {
-                                self.builder.bool(true, attr_loc.clone())
-                            };
-                            attr_ids.push(self.builder.extension("jsx_attr", vec![name, value], attr_loc));
-                        }
-                        ast::JsxAttributeOrSpread::Spread(expr) => {
-                            let spread_id = self.convert_expression(expr);
-                            attr_ids.push(self.builder.extension("jsx_spread_attr", vec![spread_id], Loc::default()));
-                        }
-                    }
-                }
-                args.push(self.builder.seq(attr_ids, loc.clone()));
-
-                let mut child_ids = Vec::new();
-                for child in elem.children {
-                    child_ids.push(self.convert_jsx_child(child));
-                }
-                args.push(self.builder.seq(child_ids, loc.clone()));
-
-                self.builder.extension("jsx_element", args, loc)
-            }
-            ast::Expression::JsxSelfClosingElement(elem) => {
-                let loc = self.to_loc(elem.span.into());
-                let mut args = vec![self.convert_jsx_tag_name(elem.name, loc.clone())];
-
-                let mut attr_ids = Vec::new();
-                for attr_or_spread in elem.attributes {
-                    match attr_or_spread {
-                        ast::JsxAttributeOrSpread::Attribute(attr) => {
-                            let attr_loc = self.to_loc(attr.span.into());
-                            let name = self.builder.string(&attr.name, attr_loc.clone());
-                            let value = if let Some(val) = attr.value {
-                                self.convert_jsx_attribute_value(val)
-                            } else {
-                                self.builder.bool(true, attr_loc.clone())
-                            };
-                            attr_ids.push(self.builder.extension("jsx_attr", vec![name, value], attr_loc));
-                        }
-                        ast::JsxAttributeOrSpread::Spread(expr) => {
-                            let spread_id = self.convert_expression(expr);
-                            attr_ids.push(self.builder.extension("jsx_spread_attr", vec![spread_id], Loc::default()));
-                        }
-                    }
-                }
-                args.push(self.builder.seq(attr_ids, loc.clone()));
-                args.push(self.builder.seq(vec![], loc.clone())); // No children
-
-                self.builder.extension("jsx_element", args, loc)
-            }
-            ast::Expression::JsxFragment(frag) => {
-                let mut child_ids = Vec::new();
-                for child in frag.children {
-                    child_ids.push(self.convert_jsx_child(child));
-                }
-                let seq = self.builder.seq(child_ids, Loc::default());
-                self.builder.extension("jsx_fragment", vec![seq], Loc::default())
-            }
-            _ => self.builder.constant(0, Loc::default()),
+            _ => self.builder.constant(0, loc),
         }
+    }
+
+    fn convert_jsx_element(&mut self, elem: ast::JsxElement, loc: Loc) -> Id {
+        let mut args = vec![self.convert_jsx_tag_name(elem.opening_element.name, loc.clone())];
+
+        let mut attr_ids = Vec::new();
+        for attr_or_spread in elem.opening_element.attributes {
+            match attr_or_spread {
+                ast::JsxAttributeOrSpread::Attribute(attr) => {
+                    let attr_loc = self.to_loc(attr.span.into());
+                    let name = self.builder.string(&attr.name, attr_loc.clone());
+                    let value = if let Some(val) = attr.value {
+                        self.convert_jsx_attribute_value(val)
+                    } else {
+                        self.builder.bool(true, attr_loc.clone())
+                    };
+                    attr_ids.push(self.builder.extension(
+                        "jsx_attr",
+                        vec![name, value],
+                        attr_loc,
+                    ));
+                }
+                ast::JsxAttributeOrSpread::Spread(expr) => {
+                    let spread_id = self.convert_expression(expr);
+                    attr_ids.push(self.builder.extension(
+                        "jsx_spread_attr",
+                        vec![spread_id],
+                        Loc::default(),
+                    ));
+                }
+            }
+        }
+        args.push(self.builder.seq(attr_ids, loc.clone()));
+
+        let mut child_ids = Vec::new();
+        for child in elem.children {
+            child_ids.push(self.convert_jsx_child(child));
+        }
+        args.push(self.builder.seq(child_ids, loc.clone()));
+
+        self.builder.extension("jsx_element", args, loc)
+    }
+
+    fn convert_jsx_fragment(&mut self, frag: ast::JsxFragment, _loc: Loc) -> Id {
+        let mut child_ids = Vec::new();
+        for child in frag.children {
+            child_ids.push(self.convert_jsx_child(child));
+        }
+        let seq = self.builder.seq(child_ids, Loc::default());
+        self.builder.extension("jsx_fragment", vec![seq], Loc::default())
+    }
+
+    fn convert_jsx_self_closing_element(
+        &mut self,
+        elem: ast::JsxSelfClosingElement,
+        loc: Loc,
+    ) -> Id {
+        let mut args = vec![self.convert_jsx_tag_name(elem.name, loc.clone())];
+
+        let mut attr_ids = Vec::new();
+        for attr_or_spread in elem.attributes {
+            match attr_or_spread {
+                ast::JsxAttributeOrSpread::Attribute(attr) => {
+                    let attr_loc = self.to_loc(attr.span.into());
+                    let name = self.builder.string(&attr.name, attr_loc.clone());
+                    let value = if let Some(val) = attr.value {
+                        self.convert_jsx_attribute_value(val)
+                    } else {
+                        self.builder.bool(true, attr_loc.clone())
+                    };
+                    attr_ids.push(self.builder.extension(
+                        "jsx_attr",
+                        vec![name, value],
+                        attr_loc,
+                    ));
+                }
+                ast::JsxAttributeOrSpread::Spread(expr) => {
+                    let spread_id = self.convert_expression(expr);
+                    attr_ids.push(self.builder.extension(
+                        "jsx_spread_attr",
+                        vec![spread_id],
+                        Loc::default(),
+                    ));
+                }
+            }
+        }
+        args.push(self.builder.seq(attr_ids, loc.clone()));
+        args.push(self.builder.seq(vec![], loc.clone())); // No children
+
+        self.builder.extension("jsx_element", args, loc)
     }
 
     fn convert_jsx_tag_name(&mut self, name: ast::JsxTagName, loc: Loc) -> Id {
@@ -897,8 +918,14 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     self.builder.constant(0, Loc::default())
                 }
             }
-            ast::JsxAttributeValue::Element(elem) => self.convert_expression(ast::Expression::JsxElement(elem)),
-            ast::JsxAttributeValue::Fragment(frag) => self.convert_expression(ast::Expression::JsxFragment(frag)),
+            ast::JsxAttributeValue::Element(elem) => {
+                let loc = self.to_loc(elem.span.clone().into());
+                self.convert_jsx_element(*elem, loc)
+            }
+            ast::JsxAttributeValue::Fragment(frag) => {
+                let loc = self.to_loc(frag.span.clone().into());
+                self.convert_jsx_fragment(*frag, loc)
+            }
         }
     }
 
@@ -912,9 +939,18 @@ impl<'a, A: Analysis<IKun>> UirConverter<'a, A> {
                     self.builder.constant(0, Loc::default())
                 }
             }
-            ast::JsxChild::JsxElement(elem) => self.convert_expression(ast::Expression::JsxElement(elem)),
-            ast::JsxChild::JsxSelfClosingElement(elem) => self.convert_expression(ast::Expression::JsxSelfClosingElement(elem)),
-            ast::JsxChild::JsxFragment(frag) => self.convert_expression(ast::Expression::JsxFragment(frag)),
+            ast::JsxChild::JsxElement(elem) => {
+                let loc = self.to_loc(elem.span.clone().into());
+                self.convert_jsx_element(*elem, loc)
+            }
+            ast::JsxChild::JsxSelfClosingElement(elem) => {
+                let loc = self.to_loc(elem.span.clone().into());
+                self.convert_jsx_self_closing_element(*elem, loc)
+            }
+            ast::JsxChild::JsxFragment(frag) => {
+                let loc = self.to_loc(frag.span.clone().into());
+                self.convert_jsx_fragment(*frag, loc)
+            }
         }
     }
 
