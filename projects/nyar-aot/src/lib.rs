@@ -1,5 +1,5 @@
 use chomsky::optimizer::UniversalOptimizer;
-use chomsky_extract::{Backend, BackendArtifact, IKunTree};
+use chomsky_extract::{Backend, BackendArtifact};
 use chomsky_uir::IKun;
 // use chomsky_cost::CostModel;
 use gaia_types::helpers::Architecture;

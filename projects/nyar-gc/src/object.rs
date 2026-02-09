@@ -327,6 +327,18 @@ impl<T: Trace + 'static> std::ops::Deref for Gc<T> {
     }
 }
 
+impl<T: Trace + 'static> AsRef<T> for Gc<T> {
+    fn as_ref(&self) -> &T {
+        unsafe { &self.ptr.as_ref().data }
+    }
+}
+
+impl<T: Trace + 'static> AsMut<T> for Gc<T> {
+    fn as_mut(&mut self) -> &mut T {
+        unsafe { &mut self.ptr.as_mut().data }
+    }
+}
+
 impl<T: Trace + 'static> Trace for Gc<T> {
     fn trace(&self, ctx: &mut MarkContext) {
         unsafe {

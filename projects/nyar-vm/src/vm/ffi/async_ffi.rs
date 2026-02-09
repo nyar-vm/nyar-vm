@@ -3,7 +3,6 @@ use crate::vm::value::{Value, Future, FutureStatus};
 use crate::vm::ffi::{FFIFunction, FFIResult, FFISignature, FFIType};
 use nyar_gc::Root;
 use std::time::Duration;
-use nyar_types::NyarError;
 
 pub struct AsyncDelay;
 impl FFIFunction for AsyncDelay {
