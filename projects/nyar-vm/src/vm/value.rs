@@ -983,9 +983,7 @@ impl Upvalue {
         if val.is_gc_ptr() {
             crate::vm::core::CURRENT_GC.with(|curr| {
                 if let Some(gc) = &*curr.borrow() {
-                    unsafe {
-                        gc.write_barrier_raw(val.payload() as *mut GcHeader);
-                    }
+                    gc.write_barrier_raw(val.payload() as *mut GcHeader);
                 }
             });
         }

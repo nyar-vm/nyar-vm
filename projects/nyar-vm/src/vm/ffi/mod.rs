@@ -160,7 +160,7 @@ pub struct NativeGcStats;
 impl FFIFunction for NativeGcStats {
     fn call(&self, vm: &mut NyarVM, _args: Vec<Value>) -> FFIResult {
         let stats = Value::dyn_object(&vm.gc);
-        if let Some(mut obj) = stats.try_as_dyn_object_mut() {
+        if let Some(obj) = stats.try_as_dyn_object_mut() {
             obj.entries.insert(
                 "allocated_bytes".to_string(),
                 Value::int(vm.gc.allocated_bytes() as i64),

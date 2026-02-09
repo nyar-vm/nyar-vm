@@ -70,11 +70,9 @@ impl FFIFunction for AsyncTimeout {
                     }
                     _ = async {
                         loop {
-                            unsafe {
-                                let f = target_root.as_gc();
-                                if (&*f).status != FutureStatus::Pending {
-                                    return (&*f).status;
-                                }
+                            let f = target_root.as_gc();
+                            if (&*f).status != FutureStatus::Pending {
+                                return (&*f).status;
                             }
                             tokio::task::yield_now().await;
                         }
@@ -127,6 +125,7 @@ impl FFIFunction for AsyncAwait {
                         unsafe {
                             let future_mut = val.as_future_mut();
                             future_mut.waker = vm.current_waker.clone();
+                            val.write_barrier(&vm.gc);
                         }
                         return Err(vm.error(nyar_types::VmErrorKind::YieldAsync));
                     }
@@ -179,6 +178,7 @@ impl FFIFunction for AsyncSpawn {
                  unsafe {
                     let f = future_clone.as_future_mut();
                     f.status = FutureStatus::Failed;
+                    future_clone.write_barrier(&gc_clone);
                     if let Some(waker) = f.waker.take() {
                         waker.wake();
                     }
@@ -209,6 +209,7 @@ impl FFIFunction for AsyncSpawn {
                         let f = future_clone.as_future_mut();
                         f.status = FutureStatus::Ready;
                         f.result = res;
+                        future_clone.write_barrier(&gc_clone);
                         if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }
@@ -218,6 +219,7 @@ impl FFIFunction for AsyncSpawn {
                     unsafe {
                         let f = future_clone.as_future_mut();
                         f.status = FutureStatus::Failed;
+                        future_clone.write_barrier(&gc_clone);
                         if let Some(waker) = f.waker.take() {
                             waker.wake();
                         }
@@ -317,7 +319,7 @@ impl FFIFunction for AsyncWaitAny {
                         let target_root = &roots[idx];
                         let target_f = target_root.as_gc();
                         f.status = status;
-                        f.result = target_f.as_ref().result;
+                        f.result = (&*target_f).result;
                         root.as_gc().write_barrier(&gc);
                         if let Some(waker) = f.waker.take() {
                             waker.wake();
