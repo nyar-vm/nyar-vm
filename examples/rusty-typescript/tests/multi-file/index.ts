@@ -1,4 +1,4 @@
-import { add, multiply } from "./math";
+import { add, multiply } from './math';
 
 export function main() {
     let x = 10;
@@ -9,6 +9,6 @@ export function main() {
 }
 
 let result = main();
-// In our mini-ts, we might not have console.log yet, 
+// In our mini-ts, we might not have console.log yet,
 // but let's assume top-level code is executed.
-result; 
+result;

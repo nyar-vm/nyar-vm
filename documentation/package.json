@@ -10,12 +10,7 @@
         "preview": "vitepress preview .",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
-    "keywords": [
-        "valkyrie",
-        "documentation",
-        "functional-programming",
-        "algebraic-effects"
-    ],
+    "keywords": ["valkyrie", "documentation", "functional-programming", "algebraic-effects"],
     "author": "Valkyrie Team",
     "license": "MIT",
     "devDependencies": {

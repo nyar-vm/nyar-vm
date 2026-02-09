@@ -1,12 +1,12 @@
 {
-  "name": "@nyar-vm/nyar-darwin-arm64",
-  "version": "0.1.0",
-  "description": "Darwin arm64 binary for Nyar",
-  "os": ["darwin"],
-  "cpu": ["arm64"],
-  "license": "MIT",
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  }
+    "name": "@nyar-vm/nyar-darwin-arm64",
+    "version": "0.1.0",
+    "description": "Darwin arm64 binary for Nyar",
+    "os": ["darwin"],
+    "cpu": ["arm64"],
+    "license": "MIT",
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    }
 }

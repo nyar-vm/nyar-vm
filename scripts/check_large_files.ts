@@ -15,7 +15,7 @@ function getRsFiles(dir: string, fileList: string[] = []): string[] {
         for (const file of files) {
             const filePath = path.join(dir, file);
             if (IGNORE_DIRS.includes(file)) continue;
-            
+
             const stat = fs.statSync(filePath);
             if (stat.isDirectory()) {
                 getRsFiles(filePath, fileList);
@@ -40,15 +40,19 @@ function analyzeFile(filePath: string) {
         console.log(`Path: ${relativePath}`);
         console.log(`Lines: ${lineCount}`);
         console.log(`\x1b[36mRefactoring Suggestions:\x1b[0m`);
-        
+
         // 基础建议
-        console.log(`- Consider splitting this file into multiple sub-modules (e.g., move logic to a sub-directory with mod.rs).`);
-        
+        console.log(
+            `- Consider splitting this file into multiple sub-modules (e.g., move logic to a sub-directory with mod.rs).`,
+        );
+
         // 检查 impl 块
         const implMatches = content.match(/impl\s+[\w<>, ]+\s+for\s+[\w<>, ]+\s*\{/g) || [];
         const structImplMatches = content.match(/impl\s+[\w<>, ]+\s*\{/g) || [];
         if (implMatches.length + structImplMatches.length > 3) {
-            console.log(`- Found ${implMatches.length + structImplMatches.length} 'impl' blocks. Consider extracting each major 'impl' into its own file.`);
+            console.log(
+                `- Found ${implMatches.length + structImplMatches.length} 'impl' blocks. Consider extracting each major 'impl' into its own file.`,
+            );
         }
 
         // 检查函数长度
@@ -69,12 +73,16 @@ function analyzeFile(filePath: string) {
             }
         }
         if (maxFuncLines > 100) {
-            console.log(`- Detected functions with over ${maxFuncLines} lines. Break down complex functions into smaller, reusable helpers.`);
+            console.log(
+                `- Detected functions with over ${maxFuncLines} lines. Break down complex functions into smaller, reusable helpers.`,
+            );
         }
 
         // 检查宏使用
         if (content.includes('macro_rules!')) {
-            console.log(`- Contains macro definitions. If macros are large, move them to a dedicated 'macros.rs' file.`);
+            console.log(
+                `- Contains macro definitions. If macros are large, move them to a dedicated 'macros.rs' file.`,
+            );
         }
 
         console.log(`--------------------------------------------------\n`);
@@ -96,7 +104,7 @@ function main() {
     }
 
     if (largeFileCount === 0) {
-        console.log("\x1b[32mGreat! No files exceeding 1000 lines were found.\x1b[0m");
+        console.log('\x1b[32mGreat! No files exceeding 1000 lines were found.\x1b[0m');
     } else {
         console.log(`\x1b[1mTotal large files found: ${largeFileCount}\x1b[0m`);
     }

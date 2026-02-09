@@ -1,4 +1,4 @@
 {
-  "name": "multi-file-test",
-  "main": "main.ts"
+    "name": "multi-file-test",
+    "main": "main.ts"
 }

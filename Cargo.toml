@@ -53,6 +53,8 @@ oak-fortran = { path = "../oaks/examples/oak-fortran" }
 oak-nim = { path = "../oaks/examples/oak-nim" }
 oak-mojo = { path = "../oaks/examples/oak-mojo" }
 oak-prolog = { path = "../oaks/examples/oak-prolog" }
+oak-php = { path = "../oaks/examples/oak-php" }
+oak-tcl = { path = "../oaks/examples/oak-tcl" }
 oak-scheme = { path = "../oaks/examples/oak-scheme" }
 oak-swift = { path = "../oaks/examples/oak-swift" }
 oak-zig = { path = "../oaks/examples/oak-zig" }

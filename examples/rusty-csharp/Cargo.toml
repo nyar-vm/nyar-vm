@@ -8,18 +8,18 @@ name = "rusty_csharp"
 path = "src/lib.rs"
 
 [dependencies]
-chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
-chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
-chomsky-cost = { path = "../../../ProjectChomsky/packages/chomsky-cost" }
-chomsky-emit = { path = "../../../ProjectChomsky/packages/chomsky-emit" }
-oak-core = { path = "../../../oaks/projects/oak-core" }
-oak-java = { path = "../../../oaks/examples/oak-java" }
-oak-csharp = { path = "../../../oaks/examples/oak-csharp" }
-nyar-types = { path = "../../projects/nyar-types" }
-nyar-vm = { path = "../../projects/nyar-vm" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-toml = "0.8"
-clap = { version = "4.5", features = ["derive"] }
-tempfile = "3.10"
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-extract = { workspace = true }
+chomsky-cost = { workspace = true }
+chomsky-emit = { workspace = true }
+oak-core = { workspace = true }
+oak-java = { workspace = true }
+oak-csharp = { workspace = true }
+nyar-types = { workspace = true }
+nyar-vm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+clap = { workspace = true }
+tempfile = { workspace = true }

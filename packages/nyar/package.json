@@ -9,9 +9,11 @@
         "directory": "packages/nyar"
     },
     "type": "module",
+    "main": "./dist/index.js",
     "bin": {
-        "nyar": "nyar.js"
+        "nyar": "./bin/nyar.js"
     },
+    "files": ["bin", "dist"],
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"

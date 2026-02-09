@@ -3,5 +3,5 @@ export function add(a: number, b: number): number {
 }
 
 export function greet(name: string): string {
-    return "Hello, " + name;
+    return 'Hello, ' + name;
 }
