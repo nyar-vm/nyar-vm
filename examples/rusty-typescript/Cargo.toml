@@ -8,14 +8,6 @@ name = "rusty_typescript"
 path = "src/lib.rs"
 crate-type = ["lib", "cdylib"]
 
-[[bin]]
-name = "tsc"
-path = "bin/tsc.rs"
-
-[[bin]]
-name = "tsx"
-path = "bin/tsx.rs"
-
 [dependencies]
 chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }

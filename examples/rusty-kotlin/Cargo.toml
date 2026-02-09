@@ -15,15 +15,3 @@ serde = { version = "1.0", features = ["derive"] }
 
 [lib]
 path = "src/lib.rs"
-
-[[bin]]
-name = "rusty-kotlin"
-path = "src/main.rs"
-
-[[bin]]
-name = "kotlin"
-path = "bin/kotlin.rs"
-
-[[bin]]
-name = "kotlinc"
-path = "bin/kotlinc.rs"

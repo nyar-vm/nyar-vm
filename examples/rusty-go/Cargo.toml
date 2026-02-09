@@ -17,11 +17,3 @@ clap = { version = "4.5", features = ["derive"] }
 
 [lib]
 path = "src/lib.rs"
-
-[[bin]]
-name = "rusty-go"
-path = "src/main.rs"
-
-[[bin]]
-name = "debug-tokens"
-path = "src/debug_tokens.rs"

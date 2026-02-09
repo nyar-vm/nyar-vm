@@ -7,14 +7,6 @@ edition = "2021"
 name = "rusty_csharp"
 path = "src/lib.rs"
 
-[[bin]]
-name = "csc"
-path = "bin/csc.rs"
-
-[[bin]]
-name = "csx"
-path = "bin/csharp.rs"
-
 [dependencies]
 chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }

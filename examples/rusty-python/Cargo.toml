@@ -7,10 +7,6 @@ edition = "2021"
 name = "rusty_python"
 path = "src/lib.rs"
 
-[[bin]]
-name = "rusty-python"
-path = "src/main.rs"
-
 [dependencies]
 chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
 chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
