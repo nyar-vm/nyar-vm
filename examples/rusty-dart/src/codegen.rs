@@ -36,13 +36,13 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<IKun>> UirConverter<'a, 'b, V, A> 
             Item::Function(func) => {
                 let name = &func.name.name;
                 // Basic function representation
-                let body = self.ctx.builder().seq(vec![]);
-                Some(self.ctx.builder().export(name, body))
+                let body = self.ctx.builder().seq(vec![], loc.clone());
+                Some(self.ctx.builder().export(name, body, loc))
             }
             Item::Variable(var) => {
                 let name = &var.name.name;
                 let mangled = self.ctx.scopes.declare_variable(name);
-                let value = self.ctx.builder().constant(0); // Default value for now
+                let value = self.ctx.builder().constant(0, loc.clone()); // Default value for now
                 Some(self.ctx.builder().assign(&mangled, value, loc))
             }
         }

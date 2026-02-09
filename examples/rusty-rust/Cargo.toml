@@ -10,11 +10,13 @@ nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
 nyar-aot = { workspace = true }
 oak-core = { workspace = true }
+oak-vfs = { workspace = true }
 oak-rust = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
+chomsky-types = { workspace = true }
 gaia-assembler = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }

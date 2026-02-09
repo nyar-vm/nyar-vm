@@ -80,11 +80,11 @@ impl RustyCRuntime {
         let module_idx = self.vm.load_module(module);
 
         // Find main or first export
-        if let Some(export) = self.vm.modules[module_idx]
+        if let Some(export) = self.vm.env.modules[module_idx]
             .exports
             .iter()
             .find(|e| e.symbol == "main".into())
-            .or(self.vm.modules[module_idx].exports.first())
+            .or(self.vm.env.modules[module_idx].exports.first())
         {
             match self.vm.execute(module_idx, export.chunk_idx as usize) {
                 Ok(val) => {

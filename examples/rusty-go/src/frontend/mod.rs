@@ -87,10 +87,9 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
     fn convert_type(&mut self, t: &ast::TypeDecl) -> Id {
         let loc = self.to_loc(t.span.clone().into());
         // 注册类型定义，支持接口和结构体
-        self.ctx.builder().extension("type_decl", vec![
-            self.ctx.builder().symbol(&t.name, loc.clone()),
-            self.ctx.builder().symbol(&t.definition, loc.clone()),
-        ], loc)
+        let name_id = self.ctx.builder().symbol(&t.name, loc.clone());
+        let def_id = self.ctx.builder().symbol(&t.definition, loc.clone());
+        self.ctx.builder().extension("type_decl", vec![name_id, def_id], loc)
     }
 
     fn convert_variable(&mut self, var: &ast::Variable) -> Id {

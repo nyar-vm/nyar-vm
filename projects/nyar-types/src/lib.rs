@@ -111,7 +111,7 @@ pub trait NyarFrontend: Default {
 }
 
 use std::collections::HashMap;
-use chomsky_uir::{EGraph, IKun, Id, IntentBuilder};
+pub use chomsky_uir::{EGraph, IKun, Id, IntentBuilder};
 pub use oak_vfs::Vfs;
 pub use chomsky_types::Loc;
 

@@ -1,5 +1,4 @@
 #[cfg(feature = "wasi")]
-#[cfg(feature = "wasi")]
 use wasi;
 use crate::vm::platform::NyarPlatform;
 use nyar_types::NyarError;

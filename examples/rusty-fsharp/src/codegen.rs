@@ -105,7 +105,7 @@ impl NyarTranslator {
 
     fn translate_binding<A: chomsky_uir::Analysis<IKun>>(
         &self,
-        b: &Binding,
+        _b: &Binding,
         ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         // Placeholder for let binding

@@ -1,44 +1,45 @@
 # rusty-lua
 
-A Lua-like language frontend for the Nyar virtual machine.
+A Lua language frontend for the Nyar virtual machine.
 
 ## Overview
 
-This project implements a compiler frontend for a subset of the Lua language, designed to verify Nyar's support for dynamic language features and its ability to generate Gaia-compliant instructions.
+`rusty-lua` is a high-performance Lua frontend for the Nyar virtual machine. It provides full lexical and syntactic analysis of Lua source code and translates it into Gaia IR. By targeting the Nyar VM, Lua scripts can benefit from advanced features like algebraic effects and multi-tier JIT compilation.
 
 ## Features
 
-### Language Features
-- **Basic Types**: Numbers, strings, booleans, and nil.
-- **Tables**: Support for Lua's core data structure.
-- **Functions**: Function definitions, anonymous functions, and closures.
-- **Control Flow**: `if-then-else`, `for`, `while`, and `repeat-until` loops.
-- **Local Variables**: Support for the `local` keyword.
+- **Lua 5.4 Compatibility**: Aims for high compatibility with the latest Lua specifications.
+- **Fast Execution**: Translates Lua's register-based conceptual model into Nyar's stack-based execution, optimized by `nyar-jit`.
+- **First-Class Closures**: Full support for Lua's powerful closure and upvalue system.
+- **Table Support**: Efficient implementation of Lua tables using the VM's native object and dictionary support.
+- **Coroutine Support**: Implements Lua coroutines using Nyar VM's native algebraic effects and delimited continuations.
+- **Metatable System**: Integrated with the VM's virtual call and dynamic dispatch mechanisms.
 
-### Compiler Features
-- Generates Gaia Intermediate Representation (Gaia IR).
-- Supports AST and Token stream dumping for debugging.
+## Supported Constructs
+
+- **All standard Lua statements**: `if`, `while`, `repeat`, `for` (numeric and generic).
+- **Functional Features**: Anonymous functions, multiple return values, proper tail calls.
+- **Table Operations**: Literal construction, indexing, and iteration.
+- **Environment Management**: Global (`_G`) and local variable management.
 
 ## Getting Started
 
-### Usage
-```bash
-# View Abstract Syntax Tree
-cargo run -- <input.lua> --ast
+### Usage via Nyar CLI
 
-# Generate Gaia instructions
-cargo run -- <input.lua> --gaia
+```bash
+nyar run script.lua
 ```
 
-### Options
-- `--ast`: Output the Abstract Syntax Tree.
-- `--tokens`: Output the lexer token stream.
-- `--gaia`: Output Gaia instructions.
-- `--gaia-json`: Output Gaia instructions in JSON format.
+### Usage as a Library
 
-## Project Structure
-- `src/lib.rs`: Core implementation of the Mini Lua frontend.
-- `src/codegen.rs`: Gaia instruction generator.
+```rust
+use rusty_lua::RustyLuaFrontend;
+use nyar_types::NyarFrontend;
+
+let frontend = RustyLuaFrontend::new();
+let ast = frontend.parse("print('Hello from Lua on Nyar!')").unwrap();
+// Lower and execute via NyarVM
+```
 
 ## License
 

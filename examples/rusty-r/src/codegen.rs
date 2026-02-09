@@ -1,55 +1,33 @@
-//! R 代码生成实现
-
-use chomsky_uir::{EGraph, IKun, IntentBuilder};
-use nyar_types::{Loc, NyarError};
-use oak_r::ast::*;
+use chomsky_types::Loc;
+use chomsky_uir::egraph::Id;
+use chomsky_uir::intent::IKun;
+use nyar_types::NyarError;
+use oak_r::ast::{Expr, RRoot, Statement};
 use oak_r::kind::RSyntaxKind;
 
-/// R 翻译器上下文
-pub struct TranslatorContext<'a, A: chomsky_uir::Analysis<IKun> = ()> {
-    pub builder: IntentBuilder<'a, A>,
+pub struct TranslatorContext<'a, A: chomsky_uir::Analysis<IKun>> {
+    pub builder: chomsky_uir::builder::IntentBuilder<'a, A>,
 }
 
 impl<'a, A: chomsky_uir::Analysis<IKun>> TranslatorContext<'a, A> {
-    pub fn new(egraph: &'a mut EGraph<IKun, A>) -> Self {
-        Self {
-            builder: IntentBuilder::new(egraph),
-        }
-    }
-
-    pub fn new_with_builder(builder: IntentBuilder<'a, A>) -> Self {
+    pub fn new_with_builder(builder: chomsky_uir::builder::IntentBuilder<'a, A>) -> Self {
         Self { builder }
-    }
-
-    /// 解析内置函数映射
-    pub fn resolve_builtin(&mut self, method: &str, args: Vec<chomsky_uir::egraph::Id>, loc: Loc) -> Option<chomsky_uir::egraph::Id> {
-        match method {
-            "print" | "cat" => {
-                Some(self.builder.cross_lang_call("nyar", "std::io", "println", args, loc))
-            }
-            "sum" => {
-                Some(self.builder.cross_lang_call("nyar", "std::math", "sum", args, loc))
-            }
-            "mean" => {
-                Some(self.builder.cross_lang_call("nyar", "std::math", "mean", args, loc))
-            }
-            _ => None,
-        }
     }
 }
 
-pub struct NyarTranslator;
+#[derive(Default)]
+pub struct NyarTranslator {}
 
 impl NyarTranslator {
     pub fn new() -> Self {
-        Self
+        Self {}
     }
 
     pub fn translate_root<A: chomsky_uir::Analysis<IKun>>(
         &self,
         root: &RRoot,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
+    ) -> Result<Id, NyarError> {
         let mut items = Vec::new();
         for stmt in &root.statements {
             items.push(self.translate_statement(stmt, ctx)?);
@@ -61,24 +39,27 @@ impl NyarTranslator {
         &self,
         stmt: &Statement,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
-        let loc = Loc::unknown();
+    ) -> Result<Id, NyarError> {
         match stmt {
             Statement::Assignment { name, expr, .. } => {
                 let val_id = self.translate_expr(expr, ctx)?;
-                let sym_id = ctx.builder.symbol(&name.name, loc);
-                Ok(ctx.builder.state_update(sym_id, val_id))
+                Ok(ctx.builder.assign(&name.name, val_id, Loc::default()))
             }
             Statement::ExprStmt { expr, .. } => self.translate_expr(expr, ctx),
-            Statement::FunctionDef { name, params, body, .. } => {
-                let mut body_items = Vec::new();
+            Statement::FunctionDef {
+                name,
+                params,
+                body,
+                ..
+            } => {
+                let mut body_ids = Vec::new();
                 for s in body {
-                    body_items.push(self.translate_statement(s, ctx)?);
+                    body_ids.push(self.translate_statement(s, ctx)?);
                 }
-                let body_id = ctx.builder.seq(body_items);
-                let param_names = params.iter().map(|p| p.name.clone()).collect();
-                let lambda_id = ctx.builder.lambda(param_names, body_id);
-                Ok(ctx.builder.export(&name.name, lambda_id))
+                let body_id = ctx.builder.block(body_ids, Loc::default());
+                let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+                let lambda_id = ctx.builder.lambda(param_names, body_id, Loc::default());
+                Ok(ctx.builder.export(&name.name, lambda_id, Loc::default()))
             }
         }
     }
@@ -87,71 +68,72 @@ impl NyarTranslator {
         &self,
         expr: &Expr,
         ctx: &mut TranslatorContext<'_, A>,
-    ) -> Result<chomsky_uir::egraph::Id, NyarError> {
-        let loc = Loc::unknown();
+    ) -> Result<Id, NyarError> {
         match expr {
-            Expr::Ident(id) => Ok(ctx.builder.symbol(&id.name, loc)),
+            Expr::Ident(id) => Ok(ctx.builder.symbol(&id.name, Loc::default())),
             Expr::Literal { value, .. } => {
-                // 尝试解析为整数或浮点数
                 if let Ok(i) = value.parse::<i64>() {
-                    Ok(ctx.builder.constant(i))
+                    Ok(ctx.builder.constant(i, Loc::default()))
                 } else if let Ok(f) = value.parse::<f64>() {
-                    Ok(ctx.builder.float_constant(f.to_bits()))
+                    Ok(ctx.builder.float(f, Loc::default()))
                 } else {
-                    Ok(ctx.builder.string_constant(value))
+                    Ok(ctx.builder.string(value, Loc::default()))
                 }
             }
-            Expr::Bool { value, .. } => Ok(ctx.builder.boolean_constant(*value)),
-            Expr::Null { .. } => Ok(ctx.builder.symbol("NULL", loc)),
+            Expr::Bool { value, .. } => Ok(ctx.builder.bool(*value, Loc::default())),
+            Expr::Null { .. } => Ok(ctx.builder.symbol("null", Loc::default())),
             Expr::Call { callee, args, .. } => {
+                let callee_id = self.translate_expr(callee, ctx)?;
                 let mut arg_ids = Vec::new();
                 for arg in args {
                     arg_ids.push(self.translate_expr(arg, ctx)?);
                 }
-                
-                if let Expr::Ident(id) = &**callee {
-                    if let Some(builtin) = ctx.resolve_builtin(&id.name, arg_ids.clone(), loc) {
-                        return Ok(builtin);
+                // Handle built-in functions
+                if let Expr::Ident(id) = callee.as_ref() {
+                    match id.name.as_str() {
+                        "print" => {
+                            return Ok(ctx.builder.cross_lang_call(
+                                "nyar",
+                                "std",
+                                "print",
+                                arg_ids,
+                                Loc::default(),
+                            ));
+                        }
+                        _ => {}
                     }
                 }
-                
-                let callee_id = self.translate_expr(callee, ctx)?;
-                Ok(ctx.builder.apply(callee_id, arg_ids))
+                Ok(ctx.builder.call(callee_id, arg_ids, Loc::default()))
             }
-            Expr::Binary { left, op, right, .. } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
                 let l_id = self.translate_expr(left, ctx)?;
                 let r_id = self.translate_expr(right, ctx)?;
-                let op_str = match op {
-                    RSyntaxKind::Plus => "+",
-                    RSyntaxKind::Minus => "-",
-                    RSyntaxKind::Star => "*",
-                    RSyntaxKind::Slash => "/",
-                    RSyntaxKind::Caret => "^",
-                    RSyntaxKind::EqualEqual => "==",
-                    RSyntaxKind::NotEqual => "!=",
-                    RSyntaxKind::Less => "<",
-                    RSyntaxKind::Greater => ">",
-                    RSyntaxKind::LessEqual => "<=",
-                    RSyntaxKind::GreaterEqual => ">=",
-                    RSyntaxKind::And => "&",
-                    RSyntaxKind::Or => "|",
-                    RSyntaxKind::AndAnd => "&&",
-                    RSyntaxKind::OrOr => "||",
-                    _ => "unknown_op",
+                let op_name = match op {
+                    RSyntaxKind::Plus => "add",
+                    RSyntaxKind::Minus => "sub",
+                    RSyntaxKind::Star => "mul",
+                    RSyntaxKind::Slash => "div",
+                    RSyntaxKind::EqualEqual => "eq",
+                    RSyntaxKind::NotEqual => "ne",
+                    RSyntaxKind::Less => "lt",
+                    RSyntaxKind::LessEqual => "le",
+                    RSyntaxKind::Greater => "gt",
+                    RSyntaxKind::GreaterEqual => "ge",
+                    _ => "unknown",
                 };
-                let op_sym = ctx.builder.symbol(op_str, loc);
-                Ok(ctx.builder.apply(op_sym, vec![l_id, r_id]))
+                Ok(ctx.builder.binary_op(op_name, l_id, r_id, Loc::default()))
             }
             Expr::Unary { op, expr, .. } => {
                 let expr_id = self.translate_expr(expr, ctx)?;
-                let op_str = match op {
-                    RSyntaxKind::Minus => "-",
-                    RSyntaxKind::Plus => "+",
-                    RSyntaxKind::Not => "!",
-                    _ => "unknown_unary",
+                let op_name = match op {
+                    RSyntaxKind::Minus => "neg",
+                    RSyntaxKind::Plus => "pos",
+                    RSyntaxKind::Not => "not",
+                    _ => "unknown",
                 };
-                let op_sym = ctx.builder.symbol(op_str, loc);
-                Ok(ctx.builder.apply(op_sym, vec![expr_id]))
+                Ok(ctx.builder.extension(op_name, vec![expr_id], Loc::default()))
             }
         }
     }

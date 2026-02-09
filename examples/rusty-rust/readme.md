@@ -1,47 +1,45 @@
-# rusty-rust
+# rusty-rust (Mini Rust)
 
-A simplified Rust-style language frontend for the Nyar virtual machine.
+A Rust language frontend for the Nyar virtual machine.
 
 ## Overview
 
-This project implements a compiler for a simplified version of the Rust language. It is primarily used to verify Nyar's correctness when handling Rust-like syntax and compiling to managed environments such as the .NET CLR (Common Language Runtime).
+`rusty-rust` (also known as Mini Rust) is a compiler frontend that allows a subset of the Rust programming language to be executed on the Nyar virtual machine. It provides a robust parsing and lowering pipeline that transforms Rust source code into Gaia IR, benefiting from Nyar's advanced runtime optimizations.
 
 ## Features
 
-### Language Features
-- **Variable Management**: `let` declarations with support for mutability (`mut`).
-- **Data Structures**: `struct` definitions, instantiation, and array literals.
-- **Control Flow**: `if-else`, `while`, and range-based `for` loops (`for i in 0..10`).
-- **Expressions**: 
-  - Basic arithmetic and logical operations.
-  - Function, method, and macro calls (e.g., `println!`).
-  - Field and index access.
-- **Type System**: Built-in types including `i32`, `i64`, `f32`, `f64`, `string`, and `bool`.
+- **Safe subset of Rust**: Supports core Rust features including ownership concepts, pattern matching, and traits.
+- **Advanced AOT Compilation**: Utilizes `nyar-aot` and E-Graph optimization to generate highly optimized bytecode modules.
+- **Type-Safe Lowering**: Leverages `chomsky-uir` for constraint analysis during the lowering process.
+- **Algebraic Effects Integration**: Maps Rust's future/async system to Nyar's native algebraic effects.
+- **Zero-Cost Abstractions**: Aims to maintain Rust's promise of high performance even when running on a virtual machine.
 
-### Compilation Targets
-Supports multiple targets via the `--target` flag:
-- `il`: .NET IL (Intermediate Language)
-- `clr`: .NET CLR binary
-- `jvm`: Java Virtual Machine bytecode
-- `pe`: Windows Portable Executable
-- `wasi`: WebAssembly System Interface
+## Supported Constructs
+
+- **Core Syntax**: `let` bindings, `fn` definitions, `struct`, `enum`, `impl`.
+- **Control Flow**: `if`, `loop`, `while`, `for`, `match`.
+- **Ownership**: Support for references and basic borrow checking logic during compilation.
+- **Traits**: Implementation of trait-based polymorphism via Nyar's witness tables.
+- **Macros**: Support for basic declarative macros.
 
 ## Getting Started
 
-### Usage
+### Usage via Nyar CLI
+
 ```bash
-# Compile Mini Rust source file
-cargo run -- <input.vrs> --target clr
+nyar run main.rs
 ```
 
-### CLI Arguments
-- `-t, --target <TARGET>`: Compilation target (default: `all`).
-- `-o, --output <DIR>`: Output directory (default: `target`).
-- `-v, --verbose`: Enable verbose logging.
+### Usage as a Library
 
-## Project Structure
-- `src/ast/`: AST definitions and type conversion logic.
-- `src/codegen/`: Code generator mapping AST to Gaia or target-specific instructions.
+```rust
+use rusty_rust::MiniRustFrontend;
+use nyar_types::NyarFrontend;
+
+let frontend = MiniRustFrontend::new();
+let ast = frontend.parse("fn main() { println!(\"Hello from Rust!\"); }").unwrap();
+// Lower and execute via NyarVM
+```
 
 ## License
 

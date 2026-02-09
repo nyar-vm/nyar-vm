@@ -4,7 +4,7 @@
 
 pub mod codegen;
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarError, NyarFrontend};
 use oak_core::{source::SourceText, Builder};
 use oak_fsharp::{FSharpLanguage};
 

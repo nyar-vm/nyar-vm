@@ -8,7 +8,8 @@ pub mod converter;
 use chomsky_extract::Backend;
 use chomsky_uir::ConstraintAnalysis;
 use chomsky_uir::IntentBuilder;
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{IKunTree, NyarError, NyarFrontend, NyarContext, Id};
+use oak_vfs::Vfs;
 use oak_core::source::SourceText;
 use oak_core::Builder;
 use oak_rust::{RustBuilder, RustLanguage, RustRoot};
@@ -42,7 +43,12 @@ impl NyarFrontend for MiniRustFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &RustRoot) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, ast: &RustRoot, ctx: &mut NyarContext<V>) -> Id {
+        let mut builder = ctx.builder();
+        converter::convert_root(ast, &mut builder)
+    }
+
+    fn lower<V: Vfs>(&self, _ast: &RustRoot, _vfs: &V) -> Result<IKunTree, NyarError> {
         let mut aot = nyar_aot::NyarAot::<ConstraintAnalysis>::new();
         let mut builder = chomsky_uir::IntentBuilder::new(&mut aot.optimizer.egraph);
         let id = converter::convert_root(_ast, &mut builder);

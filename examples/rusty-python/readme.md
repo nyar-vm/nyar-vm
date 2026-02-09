@@ -1,44 +1,49 @@
 # rusty-python
 
-A Python-like language frontend for the Nyar virtual machine.
+A Python language frontend for the Nyar virtual machine.
 
 ## Overview
 
-This project implements a compiler frontend for a subset of the Python language, designed to verify Nyar's support for dynamic language features and its ability to generate standard `.pyc` bytecode files.
+`rusty-python` is a compiler frontend that allows Python source code to be executed on the Nyar virtual machine. It leverages the `oak-python` parser to generate an Abstract Syntax Tree (AST), which is then lowered into Gaia Intermediate Representation (Gaia IR) for high-performance execution.
 
 ## Features
 
-### Language Features
-- **Object-Oriented**: Support for `class` definitions and inheritance.
-- **Functional Programming**: Support for `def` definitions and `lambda` expressions.
-- **Control Flow**: Full `if-elif-else`, `for-in`, and `while` loops, including `break`, `continue`, and `pass`.
-- **Exception Handling**: Support for `try-except-finally` blocks and `raise`.
-- **Advanced Syntax**: List, dictionary, and set comprehensions.
-- **Module System**: Support for `import` and `from ... import`.
-- **Context Management**: Support for `with` statements.
+- **Python 3 Compatibility**: Support for a significant subset of Python 3 syntax and features.
+- **Efficient Variable Scoping**: Correct handling of local, global, and nonlocal scopes.
+- **Object Model Mapping**: Maps Python's dynamic object model (attributes, methods) to the Nyar VM's object system.
+- **Nyar Integration**: Seamlessly compiles to Gaia IR, enabling JIT optimization via `nyar-jit`.
+- **Interoperability**: Ability to call functions and use objects defined in other Nyar-supported languages.
 
-### Compiler Features
-- Generates Gaia Intermediate Representation (Gaia IR).
-- **Core Feature**: Generates standard Python bytecode (`.pyc`) compatible with standard Python runtimes.
+## Supported Constructs
+
+- **Control Flow**: `if`, `for`, `while`, `try-except`, `with`.
+- **Data Structures**: Lists, Dictionaries, Sets, Tuples.
+- **Functions**: Support for closures, decorators, and generator functions (via algebraic effects).
+- **Classes**: Full support for class definitions, inheritance, and magic methods.
+- **Assignments**: Multiple assignments, augmented assignments (`+=`, `-=`, etc.).
 
 ## Getting Started
 
-### Usage
+### Usage via Nyar CLI
+
 ```bash
-# Generate Python bytecode
-cargo run -- <input.py> --pyc
+nyar run example.py
 ```
 
-### Options
-- `--pyc`: Compile to a Python bytecode file.
-- `--ast`: Output the Abstract Syntax Tree.
-- `--tokens`: Output the lexer token stream.
-- `--gaia`: Output Gaia instructions.
-- `--gaia-json`: Output Gaia instructions in JSON format.
+### Usage as a Library
 
-## Project Structure
-- `src/ast.rs`: AST definitions covering rich Python syntax.
-- `src/pyc_codegen.rs`: Backend implementation for generating `.pyc` files.
+```rust
+use rusty_python::RustyPythonFrontend;
+use nyar_types::NyarFrontend;
+
+let frontend = RustyPythonFrontend::new();
+let ast = frontend.parse("print('Hello from Nyar!')").unwrap();
+// Lower and execute via NyarVM
+```
+
+## Status
+
+`rusty-python` is currently in active development. While it supports many core Python features, some parts of the standard library and advanced language features (like metaclasses) are still being implemented.
 
 ## License
 
