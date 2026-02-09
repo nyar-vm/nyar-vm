@@ -9,7 +9,7 @@ chomsky-uir = { workspace = true }
 chomsky-rules = { workspace = true }
 chomsky-rule-engine = { workspace = true }
 gaia-jit = { workspace = true }
-nyar-types = { path = "../nyar-types" }
-nyar-vm = { path = "../nyar-vm" }
-hashbrown = "0.14"
-dashmap = "5.5"
+nyar-types = { workspace = true }
+nyar-vm = { workspace = true }
+hashbrown = { workspace = true }
+dashmap = { workspace = true }

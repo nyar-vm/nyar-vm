@@ -10,24 +10,24 @@ nyar-aot = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = "1.0"
+thiserror = { workspace = true }
 
 # Frontends
-rusty-c = { path = "../../examples/rusty-c" }
-rusty-java = { path = "../../examples/rusty-java" }
-rusty-python = { path = "../../examples/rusty-python" }
-rusty-typescript = { path = "../../examples/rusty-typescript" }
-rusty-go = { path = "../../examples/rusty-go" }
-rusty-csharp = { path = "../../examples/rusty-csharp" }
-rusty-tcl = { path = "../../examples/rusty-tcl" }
-rusty-swift = { path = "../../examples/rusty-swift" }
-rusty-julia = { path = "../../examples/rusty-julia" }
-rusty-lua = { path = "../../examples/rusty-lua" }
-rusty-rust = { path = "../../examples/rusty-rust" }
-rusty-zig = { path = "../../examples/rusty-zig" }
-rusty-php = { path = "../../examples/rusty-php" }
-rusty-ruby = { path = "../../examples/rusty-ruby" }
-rusty-dart = { path = "../../examples/rusty-dart" }
-rusty-nim = { path = "../../examples/rusty-nim" }
-rusty-mojo = { path = "../../examples/rusty-mojo" }
-rusty-kotlin = { path = "../../examples/rusty-kotlin" }
+rusty-c = { workspace = true }
+rusty-java = { workspace = true }
+rusty-python = { workspace = true }
+rusty-typescript = { workspace = true }
+rusty-go = { workspace = true }
+rusty-csharp = { workspace = true }
+rusty-tcl = { workspace = true }
+rusty-swift = { workspace = true }
+rusty-julia = { workspace = true }
+rusty-lua = { workspace = true }
+rusty-rust = { workspace = true }
+rusty-zig = { workspace = true }
+rusty-php = { workspace = true }
+rusty-ruby = { workspace = true }
+rusty-dart = { workspace = true }
+rusty-nim = { workspace = true }
+rusty-mojo = { workspace = true }
+rusty-kotlin = { workspace = true }

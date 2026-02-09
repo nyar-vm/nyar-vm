@@ -1,5 +1,4 @@
-use clap::{Parser, Subcommand};
-use nyar_types::NyarFrontend;
+use nyar_types::{NyarError, NyarFrontend};
 use nyar_vm::NyarDriver;
 use oak_vfs::DiskVfs;
 use std::path::{Path, PathBuf};
@@ -45,7 +44,7 @@ enum Commands {
     },
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), NyarError> {
     let cli = Cli::parse();
 
     let driver = NyarDriver::new();
@@ -70,16 +69,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn get_frontend(ext: &str) -> Option<Box<dyn NyarFrontend<Language = ()>>> {
-    // This is a bit tricky because NyarFrontend has an associated type Language.
-    // We might need a trait object that hides the Language type or use a macro.
-    // For now, let's use a simpler approach or just match manually in run_file/compile_file.
-    None
-}
-
-fn run_file(driver: &NyarDriver, vfs: &DiskVfs, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn run_file(driver: &NyarDriver, vfs: &DiskVfs, path: &Path) -> Result<(), NyarError> {
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let input_uri = path.to_str().ok_or("Invalid input path")?;
+    let input_uri = path.to_str().ok_or_else(|| NyarError::RuntimeError("Invalid input path".to_string()))?;
 
     match ext {
         "c" => driver.run_source(&rusty_c::RustyCFrontend::new(), vfs, input_uri)?,
@@ -100,7 +92,7 @@ fn run_file(driver: &NyarDriver, vfs: &DiskVfs, path: &Path) -> Result<(), Box<d
         "nim" => driver.run_source(&rusty_nim::RustyNimFrontend::new(), vfs, input_uri)?,
         "mojo" => driver.run_source(&rusty_mojo::RustyMojoFrontend::new(), vfs, input_uri)?,
         "kt" => driver.run_source(&rusty_kotlin::RustyKotlinFrontend::new(), vfs, input_uri)?,
-        _ => return Err(format!("Unsupported file extension: .{}", ext).into()),
+        _ => return Err(NyarError::RuntimeError(format!("Unsupported file extension: .{}", ext))),
     }
 
     Ok(())
@@ -111,16 +103,16 @@ fn compile_file(
     vfs: &DiskVfs,
     path: &Path,
     output: Option<PathBuf>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), NyarError> {
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let input_uri = path.to_str().ok_or("Invalid input path")?;
+    let input_uri = path.to_str().ok_or_else(|| NyarError::RuntimeError("Invalid input path".to_string()))?;
     
     let output_path = output.unwrap_or_else(|| {
         let mut p = path.to_path_buf();
         p.set_extension("exe");
         p
     });
-    let output_uri = output_path.to_str().ok_or("Invalid output path")?;
+    let output_uri = output_path.to_str().ok_or_else(|| NyarError::RuntimeError("Invalid output path".to_string()))?;
 
     match ext {
         "c" => driver.compile_to_native(&rusty_c::RustyCFrontend::new(), vfs, input_uri, output_uri)?,
@@ -141,13 +133,13 @@ fn compile_file(
         "nim" => driver.compile_to_native(&rusty_nim::RustyNimFrontend::new(), vfs, input_uri, output_uri)?,
         "mojo" => driver.compile_to_native(&rusty_mojo::RustyMojoFrontend::new(), vfs, input_uri, output_uri)?,
         "kt" => driver.compile_to_native(&rusty_kotlin::RustyKotlinFrontend::new(), vfs, input_uri, output_uri)?,
-        _ => return Err(format!("Unsupported file extension: .{}", ext).into()),
+        _ => return Err(NyarError::RuntimeError(format!("Unsupported file extension: .{}", ext))),
     }
 
     Ok(())
 }
 
-fn start_repl(driver: &NyarDriver, vfs: &DiskVfs, lang: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn start_repl(_driver: &NyarDriver, _vfs: &DiskVfs, lang: &str) -> Result<(), NyarError> {
     match lang.to_lowercase().as_str() {
         "c" => {
             // Logic from cling.rs could be moved here or called

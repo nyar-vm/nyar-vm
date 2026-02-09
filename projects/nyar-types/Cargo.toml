@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 serde = { workspace = true }
-thiserror = "1.0"
+thiserror = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
 chomsky-extract = { workspace = true }
@@ -13,7 +13,7 @@ chomsky-emit = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-types = { workspace = true }
 chomsky-cost = { workspace = true }
-nyar-gc = { path = "../nyar-gc" }
+nyar-gc = { workspace = true }
 
 [features]
 default = ["gc"]

@@ -1,5 +1,5 @@
 {
-  "name": "↯nyar-vm/nyar-win32-x64",
+  "name": "@nyar-vm/nyar-win32-x64",
   "version": "0.1.0",
   "description": "Windows x64 binary for Nyar",
   "os": ["win32"],

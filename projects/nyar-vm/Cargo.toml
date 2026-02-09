@@ -8,31 +8,31 @@ nyar-gc = { workspace = true, features = ["tokio"] }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
-nyar-aot = { path = "../nyar-aot", default-features = false }
-chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false, features = ["pe", "x86", "jvm"] }
+nyar-aot = { workspace = true, default-features = false }
+chomsky = { workspace = true, features = ["pe", "x86", "jvm"] }
 chomsky-uir = { workspace = true }
 chomsky-cost = { workspace = true }
-chomsky-extract = { path = "../../../ProjectChomsky/packages/chomsky-extract" }
-chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
+chomsky-extract = { workspace = true }
+chomsky-types = { workspace = true }
 byteorder = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
-rand = "0.8"
-thiserror = "1.0"
-dashmap = "5.5"
-indexmap = "2.2"
+rand = { workspace = true }
+thiserror = { workspace = true }
+dashmap = { workspace = true }
+indexmap = { workspace = true }
 pe-assembler = { workspace = true }
 oak-json = { path = "../../../oaks/examples/oak-json" }
- reqwest = { workspace = true }
+reqwest = { workspace = true }
 gaia-assembler = { workspace = true }
 gaia-types = { workspace = true }
 x86_64-assembler = { workspace = true }
 clap = { workspace = true, optional = true }
-tokio = { version = "1.0", features = ["full"], optional = true }
-wasi = { version = "0.14.7", optional = true }
+tokio = { workspace = true, optional = true }
+wasi = { workspace = true, optional = true }
 
 [features]
 default = ["clap", "tokio"]

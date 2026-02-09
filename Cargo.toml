@@ -37,6 +37,11 @@ oak-repl = { path = "../oaks/projects/oak-repl" }
 oak-rust = { path = "../oaks/examples/oak-rust" }
 oak-c = { path = "../oaks/examples/oak-c" }
 oak-typescript = { path = "../oaks/examples/oak-typescript" }
+oak-go = { path = "../oaks/examples/oak-go" }
+oak-kotlin = { path = "../oaks/examples/oak-kotlin" }
+oak-python = { path = "../oaks/examples/oak-python" }
+oak-java = { path = "../oaks/examples/oak-java" }
+oak-lua = { path = "../oaks/examples/oak-lua" }
 gaia-jit = { path = "../project-gaia/projects/gaia-jit" }
 gaia-types = { path = "../project-gaia/projects/gaia-types" }
 gaia-assembler = { path = "../project-gaia/projects/gaia-assembler" }
@@ -48,6 +53,24 @@ nyar-types = { path = "projects/nyar-types" }
 nyar-aot = { path = "projects/nyar-aot" }
 nyar-macros = { path = "projects/nyar-macros" }
 nyar-gc = { path = "projects/nyar-gc" }
+rusty-c = { path = "examples/rusty-c" }
+rusty-java = { path = "examples/rusty-java" }
+rusty-python = { path = "examples/rusty-python" }
+rusty-typescript = { path = "examples/rusty-typescript" }
+rusty-go = { path = "examples/rusty-go" }
+rusty-csharp = { path = "examples/rusty-csharp" }
+rusty-tcl = { path = "examples/rusty-tcl" }
+rusty-swift = { path = "examples/rusty-swift" }
+rusty-julia = { path = "examples/rusty-julia" }
+rusty-lua = { path = "examples/rusty-lua" }
+rusty-rust = { path = "examples/rusty-rust" }
+rusty-zig = { path = "examples/rusty-zig" }
+rusty-php = { path = "examples/rusty-php" }
+rusty-ruby = { path = "examples/rusty-ruby" }
+rusty-dart = { path = "examples/rusty-dart" }
+rusty-nim = { path = "examples/rusty-nim" }
+rusty-mojo = { path = "examples/rusty-mojo" }
+rusty-kotlin = { path = "examples/rusty-kotlin" }
 
 criterion = "0.5"
 serde = { version = "1.0", features = ["derive"] }
@@ -63,3 +86,15 @@ rand = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
 nipper = "0.1"
 scraper = "0.19"
+thiserror = "1.0"
+dashmap = "5.5"
+parking_lot = "0.12"
+once_cell = "1.18"
+hashbrown = "0.14"
+quote = "1.0"
+syn = { version = "2.0", features = ["full", "derive"] }
+proc-macro2 = "1.0"
+wit-bindgen = "0.35.0"
+indexmap = "2.2"
+tokio = { version = "1.0", features = ["full"] }
+wasi = "0.14.7"

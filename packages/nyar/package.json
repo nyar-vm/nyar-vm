@@ -17,12 +17,12 @@
         "registry": "https://registry.npmjs.org/"
     },
     "dependencies": {
-        "↯nyar-vm/nyar-wasm32-wasi": "0.1.*"
+        "@nyar-vm/nyar-wasm32-wasi": "workspace:*"
     },
     "optionalDependencies": {
-        "↯nyar-vm/nyar-win32-x64": "0.1.*",
-        "↯nyar-vm/nyar-linux-x64": "0.1.*",
-        "↯nyar-vm/nyar-darwin-x64": "0.1.*",
-        "↯nyar-vm/nyar-darwin-arm64": "0.1.*"
+        "@nyar-vm/nyar-win32-x64": "workspace:*",
+        "@nyar-vm/nyar-linux-x64": "workspace:*",
+        "@nyar-vm/nyar-darwin-x64": "workspace:*",
+        "@nyar-vm/nyar-darwin-arm64": "workspace:*"
     }
 }

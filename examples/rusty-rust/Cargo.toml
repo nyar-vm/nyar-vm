@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-nyar-vm = { path = "../../projects/nyar-vm" }
-nyar-types = { path = "../../projects/nyar-types" }
-nyar-aot = { path = "../../projects/nyar-aot" }
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
 oak-core = { workspace = true }
 oak-rust = { workspace = true }
-chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
 gaia-assembler = { workspace = true }
