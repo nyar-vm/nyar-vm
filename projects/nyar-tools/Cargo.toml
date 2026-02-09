@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[[bin]]
+name = "nyar"
+path = "src/main.rs"
+
 [dependencies]
 clap = { workspace = true }
 nyar-vm = { workspace = true }

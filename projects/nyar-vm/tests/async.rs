@@ -656,10 +656,26 @@ fn run_throw_effect_uncaught_prints_traceback() {
     let module_idx = vm.load_module(module);
     use std::sync::{Arc, Mutex};
     let output = Arc::new(Mutex::new(Vec::<String>::new()));
+    struct TestPlatform {
+        output: Arc<Mutex<Vec<String>>>,
+    }
+    impl nyar_vm::vm::platform::NyarPlatform for TestPlatform {
+        fn stdout_write(&self, msg: &str) {
+            self.output.lock().unwrap().push(msg.to_string());
+        }
+        fn stdin_read_line(&self) -> String { String::new() }
+        fn proc_exit(&self, _code: i32) -> ! { std::process::exit(1) }
+        fn clock_now(&self) -> f64 { 0.0 }
+        fn get_env(&self, _key: &str) -> Option<String> { None }
+        fn fs_read_to_string(&self, _path: &str) -> Result<String, nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn fs_write(&self, _path: &str, _content: &str) -> Result<(), nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn fs_exists(&self, _path: &str) -> bool { false }
+        fn fs_remove_file(&self, _path: &str) -> Result<(), nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn random_f64(&self) -> f64 { 0.0 }
+        fn sleep(&self, _ms: u64) {}
+    }
     let out_clone = output.clone();
-    vm.stdout = Some(Arc::new(move |msg: &str| {
-        out_clone.lock().unwrap().push(msg.to_string());
-    }));
+    vm.platform = Arc::new(TestPlatform { output: out_clone });
     let r = vm.execute(module_idx, 0);
     assert!(r.is_err());
     let err = NyarError::new(
@@ -706,10 +722,26 @@ fn run_logger_event_default_prints() {
     let module_idx = vm.load_module(module);
     use std::sync::{Arc, Mutex};
     let output = Arc::new(Mutex::new(Vec::<String>::new()));
+    struct TestPlatform {
+        output: Arc<Mutex<Vec<String>>>,
+    }
+    impl nyar_vm::vm::platform::NyarPlatform for TestPlatform {
+        fn stdout_write(&self, msg: &str) {
+            self.output.lock().unwrap().push(msg.to_string());
+        }
+        fn stdin_read_line(&self) -> String { String::new() }
+        fn proc_exit(&self, _code: i32) -> ! { std::process::exit(1) }
+        fn clock_now(&self) -> f64 { 0.0 }
+        fn get_env(&self, _key: &str) -> Option<String> { None }
+        fn fs_read_to_string(&self, _path: &str) -> Result<String, nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn fs_write(&self, _path: &str, _content: &str) -> Result<(), nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn fs_exists(&self, _path: &str) -> bool { false }
+        fn fs_remove_file(&self, _path: &str) -> Result<(), nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn random_f64(&self) -> f64 { 0.0 }
+        fn sleep(&self, _ms: u64) {}
+    }
     let out_clone = output.clone();
-    vm.stdout = Some(Arc::new(move |msg: &str| {
-        out_clone.lock().unwrap().push(msg.to_string());
-    }));
+    vm.platform = Arc::new(TestPlatform { output: out_clone });
     let v = vm.execute(module_idx, 0).unwrap();
     assert_eq!(v.as_int(), 0);
     let lines = output.lock().unwrap();
@@ -786,10 +818,26 @@ fn run_logger_event_handler_prints_and_resumes() {
     let module_idx = vm.load_module(module);
     use std::sync::{Arc, Mutex};
     let output = Arc::new(Mutex::new(Vec::<String>::new()));
+    struct TestPlatform {
+        output: Arc<Mutex<Vec<String>>>,
+    }
+    impl nyar_vm::vm::platform::NyarPlatform for TestPlatform {
+        fn stdout_write(&self, msg: &str) {
+            self.output.lock().unwrap().push(msg.to_string());
+        }
+        fn stdin_read_line(&self) -> String { String::new() }
+        fn proc_exit(&self, _code: i32) -> ! { std::process::exit(1) }
+        fn clock_now(&self) -> f64 { 0.0 }
+        fn get_env(&self, _key: &str) -> Option<String> { None }
+        fn fs_read_to_string(&self, _path: &str) -> Result<String, nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn fs_write(&self, _path: &str, _content: &str) -> Result<(), nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn fs_exists(&self, _path: &str) -> bool { false }
+        fn fs_remove_file(&self, _path: &str) -> Result<(), nyar_vm::vm::NyarError> { Err(nyar_vm::vm::NyarError::RuntimeError("not implemented".to_string())) }
+        fn random_f64(&self) -> f64 { 0.0 }
+        fn sleep(&self, _ms: u64) {}
+    }
     let out_clone = output.clone();
-    vm.stdout = Some(Arc::new(move |msg: &str| {
-        out_clone.lock().unwrap().push(msg.to_string());
-    }));
+    vm.platform = Arc::new(TestPlatform { output: out_clone });
     let v = vm.execute(module_idx, 1).unwrap();
     assert_eq!(v.as_int(), 0);
     let lines = output.lock().unwrap();

@@ -15,7 +15,7 @@ default-members = [
     "projects/nyar-types",
     "projects/nyar-vm",
 ]
-exclude = ["examples/valkyrie-bootstrap", "projects/nyar-tools"]
+exclude = ["examples/valkyrie-bootstrap"]
 
 [profile.release]
 lto = true
