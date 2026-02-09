@@ -1,0 +1,10 @@
+{
+    "name": "↯nyar-vm/nyar-wasm32-wasi",
+    "version": "0.1.0",
+    "description": "WASM32 WASI binary for Nyar",
+    "license": "MIT",
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    }
+}

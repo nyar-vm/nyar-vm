@@ -1,0 +1,28 @@
+{
+    "name": "↯nyar-vm/nyar",
+    "version": "0.1.0",
+    "description": "Nyar virtual machine CLI",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/nyar-vm/nyar-vm",
+        "directory": "packages/nyar"
+    },
+    "type": "module",
+    "bin": {
+        "nyar": "nyar.js"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
+    "dependencies": {
+        "↯nyar-vm/nyar-wasm32-wasi": "0.1.*"
+    },
+    "optionalDependencies": {
+        "↯nyar-vm/nyar-win32-x64": "0.1.*",
+        "↯nyar-vm/nyar-linux-x64": "0.1.*",
+        "↯nyar-vm/nyar-darwin-x64": "0.1.*",
+        "↯nyar-vm/nyar-darwin-arm64": "0.1.*"
+    }
+}

@@ -2,7 +2,6 @@ use chomsky::optimizer::UniversalOptimizer;
 use chomsky_extract::{Backend, BackendArtifact};
 use chomsky_uir::IKun;
 // use chomsky_cost::CostModel;
-use gaia_types::helpers::Architecture;
 use nyar_types::VmError;
 
 pub struct NyarAot<A: chomsky_uir::egraph::Analysis<IKun> + 'static = ()>

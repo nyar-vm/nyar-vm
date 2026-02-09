@@ -233,7 +233,7 @@ impl NyarVM {
         self.platform.stdout_write(&format!("{}\n", msg));
     }
 
-    pub fn get_module(&self, idx: usize) -> dashmap::mapref::one::Ref<usize, NyarcModule> {
+    pub fn get_module(&self, idx: usize) -> dashmap::mapref::one::Ref<'_, usize, NyarcModule> {
         self.env.modules.get(&idx).expect("Module not found")
     }
 
