@@ -16,10 +16,6 @@ chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
 tempfile = "3.3"
 
-[[bin]]
-name = "javac"
-path = "bin/javac.rs"
+[dev-dependencies]
+# empty or existing dev-dependencies if any
 
-[[bin]]
-name = "java"
-path = "bin/java.rs"

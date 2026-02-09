@@ -1,0 +1,33 @@
+[package]
+name = "nyar"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+nyar-aot = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "1.0"
+
+# Frontends
+rusty-c = { path = "../../examples/rusty-c" }
+rusty-java = { path = "../../examples/rusty-java" }
+rusty-python = { path = "../../examples/rusty-python" }
+rusty-typescript = { path = "../../examples/rusty-typescript" }
+rusty-go = { path = "../../examples/rusty-go" }
+rusty-csharp = { path = "../../examples/rusty-csharp" }
+rusty-tcl = { path = "../../examples/rusty-tcl" }
+rusty-swift = { path = "../../examples/rusty-swift" }
+rusty-julia = { path = "../../examples/rusty-julia" }
+rusty-lua = { path = "../../examples/rusty-lua" }
+rusty-rust = { path = "../../examples/rusty-rust" }
+rusty-zig = { path = "../../examples/rusty-zig" }
+rusty-php = { path = "../../examples/rusty-php" }
+rusty-ruby = { path = "../../examples/rusty-ruby" }
+rusty-dart = { path = "../../examples/rusty-dart" }
+rusty-nim = { path = "../../examples/rusty-nim" }
+rusty-mojo = { path = "../../examples/rusty-mojo" }
+rusty-kotlin = { path = "../../examples/rusty-kotlin" }

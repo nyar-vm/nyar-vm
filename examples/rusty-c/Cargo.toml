@@ -7,14 +7,6 @@ edition = "2021"
 name = "rusty_c"
 path = "src/lib.rs"
 
-[[bin]]
-name = "rusty-c"
-path = "src/main.rs"
-
-[[bin]]
-name = "cling"
-path = "bin/cling.rs"
-
 [dependencies]
 nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
