@@ -629,7 +629,6 @@ impl NyarTranslator {
                 Ok(ctx.builder.extension("await", vec![expr_id], loc))
             }
             Expression::Query(query) => self.translate_query(query, ctx),
-            _ => Ok(ctx.builder.constant(0, loc)),
         }
     }
 
@@ -650,9 +649,10 @@ impl NyarTranslator {
         for clause in &query.body.clauses {
             match clause {
                 QueryClause::Where(expr) => {
+                    let body_id = self.translate_expr(expr, ctx)?;
                     let lambda_id = ctx.builder.lambda(
                         vec![query.from_clause.identifier.clone()],
-                        self.translate_expr(expr, ctx)?,
+                        body_id,
                         loc,
                     );
                     let name_id = ctx.builder.symbol("Where", loc);
@@ -672,9 +672,10 @@ impl NyarTranslator {
         // 处理最终的 select 或 group
         match &query.body.select_or_group {
             SelectOrGroupClause::Select(expr) => {
+                let body_id = self.translate_expr(expr, ctx)?;
                 let lambda_id = ctx.builder.lambda(
                     vec![query.from_clause.identifier.clone()],
-                    self.translate_expr(expr, ctx)?,
+                    body_id,
                     loc,
                 );
                 let name_id = ctx.builder.symbol("Select", loc);
