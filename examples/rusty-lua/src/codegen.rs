@@ -26,7 +26,7 @@ impl GaiaTranslator {
         }
 
         let loc = chomsky_types::Loc::default();
-        let root = builder.build_block(statements, loc);
+        let root = builder.block(statements, loc);
         
         let extractor = chomsky_extract::IKunExtractor::new(&egraph, chomsky_cost::DEFAULT_COST_MODEL.clone());
         Ok(extractor.extract(root))
@@ -41,11 +41,11 @@ impl GaiaTranslator {
                     let val = if let Some(expr) = s.values.get(i) {
                         self.translate_expression(expr, builder)?
                     } else {
-                        builder.build_nil(loc)
+                        builder.symbol("nil", loc)
                     };
-                    ids.push(builder.build_let(name, val, loc));
+                    ids.push(builder.assign(name, val, loc));
                 }
-                Ok(builder.build_block(ids, loc))
+                Ok(builder.block(ids, loc))
             }
             LuaStatement::Expression(expr) => self.translate_expression(expr, builder),
             LuaStatement::Return(s) => {
@@ -54,15 +54,15 @@ impl GaiaTranslator {
                     vals.push(self.translate_expression(expr, builder)?);
                 }
                 if vals.len() == 1 {
-                    Ok(builder.build_return(vals[0], loc))
+                    Ok(builder.return_(vals[0], loc))
                 } else {
-                    let tuple = builder.build_tuple(vals, loc);
-                    Ok(builder.build_return(tuple, loc))
+                    let tuple = builder.extension("tuple", vals, loc);
+                    Ok(builder.return_(tuple, loc))
                 }
             }
             _ => {
                 // TODO: 更多语句支持
-                Ok(builder.build_nil(loc))
+                Ok(builder.symbol("nil", loc))
             }
         }
     }
@@ -70,20 +70,20 @@ impl GaiaTranslator {
     fn translate_expression(&self, expr: &LuaExpression, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
         let loc = chomsky_types::Loc::default();
         match expr {
-            LuaExpression::Number(n) => Ok(builder.build_float(*n, loc)),
-            LuaExpression::String(s) => Ok(builder.build_string(s, loc)),
-            LuaExpression::Boolean(b) => Ok(builder.build_bool(*b, loc)),
-            LuaExpression::Nil => Ok(builder.build_nil(loc)),
-            LuaExpression::Identifier(id) => Ok(builder.build_var(id, loc)),
+            LuaExpression::Number(n) => Ok(builder.float(*n, loc)),
+            LuaExpression::String(s) => Ok(builder.string(s, loc)),
+            LuaExpression::Boolean(b) => Ok(builder.bool(*b, loc)),
+            LuaExpression::Nil => Ok(builder.symbol("nil", loc)),
+            LuaExpression::Identifier(id) => Ok(builder.symbol(id, loc)),
             LuaExpression::Binary(bin) => {
                 let left = self.translate_expression(&bin.left, builder)?;
                 let right = self.translate_expression(&bin.right, builder)?;
                 match bin.op.as_str() {
-                    "+" => Ok(builder.build_add(left, right, loc)),
-                    "-" => Ok(builder.build_sub(left, right, loc)),
-                    "*" => Ok(builder.build_mul(left, right, loc)),
-                    "/" => Ok(builder.build_div(left, right, loc)),
-                    _ => Ok(builder.build_nil(loc)),
+                    "+" => Ok(builder.add_op(left, right, loc)),
+                    "-" => Ok(builder.sub_op(left, right, loc)),
+                    "*" => Ok(builder.mul_op(left, right, loc)),
+                    "/" => Ok(builder.div_op(left, right, loc)),
+                    _ => Ok(builder.symbol("nil", loc)),
                 }
             }
             LuaExpression::Call(call) => {
@@ -92,11 +92,11 @@ impl GaiaTranslator {
                 for arg in &call.arguments {
                     args.push(self.translate_expression(arg, builder)?);
                 }
-                Ok(builder.build_call(func, args, loc))
+                Ok(builder.call(func, args, loc))
             }
             _ => {
                 // TODO: 更多表达式支持
-                Ok(builder.build_nil(loc))
+                Ok(builder.symbol("nil", loc))
             }
         }
     }

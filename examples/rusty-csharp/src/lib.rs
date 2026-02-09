@@ -48,9 +48,7 @@ impl NyarFrontend for RustyCSharpFrontend {
         ctx: &mut nyar_types::NyarContext<'_, V>,
     ) -> chomsky_uir::Id {
         let translator = crate::codegen::NyarTranslator::new();
-        let mut translator_ctx = crate::codegen::TranslatorContext {
-            builder: ctx.builder(),
-        };
-        translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Nil))
+        let mut translator_ctx = crate::codegen::TranslatorContext::new_with_builder(ctx.builder());
+        translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Seq(vec![])))
     }
 }

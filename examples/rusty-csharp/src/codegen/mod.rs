@@ -7,15 +7,19 @@ use oak_csharp::ast::*;
 /// CSharp 翻译器上下文
 ///
 /// 用于管理翻译过程中的状态，如符号表、E-Graph 构建器等。
-pub struct TranslatorContext<'a> {
-    pub builder: IntentBuilder<'a, ConstraintAnalysis>,
+pub struct TranslatorContext<'a, A: chomsky_uir::Analysis<IKun> = ()> {
+    pub builder: IntentBuilder<'a, A>,
 }
 
-impl<'a> TranslatorContext<'a> {
-    pub fn new(egraph: &'a mut EGraph<IKun, ConstraintAnalysis>) -> Self {
+impl<'a, A: chomsky_uir::Analysis<IKun>> TranslatorContext<'a, A> {
+    pub fn new(egraph: &'a mut EGraph<IKun, A>) -> Self {
         Self {
             builder: IntentBuilder::new(egraph),
         }
+    }
+
+    pub fn new_with_builder(builder: IntentBuilder<'a, A>) -> Self {
+        Self { builder }
     }
 
     /// 解析内置函数映射
@@ -85,10 +89,10 @@ impl NyarTranslator {
         Ok(extractor.extract(root_id))
     }
 
-    pub fn translate_root(
+    pub fn translate_root<A: chomsky_uir::Analysis<IKun>>(
         &self,
         root: &CSharpRoot,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut items = Vec::new();
         for item in &root.items {
@@ -99,10 +103,10 @@ impl NyarTranslator {
         Ok(ctx.builder.module("root", items))
     }
 
-    fn translate_item(
+    fn translate_item<A: chomsky_uir::Analysis<IKun>>(
         &self,
         item: &Item,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<Option<chomsky_uir::egraph::Id>, NyarError> {
         match item {
             Item::Namespace(ns) => Ok(Some(self.translate_namespace(ns, ctx)?)),
@@ -128,10 +132,10 @@ impl NyarTranslator {
         }
     }
 
-    fn translate_namespace(
+    fn translate_namespace<A: chomsky_uir::Analysis<IKun>>(
         &self,
         ns: &NamespaceDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut items = Vec::new();
         // 处理特性的翻译（可选，取决于 Nyar 是否支持模块特性）
@@ -146,10 +150,10 @@ impl NyarTranslator {
         Ok(ctx.builder.module(&ns.name, items))
     }
 
-    fn translate_class(
+    fn translate_class<A: chomsky_uir::Analysis<IKun>>(
         &self,
         class: &ClassDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut members = Vec::new();
         
@@ -201,7 +205,8 @@ impl NyarTranslator {
                 "abstract" => class_id = ctx.builder.extension("abstract", vec![class_id], loc),
                 "sealed" => class_id = ctx.builder.extension("sealed", vec![class_id], loc),
                 "public" | "private" | "protected" | "internal" => {
-                    class_id = ctx.builder.extension("visibility", vec![ctx.builder.symbol(modifier, loc), class_id], loc);
+                    let modifier_id = ctx.builder.symbol(modifier, loc);
+                    class_id = ctx.builder.extension("visibility", vec![modifier_id, class_id], loc);
                 }
                 _ => {}
             }
@@ -210,10 +215,10 @@ impl NyarTranslator {
         Ok(class_id)
     }
 
-    fn translate_attribute(
+    fn translate_attribute<A: chomsky_uir::Analysis<IKun>>(
         &self,
         attr: &Attribute,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         let mut args = Vec::new();
@@ -224,33 +229,34 @@ impl NyarTranslator {
         Ok(ctx.builder.extension("attribute", vec![attr_id], loc))
     }
 
-    fn translate_type_parameter(
+    fn translate_type_parameter<A: chomsky_uir::Analysis<IKun>>(
         &self,
         tp: &TypeParameter,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         Ok(ctx.builder.symbol(&tp.name, loc))
     }
 
-    fn translate_delegate(
+    fn translate_delegate<A: chomsky_uir::Analysis<IKun>>(
         &self,
         delegate: &DelegateDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         let mut params = Vec::new();
         for p in &delegate.parameters {
             params.push(p.name.clone());
         }
-        let lambda = ctx.builder.lambda(params, ctx.builder.constant(0, loc), loc);
+        let body_id = ctx.builder.constant(0, loc);
+        let lambda = ctx.builder.lambda(params, body_id, loc);
         Ok(ctx.builder.export(&delegate.name, lambda, loc))
     }
 
-    fn translate_interface(
+    fn translate_interface<A: chomsky_uir::Analysis<IKun>>(
         &self,
         interface: &InterfaceDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut members = Vec::new();
         for member in &interface.members {
@@ -261,10 +267,10 @@ impl NyarTranslator {
         Ok(ctx.builder.module(&interface.name, members))
     }
 
-    pub fn translate_struct(
+    pub fn translate_struct<A: chomsky_uir::Analysis<IKun>>(
         &self,
         struct_decl: &StructDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut members = Vec::new();
         for member in &struct_decl.members {
@@ -278,10 +284,10 @@ impl NyarTranslator {
         Ok(ctx.builder.module(&struct_decl.name, members))
     }
 
-    pub fn translate_record(
+    pub fn translate_record<A: chomsky_uir::Analysis<IKun>>(
         &self,
         record_decl: &RecordDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut members = Vec::new();
         for member in &record_decl.members {
@@ -296,23 +302,24 @@ impl NyarTranslator {
         Ok(ctx.builder.module(&record_decl.name, members))
     }
 
-    fn translate_enum(
+    fn translate_enum<A: chomsky_uir::Analysis<IKun>>(
         &self,
         enum_decl: &EnumDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let mut variants = Vec::new();
         let loc = Loc::unknown();
         for variant in &enum_decl.members {
-            variants.push(ctx.builder.export(&variant.name, ctx.builder.constant(0, loc), loc));
+            let value_id = ctx.builder.constant(0, loc);
+            variants.push(ctx.builder.export(&variant.name, value_id, loc));
         }
         Ok(ctx.builder.module(&enum_decl.name, variants))
     }
 
-    fn translate_field(
+    fn translate_field<A: chomsky_uir::Analysis<IKun>>(
         &self,
         field: &FieldDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         let mut field_id = ctx.builder.symbol(&field.name, loc);
@@ -323,7 +330,8 @@ impl NyarTranslator {
                 "static" => field_id = ctx.builder.extension("static", vec![field_id], loc),
                 "readonly" => field_id = ctx.builder.extension("readonly", vec![field_id], loc),
                 "public" | "private" | "protected" | "internal" => {
-                    field_id = ctx.builder.extension("visibility", vec![ctx.builder.symbol(modifier, loc), field_id], loc);
+                    let modifier_id = ctx.builder.symbol(modifier, loc);
+                    field_id = ctx.builder.extension("visibility", vec![modifier_id, field_id], loc);
                 }
                 _ => {}
             }
@@ -332,10 +340,10 @@ impl NyarTranslator {
         Ok(ctx.builder.export(&field.name, field_id, loc))
     }
 
-    fn translate_property(
+    fn translate_property<A: chomsky_uir::Analysis<IKun>>(
         &self,
         prop: &PropertyDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         let mut accessors = Vec::new();
@@ -360,10 +368,10 @@ impl NyarTranslator {
         Ok(ctx.builder.module(&prop.name, accessors))
     }
 
-    fn translate_indexer(
+    fn translate_indexer<A: chomsky_uir::Analysis<IKun>>(
         &self,
         indexer: &IndexerDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         let mut accessors = Vec::new();
@@ -395,20 +403,20 @@ impl NyarTranslator {
         Ok(ctx.builder.module("Indexer", accessors))
     }
 
-    fn translate_event(
+    fn translate_event<A: chomsky_uir::Analysis<IKun>>(
         &self,
         event: &EventDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         let name_id = ctx.builder.symbol(&event.name, loc);
         Ok(ctx.builder.export(&event.name, name_id, loc))
     }
 
-    fn translate_method(
+    fn translate_method<A: chomsky_uir::Analysis<IKun>>(
         &self,
         method: &MethodDeclaration,
-        ctx: &mut TranslatorContext,
+        ctx: &mut TranslatorContext<'_, A>,
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let loc = Loc::unknown();
         let mut stmts = Vec::new();
@@ -446,7 +454,8 @@ impl NyarTranslator {
                 "async" => lambda = ctx.builder.extension("async", vec![lambda], loc),
                 "static" => lambda = ctx.builder.extension("static", vec![lambda], loc),
                 "public" | "private" | "protected" | "internal" => {
-                    lambda = ctx.builder.extension("visibility", vec![ctx.builder.symbol(modifier, loc), lambda], loc);
+                    let modifier_id = ctx.builder.symbol(modifier, loc);
+                    lambda = ctx.builder.extension("visibility", vec![modifier_id, lambda], loc);
                 }
                 _ => {}
             }
