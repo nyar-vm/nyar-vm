@@ -16,14 +16,14 @@ function getBinaryPath() {
     let binaryName = 'nyar';
 
     if (p === 'win32' && a === 'x64') {
-        packageName = '↯nyar-vm/nyar-win32-x64';
+        packageName = '@nyar-vm/nyar-win32-x64';
         binaryName = 'nyar.exe';
     } else if (p === 'linux' && a === 'x64') {
-        packageName = '↯nyar-vm/nyar-linux-x64';
+        packageName = '@nyar-vm/nyar-linux-x64';
     } else if (p === 'darwin' && a === 'x64') {
-        packageName = '↯nyar-vm/nyar-darwin-x64';
+        packageName = '@nyar-vm/nyar-darwin-x64';
     } else if (p === 'darwin' && a === 'arm64') {
-        packageName = '↯nyar-vm/nyar-darwin-arm64';
+        packageName = '@nyar-vm/nyar-darwin-arm64';
     }
 
     if (packageName) {
@@ -45,7 +45,7 @@ if (binaryPath) {
     process.exit(result.status ?? 0);
 } else {
     // Fallback to WASM
-    import('↯nyar-vm/nyar-wasm32-wasi').then(({ run }) => {
+    import('@nyar-vm/nyar-wasm32-wasi').then(({ run }) => {
         run.run();
     }).catch(err => {
         console.error('Failed to run nyar:', err);

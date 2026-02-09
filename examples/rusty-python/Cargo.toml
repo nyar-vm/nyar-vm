@@ -8,23 +8,23 @@ name = "rusty_python"
 path = "src/lib.rs"
 
 [dependencies]
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
-chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
-oak-core = { path = "../../../oaks/projects/oak-core" }
-oak-vfs = { path = "../../../oaks/projects/oak-vfs" }
-oak-python = { path = "../../../oaks/examples/oak-python" }
-nyar-types = { path = "../../projects/nyar-types" }
+chomsky-uir = { workspace = true }
+chomsky = { workspace = true }
+oak-core = { workspace = true }
+oak-vfs = { workspace = true }
+oak-python = { workspace = true }
+nyar-types = { workspace = true }
 nyar-vm = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-types = { workspace = true }
 python-assembler = { workspace = true }
 gaia-assembler = { workspace = true }
 gaia-types = { workspace = true }
-clap = { version = "4.5", features = ["derive"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-toml = "0.8"
-tempfile = "3.10"
-byteorder = "1.5"
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tempfile = { workspace = true }
+byteorder = { workspace = true }
 
 [dev-dependencies]

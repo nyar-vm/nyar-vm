@@ -1,5 +1,5 @@
 {
-  "name": "↯nyar-vm/nyar-linux-x64",
+  "name": "@nyar-vm/nyar-linux-x64",
   "version": "0.1.0",
   "description": "Linux x64 binary for Nyar",
   "os": ["linux"],

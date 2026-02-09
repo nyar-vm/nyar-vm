@@ -1,5 +1,5 @@
 {
-  "name": "↯nyar-vm/nyar-darwin-arm64",
+  "name": "@nyar-vm/nyar-darwin-arm64",
   "version": "0.1.0",
   "description": "Darwin arm64 binary for Nyar",
   "os": ["darwin"],

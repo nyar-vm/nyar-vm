@@ -8,13 +8,13 @@ nyar-types = { workspace = true }
 nyar-vm = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
-oak-java = { path = "../../../oaks/examples/oak-java" }
-chomsky = { path = "../../../ProjectChomsky/packages/chomsky", default-features = false, features = ["jvm"] }
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
+oak-java = { workspace = true }
+chomsky = { workspace = true, features = ["jvm"] }
+chomsky-uir = { workspace = true }
 chomsky-types = { workspace = true }
 chomsky-extract = { workspace = true }
 chomsky-cost = { workspace = true }
-tempfile = "3.3"
+tempfile = { workspace = true }
 
 [dev-dependencies]
 # empty or existing dev-dependencies if any
