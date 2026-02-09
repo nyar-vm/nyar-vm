@@ -8,7 +8,7 @@ nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
 oak-vfs = { workspace = true }
-oak-tcl = { path = "../../../oaks/examples/oak-tcl" }
+oak-tcl = { workspace = true }
 chomsky = { workspace = true }
 chomsky-uir = { workspace = true }
 serde = { workspace = true }

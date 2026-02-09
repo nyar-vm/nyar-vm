@@ -1,3 +1,5 @@
+use nyar_types::NyarError;
+
 /// Nyar 平台抽象接口，符合 WASI 规范的语义
 pub trait NyarPlatform: Send + Sync {
     /// 向标准输出写入数据 (对应 WASI fd_write)
@@ -16,16 +18,16 @@ pub trait NyarPlatform: Send + Sync {
     fn get_env(&self, key: &str) -> Option<String>;
     
     /// 读取文件内容 (对应 WASI fd_read)
-    fn fs_read_to_string(&self, path: &str) -> Result<String, String>;
+    fn fs_read_to_string(&self, path: &str) -> Result<String, NyarError>;
 
     /// 写入文件内容 (对应 WASI fd_write)
-    fn fs_write(&self, path: &str, content: &str) -> Result<(), String>;
+    fn fs_write(&self, path: &str, content: &str) -> Result<(), NyarError>;
 
     /// 判断文件是否存在
     fn fs_exists(&self, path: &str) -> bool;
 
     /// 删除文件 (对应 WASI path_unlink_file)
-    fn fs_remove_file(&self, path: &str) -> Result<(), String>;
+    fn fs_remove_file(&self, path: &str) -> Result<(), NyarError>;
 
     /// 获取随机数 (对应 WASI random_get)
     fn random_f64(&self) -> f64;
@@ -51,17 +53,17 @@ impl NyarPlatform for StubPlatform {
     fn get_env(&self, _key: &str) -> Option<String> {
         None
     }
-    fn fs_read_to_string(&self, _path: &str) -> Result<String, String> {
-        Err("StubPlatform: fs_read_to_string not implemented".to_string())
+    fn fs_read_to_string(&self, _path: &str) -> Result<String, NyarError> {
+        Err(NyarError::RuntimeError("StubPlatform: fs_read_to_string not implemented".to_string()))
     }
-    fn fs_write(&self, _path: &str, _content: &str) -> Result<(), String> {
-        Err("StubPlatform: fs_write not implemented".to_string())
+    fn fs_write(&self, _path: &str, _content: &str) -> Result<(), NyarError> {
+        Err(NyarError::RuntimeError("StubPlatform: fs_write not implemented".to_string()))
     }
     fn fs_exists(&self, _path: &str) -> bool {
         false
     }
-    fn fs_remove_file(&self, _path: &str) -> Result<(), String> {
-        Err("StubPlatform: fs_remove_file not implemented".to_string())
+    fn fs_remove_file(&self, _path: &str) -> Result<(), NyarError> {
+        Err(NyarError::RuntimeError("StubPlatform: fs_remove_file not implemented".to_string()))
     }
     fn random_f64(&self) -> f64 {
         0.0

@@ -179,17 +179,17 @@ impl RustyGoRuntime {
             }
             IKunTree::Choice(condition, then_body, else_body) => {
                 self.emit_tree(condition, code, module)?;
-                
+
                 // Placeholder for JumpIfFalse offset
                 let jump_if_false_pos = code.len();
                 code.extend_from_slice(&Instruction::JumpIfFalse(0).encode());
-                
+
                 self.emit_tree(then_body, code, module)?;
-                
+
                 // Placeholder for Jump offset (to skip else)
                 let jump_pos = code.len();
                 code.extend_from_slice(&Instruction::Jump(0).encode());
-                
+
                 // Patch JumpIfFalse
                 let else_start = code.len();
                 let diff_to_else = (else_start - jump_if_false_pos) as i16;
@@ -197,9 +197,9 @@ impl RustyGoRuntime {
                 for (i, byte) in patched_jump_if_false.iter().enumerate() {
                     code[jump_if_false_pos + i] = *byte;
                 }
-                
+
                 self.emit_tree(else_body, code, module)?;
-                
+
                 // Patch Jump
                 let end_pos = code.len();
                 let diff_to_end = (end_pos - jump_pos) as i16;
@@ -207,6 +207,17 @@ impl RustyGoRuntime {
                 for (i, byte) in patched_jump.iter().enumerate() {
                     code[jump_pos + i] = *byte;
                 }
+            }
+            IKunTree::Call(func, args) => {
+                // Push arguments
+                let argc = args.len();
+                for arg in args {
+                    self.emit_tree(arg, code, module)?;
+                }
+                // Push function
+                self.emit_tree(func, code, module)?;
+                // Call closure
+                code.extend_from_slice(&Instruction::CallClosure(argc as u16).encode());
             }
             IKunTree::CrossLangCall { language, module_path, function_name, arguments } => {
                 if language == "native" || language == "nyar" {

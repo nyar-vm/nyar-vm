@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-nyar-vm = { path = "../../projects/nyar-vm" }
-nyar-types = { path = "../../projects/nyar-types" }
-oak-core = { path = "../../../oaks/projects/oak-core" }
-oak-prolog = { path = "../../../oaks/examples/oak-prolog" }
-chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
-serde = { version = "1.0", features = ["derive"] }
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+oak-core = { workspace = true }
+oak-prolog = { workspace = true }
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+serde = { workspace = true }

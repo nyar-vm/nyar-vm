@@ -1,7 +1,9 @@
 [package]
 name = "nyar-vm"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [dependencies]
 nyar-gc = { workspace = true, features = ["tokio"] }
@@ -25,7 +27,7 @@ thiserror = { workspace = true }
 dashmap = { workspace = true }
 indexmap = { workspace = true }
 pe-assembler = { workspace = true }
-oak-json = { path = "../../../oaks/examples/oak-json" }
+oak-json = { workspace = true }
 reqwest = { workspace = true }
 gaia-assembler = { workspace = true }
 gaia-types = { workspace = true }

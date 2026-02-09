@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-nyar-vm = { path = "../../projects/nyar-vm" }
-nyar-types = { path = "../../projects/nyar-types" }
-oak-core = { path = "../../../oaks/projects/oak-core" }
-oak-swift = { path = "../../../oaks/examples/oak-swift" }
-chomsky = { path = "../../../ProjectChomsky/packages/chomsky" }
-chomsky-uir = { path = "../../../ProjectChomsky/packages/chomsky-uir" }
-chomsky-types = { path = "../../../ProjectChomsky/packages/chomsky-types" }
-oak-vfs = { path = "../../../oaks/projects/oak-vfs" }
+nyar-vm = { workspace = true }
+nyar-types = { workspace = true }
+oak-core = { workspace = true }
+oak-swift = { workspace = true }
+chomsky = { workspace = true }
+chomsky-uir = { workspace = true }
+chomsky-types = { workspace = true }
+oak-vfs = { workspace = true }
