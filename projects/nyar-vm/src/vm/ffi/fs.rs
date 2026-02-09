@@ -40,22 +40,22 @@ impl FFIFunction for AsyncFsReadToString {
         tokio::spawn(async move {
             let res = tokio::fs::read_to_string(&path_str).await;
             unsafe {
-                    let f = root.as_mut();
-                    match res {
-                        Ok(content) => {
-                            f.status = FutureStatus::Ready;
-                            f.result = Value::string(content, &gc);
-                            root.as_gc().write_barrier(&gc);
-                        }
-                        Err(_e) => {
-                            f.status = FutureStatus::Failed;
-                            root.as_gc().write_barrier(&gc);
-                        }
+                let f = root.as_mut();
+                match res {
+                    Ok(content) => {
+                        f.status = FutureStatus::Ready;
+                        f.result = Value::string(content, &gc);
+                        root.as_gc().write_barrier(&gc);
                     }
-                    if let Some(waker) = f.waker.take() {
-                        waker.wake();
+                    Err(_e) => {
+                        f.status = FutureStatus::Failed;
+                        root.as_gc().write_barrier(&gc);
                     }
                 }
+                if let Some(waker) = f.waker.take() {
+                    waker.wake();
+                }
+            }
         });
 
         Ok(future_val)
@@ -102,7 +102,7 @@ impl FFIFunction for AsyncFsWrite {
         tokio::spawn(async move {
             let res = tokio::fs::write(&path_str, &content_str).await;
             unsafe {
-                let f = root.as_gc().as_mut();
+                let f = root.as_mut();
                 match res {
                     Ok(_) => {
                         f.status = FutureStatus::Ready;

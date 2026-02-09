@@ -72,8 +72,8 @@ impl FFIFunction for AsyncTimeout {
                         loop {
                             unsafe {
                                 let f = target_root.as_gc();
-                                if f.as_ref().status != FutureStatus::Pending {
-                                    return f.as_ref().status;
+                                if (&*f).status != FutureStatus::Pending {
+                                    return (&*f).status;
                                 }
                             }
                             tokio::task::yield_now().await;
@@ -82,8 +82,8 @@ impl FFIFunction for AsyncTimeout {
                         unsafe {
                             let f = root.as_mut();
                             let target_f = target_root.as_gc();
-                            f.status = target_f.as_ref().status;
-                            f.result = target_f.as_ref().result;
+                            f.status = (&*target_f).status;
+                            f.result = (&*target_f).result;
                             root.as_gc().write_barrier(&gc);
                             if let Some(waker) = f.waker.take() {
                                 waker.wake();
@@ -238,9 +238,9 @@ impl FFIFunction for AsyncWaitAll {
         let root = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
         let gc = vm.gc.clone();
 
-        let mut roots = vec![];
+        let mut roots: Vec<Root<Future>> = vec![];
         for f in &futures {
-            if let Some(f_gc) = unsafe { f.try_as_gc_future() } {
+            if let Some(f_gc) = f.try_as_gc_future() {
                 roots.push(Root::new(vm.gc.clone(), f_gc));
             }
         }
@@ -293,9 +293,9 @@ impl FFIFunction for AsyncWaitAny {
         let root = Root::new(vm.gc.clone(), unsafe { future_val.as_gc_future() });
         let gc = vm.gc.clone();
 
-        let mut roots = vec![];
+        let mut roots: Vec<Root<Future>> = vec![];
         for f in &futures {
-            if let Some(f_gc) = unsafe { f.try_as_gc_future() } {
+            if let Some(f_gc) = f.try_as_gc_future() {
                 roots.push(Root::new(vm.gc.clone(), f_gc));
             }
         }

@@ -475,6 +475,13 @@ impl Value {
     pub unsafe fn as_gc_future(&self) -> Gc<Future> {
         Gc::new(self.payload() as *mut GcBox<Future>)
     }
+    pub fn try_as_gc_future(&self) -> Option<Gc<Future>> {
+        if self.is_future() {
+            Some(unsafe { self.as_gc_future() })
+        } else {
+            None
+        }
+    }
     pub fn int(v: i64) -> Self {
         Self::encode(ValueTag::Int, v as u64)
     }

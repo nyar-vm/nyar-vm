@@ -42,7 +42,7 @@ impl FFIFunction for StdHttpGet {
                     match text_res {
                         Ok(t) => {
                             unsafe {
-                                let f = root.as_gc().as_mut();
+                                let f = root.as_mut();
                                 f.result = Value::string(t, &gc);
                                 f.status = FutureStatus::Ready;
                                 root.as_gc().write_barrier(&gc);
@@ -53,7 +53,7 @@ impl FFIFunction for StdHttpGet {
                         }
                         Err(_) => {
                             unsafe {
-                                let f = root.as_gc().as_mut();
+                                let f = root.as_mut();
                                 f.status = FutureStatus::Failed;
                                 root.as_gc().write_barrier(&gc);
                                 if let Some(waker) = f.waker.take() {
@@ -65,7 +65,7 @@ impl FFIFunction for StdHttpGet {
                 }
                 Err(_) => {
                     unsafe {
-                        let f = root.as_gc().as_mut();
+                        let f = root.as_mut();
                         f.status = FutureStatus::Failed;
                         root.as_gc().write_barrier(&gc);
                         if let Some(waker) = f.waker.take() {
@@ -107,7 +107,7 @@ impl FFIFunction for StdHttpPost {
                     match text_res {
                         Ok(t) => {
                             unsafe {
-                                let f = root.as_gc().as_mut();
+                                let f = root.as_mut();
                                 f.result = Value::string(t, &gc);
                                 f.status = FutureStatus::Ready;
                                 root.as_gc().write_barrier(&gc);
@@ -118,7 +118,7 @@ impl FFIFunction for StdHttpPost {
                         }
                         Err(_) => {
                             unsafe {
-                                let f = root.as_gc().as_mut();
+                                let f = root.as_mut();
                                 f.status = FutureStatus::Failed;
                                 root.as_gc().write_barrier(&gc);
                                 if let Some(waker) = f.waker.take() {
@@ -130,7 +130,7 @@ impl FFIFunction for StdHttpPost {
                 }
                 Err(_) => {
                     unsafe {
-                        let f = root.as_gc().as_mut();
+                        let f = root.as_mut();
                         f.status = FutureStatus::Failed;
                         root.as_gc().write_barrier(&gc);
                         if let Some(waker) = f.waker.take() {
