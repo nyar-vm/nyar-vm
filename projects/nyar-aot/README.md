@@ -1,6 +1,6 @@
 # nyar-aot
 
-Ahead-of-Time (AOT) compiler for the Nyar virtual machine.
+Ahead-of-Time (AOT) compiler for the Nyar VM.
 
 ## Features
 

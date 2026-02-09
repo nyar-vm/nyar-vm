@@ -1,10 +1,10 @@
 # rusty-typescript
 
-A TypeScript language frontend for the Nyar virtual machine.
+A TypeScript language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-typescript` is a sophisticated compiler frontend for the TypeScript language, targeting the Nyar virtual machine. It supports modern TypeScript features, including decorators and JSX, and provides both JIT (via `nyar-vm`) and AOT (compiling to WebAssembly) execution paths.
+`rusty-typescript` is a sophisticated compiler frontend for the TypeScript language, targeting the Nyar VM. It supports modern TypeScript features, including decorators and JSX, and provides both JIT (via `nyar-vm`) and AOT (compiling to WebAssembly) execution paths.
 
 ## Features
 

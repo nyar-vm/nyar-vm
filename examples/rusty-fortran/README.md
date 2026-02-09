@@ -1,10 +1,10 @@
 # rusty-fortran
 
-A Fortran language frontend for the Nyar virtual machine.
+A Fortran language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-fortran` is a compiler frontend that brings the power of Fortran to the Nyar virtual machine. It is designed for high-performance scientific and numerical computing, allowing legacy and modern Fortran code to run on a modern, JIT-optimized runtime with advanced memory management.
+`rusty-fortran` is a compiler frontend that brings the power of Fortran to the Nyar VM. It is designed for high-performance scientific and numerical computing, allowing legacy and modern Fortran code to run on a modern, JIT-optimized runtime with advanced memory management.
 
 ## Features
 

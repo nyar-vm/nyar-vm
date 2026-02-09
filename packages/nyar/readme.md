@@ -1,10 +1,10 @@
 # @nyar/nyar
 
-The command-line interface for the Nyar virtual machine.
+The command-line interface for the Nyar VM.
 
 ## Overview
 
-This package provides the `nyar` command, which is the primary tool for running, compiling, and managing projects on the Nyar virtual machine.
+This package provides the `nyar` command, which is the primary tool for running, compiling, and managing projects on the Nyar VM.
 
 ## Installation
 

@@ -31,7 +31,8 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<IKun>> UirConverter<'a, 'b, V, A> 
             Item::Class(class) => {
                 let name = &class.name.name;
                 // Basic class representation
-                Some(self.ctx.builder().extension("class", vec![], loc))
+                let name_id = self.ctx.builder().symbol(name, loc.clone());
+                Some(self.ctx.builder().extension("class", vec![name_id], loc))
             }
             Item::Function(func) => {
                 let name = &func.name.name;
@@ -42,7 +43,7 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<IKun>> UirConverter<'a, 'b, V, A> 
             Item::Variable(var) => {
                 let name = &var.name.name;
                 let mangled = self.ctx.scopes.declare_variable(name);
-                let value = self.ctx.builder().constant(0, loc.clone()); // Default value for now
+                let value = self.ctx.builder().constant(0, loc.clone());
                 Some(self.ctx.builder().assign(&mangled, value, loc))
             }
         }

@@ -1,6 +1,6 @@
 # nyar-gc
 
-A high-performance, precise, and concurrent garbage collector for the Nyar virtual machine.
+A high-performance, precise, and concurrent garbage collector for the Nyar VM.
 
 ## Overview
 

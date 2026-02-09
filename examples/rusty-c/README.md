@@ -1,10 +1,10 @@
 # rusty-c
 
-A C language frontend for the Nyar virtual machine.
+A C language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-c` is a compiler frontend that allows C source code to be executed on the Nyar virtual machine. It provides a bridge between low-level systems programming and Nyar's high-level managed environment, allowing C code to benefit from automatic memory management and JIT optimization.
+`rusty-c` is a compiler frontend that allows C source code to be executed on the Nyar VM. It provides a bridge between low-level systems programming and Nyar's high-level managed environment, allowing C code to benefit from automatic memory management and JIT optimization.
 
 ## Features
 

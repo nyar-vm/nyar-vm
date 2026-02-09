@@ -69,23 +69,27 @@ impl RustyGoRuntime {
         let module_idx = self.vm.load_module(module);
 
         // Find main or first export
-        if let Some(export) = self.vm.env.modules[module_idx]
-            .exports
-            .iter()
-            .find(|e| e.symbol == "main".into())
-            .or(self.vm.env.modules[module_idx].exports.first())
-        {
-            match self.vm.execute(module_idx, export.chunk_idx as usize) {
-                Ok(val) => {
-                    println!("Execution result: {}", val);
+        if let Some(module_ref) = self.vm.env.modules.get(&module_idx) {
+            if let Some(export) = module_ref
+                .exports
+                .iter()
+                .find(|e| e.symbol == "main".into())
+                .or(module_ref.exports.first())
+            {
+                match self.vm.execute(module_idx, export.chunk_idx as usize) {
+                    Ok(val) => {
+                        println!("Execution result: {}", val);
+                    }
+                    Err(e) => {
+                        println!("Nyar VM execution failed: {:?}", e);
+                        return Err(RuntimeError::NyarVm(format!("{:?}", e)));
+                    }
                 }
-                Err(e) => {
-                    println!("Nyar VM execution failed: {:?}", e);
-                    return Err(RuntimeError::NyarVm(format!("{:?}", e)));
-                }
+            } else {
+                return Err(RuntimeError::EntryPointNotFound);
             }
         } else {
-            return Err(RuntimeError::EntryPointNotFound);
+            return Err(RuntimeError::Other(format!("Module {} not found", module_idx)));
         }
 
         Ok(())

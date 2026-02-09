@@ -1,6 +1,6 @@
 # nyar-types
 
-Core type definitions and common abstractions for the Nyar virtual machine.
+Core type definitions and common abstractions for the Nyar VM.
 
 ## Overview
 

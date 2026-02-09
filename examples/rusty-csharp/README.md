@@ -1,10 +1,10 @@
 # rusty-csharp
 
-A C# language frontend for the Nyar virtual machine.
+A C# language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-csharp` is a compiler frontend that allows C# source code to be executed on the Nyar virtual machine. It provides a robust, managed environment for C# applications, mapping the .NET-style object model to Nyar's native execution engine and advanced garbage collector.
+`rusty-csharp` is a compiler frontend that allows C# source code to be executed on the Nyar VM. It provides a robust, managed environment for C# applications, mapping the .NET-style object model to Nyar's native execution engine and advanced garbage collector.
 
 ## Features
 

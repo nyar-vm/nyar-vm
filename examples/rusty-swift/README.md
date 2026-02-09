@@ -1,10 +1,10 @@
 # rusty-swift
 
-A Swift language frontend for the Nyar virtual machine.
+A Swift language frontend for the Nyar VM.
 
 ## Overview
 
-This project implements a compiler frontend for the Swift language, allowing Swift source code to be compiled and executed on the Nyar virtual machine.
+This project implements a compiler frontend for the Swift language, allowing Swift source code to be compiled and executed on the Nyar VM.
 
 ## Features
 

@@ -1,10 +1,10 @@
 # rusty-rust (Mini Rust)
 
-A Rust language frontend for the Nyar virtual machine.
+A Rust language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-rust` (also known as Mini Rust) is a compiler frontend that allows a subset of the Rust programming language to be executed on the Nyar virtual machine. It provides a robust parsing and lowering pipeline that transforms Rust source code into Gaia IR, benefiting from Nyar's advanced runtime optimizations.
+`rusty-rust` (also known as Mini Rust) is a compiler frontend that allows a subset of the Rust programming language to be executed on the Nyar VM. It provides a robust parsing and lowering pipeline that transforms Rust source code into Gaia IR, benefiting from Nyar's advanced runtime optimizations.
 
 ## Features
 

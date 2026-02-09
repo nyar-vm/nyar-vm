@@ -1,6 +1,6 @@
 # @nyar-vm/nyar-wasm32-wasi
 
-WebAssembly (WASI) binary distribution for the Nyar virtual machine.
+WebAssembly (WASI) binary distribution for the Nyar VM.
 
 ## Overview
 

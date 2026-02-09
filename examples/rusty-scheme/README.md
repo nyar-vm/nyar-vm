@@ -1,10 +1,10 @@
 # rusty-scheme
 
-A Scheme language frontend for the Nyar virtual machine.
+A Scheme language frontend for the Nyar VM.
 
 ## Overview
 
-This project implements a compiler frontend for the Scheme language, allowing Scheme source code to be compiled and executed on the Nyar virtual machine.
+This project implements a compiler frontend for the Scheme language, allowing Scheme source code to be compiled and executed on the Nyar VM.
 
 ## Features
 

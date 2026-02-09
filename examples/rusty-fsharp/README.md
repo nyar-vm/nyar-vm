@@ -1,10 +1,10 @@
 # rusty-fsharp
 
-An F# language frontend for the Nyar virtual machine.
+An F# language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-fsharp` is a compiler frontend that brings the F# programming language to the Nyar virtual machine. It combines F#'s concise syntax and functional-first approach with Nyar's advanced runtime, mapping F#'s unique features to the VM's native execution engine.
+`rusty-fsharp` is a compiler frontend that brings the F# programming language to the Nyar VM. It combines F#'s concise syntax and functional-first approach with Nyar's advanced runtime, mapping F#'s unique features to the VM's native execution engine.
 
 ## Features
 

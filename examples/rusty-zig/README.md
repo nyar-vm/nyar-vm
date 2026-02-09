@@ -1,10 +1,10 @@
 # rusty-zig
 
-A Zig language frontend for the Nyar virtual machine.
+A Zig language frontend for the Nyar VM.
 
 ## Overview
 
-This project implements a compiler frontend for the Zig language, allowing Zig source code to be compiled and executed on the Nyar virtual machine.
+This project implements a compiler frontend for the Zig language, allowing Zig source code to be compiled and executed on the Nyar VM.
 
 ## Features
 

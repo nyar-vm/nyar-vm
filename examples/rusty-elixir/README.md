@@ -1,10 +1,10 @@
 # rusty-elixir
 
-An Elixir language frontend for the Nyar virtual machine.
+An Elixir language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-elixir` is a compiler frontend that brings the Elixir programming language to the Nyar virtual machine. It focuses on Elixir's strengths in functional programming and concurrency, mapping Elixir's processes and message passing to Nyar's native task system and algebraic effects.
+`rusty-elixir` is a compiler frontend that brings the Elixir programming language to the Nyar VM. It focuses on Elixir's strengths in functional programming and concurrency, mapping Elixir's processes and message passing to Nyar's native task system and algebraic effects.
 
 ## Features
 

@@ -1,6 +1,6 @@
 # @nyar-vm/nyar-darwin-x64
 
-macOS x64 native binary distribution for the Nyar virtual machine.
+macOS x64 native binary distribution for the Nyar VM.
 
 ## Overview
 

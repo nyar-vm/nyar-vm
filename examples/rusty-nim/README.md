@@ -1,10 +1,10 @@
 # rusty-nim
 
-A Nim language frontend for the Nyar virtual machine.
+A Nim language frontend for the Nyar VM.
 
 ## Overview
 
-This project implements a compiler frontend for the Nim language, allowing Nim source code to be compiled and executed on the Nyar virtual machine.
+This project implements a compiler frontend for the Nim language, allowing Nim source code to be compiled and executed on the Nyar VM.
 
 ## Features
 

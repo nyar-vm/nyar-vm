@@ -1,6 +1,6 @@
 # nyar-macros
 
-Procedural macros for the Nyar virtual machine ecosystem.
+Procedural macros for the Nyar VM ecosystem.
 
 ## Overview
 

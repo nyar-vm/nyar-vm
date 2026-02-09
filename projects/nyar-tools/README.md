@@ -1,6 +1,6 @@
 # nyar-tools
 
-Diagnostic and development utilities for the Nyar virtual machine.
+Diagnostic and development utilities for the Nyar VM.
 
 ## Overview
 

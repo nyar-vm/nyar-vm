@@ -1,10 +1,10 @@
 # rusty-mojo
 
-A Mojo language frontend for the Nyar virtual machine.
+A Mojo language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-mojo` is an experimental compiler frontend for the Mojo programming language, targeting the Nyar virtual machine. It aims to combine Mojo's high-performance AI and systems programming capabilities with Nyar's advanced runtime optimizations and multi-tier JIT compilation.
+`rusty-mojo` is an experimental compiler frontend for the Mojo programming language, targeting the Nyar VM. It aims to combine Mojo's high-performance AI and systems programming capabilities with Nyar's advanced runtime optimizations and multi-tier JIT compilation.
 
 ## Features
 

@@ -1,7 +1,7 @@
 {
     "name": "@nyar/nyar",
     "version": "0.1.0",
-    "description": "Nyar virtual machine CLI",
+    "description": "Nyar VM CLI",
     "license": "MIT",
     "repository": {
         "type": "git",

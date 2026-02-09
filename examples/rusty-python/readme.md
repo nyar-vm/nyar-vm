@@ -1,10 +1,10 @@
 # rusty-python
 
-A Python language frontend for the Nyar virtual machine.
+A Python language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-python` is a compiler frontend that allows Python source code to be executed on the Nyar virtual machine. It leverages the `oak-python` parser to generate an Abstract Syntax Tree (AST), which is then lowered into Gaia Intermediate Representation (Gaia IR) for high-performance execution.
+`rusty-python` is a compiler frontend that allows Python source code to be executed on the Nyar VM. It leverages the `oak-python` parser to generate an Abstract Syntax Tree (AST), which is then lowered into Gaia Intermediate Representation (Gaia IR) for high-performance execution.
 
 ## Features
 

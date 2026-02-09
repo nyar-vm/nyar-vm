@@ -1,10 +1,10 @@
 # rusty-julia
 
-A Julia language frontend for the Nyar virtual machine.
+A Julia language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-julia` is a compiler frontend that brings the Julia programming language to the Nyar virtual machine. It focuses on Julia's strengths—high-performance numerical computing and multiple dispatch—mapping them to Nyar's native execution engine and optimization pipeline.
+`rusty-julia` is a compiler frontend that brings the Julia programming language to the Nyar VM. It focuses on Julia's strengths—high-performance numerical computing and multiple dispatch—mapping them to Nyar's native execution engine and optimization pipeline.
 
 ## Features
 

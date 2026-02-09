@@ -1,10 +1,10 @@
 # rusty-java (Mini Java)
 
-A Java language frontend for the Nyar virtual machine.
+A Java language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-java` (also known as Mini Java) is a compiler frontend that allows Java source code to be executed on the Nyar virtual machine. It provides a managed, object-oriented runtime for Java applications, mapping the JVM-style execution model to Nyar's native engine and advanced garbage collector.
+`rusty-java` (also known as Mini Java) is a compiler frontend that allows Java source code to be executed on the Nyar VM. It provides a managed, object-oriented runtime for Java applications, mapping the JVM-style execution model to Nyar's native engine and advanced garbage collector.
 
 ## Features
 

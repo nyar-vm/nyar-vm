@@ -1,10 +1,10 @@
 # rusty-dart
 
-A Dart language frontend for the Nyar virtual machine.
+A Dart language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-dart` is a compiler frontend that brings the Dart programming language to the Nyar virtual machine. It is designed to provide a high-performance runtime for Dart applications, leveraging Nyar's advanced JIT compilation and garbage collection for both mobile and server-side scenarios.
+`rusty-dart` is a compiler frontend that brings the Dart programming language to the Nyar VM. It is designed to provide a high-performance runtime for Dart applications, leveraging Nyar's advanced JIT compilation and garbage collection for both mobile and server-side scenarios.
 
 ## Features
 

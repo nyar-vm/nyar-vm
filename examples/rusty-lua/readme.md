@@ -1,10 +1,10 @@
 # rusty-lua
 
-A Lua language frontend for the Nyar virtual machine.
+A Lua language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-lua` is a high-performance Lua frontend for the Nyar virtual machine. It provides full lexical and syntactic analysis of Lua source code and translates it into Gaia IR. By targeting the Nyar VM, Lua scripts can benefit from advanced features like algebraic effects and multi-tier JIT compilation.
+`rusty-lua` is a high-performance Lua frontend for the Nyar VM. It provides full lexical and syntactic analysis of Lua source code and translates it into Gaia IR. By targeting the Nyar VM, Lua scripts can benefit from advanced features like algebraic effects and multi-tier JIT compilation.
 
 ## Features
 

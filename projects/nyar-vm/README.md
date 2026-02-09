@@ -1,6 +1,6 @@
 # nyar-vm
 
-The core execution engine for the Nyar virtual machine ecosystem.
+The core execution engine for the Nyar VM ecosystem.
 
 ## Overview
 

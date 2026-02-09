@@ -1,6 +1,6 @@
 # @nyar-vm/nyar-linux-x64
 
-Linux x64 native binary distribution for the Nyar virtual machine.
+Linux x64 native binary distribution for the Nyar VM.
 
 ## Overview
 

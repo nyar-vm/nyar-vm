@@ -1,10 +1,10 @@
 # rusty-ruby
 
-A Ruby language frontend for the Nyar virtual machine.
+A Ruby language frontend for the Nyar VM.
 
 ## Overview
 
-This project implements a compiler frontend for the Ruby language, allowing Ruby source code to be compiled and executed on the Nyar virtual machine.
+This project implements a compiler frontend for the Ruby language, allowing Ruby source code to be compiled and executed on the Nyar VM.
 
 ## Features
 

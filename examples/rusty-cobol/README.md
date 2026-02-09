@@ -1,10 +1,10 @@
 # rusty-cobol
 
-A COBOL language frontend for the Nyar virtual machine.
+A COBOL language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-cobol` is a specialized compiler frontend that brings the venerable COBOL language to the modern Nyar virtual machine ecosystem. It allows legacy business logic and data processing applications to run on a high-performance, JIT-optimized runtime with advanced garbage collection and concurrency support.
+`rusty-cobol` is a specialized compiler frontend that brings the venerable COBOL language to the modern Nyar VM ecosystem. It allows legacy business logic and data processing applications to run on a high-performance, JIT-optimized runtime with advanced garbage collection and concurrency support.
 
 ## Features
 

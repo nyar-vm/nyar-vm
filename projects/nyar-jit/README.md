@@ -1,6 +1,6 @@
 # nyar-jit
 
-A multi-tier Just-In-Time (JIT) compiler for the Nyar virtual machine.
+A multi-tier Just-In-Time (JIT) compiler for the Nyar VM.
 
 ## Overview
 

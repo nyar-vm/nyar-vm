@@ -1,10 +1,10 @@
 # rusty-kotlin
 
-A Kotlin language frontend for the Nyar virtual machine.
+A Kotlin language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-kotlin` is a compiler frontend that brings the Kotlin programming language to the Nyar virtual machine. It provides a modern, expressive runtime for Kotlin applications, mapping Kotlin's unique features—like null safety and coroutines—to Nyar's native execution engine and algebraic effects.
+`rusty-kotlin` is a compiler frontend that brings the Kotlin programming language to the Nyar VM. It provides a modern, expressive runtime for Kotlin applications, mapping Kotlin's unique features—like null safety and coroutines—to Nyar's native execution engine and algebraic effects.
 
 ## Features
 

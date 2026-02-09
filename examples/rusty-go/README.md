@@ -1,10 +1,10 @@
 # rusty-go
 
-A Go language frontend for the Nyar virtual machine.
+A Go language frontend for the Nyar VM.
 
 ## Overview
 
-`rusty-go` is a compiler frontend that brings the Go programming language to the Nyar virtual machine. It focuses on Go's strengths—simplicity and concurrency—by mapping Go's goroutines and channels to Nyar's native concurrency primitives and algebraic effects.
+`rusty-go` is a compiler frontend that brings the Go programming language to the Nyar VM. It focuses on Go's strengths—simplicity and concurrency—by mapping Go's goroutines and channels to Nyar's native concurrency primitives and algebraic effects.
 
 ## Features
 

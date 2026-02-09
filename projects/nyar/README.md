@@ -1,6 +1,6 @@
 # nyar
 
-The unified Command-Line Interface (CLI) for the Nyar virtual machine.
+The unified Command-Line Interface (CLI) for the Nyar VM.
 
 ## Overview
 

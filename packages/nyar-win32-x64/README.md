@@ -1,6 +1,6 @@
 # @nyar-vm/nyar-win32-x64
 
-Windows x64 native binary distribution for the Nyar virtual machine.
+Windows x64 native binary distribution for the Nyar VM.
 
 ## Overview
 
