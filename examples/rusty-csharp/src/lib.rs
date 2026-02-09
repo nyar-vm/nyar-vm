@@ -3,7 +3,7 @@
 //!
 //! 提供 Rusty CSharp 的词法分析、语法分析和 Nyar 翻译功能。
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarError, NyarFrontend};
 use oak_core::{builder::Builder, source::SourceText};
 use oak_csharp::{CSharpBuilder, CSharpLanguage, ast::CSharpRoot};
 
@@ -42,9 +42,15 @@ impl NyarFrontend for RustyCSharpFrontend {
             .map_err(|e| NyarError::Compile(format!("{:?}", e)))
     }
 
-    /// 编译到 Chomsky UIR (IKunTree)
-    fn lower(&self, ast: &CSharpRoot) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: nyar_types::Vfs>(
+        &self,
+        ast: &CSharpRoot,
+        ctx: &mut nyar_types::NyarContext<'_, V>,
+    ) -> chomsky_uir::Id {
         let translator = crate::codegen::NyarTranslator::new();
-        translator.translate_to_tree(ast)
+        let mut translator_ctx = crate::codegen::TranslatorContext {
+            builder: ctx.builder(),
+        };
+        translator.translate_root(ast, &mut translator_ctx).unwrap_or_else(|_| ctx.egraph.add(chomsky_uir::IKun::Nil))
     }
 }

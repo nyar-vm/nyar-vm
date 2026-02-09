@@ -1,8 +1,7 @@
 //! CSharp 到 Nyar 字节码的翻译器
 
-use chomsky_types::Loc;
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
-use nyar_types::NyarError;
+use nyar_types::{Loc, NyarError};
 use oak_csharp::ast::*;
 
 /// CSharp 翻译器上下文
@@ -24,37 +23,37 @@ impl<'a> TranslatorContext<'a> {
         match (target, method) {
             // System.Console
             ("System.Console", "WriteLine") | ("Console", "WriteLine") => {
-                Some(self.builder.cross_lang_call("nyar", "std::io::println", args, loc))
+                Some(self.builder.cross_lang_call("nyar", "std::io", "println", args, loc))
             }
             ("System.Console", "Write") | ("Console", "Write") => {
-                Some(self.builder.cross_lang_call("nyar", "std::io::print", args, loc))
+                Some(self.builder.cross_lang_call("nyar", "std::io", "print", args, loc))
             }
             ("System.Console", "ReadLine") | ("Console", "ReadLine") => {
-                Some(self.builder.cross_lang_call("nyar", "std::io::read_line", args, loc))
+                Some(self.builder.cross_lang_call("nyar", "std::io", "read_line", args, loc))
             }
             // System.Math
-            ("System.Math", "Abs") | ("Math", "Abs") => Some(self.builder.cross_lang_call("nyar", "std::math::abs", args, loc)),
-            ("System.Math", "Sqrt") | ("Math", "Sqrt") => Some(self.builder.cross_lang_call("nyar", "std::math::sqrt", args, loc)),
-            ("System.Math", "Pow") | ("Math", "Pow") => Some(self.builder.cross_lang_call("nyar", "std::math::pow", args, loc)),
-            ("System.Math", "Sin") | ("Math", "Sin") => Some(self.builder.cross_lang_call("nyar", "std::math::sin", args, loc)),
-            ("System.Math", "Cos") | ("Math", "Cos") => Some(self.builder.cross_lang_call("nyar", "std::math::cos", args, loc)),
-            ("System.Math", "Tan") | ("Math", "Tan") => Some(self.builder.cross_lang_call("nyar", "std::math::tan", args, loc)),
-            ("System.Math", "Log") | ("Math", "Log") => Some(self.builder.cross_lang_call("nyar", "std::math::log", args, loc)),
-            ("System.Math", "Exp") | ("Math", "Exp") => Some(self.builder.cross_lang_call("nyar", "std::math::exp", args, loc)),
-            ("System.Math", "Floor") | ("Math", "Floor") => Some(self.builder.cross_lang_call("nyar", "std::math::floor", args, loc)),
-            ("System.Math", "Ceiling") | ("Math", "Ceiling") => Some(self.builder.cross_lang_call("nyar", "std::math::ceil", args, loc)),
-            ("System.Math", "Round") | ("Math", "Round") => Some(self.builder.cross_lang_call("nyar", "std::math::round", args, loc)),
-            ("System.Math", "Min") | ("Math", "Min") => Some(self.builder.cross_lang_call("nyar", "std::math::min", args, loc)),
-            ("System.Math", "Max") | ("Math", "Max") => Some(self.builder.cross_lang_call("nyar", "std::math::max", args, loc)),
+            ("System.Math", "Abs") | ("Math", "Abs") => Some(self.builder.cross_lang_call("nyar", "std::math", "abs", args, loc)),
+            ("System.Math", "Sqrt") | ("Math", "Sqrt") => Some(self.builder.cross_lang_call("nyar", "std::math", "sqrt", args, loc)),
+            ("System.Math", "Pow") | ("Math", "Pow") => Some(self.builder.cross_lang_call("nyar", "std::math", "pow", args, loc)),
+            ("System.Math", "Sin") | ("Math", "Sin") => Some(self.builder.cross_lang_call("nyar", "std::math", "sin", args, loc)),
+            ("System.Math", "Cos") | ("Math", "Cos") => Some(self.builder.cross_lang_call("nyar", "std::math", "cos", args, loc)),
+            ("System.Math", "Tan") | ("Math", "Tan") => Some(self.builder.cross_lang_call("nyar", "std::math", "tan", args, loc)),
+            ("System.Math", "Log") | ("Math", "Log") => Some(self.builder.cross_lang_call("nyar", "std::math", "log", args, loc)),
+            ("System.Math", "Exp") | ("Math", "Exp") => Some(self.builder.cross_lang_call("nyar", "std::math", "exp", args, loc)),
+            ("System.Math", "Floor") | ("Math", "Floor") => Some(self.builder.cross_lang_call("nyar", "std::math", "floor", args, loc)),
+            ("System.Math", "Ceiling") | ("Math", "Ceiling") => Some(self.builder.cross_lang_call("nyar", "std::math", "ceil", args, loc)),
+            ("System.Math", "Round") | ("Math", "Round") => Some(self.builder.cross_lang_call("nyar", "std::math", "round", args, loc)),
+            ("System.Math", "Min") | ("Math", "Min") => Some(self.builder.cross_lang_call("nyar", "std::math", "min", args, loc)),
+            ("System.Math", "Max") | ("Math", "Max") => Some(self.builder.cross_lang_call("nyar", "std::math", "max", args, loc)),
             // System.String
-            ("System.String", "Concat") | ("String", "Concat") => Some(self.builder.cross_lang_call("nyar", "std::string::concat", args, loc)),
-            ("System.String", "IsNullOrEmpty") | ("String", "IsNullOrEmpty") => Some(self.builder.cross_lang_call("nyar", "std::string::is_null_or_empty", args, loc)),
+            ("System.String", "Concat") | ("String", "Concat") => Some(self.builder.cross_lang_call("nyar", "std::string", "concat", args, loc)),
+            ("System.String", "IsNullOrEmpty") | ("String", "IsNullOrEmpty") => Some(self.builder.cross_lang_call("nyar", "std::string", "is_null_or_empty", args, loc)),
             // System.Convert
-            ("System.Convert", "ToInt32") | ("Convert", "ToInt32") => Some(self.builder.cross_lang_call("nyar", "std::convert::to_int", args, loc)),
-            ("System.Convert", "ToDouble") | ("Convert", "ToDouble") => Some(self.builder.cross_lang_call("nyar", "std::convert::to_float", args, loc)),
-            ("System.Convert", "ToString") | ("Convert", "ToString") => Some(self.builder.cross_lang_call("nyar", "std::convert::to_string", args, loc)),
+            ("System.Convert", "ToInt32") | ("Convert", "ToInt32") => Some(self.builder.cross_lang_call("nyar", "std::convert", "to_int", args, loc)),
+            ("System.Convert", "ToDouble") | ("Convert", "ToDouble") => Some(self.builder.cross_lang_call("nyar", "std::convert", "to_float", args, loc)),
+            ("System.Convert", "ToString") | ("Convert", "ToString") => Some(self.builder.cross_lang_call("nyar", "std::convert", "to_string", args, loc)),
             // System.Environment
-            ("System.Environment", "Exit") | ("Environment", "Exit") => Some(self.builder.cross_lang_call("nyar", "std::os::exit", args, loc)),
+            ("System.Environment", "Exit") | ("Environment", "Exit") => Some(self.builder.cross_lang_call("nyar", "std::os", "exit", args, loc)),
             _ => None,
         }
     }
@@ -86,7 +85,7 @@ impl NyarTranslator {
         Ok(extractor.extract(root_id))
     }
 
-    fn translate_root(
+    pub fn translate_root(
         &self,
         root: &CSharpRoot,
         ctx: &mut TranslatorContext,
@@ -305,7 +304,7 @@ impl NyarTranslator {
         let mut variants = Vec::new();
         let loc = Loc::unknown();
         for variant in &enum_decl.members {
-            variants.push(ctx.builder.export(variant, ctx.builder.constant(0, loc), loc));
+            variants.push(ctx.builder.export(&variant.name, ctx.builder.constant(0, loc), loc));
         }
         Ok(ctx.builder.module(&enum_decl.name, variants))
     }
@@ -566,8 +565,8 @@ impl NyarTranslator {
         match expr {
             Expression::Literal(lit) => match lit {
                 Literal::Integer(n) => Ok(ctx.builder.constant(*n, loc)),
-                Literal::String(s) => Ok(ctx.builder.constant(s.clone(), loc)),
-                Literal::Boolean(b) => Ok(ctx.builder.constant(*b, loc)),
+                Literal::String(s) => Ok(ctx.builder.string(s, loc)),
+                Literal::Boolean(b) => Ok(ctx.builder.bool(*b, loc)),
                 Literal::Null => Ok(ctx.builder.constant(0, loc)),
             },
             Expression::Identifier(id) => Ok(ctx.builder.symbol(id, loc)),
@@ -591,7 +590,8 @@ impl NyarTranslator {
             }
             Expression::MemberAccess(access) => {
                 let target_id = self.translate_expr(&access.target, ctx)?;
-                Ok(ctx.builder.get_member(target_id, &access.name, loc))
+                let name_id = ctx.builder.symbol(&access.name, loc);
+                Ok(ctx.builder.extension("get_member", vec![target_id, name_id], loc))
             }
             Expression::ElementAccess(access) => {
                 let target_id = self.translate_expr(&access.target, ctx)?;
@@ -606,23 +606,23 @@ impl NyarTranslator {
                 for arg in &new_expr.arguments {
                     args.push(self.translate_expr(arg, ctx)?);
                 }
-                Ok(ctx.builder.cross_lang_call("nyar", &format!("new::{}", new_expr.r#type), args, loc))
+                Ok(ctx.builder.cross_lang_call("nyar", "new", &new_expr.r#type, args, loc))
             }
             Expression::This => Ok(ctx.builder.symbol("this", loc)),
             Expression::Base => Ok(ctx.builder.symbol("base", loc)),
             Expression::Binary { left, op, right } => {
                 let left_id = self.translate_expr(left, ctx)?;
                 let right_id = self.translate_expr(right, ctx)?;
-                Ok(ctx.builder.binary(op, left_id, right_id, loc))
+                Ok(ctx.builder.binary_op(op, left_id, right_id, loc))
             }
             Expression::Unary { op, expression } => {
                 let expr_id = self.translate_expr(expression, ctx)?;
-                Ok(ctx.builder.unary(op, expr_id, loc))
+                Ok(ctx.builder.extension(op, vec![expr_id], loc))
             }
             Expression::Assignment { left, op, right } => {
                 let left_id = self.translate_expr(left, ctx)?;
                 let right_id = self.translate_expr(right, ctx)?;
-                Ok(ctx.builder.binary(op, left_id, right_id, loc))
+                Ok(ctx.builder.binary_op(op, left_id, right_id, loc))
             }
             Expression::Await(expr) => {
                 let expr_id = self.translate_expr(expr, ctx)?;
@@ -655,20 +655,10 @@ impl NyarTranslator {
                         self.translate_expr(expr, ctx)?,
                         loc,
                     );
+                    let name_id = ctx.builder.symbol("Where", loc);
+                    let member_id = ctx.builder.extension("get_member", vec![current_id, name_id], loc);
                     current_id = ctx.builder.call(
-                        ctx.builder.get_member(current_id, "Where", loc),
-                        vec![lambda_id],
-                        loc,
-                    );
-                }
-                QueryClause::Select(expr) => {
-                    let lambda_id = ctx.builder.lambda(
-                        vec![query.from_clause.identifier.clone()],
-                        self.translate_expr(expr, ctx)?,
-                        loc,
-                    );
-                    current_id = ctx.builder.call(
-                        ctx.builder.get_member(current_id, "Select", loc),
+                        member_id,
                         vec![lambda_id],
                         loc,
                     );
@@ -687,8 +677,10 @@ impl NyarTranslator {
                     self.translate_expr(expr, ctx)?,
                     loc,
                 );
+                let name_id = ctx.builder.symbol("Select", loc);
+                let member_id = ctx.builder.extension("get_member", vec![current_id, name_id], loc);
                 current_id = ctx.builder.call(
-                    ctx.builder.get_member(current_id, "Select", loc),
+                    member_id,
                     vec![lambda_id],
                     loc,
                 );
