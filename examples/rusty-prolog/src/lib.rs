@@ -1,6 +1,8 @@
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_prolog::{PrologBuilder, PrologLanguage, PrologRoot};
 use oak_core::{Builder, SourceText};
+use oak_vfs::Vfs;
+use chomsky_uir::Id;
 
 pub struct RustyPrologFrontend {
     language: PrologLanguage,
@@ -34,8 +36,8 @@ impl NyarFrontend for RustyPrologFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &PrologRoot) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, _ast: &PrologRoot, _ctx: &mut NyarContext<V>) -> Id {
         // TODO: 实现从 PrologRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-prolog-program".to_string(), Vec::new()))
+        _ctx.builder.module("rusty-prolog-program", Vec::new(), nyar_types::Loc::default())
     }
 }

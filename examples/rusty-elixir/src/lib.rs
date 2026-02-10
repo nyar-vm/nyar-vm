@@ -4,8 +4,10 @@
 
 pub mod codegen;
 
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_elixir::{ElixirLanguage, ElixirRoot};
+use oak_vfs::Vfs;
+use chomsky_uir::Id;
 
 /// Rusty Elixir 前端
 pub struct RustyElixirFrontend {
@@ -35,8 +37,8 @@ impl NyarFrontend for RustyElixirFrontend {
         Err(NyarError::Parse("Elixir parser not yet integrated".to_string()))
     }
 
-    fn lower(&self, _ast: &ElixirRoot) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, _ast: &ElixirRoot, ctx: &mut NyarContext<V>) -> Id {
         // TODO: 实现真正的从 ElixirRoot 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-elixir-program".to_string(), Vec::new()))
+        ctx.builder.module("rusty-elixir-program", Vec::new(), nyar_types::Loc::default())
     }
 }

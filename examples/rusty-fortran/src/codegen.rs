@@ -1,7 +1,7 @@
 //! Fortran 到 Nyar 字节码的翻译器
 
 use chomsky_uir::{ConstraintAnalysis, EGraph, IKun, IKunTree, IntentBuilder};
-use nyar_types::NyarError;
+use nyar_types::{Loc, NyarError};
 use oak_fortran::ast::*;
 
 /// Fortran 翻译器上下文
@@ -61,7 +61,7 @@ impl NyarTranslator {
             }
         }
         let name = root.name.as_deref().unwrap_or("root");
-        Ok(ctx.builder.module(name, items))
+        Ok(ctx.builder.module(name, items, Loc::default()))
     }
 
     fn translate_program_unit<A: chomsky_uir::Analysis<IKun>>(
@@ -87,7 +87,7 @@ impl NyarTranslator {
         let items = Vec::new();
         // TODO: 翻译 specification_part, execution_part, internal_subprograms
         let name = main.name.as_deref().unwrap_or("main");
-        Ok(ctx.builder.module(name, items))
+        Ok(ctx.builder.module(name, items, Loc::default()))
     }
 
     fn translate_subroutine<A: chomsky_uir::Analysis<IKun>>(
@@ -97,7 +97,7 @@ impl NyarTranslator {
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let items = Vec::new();
         // TODO
-        Ok(ctx.builder.module(&sub.name, items))
+        Ok(ctx.builder.module(&sub.name, items, Loc::default()))
     }
 
     fn translate_function<A: chomsky_uir::Analysis<IKun>>(
@@ -107,7 +107,7 @@ impl NyarTranslator {
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let items = Vec::new();
         // TODO
-        Ok(ctx.builder.module(&func.name, items))
+        Ok(ctx.builder.module(&func.name, items, Loc::default()))
     }
 
     fn translate_module<A: chomsky_uir::Analysis<IKun>>(
@@ -117,7 +117,7 @@ impl NyarTranslator {
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let items = Vec::new();
         // TODO
-        Ok(ctx.builder.module(&module.name, items))
+        Ok(ctx.builder.module(&module.name, items, Loc::default()))
     }
 
     fn translate_submodule<A: chomsky_uir::Analysis<IKun>>(
@@ -127,7 +127,7 @@ impl NyarTranslator {
     ) -> Result<chomsky_uir::egraph::Id, NyarError> {
         let items = Vec::new();
         // TODO
-        Ok(ctx.builder.module(&submodule.name, items))
+        Ok(ctx.builder.module(&submodule.name, items, Loc::default()))
     }
 
     fn translate_block_data<A: chomsky_uir::Analysis<IKun>>(
@@ -138,6 +138,6 @@ impl NyarTranslator {
         let items = Vec::new();
         // TODO
         let name = block_data.name.as_deref().unwrap_or("block_data");
-        Ok(ctx.builder.module(name, items))
+        Ok(ctx.builder.module(name, items, Loc::default()))
     }
 }
