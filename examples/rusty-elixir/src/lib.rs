@@ -32,7 +32,7 @@ impl RustyElixirFrontend {
 impl NyarFrontend for RustyElixirFrontend {
     type Language = ElixirLanguage;
 
-    fn parse(&self, _source: &str) -> Result<ElixirRoot, NyarError> {
+    fn parse(&self, _source: &str) -> Result<(), NyarError> {
         // TODO: 实现真正的解析逻辑
         Err(NyarError::Parse("Elixir parser not yet integrated".to_string()))
     }

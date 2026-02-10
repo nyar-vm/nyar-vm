@@ -1,6 +1,8 @@
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_nix::{NixBuilder, NixLanguage};
 use oak_core::{Builder, SourceText};
+use oak_vfs::Vfs;
+use chomsky_uir::Id;
 
 pub struct RustyNixFrontend {
     language: NixLanguage,
@@ -34,8 +36,8 @@ impl NyarFrontend for RustyNixFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, _ast: &(), ctx: &mut NyarContext<V>) -> Id {
         // TODO: 实现从 Nix AST 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-nix-program".to_string(), Vec::new()))
+        ctx.builder.module("rusty-nix-program", Vec::new(), nyar_types::Loc::default())
     }
 }

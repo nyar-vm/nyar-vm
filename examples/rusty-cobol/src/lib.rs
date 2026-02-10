@@ -1,4 +1,4 @@
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_cobol::{CobolLanguage, parser::CobolParser};
 use oak_core::{parser::Parser, SourceText};
 
@@ -35,8 +35,8 @@ impl NyarFrontend for RustyCobolFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, _ast: &(), ctx: &mut NyarContext<V>) -> Id {
         // TODO: 实现从 COBOL AST 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-cobol-program".to_string(), Vec::new()))
+        ctx.builder.module("rusty-cobol-program", Vec::new(), nyar_types::Loc::default())
     }
 }

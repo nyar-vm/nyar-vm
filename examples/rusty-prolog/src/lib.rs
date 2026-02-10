@@ -1,8 +1,6 @@
-use nyar_types::{NyarContext, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_prolog::{PrologBuilder, PrologLanguage, PrologRoot};
 use oak_core::{Builder, SourceText};
-use oak_vfs::Vfs;
-use chomsky_uir::Id;
 
 pub struct RustyPrologFrontend {
     language: PrologLanguage,

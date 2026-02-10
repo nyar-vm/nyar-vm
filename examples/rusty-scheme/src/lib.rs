@@ -1,4 +1,4 @@
-use nyar_types::{IKunTree, NyarError, NyarFrontend};
+use nyar_types::{NyarContext, NyarError, NyarFrontend, Id, Vfs};
 use oak_scheme::{SchemeBuilder, SchemeLanguage};
 use oak_core::{Builder, SourceText};
 
@@ -34,8 +34,8 @@ impl NyarFrontend for RustySchemeFrontend {
             .map_err(|e| NyarError::Parse(format!("{:?}", e)))
     }
 
-    fn lower(&self, _ast: &()) -> Result<IKunTree, NyarError> {
+    fn lower_unified<V: Vfs>(&self, _ast: &(), ctx: &mut NyarContext<V>) -> Id {
         // TODO: 实现从 Scheme AST 到 IKunTree 的转换
-        Ok(IKunTree::Module("rusty-scheme-program".to_string(), Vec::new()))
+        ctx.builder.module("rusty-scheme-program", Vec::new(), nyar_types::Loc::default())
     }
 }

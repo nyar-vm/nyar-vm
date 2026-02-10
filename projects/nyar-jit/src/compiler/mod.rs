@@ -71,7 +71,7 @@ impl JitProvider for NyarJit {
         }
 
         let threshold = self.get_threshold(JitTier::Baseline);
-        let chunk = &vm.env.modules[module_idx].chunks[chunk_idx];
+        let chunk = &vm.env.modules.get(&module_idx).unwrap().chunks[chunk_idx];
         let hotness = chunk.hotness.load(std::sync::atomic::Ordering::Relaxed);
 
         if hotness >= threshold {
@@ -307,7 +307,7 @@ impl NyarJit {
         start_offset: usize,
         initial_stack_depth: usize,
     ) -> Vec<IKun> {
-        let module = &vm.env.modules[module_idx];
+        let module = &vm.env.modules.get(&module_idx).unwrap();
         let chunk = &module.chunks[chunk_idx];
         let mut intents = Vec::new();
         let mut stack = Vec::new();
@@ -423,7 +423,7 @@ impl NyarJit {
                 Instruction::Push(idx) => {
                     let constant = &module.constants[idx as usize];
                     let intent = match constant {
-                        NyarConstant::Int(v) => IKun::Constant(v),
+                        NyarConstant::Int(v) => IKun::Constant(*v),
                         NyarConstant::Float(v) => IKun::FloatConstant(v.to_bits()),
                         NyarConstant::String(s) => IKun::StringConstant(s.clone()),
                         NyarConstant::QualifiedName(qn) => IKun::Symbol(qn.parts.join("::")),
