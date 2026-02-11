@@ -120,7 +120,31 @@ impl NyarVM {
             last_gc_count: 0,
             current_waker: None,
             network: crate::vm::net::NetworkContext::new(),
-            platform: Arc::new(crate::vm::platform::StubPlatform),
+            platform: Arc::new(crate::runtime::platform::NativePlatform),
+            effect_handler: None,
+            parent_traceback: None,
+        };
+        vm.ffi.register_std();
+        vm
+    }
+
+    pub fn with_platform(platform: Arc<dyn crate::vm::platform::NyarPlatform>) -> Self {
+        let mut vm = Self {
+            gc: Arc::new(NyarGc::new()),
+            env: Arc::new(NyarEnv::new()),
+            stack: Vec::with_capacity(64),
+            sp: 0,
+            frames: Vec::new(),
+            handler_stack: Vec::new(),
+            trace_log: Arc::new(std::sync::Mutex::new(Vec::new())),
+            ffi: FFIRegistry::new(),
+            jit: None,
+            local_hotness: 0,
+            step_count: 0,
+            last_gc_count: 0,
+            current_waker: None,
+            network: crate::vm::net::NetworkContext::new(),
+            platform,
             effect_handler: None,
             parent_traceback: None,
         };

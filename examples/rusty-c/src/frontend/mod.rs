@@ -4,7 +4,9 @@ use crate::errors::CError;
 use nyar_types::{NyarContext, NyarError, NyarFrontend};
 use oak_vfs::Vfs;
 use chomsky_uir::Id;
-use oak_c::{ast, CBuilder, CLanguage, CRoot};
+use oak_c::ast::{self, CRoot};
+use oak_c::builder::CBuilder;
+use oak_c::language::CLanguage;
 use oak_core::source::SourceText;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -106,16 +108,14 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
 
         let mut params = Vec::new();
         if let ast::DirectDeclarator::Function {
-            parameter_type_list,
+            parameter_list,
             ..
         } = &func.declarator.direct_declarator
         {
-            if let Some(list) = parameter_type_list {
-                for param in &list.parameter_list {
-                    if let Some(decl) = &param.declarator {
-                        let original_name = self.get_declarator_name(decl);
-                        params.push(self.ctx.scopes.declare_variable(&original_name));
-                    }
+            for param in &parameter_list.parameter_declarations {
+                if let Some(decl) = &param.declarator {
+                    let original_name = self.get_declarator_name(decl);
+                    params.push(self.ctx.scopes.declare_variable(&original_name));
                 }
             }
         }
@@ -127,12 +127,9 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
         }
         self.ctx.scopes.pop_scope();
 
-        if name == "main" {
-            return self.ctx.builder().block(body_ids, loc);
-        }
-
-        let lambda = self.ctx.builder().function(&name, params, body_ids, loc.clone());
-        self.ctx.builder().assign(&name, lambda, loc)
+        let body_block = self.ctx.builder().block(body_ids, loc.clone());
+        let lambda = self.ctx.builder().lambda(params, body_block, loc.clone());
+        self.ctx.builder().export(&name, lambda, loc)
     }
 
     fn convert_declaration(&mut self, decl: &ast::Declaration) -> Id {
@@ -152,15 +149,15 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 match ts {
                     ast::TypeSpecifier::StructOrUnion(s) => {
                         if let Some(name) = &s.identifier {
-                            if let Some(decls) = &s.struct_declarations {
-                                self.structs.insert(name.clone(), decls.clone());
+                            if !s.struct_declarations.is_empty() {
+                                self.structs.insert(name.clone(), s.struct_declarations.clone());
                             }
                         }
                     }
                     ast::TypeSpecifier::Enum(e) => {
                         if let Some(name) = &e.identifier {
-                            if let Some(enumerators) = &e.enumerators {
-                                self.enums.insert(name.clone(), enumerators.clone());
+                            if !e.enumerators.is_empty() {
+                                self.enums.insert(name.clone(), e.enumerators.clone());
                             }
                         }
                     }
@@ -257,7 +254,6 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     let loc = self.to_loc(span.clone().into());
                     self.ctx.builder().extension("switch", vec![cond, body], loc)
                 }
-                _ => self.ctx.builder().constant(0, loc),
             },
             ast::Statement::Iteration(iter) => match iter {
                 ast::IterationStatement::While {
@@ -329,7 +325,6 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                     let label_name = self.ctx.builder().string(identifier.clone().as_str(), loc.clone());
                     self.ctx.builder().extension("goto", vec![label_name], loc)
                 }
-                _ => self.ctx.builder().constant(0, loc),
             },
             _ => self.ctx.builder().constant(0, loc),
         }
@@ -373,24 +368,24 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let l = self.convert_expression(left);
                 let r = self.convert_expression(right);
                 let op = match operator {
-                    ast::BinaryOperator::Add { .. } => "add",
-                    ast::BinaryOperator::Subtract { .. } => "sub",
-                    ast::BinaryOperator::Multiply { .. } => "mul",
-                    ast::BinaryOperator::Divide { .. } => "div",
-                    ast::BinaryOperator::Modulo { .. } => "mod",
-                    ast::BinaryOperator::BitwiseAnd { .. } => "bit_and",
-                    ast::BinaryOperator::BitwiseOr { .. } => "bit_or",
-                    ast::BinaryOperator::BitwiseXor { .. } => "bit_xor",
-                    ast::BinaryOperator::LeftShift { .. } => "shl",
-                    ast::BinaryOperator::RightShift { .. } => "shr",
-                    ast::BinaryOperator::Equal { .. } => "eq",
-                    ast::BinaryOperator::NotEqual { .. } => "ne",
-                    ast::BinaryOperator::Less { .. } => "lt",
-                    ast::BinaryOperator::LessEqual { .. } => "le",
-                    ast::BinaryOperator::Greater { .. } => "gt",
-                    ast::BinaryOperator::GreaterEqual { .. } => "ge",
-                    ast::BinaryOperator::LogicalAnd { .. } => "and",
-                    ast::BinaryOperator::LogicalOr { .. } => "or",
+                    ast::BinaryOperator::Add => "add",
+                    ast::BinaryOperator::Subtract => "sub",
+                    ast::BinaryOperator::Multiply => "mul",
+                    ast::BinaryOperator::Divide => "div",
+                    ast::BinaryOperator::Modulo => "mod",
+                    ast::BinaryOperator::BitAnd => "bit_and",
+                    ast::BinaryOperator::BitOr => "bit_or",
+                    ast::BinaryOperator::BitXor => "bit_xor",
+                    ast::BinaryOperator::ShiftLeft => "shl",
+                    ast::BinaryOperator::ShiftRight => "shr",
+                    ast::BinaryOperator::Equal => "eq",
+                    ast::BinaryOperator::NotEqual => "ne",
+                    ast::BinaryOperator::Less => "lt",
+                    ast::BinaryOperator::LessEqual => "le",
+                    ast::BinaryOperator::Greater => "gt",
+                    ast::BinaryOperator::GreaterEqual => "ge",
+                    ast::BinaryOperator::LogicalAnd => "and",
+                    ast::BinaryOperator::LogicalOr => "or",
                 };
                 self.ctx.builder().binary_op(op, l, r, loc)
             }
@@ -399,13 +394,13 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
             } => {
                 let arg = self.convert_expression(operand);
                 let op = match operator {
-                    ast::UnaryOperator::AddressOf { .. } => "address_of",
-                    ast::UnaryOperator::Dereference { .. } => "deref",
-                    ast::UnaryOperator::Plus { .. } => "pos",
-                    ast::UnaryOperator::Minus { .. } => "neg",
-                    ast::UnaryOperator::BitwiseNot { .. } => "bit_not",
-                    ast::UnaryOperator::LogicalNot { .. } => "not",
-                    ast::UnaryOperator::Sizeof { .. } => "sizeof",
+                    ast::UnaryOperator::AddressOf => "address_of",
+                    ast::UnaryOperator::Indirection => "deref",
+                    ast::UnaryOperator::Plus => "pos",
+                    ast::UnaryOperator::Minus => "neg",
+                    ast::UnaryOperator::BitNot => "bit_not",
+                    ast::UnaryOperator::LogicalNot => "not",
+                    ast::UnaryOperator::Sizeof => "sizeof",
                 };
                 self.ctx.builder().extension(op, vec![arg], loc)
             }
@@ -433,8 +428,9 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 ..
             } => {
                 let val = self.convert_expression(expression);
-                // TODO: Handle type_name
-                self.ctx.builder().extension("cast", vec![val], loc)
+                let ty = self.convert_type_name(type_name);
+                let type_id = self.ctx.builder().string(&ty, loc.clone());
+                self.ctx.builder().extension("cast", vec![val, type_id], loc)
             }
             ast::ExpressionKind::Conditional {
                 condition,
@@ -456,20 +452,20 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let r = self.convert_expression(right);
                 let l = self.convert_expression(left);
                 match operator {
-                    ast::AssignmentOperator::Assign { .. } => self.ctx.builder().assign_to_id(l, r, loc),
+                    ast::AssignmentOperator::Assign => self.ctx.builder().assign_to_id(l, r, loc),
                     _ => {
                         let op = match operator {
-                            ast::AssignmentOperator::AddAssign { .. } => "add",
-                            ast::AssignmentOperator::SubAssign { .. } => "sub",
-                            ast::AssignmentOperator::MulAssign { .. } => "mul",
-                            ast::AssignmentOperator::DivAssign { .. } => "div",
-                            ast::AssignmentOperator::ModAssign { .. } => "mod",
-                            ast::AssignmentOperator::AndAssign { .. } => "bit_and",
-                            ast::AssignmentOperator::OrAssign { .. } => "bit_or",
-                            ast::AssignmentOperator::XorAssign { .. } => "bit_xor",
-                            ast::AssignmentOperator::LeftShiftAssign { .. } => "shl",
-                            ast::AssignmentOperator::RightShiftAssign { .. } => "shr",
-                            ast::AssignmentOperator::Assign { .. } => unreachable!(),
+                            ast::AssignmentOperator::AddAssign => "add",
+                            ast::AssignmentOperator::SubAssign => "sub",
+                            ast::AssignmentOperator::MulAssign => "mul",
+                            ast::AssignmentOperator::DivAssign => "div",
+                            ast::AssignmentOperator::ModAssign => "mod",
+                            ast::AssignmentOperator::AndAssign => "bit_and",
+                            ast::AssignmentOperator::OrAssign => "bit_or",
+                            ast::AssignmentOperator::XorAssign => "bit_xor",
+                            ast::AssignmentOperator::ShlAssign => "shl",
+                            ast::AssignmentOperator::ShrAssign => "shr",
+                            ast::AssignmentOperator::Assign => unreachable!(),
                         };
                         let value = self.ctx.builder().binary_op(op, l, r, loc.clone());
                         self.ctx.builder().assign_to_id(l, value, loc)
@@ -559,7 +555,132 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
                 let func_id = self.convert_expression(function);
                 self.ctx.builder().call(func_id, args, loc)
             }
-            _ => self.ctx.builder().constant(0, loc),
+        }
+    }
+
+    fn convert_type_name(&self, type_name: &ast::TypeName) -> String {
+        let mut res = String::new();
+        for spec in &type_name.specifier_qualifiers {
+            match spec {
+                ast::SpecifierQualifier::TypeSpecifier(ts) => {
+                    res.push_str(&self.convert_type_specifier(ts));
+                }
+                ast::SpecifierQualifier::TypeQualifier(tq) => {
+                    match tq {
+                        ast::TypeQualifier::Const { .. } => res.push_str("const "),
+                        ast::TypeQualifier::Restrict { .. } => res.push_str("restrict "),
+                        ast::TypeQualifier::Volatile { .. } => res.push_str("volatile "),
+                    }
+                }
+            }
+        }
+        if let Some(decl) = &type_name.abstract_declarator {
+            res.push_str(&self.convert_abstract_declarator(decl));
+        }
+        res.trim().to_string()
+    }
+
+    fn convert_type_specifier(&self, ts: &ast::TypeSpecifier) -> String {
+        match ts {
+            ast::TypeSpecifier::Void { .. } => "void ".to_string(),
+            ast::TypeSpecifier::Char { .. } => "char ".to_string(),
+            ast::TypeSpecifier::Short { .. } => "short ".to_string(),
+            ast::TypeSpecifier::Int { .. } => "int ".to_string(),
+            ast::TypeSpecifier::Long { .. } => "long ".to_string(),
+            ast::TypeSpecifier::Float { .. } => "float ".to_string(),
+            ast::TypeSpecifier::Double { .. } => "double ".to_string(),
+            ast::TypeSpecifier::Signed { .. } => "signed ".to_string(),
+            ast::TypeSpecifier::Unsigned { .. } => "unsigned ".to_string(),
+            ast::TypeSpecifier::Bool { .. } => "_Bool ".to_string(),
+            ast::TypeSpecifier::Complex { .. } => "_Complex ".to_string(),
+            ast::TypeSpecifier::Imaginary { .. } => "_Imaginary ".to_string(),
+            ast::TypeSpecifier::TypedefName(name, _) => format!("{} ", name),
+            ast::TypeSpecifier::StructOrUnion(s) => {
+                let kind = match s.kind {
+                    ast::StructOrUnion::Struct { .. } => "struct",
+                    ast::StructOrUnion::Union { .. } => "union",
+                };
+                if let Some(id) = &s.identifier {
+                    format!("{} {} ", kind, id)
+                } else {
+                    format!("{} <anonymous> ", kind)
+                }
+            }
+            ast::TypeSpecifier::Enum(e) => {
+                if let Some(id) = &e.identifier {
+                    format!("enum {} ", id)
+                } else {
+                    "enum <anonymous> ".to_string()
+                }
+            }
+        }
+    }
+
+    fn convert_abstract_declarator(&self, decl: &ast::AbstractDeclarator) -> String {
+        let mut res = String::new();
+        if let Some(p) = &decl.pointer {
+            res.push_str(&self.convert_pointer(p));
+        }
+        if let Some(d) = &decl.direct_abstract_declarator {
+            res.push_str(&self.convert_direct_abstract_declarator(d));
+        }
+        res
+    }
+
+    fn convert_pointer(&self, p: &ast::Pointer) -> String {
+        let mut res = "*".to_string();
+        for q in &p.type_qualifiers {
+            match q {
+                ast::TypeQualifier::Const { .. } => res.push_str("const "),
+                ast::TypeQualifier::Restrict { .. } => res.push_str("restrict "),
+                ast::TypeQualifier::Volatile { .. } => res.push_str("volatile "),
+            }
+        }
+        if let Some(inner) = &p.pointer {
+            res.push_str(&self.convert_pointer(inner));
+        }
+        res
+    }
+
+    fn convert_direct_abstract_declarator(&self, decl: &ast::DirectAbstractDeclarator) -> String {
+        match decl {
+            ast::DirectAbstractDeclarator::AbstractDeclarator(d) => {
+                format!("({})", self.convert_abstract_declarator(d))
+            }
+            ast::DirectAbstractDeclarator::Array {
+                declarator,
+                assignment_expression,
+                ..
+            } => {
+                let mut res = String::new();
+                if let Some(d) = declarator {
+                    res.push_str(&self.convert_direct_abstract_declarator(d));
+                }
+                res.push('[');
+                if let Some(_expr) = assignment_expression {
+                    // We don't have an easy way to stringify expression here without a lot of work
+                    // Just put a placeholder or leave empty for now
+                    res.push_str("...");
+                }
+                res.push(']');
+                res
+            }
+            ast::DirectAbstractDeclarator::Function {
+                declarator,
+                parameter_list,
+                ..
+            } => {
+                let mut res = String::new();
+                if let Some(d) = declarator {
+                    res.push_str(&self.convert_direct_abstract_declarator(d));
+                }
+                res.push('(');
+                if let Some(_params) = parameter_list {
+                    res.push_str("...");
+                }
+                res.push(')');
+                res
+            }
         }
     }
 
@@ -584,12 +705,12 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> UirConverter<'
     fn get_direct_declarator_name(&self, decl: &ast::DirectDeclarator) -> String {
         match decl {
             ast::DirectDeclarator::Identifier(name, _) => name.clone(),
-            ast::DirectDeclarator::Declarator(decl) => self.get_declarator_name(decl),
-            ast::DirectDeclarator::Array { declarator, .. } => {
-                self.get_direct_declarator_name(declarator)
+            ast::DirectDeclarator::Declarator(decl, _) => self.get_declarator_name(decl),
+            ast::DirectDeclarator::Array { direct_declarator, .. } => {
+                self.get_direct_declarator_name(direct_declarator)
             }
-            ast::DirectDeclarator::Function { declarator, .. } => {
-                self.get_direct_declarator_name(declarator)
+            ast::DirectDeclarator::Function { direct_declarator, .. } => {
+                self.get_direct_declarator_name(direct_declarator)
             }
         }
     }

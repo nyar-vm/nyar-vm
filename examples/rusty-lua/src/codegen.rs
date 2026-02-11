@@ -34,6 +34,12 @@ impl GaiaTranslator {
                 for (i, name) in s.names.iter().enumerate() {
                     let val = if let Some(expr) = s.values.get(i) {
                         self.translate_expression(expr, builder)?
+                    } else if !s.values.is_empty() && i >= s.values.len() {
+                        // Lua multiple assignment: if more targets than values, fill with nil
+                        // But if values is empty, it's just local declarations without initialization
+                        builder.symbol("nil", loc)
+                    } else if s.values.is_empty() {
+                        builder.symbol("nil", loc)
                     } else {
                         builder.symbol("nil", loc)
                     };
@@ -93,6 +99,46 @@ impl GaiaTranslator {
                 let body = self.translate_statements(&s.block, builder)?;
                 Ok(builder.while_(cond, body, loc))
             }
+            LuaStatement::Repeat(s) => {
+                let body = self.translate_statements(&s.block, builder)?;
+                let cond = self.translate_expression(&s.condition, builder)?;
+                // repeat until cond => loop { body; if cond break; }
+                Ok(builder.extension("repeat_until", vec![body, cond], loc))
+            }
+            LuaStatement::For(s) => match s {
+                LuaForStatement::Numeric { variable, start, end, step, block } => {
+                    let start_id = self.translate_expression(start, builder)?;
+                    let end_id = self.translate_expression(end, builder)?;
+                    let step_id = if let Some(s) = step { self.translate_expression(s, builder)? } else { builder.int(1, loc) };
+                    let body = self.translate_statements(block, builder)?;
+                    let var_name = builder.string(variable, loc);
+                    Ok(builder.extension("for_num", vec![var_name, start_id, end_id, step_id, body], loc))
+                }
+                LuaForStatement::Generic { variables, iterators, block } => {
+                    let mut iters = Vec::new();
+                    for it in iterators {
+                        iters.push(self.translate_expression(it, builder)?);
+                    }
+                    let body = self.translate_statements(block, builder)?;
+                    let mut var_names = Vec::new();
+                    for v in variables {
+                        var_names.push(builder.string(v, loc));
+                    }
+                    let vars_id = builder.extension("vars", var_names, loc);
+                    let iters_id = builder.extension("iters", iters, loc);
+                    Ok(builder.extension("for_gen", vec![vars_id, iters_id, body], loc))
+                }
+            },
+            LuaStatement::Do(stmts) => self.translate_statements(stmts, builder),
+            LuaStatement::Break => Ok(builder.break_(loc)),
+            LuaStatement::Goto(label) => {
+                let name = builder.string(label, loc);
+                Ok(builder.extension("goto", vec![name], loc))
+            }
+            LuaStatement::Label(label) => {
+                let name = builder.string(label, loc);
+                Ok(builder.extension("label", vec![name], loc))
+            }
             LuaStatement::Function(s) => {
                 let func_id = self.translate_function_body(&s.parameters, s.is_vararg, &s.block, builder)?;
                 if let Some(receiver) = &s.receiver {
@@ -136,10 +182,6 @@ impl GaiaTranslator {
                     Ok(builder.return_(tuple, loc))
                 }
             }
-            _ => {
-                // TODO: 更多语句支持
-                Ok(builder.symbol("nil", loc))
-            }
         }
     }
 
@@ -159,6 +201,23 @@ impl GaiaTranslator {
                     "-" => Ok(builder.sub_op(left, right, loc)),
                     "*" => Ok(builder.mul_op(left, right, loc)),
                     "/" => Ok(builder.div_op(left, right, loc)),
+                    "%" => Ok(builder.extension("mod", vec![left, right], loc)),
+                    "^" => Ok(builder.extension("pow", vec![left, right], loc)),
+                    ".." => Ok(builder.extension("concat", vec![left, right], loc)),
+                    "==" => Ok(builder.eq_op(left, right, loc)),
+                    "~=" => Ok(builder.ne_op(left, right, loc)),
+                    "<" => Ok(builder.lt_op(left, right, loc)),
+                    ">" => Ok(builder.gt_op(left, right, loc)),
+                    "<=" => Ok(builder.le_op(left, right, loc)),
+                    ">=" => Ok(builder.ge_op(left, right, loc)),
+                    "and" => Ok(builder.binary_op("and", left, right, loc)),
+                    "or" => Ok(builder.binary_op("or", left, right, loc)),
+                    "&" => Ok(builder.binary_op("bit_and", left, right, loc)),
+                    "|" => Ok(builder.binary_op("bit_or", left, right, loc)),
+                    "~" => Ok(builder.binary_op("bit_xor", left, right, loc)),
+                    "<<" => Ok(builder.binary_op("bit_shl", left, right, loc)),
+                    ">>" => Ok(builder.binary_op("bit_shr", left, right, loc)),
+                    "//" => Ok(builder.extension("idiv", vec![left, right], loc)),
                     _ => Ok(builder.symbol("nil", loc)),
                 }
             }
@@ -190,18 +249,22 @@ impl GaiaTranslator {
                             fields.push((k, v));
                         }
                         LuaTableField::Named { name, value } => {
-                            let k = builder.string(name, loc);
+                            let k = builder.string(name, loc.clone());
                             let v = self.translate_expression(value, builder)?;
                             fields.push((k, v));
                         }
                         LuaTableField::List { value } => {
-                            let k = builder.int((i + 1) as i64, loc);
+                            let k = builder.int((i + 1) as i64, loc.clone());
                             let v = self.translate_expression(value, builder)?;
                             fields.push((k, v));
                         }
                     }
                 }
-                Ok(builder.extension("table", fields.into_iter().map(|(k, v)| builder.extension("pair", vec![k, v], loc)).collect(), loc))
+                let mut pairs = Vec::new();
+                for (k, v) in fields {
+                    pairs.push(builder.extension("pair", vec![k, v], loc.clone()));
+                }
+                Ok(builder.extension("table", pairs, loc))
             }
             LuaExpression::Function(func) => {
                 self.translate_function_body(&func.parameters, func.is_vararg, &func.block, builder)
@@ -216,10 +279,7 @@ impl GaiaTranslator {
                 let key = builder.string(&mem.member, loc);
                 Ok(builder.get_index(obj, key, loc))
             }
-            _ => {
-                // TODO: 更多表达式支持
-                Ok(builder.symbol("nil", loc))
-            }
+            LuaExpression::Vararg => Ok(builder.symbol("...", loc)),
         }
     }
 

@@ -188,7 +188,7 @@ impl RustyCRuntime {
         for (label_name, jump_idx) in pending_gotos {
             if let Some(&target_pos) = labels.get(&label_name) {
                 let jump_pos = self.calculate_code_size(&instructions[..jump_idx + 1]);
-                instructions[jump_idx] = Instruction::Jump((target_pos as i16 - jump_pos as i16));
+                instructions[jump_idx] = Instruction::Jump(target_pos as i16 - jump_pos as i16);
             } else {
                 return Err(RuntimeError::Other(format!("Label '{}' not found", label_name)));
             }
@@ -241,7 +241,7 @@ impl RustyCRuntime {
                     insts.push(Instruction::LoadLocal(idx));
                 }
             }
-            IKunTree::Extension(op, args) if args.len() == 2 && ["+", "-", "*", "/", "==", "!=", "<", "<=", ">", ">="].contains(&op.as_str()) => {
+            IKunTree::Extension(op, args) if args.len() == 2 && ["+", "-", "*", "/", "%", "==", "!=", "<", "<=", ">", ">=", "&", "|", "^", "<<", ">>", "&&", "||"].contains(&op.as_str()) => {
                 self.translate_expr(&args[0], insts, symbols, 
                     break_indices.as_mut().map(|b| &mut **b),
                     continue_indices.as_mut().map(|c| &mut **c),
@@ -265,15 +265,161 @@ impl RustyCRuntime {
                     "-" => insts.push(Instruction::I32Sub),
                     "*" => insts.push(Instruction::I32Mul),
                     "/" => insts.push(Instruction::I32DivS),
+                    "%" => insts.push(Instruction::I32RemS),
                     "==" => insts.push(Instruction::I32Eq),
                     "!=" => insts.push(Instruction::I32Ne),
                     "<" => insts.push(Instruction::I32LtS),
                     "<=" => insts.push(Instruction::I32LeS),
                     ">" => insts.push(Instruction::I32GtS),
                     ">=" => insts.push(Instruction::I32GeS),
+                    "&" => insts.push(Instruction::I32And),
+                    "|" => insts.push(Instruction::I32Or),
+                    "^" => insts.push(Instruction::I32Xor),
+                    "<<" => insts.push(Instruction::I32Shl),
+                    ">>" => insts.push(Instruction::I32ShrS),
+                    "&&" => {
+                        // Logical and is already handled by short-circuiting in some frontends, 
+                        // but here we just use I32And for simplicity if they are already boolean
+                        insts.push(Instruction::I32And);
+                    }
+                    "||" => {
+                        insts.push(Instruction::I32Or);
+                    }
                     _ => unreachable!(),
                 }
             }
+            IKunTree::Extension(op, args) if args.len() == 1 && ["pos", "neg", "bit_not", "not", "sizeof", "address_of", "deref"].contains(&op.as_str()) => {
+                self.translate_expr(&args[0], insts, symbols, 
+                    break_indices.as_mut().map(|b| &mut **b),
+                    continue_indices.as_mut().map(|c| &mut **c),
+                    continue_pos,
+                    labels,
+                    pending_gotos,
+                    switch_info.as_mut().map(|s| &mut **s),
+                    module
+                )?;
+                match op.as_str() {
+                    "pos" => {}, // No-op
+                    "neg" => insts.push(Instruction::I32Neg),
+                    "bit_not" => insts.push(Instruction::I32Not),
+                    "not" => {
+                        insts.push(Instruction::I32Const(0));
+                        insts.push(Instruction::I32Eq);
+                    }
+                    "sizeof" => insts.push(Instruction::SizeOf),
+                    "address_of" => {
+                        // In a managed VM, this might just be the object itself
+                        // or we might need a special instruction. 
+                        // For now, let's keep it as is.
+                    }
+                    "deref" => {
+                        // If it's a pointer to an array, we might want GetElement(0)
+                        // If it's a pointer to a struct, we might want a field.
+                        // Basic deref in Nyar might map to loading from a reference.
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            IKunTree::Extension(op, args) if ["index", "dot", "arrow"].contains(&op.as_str()) => {
+                for arg in args {
+                    self.translate_expr(arg, insts, symbols, break_indices.as_mut().map(|b| &mut **b), continue_indices.as_mut().map(|c| &mut **c), continue_pos, labels, pending_gotos, switch_info.as_mut().map(|s| &mut **s), module)?;
+                }
+                match op.as_str() {
+                    "index" => insts.push(Instruction::GetElement),
+                    "dot" | "arrow" => {
+                        // The member name should be on stack as a string constant
+                        // We need to find the constant index or create it
+                        if let IKunTree::StringConstant(member) = &args[1] {
+                            let member_const = Constant::String(member.clone());
+                            let member_idx = if let Some(idx) = module.constants.iter().position(|c| c == &member_const) {
+                                idx as u16
+                            } else {
+                                let idx = module.constants.len() as u16;
+                                module.constants.push(member_const);
+                                idx
+                            };
+                            insts.pop(); // Remove the string from stack if it was pushed
+                            insts.push(Instruction::GetField(member_idx));
+                        } else {
+                            // Fallback if not a constant string (shouldn't happen with current frontend)
+                            insts.push(Instruction::GetElement);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            IKunTree::Extension(op, args) if op == "cast" && args.len() == 2 => {
+                self.translate_expr(&args[0], insts, symbols, break_indices.as_mut().map(|b| &mut **b), continue_indices.as_mut().map(|c| &mut **c), continue_pos, labels, pending_gotos, switch_info.as_mut().map(|s| &mut **s), module)?;
+                // args[1] is the type name as a string
+                if let IKunTree::StringConstant(type_name) = &args[1] {
+                    let type_const = Constant::String(type_name.clone());
+                    let type_idx = if let Some(idx) = module.constants.iter().position(|c| c == &type_const) {
+                        idx as u16
+                    } else {
+                        let idx = module.constants.len() as u16;
+                        module.constants.push(type_const);
+                        idx
+                    };
+                    insts.push(Instruction::Cast(type_idx));
+                }
+            }
+            IKunTree::Extension(op, args) if ["post_inc", "post_dec", "pre_inc", "pre_dec"].contains(&op.as_str()) => {
+                // This is complex because we need to load, modify, and store.
+                // If it's a simple variable, we can do it.
+                if let IKunTree::Symbol(name) = &args[0] {
+                    let idx = *symbols.get(name).unwrap_or(&0);
+                    match op.as_str() {
+                        "post_inc" => {
+                            insts.push(Instruction::LoadLocal(idx));
+                            insts.push(Instruction::Dup(0));
+                            insts.push(Instruction::I32Const(1));
+                            insts.push(Instruction::I32Add);
+                            insts.push(Instruction::StoreLocal(idx));
+                        }
+                        "post_dec" => {
+                            insts.push(Instruction::LoadLocal(idx));
+                            insts.push(Instruction::Dup(0));
+                            insts.push(Instruction::I32Const(1));
+                            insts.push(Instruction::I32Sub);
+                            insts.push(Instruction::StoreLocal(idx));
+                        }
+                        "pre_inc" => {
+                            insts.push(Instruction::LoadLocal(idx));
+                            insts.push(Instruction::I32Const(1));
+                            insts.push(Instruction::I32Add);
+                            insts.push(Instruction::Dup(0));
+                            insts.push(Instruction::StoreLocal(idx));
+                        }
+                        "pre_dec" => {
+                            insts.push(Instruction::LoadLocal(idx));
+                            insts.push(Instruction::I32Const(1));
+                            insts.push(Instruction::I32Sub);
+                            insts.push(Instruction::Dup(0));
+                            insts.push(Instruction::StoreLocal(idx));
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            IKunTree::Apply(func, args) => {
+                 for arg in args {
+                     self.translate_expr(arg, insts, symbols, break_indices.as_mut().map(|b| &mut **b), continue_indices.as_mut().map(|c| &mut **c), continue_pos, labels, pending_gotos, switch_info.as_mut().map(|s| &mut **s), module)?;
+                 }
+                 if let IKunTree::Symbol(name) = &**func {
+                     let name_const = Constant::String(name.clone());
+                     let name_idx = if let Some(idx) = module.constants.iter().position(|c| c == &name_const) {
+                         idx as u16
+                     } else {
+                         let idx = module.constants.len() as u16;
+                         module.constants.push(name_const);
+                         idx
+                     };
+                     insts.push(Instruction::CallSymbol(name_idx, args.len() as u8));
+                 } else {
+                     self.translate_expr(func, insts, symbols, break_indices.as_mut().map(|b| &mut **b), continue_indices.as_mut().map(|c| &mut **c), continue_pos, labels, pending_gotos, switch_info.as_mut().map(|s| &mut **s), module)?;
+                     insts.push(Instruction::CallClosure(args.len() as u8));
+                 }
+             }
             IKunTree::Choice(cond, then_br, else_br) => {
                 self.translate_expr(cond, insts, symbols, 
                     break_indices.as_mut().map(|b| &mut **b),
@@ -346,7 +492,7 @@ impl RustyCRuntime {
                 self.translate_expr(body, insts, symbols, Some(&mut current_break_indices), Some(&mut current_continue_indices), Some(start_pos), labels, pending_gotos, switch_info.as_mut().map(|s| &mut **s), module)?;
                 
                 let current_pos = self.calculate_code_size(insts);
-                insts.push(Instruction::Jump((start_pos as i16 - current_pos as i16 - 3)));
+                insts.push(Instruction::Jump(start_pos as i16 - current_pos as i16 - 3));
 
                 let end_pos = self.calculate_code_size(insts);
                 let loop_len = end_pos - self.calculate_code_size(&insts[..jump_if_false_idx + 1]);
@@ -360,7 +506,7 @@ impl RustyCRuntime {
                 // Patch continues
                 for idx in current_continue_indices {
                     let cont_pos = self.calculate_code_size(&insts[..idx + 1]);
-                    insts[idx] = Instruction::Jump((start_pos as i16 - cont_pos as i16));
+                    insts[idx] = Instruction::Jump(start_pos as i16 - cont_pos as i16);
                 }
             }
             IKunTree::Extension(name, args) if name == "do-while" && args.len() == 2 => {
@@ -387,7 +533,7 @@ impl RustyCRuntime {
                 let current_pos = self.calculate_code_size(insts);
                 // If cond is true, jump back to start
                 insts.push(Instruction::I32Not);
-                insts.push(Instruction::JumpIfFalse((start_pos as i16 - current_pos as i16 - 4))); // 4 bytes for Not + JumpIfFalse
+                insts.push(Instruction::JumpIfFalse(start_pos as i16 - current_pos as i16 - 4)); // 4 bytes for Not + JumpIfFalse
 
                 let end_pos = self.calculate_code_size(insts);
                 // Patch breaks
@@ -398,7 +544,7 @@ impl RustyCRuntime {
                 // Patch continues
                 for idx in current_continue_indices {
                     let cont_pos = self.calculate_code_size(&insts[..idx + 1]);
-                    insts[idx] = Instruction::Jump((continue_pos_val as i16 - cont_pos as i16));
+                    insts[idx] = Instruction::Jump(continue_pos_val as i16 - cont_pos as i16);
                 }
             }
             IKunTree::Extension(name, args) if name == "for" && args.len() == 4 => {
@@ -448,7 +594,7 @@ impl RustyCRuntime {
                 )?;
 
                 let current_pos = self.calculate_code_size(insts);
-                insts.push(Instruction::Jump((cond_pos as i16 - current_pos as i16 - 3)));
+                insts.push(Instruction::Jump(cond_pos as i16 - current_pos as i16 - 3));
 
                 let end_pos = self.calculate_code_size(insts);
                 let loop_len = end_pos - self.calculate_code_size(&insts[..jump_if_false_idx + 1]);
@@ -462,7 +608,7 @@ impl RustyCRuntime {
                 // Patch continues
                 for idx in current_continue_indices {
                     let cont_pos = self.calculate_code_size(&insts[..idx + 1]);
-                    insts[idx] = Instruction::Jump((step_pos as i16 - cont_pos as i16));
+                    insts[idx] = Instruction::Jump(step_pos as i16 - cont_pos as i16);
                 }
             }
             IKunTree::Extension(name, args) if name == "switch" && args.len() == 2 => {
@@ -518,7 +664,7 @@ impl RustyCRuntime {
                         insts.push(Instruction::JumpIfFalse(0)); // If not equal, skip the jump to target
                         
                         let current_pos = self.calculate_code_size(insts);
-                        insts.push(Instruction::Jump((target_pos as i16 - current_pos as i16 - 3)));
+                        insts.push(Instruction::Jump(target_pos as i16 - current_pos as i16 - 3));
                         
                         let next_case_pos = self.calculate_code_size(insts);
                         let skip_len = next_case_pos - self.calculate_code_size(&insts[..jump_to_next_case_idx + 1]);
@@ -529,7 +675,7 @@ impl RustyCRuntime {
                 if let Some(label_name) = current_switch_info.default_label {
                     if let Some(&target_pos) = labels.get(&label_name) {
                         let jump_pos = self.calculate_code_size(insts);
-                        insts.push(Instruction::Jump((target_pos as i16 - jump_pos as i16 - 3)));
+                        insts.push(Instruction::Jump(target_pos as i16 - jump_pos as i16 - 3));
                     }
                 }
 
@@ -583,7 +729,7 @@ impl RustyCRuntime {
             IKunTree::Extension(name, _args) if name == "continue" => {
                 if let Some(pos) = continue_pos {
                     let current_pos = self.calculate_code_size(insts);
-                    insts.push(Instruction::Jump((pos as i16 - current_pos as i16 - 3)));
+                    insts.push(Instruction::Jump(pos as i16 - current_pos as i16 - 3));
                 } else if let Some(indices) = continue_indices {
                     indices.push(insts.len());
                     insts.push(Instruction::Jump(0));
@@ -707,6 +853,20 @@ impl RustyCRuntime {
                     idx
                 };
                 insts.push(Instruction::FFICall(name_idx, arguments.len() as u8));
+            }
+            IKunTree::Source(_loc, body) => {
+                self.translate_expr(
+                    body,
+                    insts,
+                    symbols,
+                    break_indices,
+                    continue_indices,
+                    continue_pos,
+                    labels,
+                    pending_gotos,
+                    switch_info,
+                    module,
+                )?;
             }
             _ => {}
         }

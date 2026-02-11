@@ -104,6 +104,10 @@ impl FFIRegistry {
         self.register("std::io::println".to_string(), Arc::new(io::StdIoPrintln));
         self.register("std::io::read_line".to_string(), Arc::new(io::StdIoReadLine));
         
+        // Aliases for Lua/other languages
+        self.register("print".to_string(), Arc::new(io::StdIoPrintln));
+        self.register("println".to_string(), Arc::new(io::StdIoPrintln));
+        
         self.register("std::fs::read_to_string".to_string(), Arc::new(fs::StdFsReadToString));
         self.register("std::fs::write".to_string(), Arc::new(fs::StdFsWrite));
         self.register("std::fs::exists".to_string(), Arc::new(fs::StdFsExists));

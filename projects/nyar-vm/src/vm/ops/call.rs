@@ -134,6 +134,20 @@ impl NyarVM {
             self.frames.push(new_frame);
             Ok(Some(0))
         } else {
+            // Check in FFI registry
+            let name_str = name.to_string();
+            if let Some(func) = self.ffi.get(&name_str) {
+                let mut args = Vec::with_capacity(argc as usize);
+                for _ in 0..argc {
+                    args.push(self.pop()?);
+                }
+                args.reverse();
+
+                let result = func.call(self, args)?;
+                self.push(result)?;
+                return Ok(None);
+            }
+
             let callee = self.env.builtins.get(&name).map(|v| *v.value());
             if let Some(val) = callee {
                 if let Some(closure) = val.try_as_closure() {
@@ -427,11 +441,138 @@ impl NyarVM {
                     self.push(Value::null())?;
                 }
             }
+            "rem" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    if let (Some(l), Some(r)) = (receiver.try_as_int(), rhs.try_as_int()) {
+                        if r != 0 {
+                            self.push(Value::int(l % r))?;
+                        } else {
+                            self.push(Value::null())?;
+                        }
+                    } else if receiver.is_f32() && rhs.is_f32() {
+                        self.push(Value::f32(receiver.as_f32() % rhs.as_f32()))?;
+                    } else if receiver.is_f64() && rhs.is_f64() {
+                        self.push(Value::float(receiver.as_f64() % rhs.as_f64()))?;
+                    } else {
+                        self.push(Value::null())?;
+                    }
+                } else {
+                    self.push(Value::null())?;
+                }
+            }
+            "eq" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    self.push(Value::bool(self.compare_values(receiver, rhs, "eq")))?;
+                } else {
+                    self.push(Value::bool(false))?;
+                }
+            }
+            "ne" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    self.push(Value::bool(!self.compare_values(receiver, rhs, "eq")))?;
+                } else {
+                    self.push(Value::bool(true))?;
+                }
+            }
+            "lt" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    self.push(Value::bool(self.compare_values(receiver, rhs, "lt")))?;
+                } else {
+                    self.push(Value::bool(false))?;
+                }
+            }
+            "le" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    self.push(Value::bool(self.compare_values(receiver, rhs, "le")))?;
+                } else {
+                    self.push(Value::bool(false))?;
+                }
+            }
+            "gt" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    self.push(Value::bool(self.compare_values(receiver, rhs, "gt")))?;
+                } else {
+                    self.push(Value::bool(false))?;
+                }
+            }
+            "ge" => {
+                if args.len() == 1 {
+                    let rhs = args[0];
+                    self.push(Value::bool(self.compare_values(receiver, rhs, "ge")))?;
+                } else {
+                    self.push(Value::bool(false))?;
+                }
+            }
             _ => {
                 self.push(Value::null())?;
             }
         }
         Ok(())
+    }
+
+    fn compare_values(&self, lhs: Value, rhs: Value, op: &str) -> bool {
+        let (l_f, r_f) = if lhs.is_int() && rhs.is_int() {
+            let l = lhs.as_int();
+            let r = rhs.as_int();
+            return match op {
+                "eq" => l == r,
+                "lt" => l < r,
+                "le" => l <= r,
+                "gt" => l > r,
+                "ge" => l >= r,
+                _ => false,
+            };
+        } else if (lhs.is_int() || lhs.is_f64() || lhs.is_f32())
+            && (rhs.is_int() || rhs.is_f64() || rhs.is_f32())
+        {
+            let l = if lhs.is_int() {
+                lhs.as_int() as f64
+            } else if lhs.is_f32() {
+                lhs.as_f32() as f64
+            } else {
+                lhs.as_f64()
+            };
+            let r = if rhs.is_int() {
+                rhs.as_int() as f64
+            } else if rhs.is_f32() {
+                rhs.as_f32() as f64
+            } else {
+                rhs.as_f64()
+            };
+            (l, r)
+        } else if lhs.is_string() && rhs.is_string() {
+            if let (Some(l), Some(r)) = (lhs.try_as_str(), rhs.try_as_str()) {
+                return match op {
+                    "eq" => l == r,
+                    "lt" => l < r,
+                    "le" => l <= r,
+                    "gt" => l > r,
+                    "ge" => l >= r,
+                    _ => false,
+                };
+            }
+            return false;
+        } else {
+            return match op {
+                "eq" => false, // Different types are not equal
+                _ => false,
+            };
+        };
+
+        match op {
+            "eq" => l_f == r_f,
+            "lt" => l_f < r_f,
+            "le" => l_f <= r_f,
+            "gt" => l_f > r_f,
+            "ge" => l_f >= r_f,
+            _ => false,
+        }
     }
 
     #[inline(always)]

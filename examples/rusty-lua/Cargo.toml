@@ -6,9 +6,9 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-nyar-vm = { workspace = true }
 nyar-types = { workspace = true }
 oak-core = { workspace = true }
+oak-vfs = { workspace = true }
 oak-lua = { workspace = true }
 chomsky-uir = { workspace = true }
 chomsky-types = { workspace = true }

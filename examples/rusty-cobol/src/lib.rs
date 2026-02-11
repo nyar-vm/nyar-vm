@@ -56,31 +56,44 @@ impl<'a, 'b, V: Vfs, A: chomsky_uir::Analysis<chomsky_uir::IKun>> CobolLowerer<'
             self.lower_procedure_division(proc_div, &mut items);
         }
         
-        self.ctx.builder.module("rusty-cobol-program", items, Loc::default())
+        let mut builder = self.ctx.builder();
+        builder.module("rusty-cobol-program", items, Loc::default())
     }
 
     fn lower_procedure_division(&mut self, proc_div: &oak_cobol::ast::ProcedureDivision, items: &mut Vec<Id>) {
         let mut stmts = Vec::new();
         
         for stmt in &proc_div.statements {
+            let mut builder = self.ctx.builder();
             match stmt {
                 oak_cobol::ast::Statement::Display(display) => {
                     let mut args = Vec::new();
                     for arg in &display.items {
-                        args.push(self.ctx.builder.string(arg, Loc::default()));
+                        args.push(builder.string(arg, Loc::default()));
                     }
-                    stmts.push(self.ctx.builder.extension("display", args, Loc::default()));
+                    stmts.push(builder.extension("display", args, Loc::default()));
                 }
                 oak_cobol::ast::Statement::Stop(stop) => {
                     if stop.run {
-                        stmts.push(self.ctx.builder.extension("stop", Vec::new(), Loc::default()));
+                        stmts.push(builder.extension("stop", Vec::new(), Loc::default()));
                     }
+                }
+                oak_cobol::ast::Statement::Move(move_stmt) => {
+                    let mut args = Vec::new();
+                    args.push(builder.string(&move_stmt.source, Loc::default()));
+                    for target in &move_stmt.targets {
+                        args.push(builder.string(target, Loc::default()));
+                    }
+                    stmts.push(builder.extension("move", args, Loc::default()));
                 }
                 _ => {}
             }
         }
         
-        let main_func = self.ctx.builder.function("main", Vec::new(), stmts, Loc::default());
-        items.push(main_func);
+        let mut builder = self.ctx.builder();
+        let body = builder.block(stmts, Loc::default());
+        let main_func = builder.lambda(Vec::new(), body, Loc::default());
+        let export = builder.export("main", main_func, Loc::default());
+        items.push(export);
     }
 }

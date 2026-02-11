@@ -99,19 +99,19 @@ impl Preprocessor {
     pub fn process(&mut self, source: &str, current_dir: &Path) -> Result<String, String> {
         let stripped_source = self.strip_comments(source);
         let mut output = String::new();
-        let mut lines = stripped_source.lines().enumerate();
+        let mut lines = stripped_source.lines();
         let mut skip_stack = Vec::new();
 
-        while let Some((line_idx, mut line)) = lines.next() {
-            self.current_line = line_idx + 1;
+        while let Some(mut line) = lines.next() {
+            self.current_line += 1;
             
             // Handle line continuation
             let mut full_line = line.to_string();
             while full_line.ends_with('\\') {
                 full_line.pop();
-                if let Some((_, next_line)) = lines.next() {
+                if let Some(next_line) = lines.next() {
                     full_line.push_str(next_line);
-                    self.current_line += 1;
+                    // Line continuation doesn't increment current_line in terms of #line directive mapping
                 } else {
                     break;
                 }
@@ -253,11 +253,27 @@ impl Preprocessor {
                     }
                 } else if directive_line.starts_with("embed") {
                     let rest = directive_line[5..].trim();
-                    let parts: Vec<&str> = rest.split_whitespace().collect();
-                    if parts.is_empty() {
+                    
+                    // Improved parsing of #embed directive
+                    let mut chars = rest.chars().peekable();
+                    while chars.peek().map_or(false, |c| c.is_whitespace()) { chars.next(); }
+                    
+                    let mut spec = String::new();
+                    if let Some(&c) = chars.peek() {
+                        if c == '"' || c == '<' {
+                            let end_c = if c == '"' { '"' } else { '>' };
+                            spec.push(chars.next().unwrap());
+                            while let Some(nc) = chars.next() {
+                                spec.push(nc);
+                                if nc == end_c { break; }
+                            }
+                        }
+                    }
+                    
+                    if spec.is_empty() {
                         return Err(format!("Line {}: #embed missing file name", self.current_line));
                     }
-                    let spec = parts[0];
+
                     let (file_name, search_current) = if spec.starts_with('"') && spec.ends_with('"') {
                         (&spec[1..spec.len()-1], true)
                     } else if spec.starts_with('<') && spec.ends_with('>') {
@@ -271,72 +287,41 @@ impl Preprocessor {
                     let mut if_empty = String::new();
                     let mut limit: Option<usize> = None;
 
-                    // Very basic parsing of embed parameters
-                    let mut i = 1;
-                    while i < parts.len() {
-                        match parts[i] {
-                            "prefix" => {
-                                if i + 1 < parts.len() && parts[i+1].starts_with('(') {
-                                    let mut j = i + 1;
-                                    let mut content = parts[j].to_string();
-                                    while j < parts.len() && !content.ends_with(')') {
-                                        j += 1;
-                                        if j < parts.len() {
-                                            content.push(' ');
-                                            content.push_str(parts[j]);
-                                        }
-                                    }
-                                    prefix = content[1..content.len()-1].to_string();
-                                    i = j + 1;
-                                } else { i += 1; }
+                    // Parse parameters
+                    while let Some(c) = chars.next() {
+                        if c.is_whitespace() { continue; }
+                        if c.is_alphabetic() || c == '_' {
+                            let mut param_name = String::new();
+                            param_name.push(c);
+                            while let Some(&nc) = chars.peek() {
+                                if nc.is_alphanumeric() || nc == '_' {
+                                    param_name.push(chars.next().unwrap());
+                                } else { break; }
                             }
-                            "suffix" => {
-                                if i + 1 < parts.len() && parts[i+1].starts_with('(') {
-                                    let mut j = i + 1;
-                                    let mut content = parts[j].to_string();
-                                    while j < parts.len() && !content.ends_with(')') {
-                                        j += 1;
-                                        if j < parts.len() {
-                                            content.push(' ');
-                                            content.push_str(parts[j]);
-                                        }
+                            
+                            // Skip whitespace before '('
+                            while chars.peek().map_or(false, |c| c.is_whitespace()) { chars.next(); }
+                            
+                            if let Some('(') = chars.next() {
+                                let mut depth = 1;
+                                let mut content = String::new();
+                                while let Some(ac) = chars.next() {
+                                    if ac == '(' { depth += 1; }
+                                    else if ac == ')' {
+                                        depth -= 1;
+                                        if depth == 0 { break; }
                                     }
-                                    suffix = content[1..content.len()-1].to_string();
-                                    i = j + 1;
-                                } else { i += 1; }
+                                    content.push(ac);
+                                }
+                                
+                                match param_name.as_str() {
+                                    "prefix" => prefix = content,
+                                    "suffix" => suffix = content,
+                                    "if_empty" => if_empty = content,
+                                    "limit" => limit = content.trim().parse().ok(),
+                                    _ => {}
+                                }
                             }
-                            "if_empty" => {
-                                if i + 1 < parts.len() && parts[i+1].starts_with('(') {
-                                    let mut j = i + 1;
-                                    let mut content = parts[j].to_string();
-                                    while j < parts.len() && !content.ends_with(')') {
-                                        j += 1;
-                                        if j < parts.len() {
-                                            content.push(' ');
-                                            content.push_str(parts[j]);
-                                        }
-                                    }
-                                    if_empty = content[1..content.len()-1].to_string();
-                                    i = j + 1;
-                                } else { i += 1; }
-                            }
-                            "limit" => {
-                                if i + 1 < parts.len() && parts[i+1].starts_with('(') {
-                                    let mut j = i + 1;
-                                    let mut content = parts[j].to_string();
-                                    while j < parts.len() && !content.ends_with(')') {
-                                        j += 1;
-                                        if j < parts.len() {
-                                            content.push(' ');
-                                            content.push_str(parts[j]);
-                                        }
-                                    }
-                                    let limit_str = content[1..content.len()-1].to_string();
-                                    limit = limit_str.parse().ok();
-                                    i = j + 1;
-                                } else { i += 1; }
-                            }
-                            _ => { i += 1; }
                         }
                     }
 
@@ -469,8 +454,71 @@ impl Preprocessor {
     }
 
     fn evaluate_condition(&mut self, expr: &str) -> bool {
-        let expanded = self.expand_macros_in_line(expr);
-        // Replace remaining identifiers (not defined in macros) with 0, as per C standard
+        // 1. Handle 'defined' operator before any macro expansion
+        let mut with_defined = String::new();
+        let mut chars = expr.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c.is_alphabetic() || c == '_' {
+                let mut name = String::new();
+                name.push(c);
+                while let Some(&nc) = chars.peek() {
+                    if nc.is_alphanumeric() || nc == '_' {
+                        name.push(nc);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                
+                if name == "defined" {
+                    // Skip whitespace
+                    while let Some(&nc) = chars.peek() {
+                        if nc.is_whitespace() { chars.next(); } else { break; }
+                    }
+                    
+                    let mut has_paren = false;
+                    if let Some(&'(') = chars.peek() {
+                        chars.next();
+                        has_paren = true;
+                        while let Some(&nc) = chars.peek() {
+                            if nc.is_whitespace() { chars.next(); } else { break; }
+                        }
+                    }
+                    
+                    let mut macro_name = String::new();
+                    while let Some(nc) = chars.next() {
+                        if nc.is_alphanumeric() || nc == '_' {
+                            macro_name.push(nc);
+                        } else {
+                            // If we have more characters, we might need to put them back or handle error
+                            // But for simple cases this is fine
+                            break;
+                        }
+                    }
+                    
+                    if has_paren {
+                        while let Some(&nc) = chars.peek() {
+                            if nc.is_whitespace() { chars.next(); } else if nc == ')' { chars.next(); break; } else { break; }
+                        }
+                    }
+                    
+                    if self.macros.contains_key(&macro_name) {
+                        with_defined.push('1');
+                    } else {
+                        with_defined.push('0');
+                    }
+                } else {
+                    with_defined.push_str(&name);
+                }
+            } else {
+                with_defined.push(c);
+            }
+        }
+
+        // 2. Expand macros in the remaining expression
+        let expanded = self.expand_macros_in_line(&with_defined);
+
+        // 3. Replace remaining identifiers (not defined in macros) with 0, as per C standard
         let mut cleaned_expr = String::new();
         let mut chars = expanded.chars().peekable();
         while let Some(c) = chars.next() {
@@ -485,10 +533,10 @@ impl Preprocessor {
                         break;
                     }
                 }
-                if name == "defined" || name == "__has_include" || name == "__has_c_attribute" || name == "__has_builtin" {
-                    // Skip built-in operators and their arguments during cleaning
+                if name == "__has_include" || name == "__has_c_attribute" || name == "__has_builtin" {
+                    // Keep these built-ins for parse_unary to handle
                     cleaned_expr.push_str(&name);
-                    // Copy arguments of defined/has_include/has_c_attribute/has_builtin as is
+                    // Copy arguments
                     while let Some(&nc) = chars.peek() {
                         if nc.is_whitespace() {
                             cleaned_expr.push(chars.next().unwrap());
@@ -503,14 +551,6 @@ impl Preprocessor {
                                 }
                             }
                         } else {
-                            // Non-parenthesized defined
-                            while let Some(&ac) = chars.peek() {
-                                if ac.is_alphanumeric() || ac == '_' {
-                                    cleaned_expr.push(chars.next().unwrap());
-                                } else {
-                                    break;
-                                }
-                            }
                             break;
                         }
                     }
@@ -519,7 +559,12 @@ impl Preprocessor {
                 } else if name == "false" {
                     cleaned_expr.push('0');
                 } else {
-                    cleaned_expr.push('0');
+                    // Check if it's a number that was just expanded
+                    if name.chars().all(|c| c.is_digit(10)) {
+                        cleaned_expr.push_str(&name);
+                    } else {
+                        cleaned_expr.push('0');
+                    }
                 }
             } else {
                 cleaned_expr.push(c);
@@ -1020,12 +1065,23 @@ impl Preprocessor {
                                             }
                                             
                                             if let Some(abs_opt_end) = opt_end {
-                                                let replacement = if !va_args.is_empty() {
-                                                    expanded_body[abs_paren_start + 1..abs_opt_end].to_string()
+                                                // Always try to consume one preceding space for __VA_OPT__
+                                                let mut start = opt_start;
+                                                if start > 0 && expanded_body.as_bytes()[start-1] == b' ' {
+                                                    start -= 1;
+                                                }
+                                                
+                                                if !va_args.is_empty() {
+                                                    let replacement = expanded_body[abs_paren_start + 1..abs_opt_end].to_string();
+                                                    expanded_body.replace_range(start..abs_opt_end + 1, &replacement);
                                                 } else {
-                                                    String::new()
-                                                };
-                                                expanded_body.replace_range(opt_start..abs_opt_end + 1, &replacement);
+                                                    expanded_body.replace_range(start..abs_opt_end + 1, "");
+                                                }
+                                                
+                                                // Collapse potential double spaces created by replacement
+                                                while expanded_body.contains("  ") {
+                                                    expanded_body = expanded_body.replace("  ", " ");
+                                                }
                                             } else {
                                                 break;
                                             }
@@ -1038,11 +1094,17 @@ impl Preprocessor {
                                     if va_args.is_empty() {
                                         expanded_body = expanded_body.replace(", ##__VA_ARGS__", "");
                                         expanded_body = expanded_body.replace(",##__VA_ARGS__", "");
+                                        expanded_body = expanded_body.replace(", __VA_ARGS__", "");
+                                        expanded_body = expanded_body.replace(",__VA_ARGS__", "");
+                                        // Also handle space before __VA_ARGS__ if no comma
+                                        expanded_body = expanded_body.replace(" __VA_ARGS__", "");
                                     } else {
                                         expanded_body = expanded_body.replace("##__VA_ARGS__", &va_args);
                                     }
 
                                     expanded_body = expanded_body.replace("__VA_ARGS__", &va_args);
+                                    // Collapse double spaces again after __VA_ARGS__ replacement
+                                    expanded_body = expanded_body.replace("  ", " ");
                                 }
 
                                 // Handle stringification (#param)
@@ -1268,7 +1330,7 @@ mod tests {
     fn test_if_logic() {
         let mut pp = Preprocessor::new();
         pp.define("A", "1");
-        pp.define("B", "0");
+        // B is not defined
         let source = "#if defined(A) && !defined(B)\nint x = 1;\n#endif";
         let result = pp.process(source, Path::new(".")).unwrap();
         assert_eq!(result, "int x = 1;\n");

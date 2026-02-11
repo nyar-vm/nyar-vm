@@ -1,6 +1,6 @@
 use crate::bytecode::compiler::NyarBackend;
 use crate::vm::core::NyarVM;
-use nyar_types::{NyarError, NyarFrontend, QualifiedName};
+use nyar_types::{HasDebugInfo, IKun, NyarError, NyarFrontend, QualifiedName};
 use oak_core::source::Source;
 use oak_vfs::{Vfs, WritableVfs};
 
@@ -16,14 +16,16 @@ impl NyarDriver {
 
     /// 获取默认的 VFS
     pub fn default_vfs(&self) -> oak_vfs::DiskVfs {
-        oak_vfs::DiskVfs::new()
+        oak_vfs::DiskVfs::new(std::env::current_dir().unwrap_or_default())
     }
 
     /// 运行源代码文件
-    pub fn run_source<F, V>(&self, frontend: &F, vfs: &V, uri: &str) -> Result<(), NyarError>
+    pub fn run_source<F, V, A>(&self, frontend: &F, vfs: &V, uri: &str) -> Result<(), NyarError>
     where
-        F: NyarFrontend,
+        F: NyarFrontend<A>,
         V: Vfs,
+        A: chomsky_uir::Analysis<IKun>,
+        A::Data: HasDebugInfo,
     {
         let source = vfs
             .get_source(uri)
@@ -48,10 +50,12 @@ impl NyarDriver {
     }
 
     /// 运行源代码字符串
-    pub fn run_code<F, V>(&self, frontend: &F, vfs: &V, source: &str) -> Result<(), NyarError>
+    pub fn run_code<F, V, A>(&self, frontend: &F, vfs: &V, source: &str) -> Result<(), NyarError>
     where
-        F: NyarFrontend,
+        F: NyarFrontend<A>,
         V: Vfs,
+        A: chomsky_uir::Analysis<IKun>,
+        A::Data: HasDebugInfo,
     {
         let ast = frontend.parse(source)?;
         let tree = frontend.lower(&ast, vfs)?;
@@ -72,7 +76,7 @@ impl NyarDriver {
     }
 
     /// AOT 编译到原生可执行文件
-    pub fn compile_to_native<F, V>(
+    pub fn compile_to_native<F, V, A>(
         &self,
         frontend: &F,
         vfs: &V,
@@ -80,8 +84,10 @@ impl NyarDriver {
         output_uri: &str,
     ) -> Result<(), NyarError>
     where
-        F: NyarFrontend,
+        F: NyarFrontend<A>,
         V: WritableVfs,
+        A: chomsky_uir::Analysis<IKun> + 'static,
+        A::Data: HasDebugInfo,
     {
         let source = vfs
             .get_source(source_uri)
@@ -92,8 +98,7 @@ impl NyarDriver {
 
         eprintln!("DEBUG: IKunTree: {:#?}", tree);
 
-        let _aot: crate::aot::NyarAot<chomsky_uir::ConstraintAnalysis> =
-            crate::aot::NyarAot::new();
+        let _aot: crate::aot::NyarAot<A> = crate::aot::NyarAot::new();
         let backend = crate::aot::NativeBackend::new();
 
         use chomsky_extract::Backend;

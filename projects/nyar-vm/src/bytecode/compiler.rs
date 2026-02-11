@@ -992,29 +992,110 @@ impl NyarBackend {
                         }
                     }
                     "add" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64Add, &mut code);
+                        let left = &args[0];
+                        let right = &args[1];
+                        if let (IKunTree::Constant(l), IKunTree::Constant(r)) = (left, right) {
+                            self.emit(Instruction::I64Const(*l + *r), &mut code);
+                        } else if let (IKunTree::FloatConstant(l), IKunTree::FloatConstant(r)) = (left, right) {
+                            self.emit(Instruction::F64Const(f64::from_bits(*l) + f64::from_bits(*r)), &mut code);
+                        } else {
+                            code.extend(self.lower_tree(left)?);
+                            code.extend(self.lower_tree(right)?);
+                            
+                            match (left, right) {
+                                (IKunTree::Constant(_), IKunTree::Constant(_)) => {
+                                    self.emit(Instruction::I64Add, &mut code);
+                                }
+                                (IKunTree::FloatConstant(_), IKunTree::FloatConstant(_)) => {
+                                    self.emit(Instruction::F64Add, &mut code);
+                                }
+                                _ => {
+                                    let name_idx = self.add_constant(Constant::String("add".to_string()));
+                                    self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
+                                }
+                            }
+                        }
                     }
                     "sub" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64Sub, &mut code);
+                        let left = &args[0];
+                        let right = &args[1];
+                        if let (IKunTree::Constant(l), IKunTree::Constant(r)) = (left, right) {
+                            self.emit(Instruction::I64Const(*l - *r), &mut code);
+                        } else if let (IKunTree::FloatConstant(l), IKunTree::FloatConstant(r)) = (left, right) {
+                            self.emit(Instruction::F64Const(f64::from_bits(*l) - f64::from_bits(*r)), &mut code);
+                        } else {
+                            code.extend(self.lower_tree(left)?);
+                            code.extend(self.lower_tree(right)?);
+                            match (left, right) {
+                                (IKunTree::Constant(_), IKunTree::Constant(_)) => {
+                                    self.emit(Instruction::I64Sub, &mut code);
+                                }
+                                (IKunTree::FloatConstant(_), IKunTree::FloatConstant(_)) => {
+                                    self.emit(Instruction::F64Sub, &mut code);
+                                }
+                                _ => {
+                                    let name_idx = self.add_constant(Constant::String("sub".to_string()));
+                                    self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
+                                }
+                            }
+                        }
                     }
                     "mul" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64Mul, &mut code);
+                        let left = &args[0];
+                        let right = &args[1];
+                        if let (IKunTree::Constant(l), IKunTree::Constant(r)) = (left, right) {
+                            self.emit(Instruction::I64Const(*l * *r), &mut code);
+                        } else if let (IKunTree::FloatConstant(l), IKunTree::FloatConstant(r)) = (left, right) {
+                            self.emit(Instruction::F64Const(f64::from_bits(*l) * f64::from_bits(*r)), &mut code);
+                        } else {
+                            code.extend(self.lower_tree(left)?);
+                            code.extend(self.lower_tree(right)?);
+                            match (left, right) {
+                                (IKunTree::Constant(_), IKunTree::Constant(_)) => {
+                                    self.emit(Instruction::I64Mul, &mut code);
+                                }
+                                (IKunTree::FloatConstant(_), IKunTree::FloatConstant(_)) => {
+                                    self.emit(Instruction::F64Mul, &mut code);
+                                }
+                                _ => {
+                                    let name_idx = self.add_constant(Constant::String("mul".to_string()));
+                                    self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
+                                }
+                            }
+                        }
                     }
                     "div" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64DivS, &mut code);
+                        let left = &args[0];
+                        let right = &args[1];
+                        code.extend(self.lower_tree(left)?);
+                        code.extend(self.lower_tree(right)?);
+                        match (left, right) {
+                            (IKunTree::Constant(_), IKunTree::Constant(_)) => {
+                                self.emit(Instruction::I64DivS, &mut code);
+                            }
+                            (IKunTree::FloatConstant(_), IKunTree::FloatConstant(_)) => {
+                                self.emit(Instruction::F64Div, &mut code);
+                            }
+                            _ => {
+                                let name_idx = self.add_constant(Constant::String("div".to_string()));
+                                self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
+                            }
+                        }
                     }
                     "rem" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64RemS, &mut code);
+                        let left = &args[0];
+                        let right = &args[1];
+                        code.extend(self.lower_tree(left)?);
+                        code.extend(self.lower_tree(right)?);
+                        match (left, right) {
+                            (IKunTree::Constant(_), IKunTree::Constant(_)) => {
+                                self.emit(Instruction::I64RemS, &mut code);
+                            }
+                            _ => {
+                                let name_idx = self.add_constant(Constant::String("rem".to_string()));
+                                self.emit(Instruction::InvokeMethod(name_idx, 1), &mut code);
+                            }
+                        }
                     }
                     "bit_and" => {
                         code.extend(self.lower_tree(&args[0])?);
@@ -1368,35 +1449,51 @@ impl NyarBackend {
                             self.emit(Instruction::Pop, &mut code);
                         }
                     }
-                    "eq" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64Eq, &mut code);
-                    }
-                    "ne" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64Ne, &mut code);
-                    }
-                    "lt" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64LtS, &mut code);
-                    }
-                    "le" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64LeS, &mut code);
-                    }
-                    "gt" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64GtS, &mut code);
-                    }
-                    "ge" => {
-                        code.extend(self.lower_tree(&args[0])?);
-                        code.extend(self.lower_tree(&args[1])?);
-                        self.emit(Instruction::I64GeS, &mut code);
+                    "eq" | "ne" | "lt" | "le" | "gt" | "ge" => {
+                        if let (Some(l), Some(r)) =
+                            (self.try_fold_const(&args[0]), self.try_fold_const(&args[1]))
+                        {
+                            let result = match (l, r) {
+                                (Constant::Int(l), Constant::Int(r)) => match name.as_str() {
+                                    "eq" => l == r,
+                                    "ne" => l != r,
+                                    "lt" => l < r,
+                                    "le" => l <= r,
+                                    "gt" => l > r,
+                                    "ge" => l >= r,
+                                    _ => unreachable!(),
+                                },
+                                (Constant::Float(l), Constant::Float(r)) => match name.as_str() {
+                                    "eq" => l == r,
+                                    "ne" => l != r,
+                                    "lt" => l < r,
+                                    "le" => l <= r,
+                                    "gt" => l > r,
+                                    "ge" => l >= r,
+                                    _ => unreachable!(),
+                                },
+                                (Constant::String(l), Constant::String(r)) => match name.as_str() {
+                                    "eq" => l == r,
+                                    "ne" => l != r,
+                                    "lt" => l < r,
+                                    "le" => l <= r,
+                                    "gt" => l > r,
+                                    "ge" => l >= r,
+                                    _ => unreachable!(),
+                                },
+                                _ => {
+                                    code.extend(self.lower_tree(&args[0])?);
+                                    code.extend(self.lower_tree(&args[1])?);
+                                    self.emit(Instruction::InvokeMethod(name.clone().into(), 1), &mut code);
+                                    return Ok(code);
+                                }
+                            };
+                            self.emit(Instruction::I64Const(if result { 1 } else { 0 }), &mut code);
+                        } else {
+                            code.extend(self.lower_tree(&args[0])?);
+                            code.extend(self.lower_tree(&args[1])?);
+                            self.emit(Instruction::InvokeMethod(name.clone().into(), 1), &mut code);
+                        }
                     }
                     _ => {}
                 }

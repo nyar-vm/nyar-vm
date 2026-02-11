@@ -2,7 +2,7 @@ use rusty_c::frontend::RustyCFrontend;
 use rusty_c::runtime::RustyCRuntime;
 use nyar_types::{NyarContext, NyarFrontend, EGraph};
 use oak_vfs::MemoryVfs;
-use std::path::PathBuf;
+use std::path::Path;
 
 #[test]
 fn test_simple_return() {

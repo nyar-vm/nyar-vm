@@ -3,26 +3,22 @@ use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let program_name = if let Some(last_slash) = args[0].rfind(|c| c == '/' || c == '\\') {
-        &args[0][last_slash + 1..]
+    if args.len() < 2 {
+        println!("Nyar Universal Runtime");
+        println!("Usage: nyar <input_file>");
+        return Ok(());
+    }
+
+    let driver = NyarDriver::new();
+    let file_path = &args[1];
+
+    if file_path.ends_with(".lua") {
+        let frontend = rusty_lua::RustyLuaFrontend::new();
+        let vfs = driver.default_vfs();
+        driver.run_source(&frontend, &vfs, file_path)?;
     } else {
-        &args[0]
-    };
-
-    let _driver = NyarDriver::new();
-
-    match program_name {
-        // Frontends are currently disabled as they are not in the workspace
-        _ => {
-            if args.len() < 2 {
-                println!("Nyar Universal Runtime");
-                println!("Usage: nyar <input_file>");
-                return Ok(());
-            }
-            println!("Nyar Universal Runtime (Internal Testing)");
-            // In a real scenario, we would pick a frontend based on file extension
-            // For now, this is just a placeholder.
-        }
+        println!("Nyar Universal Runtime (Internal Testing)");
+        println!("Unsupported file format: {}", file_path);
     }
 
     Ok(())
