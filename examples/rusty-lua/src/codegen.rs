@@ -1,7 +1,10 @@
 //! Gaia 指令生成器 (已重构为意图树生成器)
 
-use chomsky_uir::{ConstraintAnalysis, IntentBuilder, Id};
-use nyar_types::{NyarError, NyarContext, Loc, Vfs};
+use chomsky_uir::{IntentBuilder, Id, Analysis, IKun};
+use chomsky_types::Loc;
+use nyar_aot::NyarContext;
+use nyar_types::NyarError;
+use oak_vfs::Vfs;
 use oak_lua::ast::*;
 
 /// Gaia 翻译器，将 Lua AST 转换为意图树
@@ -14,7 +17,7 @@ impl GaiaTranslator {
     }
 
     /// 统一的转换接口
-    pub fn lower_unified<V: Vfs>(&self, ast: &LuaRoot, ctx: &mut NyarContext<V, ConstraintAnalysis>) -> Id {
+    pub fn lower_unified<V: Vfs, A: Analysis<IKun>>(&self, ast: &LuaRoot, ctx: &mut NyarContext<V, A>) -> Id {
         let mut builder = ctx.builder();
         let mut statements = Vec::new();
         for stmt in &ast.statements {
@@ -26,7 +29,7 @@ impl GaiaTranslator {
         builder.module("main", statements, Loc::default())
     }
 
-    fn translate_statement(&self, stmt: &LuaStatement, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+    fn translate_statement<A: Analysis<IKun>>(&self, stmt: &LuaStatement, builder: &mut IntentBuilder<A>) -> Result<Id, NyarError> {
         let loc = Loc::default();
         match stmt {
             LuaStatement::Local(s) => {
@@ -185,7 +188,7 @@ impl GaiaTranslator {
         }
     }
 
-    fn translate_expression(&self, expr: &LuaExpression, builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+    fn translate_expression<A: Analysis<IKun>>(&self, expr: &LuaExpression, builder: &mut IntentBuilder<A>) -> Result<Id, NyarError> {
         let loc = Loc::default();
         match expr {
             LuaExpression::Number(n) => Ok(builder.float(*n, loc)),
@@ -283,7 +286,7 @@ impl GaiaTranslator {
         }
     }
 
-    fn translate_statements(&self, stmts: &[LuaStatement], builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+    fn translate_statements<A: Analysis<IKun>>(&self, stmts: &[LuaStatement], builder: &mut IntentBuilder<A>) -> Result<Id, NyarError> {
         let loc = Loc::default();
         let mut ids = Vec::new();
         for stmt in stmts {
@@ -294,16 +297,16 @@ impl GaiaTranslator {
         Ok(builder.block(ids, loc))
     }
 
-    fn translate_function_body(&self, params: &[String], is_vararg: bool, body: &[LuaStatement], builder: &mut IntentBuilder<ConstraintAnalysis>) -> Result<Id, NyarError> {
+    fn translate_function_body<A: Analysis<IKun>>(&self, params: &[String], is_vararg: bool, block: &[LuaStatement], builder: &mut IntentBuilder<A>) -> Result<Id, NyarError> {
         let loc = Loc::default();
-        let mut parameters = Vec::new();
+        let mut param_names = Vec::new();
         for p in params {
-            parameters.push(p.clone());
+            param_names.push(p.clone());
         }
         if is_vararg {
-            parameters.push("...".to_string());
+            param_names.push("...".to_string());
         }
-        let body_id = self.translate_statements(body, builder)?;
-        Ok(builder.lambda(parameters, body_id, loc))
+        let body = self.translate_statements(block, builder)?;
+        Ok(builder.lambda(param_names, body, loc))
     }
 }

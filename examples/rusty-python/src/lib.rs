@@ -351,7 +351,6 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                     let handler_body_id = self.ctx.builder().block(handler_body_items, loc.clone());
 
                     handler_nodes.push(self.ctx.builder().extension("except", vec![type_node, name_node, handler_body_id], loc.clone()));
-                    self.ctx.scopes.pop_scope();
                 }
                 let handlers_id = self.ctx.builder().block(handler_nodes, loc.clone());
 
@@ -364,14 +363,12 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 Some(self.ctx.builder().extension("try", vec![body_id, handlers_id, orelse_id, final_id], loc))
             }
             Statement::With { items, body } => {
-                self.ctx.scopes.push_scope();
                 let mut item_nodes = Vec::new();
                 for item in items {
                     let ctx_expr = self.convert_expression(&item.context_expr);
                     let var_node = if let Some(v) = &item.optional_vars {
                         if let Expression::Name(name) = v {
-                            let var = self.ctx.scopes.declare_variable(name);
-                            self.ctx.builder().symbol(&var, loc.clone())
+                            self.ctx.builder().symbol(name, loc.clone())
                         } else {
                             self.convert_expression(v)
                         }
@@ -385,19 +382,15 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 let body_items = body.iter().filter_map(|s| self.convert_statement(s)).collect::<Vec<_>>();
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
 
-                let result = Some(self.ctx.builder().extension("with", vec![items_id, body_id], loc));
-                self.ctx.scopes.pop_scope();
-                result
+                Some(self.ctx.builder().extension("with", vec![items_id, body_id], loc))
             }
             Statement::AsyncWith { items, body } => {
-                self.ctx.scopes.push_scope();
                 let mut item_nodes = Vec::new();
                 for item in items {
                     let ctx_expr = self.convert_expression(&item.context_expr);
                     let var_node = if let Some(v) = &item.optional_vars {
                         if let Expression::Name(name) = v {
-                            let var = self.ctx.scopes.declare_variable(name);
-                            self.ctx.builder().symbol(&var, loc.clone())
+                            self.ctx.builder().symbol(name, loc.clone())
                         } else {
                             self.convert_expression(v)
                         }
@@ -411,9 +404,7 @@ impl<'a, 'b, V: Vfs, A: Analysis<IKun>> UirConverter<'a, 'b, V, A> {
                 let body_items = body.iter().filter_map(|s| self.convert_statement(s)).collect::<Vec<_>>();
                 let body_id = self.ctx.builder().block(body_items, loc.clone());
 
-                let result = Some(self.ctx.builder().extension("async_with", vec![items_id, body_id], loc));
-                self.ctx.scopes.pop_scope();
-                result
+                Some(self.ctx.builder().extension("async_with", vec![items_id, body_id], loc))
             }
             Statement::Match { subject, cases } => {
                 let subject_node = self.convert_expression(subject);

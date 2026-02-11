@@ -6,7 +6,7 @@ use nyar_types::NyarError;
 use nyar_vm::bytecode::instruction::Instruction;
 use nyar_vm::bytecode::format::{Chunk, Constant, ExportInfo, NyarcModule};
 use nyar_vm::vm::NyarVM;
-use nyar_vm::runtime::NyarBuiltin;
+use nyar_vm::bytecode::opcode::NyarBuiltin;
 use std::collections::HashMap;
 use std::cell::RefCell;
 
